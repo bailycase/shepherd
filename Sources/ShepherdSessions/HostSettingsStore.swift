@@ -8,12 +8,13 @@ import ShepherdRemote
 ///
 /// Each field is declared once, with its default as the property's initial value. A file that lacks a
 /// field (an older release's, or a group not moved here yet) reads that field as its default
-/// (`decode`). Groups move here one at a time; only `agents` has so far.
+/// (`decode`). Groups move here one at a time; `agents` and `worktrees` have so far.
 public struct StoredHostPreferences: Codable, Equatable, Sendable {
     public static let currentVersion = 1
 
     public var version = currentVersion
     public var agents = Agents()
+    public var worktrees = Worktrees()
 
     public init() {}
 
@@ -35,6 +36,17 @@ public struct StoredHostPreferences: Codable, Equatable, Sendable {
         public var codemode = true
         /// nil is pi's own default.
         public var compactAtPercent: Int?
+
+        public init() {}
+    }
+
+    /// Settings ▸ Worktrees (the page labelled Git): the `shepherd.worktree.*` keys, kept in the file and the keys like Agents.
+    public struct Worktrees: Codable, Equatable, Sendable {
+        public var baseMode = WorktreeBaseMode.fresh
+        public var fetchBeforeCreate = true
+        public var generatePRDescription = true
+        public var closeOnMerge = false
+        public var deleteAction = HostSettings.WorktreeDeleteAction.ask
 
         public init() {}
     }

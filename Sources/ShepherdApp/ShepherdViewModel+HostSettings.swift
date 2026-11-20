@@ -66,8 +66,8 @@ enum HostSettingsMapping {
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?,
                          slashCommands: [NativeCommand] = []) -> HostSettings {
-        // The Agents group comes from the host's store (`AppSettings.hostAgents`); the rest still from `app`.
-        let agents = app.hostAgents
+        // The Agents and Worktrees groups come from the host's store (`AppSettings.hostAgents`, `hostWorktrees`); the rest still from `app`.
+        let agents = app.hostAgents, worktrees = app.hostWorktrees
         return HostSettings(
             shepherdVersion: shepherdVersion,
             piVersion: piVersion,
@@ -80,10 +80,10 @@ enum HostSettingsMapping {
             queueDelivery: agents.queueDelivery,
             goalsEnabled: app.goalsEnabled,
             projectsEnabled: app.projectsEnabled,
-            worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
-            fetchBeforeCreating: app.worktreeFetchBeforeCreate,
-            generatePRDescriptions: app.worktreeGeneratePRDescription,
-            closeOnMerge: app.worktreeCloseOnMerge,
+            worktreeBase: worktrees.baseMode == .head ? .head : .fresh,
+            fetchBeforeCreating: worktrees.fetchBeforeCreate,
+            generatePRDescriptions: worktrees.generatePRDescription,
+            closeOnMerge: worktrees.closeOnMerge,
             designToolEnabled: app.designToolEnabled,
             threadsStartThreads: agents.threadsStartThreads,
             subThreadPlace: agents.subThreadPlace,
@@ -93,7 +93,7 @@ enum HostSettingsMapping {
                 model: app.childModel.isEmpty ? nil : app.childModel,
                 thinking: ThinkingLevel(rawValue: app.childThinking),
                 context: HostSettings.SubagentDefaults.Context(rawValue: app.childContext) ?? .fresh),
-            worktreeDeleteAction: HostSettings.WorktreeDeleteAction(rawValue: app.worktreeDeleteAction.rawValue) ?? .ask,
+            worktreeDeleteAction: worktrees.deleteAction,
             skillsInSlashMenu: app.skillsInSlashMenu,
             mcpProjectConfig: app.mcpProjectConfig,
             slashCommands: slashCommands,

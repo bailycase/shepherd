@@ -18,6 +18,11 @@ struct HostSettingsStoreTests {
         let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(agents)) as? [String: Any])
         let fields = Mirror(reflecting: agents).children.compactMap(\.label)
         #expect(Set(fields) == Set(encoded.keys), "a stored field the file does not carry")
+        let worktrees = StoredHostPreferences.Worktrees()
+        let worktreesEncoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(worktrees)) as? [String: Any])
+        #expect(Set(Mirror(reflecting: worktrees).children.compactMap(\.label)) == Set(worktreesEncoded.keys), "a Worktrees field the file does not carry")
+        let groups = Mirror(reflecting: StoredHostPreferences()).children.compactMap(\.label)
+        #expect(Set(groups) == ["version", "agents", "worktrees"], "a group with no check above")
         #expect(try StoredHostPreferences.decode(Data("{}".utf8)) == StoredHostPreferences())
     }
 
@@ -26,6 +31,13 @@ struct HostSettingsStoreTests {
         let read = try StoredHostPreferences.decode(Data(older.utf8))
         #expect(read.agents.defaultThinking == .high)
         #expect(read.agents.codemode && read.agents.defaultModel.isEmpty && read.agents.compactAtPercent == nil)
+    }
+
+    @Test func aFileFromBeforeWorktreesMovedReadsThemAsDefaults() throws {
+        let read = try StoredHostPreferences.decode(Data(#"{"version":1,"agents":{"codemode":false}}"#.utf8))
+        #expect(read.worktrees == StoredHostPreferences.Worktrees() && !read.agents.codemode)
+        let partial = try StoredHostPreferences.decode(Data(#"{"worktrees":{"closeOnMerge":true}}"#.utf8)).worktrees
+        #expect(partial.closeOnMerge && partial.baseMode == .fresh && partial.fetchBeforeCreate && partial.generatePRDescription && partial.deleteAction == .ask)
     }
 
     @Test func aChangeIsKeptInTheFileAndAReopenedStoreReadsIt() throws {
