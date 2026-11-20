@@ -51,6 +51,42 @@ struct EngineSmokeTests {
         try await EngineSmoke.run(node: engine.node, engine: engine)
     }
 
+    @Test func piLoadsTheRunningHostsExtensionAfterABundleReplacementAddsAnImport() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("ext-update")
+        let fm = FileManager.default
+        defer { try? fm.removeItem(at: scratch) }
+        let bundle = scratch.appendingPathComponent("Extensions.bundle")
+        let replacement = scratch.appendingPathComponent("Update.bundle")
+        let home = scratch.appendingPathComponent("pi")
+        for directory in [bundle, replacement, home] {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let entry = "probe.ts"
+        let oldSource = "export default function(pi) { pi.registerCommand('old-build', { handler: async () => {} }); }"
+        try Data(oldSource.utf8).write(to: bundle.appendingPathComponent(entry))
+        let running = try EmbeddedExtensions.Snapshot(directory: bundle)
+
+        let newSource = "import './new-helper.mjs'; export default function(pi) {}"
+        try Data(newSource.utf8).write(to: replacement.appendingPathComponent(entry))
+        try Data("export {};".utf8).write(to: replacement.appendingPathComponent("new-helper.mjs"))
+        _ = try fm.replaceItemAt(bundle, withItemAt: replacement, options: .usingNewMetadataOnly)
+        #expect(try Data(contentsOf: bundle.appendingPathComponent(entry)) == Data(newSource.utf8))
+
+        // Like an old installer, install only the entry point it knows about, then start pi.
+        let installed = scratch.appendingPathComponent(entry)
+        try #require(running.data(entry)).write(to: installed)
+        let pi = try RPCProcess(executable: engine.node.path,
+                                arguments: [engine.entry.path, "--mode", "rpc", "--no-session", "-e", installed.path],
+                                directory: scratch, environment: ["HOME": scratch.path, "TMPDIR": scratch.path,
+                                                                   "PATH": "/usr/bin:/bin", "PI_CODING_AGENT_DIR": home.path,
+                                                                   "PI_OFFLINE": "1"])
+        defer { pi.stop() }
+        let listing = try await pi.request(["type": "get_commands"])
+        let commands = (listing["data"] as? [String: Any])?["commands"] as? [[String: Any]]
+        #expect(commands?.contains { $0["name"] as? String == "old-build" } == true, "\(listing) \(pi.errors)")
+    }
+
     /// Through Shepherd's real launcher in a scratch Shepherd home: pi never sees the
     /// `NODE_OPTIONS` it was started with, and an RPC `bash` command finds `pi` at the launcher
     /// and gets that `NODE_OPTIONS` back (`restore-env.sh`, through `shellCommandPrefix`).
