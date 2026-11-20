@@ -215,11 +215,18 @@ private final class ForkWatch {
 
     deinit { close(queue) }
 
-    /// Whether this process started a child since the last call.
-    func started() -> Bool {
+    /// Whether this process started a child since the last call. A `kevent` failure throws: it is not "no child".
+    func started() throws -> Bool {
         var event = kevent()
         var immediately = timespec()
-        return kevent(queue, nil, 0, &event, 1, &immediately) > 0
+        while true {
+            let count = kevent(queue, nil, 0, &event, 1, &immediately)
+            if count < 0, errno == EINTR { continue }
+            guard count >= 0 else { throw WireFailure("fork watch: kevent errno \(errno)") }
+            // An error on the registered watch comes back as an event with EV_ERROR and the errno in `data`.
+            if count > 0, event.flags & UInt16(EV_ERROR) != 0 { throw WireFailure("fork watch: event error \(event.data)") }
+            return count > 0
+        }
     }
 }
 
@@ -289,12 +296,12 @@ private final class Corpus {
         try Data("y".utf8).write(to: probe)
         try FileManager.default.removeItem(at: probe)
         guard try await fileEvents.drain().contains(where: { $0.hasPrefix("/watch-probe ") }) else { throw WireFailure("the file watch saw no write") }
-        _ = forks.started()
+        _ = try forks.started()
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/usr/bin/true")
         try child.run()
         child.waitUntilExit()
-        guard forks.started() else { throw WireFailure("the fork watch saw no child process") }
+        guard try forks.started() else { throw WireFailure("the fork watch saw no child process") }
     }
 
     // MARK: Normalizing
@@ -320,10 +327,12 @@ private final class Corpus {
         return result + text[last...]
     }
 
-    /// `value` as one entry per path (`a.b[0].c`), normalized; a list of plain values is one entry.
+    /// `value` as one entry per path (`a.b[0].c`), normalized; a list of plain values is one entry. JSON structure and types are kept: an
+    /// empty object is an entry (`{}`), and null is null, not the text "null".
     private func flatten(_ value: Any, _ path: String, into fields: inout [String: Any]) {
         switch value {
         case let object as [String: Any]:
+            if object.isEmpty, !path.isEmpty { fields[path] = object }
             // Sorted, so IDs are numbered in the same order every run.
             for key in object.keys.sorted() { flatten(object[key]!, path.isEmpty ? key : "\(path).\(key)", into: &fields) }
         case let array as [Any]:
@@ -333,7 +342,7 @@ private final class Corpus {
                 for (index, member) in array.enumerated() { flatten(member, "\(path)[\(index)]", into: &fields) }
             }
         case let text as String: fields[path] = normalize(text)
-        case is NSNull: fields[path] = "null"
+        case is NSNull: fields[path] = NSNull()
         default: fields[path] = value
         }
     }
@@ -341,6 +350,8 @@ private final class Corpus {
     /// `object` flattened under `prefix`, without the top-level members in `leaving` (a secret).
     private func fields(of object: [String: Any]?, prefix: String, leaving: Set<String> = []) -> [String: Any] {
         guard let object else { return [prefix: "<none>"] }
+        // A frame that is not JSON has no fields (`exchange` gives it `[:]`), which is not an empty object sent.
+        if object.isEmpty { return [:] }
         var result: [String: Any] = [:]
         flatten(object.filter { !leaving.contains($0.key) }, prefix, into: &result)
         return result
@@ -397,18 +408,20 @@ private final class Corpus {
         var launchedChild: Bool
     }
 
-    /// Fails unless the host answers with a state and `state.json` reads back as JSON: an unreadable snapshot never compares equal to another.
+    /// Fails unless the host answers with a state that decodes as one and `state.json` reads back as JSON: an unreadable snapshot never
+    /// compares equal to another.
     private func snapshot() async throws -> Snapshot {
         let events = try await fileEvents.drain()
         let (_, reply) = try await exchange(observer, .stateFetch(id: observer.nextID()))
-        guard case .object(let object) = reply, object["type"] as? String == "state", let state = object["state"] else {
-            throw WireFailure("the observer's stateFetch was not answered with a state: \(reply)")
+        guard case .object(let object) = reply, object["type"] as? String == "state", let state = object["state"] as? [String: Any],
+              (try? NDJSON.decode(ShepherdState.self, from: JSONSerialization.data(withJSONObject: state))) != nil else {
+            throw WireFailure("the observer's stateFetch was not answered with a decodable state: \(reply)")
         }
         let stored = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: app.scratch.stateURL)) as? [String: Any])
         var flatState: [String: Any] = [:], flatStored: [String: Any] = [:]
         flatten(state, "", into: &flatState)
         flatten(stored, "", into: &flatStored)
-        return Snapshot(state: flatState, stored: flatStored, fileEvents: events, launchedChild: forks.started())
+        return Snapshot(state: flatState, stored: flatStored, fileEvents: events, launchedChild: try forks.started())
     }
 
     private func text(_ value: Any?) -> String {
