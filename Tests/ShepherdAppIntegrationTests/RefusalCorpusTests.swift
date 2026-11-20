@@ -187,7 +187,9 @@ private final class FileEvents: @unchecked Sendable {
         try FileManager.default.removeItem(at: barrier)
         try await wait(for: barrier.path, flag: UInt32(kFSEventStreamEventFlagItemRemoved))
         let events = seen.withValue { all in defer { all = [:] }; return all }
-        return events.filter { $0.key.hasPrefix(root) }.map { path, flags in
+        // An atomic write (`Data.write(options: .atomic)`) first makes `<name>.sb-<random>`, whose name differs on every run; the event on
+        // `<name>` itself is the write, so the temporary is left out.
+        return events.filter { $0.key.hasPrefix(root) && !$0.key.contains(".sb-") }.map { path, flags in
             let kinds = [(Self.created, "created"), (Self.changed, "changed"), (Self.removed, "removed")]
                 .filter { flags & $0.0 != 0 }.map(\.1).joined(separator: ",")
             return "\(path.dropFirst(root.count)) \(kinds)"
@@ -574,6 +576,7 @@ private final class Corpus {
     }
 
     /// The host has no offered-and-negotiated check for `hostSettings`: this records what it takes and refuses from a client that listed nothing.
+    /// A change it takes is applied, so it also persists: `host-preferences.json` is rewritten (`HostSettingsStore`, R3b #781), unlike a refusal.
     private func hostSettings() async throws {
         let client = try await connect(capabilities: Self.bare)
         let stored = { [app] in ["stored.closeOnMerge": try #require(app.hostSettings).worktreeCloseOnMerge] as [String: Any] }
@@ -725,5 +728,71 @@ private final class Corpus {
         result.merge(try await aftermath(before)) { $1 }
         result.merge(try status()) { $1 }
         record(step, result)
+    }
+}
+
+// MARK: - A refused settings change writes nothing
+
+/// A `hostSettings` change the host refuses leaves `host-preferences.json` and the preferences domain as they were. The host refuses it only
+/// before an authenticated `hello` (`MessageSpec` has no capability row for `hostSettings`: a change a client did not list, or a host
+/// does not advertise, is applied like any other), so those are the refusals here; the last step shows the watch would see a write.
+@Suite("Refused settings change", .mainActorExclusive)
+@MainActor
+struct RefusedSettingsChangeTests {
+    @Test func aChangeRefusedBeforeAnAuthenticatedHelloWritesNoPreferences() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        try await app.start()
+        let port = try app.server.startRemoteListener(port: 0, tokenURL: app.dir.appendingPathComponent("remote-token"))
+        let file = app.dir.appendingPathComponent("host-preferences.json")
+        // Both are at least as old as the host's start (`ShepherdHost.serveSettings` writes the file; `AppSettings` its keys).
+        let before = try Data(contentsOf: file)
+        let domain = { NSDictionary(dictionary: app.defaults.persistentDomain(forName: app.defaults.name) ?? [:]) }
+        let defaultsBefore = domain()
+
+        func send(_ wire: Wire, _ request: RemoteRequest) async throws -> Wire.Frame {
+            try wire.send(NDJSON.encode(request))
+            return await wire.next()
+        }
+        let change = { (id: Int) in RemoteRequest.hostSettings(id: id, request: .change(.closeOnMerge(true))) }
+
+        // No hello at all.
+        let silent = try Wire(port: port)
+        guard case .line(let refused) = try await send(silent, change(silent.nextID())),
+              try #require(JSONSerialization.jsonObject(with: refused) as? [String: Any])["code"] as? String == "unauthenticated" else {
+            Issue.record("a change before hello was not refused `unauthenticated`")
+            return
+        }
+
+        // A hello with a token the host does not know, then the change on the same connection.
+        let impostor = try Wire(port: port)
+        _ = try await send(impostor, .hello(id: impostor.nextID(), token: "wrong", clientName: "acme-phone",
+                                            protocolVersion: RemoteProtocol.version, capabilities: []))
+        if case .line(let reply) = try await send(impostor, change(impostor.nextID())) {
+            #expect(try #require(JSONSerialization.jsonObject(with: reply) as? [String: Any])["type"] as? String == "error")
+        }
+
+        // A request the host answers after these has been served after any write they would have made.
+        let client = try Wire(port: port)
+        guard case .line = try await send(client, .hello(id: client.nextID(), token: app.server.clientTokenForTests(), clientName: "acme-phone",
+                                                         protocolVersion: RemoteProtocol.version, capabilities: [])) else {
+            Issue.record("no helloOk")
+            return
+        }
+        guard case .line = try await send(client, .hostSettings(id: client.nextID(), request: .fetch)) else {
+            Issue.record("no hostSettings reply")
+            return
+        }
+        #expect(try Data(contentsOf: file) == before)
+        #expect(domain().isEqual(defaultsBefore))
+        #expect(app.hostSettings?.worktreeCloseOnMerge == false)
+
+        // The same change, authenticated, is applied: it writes the file and the key, so the comparisons above can fail.
+        guard case .line = try await send(client, change(client.nextID())) else {
+            Issue.record("no reply to the authenticated change")
+            return
+        }
+        #expect(try Data(contentsOf: file) != before)
+        #expect(!domain().isEqual(defaultsBefore))
     }
 }
