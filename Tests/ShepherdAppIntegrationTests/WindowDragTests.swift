@@ -1,5 +1,7 @@
 import AppKit
 import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
@@ -103,24 +105,70 @@ struct WindowDragTests {
         (view is ThreadTailGuard.RowMarker ? 1 : 0) + view.subviews.reduce(0) { $0 + builtRows(in: $1) }
     }
 
+    private func documentHeight(_ scroll: NSScrollView) -> CGFloat { scroll.documentView?.frame.height ?? 0 }
+
+    /// The two ways a drag can leave the tail: what covers the window while it is dragged is fewer rows than the tail at rest (it
+    /// grows back in steps once the drag ends), or the same rows (nothing grows back, and the end of the drag changes nothing that the
+    /// thread reads but the drag itself).
+    enum Shape: CaseIterable, CustomTestStringConvertible {
+        case longReplies, shortRows
+
+        var testDescription: String {
+            switch self {
+            case .longReplies: "replies of a few paragraphs in an ordinary window"
+            case .shortRows: "one-line rows in a tall window"
+            }
+        }
+
+        var size: CGSize {
+            switch self {
+            case .longReplies: CGSize(width: 900, height: 800)
+            // Tall enough that the rows covering it are more than the tail's cap (`ThreadView.eagerRows`).
+            case .shortRows: CGSize(width: 900, height: 1600)
+            }
+        }
+
+        /// A thread of `count` messages: a question and its answer, in paragraphs or in a line.
+        func messages(_ count: Int) -> [NativeThreadMessage] {
+            switch self {
+            case .longReplies: ThreadFixture.history(count)
+            case .shortRows:
+                (0..<count).map { i in
+                    i.isMultiple(of: 2) ? ThreadFixture.user("m\(i)", "Question \(i / 2)") : ThreadFixture.assistant("m\(i)", "Answer \(i / 2).")
+                }
+            }
+        }
+    }
+
     /// The reader at the tail reads none of the history while the window is dragged, and the tail covers the window: the history is not
-    /// laid out, row by row, at every width the drag passes through. It is back when the drag ends, and the tail grows back with it.
-    @Test func theHistoryStandsDownWhileFollowingTheTailThroughADrag() async throws {
-        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)))
+    /// laid out, row by row, at every width the drag passes through. It is back when the drag ends, and the tail grows back with it: with
+    /// no scroll and no update of the thread to bring it, whether the tail has anything to grow back to or not.
+    @Test(arguments: Shape.allCases)
+    func theHistoryStandsDownWhileFollowingTheTailThroughADrag(_ shape: Shape) async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(shape.messages(ThreadView.eagerRows * 4)), size: shape.size)
         try await thread.waitUntilReady()
         defer { thread.close() }
         let scroll = try #require(thread.scrollView)
-        let tail = thread.store.eagerRowCount(coveringHeight: AppLayout.eagerCoverHeight(forViewport: scroll.bounds.height),
-                                              maxRows: ThreadView.eagerRows)
+        let cover = AppLayout.eagerCoverHeight(forViewport: scroll.bounds.height)
+        let tail = thread.store.eagerRowCount(coveringHeight: cover, maxRows: ThreadView.eagerRows)
+        let resting = thread.store.eagerTailRows(maxRows: ThreadView.eagerRows, costCap: NativeMountedCost.eagerTailCap,
+                                                 coveringHeight: AppLayout.eagerTailHeight(cover: cover))
+        switch shape {
+        case .longReplies: #expect(tail < resting, "the tail grows back after the drag: \(tail) rows cover the window, \(resting) at rest")
+        case .shortRows: #expect(tail == resting, "the tail has nothing to grow back to: \(tail) rows cover the window, \(resting) at rest")
+        }
         let full = builtRows(in: thread.window.host)
+        let fullHeight = documentHeight(scroll)
 
         thread.visibility.liveResizing = true
         ListPerf.settle(thread.window)
         let live = builtRows(in: thread.window.host)
+        let parkedHeight = documentHeight(scroll)
         #expect(live <= tail, "only the tail is built while the window is dragged: \(live) built, the tail covers it in \(tail) rows (\(full) at rest)")
+        #expect(fullHeight - parkedHeight > 500, "the history above the tail is out of the document: \(parkedHeight) of \(fullHeight)")
         let dragged = ListPerf.counting {
             for step in 1...8 {
-                thread.window.window.setContentSize(NSSize(width: 900 - CGFloat(step) * 30, height: 800))
+                thread.window.window.setContentSize(NSSize(width: shape.size.width - CGFloat(step) * 30, height: shape.size.height))
                 ListPerf.settle(thread.window)
             }
         }
@@ -129,13 +177,13 @@ struct WindowDragTests {
 
         // Taller or shorter only: no row's body runs, and no prose is built again, once the drag has been over the tallest it gets (the
         // tail covers what the window shows, and a drag only widens that).
-        for height in [960.0, 800.0] {
-            thread.window.window.setContentSize(NSSize(width: 900 - 8 * 30, height: height))
+        for height in [shape.size.height + 160, shape.size.height] {
+            thread.window.window.setContentSize(NSSize(width: shape.size.width - 8 * 30, height: height))
             ListPerf.settle(thread.window)
         }
         let taller = ListPerf.counting {
             for step in 1...8 {
-                thread.window.window.setContentSize(NSSize(width: 900 - 8 * 30, height: 800 + CGFloat(step % 4) * 40))
+                thread.window.window.setContentSize(NSSize(width: shape.size.width - 8 * 30, height: shape.size.height + CGFloat(step % 4) * 40))
                 ListPerf.settle(thread.window)
             }
         }
@@ -144,9 +192,33 @@ struct WindowDragTests {
         }
 
         thread.visibility.liveResizing = false
-        try await eventuallyOnMain("the tail back at its size") { builtRows(in: thread.window.host) >= min(full, ThreadView.eagerRows) }
+        try await eventuallyOnMain("the tail back at its size") {
+            ListPerf.settle(thread.window)
+            return builtRows(in: thread.window.host) >= min(full, ThreadView.eagerRows)
+        }
+        // The history is back with it, and the reader has done nothing: it stands in the document again.
+        try await eventuallyOnMain("the history above the tail back in the document") {
+            ListPerf.settle(thread.window)
+            return documentHeight(scroll) - parkedHeight > (fullHeight - parkedHeight) / 2
+        }
 
-        // The history is back once the tail is: a reader who scrolls up to it finds its rows built.
+        // A drag that only widens the window again: the height it ended at is the one the thread has, so the drag's end tells the thread
+        // nothing but that it ended. The history is back all the same, with no scroll and no update of the thread to bring it.
+        thread.visibility.liveResizing = true
+        ListPerf.settle(thread.window)
+        let parkedAgain = documentHeight(scroll)
+        #expect(fullHeight - parkedAgain > 500, "the history is out of the document again: \(parkedAgain) of \(fullHeight)")
+        for step in 1...8 {
+            thread.window.window.setContentSize(NSSize(width: shape.size.width - CGFloat(8 - step) * 30, height: shape.size.height))
+            ListPerf.settle(thread.window)
+        }
+        thread.visibility.liveResizing = false
+        try await eventuallyOnMain("the history above the tail back in the document after a drag in width alone") {
+            ListPerf.settle(thread.window)
+            return documentHeight(scroll) - parkedAgain > (fullHeight - parkedAgain) / 2
+        }
+
+        // And a reader who scrolls up to it finds its rows built.
         let tailRows = builtRows(in: thread.window.host)
         let clip = scroll.contentView
         for _ in 0..<12 {
