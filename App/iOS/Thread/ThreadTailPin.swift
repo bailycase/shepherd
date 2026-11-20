@@ -72,8 +72,8 @@ final class ThreadTailPin {
 
     /// The reader sent a message, or asks for the latest: land on the next turn, even while the
     /// thread coasts after a flick (landing ends the coast). A finger on it holds the landing back.
-    func asked(_ land: @escaping Land) {
-        self.land = land
+    func asked(_ land: Land? = nil) {
+        if let land { self.land = land }
         repin.asked()
         schedule()
     }

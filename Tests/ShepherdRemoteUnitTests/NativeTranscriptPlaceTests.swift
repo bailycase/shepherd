@@ -297,6 +297,23 @@ struct NativeTranscriptPlaceTests {
         #expect(place.withholdsMarker(tail: c.tail) == c.withheld)
     }
 
+    @Test func jumpToLatestDoesNotFeedHistoryPositionsBackDuringTheJump() {
+        var place = Self.played([.detach, .swiftUI("older", tail: "live")], mountsAtTail: false)
+        #expect(place.position(tail: "live") == "older")
+
+        place.jumpToLatest()
+        #expect(place.follows)
+        #expect(place.position(tail: "live") == nil)
+        place.note("older", tail: "live")
+        #expect(place.position(tail: "live") == nil)
+
+        var reader = place.follower
+        reader.observe(distanceFromBottom: 600, userIntent: true)
+        place.follow(reader)
+        place.note("another-older-turn", tail: "live")
+        #expect(place.position(tail: "live") == "another-older-turn")
+    }
+
     @Test("what the transcript draws of the follower: following, and output it has not seen")
     func mirrorsTheFollower() {
         var place = NativeTranscriptPlace(mountsAtTail: true)

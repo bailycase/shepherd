@@ -98,6 +98,8 @@
   **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
   (the composer's menus over a full model catalog), `DataPathBenchmarks` (the server's data path),
   and `PiSessionFileTests`' runtime-state check.
+- **`SHEPHERD_VALIDATION_DIR`** is set by `scripts/validate.py` to the run's `mac/` artifact directory.
+  The named tests write step records and any other evidence there.
 - **`SHEPHERD_DESIGN_CANVAS`** points `DesignCanvasFidelityCheck` at a design folder (one holding
   `project/canvas.json`): it renders every board at its canvas size, with Google Fonts, reports
   what each drew, and with `SHEPHERD_PREVIEW_DIR` set writes each snapshot to
