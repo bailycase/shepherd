@@ -837,8 +837,9 @@ public final class SessionServer: @unchecked Sendable {
     /// for an app that connects later.
     var pullRequestLinksPush: RemoteReply?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
-    /// Main actor: terminal panes whose shell `startTerminal` is starting now.
-    @MainActor var startingTerminals = Set<PaneID>()
+    /// Main actor: the shell `startTerminal` is starting now in each terminal pane, which a second
+    /// request for the same pane waits for.
+    @MainActor var startingTerminals: [PaneID: Task<SessionID, Error>] = [:]
     /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
     @MainActor var spawningAgents = 0
     /// Main actor: new agents `startNewAgent` is still starting, whose pi is its to spawn and bind (a
