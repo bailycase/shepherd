@@ -15,7 +15,10 @@ change.
   arms, a row in the protocol round-trip table, and its lines in `speaksFor` (the agent it acts
   as; `nil` only when it names none) and `replyID`. Replies (`ExtensionReply`) are the same without
   the last part. Remote messages follow the same rules, plus the capabilities, both clients and the
-  listener tests ([remote-protocol](remote-protocol.md)).
+  listener tests ([remote-protocol](remote-protocol.md)). A new `RemoteRequest` also needs its
+  `kind` line and a row in `MessageSpec.table` (who may send it, and the capability the host
+  refuses without); a test fails for a kind with no row. A new capability is one `Capability`
+  member, and `RemoteProtocol.<name>Capability` points at it.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 

@@ -68,7 +68,7 @@ public final class ClientHooks {
 
     public var state: State {
         guard let host, host.isConnected else { return .offline }
-        guard host.capabilities.contains(RemoteProtocol.hooksCapability) else { return .unsupported }
+        guard host.supports(.hooks) else { return .unsupported }
         return loaded ?? .loading
     }
 
@@ -83,7 +83,7 @@ public final class ClientHooks {
 
     /// Reads the host's hooks afresh; a host that can't answer keeps what it showed, with why.
     public func refresh() async {
-        guard let host, let client = host.client as? HooksClient, host.capabilities.contains(RemoteProtocol.hooksCapability) else { return }
+        guard let host, let client = host.client as? HooksClient, host.supports(.hooks) else { return }
         do {
             apply(try await client.hooks(.fetch))
         } catch {
