@@ -46,6 +46,12 @@ struct SettingsWritePathTests {
 
     // MARK: The settings, read from what production declares and writes
 
+    /// A setting the golden does not know, or a probe for one that is gone: the message names it.
+    private struct Inventory: Error, CustomStringConvertible {
+        let description: String
+        init(_ description: String) { self.description = description }
+    }
+
     /// Declared in `AppSettings.Key` but no longer a setting: read once at load to move its choice to the text
     /// generation model, then removed.
     private static let retired: Set<String> = ["legacyNamingModel"]
@@ -68,12 +74,15 @@ struct SettingsWritePathTests {
         for match in source.matches(of: /store\.set\([^\n]*forKey: (?:Key\.(\w+)|("[^"]*"))/) {
             if let name = match.1 { written.insert(String(name)) } else if let literal = match.2 { literals.insert(String(literal)) }
         }
-        try #require(literals.isEmpty, "settings written to a key that is not declared in AppSettings.Key: \(literals.sorted())")
+        guard literals.isEmpty else { throw Inventory("settings written to a key that is not declared in AppSettings.Key: \(literals.sorted())") }
         let names = Set(declared.keys).subtracting(retired)
-        try #require(written == names, "AppSettings.Key declares and `store.set` writes differ: declared only \(names.subtracting(written).sorted()), written only \(written.subtracting(names).sorted())")
+        guard written == names else {
+            throw Inventory("AppSettings.Key declares and `store.set` writes differ: declared only \(names.subtracting(written).sorted()), written only \(written.subtracting(names).sorted())")
+        }
         let settings = names.map { declared[$0]! }.sorted()
-        try #require(Set(AppSettings.Key.all) == Set(settings),
-                     "settings declared and written by AppSettings but missing from AppSettings.Key.all: \(Set(settings).subtracting(AppSettings.Key.all).sorted()); listed there but not declared: \(Set(AppSettings.Key.all).subtracting(settings).sorted())")
+        guard Set(AppSettings.Key.all) == Set(settings) else {
+            throw Inventory("settings declared and written by AppSettings but missing from AppSettings.Key.all: \(Set(settings).subtracting(AppSettings.Key.all).sorted()); listed there but not declared: \(Set(AppSettings.Key.all).subtracting(settings).sorted())")
+        }
         return (settings, (settings + retired.map { declared[$0]! }).sorted())
     }
 
@@ -98,7 +107,9 @@ struct SettingsWritePathTests {
 
         let (keys, tracked) = try inventory()
         let probes = Dictionary(uniqueKeysWithValues: Self.probes(hostID: hostID, spaceID: spaceID).map { ($0.key, $0) })
-        try #require(Set(probes.keys) == Set(keys), "settings without a write-path probe: \(Set(keys).subtracting(probes.keys).sorted()); probes for no setting: \(Set(probes.keys).subtracting(keys).sorted())")
+        guard Set(probes.keys) == Set(keys) else {
+            throw Inventory("settings without a write-path probe: \(Set(keys).subtracting(probes.keys).sorted()); probes for no setting: \(Set(probes.keys).subtracting(keys).sorted())")
+        }
         AccessibilityNode.enable()
 
         // (a) The Mac's own write, taken by the host and read back in its reply.

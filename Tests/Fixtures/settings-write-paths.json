@@ -3,151 +3,9 @@
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "Menlo",
-        "otherProcess.before": "SF Mono",
-        "stored": "\"Menlo\"",
-        "storedKeysChanged": "shepherd.terminal.fontFamily",
-        "write": "Menlo"
-      },
-      "step": "direct.shepherd.terminal.fontFamily"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "14.0",
-        "otherProcess.before": "12.5",
-        "stored": "14",
-        "storedKeysChanged": "shepherd.terminal.fontSize",
-        "write": "14.0"
-      },
-      "step": "direct.shepherd.terminal.fontSize"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "acme/model-a",
-        "otherProcess.before": "",
-        "stored": "\"acme/model-a\"",
-        "storedKeysChanged": "shepherd.agent.defaultModel",
-        "write": "acme/model-a"
-      },
-      "step": "direct.shepherd.agent.defaultModel"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "high",
-        "otherProcess.before": "medium",
-        "stored": "\"high\"",
-        "storedKeysChanged": "shepherd.agent.defaultThinking",
-        "write": "high"
-      },
-      "step": "direct.shepherd.agent.defaultThinking"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "fast",
-        "otherProcess.before": "standard",
-        "stored": "\"fast\"",
-        "storedKeysChanged": "shepherd.agent.defaultServiceTier",
-        "write": "fast"
-      },
-      "step": "direct.shepherd.agent.defaultServiceTier"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "acme/text",
-        "otherProcess.before": "",
-        "stored": "\"acme/text\"",
-        "storedKeysChanged": "shepherd.agent.textGenerationModel",
-        "write": "acme/text"
-      },
-      "step": "direct.shepherd.agent.textGenerationModel"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "acme/vision",
-        "otherProcess.before": "",
-        "stored": "\"acme/vision\"",
-        "storedKeysChanged": "shepherd.agent.visionModel",
-        "write": "acme/vision"
-      },
-      "step": "direct.shepherd.agent.visionModel"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "oneAtATime",
-        "otherProcess.before": "all",
-        "stored": "\"oneAtATime\"",
-        "storedKeysChanged": "shepherd.agent.queueDelivery",
-        "write": "oneAtATime"
-      },
-      "step": "direct.shepherd.agent.queueDelivery"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.agent.trimToolOutput",
-        "write": "false"
-      },
-      "step": "direct.shepherd.agent.trimToolOutput"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.agent.notifyOnTurnFinished",
-        "write": "false"
-      },
-      "step": "direct.shepherd.agent.notifyOnTurnFinished"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.agent.deferTools",
-        "write": "false"
-      },
-      "step": "direct.shepherd.agent.deferTools"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.agent.threadsStartThreads",
-        "write": "true"
-      },
-      "step": "direct.shepherd.agent.threadsStartThreads"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "worktree",
-        "otherProcess.before": "checkout",
-        "stored": "\"worktree\"",
-        "storedKeysChanged": "shepherd.agent.subThreadPlace",
-        "write": "worktree"
-      },
-      "step": "direct.shepherd.agent.subThreadPlace"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[codemode].on": "false",
         "stored": "false",
         "storedKeysChanged": "shepherd.agent.codemode",
         "write": "false"
@@ -157,8 +15,9 @@
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "80",
-        "otherProcess.before": "null",
+        "hostProcess.afterNotice": "80",
+        "hostProcess.before": "null",
+        "hostReply.compactAtPercent": "80",
         "stored": "80",
         "storedKeysChanged": "shepherd.agent.compactAtPercent",
         "write": "80"
@@ -168,316 +27,139 @@
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "/bin/bash",
-        "otherProcess.before": "/bin/zsh",
-        "stored": "\"/bin/bash\"",
-        "storedKeysChanged": "shepherd.pane.shell",
-        "write": "/bin/bash"
+        "hostProcess.afterNotice": "acme/model-a",
+        "hostProcess.before": "",
+        "hostReply.defaultModel": "\"acme/model-a\"",
+        "stored": "\"acme/model-a\"",
+        "storedKeysChanged": "shepherd.agent.defaultModel",
+        "write": "acme/model-a"
       },
-      "step": "direct.shepherd.pane.shell"
+      "step": "direct.shepherd.agent.defaultModel"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "\"acme-edit\"",
-        "otherProcess.before": "null",
-        "stored": "\"acme-edit\"",
-        "storedKeysChanged": "shepherd.files.editor",
-        "write": "\"acme-edit\""
+        "hostProcess.afterNotice": "fast",
+        "hostProcess.before": "standard",
+        "hostReply.defaultServiceTier": "\"fast\"",
+        "stored": "\"fast\"",
+        "storedKeysChanged": "shepherd.agent.defaultServiceTier",
+        "write": "fast"
       },
-      "step": "direct.shepherd.files.editor"
+      "step": "direct.shepherd.agent.defaultServiceTier"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "{\"swift\":\"acme-edit\"}",
-        "otherProcess.before": "{}",
-        "stored": "{\"swift\":\"acme-edit\"}",
-        "storedKeysChanged": "shepherd.files.editorsByType",
-        "write": "{\"swift\":\"acme-edit\"}"
-      },
-      "step": "direct.shepherd.files.editorsByType"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.panes",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.panes"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.review",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.review"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.subagents",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.subagents"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.nativeSubagents",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.nativeSubagents"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.mcp",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.mcp"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.browser",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.browser"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.pi.extension.designReferences",
-        "write": "false"
-      },
-      "step": "direct.shepherd.pi.extension.designReferences"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "8",
-        "otherProcess.before": "4",
-        "stored": "8",
-        "storedKeysChanged": "shepherd.pi.children.concurrency",
-        "write": "8"
-      },
-      "step": "direct.shepherd.pi.children.concurrency"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "acme/child",
-        "otherProcess.before": "",
-        "stored": "\"acme/child\"",
-        "storedKeysChanged": "shepherd.pi.children.model",
-        "write": "acme/child"
-      },
-      "step": "direct.shepherd.pi.children.model"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "high",
-        "otherProcess.before": "",
+        "hostProcess.afterNotice": "high",
+        "hostProcess.before": "medium",
+        "hostReply.defaultThinking": "\"high\"",
         "stored": "\"high\"",
-        "storedKeysChanged": "shepherd.pi.children.thinking",
+        "storedKeysChanged": "shepherd.agent.defaultThinking",
         "write": "high"
       },
-      "step": "direct.shepherd.pi.children.thinking"
+      "step": "direct.shepherd.agent.defaultThinking"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "fork",
-        "otherProcess.before": "fresh",
-        "stored": "\"fork\"",
-        "storedKeysChanged": "shepherd.pi.children.context",
-        "write": "fork"
-      },
-      "step": "direct.shepherd.pi.children.context"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "1.25",
-        "otherProcess.before": "1.0",
-        "stored": "1.25",
-        "storedKeysChanged": "shepherd.ui.density",
-        "write": "1.25"
-      },
-      "step": "direct.shepherd.ui.density"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "1.1",
-        "otherProcess.before": "1.0",
-        "stored": "1.1000000000000001",
-        "storedKeysChanged": "shepherd.ui.textScale",
-        "write": "1.1"
-      },
-      "step": "direct.shepherd.ui.textScale"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "300.0",
-        "otherProcess.before": "232.0",
-        "stored": "300",
-        "storedKeysChanged": "shepherd.ui.sidebarWidth",
-        "write": "300.0"
-      },
-      "step": "direct.shepherd.ui.sidebarWidth"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "compact",
-        "otherProcess.before": "standard",
-        "stored": "\"compact\"",
-        "storedKeysChanged": "shepherd.sidebarRowDensity",
-        "write": "compact"
-      },
-      "step": "direct.shepherd.sidebarRowDensity"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "projects",
-        "otherProcess.before": "activity",
-        "stored": "\"projects\"",
-        "storedKeysChanged": "shepherd.sidebar.style",
-        "write": "projects"
-      },
-      "step": "direct.shepherd.sidebar.style"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "14",
-        "otherProcess.before": "7",
-        "stored": "14",
-        "storedKeysChanged": "shepherd.sidebar.keepIdleDays",
-        "write": "14"
-      },
-      "step": "direct.shepherd.sidebar.keepIdleDays"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.diagnostics.enabled",
-        "write": "true"
-      },
-      "step": "direct.shepherd.diagnostics.enabled"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.remote.listener",
-        "write": "true"
-      },
-      "step": "direct.shepherd.remote.listener"
-    },
-    {
-      "fields": {
-        "followed": "no",
-        "otherProcess.afterReload": "7433",
-        "otherProcess.before": "7433",
-        "stored": "9123",
-        "storedKeysChanged": "shepherd.remote.listenerPort",
-        "write": "9123"
-      },
-      "step": "direct.shepherd.remote.listenerPort"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "head",
-        "otherProcess.before": "fresh",
-        "stored": "\"head\"",
-        "storedKeysChanged": "shepherd.worktree.baseMode",
-        "write": "head"
-      },
-      "step": "direct.shepherd.worktree.baseMode"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[deferTools].on": "false",
         "stored": "false",
-        "storedKeysChanged": "shepherd.worktree.fetchBeforeCreate",
+        "storedKeysChanged": "shepherd.agent.deferTools",
         "write": "false"
       },
-      "step": "direct.shepherd.worktree.fetchBeforeCreate"
+      "step": "direct.shepherd.agent.deferTools"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
         "stored": "false",
-        "storedKeysChanged": "shepherd.worktree.generatePRDescription",
+        "storedKeysChanged": "shepherd.agent.notifyOnTurnFinished",
         "write": "false"
       },
-      "step": "direct.shepherd.worktree.generatePRDescription"
+      "step": "direct.shepherd.agent.notifyOnTurnFinished"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "keepWorktree",
-        "otherProcess.before": "ask",
-        "stored": "\"keepWorktree\"",
-        "storedKeysChanged": "shepherd.worktree.deleteAction",
-        "write": "keepWorktree"
+        "hostProcess.afterNotice": "oneAtATime",
+        "hostProcess.before": "all",
+        "hostReply.queueDelivery": "\"oneAtATime\"",
+        "stored": "\"oneAtATime\"",
+        "storedKeysChanged": "shepherd.agent.queueDelivery",
+        "write": "oneAtATime"
       },
-      "step": "direct.shepherd.worktree.deleteAction"
+      "step": "direct.shepherd.agent.queueDelivery"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
+        "hostProcess.afterNotice": "worktree",
+        "hostProcess.before": "checkout",
+        "hostReply.subThreadPlace": "\"worktree\"",
+        "stored": "\"worktree\"",
+        "storedKeysChanged": "shepherd.agent.subThreadPlace",
+        "write": "worktree"
+      },
+      "step": "direct.shepherd.agent.subThreadPlace"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "acme/text",
+        "hostProcess.before": "",
+        "hostReply.textGenerationModel": "\"acme/text\"",
+        "stored": "\"acme/text\"",
+        "storedKeysChanged": "shepherd.agent.textGenerationModel",
+        "write": "acme/text"
+      },
+      "step": "direct.shepherd.agent.textGenerationModel"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.threadsStartThreads": "true",
         "stored": "true",
-        "storedKeysChanged": "shepherd.worktree.closeOnMerge",
+        "storedKeysChanged": "shepherd.agent.threadsStartThreads",
         "write": "true"
       },
-      "step": "direct.shepherd.worktree.closeOnMerge"
+      "step": "direct.shepherd.agent.threadsStartThreads"
     },
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "{\"removeSpace\":\"remove\"}",
-        "otherProcess.before": "{}",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[context].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.agent.trimToolOutput",
+        "write": "false"
+      },
+      "step": "direct.shepherd.agent.trimToolOutput"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "acme/vision",
+        "hostProcess.before": "",
+        "hostReply.visionModel": "\"acme/vision\"",
+        "stored": "\"acme/vision\"",
+        "storedKeysChanged": "shepherd.agent.visionModel",
+        "write": "acme/vision"
+      },
+      "step": "direct.shepherd.agent.visionModel"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "{\"removeSpace\":\"remove\"}",
+        "hostProcess.before": "{}",
         "stored": "{\"removeSpace\":\"remove\"}",
         "storedKeysChanged": "shepherd.confirmations.skipped",
         "write": "{\"removeSpace\":\"remove\"}"
@@ -487,173 +169,8 @@
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.skills.slashMenu",
-        "write": "false"
-      },
-      "step": "direct.shepherd.skills.slashMenu"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "fix-tests",
-        "otherProcess.before": "",
-        "stored": "[\"fix-tests\"]",
-        "storedKeysChanged": "shepherd.pi.slashCommands.hidden",
-        "write": "fix-tests"
-      },
-      "step": "direct.shepherd.pi.slashCommands.hidden"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.mcp.projectConfig",
-        "write": "true"
-      },
-      "step": "direct.shepherd.mcp.projectConfig"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.experiments.goals",
-        "write": "true"
-      },
-      "step": "direct.shepherd.experiments.goals"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.experiments.projects",
-        "write": "true"
-      },
-      "step": "direct.shepherd.experiments.projects"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.experiments.designTool",
-        "write": "true"
-      },
-      "step": "direct.shepherd.experiments.designTool"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.experiments.computerUse",
-        "write": "true"
-      },
-      "step": "direct.shepherd.experiments.computerUse"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}",
-        "otherProcess.before": "{}",
-        "stored": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}",
-        "storedKeysChanged": "shepherd.fleet.weights",
-        "write": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}"
-      },
-      "step": "direct.shepherd.fleet.weights"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.fleet.threadsCanSend",
-        "write": "true"
-      },
-      "step": "direct.shepherd.fleet.threadsCanSend"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "5",
-        "otherProcess.before": "3",
-        "stored": "5",
-        "storedKeysChanged": "shepherd.fleet.threadCap",
-        "write": "5"
-      },
-      "step": "direct.shepherd.fleet.threadCap"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "null",
-        "stored": "true",
-        "storedKeysChanged": "shepherd.fleet.autoDispatch",
-        "write": "true"
-      },
-      "step": "direct.shepherd.fleet.autoDispatch"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
-        "stored": "false",
-        "storedKeysChanged": "shepherd.fleet.batteryCountsHalf",
-        "write": "false"
-      },
-      "step": "direct.shepherd.fleet.batteryCountsHalf"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "leaveBehind",
-        "otherProcess.before": "sendThem",
-        "stored": "\"leaveBehind\"",
-        "storedKeysChanged": "shepherd.fleet.uncommitted",
-        "write": "leaveBehind"
-      },
-      "step": "direct.shepherd.fleet.uncommitted"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
-        "otherProcess.before": "{}",
-        "stored": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
-        "storedKeysChanged": "shepherd.fleet.snapshotExcludes",
-        "write": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}"
-      },
-      "step": "direct.shepherd.fleet.snapshotExcludes"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}",
-        "otherProcess.before": "{}",
-        "stored": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}",
-        "storedKeysChanged": "shepherd.fleet.checkIgnores",
-        "write": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}"
-      },
-      "step": "direct.shepherd.fleet.checkIgnores"
-    },
-    {
-      "fields": {
-        "followed": "yes",
-        "otherProcess.afterReload": "false",
-        "otherProcess.before": "true",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
         "stored": "false",
         "storedKeysChanged": "shepherd.designs.implementOpensThread",
         "write": "false"
@@ -663,8 +180,100 @@
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.diagnostics.enabled",
+        "write": "true"
+      },
+      "step": "direct.shepherd.diagnostics.enabled"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.computerUseEnabled": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.experiments.computerUse",
+        "write": "true"
+      },
+      "step": "direct.shepherd.experiments.computerUse"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.designToolEnabled": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.experiments.designTool",
+        "write": "true"
+      },
+      "step": "direct.shepherd.experiments.designTool"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.goalsEnabled": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.experiments.goals",
+        "write": "true"
+      },
+      "step": "direct.shepherd.experiments.goals"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.projectsEnabled": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.experiments.projects",
+        "write": "true"
+      },
+      "step": "direct.shepherd.experiments.projects"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "\"acme-edit\"",
+        "hostProcess.before": "null",
+        "stored": "\"acme-edit\"",
+        "storedKeysChanged": "shepherd.files.editor",
+        "write": "\"acme-edit\""
+      },
+      "step": "direct.shepherd.files.editor"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "{\"swift\":\"acme-edit\"}",
+        "hostProcess.before": "{}",
+        "stored": "{\"swift\":\"acme-edit\"}",
+        "storedKeysChanged": "shepherd.files.editorsByType",
+        "write": "{\"swift\":\"acme-edit\"}"
+      },
+      "step": "direct.shepherd.files.editorsByType"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.files.markdownPreview",
+        "write": "true"
+      },
+      "step": "direct.shepherd.files.markdownPreview"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
         "stored": "true",
         "storedKeysChanged": "shepherd.files.wordWrap",
         "write": "true"
@@ -674,21 +283,460 @@
     {
       "fields": {
         "followed": "yes",
-        "otherProcess.afterReload": "true",
-        "otherProcess.before": "false",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "null",
+        "hostReply.fleetAutoDispatch": "true",
         "stored": "true",
-        "storedKeysChanged": "shepherd.files.markdownPreview",
+        "storedKeysChanged": "shepherd.fleet.autoDispatch",
         "write": "true"
       },
-      "step": "direct.shepherd.files.markdownPreview"
+      "step": "direct.shepherd.fleet.autoDispatch"
     },
     {
       "fields": {
-        "remoteListenerCallbacks": "[true]",
-        "remoteListenerEnabled": "true",
-        "sidebarWidth": "300.0"
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.fleetBatteryCountsHalf": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.fleet.batteryCountsHalf",
+        "write": "false"
       },
-      "step": "notice"
+      "step": "direct.shepherd.fleet.batteryCountsHalf"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}",
+        "hostProcess.before": "{}",
+        "hostReply.fleetCheckIgnores": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}",
+        "stored": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}",
+        "storedKeysChanged": "shepherd.fleet.checkIgnores",
+        "write": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\"]}"
+      },
+      "step": "direct.shepherd.fleet.checkIgnores"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
+        "hostProcess.before": "{}",
+        "hostReply.fleetSnapshotExcludes": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
+        "stored": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
+        "storedKeysChanged": "shepherd.fleet.snapshotExcludes",
+        "write": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}"
+      },
+      "step": "direct.shepherd.fleet.snapshotExcludes"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "5",
+        "hostProcess.before": "3",
+        "hostReply.fleetThreadCap": "5",
+        "stored": "5",
+        "storedKeysChanged": "shepherd.fleet.threadCap",
+        "write": "5"
+      },
+      "step": "direct.shepherd.fleet.threadCap"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.fleetThreadsCanSend": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.fleet.threadsCanSend",
+        "write": "true"
+      },
+      "step": "direct.shepherd.fleet.threadsCanSend"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "leaveBehind",
+        "hostProcess.before": "sendThem",
+        "hostReply.fleetUncommitted": "\"leaveBehind\"",
+        "stored": "\"leaveBehind\"",
+        "storedKeysChanged": "shepherd.fleet.uncommitted",
+        "write": "leaveBehind"
+      },
+      "step": "direct.shepherd.fleet.uncommitted"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}",
+        "hostProcess.before": "{}",
+        "hostReply.fleetWeights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}",
+        "stored": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}",
+        "storedKeysChanged": "shepherd.fleet.weights",
+        "write": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}"
+      },
+      "step": "direct.shepherd.fleet.weights"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.mcpProjectConfig": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.mcp.projectConfig",
+        "write": "true"
+      },
+      "step": "direct.shepherd.mcp.projectConfig"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "/bin/bash",
+        "hostProcess.before": "/bin/zsh",
+        "stored": "\"/bin/bash\"",
+        "storedKeysChanged": "shepherd.pane.shell",
+        "write": "/bin/bash"
+      },
+      "step": "direct.shepherd.pane.shell"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "8",
+        "hostProcess.before": "4",
+        "hostReply.subagentDefaults": "{\"concurrency\":8,\"context\":\"fresh\"}",
+        "stored": "8",
+        "storedKeysChanged": "shepherd.pi.children.concurrency",
+        "write": "8"
+      },
+      "step": "direct.shepherd.pi.children.concurrency"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "fork",
+        "hostProcess.before": "fresh",
+        "hostReply.subagentDefaults": "{\"concurrency\":8,\"context\":\"fork\"}",
+        "stored": "\"fork\"",
+        "storedKeysChanged": "shepherd.pi.children.context",
+        "write": "fork"
+      },
+      "step": "direct.shepherd.pi.children.context"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "acme/child",
+        "hostProcess.before": "",
+        "hostReply.subagentDefaults": "{\"concurrency\":8,\"context\":\"fork\",\"model\":\"acme/child\"}",
+        "stored": "\"acme/child\"",
+        "storedKeysChanged": "shepherd.pi.children.model",
+        "write": "acme/child"
+      },
+      "step": "direct.shepherd.pi.children.model"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "high",
+        "hostProcess.before": "",
+        "hostReply.subagentDefaults": "{\"concurrency\":8,\"context\":\"fork\",\"model\":\"acme/child\",\"thinking\":\"high\"}",
+        "stored": "\"high\"",
+        "storedKeysChanged": "shepherd.pi.children.thinking",
+        "write": "high"
+      },
+      "step": "direct.shepherd.pi.children.thinking"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[browser].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.browser",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.browser"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[designReferences].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.designReferences",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.designReferences"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[mcp].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.mcp",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.mcp"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[nativeSubagents].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.nativeSubagents",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.nativeSubagents"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[panes].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.panes",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.panes"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[review].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.review",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.review"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[subagents].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.subagents",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.subagents"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "fix-tests",
+        "hostProcess.before": "",
+        "hostReply.hiddenSlashCommands": "[\"fix-tests\"]",
+        "stored": "[\"fix-tests\"]",
+        "storedKeysChanged": "shepherd.pi.slashCommands.hidden",
+        "write": "fix-tests"
+      },
+      "step": "direct.shepherd.pi.slashCommands.hidden"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.listenerPort": "<open>",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.remote.listener",
+        "write": "true"
+      },
+      "step": "direct.shepherd.remote.listener"
+    },
+    {
+      "fields": {
+        "followed": "no",
+        "hostProcess.afterNotice": "0",
+        "hostProcess.before": "0",
+        "stored": "9123",
+        "storedKeysChanged": "shepherd.remote.listenerPort",
+        "write": "9123"
+      },
+      "step": "direct.shepherd.remote.listenerPort"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "14",
+        "hostProcess.before": "7",
+        "stored": "14",
+        "storedKeysChanged": "shepherd.sidebar.keepIdleDays",
+        "write": "14"
+      },
+      "step": "direct.shepherd.sidebar.keepIdleDays"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "projects",
+        "hostProcess.before": "activity",
+        "stored": "\"projects\"",
+        "storedKeysChanged": "shepherd.sidebar.style",
+        "write": "projects"
+      },
+      "step": "direct.shepherd.sidebar.style"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "compact",
+        "hostProcess.before": "standard",
+        "stored": "\"compact\"",
+        "storedKeysChanged": "shepherd.sidebarRowDensity",
+        "write": "compact"
+      },
+      "step": "direct.shepherd.sidebarRowDensity"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.skillsInSlashMenu": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.skills.slashMenu",
+        "write": "false"
+      },
+      "step": "direct.shepherd.skills.slashMenu"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "Menlo",
+        "hostProcess.before": "sentinel-52",
+        "stored": "\"Menlo\"",
+        "storedKeysChanged": "shepherd.terminal.fontFamily",
+        "write": "Menlo"
+      },
+      "step": "direct.shepherd.terminal.fontFamily"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "14.0",
+        "hostProcess.before": "12.5",
+        "stored": "14",
+        "storedKeysChanged": "shepherd.terminal.fontSize",
+        "write": "14.0"
+      },
+      "step": "direct.shepherd.terminal.fontSize"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "1.25",
+        "hostProcess.before": "1.0",
+        "stored": "1.25",
+        "storedKeysChanged": "shepherd.ui.density",
+        "write": "1.25"
+      },
+      "step": "direct.shepherd.ui.density"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "300.0",
+        "hostProcess.before": "232.0",
+        "stored": "300",
+        "storedKeysChanged": "shepherd.ui.sidebarWidth",
+        "write": "300.0"
+      },
+      "step": "direct.shepherd.ui.sidebarWidth"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "1.1",
+        "hostProcess.before": "1.0",
+        "stored": "1.1000000000000001",
+        "storedKeysChanged": "shepherd.ui.textScale",
+        "write": "1.1"
+      },
+      "step": "direct.shepherd.ui.textScale"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "head",
+        "hostProcess.before": "fresh",
+        "hostReply.worktreeBase": "\"head\"",
+        "stored": "\"head\"",
+        "storedKeysChanged": "shepherd.worktree.baseMode",
+        "write": "head"
+      },
+      "step": "direct.shepherd.worktree.baseMode"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "true",
+        "hostProcess.before": "false",
+        "hostReply.closeOnMerge": "true",
+        "stored": "true",
+        "storedKeysChanged": "shepherd.worktree.closeOnMerge",
+        "write": "true"
+      },
+      "step": "direct.shepherd.worktree.closeOnMerge"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "keepWorktree",
+        "hostProcess.before": "ask",
+        "hostReply.worktreeDeleteAction": "\"keepWorktree\"",
+        "stored": "\"keepWorktree\"",
+        "storedKeysChanged": "shepherd.worktree.deleteAction",
+        "write": "keepWorktree"
+      },
+      "step": "direct.shepherd.worktree.deleteAction"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.fetchBeforeCreating": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.worktree.fetchBeforeCreate",
+        "write": "false"
+      },
+      "step": "direct.shepherd.worktree.fetchBeforeCreate"
+    },
+    {
+      "fields": {
+        "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.generatePRDescriptions": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.worktree.generatePRDescription",
+        "write": "false"
+      },
+      "step": "direct.shepherd.worktree.generatePRDescription"
+    },
+    {
+      "fields": {
+        "hostReply.listenerPort": "<missing>"
+      },
+      "step": "direct.shepherd.remote.listener.off"
+    },
+    {
+      "fields": {
+        "assignmentsInSources": "{\"AppSettings.swift\":1}"
+      },
+      "step": "remoteListenerPort.writers"
     },
     {
       "fields": {
@@ -1406,6 +1454,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.defaultModel": "\"acme/model-c\"",
         "stored.shepherd.agent.defaultModel": "\"acme/model-c\"",
         "unit": "setting:host.defaultModel",
@@ -1415,6 +1464,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.defaultThinking": "\"low\"",
         "stored.shepherd.agent.defaultThinking": "\"low\"",
         "unit": "setting:host.defaultThinking",
@@ -1424,6 +1474,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.defaultServiceTier": "\"standard\"",
         "stored.shepherd.agent.defaultServiceTier": "\"standard\"",
         "unit": "setting:host.defaultServiceTier",
@@ -1433,6 +1484,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.textGenerationModel": "\"acme/text-c\"",
         "stored.shepherd.agent.textGenerationModel": "\"acme/text-c\"",
         "unit": "setting:host.textGenerationModel",
@@ -1442,6 +1494,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.visionModel": "\"acme/vision-c\"",
         "stored.shepherd.agent.visionModel": "\"acme/vision-c\"",
         "unit": "setting:host.visionModel",
@@ -1451,6 +1504,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.compactAtPercent": "60",
         "stored.shepherd.agent.compactAtPercent": "60",
         "unit": "setting:host.compactAtPercent",
@@ -1460,6 +1514,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.queueDelivery": "\"all\"",
         "stored.shepherd.agent.queueDelivery": "\"all\"",
         "unit": "setting:host.queueDelivery",
@@ -1469,6 +1524,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.worktreeBase": "\"fresh\"",
         "stored.shepherd.worktree.baseMode": "\"fresh\"",
         "unit": "setting:host.worktreeBase",
@@ -1478,6 +1534,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fetchBeforeCreating": "true",
         "stored.shepherd.worktree.fetchBeforeCreate": "true",
         "unit": "setting:host.fetchBeforeCreating",
@@ -1487,6 +1544,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.generatePRDescriptions": "true",
         "stored.shepherd.worktree.generatePRDescription": "true",
         "unit": "setting:host.generatePRDescriptions",
@@ -1496,6 +1554,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.closeOnMerge": "false",
         "stored.shepherd.worktree.closeOnMerge": "false",
         "unit": "setting:host.closeOnMerge",
@@ -1505,6 +1564,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.worktreeDeleteAction": "\"removeWorktree\"",
         "stored.shepherd.worktree.deleteAction": "\"removeWorktree\"",
         "unit": "setting:host.worktreeDeleteAction",
@@ -1514,6 +1574,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetThreadsCanSend": "false",
         "stored.shepherd.fleet.threadsCanSend": "false",
         "unit": "setting:host.fleetThreadsCanSend",
@@ -1523,6 +1584,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetThreadCap": "7",
         "stored.shepherd.fleet.threadCap": "7",
         "unit": "setting:host.fleetThreadCap",
@@ -1532,6 +1594,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetAutoDispatch": "false",
         "stored.shepherd.fleet.autoDispatch": "false",
         "unit": "setting:host.fleetAutoDispatch",
@@ -1541,6 +1604,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetBatteryCountsHalf": "true",
         "stored.shepherd.fleet.batteryCountsHalf": "true",
         "unit": "setting:host.fleetBatteryCountsHalf",
@@ -1550,6 +1614,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetUncommitted": "\"sendThem\"",
         "stored.shepherd.fleet.uncommitted": "\"sendThem\"",
         "unit": "setting:host.fleetUncommitted",
@@ -1559,6 +1624,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetWeights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\",\"fleet.weight.00000000-0000-4000-8000-0000000000B2\":\"lessOften\"}",
         "stored.shepherd.fleet.weights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\",\"fleet.weight.00000000-0000-4000-8000-0000000000B2\":\"lessOften\"}",
         "unit": "setting:fleet.weight.00000000-0000-4000-8000-0000000000B2",
@@ -1568,6 +1634,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetWeights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\",\"fleet.weight.00000000-0000-4000-8000-0000000000B2\":\"normal\"}",
         "stored.shepherd.fleet.weights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\",\"fleet.weight.00000000-0000-4000-8000-0000000000B2\":\"normal\"}",
         "unit": "setting:fleet.weight.00000000-0000-4000-8000-0000000000B2",
@@ -1577,6 +1644,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetSnapshotExcludes": "{\"fleet.snapshotExcludes.acme-docs-space\":{\"excluded\":[\"build\"],\"included\":[]},\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
         "stored.shepherd.fleet.snapshotExcludes": "{\"fleet.snapshotExcludes.acme-docs-space\":{\"excluded\":[\"build\"],\"included\":[]},\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
         "unit": "setting:fleet.snapshotExcludes.acme-docs-space",
@@ -1586,6 +1654,7 @@
     },
     {
       "fields": {
+        "accepted": "yes",
         "reply.settings.fleetCheckIgnores": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\",\"check-b\"],\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000b2\":[\"check-c\"]}",
         "stored.shepherd.fleet.checkIgnores": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\",\"check-b\"],\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000b2\":[\"check-c\"]}",
         "unit": "setting:fleet.checkIgnore.00000000-0000-4000-8000-0000000000b2",
@@ -1595,7 +1664,7 @@
     },
     {
       "fields": {
-        "refused": "setting:host.defaultThinking holds a value this version doesn't know",
+        "accepted": "yes",
         "unit": "setting:host.defaultThinking",
         "value": "\"loud\""
       },
@@ -1603,7 +1672,7 @@
     },
     {
       "fields": {
-        "refused": "setting:host.someday holds a value this version doesn't know",
+        "accepted": "yes",
         "unit": "setting:host.someday",
         "value": "true"
       },
@@ -1611,77 +1680,78 @@
     },
     {
       "fields": {
-        "shepherd.agent.codemode": "{\"a\":\"followed\",\"b\":[\"bundledExtension.codemode\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[codemode].on\"]}",
-        "shepherd.agent.compactAtPercent": "{\"a\":\"followed\",\"b\":[\"compactAtPercent\"],\"c\":[\"host.compactAtPercent\"],\"hostSettingsFields\":[\"compactAtPercent\"]}",
-        "shepherd.agent.defaultModel": "{\"a\":\"followed\",\"b\":[\"defaultModel\",\"defaultModel.cleared\",\"defaultModel.again\"],\"c\":[\"host.defaultModel\"],\"hostSettingsFields\":[\"defaultModel\"]}",
-        "shepherd.agent.defaultServiceTier": "{\"a\":\"followed\",\"b\":[\"defaultServiceTier\"],\"c\":[\"host.defaultServiceTier\"],\"hostSettingsFields\":[\"defaultServiceTier\"]}",
-        "shepherd.agent.defaultThinking": "{\"a\":\"followed\",\"b\":[\"defaultThinking\"],\"c\":[\"host.defaultThinking\"],\"hostSettingsFields\":[\"defaultThinking\"]}",
-        "shepherd.agent.deferTools": "{\"a\":\"followed\",\"b\":[\"bundledExtension.deferTools\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[deferTools].on\"]}",
-        "shepherd.agent.notifyOnTurnFinished": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.agent.queueDelivery": "{\"a\":\"followed\",\"b\":[\"queueDelivery\"],\"c\":[\"host.queueDelivery\"],\"hostSettingsFields\":[\"queueDelivery\"]}",
-        "shepherd.agent.subThreadPlace": "{\"a\":\"followed\",\"b\":[\"subThreadPlace\"],\"c\":[],\"hostSettingsFields\":[\"subThreadPlace\"]}",
-        "shepherd.agent.textGenerationModel": "{\"a\":\"followed\",\"b\":[\"textGenerationModel\",\"namingModel\"],\"c\":[\"host.textGenerationModel\"],\"hostSettingsFields\":[\"textGenerationModel\"]}",
-        "shepherd.agent.threadsStartThreads": "{\"a\":\"followed\",\"b\":[\"threadsStartThreads\"],\"c\":[],\"hostSettingsFields\":[\"threadsStartThreads\"]}",
-        "shepherd.agent.trimToolOutput": "{\"a\":\"followed\",\"b\":[\"bundledExtension.context\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[context].on\"]}",
-        "shepherd.agent.visionModel": "{\"a\":\"followed\",\"b\":[\"visionModel\"],\"c\":[\"host.visionModel\"],\"hostSettingsFields\":[\"visionModel\"]}",
-        "shepherd.confirmations.skipped": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.designs.implementOpensThread": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.diagnostics.enabled": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.experiments.computerUse": "{\"a\":\"followed\",\"b\":[\"computerUseEnabled\"],\"c\":[],\"hostSettingsFields\":[\"computerUseEnabled\"]}",
-        "shepherd.experiments.designTool": "{\"a\":\"followed\",\"b\":[\"designToolEnabled\"],\"c\":[],\"hostSettingsFields\":[\"designToolEnabled\"]}",
-        "shepherd.experiments.goals": "{\"a\":\"followed\",\"b\":[\"goalsEnabled\"],\"c\":[],\"hostSettingsFields\":[\"goalsEnabled\"]}",
-        "shepherd.experiments.projects": "{\"a\":\"followed\",\"b\":[\"projectsEnabled\"],\"c\":[],\"hostSettingsFields\":[\"projectsEnabled\"]}",
-        "shepherd.files.editor": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.files.editorsByType": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.files.markdownPreview": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.files.wordWrap": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.fleet.autoDispatch": "{\"a\":\"followed\",\"b\":[\"fleetAutoDispatch\"],\"c\":[\"host.fleetAutoDispatch\"],\"hostSettingsFields\":[\"fleetAutoDispatch\"]}",
-        "shepherd.fleet.batteryCountsHalf": "{\"a\":\"followed\",\"b\":[\"fleetBatteryCountsHalf\"],\"c\":[\"host.fleetBatteryCountsHalf\"],\"hostSettingsFields\":[\"fleetBatteryCountsHalf\"]}",
-        "shepherd.fleet.checkIgnores": "{\"a\":\"followed\",\"b\":[\"fleetCheckIgnore\"],\"c\":[\"fleet.checkIgnore\"],\"hostSettingsFields\":[\"fleetCheckIgnores\"]}",
-        "shepherd.fleet.snapshotExcludes": "{\"a\":\"followed\",\"b\":[\"fleetSnapshotExcludes\"],\"c\":[\"fleet.snapshotExcludes\"],\"hostSettingsFields\":[\"fleetSnapshotExcludes\"]}",
-        "shepherd.fleet.threadCap": "{\"a\":\"followed\",\"b\":[\"fleetThreadCap\",\"fleetThreadCap.aboveRange\"],\"c\":[\"host.fleetThreadCap\"],\"hostSettingsFields\":[\"fleetThreadCap\"]}",
-        "shepherd.fleet.threadsCanSend": "{\"a\":\"followed\",\"b\":[\"fleetThreadsCanSend\"],\"c\":[\"host.fleetThreadsCanSend\"],\"hostSettingsFields\":[\"fleetThreadsCanSend\"]}",
-        "shepherd.fleet.uncommitted": "{\"a\":\"followed\",\"b\":[\"fleetUncommitted\"],\"c\":[\"host.fleetUncommitted\"],\"hostSettingsFields\":[\"fleetUncommitted\"]}",
-        "shepherd.fleet.weights": "{\"a\":\"followed\",\"b\":[\"fleetWeight\"],\"c\":[\"fleet.weight\",\"fleet.weight.deleted\"],\"hostSettingsFields\":[\"fleetWeights\"]}",
-        "shepherd.mcp.projectConfig": "{\"a\":\"followed\",\"b\":[\"mcpProjectConfig\"],\"c\":[],\"hostSettingsFields\":[\"mcpProjectConfig\"]}",
-        "shepherd.pane.shell": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.pi.children.concurrency": "{\"a\":\"followed\",\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"hostSettingsFields\":[\"subagentDefaults\"]}",
-        "shepherd.pi.children.context": "{\"a\":\"followed\",\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"hostSettingsFields\":[\"subagentDefaults\"]}",
-        "shepherd.pi.children.model": "{\"a\":\"followed\",\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"hostSettingsFields\":[\"subagentDefaults\"]}",
-        "shepherd.pi.children.thinking": "{\"a\":\"followed\",\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"hostSettingsFields\":[\"subagentDefaults\"]}",
-        "shepherd.pi.extension.browser": "{\"a\":\"followed\",\"b\":[\"bundledExtension.browser\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[browser].on\"]}",
-        "shepherd.pi.extension.designReferences": "{\"a\":\"followed\",\"b\":[\"bundledExtension.designReferences\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[designReferences].on\"]}",
-        "shepherd.pi.extension.mcp": "{\"a\":\"followed\",\"b\":[\"bundledExtension.mcp\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[mcp].on\"]}",
-        "shepherd.pi.extension.nativeSubagents": "{\"a\":\"followed\",\"b\":[\"bundledExtension.nativeSubagents\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[nativeSubagents].on\"]}",
-        "shepherd.pi.extension.panes": "{\"a\":\"followed\",\"b\":[\"bundledExtension.panes\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[panes].on\"]}",
-        "shepherd.pi.extension.review": "{\"a\":\"followed\",\"b\":[\"bundledExtension.review\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[review].on\"]}",
-        "shepherd.pi.extension.subagents": "{\"a\":\"followed\",\"b\":[\"bundledExtension.subagents\"],\"c\":[],\"hostSettingsFields\":[\"bundledExtensions[subagents].on\"]}",
-        "shepherd.pi.slashCommands.hidden": "{\"a\":\"followed\",\"b\":[\"slashCommand\"],\"c\":[],\"hostSettingsFields\":[\"hiddenSlashCommands\"]}",
-        "shepherd.remote.listener": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.remote.listenerPort": "{\"a\":\"own process only\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.sidebar.keepIdleDays": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.sidebar.style": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.sidebarRowDensity": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.skills.slashMenu": "{\"a\":\"followed\",\"b\":[\"skillsInSlashMenu\"],\"c\":[],\"hostSettingsFields\":[\"skillsInSlashMenu\"]}",
-        "shepherd.terminal.fontFamily": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.terminal.fontSize": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.ui.density": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.ui.sidebarWidth": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.ui.textScale": "{\"a\":\"followed\",\"b\":[],\"c\":[],\"hostSettingsFields\":[]}",
-        "shepherd.worktree.baseMode": "{\"a\":\"followed\",\"b\":[\"worktreeBase\"],\"c\":[\"host.worktreeBase\"],\"hostSettingsFields\":[\"worktreeBase\"]}",
-        "shepherd.worktree.closeOnMerge": "{\"a\":\"followed\",\"b\":[\"closeOnMerge\"],\"c\":[\"host.closeOnMerge\"],\"hostSettingsFields\":[\"closeOnMerge\"]}",
-        "shepherd.worktree.deleteAction": "{\"a\":\"followed\",\"b\":[\"worktreeDeleteAction\"],\"c\":[\"host.worktreeDeleteAction\"],\"hostSettingsFields\":[\"worktreeDeleteAction\"]}",
-        "shepherd.worktree.fetchBeforeCreate": "{\"a\":\"followed\",\"b\":[\"fetchBeforeCreating\"],\"c\":[\"host.fetchBeforeCreating\"],\"hostSettingsFields\":[\"fetchBeforeCreating\"]}",
-        "shepherd.worktree.generatePRDescription": "{\"a\":\"followed\",\"b\":[\"generatePRDescriptions\"],\"c\":[\"host.generatePRDescriptions\"],\"hostSettingsFields\":[\"generatePRDescriptions\"]}"
+        "shepherd.agent.codemode": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[codemode].on\"],\"b\":[\"bundledExtension.codemode\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[codemode].on\"]}",
+        "shepherd.agent.compactAtPercent": "{\"a\":\"followed\",\"aHostReplyFields\":[\"compactAtPercent\"],\"b\":[\"compactAtPercent\"],\"c\":[\"host.compactAtPercent\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"compactAtPercent\"]}",
+        "shepherd.agent.defaultModel": "{\"a\":\"followed\",\"aHostReplyFields\":[\"defaultModel\"],\"b\":[\"defaultModel\",\"defaultModel.cleared\",\"defaultModel.again\"],\"c\":[\"host.defaultModel\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"defaultModel\"]}",
+        "shepherd.agent.defaultServiceTier": "{\"a\":\"followed\",\"aHostReplyFields\":[\"defaultServiceTier\"],\"b\":[\"defaultServiceTier\"],\"c\":[\"host.defaultServiceTier\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"defaultServiceTier\"]}",
+        "shepherd.agent.defaultThinking": "{\"a\":\"followed\",\"aHostReplyFields\":[\"defaultThinking\"],\"b\":[\"defaultThinking\"],\"c\":[\"host.defaultThinking\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"defaultThinking\"]}",
+        "shepherd.agent.deferTools": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[deferTools].on\"],\"b\":[\"bundledExtension.deferTools\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[deferTools].on\"]}",
+        "shepherd.agent.notifyOnTurnFinished": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.agent.queueDelivery": "{\"a\":\"followed\",\"aHostReplyFields\":[\"queueDelivery\"],\"b\":[\"queueDelivery\"],\"c\":[\"host.queueDelivery\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"queueDelivery\"]}",
+        "shepherd.agent.subThreadPlace": "{\"a\":\"followed\",\"aHostReplyFields\":[\"subThreadPlace\"],\"b\":[\"subThreadPlace\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"subThreadPlace\"]}",
+        "shepherd.agent.textGenerationModel": "{\"a\":\"followed\",\"aHostReplyFields\":[\"textGenerationModel\"],\"b\":[\"textGenerationModel\",\"namingModel\"],\"c\":[\"host.textGenerationModel\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"textGenerationModel\"]}",
+        "shepherd.agent.threadsStartThreads": "{\"a\":\"followed\",\"aHostReplyFields\":[\"threadsStartThreads\"],\"b\":[\"threadsStartThreads\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"threadsStartThreads\"]}",
+        "shepherd.agent.trimToolOutput": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[context].on\"],\"b\":[\"bundledExtension.context\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[context].on\"]}",
+        "shepherd.agent.visionModel": "{\"a\":\"followed\",\"aHostReplyFields\":[\"visionModel\"],\"b\":[\"visionModel\"],\"c\":[\"host.visionModel\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"visionModel\"]}",
+        "shepherd.confirmations.skipped": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.designs.implementOpensThread": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.diagnostics.enabled": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.experiments.computerUse": "{\"a\":\"followed\",\"aHostReplyFields\":[\"computerUseEnabled\"],\"b\":[\"computerUseEnabled\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"computerUseEnabled\"]}",
+        "shepherd.experiments.designTool": "{\"a\":\"followed\",\"aHostReplyFields\":[\"designToolEnabled\"],\"b\":[\"designToolEnabled\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"designToolEnabled\"]}",
+        "shepherd.experiments.goals": "{\"a\":\"followed\",\"aHostReplyFields\":[\"goalsEnabled\"],\"b\":[\"goalsEnabled\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"goalsEnabled\"]}",
+        "shepherd.experiments.projects": "{\"a\":\"followed\",\"aHostReplyFields\":[\"projectsEnabled\"],\"b\":[\"projectsEnabled\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"projectsEnabled\"]}",
+        "shepherd.files.editor": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.files.editorsByType": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.files.markdownPreview": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.files.wordWrap": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.fleet.autoDispatch": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetAutoDispatch\"],\"b\":[\"fleetAutoDispatch\"],\"c\":[\"host.fleetAutoDispatch\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetAutoDispatch\"]}",
+        "shepherd.fleet.batteryCountsHalf": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetBatteryCountsHalf\"],\"b\":[\"fleetBatteryCountsHalf\"],\"c\":[\"host.fleetBatteryCountsHalf\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetBatteryCountsHalf\"]}",
+        "shepherd.fleet.checkIgnores": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetCheckIgnores\"],\"b\":[\"fleetCheckIgnore\"],\"c\":[\"fleet.checkIgnore\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetCheckIgnores\"]}",
+        "shepherd.fleet.snapshotExcludes": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetSnapshotExcludes\"],\"b\":[\"fleetSnapshotExcludes\"],\"c\":[\"fleet.snapshotExcludes\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetSnapshotExcludes\"]}",
+        "shepherd.fleet.threadCap": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetThreadCap\"],\"b\":[\"fleetThreadCap\",\"fleetThreadCap.aboveRange\"],\"c\":[\"host.fleetThreadCap\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetThreadCap\"]}",
+        "shepherd.fleet.threadsCanSend": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetThreadsCanSend\"],\"b\":[\"fleetThreadsCanSend\"],\"c\":[\"host.fleetThreadsCanSend\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetThreadsCanSend\"]}",
+        "shepherd.fleet.uncommitted": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetUncommitted\"],\"b\":[\"fleetUncommitted\"],\"c\":[\"host.fleetUncommitted\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetUncommitted\"]}",
+        "shepherd.fleet.weights": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fleetWeights\"],\"b\":[\"fleetWeight\"],\"c\":[\"fleet.weight\",\"fleet.weight.deleted\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fleetWeights\"]}",
+        "shepherd.mcp.projectConfig": "{\"a\":\"followed\",\"aHostReplyFields\":[\"mcpProjectConfig\"],\"b\":[\"mcpProjectConfig\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"mcpProjectConfig\"]}",
+        "shepherd.pane.shell": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.pi.children.concurrency": "{\"a\":\"followed\",\"aHostReplyFields\":[\"subagentDefaults\"],\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"subagentDefaults\"]}",
+        "shepherd.pi.children.context": "{\"a\":\"followed\",\"aHostReplyFields\":[\"subagentDefaults\"],\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"subagentDefaults\"]}",
+        "shepherd.pi.children.model": "{\"a\":\"followed\",\"aHostReplyFields\":[\"subagentDefaults\"],\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"subagentDefaults\"]}",
+        "shepherd.pi.children.thinking": "{\"a\":\"followed\",\"aHostReplyFields\":[\"subagentDefaults\"],\"b\":[\"subagentDefaults\",\"subagentDefaults.aboveRange\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"subagentDefaults\"]}",
+        "shepherd.pi.extension.browser": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[browser].on\"],\"b\":[\"bundledExtension.browser\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[browser].on\"]}",
+        "shepherd.pi.extension.designReferences": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[designReferences].on\"],\"b\":[\"bundledExtension.designReferences\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[designReferences].on\"]}",
+        "shepherd.pi.extension.mcp": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[mcp].on\"],\"b\":[\"bundledExtension.mcp\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[mcp].on\"]}",
+        "shepherd.pi.extension.nativeSubagents": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[nativeSubagents].on\"],\"b\":[\"bundledExtension.nativeSubagents\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[nativeSubagents].on\"]}",
+        "shepherd.pi.extension.panes": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[panes].on\"],\"b\":[\"bundledExtension.panes\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[panes].on\"]}",
+        "shepherd.pi.extension.review": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[review].on\"],\"b\":[\"bundledExtension.review\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[review].on\"]}",
+        "shepherd.pi.extension.subagents": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[subagents].on\"],\"b\":[\"bundledExtension.subagents\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[subagents].on\"]}",
+        "shepherd.pi.slashCommands.hidden": "{\"a\":\"followed\",\"aHostReplyFields\":[\"hiddenSlashCommands\"],\"b\":[\"slashCommand\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"hiddenSlashCommands\"]}",
+        "shepherd.remote.listener": "{\"a\":\"followed\",\"aHostReplyFields\":[\"listenerPort\"],\"b\":[],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"listenerPort\"]}",
+        "shepherd.remote.listenerPort": "{\"a\":\"not followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.sidebar.keepIdleDays": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.sidebar.style": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.sidebarRowDensity": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.skills.slashMenu": "{\"a\":\"followed\",\"aHostReplyFields\":[\"skillsInSlashMenu\"],\"b\":[\"skillsInSlashMenu\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"skillsInSlashMenu\"]}",
+        "shepherd.terminal.fontFamily": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.terminal.fontSize": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.ui.density": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.ui.sidebarWidth": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.ui.textScale": "{\"a\":\"followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
+        "shepherd.worktree.baseMode": "{\"a\":\"followed\",\"aHostReplyFields\":[\"worktreeBase\"],\"b\":[\"worktreeBase\"],\"c\":[\"host.worktreeBase\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"worktreeBase\"]}",
+        "shepherd.worktree.closeOnMerge": "{\"a\":\"followed\",\"aHostReplyFields\":[\"closeOnMerge\"],\"b\":[\"closeOnMerge\"],\"c\":[\"host.closeOnMerge\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"closeOnMerge\"]}",
+        "shepherd.worktree.deleteAction": "{\"a\":\"followed\",\"aHostReplyFields\":[\"worktreeDeleteAction\"],\"b\":[\"worktreeDeleteAction\"],\"c\":[\"host.worktreeDeleteAction\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"worktreeDeleteAction\"]}",
+        "shepherd.worktree.fetchBeforeCreate": "{\"a\":\"followed\",\"aHostReplyFields\":[\"fetchBeforeCreating\"],\"b\":[\"fetchBeforeCreating\"],\"c\":[\"host.fetchBeforeCreating\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"fetchBeforeCreating\"]}",
+        "shepherd.worktree.generatePRDescription": "{\"a\":\"followed\",\"aHostReplyFields\":[\"generatePRDescriptions\"],\"b\":[\"generatePRDescriptions\"],\"c\":[\"host.generatePRDescriptions\"],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"generatePRDescriptions\"]}"
       },
       "step": "summary"
     }
   ],
-  "referenceRevision": "2475152191595595a064f5a71f29c496093a6228",
+  "referenceRevision": "f15c12a59236237750362970a25b7caac832c1c2",
   "seed": {
     "hostID": "00000000-0000-4000-8000-0000000000A1",
     "otherHostID": "00000000-0000-4000-8000-0000000000B2",
     "otherSpaceID": "acme-docs-space",
+    "peerID": "00000000-0000-4000-8000-0000000000C3",
     "spaceID": "acme-web-space"
   }
 }
