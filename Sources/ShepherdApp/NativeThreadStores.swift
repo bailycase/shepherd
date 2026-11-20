@@ -52,7 +52,8 @@ final class NativeThreadStores<Key: Hashable> {
     /// Rows at the end of a thread that a release of its older history keeps (`NativeThreadStore.releaseToTail`): what its eager
     /// tail can draw, at most.
     var tailRows = ThreadView.eagerRows
-    /// Bytes (`retainedHistoryBytes`) one such tail holds at most; the last question and its answer stay whatever they hold.
+    /// Bytes (`retainedHistoryBytes`) one such tail holds at most; the last question and its answer stay whatever they hold, and with no
+    /// question the host's newest page of messages.
     var tailCap = 4 * 1024 * 1024
     /// Bytes of tails kept across threads before the ones shown longest ago go whole.
     var tailBudget = 64 * 1024 * 1024

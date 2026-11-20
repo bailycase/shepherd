@@ -98,7 +98,7 @@ extension SHChoiceRow where Trailing == EmptyView {
                 SHChoiceRow("build-01", detail: "connected", note: "Update Shepherd on build-01 to send images.") {
                     SHStatusDot(.done, size: SHChoiceRowMetrics.statusDot)
                 }
-                SHChoiceRow("horizon", detail: "unreachable", dimmed: true) {
+                SHChoiceRow("orbit", detail: "unreachable", dimmed: true) {
                     SHStatusDot(.failed, size: SHChoiceRowMetrics.statusDot)
                 } trailing: {
                     Button("Retry") {}.buttonStyle(.shLink)

@@ -530,7 +530,7 @@ struct SettingsPreviewTests {
     @Test func remoteDeleteWorktreeSheet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
-        workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
+        workspace.vm.remoteHosts.addHost(name: "orbit", host: "127.0.0.1", port: 1, token: "x")
         let host = try #require(workspace.vm.remoteHosts.connections.first)
         let target = RemoteAgentRef(hostID: host.id, agentID: AgentID())
         let info = RemoteWorktreeInfo(path: "/Users/ada/Developer/Shepherd-worktree-fix-login", branch: "worktree/fix-login",
@@ -557,7 +557,7 @@ struct SettingsPreviewTests {
     /// (SHStatus's loading placeholder).
     @Test func directoryPickerLoading() async throws {
         try await Preview.render("sheet-directory-picker-loading", size: CGSize(width: AppLayout.directoryPickerWidth, height: 480)) {
-            RemoteDirectoryPicker(hostName: "horizon", startPath: "", list: { _ in
+            RemoteDirectoryPicker(hostName: "orbit", startPath: "", list: { _ in
                 // A listing that never arrives while the render looks.
                 for await _ in AsyncStream<Void> { _ in } {}
                 throw CancellationError()
@@ -837,7 +837,7 @@ struct SettingsPreviewTests {
 
     @Test func actionErrorDialog() async throws {
         try await Preview.render("sheet-action-error", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
-            ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
+            ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "orbit rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
         }
     }
 

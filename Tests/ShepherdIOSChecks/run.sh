@@ -8,7 +8,7 @@ if [ -n "${GITHUB_ENV:-}" ]; then printf 'MOBILE_CLIENT_CHECK_BUILD=%s\n' "$buil
 # Retain compiler outputs on failure; CI collects this owned root with the failing log.
 trap 'result=$?; if [ "$result" -ne 0 ]; then echo "Retained failed client check: $build"; fi' EXIT
 sdk=$(xcrun --sdk macosx --show-sdk-path)
-flags=(-j 4 -sdk "$sdk" -target "$(uname -m)-apple-macos26.0" -swift-version 5 -package-name shepherd -I "$build" -L "$build")
+flags=(-j 4 -sdk "$sdk" -target "$(uname -m)-apple-macos26.0" -swift-version 5 -package-name Shepherd -I "$build" -L "$build")
 xcrun swiftc "${flags[@]}" -parse-as-library Tests/ShepherdIOSChecks/Fixtures/FixtureCheck.swift \
     Tests/ShepherdIOSChecks/FixtureReadinessCheck.swift -o "$build/readiness-check"
 "$build/readiness-check" success | grep -q '^FIXTURE READY readiness-check$'

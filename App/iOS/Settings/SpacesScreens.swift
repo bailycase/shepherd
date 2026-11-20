@@ -4,10 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// Settings ▸ Spaces on iPhone and iPad (home track): the folders a host keeps as spaces, with
-// their configuration files, read-only, over the
-// existing space-file API (`projects.v2`, `projects.mcp.v1`). Not the Projects experiment's
-// logical Projects: these are folders on the host.
+// Settings ▸ Spaces edits folders on a paired host over projects.v2. These are not logical Projects.
 
 /// Settings ▸ Spaces: the host's spaces by folder, each with what its configuration holds.
 struct SpacesScreen: View {
@@ -48,7 +45,7 @@ struct SpacesScreen: View {
                             } else {
                                 SHListCard {
                                     ForEach(spaces) { space in
-                                        Button { navigator.open(.settings(.space(space.directory))) } label: {
+                                        Button { navigator.open(.settings(.spaceConfiguration(host: host.id, directory: space.directory, name: space.name))) } label: {
                                             SHListRow(space.name, subtitle: HostInventoryPresentation.spaceLine(space), subtitleMono: false,
                                                       subtitleTone: space.error != nil ? .failed : nil,
                                                       leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(space).rawValue) ?? .idle),
@@ -105,87 +102,513 @@ struct SpacesScreen: View {
     private static let mostSpaces = 512
 }
 
-/// One space: its path and the configuration files it holds.
+/// Pin the host in the route: falling back to another Mac could edit an unrelated folder.
 struct SpaceScreen: View {
+    let hostID: UUID
     let directory: String
+    let name: String
+    let section: SpaceConfigurationSection?
     @Environment(MobileHosts.self) private var hosts
-    @State private var files: [ProjectFile]?
-    @State private var context: ProjectContext?
-    @State private var problem: String?
+    @State private var model: ClientSpaceConfiguration?
+    @State private var loaded = false
 
     var body: some View {
-        let store = SettingsStore.of(hosts)
-        let host = store.settingsHost
-        let sh = Color.sh
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text(directory)
-                    .font(.sh(.mono))
-                    .foregroundStyle(sh.textSecondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
-                if let problem {
-                    SettingsFootnote(problem, tone: .failed)
-                } else if let files {
-                    SettingsSection("Resources") {
-                        SHListCard {
-                            let resources = context?.resources ?? files.filter { $0.category == .skills || $0.category == .extensions }.count
-                            let servers = context?.mcpServers ?? 0
-                            SHListRow("Skills, extensions and MCP servers",
-                                      subtitle: resources == 0 && servers == 0 ? "None" : "\(resources) resource\(resources == 1 ? "" : "s") · \(servers) MCP server\(servers == 1 ? "" : "s")",
-                                      subtitleMono: false, chevron: false)
-                        }
-                    }
-                    ForEach(ProjectFile.Category.allCases, id: \.self) { category in
-                        let held = files.filter { $0.category == category && $0.exists }
-                        if !held.isEmpty {
-                            SettingsSection(category.title) {
-                                SHListCard {
-                                    ForEach(held) { file in
-                                        Text(file.path)
-                                            .font(.sh(.mono))
-                                            .foregroundStyle(sh.textPrimary)
-                                            .lineLimit(2)
-                                            .truncationMode(.middle)
-                                            .padding(.horizontal, SH.Space.l)
-                                            .frame(maxWidth: .infinity, minHeight: SHListMetrics.rowHeight, alignment: .leading)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if let host {
-                        SettingsFootnote(HostInventoryPresentation.spacesGuidance(host: host.name))
-                    }
+        let host = SettingsStore.of(hosts).hosts.first { $0.id == hostID }
+        Group {
+            // The route and its pushed editors outlive a connection. Keep their view identity.
+            if let model {
+                if let section, loaded, model.files != nil {
+                    SpaceSectionScreen(model: model, name: name, section: section)
                 } else {
-                    ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                    SpaceOverview(model: model, name: name)
                 }
+            } else {
+                VStack {
+                    if host?.isConnected != true {
+                        SHBanner(.attention, title: "Host offline", message: "Reconnect to edit this space.")
+                    } else if host?.supports(.projectsV2) != true {
+                        SettingsFootnote("Update Shepherd on the host to edit this space.")
+                    } else {
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                    }
+                }
+                .padding(MobileLayout.gutter)
+                .navigationTitle(name)
+            }
+        }
+        .background(Color.sh.bgWindow)
+        .navigationBarTitleDisplayMode(.inline)
+        .environment(\.spaceSettingsConnection, .init(store: SettingsStore.of(hosts), hostID: hostID))
+        .task(id: host?.isConnected == true ? host?.capabilities : nil) {
+            guard let host, host.isConnected else { return }
+            if let model {
+                model.updateCapabilities(host.capabilities)
+                if (!loaded || model.files == nil) && host.supports(.projectsV2) {
+                    await model.load()
+                    loaded = !Task.isCancelled
+                }
+                return
+            }
+            guard host.serves(RemoteProtocol.projectsV2Capability) else { return }
+            let store = SettingsStore.of(hosts)
+            let model = ClientSpaceConfiguration(directory: directory, capabilities: host.capabilities) { request in
+                guard let client = store.hosts.first(where: { $0.id == hostID })?.client as? RemoteHostClient,
+                      client.supports(.projectsV2) else {
+                    throw ProjectFileError("offline", "Reconnect to this host to edit the space.")
+                }
+                return try await client.projects(request)
+            }
+            self.model = model
+            await model.load()
+            loaded = !Task.isCancelled
+        }
+    }
+}
+
+private struct SpaceSettingsConnection {
+    let store: SettingsStore
+    let hostID: UUID
+
+    @MainActor var host: SettingsHost? { store.hosts.first { $0.id == hostID } }
+}
+
+private extension EnvironmentValues {
+    @Entry var spaceSettingsConnection: SpaceSettingsConnection?
+}
+
+private struct SpaceOverview: View {
+    let model: ClientSpaceConfiguration
+    let name: String
+    @Environment(\.spaceSettingsConnection) private var connection
+
+    var body: some View {
+        SpacePage(title: name, model: model) {
+            Text(model.directory)
+                .shText(.mono)
+                .foregroundStyle(Color.sh.textSecondary)
+                .textSelection(.enabled)
+                .padding(.horizontal, SH.Space.xs)
+            if let files = model.files {
+                SettingsSection("Instructions") {
+                    if let file = files[.instructions]?.first, model.drafts[file.path] != nil {
+                        SpaceDraftCard(file: file.path, model: model, compact: true)
+                    }
+                    DisclosureGroup {
+                        SpaceFileLinks(files: Array((files[.instructions] ?? []).dropFirst()), model: model)
+                    } label: {
+                        Text("Other instruction files").shText(.caption)
+                    }
+                    .tint(Color.sh.textSecondary)
+                }
+                if let settings = files[.pi] {
+                    SettingsSection("Pi settings") { SpaceFileLinks(files: settings, model: model) }
+                }
+                SettingsSection("Skills and extensions") {
+                    SHListCard {
+                        sectionLink(.skills, count: files[.skills]?.count ?? 0)
+                        sectionLink(.extensions, count: files[.extensions]?.count ?? 0)
+                        sectionLink(.mcp, count: model.context?.mcpServers)
+                    }
+                }
+                if model.canManageResources {
+                    SettingsSection("More resources") {
+                        SHListCard { sectionLink(.prompts); sectionLink(.agents) }
+                    }
+                }
+            } else if model.busy {
+                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+            }
+        }
+        .refreshable { if connection?.host?.isConnected == true { await model.load() } }
+    }
+
+    private func sectionLink(_ section: SpaceConfigurationSection, count: Int? = nil) -> some View {
+        NavigationLink {
+            SpaceSectionScreen(model: model, name: name, section: section)
+                .environment(\.spaceSettingsConnection, connection)
+        } label: {
+            SettingsNavRow(section.title, note: count.map { $0 == 0 ? "None" : "\($0) in this space" })
+        }
+        .buttonStyle(.shRow(radius: 0))
+        .disabled(model.busy)
+    }
+}
+
+private struct SpacePage<Content: View>: View {
+    let title: String
+    let model: ClientSpaceConfiguration
+    @ViewBuilder let content: () -> Content
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                if host?.isConnected != true {
+                    SHBanner(.attention, title: "Host offline", message: "Reconnect to save changes.")
+                } else if !model.canEdit {
+                    SHBanner(.attention, title: "Update Shepherd on the host to edit this space.")
+                } else if let problem = model.problem {
+                    SHBanner(.failed, title: problem)
+                }
+                content()
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Color.sh.bgWindow)
-        .navigationTitle((directory as NSString).lastPathComponent)
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: host?.id) { await load(host) }
+    }
+}
+
+private struct SpaceFileLinks: View {
+    let files: [ProjectFile]
+    let model: ClientSpaceConfiguration
+    @Environment(\.spaceSettingsConnection) private var connection
+
+    var body: some View {
+        SHLazyListCard(files) { file in
+            NavigationLink {
+                SpaceFileScreen(file: file.path, model: model)
+                    .environment(\.spaceSettingsConnection, connection)
+            } label: {
+                SettingsNavRow((file.path as NSString).lastPathComponent,
+                               note: file.exists ? file.path : "\(file.path) · Not created", value: "Edit")
+            }
+            .buttonStyle(.shRow(radius: 0))
+            .disabled(model.busy)
+        }
+    }
+}
+
+private struct SpaceDraftCard: View {
+    let file: String
+    let model: ClientSpaceConfiguration
+    var compact = false
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+    @State private var focus = InstructionsEditorFocus()
+    @State private var reload = false
+
+    var body: some View {
+        if let draft = model.drafts[file] {
+            SHListCard {
+                HStack(spacing: SH.Space.m) {
+                    Text((file as NSString).lastPathComponent)
+                        .shText(.code)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if draft.conflict {
+                        Button("Reload…") { reload = true }
+                            .buttonStyle(.sh(.secondary, size: .l))
+                            .disabled(host?.isConnected != true || !model.canEdit || model.busy)
+                    } else {
+                        Button("Save") { Task { await model.save(file) } }
+                            .buttonStyle(.sh(.primary, size: .l))
+                            .disabled(host?.isConnected != true || !model.canEdit || !draft.isEdited || model.busy)
+                    }
+                }
+                .padding(.horizontal, SH.Space.l)
+                .frame(minHeight: SH.Height.touch)
+                InstructionsTextEditor(text: Binding(get: { model.drafts[file]?.text ?? "" }, set: { model.setText($0, file: file) }),
+                                       saved: draft.saved.text ?? "", metrics: .phone, focus: focus, accessibilityLabel: file)
+                    .frame(height: compact ? MobileLayout.spaceInlineEditorHeight : MobileLayout.instructionsEditorMinHeight)
+            }
+            .confirmationDialog("Reload the host's version?", isPresented: $reload, titleVisibility: .visible) {
+                Button("Discard edits and reload", role: .destructive) { Task { await model.open(file, discard: true) } }
+            } message: { Text("Any unsaved edits in this editor will be lost.") }
+        } else if model.busy {
+            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct SpaceFileScreen: View {
+    let file: String
+    let model: ClientSpaceConfiguration
+    var resource: ProjectResource? = nil
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+    @Environment(\.dismiss) private var dismiss
+    @State private var deleting = false
+
+    var body: some View {
+        SpacePage(title: (file as NSString).lastPathComponent, model: model) {
+            SettingsFootnote(file)
+            SpaceDraftCard(file: file, model: model)
+            if let resource, model.canManageResources, let draft = model.drafts[file], draft.saved.text != nil {
+                Button("Delete file…", role: .destructive) { deleting = true }
+                    .buttonStyle(.sh(.secondary, size: .l))
+                    .disabled(host?.isConnected != true || model.busy || draft.isEdited || draft.conflict)
+                    .confirmationDialog("Delete \(resource.name)?", isPresented: $deleting, titleVisibility: .visible) {
+                        Button("Delete file", role: .destructive) {
+                            Task { if await model.delete(resource) { dismiss() } }
+                        }
+                    } message: { Text("This removes the file from the space on its host.") }
+            }
+        }
+        .task(id: host?.isConnected == true) {
+            if host?.isConnected == true { await model.open(file) }
+        }
+    }
+}
+
+private struct SpaceSectionScreen: View {
+    let model: ClientSpaceConfiguration
+    let name: String
+    let section: SpaceConfigurationSection
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+    @State private var install = false
+
+    var body: some View {
+        SpacePage(title: section.title, model: model) {
+            if let kind = section.resourceKind {
+                SpaceResources(model: model, kind: kind)
+            } else {
+                SpaceMCP(model: model)
+            }
+            if model.busy { ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity) }
+        }
+        .task(id: host?.isConnected == true) { await load() }
+        .refreshable { await load() }
+        .toolbar {
+            if section == .skills, model.canManageResources {
+                Button("Add from repo") { install = true }.disabled(host?.isConnected != true || model.busy)
+            }
+        }
+        .sheet(isPresented: $install) {
+            SpaceSkillInstall(model: model, name: name)
+                .environment(\.spaceSettingsConnection, connection)
+        }
     }
 
-    private func load(_ host: SettingsHost?) async {
-        guard let host, let client = host.client as? RemoteHostClient else {
-            problem = "The host is offline. Its spaces show once it's back."
-            return
+    private func load() async {
+        guard host?.isConnected == true else { return }
+        if section == .mcp { await model.loadMCP() } else { await model.loadResources() }
+    }
+}
+
+private extension SpaceConfigurationSection {
+    var resourceKind: ProjectResource.Kind? {
+        switch self {
+        case .skills: .skill
+        case .extensions: .extension
+        case .prompts: .prompt
+        case .agents: .agent
+        case .mcp: nil
         }
-        do {
-            guard case .files(let inventory) = try await client.projects(.files(directory: directory)) else { return }
-            files = inventory
-            if host.serves(RemoteProtocol.projectDetailsCapability), case .context(let found) = try await client.projects(.context(directory: directory)) {
-                context = found
+    }
+}
+
+private struct SpaceResources: View {
+    let model: ClientSpaceConfiguration
+    let kind: ProjectResource.Kind
+    @Environment(\.spaceSettingsConnection) private var connection
+
+    var body: some View {
+        if model.canManageResources {
+            if let resources = model.resources[kind], !resources.isEmpty {
+                SHLazyListCard(resources) { resource in
+                    if resource.global {
+                        SHListRow(resource.name, subtitle: resource.description, subtitleMono: false, trailing: .value("Global"))
+                    } else {
+                        NavigationLink {
+                            SpaceFileScreen(file: resource.path, model: model, resource: resource)
+                                .environment(\.spaceSettingsConnection, connection)
+                        } label: {
+                            SettingsNavRow(resource.name, note: resource.description.isEmpty ? resource.path : resource.description)
+                        }
+                        .buttonStyle(.shRow(radius: 0))
+                        .disabled(model.busy)
+                    }
+                }
+            } else if !model.busy {
+                SettingsFootnote("None in this space.")
             }
-        } catch {
-            problem = settingsProblem(error)
+            if let inherited = model.inheritedResources[kind], !inherited.isEmpty {
+                SettingsSection(inheritanceTitle(model)) {
+                    SHLazyListCard(inherited) { resource in
+                        SpaceInheritedRow(model: model, kind: inheritanceKind, name: resource.name, note: resource.description)
+                    }
+                }
+            }
+        } else {
+            SpaceFileLinks(files: model.files?[kind == .skill ? .skills : .extensions] ?? [], model: model)
+            SettingsFootnote("Update Shepherd on the host to install or delete space resources.")
+        }
+    }
+
+    private var inheritanceKind: ClientSpaceConfiguration.Inherited {
+        switch kind {
+        case .prompt: .prompt
+        case .extension: .extension
+        default: .skill
+        }
+    }
+}
+
+@MainActor private func inheritanceTitle(_ model: ClientSpaceConfiguration) -> String {
+    "Inherited from \(((model.context?.inheritsFrom ?? "") as NSString).lastPathComponent)"
+}
+
+private struct SpaceInheritedRow: View {
+    let model: ClientSpaceConfiguration
+    let kind: ClientSpaceConfiguration.Inherited
+    let name: String
+    let note: String?
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+
+    var body: some View {
+        let on = model.inherits(kind, name)
+        HStack(spacing: SH.Space.m) {
+            SHListRow(name, subtitle: note, subtitleMono: false, chevron: false)
+            if model.canSetInheritance(kind) {
+                Toggle(name, isOn: Binding(get: { on }, set: { value in Task { await model.setInherited(kind, name, on: value) } }))
+                    .labelsHidden()
+                    .toggleStyle(.shSwitch)
+                    .disabled(host?.isConnected != true || model.busy)
+                    .padding(.trailing, SH.Space.l)
+            } else {
+                Text(on ? "Enabled" : "Disabled")
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .padding(.trailing, SH.Space.l)
+            }
+        }
+    }
+}
+
+private struct SpaceMCP: View {
+    let model: ClientSpaceConfiguration
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+
+    var body: some View {
+        if !model.inheritedServers.isEmpty {
+            SettingsSection(inheritanceTitle(model)) {
+                SHLazyListCard(model.inheritedServers) { server in
+                    SpaceInheritedRow(model: model, kind: .mcp, name: server.name, note: server.endpoint)
+                }
+            }
+        }
+        SettingsSection("Defined here") {
+            SHLazyListCard(model.servers) { server in
+                let signedIn = model.signedIn[server.file]?.contains(server.name) == true
+                HStack(spacing: SH.Space.m) {
+                    SHListRow(server.name, subtitle: server.endpoint, subtitleMono: true, chevron: false)
+                    if model.canUseMCP, server.usesOAuth, signedIn {
+                        Button("Sign out") { Task { await model.signOut(server) } }
+                            .buttonStyle(.sh(.secondary, size: .l))
+                            .disabled(host?.isConnected != true || model.busy || model.drafts[server.file]?.isEdited == true)
+                            .padding(.trailing, SH.Space.l)
+                    }
+                }
+            }
+            SpaceFileLinks(files: model.files?[.mcp] ?? [], model: model)
+            SettingsFootnote("Sign in on the host. Credentials stay there.")
+        }
+    }
+}
+
+private struct SpaceSkillInstall: View {
+    let model: ClientSpaceConfiguration
+    let name: String
+    @Environment(\.spaceSettingsConnection) private var connection
+    private var host: SettingsHost? { connection?.host }
+    @Environment(\.dismiss) private var dismiss
+    @State private var repo = ""
+    @State private var revision = ""
+    @State private var paths = ""
+    @State private var found: RepoSkills?
+    @State private var picked: Set<String> = []
+    @State private var lookingUp = false
+    @State private var problem: String?
+
+    var body: some View {
+        NavigationStack {
+            SpacePage(title: "Add skills to \(name)", model: model) {
+                SpaceInput(label: "Repository URL", placeholder: "https://github.com/owner/skills", text: $repo)
+                SpaceInput(label: "Revision", placeholder: "Branch or commit", text: $revision)
+                if revision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, host?.supports(.skills) == true {
+                    Button("Preview skills") { Task { await preview() } }
+                        .buttonStyle(.sh(.secondary, size: .l))
+                        .disabled(host?.isConnected != true || repo.isEmpty || lookingUp || model.busy)
+                    if lookingUp { ProgressView().progressViewStyle(SHSpinnerStyle()) }
+                    if let found {
+                        SHLazyListCard(found.skills) { skill in
+                            Toggle(skill.name, isOn: Binding(get: { picked.contains(skill.path) }, set: { _ in picked.formSymmetricDifference([skill.path]) }))
+                                .toggleStyle(.shSwitch)
+                                .padding(SH.Space.l)
+                        }
+                    }
+                }
+                if found == nil {
+                    SpaceInput(label: "Skill folders", placeholder: "skills/review, skills/docs", text: $paths)
+                    SettingsFootnote("Enter repository-relative folders separated by commas. Preview is available for the default branch only.")
+                }
+                if let problem { SettingsFootnote(problem, tone: .failed) }
+                SettingsFootnote("Destination · \(model.directory)/.pi/skills")
+                SettingsFootnote("Global Skills stays unchanged.")
+                Button(selectedPaths.count == 1 ? "Add 1 skill" : "Add \(selectedPaths.count) skills") { Task { await install() } }
+                    .buttonStyle(.sh(.primary, size: .l))
+                    .disabled(host?.isConnected != true || !model.canManageResources || repo.isEmpty || selectedPaths.isEmpty || lookingUp || model.busy)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(model.busy) }
+            }
+            .interactiveDismissDisabled(model.busy)
+            .onChange(of: repo) { clearPreview() }
+            .onChange(of: revision) { clearPreview() }
+        }
+    }
+
+    private var selectedPaths: [String] {
+        if found != nil { return picked.sorted() }
+        return paths.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+
+    private func preview() async {
+        guard let client = host?.client as? RemoteHostClient, !lookingUp else { return }
+        lookingUp = true
+        defer { lookingUp = false }
+        let input = repo
+        do {
+            guard case .repo(let result) = try await client.skills(.lookUp(repo: input)), input == repo,
+                  revision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            found = result.skills.isEmpty ? nil : result
+            picked = []
+            problem = result.skills.isEmpty ? "No skills found on the default branch." : nil
+        } catch { if input == repo { problem = settingsProblem(error) } }
+    }
+
+    private func clearPreview() { found = nil; picked = []; problem = nil }
+
+    private func install() async {
+        let ref = revision.trimmingCharacters(in: .whitespacesAndNewlines)
+        if await model.installSkills(repo: repo, paths: selectedPaths, commit: ref.isEmpty ? found?.commit : ref) { dismiss() }
+    }
+}
+
+private struct SpaceInput: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        SettingsSection(label) {
+            TextField(placeholder, text: $text)
+                .shText(.code)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(.horizontal, SH.Space.l)
+                .frame(minHeight: SH.Height.touch)
+                .shCard()
+                .accessibilityLabel(label)
         }
     }
 }
