@@ -381,11 +381,11 @@ struct HookFileWriterTests {
         entries = f.catalog.load().entries
         #expect(entries.map { $0.slot.split(separator: "#").last.map(String.init) } == ["Stop/0/0", "PreToolUse/0/0", "PreToolUse/0/1"])
 
-        // Off stays off across an edit; the old hash is forgotten.
+        // A reader may still hold the old hook while the edit publishes its replacement.
         try f.catalog.settingsStore.setOn(entries[1].hash, false)
         let stale = entries[1]
         let updated = try writer.update(stale, to: HookDraft(event: "PreToolUse", matcher: "Edit|Write", handler: .command("./no-env.sh", timeout: 20)))
-        #expect(try f.catalog.settingsStore.read().off == [updated])
+        #expect(try f.catalog.settingsStore.read().off == [stale.hash, updated])
         entries = f.catalog.load().entries
         #expect(entries[1].handler.timeout == 20 && !entries[1].on)
 
@@ -398,7 +398,28 @@ struct HookFileWriterTests {
         for entry in entries.reversed() { try writer.delete(entry) }
         text = try String(contentsOfFile: path, encoding: .utf8)
         #expect(text == "{\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls)\"\n    ]\n  },\n  \"hooks\": {},\n  \"zeta\": true\n}\n")
-        #expect(try f.catalog.settingsStore.read().off.isEmpty)
+        #expect(try f.catalog.settingsStore.read().off == [stale.hash, updated], "deletion also leaves hashes off for readers that still hold them")
+    }
+
+    @Test func movingADisabledHookKeepsItOffAtBothPaths() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let source = f.home + "/.shepherd/hooks.json"
+        let destination = f.space + "/.shepherd/hooks.json"
+        try f.write(source, HookCatalogTests.preToolUse)
+        let old = try #require(catalog.load().entries.first)
+        try catalog.settingsStore.setOn(old.hash, false)
+        let writer = HookFileWriter(settings: catalog.settingsStore)
+        try writer.save([HookDraft(event: "Stop", handler: .command("true")),
+                         HookDraft(event: old.event, matcher: old.matcher, handler: old.handler)],
+                        to: destination, replacing: old, kept: 1)
+
+        let moved = catalog.load(spaceRoots: [f.space]).entries
+        #expect(moved.map(\.file) == [destination, destination])
+        #expect(moved.map(\.on) == [true, false], "only the replacement carries the old off switch")
+        let replacement = try #require(moved.last)
+        #expect(replacement.hash != old.hash)
+        #expect(try catalog.settingsStore.read().off == [old.hash, replacement.hash])
     }
 
     /// The new hash must be off before the file publishes it: when the publish fails, it is already off.

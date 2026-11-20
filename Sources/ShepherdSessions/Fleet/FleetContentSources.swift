@@ -99,12 +99,13 @@ final class FleetHooksSource: FleetUnitSource {
     private var sharedPath: String { catalog().home + "/.shepherd/hooks.json" }
     var watchedFiles: [URL] { [URL(fileURLWithPath: sharedPath), catalog().settingsStore.url] }
 
-    /// Damaged settings are logged once until they read again.
+    /// Snapshot problems are logged once until the catalog reads again.
     private var wasReady = true
 
     /// A hooks file that doesn't read would look like no hooks, and delete them all: wait until it does.
     /// Damaged `settings.json` isn't ready either: its fallback reader switches would sync as real edits
-    /// and turn a reader the person switched off back on, on another Mac.
+    /// and turn a reader the person switched off back on, on another Mac. The catalog also
+    /// reports a problem if the hook files kept changing and no stable snapshot was possible.
     var isReady: Bool {
         let path = sharedPath
         let snapshot = catalog().load()
@@ -139,7 +140,8 @@ final class FleetHooksSource: FleetUnitSource {
     }
 
     func read() -> [String: Data] {
-        let snapshot = validated ?? catalog().load()
+        if validated == nil, !isReady { return [:] }
+        guard let snapshot = validated else { return [:] }
         var values: [String: Data] = [:]
         for entry in ownEntries(snapshot) {
             let id = Self.id(event: entry.event, matcher: entry.matcher, handler: entry.handler.raw)

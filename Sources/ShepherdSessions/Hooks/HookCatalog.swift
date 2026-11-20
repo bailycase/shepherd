@@ -1,3 +1,5 @@
+import CryptoKit
+import Darwin
 import Foundation
 import ShepherdProtocol
 
@@ -8,6 +10,7 @@ public struct HookCatalog: Sendable {
     public var home: String
     /// `<support>/hooks/settings.json`: the off switches and readers.
     public var settingsStore: HookSettingsStore
+    var readSettings: @Sendable (HookSettingsStore) throws -> HookSettings = { try $0.read() }
 
     /// Files larger than this are reported, not read.
     public static let fileLimit = 1 << 20
@@ -58,11 +61,50 @@ public struct HookCatalog: Sendable {
     /// Reads This Mac's files and those of each space in `spaceRoots` (canonical roots, as
     /// `spaceRoot(forCwd:)` gives them; the home folder and repeats are dropped).
     public func load(spaceRoots: [String] = []) -> HookCatalogSnapshot {
-        // Damaged settings fail closed: the person's off switches are unknown, so no hook is on.
-        let settings: HookSettings, settingsProblem: String?
-        do { settings = try settingsStore.read(); settingsProblem = nil } catch { settings = HookSettings(); settingsProblem = error.localizedDescription }
+        for _ in 0..<3 {
+            var sources = self.sources(for: spaceRoots)
+            let files = sources.map { Self.readFile($0.path) }
+            let settings: HookSettings, problem: String?
+            do { settings = try readSettings(settingsStore); problem = nil }
+            catch { settings = HookSettings(); problem = error.localizedDescription }
+            // Off hashes are published first and never removed by a file edit. Verify the
+            // exact bytes around the settings read, including files that appeared or disappeared.
+            guard sources == self.sources(for: spaceRoots),
+                  files.map(\.identity) == sources.map({ Self.readFile($0.path).identity }) else { continue }
+
+            let off = Set(settings.off)
+            var entries: [HookEntry] = []
+            for index in sources.indices {
+                let source = sources[index]
+                if case .missing = files[index] { continue }
+                if !settings.readers.reads(source.format) {
+                    sources[index].state = .readerOff
+                    continue
+                }
+                do {
+                    let root = try Self.document(from: files[index], isTOML: source.isTOML)
+                    let found = try Self.entries(of: root, file: source.path, scope: source.scope, format: source.format, editable: !source.isTOML)
+                    sources[index].state = .loaded(count: found.count)
+                    for var entry in found {
+                        entry.on = problem == nil && !off.contains(entry.hash)
+                        entries.append(entry)
+                    }
+                } catch let error as HookJSON.ParseError {
+                    sources[index].state = .unreadable(line: error.line, message: error.message)
+                } catch {
+                    sources[index].state = .unreadable(line: nil, message: String(describing: error))
+                }
+            }
+            return HookCatalogSnapshot(sources: sources, entries: entries, settings: settings, home: home, settingsProblem: problem)
+        }
+        let problem = "Hook files changed while reading. No hooks are on until the files can be read together."
+        var sources = self.sources(for: spaceRoots)
+        for index in sources.indices { sources[index].state = .unreadable(line: nil, message: problem) }
+        return HookCatalogSnapshot(sources: sources, entries: [], settings: HookSettings(), home: home, settingsProblem: problem)
+    }
+
+    private func sources(for spaceRoots: [String]) -> [HookSource] {
         let canonicalHome = PiHome.canonical(home)
-        var sources: [HookSource] = [], entries: [HookEntry] = []
         var scopes: [(HookScope, String)] = [(.mac, home)]
         var seen = Set<String>()
         for root in spaceRoots {
@@ -70,33 +112,13 @@ public struct HookCatalog: Sendable {
             guard !PiHome.isInside(canonicalHome, root), seen.insert(root).inserted else { continue }
             scopes.append((.space(root: root), root))
         }
-        for (scope, folder) in scopes {
-            for (relative, format) in Self.layout {
+        return scopes.flatMap { scope, folder in
+            Self.layout.compactMap { relative, format in
                 // The home's Claude Code local settings aren't in the contract's table.
-                if scope == .mac && relative == ".claude/settings.local.json" { continue }
-                let path = folder + "/" + relative
-                let isTOML = relative.hasSuffix(".toml")
-                var source = HookSource(path: path, scope: scope, format: format, isTOML: isTOML, state: .notFound)
-                if !FileManager.default.fileExists(atPath: path) {
-                    source.state = .notFound
-                } else if !settings.readers.reads(format) {
-                    source.state = .readerOff
-                } else {
-                    do {
-                        let found = try Self.entries(in: path, scope: scope, format: format, isTOML: isTOML, settings: settings)
-                        source.state = .loaded(count: found.count)
-                        entries += found
-                    } catch let error as HookJSON.ParseError {
-                        source.state = .unreadable(line: error.line, message: error.message)
-                    } catch {
-                        source.state = .unreadable(line: nil, message: String(describing: error))
-                    }
-                }
-                sources.append(source)
+                if scope == .mac && relative == ".claude/settings.local.json" { return nil }
+                return HookSource(path: folder + "/" + relative, scope: scope, format: format, isTOML: relative.hasSuffix(".toml"), state: .notFound)
             }
         }
-        if settingsProblem != nil { for index in entries.indices { entries[index].on = false } }
-        return HookCatalogSnapshot(sources: sources, entries: entries, settings: settings, home: home, settingsProblem: settingsProblem)
     }
 
     /// The composer glyph's counts for a thread in `cwd`: reads This Mac's files and that space's.
@@ -115,11 +137,42 @@ public struct HookCatalog: Sendable {
         return try entries(of: root, file: path, scope: scope, format: format, editable: !isTOML, settings: settings)
     }
 
+    private enum FileRead {
+        case missing, unreadable, tooLarge, bytes(Data)
+
+        var identity: String {
+            switch self {
+            case .missing: "missing"
+            case .unreadable: "unreadable"
+            case .tooLarge: "too large"
+            case .bytes(let data): SHA256.hash(data: data).description
+            }
+        }
+    }
+
+    private static func readFile(_ path: String) -> FileRead {
+        let fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return errno == ENOENT ? .missing : .unreadable }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return .unreadable }
+        guard info.st_size <= fileLimit else { return .tooLarge }
+        do {
+            let data = try handle.read(upToCount: fileLimit + 1) ?? Data()
+            return data.count <= fileLimit ? .bytes(data) : .tooLarge
+        } catch {
+            return .unreadable
+        }
+    }
+
     /// The file parsed, `{}` when it is empty.
     static func document(at path: String, isTOML: Bool) throws -> HookJSON {
-        let data: Data
-        do { data = try Data(contentsOf: URL(fileURLWithPath: path)) } catch { throw ReadFailure(description: "the file can't be opened") }
-        guard data.count <= fileLimit else { throw ReadFailure(description: "the file is larger than 1 MiB") }
+        try document(from: readFile(path), isTOML: isTOML)
+    }
+
+    private static func document(from file: FileRead, isTOML: Bool) throws -> HookJSON {
+        if case .tooLarge = file { throw ReadFailure(description: "the file is larger than 1 MiB") }
+        guard case .bytes(let data) = file else { throw ReadFailure(description: "the file can't be opened") }
         guard var text = String(data: data, encoding: .utf8) else { throw ReadFailure(description: "the file isn't UTF-8 text") }
         // A leading BOM is dropped for JSON and TOML alike, as the runtime does.
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
