@@ -35,6 +35,22 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test func damagedPiImportHistory() async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = PiHome(directory: dir, engine: .missing(app: dir))
+        let imports = YourPiImport(home: home, yourPi: nil)
+        try Data(#"{"copies":42}"#.utf8).write(to: imports.stateURL)
+        let workspace = try PreviewWorkspace(yourPi: imports.survey())
+        defer { workspace.stop() }
+        for section in [SettingsSection.models, .fromYourPi] {
+            workspace.vm.settingsSection = section
+            try await Preview.render("settings-\(section.rawValue)-damaged-import", size: CGSize(width: 1280, height: 1200)) {
+                SettingsView(vm: workspace.vm)
+            }
+        }
+    }
+
     /// Settings as a modal over the window (SettingsModal), rendered through the real window root.
     @Test(arguments: SettingsSection.allCases)
     func settingsModal(section: SettingsSection) async throws {
