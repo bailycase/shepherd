@@ -429,7 +429,7 @@ private struct BaseAnchorReader: View {
         if case .compare(let head, _) = lead {
             HStack(spacing: SH.Space.m) {
                 Text(head).font(.sh(.mono)).lineLimit(1)
-                Image(systemName: "arrow.right").font(.system(size: 10, weight: .medium))
+                Image(systemName: "arrow.right").font(.sh(.micro))
             }
             .padding(.leading, SH.Space.l)
             .fixedSize()
