@@ -49,7 +49,7 @@ struct SearchCommands: Commands {
             Button("Search Threads…") {
                 if let navigator { SearchHooks.toggle(navigator: navigator) }
             }
-            .keyboardShortcut("k", modifiers: .command)
+            .keyboardShortcut(MobileShortcut.search.shortcut)
             .disabled(navigator == nil)
         }
     }
