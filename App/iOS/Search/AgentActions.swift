@@ -16,8 +16,12 @@ enum AgentActions {
 
     static func client(_ ref: AgentRef, hosts: MobileHosts) throws -> RemoteHostClient {
         guard let host = hosts.host(ref.host) else { throw Failure("This host was forgotten.") }
-        guard let client = host.connectedClient else { throw Failure("\(host.name) is offline. Try again once it reconnects.") }
+        guard let client = host.connectedClient else { throw offline(host.name) }
         return client
+    }
+
+    private static func offline(_ hostName: String) -> Failure {
+        Failure("\(hostName) is offline. Try again once it reconnects.")
     }
 
     /// Optimistic: the thread shows `name` at once (`MobileHost.agent`, `threadState`) and the host takes it in the
@@ -100,7 +104,31 @@ enum AgentActions {
 // The app's half: presenting a failure and the worktree operations. The macOS checks (Tests/ShepherdIOSChecks/run.sh) build
 // the transport above against real TCP hosts without the app's screens.
 #if canImport(UIKit)
+import UIKit
+
 extension AgentActions {
+    /// Like the Mac's menu item, copy the saved conversation only once all its pages arrive.
+    static func copyTranscript(_ ref: AgentRef, hosts: MobileHosts, navigator: MobileNavigator) {
+        run("Couldn’t copy the transcript", navigator: navigator) {
+            let client = try client(ref, hosts: hosts)
+            let host = hosts.host(ref.host)
+            do {
+                let copied = try await ShepherdRemote.ThreadTranscript.copy(fetch: { request in
+                    try await client.nativeThread(agentID: ref.agent, request: request)
+                }, to: { UIPasteboard.general.string = $0 })
+                guard copied else {
+                    let name = host?.agent(ref.agent).map { "“\($0.name)”" } ?? "This thread"
+                    throw Failure("\(name) has no transcript yet. Nothing was copied.")
+                }
+            } catch RemoteHostClientError.disconnected {
+                throw offline(host?.name ?? "The host")
+            } catch RemoteHostClientError.rejected(_, let message) {
+                throw Failure(message)
+            }
+            navigator.present(.search(.problem(title: "Transcript copied", message: "The transcript is on the clipboard.")))
+        }
+    }
+
     /// Runs `action` from a menu or the palette, where nothing is on screen to show an error:
     /// a failure is presented on its own.
     static func run(_ title: String, navigator: MobileNavigator, _ action: @escaping @MainActor () async throws -> Void) {

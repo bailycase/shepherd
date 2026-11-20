@@ -63,6 +63,11 @@ struct ThreadRowMenuItems: View {
                 Button("Notifications for background alerts") { navigator.open(.settings(.notifications)) }
             }
             Section {
+                if hosts.host(thread.host)?.supports(RemoteProtocol.nativeThreadTranscriptCapability) == true {
+                    Button("Copy Transcript", systemImage: "doc.on.doc") {
+                        AgentActions.copyTranscript(thread, hosts: hosts, navigator: navigator)
+                    }
+                }
                 if abilities.rename {
                     Button("Rename…", systemImage: "pencil") { navigator.present(.search(.rename(thread))) }
                 }
