@@ -556,9 +556,9 @@ struct Composer: View, Equatable {
         // Let any deferred AppKit focus release finish before claiming the field (again once a
         // question gives the card back).
         .task(id: FieldClaim(active: active, focused: active && isFocused, question: questionKey != nil)) {
-            // The layout coming on screen or going off it is a flip: the one going off lets go of the card's ring at
-            // once, the one coming on fades it in briefly, and no spring is left running to lay the whole layout
-            // out again on every frame.
+            // The layout coming on screen or going off it is a flip: the card's ring follows at once, as the
+            // toolbar does, and a spring it left running would lay the whole layout out again on every frame.
+            // The one coming on still fades its ring in (Core Animation, so no frame lays anything out).
             let flip = claimed.active != active
             claimed.active = active
             claim(false, flip: flip)
@@ -772,9 +772,10 @@ struct Composer: View, Equatable {
 
     private func claim(_ value: Bool, flip: Bool) {
         guard flip else { composing = value; return }
-        var transaction = Transaction()
-        if value { transaction.shFocusFades = true } else { transaction.disablesAnimations = true }
-        withTransaction(transaction) { composing = value }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        instant.shFocusFades = value
+        withTransaction(instant) { composing = value }
     }
 
     private var card: some View {

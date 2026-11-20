@@ -9,13 +9,14 @@ import Testing
 
 /// Switching between two mounted threads is a visibility flip: it evaluates what the flip
 /// changes and then leaves both layouts alone, bar one thing: the composer's focus ring fades
-/// in, in the layout that comes on screen only, over the hover motion's duration and on no
-/// spring. A spring left running in either layout lays that layout out again on every frame for
-/// a third of a second, whoever sees it, and the window's display cycle with it.
+/// in, in the layout that comes on screen only, on the render server over the hover motion's
+/// duration. A SwiftUI animation or spring left running in either layout lays that layout out
+/// again on every frame (a spring for a third of a second), whoever sees it, and the window's
+/// display cycle with it.
 @Suite("Mounted switch", .mainActorExclusive)
 @MainActor
 struct MountedSwitchTests {
-    /// How long the ring takes to come in: the hover motion's duration, the shortest there is.
+    /// How long the ring takes to come in: the hover motion's duration.
     private static let fade = Duration.seconds(SH.Motion.hover.duration)
 
     /// How long the window runs while the ring fades: its duration, and a little room for a late frame.
@@ -105,8 +106,9 @@ struct MountedSwitchTests {
             #expect(landing["deck.hiddenLayout", default: 0] + during["deck.hiddenLayout", default: 0] == 0,
                     "round \(round), as the ring fades: \(landing) \(during)")
             #expect(after["deck.hiddenLayout", default: 0] == 0, "round \(round), after the fade: \(after)")
-            // The ring's fade is over by then: nothing is left to lay the shown layout out again (a spring's tail is a hundred
-            // passes in 50 ms), and no body to run.
+            // The ring fades on the render server: no pass over the shown layout for any of its frames (a SwiftUI fade
+            // is one per frame, a spring's tail a hundred in 50 ms), and no body to run.
+            #expect(during["deck.layout", default: 0] <= 2, "round \(round), as the ring fades: \(during)")
             #expect(after["deck.layout", default: 0] <= 2, "round \(round), after the fade: \(after)")
             #expect(frame["composer.body", default: 0] <= 2, "round \(round): \(frame)")
             #expect(landing["composer.body", default: 0] + during["composer.body", default: 0] <= 1, "round \(round): \(landing) \(during)")
@@ -114,64 +116,76 @@ struct MountedSwitchTests {
         }
     }
 
-    /// The ring where it comes on screen: a strip across the shown card's leading edge at the
-    /// field's middle, three points of the thread's background and then the ring (its inner edge is the card's line).
-    private static func ringStrip(in window: OffscreenWindow) async throws -> CGRect {
+    /// The layers the shown composer card's focus line (or its ring) is drawn on in `host`.
+    private static func focusViews(_ part: SHComposerFocusView.Part, in host: NSView) -> [SHComposerFocusView] {
+        IdleCostTests.views(SHComposerFocusView.self, in: host).filter { $0.part == part }
+    }
+
+    /// The ring where it comes on screen: its first columns across the shown card's leading edge at the
+    /// field's middle, and the thread's background outside them.
+    private static func ringColumns(in window: OffscreenWindow) async throws -> (background: Double, ring: [Double]) {
         let field = try #require(window.window.firstResponder as? NSView, "the shown composer holds the keyboard")
         let frame = field.convert(field.bounds, to: window.host)
         let reach: CGFloat = 60
         let search = CGRect(x: frame.minX - reach, y: frame.midY, width: reach, height: 1)
         let row = await MotionProbe.record(window, region: search, timeout: 0.05) {}.before
         let background = row.lightness(x: 0)
-        let ring = try #require((0..<Int(reach)).first { abs(row.lightness(x: $0) - background) > 0.02 }, "the ring on the shown composer")
-        return CGRect(x: search.minX + CGFloat(ring) - SHComposerMetrics.focusRing, y: frame.midY,
-                      width: SHComposerMetrics.focusRing * 2, height: 1)
+        let first = try #require((0..<Int(reach)).first { abs(row.lightness(x: $0) - background) > 0.02 }, "the ring on the shown composer")
+        return (background, (0..<Int(SHComposerMetrics.focusRing)).map { row.lightness(x: first + $0) })
     }
 
-    /// How far the ring has come in a frame of its strip: 0 where the background shows, 1 where it is all there.
-    private static func level(_ frame: MotionRecording.Frame, on: Double) -> Double {
-        (frame.lightness(x: 4) - frame.lightness(x: 0)) / on
+    /// A timing function as its four control points.
+    private static func curve(_ function: CAMediaTimingFunction?) -> [Float] {
+        (0..<4).flatMap { index -> [Float] in
+            var point: [Float] = [0, 0]
+            function?.getControlPoint(at: index, values: &point)
+            return point
+        }
     }
 
-    /// The composer's ring fades in on a switch, in the layout that comes on screen, and is in by
-    /// the hover motion's duration; under Reduce Motion it lands at once. Read from where the ring
-    /// draws, frame by frame.
-    @Test(.timingSensitive, arguments: [false, true]) func theShownRingFadesInOverTheHoverDurationUnlessReduceMotion(reduceMotion: Bool) async throws {
+    /// The composer's ring fades in on a switch, in the layout that comes on screen only: Core
+    /// Animation fades the layer over the hover motion's duration on an ease-out and no spring; under
+    /// Reduce Motion, in the layout going off screen and in every hidden one it lands at once.
+    @Test(arguments: [false, true]) func theShownRingFadesInOnTheRenderServerUnlessReduceMotion(reduceMotion: Bool) async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, agents) = try await MountedWorkspace.start(2, in: app)
+        let (vm, agents) = try await MountedWorkspace.start(3, in: app)
         let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true,
                                      RootView(vm: vm).environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         try await Self.mountAll(agents, in: vm, window: window, app: app)
-        let strip = try await Self.ringStrip(in: window)
+        let hosts = try agents.map { try #require(try WorkspaceNavigationTests.deck(in: window).pages[$0.tab.id]).host }
 
-        for round in 0..<2 {
-            let target = agents[round % 2 == 0 ? 1 : 0]
-            let recording = await MotionProbe.record(window, region: strip) {
-                vm.selectAgent(target.agent.id)
+        for round in 0..<4 {
+            let index = (round + 1) % agents.count
+            vm.selectAgent(agents[index].agent.id)
+            ListPerf.settle(window)
+            let ring = try #require(Self.focusViews(.ring, in: hosts[index]).first, "round \(round): the shown composer's ring")
+            let line = try #require(Self.focusViews(.line, in: hosts[index]).first, "round \(round): the shown composer's line")
+            try await eventuallyOnMain("the ring to come on the shown composer", timeout: .seconds(30)) {
                 ListPerf.settle(window)
+                return ring.drawn.opacity == 1 && Self.holdsKeyboard(hosts[index], in: window)
             }
-            let on = Self.level(recording.settled, on: 1)
-            try #require(abs(on) > 0.03, "round \(round): the ring shows against the background")
-            // The first frame is the layout that was on screen, ring and all; the ring then comes from the last frame without it.
-            let levels = recording.frames.dropFirst().map { (time: $0.time, level: Self.level($0, on: on)) }
-            let off = levels.lastIndex { $0.level < 0.02 }
-            let coming = off.map { Array(levels[($0 + 1)...]) } ?? levels
-            let partial = coming.filter { $0.level < 0.98 }
-            let summary = levels.map { "\(Int($0.time * 1000))ms:\(Int($0.level * 100))" }.joined(separator: " ")
 
-            #expect(coming.last.map { $0.level >= 0.98 } == true, "round \(round): the ring came: \(summary)")
             if reduceMotion {
-                #expect(partial.isEmpty, "round \(round): it lands at once: \(summary)")
+                #expect(ring.fade == nil && line.fade == nil, "round \(round): it lands at once")
             } else {
-                #expect(!partial.isEmpty, "round \(round): it fades in over frames: \(summary)")
-                #expect(zip(coming, coming.dropFirst()).allSatisfy { $1.level >= $0.level - 0.03 }, "round \(round): it only comes in: \(summary)")
-                let started = off.map { levels[$0].time } ?? coming.first?.time ?? 0
-                let done = coming.first { $0.level >= 0.98 }?.time ?? .infinity
-                #expect(done - started <= SH.Motion.hover.duration + 0.06,
-                        "round \(round): it is in by the hover duration: \(Int((done - started) * 1000)) ms, \(summary)")
+                let fades = [try #require(ring.fade, "round \(round): the ring fades in"), try #require(line.fade, "round \(round): the line fades in")]
+                #expect(fades.map(\.keyPath) == ["opacity", "borderColor"], "round \(round): \(fades.map(\.keyPath))")
+                #expect(fades.allSatisfy { $0.duration == SH.Motion.hover.duration }, "round \(round): they are in by the hover duration")
+                #expect(fades.allSatisfy { Self.curve($0.timingFunction) == Self.curve(CAMediaTimingFunction(name: .easeOut)) },
+                        "round \(round): they ease out, on no spring")
+                #expect(fades[0].toValue as? Float == 1, "round \(round): the ring comes to full")
             }
+            // Every other layout, the one just left included, lets go of its ring at once and never fades.
+            for other in agents.indices where other != index {
+                let off = try #require(Self.focusViews(.ring, in: hosts[other]).first)
+                let offLine = try #require(Self.focusViews(.line, in: hosts[other]).first)
+                #expect(off.drawn.opacity == 0 && off.fade == nil && offLine.fade == nil, "round \(round): layout \(other) is at rest")
+            }
+            let drawn = try await Self.ringColumns(in: window)
+            #expect(drawn.ring.allSatisfy { abs($0 - drawn.ring[0]) < 0.005 && abs($0 - drawn.background) > 0.02 },
+                    "round \(round): the ring is \(SHComposerMetrics.focusRing) points of one colour on the background: \(drawn)")
         }
     }
 }

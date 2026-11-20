@@ -163,10 +163,11 @@ status color, a raw color, a raw glyph name, or a symbol renamed where an animat
   change uses `withSHAnimation`. Never use an ad-hoc `withAnimation`.
 - Switching agents, keyboard navigation, selection, streaming text and terminal resizes land at
   once (`.shInstant()`); the one exception is the composer's focus ring in the layout a switch
-  brings on screen, which fades in over the `hover` 120ms on `SH.Motion.fade` (an ease-out, never
-  a spring) and lands at once under Reduce Motion. Under Reduce Motion nothing travels:
-  cross-fade in 120ms or stand still.
-- Spinners and glows are Core Animation layers, never a view redrawn every frame.
+  brings on screen, which fades in over the `hover` 120ms (an ease-out, never a spring) and lands at
+  once under Reduce Motion. Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
+- Spinners and glows are Core Animation layers, never a view redrawn every frame; so is the
+  composer's focus line and ring, since a SwiftUI animation lays the visible layout out again on
+  every frame it lasts.
 - A glyph that swaps for another (Send and Stop, copy and its check) is two fixed images
   cross-faded by opacity, or one image keyed on its state; a disclosure chevron is one
   `SHTurningChevron` that turns. Renaming one symbol under any animation (a content transition,

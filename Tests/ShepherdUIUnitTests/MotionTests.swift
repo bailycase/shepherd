@@ -80,19 +80,6 @@ struct MotionTests {
         #expect(Motion.crossFade == .easeInOut(duration: Motion.hover.duration))
     }
 
-    /// A fade is over at its motion's duration with nothing settling after it, which a spring's
-    /// tail would not be; under Reduce Motion there is none.
-    @Test(arguments: Motion.allCases.filter { !$0.isContinuous })
-    func aFadeIsAnEaseOutOverTheMotionsDurationAndNoneUnderReduceMotion(_ motion: Motion) {
-        #expect(motion.fade(reduceMotion: false) == .easeOut(duration: motion.duration))
-        #expect(motion.fade(reduceMotion: true) == nil)
-    }
-
-    /// The composer's ring fades over the hover motion's duration because no anchor is shorter.
-    @Test func noMotionIsShorterThanHover() {
-        #expect(Motion.allCases.map(\.duration).min() == Motion.hover.duration)
-    }
-
     @Test(arguments: [
         (Motion.pane, nil, Motion.TransitionStyle.slide(.trailing)), (.pane, .leading, .slide(.leading)),
         (.sheet, nil, .rise(.bottom)), (.sheet, .top, .rise(.top)),

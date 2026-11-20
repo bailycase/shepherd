@@ -120,36 +120,42 @@ public struct SHComposer<Top: View, Field: View, Controls: View>: View {
         .clipShape(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the
         // card as it grows.
-        .overlay {
-            Color.clear
-                .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
-                .modifier(SHComposerFocusMotion(focused: isFocused))
-                .allowsHitTesting(false)
-        }
-        .background {
-            RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
-                .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
-                .opacity(isFocused ? 1 : 0)
-                .modifier(SHComposerFocusMotion(focused: isFocused))
-        }
+        .modifier(SHComposerFocus(isFocused: isFocused))
     }
 }
 
-/// How the card's line and ring follow focus: the hover motion, a spring, as `shAnimation` has
-/// it. A focus taken as a layout comes on screen (`Transaction.shFocusFades`) fades in over the
-/// same duration with no spring instead, since a spring's tail would lay the layout out again on
-/// every frame after the switch. A change that disables animations (a hidden layout's) lands at once.
-private struct SHComposerFocusMotion: ViewModifier {
-    let focused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// The card's line and ring. On the Mac they are layers that Core Animation fades (a SwiftUI
+/// animation would lay the visible layout out again on every frame it lasts); elsewhere shapes
+/// that take the hover motion.
+private struct SHComposerFocus: ViewModifier {
+    let isFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
-        content.transaction(value: focused) { transaction in
-            guard !transaction.disablesAnimations else { return }
-            transaction.animation = transaction.shFocusFades
-                ? SH.Motion.hover.fade(reduceMotion: reduceMotion)
-                : SH.Motion.hover.animation(reduceMotion: reduceMotion)
-        }
+        #if canImport(AppKit)
+        content
+            .overlay { SHComposerFocusLayer(part: .line, focused: isFocused, colorScheme: colorScheme).allowsHitTesting(false) }
+            .background {
+                SHComposerFocusLayer(part: .ring, focused: isFocused, colorScheme: colorScheme)
+                    .padding(-SHComposerMetrics.focusRing)
+                    .allowsHitTesting(false)
+            }
+        #else
+        let sh = Color.sh
+        content
+            .overlay {
+                Color.clear
+                    .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
+                    .shAnimation(.hover, value: isFocused)
+                    .allowsHitTesting(false)
+            }
+            .background {
+                RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
+                    .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
+                    .opacity(isFocused ? 1 : 0)
+                    .shAnimation(.hover, value: isFocused)
+            }
+        #endif
     }
 }
 
