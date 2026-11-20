@@ -36,6 +36,8 @@ final class BrowserRemote {
     /// The connection the claim was made on: a claim dies with its connection.
     private var claimClient: RemoteHostClient?
     private var releaseTask: Task<Void, Never>?
+    /// Tests wait here even when adoption leaves the page unchanged.
+    var onClaimAdoptionFinished: (() -> Void)?
 
     init(ref: RemoteAgentRef, hosts: RemoteHostStore?, ports: BrowserPortForwarder,
          policy: BrowserViewerPolicy = BrowserViewerPolicy(),
@@ -206,12 +208,16 @@ final class BrowserRemote {
     /// nothing open opens the page the agent left on the host, through the tunnel, when it is one
     /// this Mac may open (cookies are not carried over).
     private func claimed(adopting address: String?) {
-        guard let session else { return }
+        guard let session else { onClaimAdoptionFinished?(); return }
         if session.notice?.message == Self.supersededMessage { session.dismissNotice() }
         session.handBack()
         guard let page = session.tabs.agentTarget, !page.hasPage, let address,
-              BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else { return }
+              BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else {
+            onClaimAdoptionFinished?()
+            return
+        }
         Task { @MainActor [weak self, weak page] in
+            defer { self?.onClaimAdoptionFinished?() }
             guard let self, let page, !page.tabClosed, !page.hasPage else { return }
             if case .refused = await self.policy.verdict(for: url) { return }
             if !page.tabClosed, !page.hasPage { page.load(url) }

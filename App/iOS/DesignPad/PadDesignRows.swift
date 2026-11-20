@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdUI
+import ShepherdRemote
 
 /// A design in the iPad sidebar's Recents (iPadSidebar): the nib, its name, and "4 boards" in
 /// mono, with its host when designs from several hosts mix.
