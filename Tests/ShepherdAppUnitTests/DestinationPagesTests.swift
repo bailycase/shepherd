@@ -44,9 +44,9 @@ struct AutomationsPageTests {
     @Test func theFilterMatchesNameHostOrPromptAndTheSelectionFollowsIt() {
         let a = Automation(name: "Triage new issues", prompt: "look at sentry", cwd: "/tmp/a")
         let b = Automation(name: "Stale branch cleanup", prompt: "delete merged branches", cwd: "/tmp/b")
-        let hosts = [host(PageHost.localID, PageHost.localName, automations: [a]), host(remoteID, "horizon", automations: [b])]
+        let hosts = [host(PageHost.localID, PageHost.localName, automations: [a]), host(remoteID, "orbit", automations: [b])]
         let keyA = AutomationKey(host: PageHost.localID, automation: a.id)
-        #expect(make(hosts, filter: "HORIZON").rows.map(\.name) == ["Stale branch cleanup"])
+        #expect(make(hosts, filter: "ORBIT").rows.map(\.name) == ["Stale branch cleanup"])
         #expect(make(hosts, filter: "sentry").rows.map(\.name) == ["Triage new issues"])
         // The selected row filtered out: the first kept row is selected and shown.
         let filtered = make(hosts, selection: keyA, filter: "merged")
@@ -95,7 +95,7 @@ struct AutomationsPageTests {
     /// holds that one row's controls.
     @Test func whatCanBeChangedFollowsTheHost() {
         let a = Automation(name: "a", prompt: "p", cwd: "/tmp"), b = Automation(name: "b", prompt: "p", cwd: "/tmp")
-        let offline = make([host(remoteID, "horizon", automations: [a], connected: false)])
+        let offline = make([host(remoteID, "orbit", automations: [a], connected: false)])
         let row = offline.rows.first
         #expect(row?.lastRun == SHRunOutcome("host offline"))
         #expect(row?.canToggle == false && row?.canRun == false && row?.canEdit == false)
@@ -103,9 +103,9 @@ struct AutomationsPageTests {
         #expect(offline.detail?.readOnlyReason == "Host offline")
         #expect(offline.detail?.runsNote == "Runs aren't available from this host.")
 
-        let older = make([host(remoteID, "horizon", automations: [a], manageable: false)])
+        let older = make([host(remoteID, "orbit", automations: [a], manageable: false)])
         #expect(older.rows.first?.canToggle == false)
-        #expect(older.detail?.readOnlyReason?.hasPrefix("Update Shepherd on horizon") == true)
+        #expect(older.detail?.readOnlyReason?.hasPrefix("Update Shepherd on orbit") == true)
 
         let keyA = AutomationKey(host: PageHost.localID, automation: a.id)
         let pending = make([host(PageHost.localID, PageHost.localName, automations: [a, b])], pending: [keyA])

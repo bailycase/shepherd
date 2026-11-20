@@ -177,8 +177,8 @@ struct AgentBannersTests {
 
     @Test func aHostGoingAwaySaysSoWithRetry() {
         let id = UUID()
-        let banner = AgentBanners.hostOffline(name: "horizon", hostID: id)
-        #expect(banner.title == "horizon is offline")
+        let banner = AgentBanners.hostOffline(name: "orbit", hostID: id)
+        #expect(banner.title == "orbit is offline")
         #expect(banner.subtitle == "Host offline")
         #expect(banner.body == "Remote agents resume when it’s back.")
         #expect(banner.actions == [.reconnect])

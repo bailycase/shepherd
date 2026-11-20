@@ -128,7 +128,7 @@ class Handler(BaseHTTPRequestHandler):
                 access, refresh = "at-%d" % STATE["n"], "rt-%d" % STATE["n"]
                 STATE["access"][access] = scope
                 STATE["refresh"][refresh] = scope
-            claims = b64url(json.dumps({"email": "baily@acme.dev"}).encode())
+            claims = b64url(json.dumps({"email": "alex@acme.dev"}).encode())
             return self.send(200, {"access_token": access, "token_type": "Bearer", "expires_in": 3600, "refresh_token": refresh,
                                    "scope": scope, "id_token": "e30." + claims + ".sig"})
         if url.path == "/mcp":

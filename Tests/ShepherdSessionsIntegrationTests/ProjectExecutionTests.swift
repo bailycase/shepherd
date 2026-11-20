@@ -387,7 +387,7 @@ struct ProjectExecutionTests {
         client.disconnect()
         let dialog = try #require(question.dialogs.first)
         _ = try await rig.host.server.nativeThread(agentID: assignment.reservedWorkerID,
-            request: .answer(expectedSessionID: question.piSessionID, generation: question.generation, operationID: UUID(), dialogID: dialog.id, answer: .select(value: "Leave Horizon alone")))
+            request: .answer(expectedSessionID: question.piSessionID, generation: question.generation, operationID: UUID(), dialogID: dialog.id, answer: .select(value: "Leave Orbit alone")))
         try await eventually("settled disconnected worker") { rig.receipt(assignment)?.phase == .settled }
         let reconnect = try await rig.remote.typed(); defer { reconnect.disconnect() }
         let result = try await reconnect.projectExecution(.snapshot(key: assignment.key, watch: true))

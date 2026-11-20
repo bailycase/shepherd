@@ -75,6 +75,7 @@ public enum MobileRoute: Hashable, Codable, Sendable {
         case .padDesign(let route): route.host
         case .projects(let route): route.host
         case .forge(let route): route.host
+        case .settings(.spaceConfiguration(let host, _, _, _)): host
         case .home, .newThread, .search, .settings: nil
         }
     }
@@ -311,9 +312,10 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     /// The fleet's subagent profiles; one profile's Markdown. Opened from Agents.
     case subagents
     case subagent(String)
-    /// A host's spaces by folder, read-only; one space's configuration files and approval.
+    /// A host's spaces by folder. Older saved routes did not record the host.
     case spaces
     case space(String)
+    case spaceConfiguration(host: UUID, directory: String, name: String, section: SpaceConfigurationSection? = nil)
     /// The root instructions every session Shepherd starts reads.
     case instructions
     /// One root instruction file in the editor.
@@ -338,6 +340,39 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     case diagnostics
     /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
     case suggestion(UUID)
+}
+
+public enum SpaceConfigurationSection: String, Identifiable, Codable, Sendable {
+    case skills, extensions, prompts, agents, mcp
+    public var id: Self { self }
+
+    public var title: String {
+        switch self {
+        case .skills: "Skills"
+        case .extensions: "Extensions"
+        case .prompts: "Slash commands"
+        case .agents: "Subagents"
+        case .mcp: "MCP servers"
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        // Older window routes used the display titles as raw values.
+        switch value {
+        case "Skills": self = .skills
+        case "Extensions": self = .extensions
+        case "Slash commands": self = .prompts
+        case "Subagents": self = .agents
+        case "MCP servers": self = .mcp
+        default:
+            guard let section = Self(rawValue: value) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown space configuration section: \(value)")
+            }
+            self = section
+        }
+    }
 }
 
 /// Subagents' screens (subagents track): a thread's runs, and one run's transcript.
