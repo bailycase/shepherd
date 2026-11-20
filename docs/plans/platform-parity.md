@@ -1,6 +1,6 @@
 # Platform parity: macOS, iPhone, iPhone Duo and iPad
 
-Plan only. Nothing here is implemented. It maps what each platform can do, ranks the gaps, and cuts them into PR-sized slices. Measured on branch `docs/platform-parity` at `origin/nightly` 710d9eade.
+Plan only. Nothing here is implemented. It maps what each platform can do, ranks the gaps, and cuts them into PR-sized slices. Measured on branch `docs/platform-parity` at `origin/nightly` 710d9eade. Section 4 was updated after the iOS 27.0 runtime was installed.
 
 How to read it: cells come from reading code and `docs/remote-protocol.md`, not from running the apps. Where a number or a behavior was measured on this machine the text says so. "Not run" means I did not run it, with the reason.
 
@@ -168,17 +168,19 @@ No hits for `UIScreen.main`, `interfaceOrientation`, `UIDeviceOrientation`, `saf
 
 ## 4. Render capability today
 
-Measured on this Mac.
+Updated after the orchestrator installed an iOS 27.0 runtime (`~/Developer/Shepherd-worktrees/SIMULATORS.md`). Re-measured here with `simctl create` and `delete`.
+
+| Platform | Device type | Runtime | Result |
+| --- | --- | --- | --- |
+| iPhone | `iPhone-18-Pro` | `iOS-27-0` | Creates. |
+| iPad | `iPad-Pro-13-inch-M5-16GB` | `iOS-27-0` | Creates. |
+| iPhone Duo (closed is compact, open is regular) | `iPhone-Duo` | `iOS-27-1` | Creates. The 27.1 runtime supports only this type. |
+
+Each was created in a custom set under this worktree's `.orchestrator/` and deleted at once; no devices remain. Before the install, the iPhone 17 Pro and iPad Pro 13-inch (M5) creates on iOS 27.1 failed with `Incompatible device` (code 403), which is why those two are on 27.0.
 
 | Check | Result |
 | --- | --- |
-| `xcrun simctl list runtimes` | One runtime: iOS 27.1 (24A94401). |
-| Runtime's `supportedDeviceTypes` | `["iPhone Duo"]` only. |
-| `xcrun simctl list devicetypes` | iPhone (6s to 18 Pro Max), iPad (mini, Air, Pro, base), and `iPhone Duo` exist as types. |
-| `simctl create` iPad Pro 13-inch (M5) on iOS 27.1 | Fails: `Incompatible device` (code 403). |
-| `simctl create` iPhone 17 Pro on iOS 27.1 | Fails: `Incompatible device` (code 403). |
-| `simctl create` iPhone Duo on iOS 27.1 | Works. I created one and deleted it. No devices exist now. |
-| Xcodes | `xcode-select`: Xcode-beta 27.0 (27A5228h), no hinge code. `/Applications/Xcode.app`: 27.1 (27A9275), hinge code compiles in. Both see the same single runtime. |
+| Xcodes | `xcode-select`: Xcode-beta 27.0 (27A5228h), no hinge code. `/Applications/Xcode.app`: 27.1 (27A9275), hinge code compiles in (D1). |
 | Duo poses | `run-simulator.sh -f closed|book|open` with `DuoPose/duopose.m` (private SpringBoard service, simulator only). |
 | Mac renders | `ShepherdPreviewTests` (95 files) render off-screen, no simulator. Not run here. |
 
@@ -187,19 +189,23 @@ What each platform needs:
 | Platform | Renderable now | Needs |
 | --- | --- | --- |
 | Mac | Yes (`SHEPHERD_PREVIEW_DIR=… swift test --filter …Preview…`) | Nothing. |
+| iPhone | Yes, iPhone 18 Pro on 27.0 | Nothing for the compact shell. Hinge code does not apply. |
+| iPad | Yes, iPad Pro 13-inch on 27.0, portrait and landscape, `--sidebar`, `-w` windows | Nothing. Stage Manager sizes are not scriptable by `run-simulator.sh`. |
 | Duo outer | Yes, `-f closed` | `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` (D1). |
 | Duo inner | Yes, `-f book`, `-f open`, landscape for the laptop pose | Same. |
-| iPhone (compact, non-Duo) | No | A second iOS runtime that supports iPhone types. Duo outer is the stand-in: compact width and the same `PhoneShell`, but not a phone's size. |
-| iPad | No | A runtime that supports iPad types. Duo inner is the stand-in: regular width and the same `PadShell`. iPad-only paths cannot be rendered: `--sidebar` over a portrait thread, Stage Manager sizes, iPad scene destruction in `-w`. |
 
-Installing another runtime is a large external download and the owner's call (`xcodebuild -downloadPlatform iOS`); I did not do it. Not run: an end-to-end Duo render. The load average was 166 at 22:41 and a cold iOS build would compete with other lanes, and there is no `gated` wrapper on `PATH`. The command to run once the machine is quiet:
+Open points, not measured:
+
+- **Custom device sets.** `SIMULATORS.md` tells agents to create devices in a custom set. `run-simulator.sh` calls `simctl` without `--set` (0 of its calls pass it), so it looks up `-d <udid>` in the default set and will say `no simulator`. Needs a `--set` option or an environment variable in the script (added to S1).
+- **Mixed SDKs.** The script builds one app with one Xcode. Building with 27.1 and installing on the 27.0 runtime should work because every hinge use is behind `#available(iOS 27.1, *)` (`Fold.swift:12`), but I did not run it. One build for all three platforms would be a saving; if it fails, iPhone and iPad need the default Xcode and Duo needs 27.1.
+- Not run: any render. The load average was 166 at 22:41 and builds go through `~/Developer/Shepherd-worktrees/bin/gated`. Command for one Duo shot, adapted for the set:
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-udid=$(xcrun simctl create "Shepherd parity" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo com.apple.CoreSimulator.SimRuntime.iOS-27-1)
-bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$udid" -o /tmp/parity -f closed home
-bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$udid" -o /tmp/parity -f book home
-xcrun simctl delete "$udid"
+set=.orchestrator/sims
+udid=$(xcrun simctl --set $set create parity com.apple.CoreSimulator.SimDeviceType.iPhone-Duo com.apple.CoreSimulator.SimRuntime.iOS-27-1)
+~/Developer/Shepherd-worktrees/bin/gated bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$udid" -o /tmp/parity -f closed home   # fails today: no --set
+xcrun simctl --set $set shutdown "$udid"; xcrun simctl --set $set delete "$udid"
 ```
 
 ## 5. Gaps, ranked by user value
@@ -209,7 +215,7 @@ xcrun simctl delete "$udid"
 **Enablers**
 
 - **E1.** Default Xcode compiles out all Duo code (D1). Tooling only.
-- **E2.** No iPad or non-Duo iPhone runtime (section 4). Owner decision.
+- **E2.** Resolved: iPhone and iPad render on the iOS 27.0 runtime, Duo on 27.1 (section 4). Remaining: `run-simulator.sh` does not accept a custom simulator set, and a mixed-SDK build is unverified.
 
 **What a person supervising from a phone, a Duo or an iPad cannot do that the Mac can**
 
@@ -230,15 +236,15 @@ What the Mac cannot do: nothing material beyond several windows (iPad and Duo in
 
 ## 6. Slices
 
-Each slice is one PR. Shared logic goes to `ShepherdRemote` with Swift Testing unit tests, as `PadSplitLayout` did, because `App/iOS` has no SwiftPM test target. Render checks use `Tests/ShepherdIOSChecks/run-simulator.sh` with `DEVELOPER_DIR` set to Xcode 27.1 (S1), light and dark. Until E2 is resolved every iPhone and iPad render is "Duo outer" or "Duo inner" and the PR says so. Mac-touching slices use `ShepherdPreviewTests`.
+Each slice is one PR. Shared logic goes to `ShepherdRemote` with Swift Testing unit tests, as `PadSplitLayout` did, because `App/iOS` has no SwiftPM test target. Render checks use `Tests/ShepherdIOSChecks/run-simulator.sh` with `DEVELOPER_DIR` set to Xcode 27.1 (S1), light and dark. Each PR renders the platforms it touches on iPhone 18 Pro, iPad Pro 13-inch and Duo (outer and inner), per `SIMULATORS.md`. Mac-touching slices use `ShepherdPreviewTests`.
 
 Open lanes to avoid duplicating: `feat/ios-retry-agent`, `fix/ios-lazy-lists`, `feat/next-needing-you`, `feat/sidebar-filters`, `feat/spend-rollup`, `feat/stop-all-running`. Their briefs were read in the other worktrees, read-only.
 
 | # | Slice | Platforms | Files | Done when | Overlap |
 | --- | --- | --- | --- | --- | --- |
-| S1 | Duo toolchain guard | iOS tooling | `Tests/ShepherdIOSChecks/run-simulator.sh`, `docs/build-and-run.md`, `docs/testing.md` | A pose run (`-f`) under a SwiftUI older than 8.0.85 exits non-zero naming `DEVELOPER_DIR`. The script lists which device types the runtime supports and prints "not run" for the rest. Docs say which Xcode renders Duo. | `docs/plans/validation-tools.md` slice 3 (render matrix). S1 is its smallest precursor. |
+| S1 | Duo toolchain guard | iOS tooling | `Tests/ShepherdIOSChecks/run-simulator.sh`, `docs/build-and-run.md`, `docs/testing.md` | A pose run (`-f`) under a SwiftUI older than 8.0.85 exits non-zero naming `DEVELOPER_DIR`. The script accepts a custom simulator set and prints "not run" for a platform whose device cannot be created. Docs say which Xcode renders Duo and which runtime each platform uses. | `docs/plans/validation-tools.md` slice 3 (render matrix). S1 is its smallest precursor. |
 | S2 | Carry logic as a tested value | iPhone, Duo, iPad | New `Sources/ShepherdRemote/NavigationCarry.swift`, `App/iOS/App/MobileNavigator.swift`, `Tests/ShepherdRemoteUnitTests` | `adopt` and `takePaneScreens` call a pure function. Unit tests cover phone to pad and back for every `MobileRoute` family, a sheet, the palette, an empty stack, a forgotten host. No behavior change. | None. |
-| S3 | Duo and resize sweep | Duo outer and inner, iPad | `Home/PadOverview.swift`, `Files/ThreadFilesSplit.swift`, `Search/SearchPalette.swift`, `NewThread/`, `Hosts/`, `Designs/` as defects show | Needs S1. Render the surfaces with no fold code (section 3) in closed, book, open and landscape, light and dark. Each defect is fixed or filed. A fixture changes size mid-run with an editor, a terminal and a sheet open and asserts they survive (D2). PNGs attached. | `feat/sidebar-filters`, `feat/spend-rollup` (Home), `feat/next-needing-you` (`NeedsYouScreen`), `fix/ios-lazy-lists` (`AutomationsScreen`): rebase on whichever lands first. |
+| S3 | Duo and resize sweep | Duo outer and inner, iPad | `Home/PadOverview.swift`, `Files/ThreadFilesSplit.swift`, `Search/SearchPalette.swift`, `NewThread/`, `Hosts/`, `Designs/` as defects show | Needs S1. Render the surfaces with no fold code (section 3) in closed, book, open and landscape on Duo, and on iPad portrait and landscape, light and dark. Each defect is fixed or filed. A fixture changes size mid-run with an editor, a terminal and a sheet open and asserts they survive (D2). PNGs attached. | `feat/sidebar-filters`, `feat/spend-rollup` (Home), `feat/next-needing-you` (`NeedsYouScreen`), `fix/ios-lazy-lists` (`AutomationsScreen`): rebase on whichever lands first. |
 | S4 | iPad and Duo keyboard | iPad, Duo inner | New `App/iOS/App/MobileCommands.swift`, `Windows/MobileWindowRoot.swift` (`MobileWindowCommands`), `Search/SearchRoute.swift`; table in `ShepherdRemote` | New thread, stop, rename, previous and next thread, toggle sidebar, toggle side pane, model picker, toggle terminal, each in the menu bar and the shortcut overlay, same chords as `Keybindings.swift` where they make sense. Unit test: no two iOS chords collide, none shadows the system's. Hardware-keyboard behavior is "not run" (no keyboard in headless renders). | `feat/next-needing-you` adds the Next chord. Leave it to that lane. |
 | S5 | Small iPad and phone fixes | iPad, Duo inner, all iOS | `Composer/GoalNotifications.swift`, `Terminal/TerminalSurface.swift`, `Settings/SettingsScreen.swift`, thread menu | Goal alerts work on iPad and Duo inner (gate on notification authorization, not idiom; unit test the predicate). Terminal links use `openURL`. Settings search over page and row titles, as the Mac. Copy transcript in the thread menu. Renders: Settings search on Duo outer and inner. | None. |
 | S6 | Composer input | iPad, Duo inner, iPhone | `Composer/ComposerControls.swift`, `Composer/ThreadComposer.swift`, classifier in `ShepherdRemote` | Paste an image, drop images and files from another app on iPad, a Files source. Unit tests for the provider-to-attachment classifier and the size and count limits. Renders: composer with chips, Duo outer and inner. | None. |
