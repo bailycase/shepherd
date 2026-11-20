@@ -76,6 +76,35 @@ struct AutomationTriggersTests {
                    events: [.init(id: "L\(number)-\(Int(at.timeIntervalSince1970))", at: at, activity: .labeled(label: label, actor: actor))])
     }
 
+    // MARK: Persistence
+
+    @Test func legacyTriggerFileKeepsPendingEventsAndDedupeCursors() throws {
+        let json = """
+        {"version":1,"allPaused":true,"records":{"loop":{
+          "fingerprint":"acme-trigger","baselineAt":1000,"lastCheckedAt":1100,"seen":{"acme-event":1100},
+          "pending":[{"event":{"id":"acme-event","title":"New issue","occurredAt":1100},"attempts":1,"queuedAt":1101}],
+          "failures":0,"starts":[1050]}}}
+        """
+        let file = try JSONDecoder().decode(AutomationTriggers.File.self, from: Data(json.utf8))
+        let record = try #require(file.records["loop"])
+        #expect(file.allPaused)
+        #expect(record.fingerprint == "acme-trigger")
+        #expect(record.lastCheckedAt == 1100)
+        #expect(record.seen == ["acme-event": 1100])
+        #expect(record.pending.map(\.event.id) == ["acme-event"])
+        #expect(record.pending.map(\.attempts) == [1])
+        #expect(record.starts == [1050])
+        #expect(record.heads.isEmpty && record.windows.isEmpty)
+    }
+
+    @Test func legacyPendingEventStartsWithNoAttempts() throws {
+        let json = #"{"event":{"id":"acme-event","title":"New issue","occurredAt":1100},"queuedAt":1101}"#
+        let pending = try JSONDecoder().decode(AutomationTriggers.Pending.self, from: Data(json.utf8))
+        #expect(pending.event.id == "acme-event")
+        #expect(pending.queuedAt == 1101)
+        #expect(pending.attempts == 0)
+    }
+
     // MARK: GitHub matching
 
     @Test func parsesTheGraphQLAnswer() throws {
