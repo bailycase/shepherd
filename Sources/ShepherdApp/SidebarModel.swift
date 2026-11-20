@@ -90,10 +90,6 @@ struct SidebarListRow: Identifiable, Equatable {
     var accessibilityLabel: String
     /// A worktree agent: its menu offers Delete Worktree Agent.
     let worktree: Bool
-    /// The checkout has uncommitted files, from the host's existing checkout monitor.
-    var hasChanges = false
-    /// Running is independent of display grouping (pinned, nested, automation run).
-    var running = false
     /// A run of one of This Mac's automations: its menu offers Stop or Run Now.
     let automation: AutomationID?
     /// That run is going (its menu offers Stop).
@@ -112,20 +108,6 @@ struct SidebarListRow: Identifiable, Equatable {
     var subtitle: SHSidebarRow.Subtitle? = nil
     /// A sender of more than two threads folds them under its chevron (`SidebarSent`).
     var fold: SidebarFold? = nil
-}
-
-private extension SidebarListRow {
-    func matches(_ filters: SidebarThreadFilters) -> Bool {
-        guard section != .designs else { return false }
-        let host: UUID
-        switch id {
-        case .local: host = PageHost.localID
-        case .remote(let ref): host = ref.hostID
-        case .design, .remoteDesign, .dispatch: return false
-        }
-        return filters.matches(host: host, running: !offline && running, needsYou: section == .needsYou,
-                               hasChanges: hasChanges, worktree: worktree)
-    }
 }
 
 /// A sender's chevron, on a sender of more than two sent threads: where its open state is remembered (`ShepherdViewModel.collapsedProjects`, with
@@ -225,73 +207,25 @@ struct SidebarLists: Equatable {
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
-    /// Next and Review Next use the whole sidebar, independent of display filters.
+    /// Next and Review Next read the whole sidebar.
     var supervisionQueues = SupervisionQueues<SidebarRowID>(blocked: [], unseenDone: [])
 
-    var filterHosts: [SidebarThreadFilters.Host] = []
-    var isFiltering = false
     var all: [SidebarListRow] { sections.flatMap(\.rows) }
-    var hasNoMatches: Bool { isFiltering && sections.allSatisfy { $0.rows.isEmpty } }
 
-    /// Unfiltered, Needs you, Designs and Automations have no digit. In filtered Activity,
-    /// every visible matching thread is eligible. Collapsed sections have no hint or target.
+    /// Needs you, Designs and Automations have no digit; folded groups have no visible hint or target.
     var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
 
     func shortcutRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
-        sections.filter { !collapsed.contains($0.section) && (isFiltering || ![.needsYou, .designs, .automations].contains($0.section)) }
+        sections.filter { ![.needsYou, .designs, .automations].contains($0.section) && !collapsed.contains($0.section) }
             .flatMap(\.rows).filter { $0.id.dispatchID == nil }
     }
 
-    func presented(selected: SidebarRowID?, shortcuts: Bool, filters: SidebarThreadFilters = .init(),
+    func presented(selected: SidebarRowID?, shortcuts: Bool,
                    collapsed: Set<SidebarActivitySection> = [], openFolds: Set<String> = []) -> SidebarLists {
-        filtered(by: filters, openFolds: openFolds).marked(selected: selected, shortcuts: shortcuts, collapsed: collapsed)
-    }
-
-    /// The rows `filters` leave and the senders' folds applied: what the view model caches by these lists and criteria, so a
-    /// change of selection or menu state doesn't filter again.
-    func filtered(by filters: SidebarThreadFilters, openFolds: Set<String> = []) -> SidebarLists {
         var lists = self
-        lists.isFiltering = filters.isActive
-        let threadPaths = [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.automations]
-        if filters.isActive {
-            // A match must not be hidden by a sender or automation that isn't a match itself.
-            // Keep section and row order; show matching run threads and sent threads directly.
-            // A sent thread sits in its sender's group, so a match goes back to the group of its own status (Working).
-            var sent: [SidebarListRow] = []
-            for path in threadPaths {
-                lists[keyPath: path] = lists[keyPath: path].compactMap { row in
-                    guard !(row.fleetNested && row.section == .needsYou), row.matches(filters) else { return nil }
-                    var flat = row
-                    flat.fleetNested = false
-                    flat.sentRoot = nil
-                    flat.fold = nil
-                    flat.foldedUnder = nil
-                    if row.fleetNested { sent.append(flat); return nil }
-                    return flat
-                }
-            }
-            if !sent.isEmpty {
-                // Working is most recently active first, which is the order of `activity`.
-                let order = Dictionary(activity.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-                lists.working = (lists.working + sent).enumerated().sorted { a, b in
-                    let left = order[a.element.id] ?? .max, right = order[b.element.id] ?? .max
-                    return left != right ? left < right : a.offset < b.offset
-                }.map(\.element)
-            }
-            lists.designs = []
-            lists.automationRows = []
-            lists.activity = lists.activity.filter { $0.matches(filters) }
-        } else {
-            for path in threadPaths.dropLast() {
-                lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
-            }
+        for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents] {
+            lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
         }
-        return lists
-    }
-
-    /// The row on screen marked, and ⌘-digits while ⌘ is held.
-    func marked(selected: SidebarRowID?, shortcuts: Bool, collapsed: Set<SidebarActivitySection> = []) -> SidebarLists {
-        var lists = self
         let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed).prefix(9).enumerated()
             .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs, \.automations] {
@@ -359,8 +293,8 @@ struct SidebarSource: Equatable {
     var fleet = SidebarFleet()
 
     /// Child work affects sidebar presentation, never the parent's actual turn status. Ignore tab
-    /// layout and keep only whether each checkout has changes. Both the Changes filter and Review
-    /// Next need that flag, not the exact file count.
+    /// layout and keep only whether each checkout has changes: Review Next needs that flag, not the
+    /// exact file count.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
         state.tabs = []
@@ -522,7 +456,7 @@ enum SidebarDerivation {
                 } ?? false
                 var parent: Automation?
                 if !host.offline, let candidate = watcher ?? origin, live || candidate.activeTrigger { parent = candidate }
-                var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil, live: live)
+                var row = remoteRow(agent, host: host, automation: watcher != nil, needsYou: needsYou, folded: parent != nil)
                 if let info = sentInfo(of: agent, host: host.id, source) { sent[row.id] = info }
                 if let dispatch = agent.dispatchedFrom?.dispatchID { sentThreads.insert(dispatch) }
                 if let parent {
@@ -567,9 +501,6 @@ enum SidebarDerivation {
             return a.index > b.index
         }
         var lists = SidebarLists()
-        // The picker offers connected hosts only: an offline host's rows are still its last known state, but it isn't a choice.
-        lists.filterHosts = [.init(id: PageHost.localID, name: "This Mac")]
-            + source.hosts.filter { !$0.offline }.map { .init(id: $0.id, name: $0.name) }
         var pinnedRows: [PinnedThread: SidebarListRow] = [:]
         var calm: [SidebarListRow] = []
         for entry in entries {
@@ -729,9 +660,7 @@ enum SidebarDerivation {
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
             accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
                 + (agent.goalState != nil ? ", goal" : ""),
-            worktree: agent.worktreeBranch != nil, hasChanges: (agent.checkout?.changedFiles ?? 0) > 0,
-            running: !needsYou && !waiting && !cannotStart && (live || agent.status == .working),
-            automation: automation?.id, automationLive: live,
+            worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live,
             subtitle: SpendFormat.line(agent.spend).map { .init($0) })
     }
 
@@ -782,9 +711,8 @@ enum SidebarDerivation {
     }
 
     /// `folded`: it sits under its automation in Automations (else `automation` says).
-    /// `live`: a watcher the run last read says is working, which counts as running while its agent idles at startup.
     static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
-                          needsYou: Bool, folded: Bool? = nil, live: Bool = false) -> SidebarListRow {
+                          needsYou: Bool, folded: Bool? = nil) -> SidebarListRow {
         let leading: SHSidebarRow.Leading
         let accessory: SHSidebarRow.Accessory
         let word: String
@@ -808,8 +736,7 @@ enum SidebarDerivation {
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
-            worktree: agent.worktreeBranch != nil, hasChanges: (agent.checkout?.changedFiles ?? 0) > 0,
-            running: !needsYou && (live || agent.status == .working), automation: nil, automationLive: false,
+            worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false,
             subtitle: SpendFormat.line(agent.spend).map { .init($0) })
     }
 
