@@ -38,6 +38,39 @@ struct FleetContentUnitTests {
         #expect(source.isReady)
     }
 
+    /// What `isReady` validated is what goes out: a hook that appears, or a settings file that breaks, in between is not read.
+    @Test func hookSyncReadsTheSnapshotThatWasValidated() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let path = f.home + "/.shepherd/hooks.json"
+        try f.write(path, HookCatalogTests.preToolUse)
+        let source = FleetHooksSource(catalog: { catalog })
+        #expect(source.isReady)
+        try f.write(path, #"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"./late.sh"}]}]}}"#)
+        let values = source.read().filter { $0.key.hasPrefix(FleetHooksSource.kind) }
+        #expect(values.count == 1 && String(decoding: values.values.first!, as: UTF8.self).contains("./check.sh"))
+        #expect(source.isReady)
+        #expect(source.read().contains { String(decoding: $0.value, as: UTF8.self).contains("./late.sh") })
+    }
+
+    /// An inbound disabled hook is recorded off before its file publishes it, so no event can run it in between.
+    @Test func anInboundDisabledHookIsRecordedOffBeforeItsFilePublishes() throws {
+        let f = try HookCatalogTests.Fixture(); defer { f.remove() }
+        let catalog = f.catalog
+        let path = f.home + "/.shepherd/hooks.json"
+        try f.write(path, HookCatalogTests.preToolUse)
+        let folder = (path as NSString).deletingLastPathComponent
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder) // the publish can't write
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder) }
+        let handler = HookJSON.object(["command": .string("./late.sh"), "type": .string("command")])
+        let value = HookJSON.object(["event": .string("Stop"), "handler": handler, "matcher": .string(""), "on": .bool(false)])
+        let source = FleetHooksSource(catalog: { catalog })
+        let id = FleetHooksSource.id(event: "Stop", matcher: "", handler: handler)
+        #expect(throws: (any Error).self) { try source.write(FleetHooksSource.kind + id, Data(value.canonical.utf8), origin: "B") }
+        let hash = HookCanonical.hash(file: path, event: "Stop", matcher: "", canonical: handler.canonical)
+        #expect(try catalog.settingsStore.read().off.contains(hash))
+    }
+
     @Test func aWriteStaysInsideItsFolderAndKeepsAScriptRunnable() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createRequire } from "node:module";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -15,6 +15,16 @@ const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
 const { createJiti } = createRequire(path.join(pkg, "package.json"))("jiti");
 const sdk = fs.existsSync(path.join(pkg, "dist/index.js")) ? path.join(pkg, "dist/index.js") : path.join(pkg, "dist/bundle/index.js");
+// The extension imports fs as an ES namespace: wrap readFileSync (and sync the namespace) so a test can act after a read.
+const nodeFs = createRequire(import.meta.url)("node:fs");
+const realReadFileSync = nodeFs.readFileSync;
+let afterRead;
+nodeFs.readFileSync = function (...args) {
+  const bytes = realReadFileSync.apply(this, args);
+  afterRead?.(String(args[0]));
+  return bytes;
+};
+syncBuiltinESMExports();
 const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": sdk, typebox: path.join(pkg, "node_modules/typebox/build/index.mjs") } });
 const hooks = await jiti.import(path.join(root, "Extensions/shepherd-hooks.ts"));
 
@@ -460,6 +470,61 @@ test("hook_propose refuses while settings.json is damaged: no test run, and no w
   assert.ok(after.content[0].text.includes(settingsFile));
   assert.equal(late.prompts.length, 1);
   assert.equal(fs.existsSync(spaceFile), false, "nothing written");
+});
+
+test("an envelope with an extra key is still an envelope, and never defaults to everything on", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "echo mac >> ran.txt" }] }] } });
+  const file = path.join(hooksDir, "settings.json");
+  fs.writeFileSync(file, '{"version":1,"value":{"version":1,"off":["x"]},"extra":true}');
+  assert.deepEqual(hooks.readSettings(hooksDir), { off: ["x"], readers: {} }, "read through the envelope, not as a bare file with no `off`");
+  for (const text of ['{"value":{"off":["x"]}}', '{"value":{"off":["x"]},"extra":1}', '{"version":2,"value":{"off":["x"]},"extra":1}', '{"version":"1","value":{}}']) {
+    fs.writeFileSync(file, text);
+    assert.ok(hooks.readSettings(hooksDir).damaged, `damaged: ${text}`);
+    await load(hooksDir).emit("tool_call", editCall(), context(project));
+    assert.equal(fs.existsSync(marker), false, `no hook runs for ${text}`);
+  }
+});
+
+test("a hook published between the settings read and the hook-file read is never run while disabled", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const marker = path.join(project, "ran.txt");
+  const hook = (name) => ({ type: "command", command: `echo ${name} >> ran.txt` });
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [hook("old")] }] } });
+  settings(hooksDir, { off: [] });
+  const pi = load(hooksDir);
+  // The app publishes a disabled hook (off hash first, then the file) right after an event reads settings.json.
+  let published = false;
+  afterRead = (file) => {
+    if (published || !file.endsWith("settings.json")) return;
+    published = true;
+    fs.writeFileSync(file, JSON.stringify({ version: 1, off: [hooks.hookHash(macFile, "PreToolUse", "Edit", hook("new"))] }));
+    writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Edit", hooks: [hook("old"), hook("new")] }] } });
+  };
+  try {
+    await pi.emit("tool_call", editCall(), context(project));
+  } finally {
+    afterRead = undefined;
+  }
+  assert.ok(published, "the race was staged");
+  await pi.emit("tool_call", editCall(), context(project));
+  assert.deepEqual(fs.readFileSync(marker, "utf8").trim().split("\n"), ["old", "old"], "the new hook never ran");
+});
+
+test("hook_propose rechecks damage right before it runs the sample command", async () => {
+  const { project, hooksDir, macFile } = fixture();
+  const settingsFile = path.join(hooksDir, "settings.json");
+  const ran = path.join(project, "tested.txt");
+  // A PreToolUse Bash hook (the test run is the agent's own bash call) that damages settings.json while it is awaited.
+  writeJSON(macFile, { hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `echo '{"off":null}' > ${JSON.stringify(settingsFile)}` }] }] } });
+  const tool = load(hooksDir).tools.get("hook_propose");
+  const ctx = context(project, async () => "Not now");
+  const result = await tool.execute("p0", { name: "Mark", event: "Stop", command: `echo x >> ${JSON.stringify(ran)}`, scope: "space" }, undefined, undefined, ctx);
+  assert.equal(result.isError, true);
+  assert.ok(result.content[0].text.includes(settingsFile), "names the damaged file");
+  assert.equal(fs.existsSync(ran), false, "the sample command never ran");
+  assert.equal(ctx.prompts.length, 0, "never asks");
 });
 
 test("hook_propose tests the command, asks with the proposal marker, then writes the file", async () => {
