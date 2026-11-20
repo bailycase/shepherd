@@ -228,7 +228,8 @@ final class DeckHost<Root: View>: NSHostingView<Root>, DeckCatchUpHost {
     /// Whether the window is being resized by hand and this layout is out of sight, so it need not follow: SwiftUI marks every hosting
     /// view of the window's graphs for an update on each frame of the drag (`NSHostingView` watches its geometry in the window), and a
     /// hidden layout's pass was most of what a frame cost with a few of them mounted. The pass it owes comes once the drag ends
-    /// (`DeckCatchUp`), or when the layout is shown.
+    /// (`DeckCatchUp`), or when the layout is shown: showing a host (`updateNSView` sets `needsLayout` before it un-hides it) is the
+    /// backstop for a container that never gets `viewDidEndLiveResize`, for a shown host holds nothing back.
     private var holdsPass: Bool {
         isHidden && laidOut && (windowResizing || window?.inLiveResize == true)
     }

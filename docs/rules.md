@@ -167,11 +167,12 @@ At launch only the visible layout mounts, and nothing but showing an agent mount
 nobody has opened has no mounted layout, so nothing may wait for its layout to draw: its pi, its
 terminals (a terminal a tool or another device opens starts its own shell), its browser page, its
 status and notifications, and remote clients all work without one. During a live resize hidden
-layouts keep their frozen size and take no layout pass (SwiftUI marks every hosting view for one on each frame of
-the drag): each takes the one it owes a turn of the run loop apart after the drag (`DeckCatchUp`), and a hidden
-thread is never told of the drag (`liveResizing` reads false in it). The deliberate unmounts are cold parking, only for a layout holding
-a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
-page draws: its coordinator never mounts here, and a worker only while it is the one open.
+layouts keep their frozen size and take no layout pass (SwiftUI marks every hosting view for one on
+each frame of the drag): each takes the one it owes a turn of the run loop apart after the drag
+(`DeckCatchUp`), and a hidden thread is never told of the drag (`liveResizing` reads false in it).
+The deliberate unmounts are cold parking, only for a layout holding a terminal
+(`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project page draws:
+its coordinator never mounts here, and a worker only while it is the one open.
 
 A thread lays out for real only the rows at its end that its cost allows (its eager tail; the older rows
 are a lazy stack's, built only as the reader scrolls to them): the last rows whose views add up to
@@ -185,12 +186,13 @@ and two at a time (`AppLayout.eagerTailCrossing`) for one who has left it, so th
 they can see it (a crossing builds the row again and drops its state); rows that come back, which are built, come
 two at a time for everyone. The first draw takes the rule whole. A hidden thread's tail follows the same rule whatever rows
 arrive while it is hidden (another view of the thread polls it, a queued prompt lands), ignoring only the
-window's height, which its frozen frame does not report. While the window is dragged, and while the tail grows
-back after it, the history above the tail of a reader who follows it is not drawn at all (`ThreadView.parksHistory`): a lazy
-stack is measured again at every width, and now and then lays out the whole history from its top. Nothing stands in
-for it: a geometry reader on that stack, or a spacer of its height, disturbed how the scroll view keeps a history
-page's boundary row in place (`ThreadScrollingTests`). A reply whose parse has not landed (a large one is
-parsed off the main thread) costs by its text until it does.
+window's height, which its frozen frame does not report. While the window is dragged, and while the
+tail grows back after it, the history above the tail of a reader who follows it is not drawn at all
+(`ThreadView.parksHistory`): a lazy stack is measured again at every width, and now and then lays
+out the whole history from its top. Nothing stands in for it: a geometry reader on that stack, or a
+spacer of its height, disturbed how the scroll view keeps a history page's boundary row in place
+(`ThreadScrollingTests`). A reply whose parse has not landed (a large one is parsed off the main
+thread) costs by its text until it does.
 
 The first rows of a thread (it opened, or its history came back) draw the eager tail alone, and `ThreadRestore`
 brings the lazy stack of the older rows after that frame, once the scroll view is at the tail and the replies at
