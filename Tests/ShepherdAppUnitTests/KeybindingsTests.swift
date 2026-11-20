@@ -460,6 +460,9 @@ struct NavigationKeyTests {
         let down = KeyChord(key: "down", command: true)
         #expect(ShepherdViewModel.draftTakesVerticalChord(up, draft: "first\nsecond"))
         #expect(ShepherdViewModel.draftTakesVerticalChord(down, draft: "first\nsecond"))
+        let next = ShortcutAction.nextNeedingYou.defaultChord
+        #expect(ShepherdViewModel.draftTakesVerticalChord(next, draft: "first\nsecond"))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(next, draft: "one line"))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: "one line"))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: ""))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(KeyChord(key: "up", command: true, option: true), draft: "a\nb"))

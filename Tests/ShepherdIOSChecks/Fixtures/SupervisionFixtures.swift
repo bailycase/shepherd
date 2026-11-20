@@ -31,6 +31,18 @@ extension FixtureCatalog {
                     FixtureCheck.fail("An unrelated completion advanced the review queue")
                 }
                 let navigator = app.navigator
+                if navigator.layout == .phone {
+                    // The NavigationStack binding changes directly on a back-swipe.
+                    navigator.homePath.removeLast()
+                } else {
+                    navigator.sidePane.isOpen = false
+                }
+                ReviewHooks.open(thread: ref, file: nil, navigator: navigator)
+                if navigator.finishQueuedReview(ref, hosts: app.hosts) || navigator.selectedThread != ref {
+                    FixtureCheck.fail("Reopening Changes manually advanced an abandoned review queue")
+                }
+                if navigator.layout == .phone { navigator.homePath.removeLast() }
+                app.navigator.openReviewQueue(hosts: app.hosts)
                 let queued = navigator.queuedReview
                 let path = navigator[path: navigator.tab]
                 let targets = HomeFeed.of(app.hosts).supervisionQueues.review
@@ -70,21 +82,25 @@ extension FixtureCatalog {
             FixtureData.preview: "Add refund events", FixtureData.extensions: "Confirm cache policy",
             FixtureData.dock: "Approve rollout plan", FixtureData.deletion: "Tighten retry limits",
         ]
+        let now = Date().timeIntervalSince1970 * 1000
         for index in host.state.agents.indices {
             var agent = host.state.agents[index]
             agent.spaceID = space.id
             agent.name = names[agent.id] ?? agent.name
-            let now = Date().timeIntervalSince1970 * 1000
             if agent.id == FixtureData.preview || agent.id == FixtureData.deletion {
                 agent.status = .done
                 agent.checkout = AgentCheckout(branch: agent.worktreeBranch ?? "main", changedFiles: agent.id == FixtureData.preview ? 5 : 2)
                 agent.lastActiveAt = now - (agent.id == FixtureData.preview ? 240_000 : 60_000)
                 agent.completedAt = agent.lastActiveAt
-                if agent.id == FixtureData.deletion {
-                    host.threads[agent.id] = FixtureData.snapshot([
-                        FixtureData.user("retry", "Limit transient failures to two retries."),
-                        FixtureData.assistant("done", "The retry limit is now two."),
-                    ])
+                if var thread = host.threads[agent.id], let old = thread.messages.last?.timestamp, let active = agent.lastActiveAt {
+                    let delta = active - old
+                    thread.messages = thread.messages.map { message in
+                        var message = message
+                        message.timestamp = message.timestamp.map { $0 + delta }
+                        message.startedAt = message.startedAt.map { $0 + delta }
+                        return message
+                    }
+                    host.threads[agent.id] = thread
                 }
             } else {
                 agent.status = .blocked

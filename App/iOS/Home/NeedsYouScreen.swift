@@ -29,8 +29,7 @@ struct NeedsYouScreen: View {
         .navigationTitle("Needs you")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { NextNeedingYouButton() }
-            // iPadInbox: "Needs you" with "5 waiting" beside it, leading the bar.
+            // On a wide iPad the trailing corner shares the status bar's space.
             if sizeClass == .regular {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
@@ -44,6 +43,10 @@ struct NeedsYouScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 }
                 .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton(showsScope: true) }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { NextNeedingYouButton(showsScope: true) }
             }
         }
         .toolbar(removing: sizeClass == .regular ? .title : nil)

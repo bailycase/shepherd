@@ -21,12 +21,21 @@ final class MobileNavigator {
     var layout: Layout = .phone
 
     // iPhone
-    var tab: Tab = .home
-    var homePath: [MobileRoute] = []
-    var designsPath: [MobileRoute] = []
-    var projectsPath: [MobileRoute] = []
-    var automationsPath: [MobileRoute] = []
-    var settingsPath: [MobileRoute] = []
+    var tab: Tab = .home {
+        didSet { if layout == .phone, tab != oldValue { queuedReview = nil } }
+    }
+    var homePath: [MobileRoute] = [] { didSet { phonePathChanged(.home) } }
+    var designsPath: [MobileRoute] = [] { didSet { phonePathChanged(.designs) } }
+    var projectsPath: [MobileRoute] = [] { didSet { phonePathChanged(.projects) } }
+    var automationsPath: [MobileRoute] = [] { didSet { phonePathChanged(.automations) } }
+    var settingsPath: [MobileRoute] = [] { didSet { phonePathChanged(.settings) } }
+
+    private func phonePathChanged(_ tab: Tab) {
+        // Back gestures write the path binding without going through open(_:).
+        guard layout == .phone, tab == self.tab, let queuedReview,
+              !currentPhonePath.contains(.review(.changes(queuedReview, file: nil))) else { return }
+        self.queuedReview = nil
+    }
 
     /// A tab's stack.
     subscript(path tab: Tab) -> [MobileRoute] {
@@ -89,6 +98,10 @@ final class MobileNavigator {
     var commitPopover: AgentRef?
     /// Review advancement is local to the window that opened the queue.
     @ObservationIgnored var queuedReview: AgentRef?
+
+    init() {
+        sidePane.leftChanges = { [weak self] in self?.queuedReview = nil }
+    }
 
     /// A route shown modally over everything.
     var presented: PresentedRoute?

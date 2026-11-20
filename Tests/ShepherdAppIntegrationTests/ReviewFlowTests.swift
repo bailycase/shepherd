@@ -21,6 +21,47 @@ struct ReviewFlowTests {
         return repo
     }
 
+    @Test(arguments: [false, true])
+    func supervisionJumpsAndAdvancesOnlyAnOpenQueue(closeBeforeFinishing: Bool) async throws {
+        let repo = try Self.dirtyRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: repo.path)
+        let blocked = Fixture.agent("Waiting", in: space, status: .blocked)
+        let first = Fixture.agent("First review", in: space, order: 1, status: .done)
+        let second = Fixture.agent("Second review", in: space, order: 2, status: .done)
+        var state = Fixture.state(spaces: [space], agents: [blocked, first, second])
+        for index in [1, 2] {
+            state.agents[index].completedAt = Double(index) * 1000
+            state.agents[index].checkout = AgentCheckout(branch: "main", changedFiles: 2)
+        }
+        let vm = try await app.start(with: state)
+        if !closeBeforeFinishing {
+            vm.sidebarPins = SidebarPins([.local(blocked.agent.id), .local(first.agent.id)])
+        }
+        vm.openNewThread()
+        vm.openNextNeedingYou()
+        #expect(vm.selectedSidebarRow == .local(blocked.agent.id))
+        vm.openReviewNext()
+        #expect(vm.selectedSidebarRow == .local(first.agent.id))
+        #expect(vm.rightPaneContent == .review)
+        let owner = SidePaneOwner.local(first.agent.id)
+        vm.advanceQueuedReview(for: .local(second.agent.id))
+        #expect(vm.selectedSidebarRow == .local(first.agent.id))
+        if closeBeforeFinishing {
+            vm.hideSidePane(owner)
+            vm.openUserReview()
+            vm.advanceQueuedReview(for: owner)
+            #expect(vm.selectedSidebarRow == .local(first.agent.id))
+        } else {
+            vm.advanceQueuedReview(for: owner)
+            #expect(vm.selectedSidebarRow == .local(second.agent.id))
+            #expect(vm.rightPaneContent == .review)
+            #expect(vm.subagentInspector.tab(for: .local(second.agent.id)) == .changes)
+        }
+    }
+
     @Test func opensCommitSheetWithoutChangingGit() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario {
