@@ -52,6 +52,8 @@ CASES = {
     "c-auth": Case(
         "RefusalCorpusTests/refusalCorpusMatchesGolden",
         {("compare-golden", None)}, "refusal corpus matched the golden", "host sockets",
+        golden="Tests/Fixtures/c-auth.json",
+        scenario="Tests/ShepherdAppIntegrationTests/RefusalCorpusTests.swift",
     ),
 }
 

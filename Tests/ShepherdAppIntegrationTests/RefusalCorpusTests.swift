@@ -1,19 +1,22 @@
+import CoreServices
 import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
 @testable import ShepherdSessions
+import ShepherdTestKit
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
 /// The refusal corpus (C-AUTH): for each request family, the reply and the observable state after a request the host must refuse.
-/// It characterizes what the host does today, against `Tests/Fixtures/c-auth.json`, and weakens no check to see one.
+/// It characterizes what the host does today, against `Tests/Fixtures/c-auth.json`, and weakens no check to see one. A refusal's side
+/// effects are observed as events (a file written under the scratch root, a child process started), not as sizes and PIDs afterwards.
 @Suite("Refusal corpus", .mainActorExclusive)
 @MainActor
 struct RefusalCorpusTests {
     @Test func refusalCorpusMatchesGolden() async {
-        // A child process of its own: "no process started" counts the children of this process, which no other test may spawn.
+        // A child process of its own: "no process started" watches this process for forks, which no other test may cause.
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.checkingRefusals() }
         }
@@ -21,53 +24,18 @@ struct RefusalCorpusTests {
     }
 
     private static func checkingRefusals() async throws {
-        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/c-auth.json")
-        let directory = ValidationEvidence.directory
-        let golden = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
-        let seed = try #require(golden["seed"] as? [String: String])
-        let corpus = try await Corpus(seed: seed)
-        defer { corpus.stop() }
-        try await corpus.run()
-        let observed = corpus.observations.map { ["step": $0.step, "fields": $0.fields] as [String: Any] }
-        if let directory {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try JSONSerialization.data(withJSONObject: ["observations": observed], options: [.sortedKeys, .prettyPrinted])
-                .write(to: directory.appendingPathComponent("observed.json"), options: .atomic)
-        }
-
-        let expected = try #require(golden["observations"] as? [[String: Any]])
-        func display(_ value: Any?) -> String {
-            guard let value, let json = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes]) else {
-                return "<missing>"
+        try await ValidationGolden.check("c-auth.json", from: #filePath, completion: "refusal corpus matched the golden") { golden in
+            let seed = try #require(golden.seed as? [String: String])
+            let corpus = try await Corpus(seed: seed)
+            defer { corpus.stop() }
+            try await corpus.run()
+            if let directory = ValidationEvidence.directory {
+                let observed = corpus.observations.map { ["step": $0.step, "fields": $0.fields] as [String: Any] }
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: ["observations": observed], options: [.sortedKeys, .prettyPrinted])
+                    .write(to: directory.appendingPathComponent("observed.json"), options: .atomic)
             }
-            return String(decoding: json, as: UTF8.self)
-        }
-        var before: [String] = [], after: [String] = []
-        for index in 0..<max(expected.count, observed.count) {
-            let old = expected.indices.contains(index) ? expected[index] : nil
-            let new = observed.indices.contains(index) ? observed[index] : nil
-            let step = (new?["step"] ?? old?["step"]) as? String ?? "<missing step \(index)>"
-            if (old?["step"] as? String) != (new?["step"] as? String) {
-                before.append("observation \(index) = \(display(old?["step"]))")
-                after.append("observation \(index) = \(display(new?["step"]))")
-                continue
-            }
-            let oldFields = old?["fields"] as? [String: Any] ?? [:], newFields = new?["fields"] as? [String: Any] ?? [:]
-            for field in Set(oldFields.keys).union(newFields.keys).sorted() where display(oldFields[field]) != display(newFields[field]) {
-                before.append("\(step).\(field) = \(display(oldFields[field]))")
-                after.append("\(step).\(field) = \(display(newFields[field]))")
-            }
-        }
-        if !before.isEmpty {
-            let expected = before.joined(separator: "\n"), actual = after.joined(separator: "\n")
-            try? ValidationEvidence.record(in: directory, step: "compare-golden", status: "failed", expected: expected, actual: actual,
-                                           evidence: directory == nil ? [] : ["mac/observed.json"])
-            try #require(before.isEmpty, "Expected: \(expected)\nActual:   \(actual)")
-        }
-        let completed = "refusal corpus matched the golden"
-        for step in ["compare-golden", "complete"] {
-            try ValidationEvidence.record(in: directory, step: step, status: "passed", expected: completed, actual: completed)
+            for (step, fields) in corpus.observations { try golden.observe(step, fields) }
         }
     }
 }
@@ -82,6 +50,8 @@ private final class Wire: @unchecked Sendable {
     private let fd: Int32
     private var buffer = Data()
     private var counter = 0
+    /// What the host's `helloOk` offered this client, once it has answered.
+    var offered: [String] = []
 
     init(port: UInt16) throws {
         fd = socket(AF_INET, SOCK_STREAM, 0)
@@ -162,6 +132,97 @@ private struct WireFailure: Error, CustomStringConvertible {
     init(_ description: String) { self.description = description }
 }
 
+// MARK: - Side effects as events
+
+/// FSEvents on the scratch root, so a write shows even when it leaves a file the size it was. Events come with the flags the kernel
+/// reported. `drain` writes a file in a directory beside the root and waits for its event: the kernel orders them, so every earlier
+/// event has been delivered by then.
+private final class FileEvents: @unchecked Sendable {
+    /// FSEvents may or may not merge a write's "modified" into its "renamed" (an atomic save): the kinds kept are created, removed, and
+    /// any other change, which is the part that is the same on every run.
+    private static let created = UInt32(kFSEventStreamEventFlagItemCreated), removed = UInt32(kFSEventStreamEventFlagItemRemoved)
+    private static let changed = UInt32(kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemInodeMetaMod
+                                        | kFSEventStreamEventFlagItemXattrMod | kFSEventStreamEventFlagItemChangeOwner)
+    private let root: String
+    private let barrierDirectory: URL
+    private let seen = Locked<[String: UInt32]>([:])
+    private var stream: FSEventStreamRef?
+    private var barriers = 0
+
+    init(root: URL, barrierDirectory: URL) {
+        // FSEvents reports real paths (`/private/var/...`), which `resolvingSymlinksInPath` strips back to `/var`.
+        func real(_ url: URL) -> String { realpath(url.path, nil).map { String(cString: $0) } ?? url.path }
+        self.root = real(root)
+        self.barrierDirectory = URL(fileURLWithPath: real(barrierDirectory), isDirectory: true)
+        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
+            let events = Unmanaged<FileEvents>.fromOpaque(info!).takeUnretainedValue()
+            let list = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
+            for index in 0..<min(count, list.count) { events.seen.withValue { $0[list[index], default: 0] |= flags[index] } }
+        }
+        let watched = [self.root, self.barrierDirectory.path] as CFArray
+        stream = FSEventStreamCreate(nil, callback, &context, watched, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.01,
+                                     FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
+                                                              | kFSEventStreamCreateFlagUseCFTypes))
+        FSEventStreamSetDispatchQueue(stream!, DispatchQueue(label: "c-auth.file-events"))
+        FSEventStreamStart(stream!)
+    }
+
+    deinit { stop() }
+
+    func stop() {
+        guard let stream else { return }
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
+        self.stream = nil
+    }
+
+    /// Every file event under the root since the last drain, as "path flags", in path order.
+    func drain() async throws -> [String] {
+        barriers += 1
+        let barrier = barrierDirectory.appendingPathComponent("barrier-\(barriers)")
+        try Data().write(to: barrier)
+        try await wait(for: barrier.path, flag: UInt32(kFSEventStreamEventFlagItemCreated))
+        try FileManager.default.removeItem(at: barrier)
+        try await wait(for: barrier.path, flag: UInt32(kFSEventStreamEventFlagItemRemoved))
+        let events = seen.withValue { all in defer { all = [:] }; return all }
+        return events.filter { $0.key.hasPrefix(root) }.map { path, flags in
+            let kinds = [(Self.created, "created"), (Self.changed, "changed"), (Self.removed, "removed")]
+                .filter { flags & $0.0 != 0 }.map(\.1).joined(separator: ",")
+            return "\(path.dropFirst(root.count)) \(kinds)"
+        }.sorted()
+    }
+
+    private func wait(for path: String, flag: UInt32) async throws {
+        for _ in 0..<500 {
+            if seen.withValue({ ($0[path] ?? 0) & flag != 0 }) { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        throw WireFailure("no file event for the barrier \(path)")
+    }
+}
+
+/// A kqueue on this process's forks: a child started and gone again in between two looks still leaves its event.
+private final class ForkWatch {
+    private let queue = kqueue()
+
+    init() throws {
+        var change = kevent(ident: UInt(getpid()), filter: Int16(EVFILT_PROC), flags: UInt16(EV_ADD | EV_CLEAR),
+                            fflags: UInt32(NOTE_FORK), data: 0, udata: nil)
+        guard queue >= 0, kevent(queue, &change, 1, nil, 0, nil) == 0 else { throw WireFailure("kqueue: errno \(errno)") }
+    }
+
+    deinit { close(queue) }
+
+    /// Whether this process started a child since the last call.
+    func started() -> Bool {
+        var event = kevent()
+        var immediately = timespec()
+        return kevent(queue, nil, 0, &event, 1, &immediately) > 0
+    }
+}
+
 // MARK: - The corpus
 
 @MainActor
@@ -171,9 +232,12 @@ private final class Corpus {
     let space: Space
     let thread: AgentFixture
     let coordinator: AgentFixture
+    let automation: Automation
     let unknown = AgentID()
     var observations: [(step: String, fields: [String: Any])] = []
     private var observer: Wire!
+    private let fileEvents: FileEvents
+    private let forks: ForkWatch
     private var labels: [String: String] = [:]
     private var numbered = 0
 
@@ -191,21 +255,46 @@ private final class Corpus {
         var owner = Fixture.agent(seed["coordinator"]!, in: reserved)
         owner.agent.coordinatorFor = ProjectID()
         coordinator = owner
+        // Off, so that nothing starts it: a request names it, and the guard under test is the one in front of the run log.
+        automation = Automation(name: seed["automation"]!, prompt: "Watch the build.", cwd: app.dir.path, enabled: false)
         // The host's fleet starts with the app's host services: named, and with no Bonjour or iCloud.
         app.server.configureFleet(name: seed["fleetName"]!, advertises: false)
-        try await app.start(with: Fixture.state(spaces: [space, reserved], agents: [thread, owner]))
+        var seeded = Fixture.state(spaces: [space, reserved], agents: [thread, owner])
+        seeded.automations = [automation]
+        try await app.start(with: seeded)
+        fileEvents = FileEvents(root: app.dir, barrierDirectory: try makeScratchDirectory("barrier"))
+        forks = try ForkWatch()
         port = try app.server.startRemoteListener(port: 0, tokenURL: app.dir.appendingPathComponent("remote-token"))
         app.scratch.useRealPeerCheck()
         for (id, label) in [(thread.agent.id.rawValue, "<thread>"), (coordinator.agent.id.rawValue, "<coordinator>"),
-                            (unknown.rawValue, "<unknown agent>"), (space.id.rawValue, "<space>")] {
+                            (unknown.rawValue, "<unknown agent>"), (space.id.rawValue, "<space>"),
+                            (automation.id.rawValue, "<automation>")] {
             labels[id.lowercased()] = label
         }
         observer = try await connect(capabilities: Self.bare, name: "observer")
+        try await provingTheWatches()
     }
 
     func stop() {
         observer = nil
+        fileEvents.stop()
         app.stop()
+    }
+
+    /// A watch that saw nothing would pass every refusal: show that each sees a write and a child process before they are relied on.
+    private func provingTheWatches() async throws {
+        _ = try await fileEvents.drain()
+        let probe = app.dir.appendingPathComponent("watch-probe")
+        try Data("x".utf8).write(to: probe)
+        try Data("y".utf8).write(to: probe)
+        try FileManager.default.removeItem(at: probe)
+        guard try await fileEvents.drain().contains(where: { $0.hasPrefix("/watch-probe ") }) else { throw WireFailure("the file watch saw no write") }
+        _ = forks.started()
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try child.run()
+        child.waitUntilExit()
+        guard forks.started() else { throw WireFailure("the fork watch saw no child process") }
     }
 
     // MARK: Normalizing
@@ -264,6 +353,7 @@ private final class Corpus {
         let (_, reply) = try await exchange(wire, .hello(id: wire.nextID(), token: app.server.clientTokenForTests(), clientName: name,
                                                          protocolVersion: RemoteProtocol.version, capabilities: capabilities))
         guard case .object(let object) = reply, object["type"] as? String == "helloOk" else { throw WireFailure("no helloOk: \(reply)") }
+        wire.offered = object["capabilities"] as? [String] ?? []
         return wire
     }
 
@@ -299,76 +389,86 @@ private final class Corpus {
 
     // MARK: Observing
 
+    /// What a client's `stateFetch` and the stored file said at one moment, flattened and normalized, and the file events since the last one.
     private struct Snapshot {
-        var state: String?
-        var stored: Data
-        var files: [String: Int]
-        var children: Set<Int32>
+        var state: [String: Any]
+        var stored: [String: Any]
+        var fileEvents: [String]
+        var launchedChild: Bool
     }
 
+    /// Fails unless the host answers with a state and `state.json` reads back as JSON: an unreadable snapshot never compares equal to another.
     private func snapshot() async throws -> Snapshot {
+        let events = try await fileEvents.drain()
         let (_, reply) = try await exchange(observer, .stateFetch(id: observer.nextID()))
-        var state: String?
-        if case .object(let object) = reply, let value = object["state"] {
-            state = String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self)
+        guard case .object(let object) = reply, object["type"] as? String == "state", let state = object["state"] else {
+            throw WireFailure("the observer's stateFetch was not answered with a state: \(reply)")
         }
-        var files: [String: Int] = [:]
-        let root = app.dir.resolvingSymlinksInPath()
-        for path in (try? FileManager.default.subpathsOfDirectory(atPath: root.path)) ?? [] {
-            let attributes = try? FileManager.default.attributesOfItem(atPath: root.appendingPathComponent(path).path)
-            guard attributes?[.type] as? FileAttributeType == .typeRegular else { continue }
-            files["/" + path] = (attributes?[.size] as? Int) ?? 0
-        }
-        return Snapshot(state: state, stored: (try? Data(contentsOf: app.scratch.stateURL)) ?? Data(), files: files, children: Self.children())
+        let stored = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: app.scratch.stateURL)) as? [String: Any])
+        var flatState: [String: Any] = [:], flatStored: [String: Any] = [:]
+        flatten(state, "", into: &flatState)
+        flatten(stored, "", into: &flatStored)
+        return Snapshot(state: flatState, stored: flatStored, fileEvents: events, launchedChild: forks.started())
     }
 
-    private static func children() -> Set<Int32> {
-        var pids = [Int32](repeating: 0, count: 256)
-        let count = proc_listchildpids(getpid(), &pids, Int32(pids.count * MemoryLayout<Int32>.size))
-        return Set(pids.prefix(max(0, Int(count))).filter { $0 > 0 })
+    private func text(_ value: Any?) -> String {
+        guard let value, let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes]) else {
+            return "<none>"
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 
-    /// What a refusal left behind, from the reply, the stored file, a second client's `stateFetch`, the files under the scratch root and
-    /// the processes this one started.
+    /// The paths whose values differ, as "path: before > after".
+    private func changes(from before: [String: Any], to after: [String: Any]) -> [String] {
+        Set(before.keys).union(after.keys).sorted().compactMap { key in
+            text(before[key]) == text(after[key]) ? nil : "\(key): \(text(before[key])) > \(text(after[key]))"
+        }
+    }
+
+    /// What a request left behind: the fields of the state a second client reads and of `state.json` that changed, the file events under
+    /// the scratch root (a write that leaves a file the same size is one) and whether this process started a child.
     private func aftermath(_ before: Snapshot) async throws -> [String: Any] {
         let after = try await snapshot()
-        let changed = Set(before.files.keys).union(after.files.keys).filter { before.files[$0] != after.files[$0] }
         return [
-            "stateFetch.unchanged": before.state == after.state,
-            "state.json.unchanged": before.stored == after.stored,
-            "files.changed": changed.sorted().map(normalize),
-            "processes.started": after.children.subtracting(before.children).count,
+            "stateFetch.changed": changes(from: before.state, to: after.state),
+            "state.json.changed": changes(from: before.stored, to: after.stored),
+            "files.events": after.fileEvents.map(normalize),
+            "process.started": after.launchedChild,
         ]
+    }
+
+    /// `state.json`'s own field for an agent, read from the file.
+    private func persisted(_ id: AgentID, _ field: String) throws -> Any {
+        let stored = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: app.scratch.stateURL)) as? [String: Any])
+        let agent = try #require((stored["agents"] as? [[String: Any]])?.first { ($0["id"] as? String) == id.rawValue })
+        return try #require(agent[field])
     }
 
     private func record(_ step: String, _ fields: [String: Any]) {
         observations.append((step, fields))
     }
 
-    /// Sends a request on `wire` and records the reply, whether `wire` still answers, and what the request left behind.
-    private func refuse(_ step: String, on wire: Wire, extra: () -> [String: Any] = { [:] }, _ make: (Int) -> RemoteRequest) async throws {
-        try await refuse(step, on: wire, raw: NDJSON.encode(make(wire.nextID())), extra: extra)
+    /// Sends a request on `wire` and records the reply, whether `wire` still answers (`probing`), and what the request left behind.
+    private func refuse(_ step: String, on wire: Wire, probing: Bool = true, extra: () throws -> [String: Any] = { [:] },
+                        _ make: (Int) -> RemoteRequest) async throws {
+        try await refuse(step, on: wire, raw: NDJSON.encode(make(wire.nextID())), probing: probing, extra: extra)
     }
 
-    private func refuse(_ step: String, on wire: Wire, raw: Data, extra: () -> [String: Any] = { [:] }) async throws {
+    private func refuse(_ step: String, on wire: Wire, raw: Data, probing: Bool = true, extra: () throws -> [String: Any] = { [:] }) async throws {
         let before = try await snapshot()
         let (sent, reply) = try await exchange(wire, raw: raw)
         var result = fields(of: sent, prefix: "request", leaving: ["token", "sendToken"])
         result.merge(replyFields(reply)) { $1 }
-        result["connection.after"] = try await probe(wire)
+        if probing { result["connection.after"] = try await probe(wire) }
         result.merge(try await aftermath(before)) { $1 }
-        result.merge(extra()) { $1 }
+        result.merge(try extra()) { $1 }
         record(step, result)
     }
 
-    /// The settings a host settings reply carries are the whole list: only the two this corpus changes are recorded.
+    /// The whole reply, normalized.
     private func replyFields(_ reply: Reply) -> [String: Any] {
         switch reply {
-        case .object(var object):
-            if let settings = object["settings"] as? [String: Any] {
-                object["settings"] = settings.filter { ["closeOnMerge", "compactAtPercent"].contains($0.key) }
-            }
-            return fields(of: object, prefix: "reply")
+        case .object(let object): return fields(of: object, prefix: "reply")
         case .closed: return ["reply": "<closed>"]
         case .timeout: return ["reply": "<no reply>"]
         }
@@ -463,7 +563,7 @@ private final class Corpus {
     /// The host has no offered-and-negotiated check for `hostSettings`: this records what it takes and refuses from a client that listed nothing.
     private func hostSettings() async throws {
         let client = try await connect(capabilities: Self.bare)
-        let stored = { [app] in ["stored.closeOnMerge": app.settings.worktreeCloseOnMerge] as [String: Any] }
+        let stored = { [app] in ["stored.closeOnMerge": try #require(app.hostSettings).worktreeCloseOnMerge] as [String: Any] }
         try await refuse("hostSettings/fetch", on: client, extra: stored) { .hostSettings(id: $0, request: .fetch) }
         // `closeOnMerge` needs `hostSettings.closeOnMerge.v1`, which this client never listed: the host still applies it.
         try await refuse("hostSettings/change-not-negotiated", on: client, extra: stored) { .hostSettings(id: $0, request: .change(.closeOnMerge(true))) }
@@ -486,27 +586,17 @@ private final class Corpus {
         try await limited("fleet-limit/mixed") { index, id in makers[index % makers.count].1(id) }
     }
 
-    /// The limit's worth of requests are answered; the next is `busy`, and the connection closes. Records the first, the last allowed and
-    /// the refused one, and what each of the others answered.
+    /// The limit's worth of requests are answered; the next is `busy`, and the connection closes. Each is recorded with its whole reply and
+    /// what it left behind. Only the refused one probes the connection: a probe is itself a request before `hello`.
     private func limited(_ step: String, _ make: (Int, Int) -> RemoteRequest) async throws {
         let limit = FleetService.unauthenticatedRequestLimit
         let wire = try unauthenticated()
-        let before = try await snapshot()
-        var answers: [String] = []
-        for index in 0..<limit {
-            let (sent, reply) = try await exchange(wire, make(index, wire.nextID()))
-            answers.append("\(sent["type"] as? String ?? "?") > \(reply.summary)")
-            if index == 0 || index == limit - 1, case .object(let object) = reply {
-                record("\(step)#\(index + 1)", fields(of: sent, prefix: "request").merging(fields(of: object, prefix: "reply")) { $1 })
-            }
+        for index in 0...limit {
+            try await refuse("\(step)#\(index + 1)", on: wire, probing: index == limit) { make(index, $0) }
         }
-        try await refuse("\(step)#\(limit + 1)", on: wire) { make(limit, $0) }
         // The count is per connection: a new one is answered again.
         let fresh = try unauthenticated()
-        let (_, again) = try await exchange(fresh, make(0, fresh.nextID()))
-        var summary: [String: Any] = ["limit": limit, "answers": answers, "new connection": again.summary]
-        summary.merge(try await aftermath(before)) { $1 }
-        record("\(step)/summary", summary)
+        try await refuse("\(step)/new-connection", on: fresh, probing: false) { make(0, $0) }
     }
 
     /// Requests only this Mac's own app may send, from a client over the network.
@@ -526,6 +616,32 @@ private final class Corpus {
         try await refuse("local-only/changesWriteBegan", on: client) {
             .agentQuery(id: $0, agentID: thread.agent.id, query: .changesWriteBegan(span: UUID(), paths: [root + "/notes.txt"]))
         }
+        try await refuse("local-only/automation-setRunPullRequest", on: client) {
+            .automation(id: $0, automationID: automation.id,
+                        request: .setRunPullRequest(agentID: thread.agent.id, url: "https://github.com/acme/web/pull/1"))
+        }
+        try await designRequests(from: client, root: root)
+    }
+
+    /// The Design tool is off until a client turns it on in the host's settings, as an iPhone does; then its import and catalog requests reach
+    /// the local-only guards. The setting goes back as it was.
+    private func designRequests(from client: Wire, root: String) async throws {
+        try await refuse("local-only/design-enable", on: client) { .hostSettings(id: $0, request: .change(.designToolEnabled(true))) }
+        var designs: Wire?
+        for _ in 0..<100 where designs == nil {
+            let candidate = try await connect(capabilities: Self.current)
+            if candidate.offered.contains(RemoteProtocol.designsCapability) { designs = candidate } else { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        let wire = try #require(designs, "the host to serve designs")
+        try await refuse("local-only/design-mentionCatalog", on: wire) { .design(id: $0, request: .mentionCatalog) }
+        try await refuse("local-only/design-importPrepare", on: wire) { .design(id: $0, request: .importPrepare(path: root + "/acme-import.zip")) }
+        let preview = DesignImportPreview(file: "acme-import.zip", title: "acme import", boards: 1, pages: 1,
+                                          origin: DesignImportOrigin(file: "acme-import.zip", title: "acme import", stamp: nil, importedAt: 1))
+        try await refuse("local-only/design-importConfirm", on: wire) {
+            .design(id: $0, request: .importConfirm(preview: preview, name: "acme import", skippingUnreadable: false))
+        }
+        try await refuse("local-only/design-importDiscard", on: wire) { .design(id: $0, request: .importDiscard(previewID: preview.id)) }
+        try await refuse("local-only/design-disable", on: client) { .hostSettings(id: $0, request: .change(.designToolEnabled(false))) }
     }
 
     /// An id the host has no agent for, and the Project coordinator it keeps out of a client's state.
@@ -547,7 +663,7 @@ private final class Corpus {
         }
         try await refuse("agent/upload-unknown-session", on: full) { .upload(id: $0, action: .begin(sessionID: SessionID(), name: "notes.txt", size: 1)) }
         // The coordinator is not in this client's state, but its id is in the host's: today the host forwards the action.
-        let stored = { [app, hidden] in ["stored.coordinatorName": app.server.state.agents.first { $0.id == hidden }?.name ?? "<none>"] as [String: Any] }
+        let stored = { [self] in ["state.json.coordinatorName": try persisted(hidden, "name")] }
         try await refuse("agent/action-invisible-coordinator", on: full, extra: stored) { .agentAction(id: $0, agentID: hidden, action: .rename(name: "taken over")) }
     }
 
@@ -561,10 +677,7 @@ private final class Corpus {
         let wire = try Wire(unixPath: app.scratch.socketPath)
         let id = thread.agent.id, hidden = coordinator.agent.id, ghost = unknown
         let pane = thread.piPane.id
-        let status = { [app, id] in
-            ["stored.status": app.server.state.agents.first { $0.id == id }?.status.rawValue ?? "<none>",
-             "stored.name": app.server.state.agents.first { $0.id == id }?.name ?? "<none>"] as [String: Any]
-        }
+        let status = { [self] in ["state.json.status": try persisted(id, "status"), "state.json.name": try persisted(id, "name")] }
         for (step, message) in [
             ("setAgentStatus", ExtensionMessage.setAgentStatus(agentID: id, status: .working)),
             ("setAgentName", .setAgentName(agentID: id, name: "renamed by a bash tool")),
@@ -587,7 +700,7 @@ private final class Corpus {
     }
 
     /// Sends `message` (if any), then the request `make` builds; records the answer to the request.
-    private func refuseExtension(_ step: String, on wire: Wire, sending message: ExtensionMessage? = nil, status: () -> [String: Any],
+    private func refuseExtension(_ step: String, on wire: Wire, sending message: ExtensionMessage? = nil, status: () throws -> [String: Any],
                                  _ make: (Int) -> ExtensionMessage) async throws {
         let before = try await snapshot()
         if let message { try wire.send(NDJSON.encode(message)) }
@@ -597,17 +710,7 @@ private final class Corpus {
         if let message { result.merge(fields(of: try json(NDJSON.encode(message)), prefix: "first")) { $1 } }
         result.merge(replyFields(try await awaitReply(wire))) { $1 }
         result.merge(try await aftermath(before)) { $1 }
-        result.merge(status()) { $1 }
+        result.merge(try status()) { $1 }
         record(step, result)
-    }
-}
-
-private extension Corpus.Reply {
-    var summary: String {
-        switch self {
-        case .object(let object): [object["type"] as? String, object["code"] as? String].compactMap { $0 }.joined(separator: " > ")
-        case .closed: "<closed>"
-        case .timeout: "<no reply>"
-        }
     }
 }
