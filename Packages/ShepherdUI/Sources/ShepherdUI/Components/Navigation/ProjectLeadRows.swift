@@ -217,9 +217,6 @@ public struct SHLeadToolbarButton: View {
         self.action = action
     }
 
-    /// Whether the pill behaves as a button (VoiceOver): only when activating it does something.
-    var isInteractive: Bool { action != nil }
-
     private var label: String { dot ? "\(title), needs you" : badge > 0 ? "\(title), \(badge)" : title }
 
     public var body: some View {
@@ -232,7 +229,7 @@ public struct SHLeadToolbarButton: View {
             content
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(label)
-                .accessibilityAddTraits(.isSelected)
+                .accessibilityAddTraits(selected ? .isSelected : [])
         }
     }
 

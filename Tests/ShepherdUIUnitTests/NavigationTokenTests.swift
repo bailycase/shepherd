@@ -28,17 +28,6 @@ struct NavigationTokenTests {
         #expect(narrow.width == 500 - 2 * SHPaletteMetrics.margin)
     }
 
-    /// The pane's current tab is selected text, not a button: activating it would do nothing.
-    /// Overview toggles the pane, so it stays a button even while selected.
-    @Test func theCurrentPaneTabIsSelectedTextNotAButton() {
-        let current = SHLeadToolbarButton("Threads", symbol: "bubble.left", selected: true, badge: 2, action: nil)
-        #expect(!current.isInteractive)
-        #expect(current.action == nil)
-        #expect(SHLeadToolbarButton("Files", symbol: "doc", selected: false, action: {}).isInteractive)
-        #expect(SHLeadToolbarButton("Overview", symbol: "list.bullet", selected: true, action: {}).isInteractive,
-                "Overview toggles the pane, so it stays a button while selected")
-    }
-
     @Test func aTinyWindowStillLeavesRoomForOneRow() {
         let tiny = SHPaletteMetrics.placement(in: CGSize(width: 100, height: 80), rowHeight: 28)
         #expect(tiny.maxListHeight == 28)
