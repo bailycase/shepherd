@@ -28,6 +28,9 @@ final class SettingsStore {
     var hookEditor: ClientHookEditor?
     /// Settings ▸ Tools' server editor while it is open: the server it edits and its JSON.
     var mcpEditor: MCPEditor?
+    /// Settings ▸ Spaces ▸ Organize: the space being renamed with the name typed so far, and the one waiting on Remove Space…'s answer.
+    var spaceRename: (space: SpaceID, name: String)?
+    var spaceRemoval: SpaceID?
 
     /// How many times Settings has read every host: a page of a host's configuration reads its own again each time.
     private(set) var refreshes = 0

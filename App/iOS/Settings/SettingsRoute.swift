@@ -21,6 +21,7 @@ struct SettingsDestination: View {
         case .subagent(let file): SubagentProfileScreen(file: file)
         case .spaces: SpacesScreen()
         case .space(let directory): SpaceScreen(directory: directory)
+        case .organizeSpaces: SpacesOrganizeScreen()
         case .instructions: InstructionsScreen()
         case .instructionsFile(let file): InstructionsEditorScreen(file: file)
         case .skills: SkillsScreen()

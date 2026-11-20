@@ -310,6 +310,8 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     /// A host's spaces by folder, read-only; one space's configuration files and approval.
     case spaces
     case space(String)
+    /// Rename, hide, reorder and remove the host's spaces (`spaces.lifecycle.v1`). Opened from Spaces.
+    case organizeSpaces
     /// The root instructions every session Shepherd starts reads.
     case instructions
     /// One root instruction file in the editor.

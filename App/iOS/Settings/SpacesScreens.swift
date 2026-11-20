@@ -6,8 +6,9 @@ import ShepherdRemote
 
 // Settings ▸ Spaces on iPhone and iPad (home track): the folders a host keeps as spaces, with
 // their configuration files, read-only, over the
-// existing space-file API (`projects.v2`, `projects.mcp.v1`). Not the Projects experiment's
-// logical Projects: these are folders on the host.
+// existing space-file API (`projects.v2`, `projects.mcp.v1`). Organize renames, hides, reorders and
+// removes them (`SpacesOrganizeScreen`). Not the Projects experiment's logical Projects: these are
+// folders on the host.
 
 /// Settings ▸ Spaces: the host's spaces by folder, each with what its configuration holds.
 struct SpacesScreen: View {
@@ -39,6 +40,15 @@ struct SpacesScreen: View {
                     } else if !host.serves(RemoteProtocol.projectsV2Capability) {
                         SettingsFootnote("\(host.name)'s Shepherd is too old to share its spaces. Update it to see them here.")
                     } else {
+                        if host.serves(RemoteProtocol.spaceLifecycleCapability) {
+                            SHListCard {
+                                Button { navigator.open(.settings(.organizeSpaces)) } label: {
+                                    SHListRow("Organize spaces", subtitle: "Rename, hide, reorder or remove", subtitleMono: false,
+                                              leading: .symbol("arrow.up.arrow.down"))
+                                }
+                                .buttonStyle(.shRow(radius: 0))
+                            }
+                        }
                         switch phase {
                         case .loading:
                             ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)

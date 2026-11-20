@@ -1,0 +1,49 @@
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+
+/// What the iPhone and iPad's Settings ▸ Spaces ▸ Organize draws and sends for a host's spaces (`spaces.lifecycle.v1`): the order the
+/// host keeps them in, and the rules of renaming, moving and removing one. The words are the Mac's own (Remove Space…).
+public enum SpaceLifecyclePresentation {
+    /// The spaces the host shows a device, in the order it keeps them (the Mac's sidebar order). Never a reserved space.
+    public static func spaces(in state: ShepherdState) -> [Space] { state.spaces.filter { !$0.hidden } }
+
+    /// The name to send for `text`: trimmed, or nil when it is empty or already `current`'s.
+    public static func renamed(_ text: String, from current: String) -> String? {
+        let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty || name == current ? nil : name
+    }
+
+    /// One place up: before the space above it. Nil for the first.
+    public static func moveUp(_ id: SpaceID, in spaces: [Space]) -> RemoteSpaceLifecycle? {
+        guard let index = spaces.firstIndex(where: { $0.id == id }), index > 0 else { return nil }
+        return .move(before: spaces[index - 1].id)
+    }
+
+    /// One place down: before the space two below it, or last. Nil for the last.
+    public static func moveDown(_ id: SpaceID, in spaces: [Space]) -> RemoteSpaceLifecycle? {
+        guard let index = spaces.firstIndex(where: { $0.id == id }), index < spaces.count - 1 else { return nil }
+        return .move(before: index + 2 < spaces.count ? spaces[index + 2].id : nil)
+    }
+
+    /// Hide from the sidebar, or bring it back.
+    public static func toggleTitle(of space: Space) -> String { space.sidebarHidden ? "Show in Sidebar" : "Hide from Sidebar" }
+
+    /// How many threads removing the space stops (the Mac counts the same).
+    public static func threads(in state: ShepherdState, of space: Space) -> Int { state.agents.count { $0.spaceID == space.id } }
+
+    public static let removeTitle = "Remove space"
+    public static let removeButton = "Remove space"
+
+    /// Remove Space…'s sentence on the Mac (`SpaceDeleteDialog`).
+    public static func removeMessage(name: String, threads: Int) -> String {
+        "Removes \(name) from the sidebar and stops its \(threads) agent\(threads == 1 ? "" : "s"). "
+            + "The local folder and all its files are kept. Saved conversations and space history remain. Child spaces stay registered."
+    }
+
+    /// A refusal as words: the host's own, with what a space gone from under the person means.
+    public static func problem(_ error: Error) -> String {
+        if case RemoteHostClientError.rejected("no_such_space", _) = error { return "That space is no longer on this host." }
+        return settingsProblem(error)
+    }
+}
