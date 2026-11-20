@@ -197,17 +197,26 @@ final class AppSettings {
 
     /// Empty means "whatever pi picks" — Shepherd never invents a model id.
     var defaultModel: String {
-        didSet { store.set(defaultModel, forKey: Key.defaultModel) }
+        didSet {
+            store.set(defaultModel, forKey: Key.defaultModel)
+            hostPreferences?.update { $0.agents.defaultModel = defaultModel }
+        }
     }
 
     var defaultThinking: ThinkingLevel {
-        didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
+        didSet {
+            store.set(defaultThinking.rawValue, forKey: Key.defaultThinking)
+            hostPreferences?.update { $0.agents.defaultThinking = defaultThinking }
+        }
     }
 
     /// The speed a new thread starts on (Settings ▸ Agents ▸ Speed for new threads); each thread
     /// keeps its own after that, and one whose model offers no tier ignores it.
     var defaultServiceTier: ServiceTier {
-        didSet { store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier) }
+        didSet {
+            store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier)
+            hostPreferences?.update { $0.agents.defaultServiceTier = defaultServiceTier }
+        }
     }
 
 
@@ -216,7 +225,10 @@ final class AppSettings {
     /// diff), or "" for Automatic (a cheapest-first list). Either way the namer falls back to the
     /// agent's own model; a draft falls back to Haiku.
     var textGenerationModel: String {
-        didSet { store.set(textGenerationModel, forKey: Key.textGenerationModel) }
+        didSet {
+            store.set(textGenerationModel, forKey: Key.textGenerationModel)
+            hostPreferences?.update { $0.agents.textGenerationModel = textGenerationModel }
+        }
     }
 
     /// Settings ▸ Agents ▸ Image reading model: "provider/id" for the model that describes
@@ -224,7 +236,10 @@ final class AppSettings {
     /// cheapest signed-in model that takes images). New agents follow a change; running ones
     /// at their next launch.
     var visionModel: String {
-        didSet { store.set(visionModel, forKey: Key.visionModel) }
+        didSet {
+            store.set(visionModel, forKey: Key.visionModel)
+            hostPreferences?.update { $0.agents.visionModel = visionModel }
+        }
     }
 
     /// Settings ▸ Skills ▸ Skills in the / menu: the composer lists pi's `/skill:name` commands.
@@ -245,6 +260,7 @@ final class AppSettings {
     var queueDelivery: NativeQueueMode {
         didSet {
             store.set(queueDelivery.rawValue, forKey: Key.queueDelivery)
+            hostPreferences?.update { $0.agents.queueDelivery = queueDelivery }
             if queueDelivery != oldValue { onQueueDeliveryChange?(queueDelivery) }
         }
     }
@@ -277,13 +293,19 @@ final class AppSettings {
     /// reasoning payloads and screenshots (docs/context-budget.md). The thread keeps all of it.
     /// Agents launched after a change follow it.
     var trimToolOutput: Bool {
-        didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+        didSet {
+            store.set(trimToolOutput, forKey: Key.trimToolOutput)
+            hostPreferences?.update { $0.agents.trimToolOutput = trimToolOutput }
+        }
     }
 
     /// Settings ▸ Agents ▸ Notify when a turn finishes: the one notification that can be muted.
     /// Questions, failures and waiting stay on.
     var notifyOnTurnFinished: Bool {
-        didSet { store.set(notifyOnTurnFinished, forKey: Key.notifyOnTurnFinished) }
+        didSet {
+            store.set(notifyOnTurnFinished, forKey: Key.notifyOnTurnFinished)
+            hostPreferences?.update { $0.agents.notifyOnTurnFinished = notifyOnTurnFinished }
+        }
     }
 
     /// Settings ▸ Agents ▸ Defer rarely used tools: agents get `SHEPHERD_DEFER_TOOLS=1` and pi's
@@ -291,24 +313,36 @@ final class AppSettings {
     /// request until the model loads them with a search (docs/context-budget.md, Deferred tools).
     /// Off sends them all, as before. Agents launched after a change follow it.
     var deferTools: Bool {
-        didSet { store.set(deferTools, forKey: Key.deferTools) }
+        didSet {
+            store.set(deferTools, forKey: Key.deferTools)
+            hostPreferences?.update { $0.agents.deferTools = deferTools }
+        }
     }
 
     /// Settings ▸ Agents ▸ Threads can start threads: agents get `SHEPHERD_THREADS_START_THREADS=1`, and agent_spawn says they may start a
     /// thread for separate work without being asked. Off keeps it to when the person asks. Agents launched after a change follow it.
     var threadsStartThreads: Bool {
-        didSet { store.set(threadsStartThreads, forKey: Key.threadsStartThreads) }
+        didSet {
+            store.set(threadsStartThreads, forKey: Key.threadsStartThreads)
+            hostPreferences?.update { $0.agents.threadsStartThreads = threadsStartThreads }
+        }
     }
 
     /// Settings ▸ Agents ▸ Threads a thread starts work in: where agent_spawn puts a thread when the call doesn't say.
     var subThreadPlace: SpawnPlace {
-        didSet { store.set(subThreadPlace.rawValue, forKey: Key.subThreadPlace) }
+        didSet {
+            store.set(subThreadPlace.rawValue, forKey: Key.subThreadPlace)
+            hostPreferences?.update { $0.agents.subThreadPlace = subThreadPlace }
+        }
     }
 
     /// Pi's native codemode is enabled by default. Project settings can override it.
     /// A running agent keeps its choice until it starts again.
     var codemode: Bool {
-        didSet { store.set(codemode, forKey: Key.codemode) }
+        didSet {
+            store.set(codemode, forKey: Key.codemode)
+            hostPreferences?.update { $0.agents.codemode = codemode }
+        }
     }
 
     /// Settings ▸ Agents ▸ Compact at: the share of a model's window past which pi compacts on its
@@ -317,6 +351,7 @@ final class AppSettings {
     var compactAtPercent: Int? {
         didSet {
             if let compactAtPercent { store.set(compactAtPercent, forKey: Key.compactAtPercent) } else { store.removeObject(forKey: Key.compactAtPercent) }
+            hostPreferences?.update { $0.agents.compactAtPercent = compactAtPercent }
             if compactAtPercent != oldValue { onCompactAtChange?(compactAtPercent) }
         }
     }
@@ -484,32 +519,47 @@ final class AppSettings {
     /// in-progress work. The New Worktree sheet shows and lets the user
     /// override the resolved base either way.
     var worktreeBaseMode: WorktreeBaseMode {
-        didSet { store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode) }
+        didSet {
+            store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode)
+            hostPreferences?.update { $0.worktrees.baseMode = worktreeBaseMode }
+        }
     }
 
     /// Fetch the base branch from origin before creating a worktree, so
     /// "fresh" means the remote's latest, not a stale local snapshot. Off =
     /// no network at creation; the cached ref is used.
     var worktreeFetchBeforeCreate: Bool {
-        didSet { store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate) }
+        didSet {
+            store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate)
+            hostPreferences?.update { $0.worktrees.fetchBeforeCreate = worktreeFetchBeforeCreate }
+        }
     }
 
     /// Draft commit messages from review with a model. Off, or on a failure, the message is
     /// written from the file list. The key keeps its name from when it drafted PR descriptions.
     var worktreeGeneratePRDescription: Bool {
-        didSet { store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription) }
+        didSet {
+            store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription)
+            hostPreferences?.update { $0.worktrees.generatePRDescription = worktreeGeneratePRDescription }
+        }
     }
 
     /// Close threads when their pull request merges: a worktree thread whose pull request merges
     /// is deleted with its worktree, its local branch and its branch on GitHub. **Off by default**.
     var worktreeCloseOnMerge: Bool {
-        didSet { store.set(worktreeCloseOnMerge, forKey: Key.worktreeCloseOnMerge) }
+        didSet {
+            store.set(worktreeCloseOnMerge, forKey: Key.worktreeCloseOnMerge)
+            hostPreferences?.update { $0.worktrees.closeOnMerge = worktreeCloseOnMerge }
+        }
     }
 
     /// Settings ▸ Worktrees ▸ Deleting a worktree agent: ask, or the delete the dialog remembered.
     /// A remembered removal still asks when the checkout holds unreconciled work.
     var worktreeDeleteAction: WorktreeDeleteAction {
-        didSet { store.set(worktreeDeleteAction.rawValue, forKey: Key.worktreeDeleteAction) }
+        didSet {
+            store.set(worktreeDeleteAction.rawValue, forKey: Key.worktreeDeleteAction)
+            hostPreferences?.update { $0.worktrees.deleteAction = HostSettings.WorktreeDeleteAction(rawValue: worktreeDeleteAction.rawValue) ?? .ask }
+        }
     }
 
     /// Confirmations turned off by their "Don't ask again", each with the label of the action it
@@ -541,6 +591,7 @@ final class AppSettings {
     var goalsEnabled: Bool {
         didSet {
             store.set(goalsEnabled, forKey: Key.goalsEnabled)
+            hostPreferences?.update { $0.experiments.goals = goalsEnabled }
             if goalsEnabled != oldValue { onGoalsChange?(goalsEnabled) }
         }
     }
@@ -550,6 +601,7 @@ final class AppSettings {
     var projectsEnabled: Bool {
         didSet {
             store.set(projectsEnabled, forKey: Key.projectsEnabled)
+            hostPreferences?.update { $0.experiments.projects = projectsEnabled }
             if projectsEnabled != oldValue { onProjectsChange?(projectsEnabled) }
         }
     }
@@ -560,6 +612,7 @@ final class AppSettings {
     var fleetWeights: [String: FleetSendWeight] {
         didSet {
             store.set(fleetWeights.mapValues(\.rawValue), forKey: Key.fleetWeights)
+            hostPreferences?.update { $0.fleet.weights = fleetWeights }
             if fleetWeights != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -568,7 +621,10 @@ final class AppSettings {
     /// Settings ▸ Fleet ▸ Threads can send work (`HostSettings.fleetThreadsCanSend`): a thread may
     /// dispatch work to another Mac on its own. Off until turned on. Synced across the fleet.
     var fleetThreadsCanSend: Bool {
-        didSet { store.set(fleetThreadsCanSend, forKey: Key.fleetThreadsCanSend) }
+        didSet {
+            store.set(fleetThreadsCanSend, forKey: Key.fleetThreadsCanSend)
+            hostPreferences?.update { $0.fleet.threadsCanSend = fleetThreadsCanSend }
+        }
     }
 
     /// How many dispatches one thread may have in flight (`HostSettings.fleetThreadCap`). Synced across the fleet.
@@ -577,18 +633,23 @@ final class AppSettings {
             let clamped = HostSettings.clampedThreadCap(fleetThreadCap)
             if clamped != fleetThreadCap { fleetThreadCap = clamped; return }
             store.set(fleetThreadCap, forKey: Key.fleetThreadCap)
+            hostPreferences?.update { $0.fleet.threadCap = fleetThreadCap }
         }
     }
 
     /// Settings ▸ Fleet ▸ Code ▸ Uncommitted changes (`HostSettings.fleetUncommitted`). Synced across the fleet.
     var fleetUncommitted: FleetUncommittedChanges {
-        didSet { store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted) }
+        didSet {
+            store.set(fleetUncommitted.rawValue, forKey: Key.fleetUncommitted)
+            hostPreferences?.update { $0.fleet.uncommitted = fleetUncommitted }
+        }
     }
 
     /// Settings ▸ Fleet ▸ Code ▸ Ignored files ▸ Per space, under the setting keys `fleet.snapshotExcludes.<spaceID>`. Synced across the fleet.
     var fleetSnapshotExcludes: [String: FleetSnapshotExcludes] {
         didSet {
             if let data = try? JSONEncoder().encode(fleetSnapshotExcludes) { store.set(data, forKey: Key.fleetSnapshotExcludes) }
+            hostPreferences?.update { $0.fleet.snapshotExcludes = fleetSnapshotExcludes }
         }
     }
 
@@ -605,6 +666,7 @@ final class AppSettings {
     var fleetCheckIgnores: [String: [String]] {
         didSet {
             store.set(fleetCheckIgnores, forKey: Key.fleetCheckIgnores)
+            hostPreferences?.update { $0.fleet.checkIgnores = fleetCheckIgnores }
             if fleetCheckIgnores != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -624,6 +686,7 @@ final class AppSettings {
     var fleetAutoDispatch: Bool? {
         didSet {
             if let fleetAutoDispatch { store.set(fleetAutoDispatch, forKey: Key.fleetAutoDispatch) } else { store.removeObject(forKey: Key.fleetAutoDispatch) }
+            hostPreferences?.update { $0.fleet.autoDispatch = fleetAutoDispatch }
             if fleetAutoDispatch != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -632,6 +695,7 @@ final class AppSettings {
     var fleetBatteryCountsHalf: Bool {
         didSet {
             store.set(fleetBatteryCountsHalf, forKey: Key.fleetBatteryCountsHalf)
+            hostPreferences?.update { $0.fleet.batteryCountsHalf = fleetBatteryCountsHalf }
             if fleetBatteryCountsHalf != oldValue { onFleetWeightsChange?() }
         }
     }
@@ -653,6 +717,7 @@ final class AppSettings {
     var designToolEnabled: Bool {
         didSet {
             store.set(designToolEnabled, forKey: Key.designToolEnabled)
+            hostPreferences?.update { $0.experiments.designTool = designToolEnabled }
             if designToolEnabled != oldValue { onDesignToolChange?(designToolEnabled) }
         }
     }
@@ -660,7 +725,10 @@ final class AppSettings {
     /// Settings ▸ Experiments ▸ Computer use: new threads get the tools that see and work this
     /// Mac's apps. Off by default; running threads follow at their next start.
     var computerUseEnabled: Bool {
-        didSet { store.set(computerUseEnabled, forKey: Key.computerUseEnabled) }
+        didSet {
+            store.set(computerUseEnabled, forKey: Key.computerUseEnabled)
+            hostPreferences?.update { $0.experiments.computerUse = computerUseEnabled }
+        }
     }
 
     /// Implement in a thread's "Open the thread after sending" (RefSentStay): off stays on the
@@ -673,6 +741,81 @@ final class AppSettings {
     @ObservationIgnored var onDesignToolChange: ((Bool) -> Void)?
 
     private let store: UserDefaults
+
+    /// The host's own copy of the Agents, Worktrees, Fleet and Experiments groups (`HostSettingsStore`), set only in the host process:
+    /// each change to any of them also goes there, beside its UserDefaults key, which stays current for the previous release.
+    @ObservationIgnored private var hostPreferences: HostSettingsStore?
+
+    /// Has the host keep `preferences` from now on, starting from what this object holds. The keys
+    /// were read at init, so a change the previous release made to them since the file was written wins.
+    func adoptHostPreferences(_ preferences: HostSettingsStore) {
+        hostPreferences = preferences
+        let agents = agentsGroup, worktrees = worktreesGroup, fleet = fleetGroup, experiments = experimentsGroup
+        preferences.update { $0.agents = agents; $0.worktrees = worktrees; $0.fleet = fleet; $0.experiments = experiments }
+    }
+
+    /// The Agents group as the host's reply reads it: from the host's store once it is adopted (it is kept current by
+    /// every setter and rebuilt from the keys at adoption), from this object's own values before that.
+    var hostAgents: StoredHostPreferences.Agents { hostPreferences?.preferences.agents ?? agentsGroup }
+
+    /// The Worktrees group as the host's reply reads it, like `hostAgents`.
+    var hostWorktrees: StoredHostPreferences.Worktrees { hostPreferences?.preferences.worktrees ?? worktreesGroup }
+
+    /// The Experiments group as the host's reply reads it, like `hostAgents`.
+    var hostExperiments: StoredHostPreferences.Experiments { hostPreferences?.preferences.experiments ?? experimentsGroup }
+
+    /// The Fleet group as the host's reply reads it, like `hostAgents`.
+    var hostFleet: StoredHostPreferences.Fleet { hostPreferences?.preferences.fleet ?? fleetGroup }
+
+    private var fleetGroup: StoredHostPreferences.Fleet {
+        var fleet = StoredHostPreferences.Fleet()
+        fleet.weights = fleetWeights
+        fleet.threadsCanSend = fleetThreadsCanSend
+        fleet.threadCap = fleetThreadCap
+        fleet.uncommitted = fleetUncommitted
+        fleet.snapshotExcludes = fleetSnapshotExcludes
+        fleet.checkIgnores = fleetCheckIgnores
+        fleet.autoDispatch = fleetAutoDispatch
+        fleet.batteryCountsHalf = fleetBatteryCountsHalf
+        return fleet
+    }
+
+    private var experimentsGroup: StoredHostPreferences.Experiments {
+        var experiments = StoredHostPreferences.Experiments()
+        experiments.goals = goalsEnabled
+        experiments.projects = projectsEnabled
+        experiments.designTool = designToolEnabled
+        experiments.computerUse = computerUseEnabled
+        return experiments
+    }
+
+    private var worktreesGroup: StoredHostPreferences.Worktrees {
+        var worktrees = StoredHostPreferences.Worktrees()
+        worktrees.baseMode = worktreeBaseMode
+        worktrees.fetchBeforeCreate = worktreeFetchBeforeCreate
+        worktrees.generatePRDescription = worktreeGeneratePRDescription
+        worktrees.closeOnMerge = worktreeCloseOnMerge
+        worktrees.deleteAction = HostSettings.WorktreeDeleteAction(rawValue: worktreeDeleteAction.rawValue) ?? .ask
+        return worktrees
+    }
+
+    private var agentsGroup: StoredHostPreferences.Agents {
+        var agents = StoredHostPreferences.Agents()
+        agents.defaultModel = defaultModel
+        agents.defaultThinking = defaultThinking
+        agents.defaultServiceTier = defaultServiceTier
+        agents.textGenerationModel = textGenerationModel
+        agents.visionModel = visionModel
+        agents.queueDelivery = queueDelivery
+        agents.trimToolOutput = trimToolOutput
+        agents.notifyOnTurnFinished = notifyOnTurnFinished
+        agents.deferTools = deferTools
+        agents.threadsStartThreads = threadsStartThreads
+        agents.subThreadPlace = subThreadPlace
+        agents.codemode = codemode
+        agents.compactAtPercent = compactAtPercent
+        return agents
+    }
 
     /// `edition` picks defaults that differ between Shepherd and Shepherd Nightly (the
     /// listener port); each app already has its own preferences domain.

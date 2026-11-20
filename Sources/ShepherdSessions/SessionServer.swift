@@ -1451,8 +1451,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
-    /// weights) is read from here. Server queue.
-    private var fleetSettings: HostSettings?
+    /// weights) is read from here. Server queue (tests read it there, off the main actor).
+    private(set) var fleetSettings: HostSettings?
     /// Tests: the host settings the app last reported (`fleetHostSettingsChanged`), read synchronously.
     var fleetSettingsForTests: HostSettings? { queue.sync { fleetSettings } }
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
@@ -2047,21 +2047,25 @@ public final class SessionServer: @unchecked Sendable {
         defer { lifecycleLock.unlock() }
         if queue.sync(execute: { isStarted }) { return }
         do {
-            try queue.sync {
+            let (repair, recovered) = try queue.sync {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
-                projects.migrateExistingProjectConfiguration(in: store.state)
-                projects.remember(store.state)
-                runLog.reload()
+                let repair = store.recoveryError != nil, recovered = store.didRecover
+                if !repair && !recovered {
+                    projects.migrateExistingProjectConfiguration(in: store.state)
+                    projects.remember(store.state)
+                }
+                if !repair { runLog.reload() }
+                return (repair, recovered)
             }
-            try finishStart()
+            if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
                 acceptOnQueue()
-                recoverCommittedProjectPublications()
+                if !repair && !recovered { recoverCommittedProjectPublications() }
             }
-            if refreshesModelCatalog { pi.catalog.refreshDaily() }
+            if !repair && refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2071,16 +2075,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func finishStart() throws {
+    private func finishStart(recovered: Bool) throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
-        // A design deleted in its undo window before a crash (state.json no longer lists it), and
-        // an import a crash left staged.
-        designs.removeLeftovers()
-        // A Git merge copy is never resumed after a restart.
-        DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        // Do not prune files on the strength of a partially recovered workspace.
+        if !recovered {
+            designs.removeLeftovers()
+            DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        }
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
+        guard !recovered else { return }
         // Copies of design references whose agent or grant is gone (a send the app quit during).
         var kept: [AgentID: Set<UUID>] = [:]
         for agent in store.committed.agents { kept[agent.id] = Set(agent.designGrants.compactMap(\.payload)) }
@@ -2096,7 +2101,7 @@ public final class SessionServer: @unchecked Sendable {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         let owned = queue.sync { () -> Bool in
-            let owned = isStarted
+            let owned = isStarted && store.recoveryError == nil && !store.didRecover
             stopOnQueue()
             return owned
         }
@@ -2264,7 +2269,7 @@ public final class SessionServer: @unchecked Sendable {
             || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
-                try store.update { state in
+                try store.reconcileStartup { state in
                     for id in stale {
                         if let i = state.agents.firstIndex(where: { $0.id == id }) {
                             state.agents[i].status = .idle
@@ -2355,6 +2360,7 @@ public final class SessionServer: @unchecked Sendable {
                 throw SessionServerError.persistFailed(String(describing: error))
             }
         }
+        guard !store.didRecover else { return }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns(keeping: Set(store.state.agents.filter { $0.automationOrigin != nil }.map(\.id)))
         do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
@@ -2624,7 +2630,7 @@ public final class SessionServer: @unchecked Sendable {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
         if hostUpdateReserved {
             switch request {
-            case .snapshot, .image, .subagentTranscript, .abort: break
+            case .snapshot, .transcriptSnapshot, .image, .subagentTranscript, .abort: break
             default:
                 completion(.result(.failure(code: "host_updating", message: "Host update in progress. Try again after reconnecting.")))
                 return
@@ -2656,6 +2662,11 @@ public final class SessionServer: @unchecked Sendable {
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
             unavailable("The agent has no thread.")
+            return
+        }
+        if case .transcriptSnapshot(let expectedSessionID, let beforeEntryID) = request {
+            serveTranscriptSnapshot(agent: agent, leaf: leaf, expectedSessionID: expectedSessionID,
+                                    beforeEntryID: beforeEntryID, authorized: transportAuthorization, completion: completion)
             return
         }
         // A pi that stopped, before it served or on its own after: its agent waits, and says why (or
@@ -2785,6 +2796,38 @@ public final class SessionServer: @unchecked Sendable {
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             completion(.result(result))
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
+        }
+    }
+
+    /// A copy reads the saved branch, not the engine's compacted context. Resolve the source on
+    /// the server queue and keep file I/O off it, as for a preview.
+    private func serveTranscriptSnapshot(agent: Agent, leaf: LeafPane, expectedSessionID: String?, beforeEntryID: String?,
+                                         authorized: @escaping () -> Bool, completion: @escaping (NativeOutcome) -> Void) {
+        let thread = leaf.sessionID.flatMap { sessions[$0] }.flatMap { $0.isAlive ? $0.thread : nil }
+        if thread?.isServable == false {
+            completion(.result(.failure(code: NativeThreadCode.starting, message: "The thread is still loading. Try copying it again when it’s ready.")))
+            return
+        }
+        let sessionID = thread?.piSessionID ?? agent.effectivePiSessionID
+        let stale = NativeOutcome.result(.failure(code: "stale_session", message: "The transcript changed. Nothing was copied."))
+        guard expectedSessionID == nil || expectedSessionID == sessionID else { completion(stale); return }
+        let root = pi.sessionsRoot
+        DispatchQueue.global(qos: .userInitiated).async {
+            let file = PiSessionFile.file(sessionID: sessionID, cwd: AgentLaunch.resolvedCwd(leaf.cwd), sessionsRoot: root)
+            let result = PiSessionFile.transcriptSnapshot(file: file, sessionID: sessionID, beforeEntryID: beforeEntryID)
+            self.queue.async {
+                guard authorized(), !self.movingThreads.contains(agent.id),
+                      let current = self.store.state.agents.first(where: { $0.id == agent.id }),
+                      current.tabID == agent.tabID, current.paneID == agent.paneID,
+                      let paneID = current.paneID,
+                      self.store.state.tabs.first(where: { $0.id == current.tabID })?.layout.leaf(withID: paneID) == leaf,
+                      (leaf.sessionID.flatMap { self.sessions[$0] }.flatMap { $0.isAlive ? $0.thread?.piSessionID : nil }
+                        ?? current.effectivePiSessionID) == sessionID else {
+                    completion(stale)
+                    return
+                }
+                completion(.result(result))
+            }
         }
     }
 
@@ -3184,7 +3227,36 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// What `authorize` decides for one frame of a remote client.
+    private enum RemoteAuthorization {
+        /// Close the connection: a frame that cannot be answered.
+        case close(reason: String)
+        /// Answer with a refusal; `final` closes the connection after it.
+        case refuse(RemoteReply, final: Bool)
+        /// One of the fleet requests answered before `hello`, within its per-connection limit.
+        case serveFleet(RemoteRequest)
+        /// A `hello` of the right protocol version: its token decides.
+        case authenticate(id: Int, token: String, clientName: String, capabilities: [String]?)
+        /// Authorized: the route serves it.
+        case route(RemoteRequest)
+    }
+
     private func handleRemoteLine(_ line: Data, from client: ExtensionConnection) {
+        switch authorize(line, from: client) {
+        case .close(let reason): disconnect(client, reason: reason)
+        case .refuse(let reply, let final): if final { sendFinal(reply, to: client) } else { send(reply, to: client) }
+        case .serveFleet(let request): serveFleet(request, from: client)
+        case .authenticate(let id, let token, let clientName, let capabilities):
+            authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities, client: client)
+        case .route(let request): route(request, line: line, from: client)
+        }
+    }
+
+    /// The one authorization step in front of every remote route: pre-hello rules, then what the
+    /// request's `MessageSpec` row asks (local socket only, a Mac of the fleet, a capability offered
+    /// and negotiated). Checks that read the payload stay in the route. Nothing but the pre-hello
+    /// fleet counter changes here.
+    private func authorize(_ line: Data, from client: ExtensionConnection) -> RemoteAuthorization {
         let request: RemoteRequest
         do {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
@@ -3195,76 +3267,102 @@ public final class SessionServer: @unchecked Sendable {
             // version sends) is refused like any unsupported one once the client has said hello.
             // A frame without an id has no reply to take, so it still closes the connection.
             if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
-                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
-                return
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
             }
-            disconnect(client, reason: "undecodable request before hello")
-            return
+            return .close(reason: "undecodable request before hello")
+        }
+        // A kind with no row is never routed: refused `unsupported` like an unknown kind (`unauthenticated` before hello).
+        guard let spec = MessageSpec.spec(for: request.kind) else {
+            ShepherdLog.warning("remote request kind without a MessageSpec row on fd \(client.fd)")
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
+            }
+            return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
         }
 
         guard client.authenticated else {
-            // The two fleet requests answered before `hello`: who is there, and pairing with a code.
-            switch request {
-            case .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetPairDevice(let id, _, _):
+            switch (spec.access, request) {
+            // The fleet requests answered before `hello`: who is there, and pairing with a code.
+            case (.beforeHello, .fleetIdentify(let id)), (.beforeHello, .fleetPair(let id, _, _)), (.beforeHello, .fleetPairDevice(let id, _, _)):
                 client.unauthenticatedFleetRequests += 1
                 guard client.unauthenticatedFleetRequests <= FleetService.unauthenticatedRequestLimit else {
-                    sendFinal(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), to: client)
-                    return
+                    return .refuse(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), final: true)
                 }
-                serveFleet(request, from: client)
-                return
-            default: break
-            }
-            guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
+                return .serveFleet(request)
+            case (.hello, .hello(let id, let token, let clientName, let protocolVersion, let capabilities)):
+                guard protocolVersion == RemoteProtocol.version else {
+                    return .refuse(.error(
+                        id: id,
+                        code: RemoteProtocol.versionMismatchCode,
+                        message: "host speaks protocol \(RemoteProtocol.version)"
+                    ), final: true)
+                }
+                return .authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities)
+            default:
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
-                sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
-                return
+                return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
             }
-            guard protocolVersion == RemoteProtocol.version else {
-                sendFinal(.error(
-                    id: id,
-                    code: RemoteProtocol.versionMismatchCode,
-                    message: "host speaks protocol \(RemoteProtocol.version)"
-                ), to: client)
-                return
-            }
-            // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
-            // device's own; the last two never on the local socket. There is no token shared by every client: one
-            // that isn't either is an old client's shared token, or a revoked device's.
-            let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
-            let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
-            guard client.isLocal || peer != nil || device != nil else {
-                ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
-                sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
-                return
-            }
-            // What the other clients are owed goes out first: the new one reads its state from its fetch.
-            flushRemoteState()
-            client.fleetPeerID = peer
-            client.fleetDeviceID = device
-            client.clientName = clientName
-            if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-            if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
-            client.authenticated = true
-            client.clientCapabilities = Set(capabilities ?? [])
-            if client.isLocal { localAppsChanged() }
-            send(.helloOk(
-                id: id,
-                protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities(to: client),
-                hostBuild: hostBuild,
-                hostID: fleet?.hostID
-            ), to: client)
-            sendStartProblems(to: client)
-            sendAppProcesses(to: client)
-            if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(links, to: client)
-            }
-            if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
-            ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
-            return
         }
 
+        // A request that got this far decoded with its `id`.
+        func refuse(_ code: String, _ message: String) -> RemoteAuthorization {
+            .refuse(.error(id: (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id ?? 0, code: code, message: message), final: false)
+        }
+        switch spec.access {
+        case .localOnly(let refusal) where !client.isLocal:
+            return refuse("unsupported", refusal)
+        case .fleetPeer(let refusal) where client.fleetPeerID == nil:
+            return refuse(FleetProtocol.Code.forbidden, refusal)
+        default: break
+        }
+        if let need = spec.requires {
+            let capability = need.capability.rawValue
+            if !offeredCapabilities.contains(capability) || need.negotiated && !client.clientCapabilities.contains(capability) {
+                return refuse("unsupported", need.message)
+            }
+        }
+        return .route(request)
+    }
+
+    /// Checks a `hello`'s token and opens the connection to its requests.
+    private func authenticate(id: Int, token: String, clientName: String, capabilities: [String]?, client: ExtensionConnection) {
+        // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
+        // device's own; the last two never on the local socket. There is no token shared by every client: one
+        // that isn't either is an old client's shared token, or a revoked device's.
+        let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
+        let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
+        guard client.isLocal || peer != nil || device != nil else {
+            ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
+            sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
+            return
+        }
+        // What the other clients are owed goes out first: the new one reads its state from its fetch.
+        flushRemoteState()
+        client.fleetPeerID = peer
+        client.fleetDeviceID = device
+        client.clientName = clientName
+        if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
+        if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+        client.authenticated = true
+        client.clientCapabilities = Set(capabilities ?? [])
+        if client.isLocal { localAppsChanged() }
+        send(.helloOk(
+            id: id,
+            protocolVersion: RemoteProtocol.version,
+            capabilities: offeredCapabilities(to: client),
+            hostBuild: hostBuild,
+            hostID: fleet?.hostID
+        ), to: client)
+        sendStartProblems(to: client)
+        sendAppProcesses(to: client)
+        if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            send(links, to: client)
+        }
+        if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
+        ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
+    }
+
+    private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
         switch request {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
@@ -3272,17 +3370,9 @@ public final class SessionServer: @unchecked Sendable {
              .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .fleetPeerAnswer(let id, let reply):
-            // The answer of a Mac to a call this host sent over the connection it opened: only that Mac's.
-            guard client.fleetPeerID != nil else {
-                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Only a Mac in the fleet answers a call."), to: client)
-                return
-            }
+            // The answer of a Mac to a call this host sent over the connection it opened: `authorize` took it from that Mac only.
             fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
                 try pushNotifications.register(registration)
                 send(.ok(id: id), to: client)
@@ -3290,10 +3380,6 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
             }
         case .pushUnregister(let id, let registrationID):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
                 try pushNotifications.unregister(registrationID)
                 send(.ok(id: id), to: client)
@@ -3302,9 +3388,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .nativeThreadSubscribe(let id, let agentIDs):
             let visible = Set(remoteState(store.state, for: client).agents.map(\.id))
-            guard offeredCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  agentIDs.count <= 64,
+            guard agentIDs.count <= 64,
                   agentIDs.allSatisfy({ visible.contains($0) && !store.state.isProjectCoordinator($0) }) else {
                 send(.error(id: id, code: "unsupported", message: "Watch at most 64 ordinary threads."), to: client); return
             }
@@ -3312,9 +3396,7 @@ public final class SessionServer: @unchecked Sendable {
             client.revisedThreads.formIntersection(client.watchedThreads)
             send(.ok(id: id), to: client)
         case .fleetDigest(let id, let agentID, let session, let revision):
-            guard offeredCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
+            guard remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
                 send(.error(id: id, code: "unsupported", message: "Fleet digests require an ordinary thread."), to: client); return
             }
             if ContinuousClock.now - client.digestWindow >= .seconds(1) {
@@ -3376,6 +3458,10 @@ public final class SessionServer: @unchecked Sendable {
             if case .retry = request, !client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) {
                 send(.nativeThread(id: id, result: .failure(code: "recovery_unsupported",
                     message: "Update the client to use message-free checkpoint recovery. Nothing was resent.")), to: client)
+                return
+            }
+            if case .transcriptSnapshot = request, !offeredCapabilities.contains(RemoteProtocol.nativeThreadTranscriptCapability) {
+                send(.error(id: id, code: "unsupported", message: "Update Shepherd on the host to copy the transcript."), to: client)
                 return
             }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
@@ -3723,10 +3809,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .logicalProjects(let id, let request):
-            guard offeredCapabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Logical projects are unavailable on this host."), to: client)
-                return
-            }
             guard !request.requiresProjectAutomations || offeredCapabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
                 send(.error(id: id, code: "unsupported", message: "Project automations are unavailable on this host."), to: client)
                 return
@@ -3864,6 +3946,10 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
+            if store.recoveryError != nil {
+                send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
+                return
+            }
             let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -3905,17 +3991,13 @@ public final class SessionServer: @unchecked Sendable {
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .drain(let id):
-            guard client.isLocal, let handler = onDrainRequest else {
+            guard let handler = onDrainRequest else {
                 send(.error(id: id, code: "unsupported", message: "This host doesn't drain on request."), to: client)
                 return
             }
             send(.ok(id: id), to: client)
             hopToMain { handler() }
         case .hostUpdateGate(let id, let step):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's app installs this host's updates."), to: client)
-                return
-            }
             Task { [weak self, weak client] in
                 guard let self else { return }
                 let refusal: String? = switch step {
@@ -3949,26 +4031,14 @@ public final class SessionServer: @unchecked Sendable {
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
         case .focusThread(let id, let agentID, let paneID):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
-                return
-            }
             pushNotifications.focused = agentID
             localFocusedPane = paneID
             if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
             send(.ok(id: id), to: client)
         case .projectExecutors(let id, let update):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says which Macs it reaches."), to: client)
-                return
-            }
             applyProjectExecutors(update)
             send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
-                return
-            }
             var request = RemoteCreateAgentRequest(
                 spaceID: thread.spaceID ?? SpaceID(rawValue: ""), cwd: thread.cwd, model: thread.model, thinking: thread.thinking,
                 initialPrompt: thread.initialPrompt, worktreeBranch: thread.worktreeBranch, worktreeBase: thread.worktreeBase,
@@ -3985,10 +4055,6 @@ public final class SessionServer: @unchecked Sendable {
             }
             remoteCreateAgent(id: id, request: request, client: client)
         case .spaceAction(let id, let spaceID, let action):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { [weak self] in
                 guard let self else { return }
@@ -4002,10 +4068,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .projectRequest(let id, let request):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -5684,6 +5746,7 @@ public final class SessionServer: @unchecked Sendable {
             // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
             changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
+            recordChildSpend(agentID: agentID, runs: children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
             let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
             hopToMain { [weak self] in
@@ -7153,6 +7216,35 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingOn = question
             $0.agents[index].waitingReason = reason
         }
+        let committedState = store.state
+        scheduleRemoteState()
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Server queue: pi reported a thread's session totals. Keeps the agent's spend (`AgentSpend`) and, when it moved, broadcasts it
+    /// like a status: live state, written along with the next change. The model is the one the thread runs, which the growth is for;
+    /// the day is this host's, stamped with its zone so every viewer agrees which day is today.
+    func recordSpend(agentID: AgentID, stats: NativeThreadStats, model: String?, sessionID: String? = nil, now: Date = Date(),
+                     zone: TimeZone = .current) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let next = AgentSpend.updated(agent.spend, tokens: stats.totalTokens, cost: stats.cost, model: model ?? agent.model,
+                                      day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier, sessionID: sessionID)
+        applySpend(next, to: agentID)
+    }
+
+    /// Server queue: the agent's background subagents published their rows. Each runs in its own pi process, so its usage (tokens and
+    /// cost of its own messages, not the history a fork inherited) joins the thread's spend once, by what each run grew by.
+    func recordChildSpend(agentID: AgentID, runs: [ChildRun], now: Date = Date(), zone: TimeZone = .current) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal,
+                                          startedAt: $0.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }) }
+        let next = AgentSpend.addingChildren(agent.spend, usage, day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier)
+        applySpend(next, to: agentID)
+    }
+
+    private func applySpend(_ next: AgentSpend?, to agentID: AgentID) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }), next != store.state.agents[index].spend else { return }
+        store.updateLive { $0.agents[index].spend = next }
         let committedState = store.state
         scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -9797,6 +9889,10 @@ public final class SessionServer: @unchecked Sendable {
                         server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.notificationLabel)
                     }
                 }
+            }
+            thread.onStatsChanged = { [weak serverWeak, weak thread] stats, piSessionID in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.recordSpend(agentID: agentID, stats: stats, model: thread?.model, sessionID: piSessionID)
             }
             thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, server.isStarted else { return true }

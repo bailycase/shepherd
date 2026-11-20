@@ -578,7 +578,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   };
   const summary = (run) => ({ id: run.id, name: run.name, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
     workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
-    turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
+    turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, cost: run.cost, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
     projectScope: run.projectScope, attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
     relaying: run.relays?.size || undefined });
   // A result as the parent model reads it: a child that asked also says what to do about it.
@@ -593,7 +593,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       needsAttention: run.needsReply === true, attentionText: run.needsReply ? clip(run.questionText ?? run.output, 160) : undefined, asyncDir: run.dir,
       role: run.role, model: run.model, thinking: run.thinking, context: workflow?.async ? "async" : "background",
       step: workflow && run.stepIndex ? { index: run.stepIndex, total: Math.max(workflow.claims.size, run.stepIndex) } : undefined,
-      turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, lastActivity: run.lastActivity,
+      turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, cost: run.cost, contextPercent: run.contextPercent, lastActivity: run.lastActivity,
       paused: run.paused === true,
       question: run.needsReply ? { text: run.questionText ?? clip(run.output, 600), options: run.questionOptions, short: run.questionShort } : undefined,
       result: run.state === "complete" ? { files: run.files?.size ?? 0, added: run.added ?? 0, removed: run.removed ?? 0, tools: run.toolCalls ?? 0, tokens: run.tokens ?? 0 } : undefined,
@@ -870,6 +870,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       run.lastStop = message.stopReason;
       run.turns = (run.turns ?? 0) + 1;
       if (Number.isFinite(message.usage?.totalTokens)) run.tokens = (run.tokens ?? 0) + message.usage.totalTokens;
+      // The child's own messages only: a fork's inherited history was never a message_end of this process, so it is not counted here.
+      if (Number.isFinite(message.usage?.cost?.total)) run.cost = (run.cost ?? 0) + message.usage.cost.total;
       // Context fill is the child's own estimate; best-effort, the card renders without it.
       command(run, "get_session_stats", {}, 2000).then((stats) => {
         if (Number.isFinite(stats?.contextUsage?.percent)) { run.contextPercent = stats.contextUsage.percent; saveSoon(run); }
@@ -1179,7 +1181,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         }
         runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
           needsReply: status.needsReply === true, lastStop: status.stopReason,
-          turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
+          turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, cost: status.cost, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
           files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, questionShort: shortReason(status.questionShort), attempt: status.attempt, questionID: status.questionID, exitCode: status.exitCode,
           tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
           state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });

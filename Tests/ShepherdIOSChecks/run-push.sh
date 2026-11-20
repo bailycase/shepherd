@@ -1,5 +1,6 @@
 #!/bin/bash
 # Usage: bash Tests/ShepherdIOSChecks/run-push.sh <Debug-iphonesimulator products> <booted simulator UDID>
+# Set SHEPHERD_SIMULATOR_SET when the device is in a custom set.
 # Compiles production code with an async check entry point; no app launch, network or permissions.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -18,4 +19,6 @@ xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sd
     "$products/SwiftTerm.o" "$products/DesignSurfaceKit.o" \
     "${sources[@]}" Tests/ShepherdIOSChecks/PushTests.swift -o "$work/PushChecks"
 codesign --force --sign - "$work/PushChecks"
-xcrun simctl spawn "$device" "$work/PushChecks"
+simctl=(xcrun simctl)
+[[ -n "${SHEPHERD_SIMULATOR_SET:-}" ]] && simctl+=(--set "$SHEPHERD_SIMULATOR_SET")
+"${simctl[@]}" spawn "$device" "$work/PushChecks"

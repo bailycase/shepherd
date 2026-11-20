@@ -118,6 +118,39 @@ struct FleetContentUnitTests {
         #expect(materializer.scan(name: "B").isEmpty, "nothing the materializer wrote is an edit")
     }
 
+    @Test(.timeLimit(.minutes(1))) func damagedInstructionHistoryPausesFleetUntilRepaired() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let receiver = try FleetStore(directory: dir.appendingPathComponent("receiver"), mac: UUID())
+        let materializer = FleetMaterializer(store: receiver, directory: receiver.directory)
+        let instructions = InstructionsStore(directory: dir.appendingPathComponent("instructions"))
+        try instructions.save(.agents, content: "local", now: .init(timeIntervalSince1970: 1))
+        materializer.add(FleetInstructionsSource(instructions))
+
+        let history = try Data(contentsOf: instructions.historyURL)
+        let damaged = Data(#"{"version":1,"revisions":["#.utf8)
+        try damaged.write(to: instructions.historyURL)
+        #expect(materializer.scan(name: "This Mac").isEmpty, "does not export an edit or seed while damaged")
+
+        let sender = try Sender(dir: dir)
+        let remote = "from the fleet"
+        let op = sender.blob(FleetUnit.instruction(.agents), remote)
+        _ = receiver.receive(op)
+        _ = receiver.putBlob(Data(remote.utf8), named: sender.hash(remote))
+        #expect(!materializer.materialize(name: "This Mac").failed, "defers instead of trying a doomed write")
+        #expect(instructions.content(.agents) == "local")
+        #expect(try Data(contentsOf: instructions.historyURL) == damaged)
+
+        try history.write(to: instructions.historyURL)
+        _ = materializer.scan(name: "This Mac")
+        #expect(!materializer.materialize(name: "This Mac").failed)
+        let repaired = instructions.snapshot()
+        #expect(repaired.historyProblem == nil)
+        #expect(repaired.agents == remote)
+        #expect(repaired.history.count == 2)
+        #expect(repaired.history.first?.summary == "Synced from Mac mini")
+    }
+
     // MARK: Whole or nothing
 
     /// A Mac as a receiver: its own store and pi home, with the extensions and skills sources.
@@ -204,6 +237,56 @@ struct FleetContentUnitTests {
         #expect(receiver.listed() == [receiver.file("paths/acme/index.ts").standardizedFileURL.path])
         for (path, text) in files { #expect((try? String(contentsOf: receiver.file("paths/acme/" + path), encoding: .utf8)) == text) }
         #expect(receiver.materializer.scan(name: "Mac studio").isEmpty)
+    }
+
+    @Test func aDamagedImportMarkerDoesNotSyncExtensionDeletions() throws {
+        let receiver = try Receiver()
+        defer { try? FileManager.default.removeItem(at: receiver.dir) }
+        let file = receiver.file("paths/acme/index.ts")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("export default 1\n".utf8).write(to: file)
+        try receiver.imports.applySyncedExtension(destination: "your-extensions/paths/acme", name: "acme", entries: ["index.ts"], on: true)
+        let meta = FleetUnit.extensionMeta("paths/acme")
+        try #require(receiver.materializer.scan(name: "Mac studio").contains { $0.unit == meta })
+
+        let url = receiver.imports.stateURL
+        let original = try Data(contentsOf: url)
+        var damaged = try #require(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        damaged["digests"] = "not a dictionary"
+        try JSONSerialization.data(withJSONObject: damaged).write(to: url)
+        #expect(receiver.materializer.scan(name: "Mac studio").isEmpty)
+
+        try original.write(to: url)
+        try receiver.imports.removeSyncedExtension(destination: "your-extensions/paths/acme")
+        #expect(receiver.materializer.scan(name: "Mac studio").contains { $0.unit == meta && $0.change == .deletion })
+    }
+
+    @Test func incomingExtensionWaitsForDamagedImportMarkerToBeRepaired() throws {
+        let receiver = try Receiver()
+        defer { try? FileManager.default.removeItem(at: receiver.dir) }
+        try receiver.imports.updateState { $0.copied = true }
+        let url = receiver.imports.stateURL
+        let original = try Data(contentsOf: url)
+        let damaged = Data(#"{"copies":42}"#.utf8)
+        try damaged.write(to: url)
+
+        let sender = try Sender(dir: receiver.dir)
+        let file = receiver.file("paths/acme/index.ts")
+        let text = "export default 1\n"
+        sender.blob(FleetUnit.extensionFile("paths/acme/index.ts"), text)
+        sender.value(FleetUnit.extensionMeta("paths/acme"), Self.extensionMeta(["index.ts": text]))
+        sender.deliver(to: receiver, blobs: [sender.hash(text)])
+
+        _ = receiver.materializer.materialize(name: "Mac studio")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(receiver.listed().isEmpty)
+        #expect(try Data(contentsOf: url) == damaged)
+
+        try original.write(to: url)
+        let result = receiver.materializer.materialize(name: "Mac studio")
+        #expect(!result.failed)
+        #expect(try String(contentsOf: file, encoding: .utf8) == text)
+        #expect(receiver.listed() == [file.standardizedFileURL.path])
     }
 
     @Test func anExtensionThatIsOnIsTakenOutWhileASyncRewritesItAndPutBackWhole() throws {

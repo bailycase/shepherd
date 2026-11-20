@@ -81,6 +81,16 @@ struct SidebarPinnedTests {
         #expect(answered.pinned.map(\.title) == ["pinned", "other"])
     }
 
+    @Test func pinnedNeedsYouAndUnseenDoneStayInSupervisionQueues() {
+        let asking = agent("asks", status: .blocked, at: 1, waiting: "Ship it?")
+        var done = agent("done", status: .done, at: 2)
+        done.checkout = AgentCheckout(branch: "main", changedFiles: 2)
+        let lists = derive([asking, done], pins: [local(asking), local(done)])
+        #expect(lists.needsYou.isEmpty && lists.done.isEmpty)
+        #expect(lists.supervisionQueues.needingYou == [.local(asking.id), .local(done.id)])
+        #expect(lists.supervisionQueues.review == [.local(done.id)])
+    }
+
     /// A remote thread pins like a local one, keeps its host's tag and reads "on horizon".
     @Test func aPinnedRemoteThreadWearsItsHostTag() {
         let remote = agent("remote", status: .working, at: 1)

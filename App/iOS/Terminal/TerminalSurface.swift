@@ -11,15 +11,18 @@ struct TerminalSurface: UIViewRepresentable {
     let session: MobileTerminalSession
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.openURL) private var openURL
 
     func makeUIView(context: Context) -> TerminalSurfaceView {
         let view = session.surface ?? TerminalSurfaceView(session: session)
         session.surface = view
+        view.openLink = { openURL($0) }
         view.apply(colorScheme: colorScheme)
         return view
     }
 
     func updateUIView(_ view: TerminalSurfaceView, context: Context) {
+        view.openLink = { openURL($0) }
         view.apply(colorScheme: colorScheme)
         // A new text size re-reads the font (and so the grid the host gets).
         _ = dynamicTypeSize
@@ -33,6 +36,8 @@ final class TerminalSurfaceView: TerminalView, TerminalViewDelegate {
     private weak var session: MobileTerminalSession?
     private var scheme: ColorScheme?
     private var fontSize: CGFloat = 0
+    /// Opens tapped links through the environment, so they honor the device's browser handoff.
+    var openLink: ((URL) -> Void)?
 
     init(session: MobileTerminalSession) {
         self.session = session
@@ -136,7 +141,7 @@ final class TerminalSurfaceView: TerminalView, TerminalViewDelegate {
     func scrolled(source: TerminalView, position: Double) {}
     func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
         guard let url = URL(string: link), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-        UIApplication.shared.open(url)
+        if let openLink { openLink(url) } else { UIApplication.shared.open(url) }
     }
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }

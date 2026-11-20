@@ -16,7 +16,7 @@ extension RemoteProtocol {
     /// offers `browserTunnelCapability` (the page the viewer runs loads through a tunnel), and a
     /// viewer claims only where both are offered. An older host lists nothing: its agent drives the
     /// host's own page, and a viewer's tab is a page of its own.
-    public static let browserDriveCapability = "browser.drive.v1"
+    public static let browserDriveCapability = Capability.browserDrive.rawValue
 }
 
 /// The numbers the claim rules live by.

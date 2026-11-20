@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -13,6 +14,17 @@ extension FixtureCatalog {
         return [
             FixtureScreen(name: "home", prepare: settle),
             FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
+            // Home's header: what every host's threads spent today, per model (a thread of a subscription model has tokens alone).
+            FixtureScreen(name: "home-spend", hosts: HomeFixtureData.spending(), prepare: settle),
+            // The Running filter lifts the working threads, each with its spend on a line of its own, above the fold.
+            FixtureScreen(name: "home-spend-running", hosts: HomeFixtureData.spending(), prepare: { app in
+                await settle(app)
+                SidebarThreads.of(app.hosts).filters = .init(chips: [.running])
+            }),
+            FixtureScreen(name: "overview-spend", hosts: HomeFixtureData.spending(), prepare: { app in
+                await settle(app)
+                await OverviewOpenCheck.hideSidebar(app)
+            }),
             FixtureScreen(name: "sidebar-filters-off", hosts: HomeFixtureData.filterHosts(), prepare: settle),
             FixtureScreen(name: "sidebar-filters-on", hosts: HomeFixtureData.filterHosts(), prepare: { app in
                 await settle(app)
@@ -80,7 +92,65 @@ extension FixtureCatalog {
             // home-fleet after another device opened Studio's finished thread: its host says so, and it leaves Done here
             // (on an iPad with --sidebar, the sidebar's Done too).
             FixtureScreen(name: "home-done-seen", hosts: HomeFixtureData.seenElsewhere(), prepare: settle),
+            // The thread's long-press menu with Copy Transcript (S5): a context menu needs a press
+            // the headless harness can't do, so the run presents the menu's rows in a sheet instead.
+            FixtureScreen(name: "thread-menu", prepare: { app in
+                await settle(app)
+                await ThreadMenuFixture.present(app)
+            }),
+            FixtureScreen(name: "copy-confirmation", hosts: ThreadMenuFixture.copyHosts(), prepare: ThreadMenuFixture.copy),
         ]
+    }
+}
+
+/// Presents a thread's long-press menu rows for the headless render (S5). Aired as a sheet: the
+/// harness can't long-press, and the rows it shows are the menu's own `ThreadRowMenuItems`.
+@MainActor enum ThreadMenuFixture {
+    static func copyHosts() -> [FixtureHostData] {
+        var hosts = FixtureData.hosts()
+        hosts[0].reply = { request in
+            guard case .nativeThread(let id, FixtureData.preview, .transcriptSnapshot(nil, nil)) = request else { return nil }
+            let page = FixtureData.snapshot([FixtureData.user("0", "Check the acme-web sidebar.", at: 0)])
+            return .nativeThread(id: id, result: .snapshot(value: page))
+        }
+        return hosts
+    }
+
+    static func copy(_ app: MobileApp) async {
+        AgentActions.copyTranscript(FixtureData.ref(FixtureData.preview), hosts: app.hosts, navigator: app.navigator)
+        await FixtureCheck.wait("transcript copy result", seconds: 8) { app.navigator.presented != nil }
+        guard case .search(.problem(title: "Transcript copied", message: _))? = app.navigator.presented?.route,
+              UIPasteboard.general.string == "user: Check the acme-web sidebar." else {
+            FixtureCheck.fail("Copy Transcript did not set the pasteboard and present its confirmation")
+        }
+        FixtureCheck.report("FIXTURE CHECK ok: copied transcript and presented confirmation")
+    }
+
+    static func present(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        await FixtureCheck.wait("preview thread listed", seconds: 10) {
+            app.hosts.host(ref.host)?.agent(ref.agent) != nil
+        }
+        guard let host = app.hosts.host(ref.host), let agent = host.agent(ref.agent) else {
+            FixtureCheck.fail("preview thread missing for thread-menu")
+        }
+        let abilities = FleetThreadAbilities(agent: agent, state: host.state,
+            connected: host.phase.isConnected, capabilities: host.capabilities)
+        FixtureCheck.report(abilities.connected
+            ? "FIXTURE CHECK ok: preview thread connected for thread-menu"
+            : "FIXTURE CHECK FAILED: preview thread offline for thread-menu")
+        let view = ThreadRowMenuItems(thread: ref, abilities: abilities, hostName: host.name)
+            .environment(app.hosts)
+            .environment(app.navigator)
+            .environment(\.mobileApp, app)
+        let sheet = UIHostingController(rootView: NavigationStack { List { view }.navigationTitle(agent.name) })
+        sheet.modalPresentationStyle = .formSheet
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard var top = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
+            FixtureCheck.fail("no key window for thread-menu")
+        }
+        while let presented = top.presentedViewController { top = presented }
+        top.present(sheet, animated: false)
     }
 }
 
@@ -159,6 +229,25 @@ enum HomeFixtureData {
                 if hosts[host].state.agents[agent].id == FixtureData.deletion { hosts[host].state.agents[agent].seenCompletedAt = 1_700 }
             }
         }
+        return hosts
+    }
+
+    /// `fleet` with what six of its threads spent today (two of them finished): two models with a cost estimate and one subscription model with none.
+    static func spending() -> [FixtureHostData] {
+        var hosts = fleet()
+        let zone = TimeZone.current.identifier
+        let day = SpendDay.key(Date(), zone: zone)
+        func spend(_ host: Int, _ id: AgentID, tokens: Int, cost: Double?, _ today: [ModelSpend]) {
+            guard let index = hosts[host].state.agents.firstIndex(where: { $0.id == id }) else { return }
+            hosts[host].state.agents[index].spend = AgentSpend(tokens: tokens, cost: cost, day: day, zone: zone, today: today)
+        }
+        spend(0, FixtureData.preview, tokens: 3_100_000, cost: 4.2,
+              [ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 2_400_000, cost: 3.1), ModelSpend(model: "openai/gpt-5-mini", tokens: 400_000, cost: 0.3)])
+        spend(0, FixtureData.extensions, tokens: 820_000, cost: 1.15, [ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 820_000, cost: 1.15)])
+        spend(1, restyle, tokens: 12_400, cost: nil, [ModelSpend(model: "acme-subscription/pro", tokens: 12_400, cost: nil)])
+        spend(0, FixtureData.deletion, tokens: 205_000, cost: 0.62, [ModelSpend(model: "openai/gpt-5-mini", tokens: 205_000, cost: 0.62)])
+        spend(1, migrations, tokens: 1_900_000, cost: nil, [ModelSpend(model: "acme-subscription/pro", tokens: 1_900_000, cost: nil)])
+        spend(1, triage, tokens: 640_000, cost: 8.9, [ModelSpend(model: "anthropic/claude-opus-4", tokens: 640_000, cost: 8.9)])
         return hosts
     }
 

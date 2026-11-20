@@ -41,6 +41,9 @@ extension ShepherdViewModel {
             if self?.designGitStates[id] != nil { self?.refreshDesignGit(id) }
         }
         remoteHosts.leavesQueuedLocalHostState = { [weak self] in self?.leavesQueuedHostState ?? false }
+        remoteHosts.onLocalHostRepairRequired = { [weak self] message in
+            self?.actionError = ActionError(title: "Workspace needs repair", message: message)
+        }
         remoteHosts.onLocalHostState = { [weak self] state, newerQueued in
             guard let self else { return }
             let automations = self.state.automations.map(\.id)

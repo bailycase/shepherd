@@ -241,7 +241,7 @@ struct StartupTests {
         #expect(throws: Never.self) { _ = try ExtensionClient(path: h.socketPath) }
     }
 
-    @Test func ownershipAlsoProtectsTheStateWithADifferentSocketAndBeforeQuarantine() throws {
+    @Test func ownershipAlsoProtectsTheStateWithADifferentSocketAndBeforeRecovery() throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let invalid = Data("invalid state".utf8)
@@ -252,7 +252,7 @@ struct StartupTests {
         #expect(throws: SessionServerError.self) { try second.start() }
         second.stop()
         #expect(try Data(contentsOf: h.stateURL) == invalid)
-        #expect(!(try FileManager.default.contentsOfDirectory(atPath: h.dir.path)).contains { $0.contains(".corrupt-") })
+        #expect(try FileManager.default.contentsOfDirectory(atPath: h.dir.path).allSatisfy { !$0.hasPrefix("state.json.") })
     }
 
     @Test func retryingStartupReloadsStateAfterTheOwnerStops() async throws {

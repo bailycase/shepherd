@@ -35,6 +35,28 @@ struct FleetSidebarTests {
         return state
     }
 
+    @Test func supervisionIgnoresFiltersAndIncludesPinsButSkipsOfflineAndProjectThreads() {
+        let waiting = Self.agent("waiting", .blocked, active: 30)
+        let pinned = Self.agent("pinned", .blocked, active: 20)
+        var project = Self.agent("project", .blocked, active: 10)
+        project.coordinatorFor = ProjectID()
+        var reviewed = Self.agent("reviewed", .done, active: 40)
+        reviewed.completedAt = 40
+        reviewed.checkout = AgentCheckout(branch: "main", changedFiles: 1)
+        let agents = [waiting, pinned, project, reviewed]
+        let state = Self.observed(agents, pins: [F.ref("pinned"), F.ref("reviewed"), F.ref("offline", on: F.build)])
+        let offline = F.host(F.build, "Build", .disconnected, agents: [Self.agent("offline", .blocked, active: 1)])
+        let model = FleetModel(hosts: Self.hosts(agents) + [offline], digests: [:])
+        #expect(model.needsYou.contains { $0.origin == .project && $0.ref == F.ref("project") })
+        #expect(state.groups(model, filters: .init(chips: [.running])).hasNoMatches)
+        let queues = state.supervisionQueues(model)
+        #expect(queues.needingYou == [F.ref("pinned"), F.ref("waiting"), F.ref("reviewed")])
+        #expect(queues.review == [F.ref("reviewed")])
+        var seen = state
+        seen.markSeen([F.ref("reviewed")])
+        #expect(seen.supervisionQueues(model).review.isEmpty)
+    }
+
     // MARK: Groups
 
     @Test func everyThreadIsInExactlyOneGroup() {

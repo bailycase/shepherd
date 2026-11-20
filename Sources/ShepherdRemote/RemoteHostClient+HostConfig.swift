@@ -6,7 +6,7 @@ extension RemoteHostClient {
     /// host without `hostConfigCapability` takes none: this throws `update_required` before
     /// sending anything, so a secret never reaches a host that can't use it.
     public func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
-        guard capabilities.contains(RemoteProtocol.hostConfigCapability) else {
+        guard supports(.hostConfig) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to change its MCP servers, subagents and sign-ins from here."
             )

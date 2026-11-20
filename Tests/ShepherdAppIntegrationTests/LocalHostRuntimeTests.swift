@@ -107,6 +107,22 @@ struct LocalHostRuntimeTests {
                      runtime: runtime, socket: socket, tokenURL: tokenURL)
     }
 
+    @Test func aLocalHostRepairRefusalReachesTheErrorSheet() async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("{".utf8).write(to: dir.appendingPathComponent("state.json"))
+        let app = try AppHarness(directory: dir)
+        defer { app.stop() }
+        try await app.server.listenLocal(path: app.hostSocket)
+        let vm = ShepherdViewModel(pi: app.server.pi, settings: app.settings, keybindings: app.keybindings,
+            themeManager: app.themeManager, remoteHosts: app.remoteHosts, sidebarDefaults: app.defaults, themeInstaller: { _ in },
+            hooks: HooksModel(home: dir.path, support: dir), apps: AppsModel(home: dir.path))
+        vm.connectLocalHost(socket: app.hostSocket)
+        try await eventuallyOnMain("the repair message reaches the app") { vm.actionError != nil }
+        #expect(vm.actionError?.title == "Workspace needs repair")
+        #expect(vm.actionError?.message.contains("state.json") == true)
+    }
+
     @Test func aProjectRunsOnTheHostAndIsThisMacs() async throws {
         let s = try await Self.setUp()
         defer { s.stop() }

@@ -8,11 +8,11 @@ public final class ValidationGolden {
 
     /// Pass `#filePath` from a Swift file directly inside a test target directory under `Tests/`.
     public static func check(_ filename: String, from source: StaticString, completion: String,
-                             isolation: isolated (any Actor)? = #isolation,
+                             excluding: Set<String> = [], isolation: isolated (any Actor)? = #isolation,
                              _ scenario: (ValidationGolden) async throws -> Void) async throws {
         let directory = ValidationEvidence.directory
         do {
-            let golden = try ValidationGolden(read(filename, from: source))
+            let golden = try ValidationGolden(read(filename, from: source), excluding: excluding)
             try await scenario(golden)
             if golden.index < golden.observations.count {
                 throw Difference(expected: try display(golden.observations[golden.index]), actual: "<no observation>")
@@ -48,12 +48,12 @@ public final class ValidationGolden {
         return try object(Data(contentsOf: url))
     }
 
-    private init(_ json: [String: Any]) throws {
+    private init(_ json: [String: Any], excluding: Set<String>) throws {
         guard let seed = json["seed"], let observations = json["observations"] as? [[String: Any]] else {
             throw Difference(expected: "golden seed and observations", actual: try Self.display(json))
         }
         self.seed = seed
-        self.observations = observations
+        self.observations = observations.filter { !excluding.contains($0["step"] as? String ?? "") }
     }
 
     public func observe(_ step: String, _ actual: [String: Any]) throws {

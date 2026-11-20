@@ -44,6 +44,7 @@ struct ThreadSimulatorFixture: App {
         } defaultValue: {
             MobileWindowSeed()
         }
+        .commands { MobileWindowCommands() }
     }
 }
 

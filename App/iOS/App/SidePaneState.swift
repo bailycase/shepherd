@@ -8,8 +8,13 @@ import ShepherdRemote
 @MainActor
 @Observable
 final class SidePaneState {
-    var isOpen = false
-    var tab: PadSidePaneTab = .changes
+    var isOpen = false {
+        didSet { if oldValue, !isOpen, tab == .changes { leftChanges?() } }
+    }
+    var tab: PadSidePaneTab = .changes {
+        didSet { if isOpen, oldValue == .changes, tab != .changes { leftChanges?() } }
+    }
+    @ObservationIgnored var leftChanges: (() -> Void)?
     /// The thread in the laptop arrangement (DuoLaptop, DuoLaptopOpen): it takes the window, the
     /// transcript above the composer, until Back. Nil otherwise.
     var arranged: AgentRef?

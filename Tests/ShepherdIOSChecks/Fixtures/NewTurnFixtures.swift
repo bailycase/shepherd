@@ -192,13 +192,13 @@ enum NewTurnFixture {
         let counts = SHRenderProbe.stop()
         let landings = counts["thread.tailLanding", default: 0] + counts["thread.tailLandingResized", default: 0]
         let revisions = (store.snapshot?.revision ?? before) - before
-        FixtureCheck.report("FIXTURE CHECK ok: \(action), \(result.frames) frames, \(revisions) revisions since press, "
-            + "farthest \(Int(result.farthest))pt, \(result.backJumps) back jumps (\(result.backJumpsAfterLanding) after first landing), "
-            + "\(landings) landings, \(Int(result.awayAfterLanding))pt off after landing, \(shown.distance)pt at rest, follows \(place.follows)")
         guard store.running, result.landed, result.backJumpsAfterLanding == 0, result.awayAfterLanding < jolt,
               shown.atTail, shown.ink >= TailFixture.inkFloor else {
             FixtureCheck.fail("\(action) did not land and stay on the streaming tail")
         }
+        FixtureCheck.report("FIXTURE CHECK ok: \(action), \(result.frames) frames, \(revisions) revisions since press, "
+            + "farthest \(Int(result.farthest))pt, \(result.backJumps) back jumps (\(result.backJumpsAfterLanding) after first landing), "
+            + "\(landings) landings, \(Int(result.awayAfterLanding))pt off after landing, \(shown.distance)pt at rest, follows \(place.follows)")
     }
 
     /// Points the thread's visible bottom sits above the end of its content.

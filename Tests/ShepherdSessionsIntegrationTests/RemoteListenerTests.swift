@@ -16,18 +16,20 @@ struct RemoteListenerTests {
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
-        // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
-        // on, and it starts off.
-        // Fleet is offered only by a host whose fleet has started (`SessionServer.startFleet`); a bare server has none.
-        // Nor an updater, so the host updates no Mac of its fleet (`fleet.update.v1`).
-        // A bare server also has no owner Project launcher/controller installed, and Files goes
-        // only to a client that lists it (this one lists nothing).
-        let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetLinkCapability && $0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetCheckCapability && $0 != RemoteProtocol.fleetDevicesCapability && $0 != RemoteProtocol.fleetSyncCapability && $0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetDispatchCapability && $0 != RemoteProtocol.fleetMoveCapability && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.fleetUpdateCapability && $0 != RemoteProtocol.fleetUpdateViewCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
-        }
-        // This host's fleet runs (a test's client is one of its devices), so it says who it is.
+        // The Design tool starts off. The test token authenticates a device, not a Fleet member.
+        let unavailable = RemoteProtocol.designCapabilities.union(RemoteProtocol.fleetMemberCapabilities).union([
+            // No updater, no Files opt-in, and no Project launcher or controller.
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.fleetUpdateViewCapability,
+            RemoteProtocol.filesCapability,
+            RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability,
+            RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectExecutionCapability,
+            RemoteProtocol.projectPlacementCapability, RemoteProtocol.projectPublicationsCapability,
+            RemoteProtocol.projectResultCapability,
+        ])
+        let offered = RemoteProtocol.capabilities.filter { !unavailable.contains($0) }
         guard case .helloOk(7, RemoteProtocol.version, let capabilities, _, let hostID) = try await client.next() else { Issue.record("expected helloOk"); return }
-        #expect(capabilities == offered && hostID != nil)
+        #expect(capabilities.sorted() == offered.sorted())
+        #expect(hostID != nil)
     }
 
     @Test(arguments: ["127.0.0.1", "localhost"])
@@ -229,6 +231,47 @@ struct RemoteListenerTests {
         guard case .error(4, let olderCode, _) = try await older.next() else { Issue.record("expected starting"); return }
         #expect(olderCode == NativeThreadCode.starting)
         try await eventually("both non-preview reads demand pi on main") { demanded.current == [idle.agent.id, idle.agent.id] }
+    }
+
+    @MainActor
+    @Test func copiesEveryPageOfAnIdleCompactedBranchWithoutStartingPi() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let demanded = Locked<[AgentID]>([])
+        r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }
+        let space = Fixture.space(path: r.host.dir.appendingPathComponent("work").path)
+        try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true)
+        let idle = Fixture.agent(in: space, name: "idle", sessionID: SessionID())
+        try await r.host.seed(Fixture.workspace([idle], space: space))
+        let sessionID = idle.agent.effectivePiSessionID
+        let folder = r.server.pi.sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: space.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl")
+        var lines = [#"{"type":"session","version":3,"id":"\#(sessionID)"}"#]
+        for index in 0..<120 {
+            if index == 60 {
+                lines.append(#"{"type":"message","id":"fork","parentId":"e0","message":{"role":"user","content":"other branch"}}"#)
+                lines.append(#"{"type":"compaction","id":"compact","parentId":"e59","firstKeptEntryId":"e55","summary":"omitted earlier context"}"#)
+            }
+            let parent = index == 0 ? "null" : index == 60 ? #""compact""# : #""e\#(index - 1)""#
+            lines.append(#"{"type":"message","id":"e\#(index)","parentId":\#(parent),"message":{"role":"user","content":"message \#(index)"}}"#)
+        }
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+
+        let client = try await r.typed(capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability])
+        defer { client.disconnect() }
+        var pages: [[String]] = []
+        var copies: [String] = []
+        let copied = try await ThreadTranscript.copy(fetch: { request in
+            let result = try await client.nativeThread(agentID: idle.agent.id, request: request)
+            if case .snapshot(let page) = result { pages.append(page.messages.map(\.entryID)) }
+            return result
+        }, to: { copies.append($0) })
+        #expect(copied)
+        #expect(pages.map(\.count) == [50, 50, 20])
+        #expect(Set(pages.joined()).count == 120, "Pages must not repeat any entries")
+        #expect(copies == [(0..<120).map { "user: message \($0)" }.joined(separator: "\n\n")])
+        #expect(demanded.current.isEmpty, "Copying must not start pi")
     }
 
     /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and
