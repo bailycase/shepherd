@@ -208,6 +208,8 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// The design this agent draws, where its host serves designs: the row is the design's
     /// (MobileAgents: the nib and "design · 4 boards"), and it opens the design.
     public var design: FleetDesign?
+    /// What the thread spent, as "est. $4.20 · 3.1M tok" (tokens alone with no cost); nil while unknown (`SpendFormat`).
+    public var spend: String?
 
     public var id: FleetRef { ref }
 
@@ -224,6 +226,11 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
         }
         if let hostTag { parts.append(hostTag) }
         return parts.isEmpty ? FleetModel.statusWord(status) : parts.joined(separator: " · ")
+    }
+
+    /// `line` with what the thread spent after it ("Running python · est. $4.20 · 3.1M tok"), as every row says its spend.
+    public func saying(spendAfter line: String) -> String {
+        spend.map { "\(line) · \($0)" } ?? line
     }
 
     /// When it last moved (ms since epoch), for a finished thread's time and day.
@@ -432,6 +439,9 @@ public struct FleetModel: Equatable, Sendable {
     /// A triggered automation's run threads (`Agent.automationOrigin`, its automation still on the host), by the
     /// automation that started them: the sidebar folds each automation's under one row (`FleetSidebarState.groups`).
     public var runOrigins: [FleetRef: AutomationID] = [:]
+    /// What every host's threads spent today, as Home's header says it; nil while nothing was. Derived with the model, and again at
+    /// midnight (`HomeFeed`), so a view only draws it.
+    public var spendToday: SpendSummary?
 
     public init() {}
 
@@ -458,8 +468,9 @@ public struct FleetModel: Equatable, Sendable {
         offlineCount == 0 ? nil : "\(offlineCount) host\(offlineCount == 1 ? "" : "s") offline"
     }
 
-    public init(hosts: [FleetHost], digests: [FleetRef: FleetDigest]) {
+    public init(hosts: [FleetHost], digests: [FleetRef: FleetDigest], now: Date = Date()) {
         tagsHosts = hosts.count > 1
+        spendToday = SpendSummary(hosts.flatMap { $0.state.agents.compactMap(\.spend) }, now: now)
         var recents: [(row: FleetThreadRow, order: Int, key: Double)] = []
         var order = 0
         for host in hosts {
@@ -617,6 +628,7 @@ public struct FleetModel: Equatable, Sendable {
         row.goal = digest?.goal
         row.result = digest?.result
         row.session = digest?.session
+        row.spend = SpendFormat.line(agent.spend)
         return row
     }
 
