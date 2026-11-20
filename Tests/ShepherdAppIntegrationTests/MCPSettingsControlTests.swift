@@ -67,9 +67,14 @@ struct MCPSettingsControlTests {
             case "login":
                 onLine?("https://mcp.example.com/authorize?server=\(arguments.dropFirst().first ?? "")")
                 if blocksLogin {
-                    // Simulated pi waiting for a browser: models the scenario, not a test wait.
-                    // One long bound, so cancellation (not the clock) ends it, with status 143 as pi exits.
-                    try? await Task.sleep(for: .seconds(30))
+                    // Simulated pi waiting for a browser: stays, with no clock of its own, until
+                    // Cancel ends it. The test's own waits carry the timeout.
+                    let gate = Gate()
+                    await withTaskCancellationHandler {
+                        await gate.wait()
+                    } onCancel: {
+                        gate.open()
+                    }
                     return MCPCLIResult(status: 143, stdout: "", stderr: "")
                 }
                 return MCPCLIResult(status: loginStatus, stdout: "", stderr: loginStatus == 0 ? "" : "Sign-in to MCP server \"x\" failed: boom")
@@ -283,6 +288,7 @@ struct MCPSettingsControlTests {
         let before = logins()
         try failed.press("Try again")
         try await eventuallyOnMain("pi's login to run again") { logins() == before + 1 }
+        try await eventuallyOnMain("the retry to fail") { failing.model.phase == .failed }
         try failed.press("Details")
         try failed.press("Close")
         #expect(closed == 2)

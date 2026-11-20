@@ -22,19 +22,29 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
     private var recorded: [Call] = []
     var reply: @Sendable ([String]) -> (lines: [String], result: MCPCLIResult) = { _ in ([], MCPCLIResult(status: 0, stdout: "", stderr: "")) }
     var blocksLogin = false
+    /// Where the fake reports: every call, and the login's lifecycle while it blocks.
+    var state = MCPHarnessState()
 
     var calls: [Call] { lock.withLock { recorded } }
 
     func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
         lock.withLock { recorded.append(Call(arguments: arguments, environment: environment, timeout: timeout)) }
+        state.noteCall()
         let answer = reply(arguments)
         for line in answer.lines { onLine?(line) }
         if blocksLogin, arguments.first == "login" {
-            // Simulated pi waiting for a browser: models the scenario, not a test wait.
-            // One long bound, so cancellation (not the clock) ends it, with status 143 as pi exits.
-            try? await Task.sleep(for: .seconds(30))
-            return MCPCLIResult(status: 143, stdout: answer.result.stdout, stderr: "")
+            // Simulated pi waiting for a browser: suspends with no sleep until the flow's
+            // task is cancelled, then answers a late success. If cancellation never reached
+            // the fake, the flow would read this as signed in and the test would fail.
+            state.loginEntered.open()
+            await withTaskCancellationHandler {
+                await state.loginGate.wait()
+            } onCancel: {
+                state.loginGate.open()
+            }
+            state.loginCancelled.open()
+            return MCPCLIResult(status: 0, stdout: "Signed in to MCP server \"notion\" (3 tools).\n", stderr: "")
         }
         return answer.result
     }
@@ -72,6 +82,19 @@ final class MCPHarnessState: @unchecked Sendable {
     var opened: [URL] { lock.withLock { _opened } }
     func write(_ data: Data) { lock.withLock { _written.append(data) } }
     func open(_ url: URL) { lock.withLock { _opened.append(url) } }
+
+    /// The fake login's lifecycle while it blocks: entered, then cancelled.
+    let loginEntered = Gate()
+    let loginCancelled = Gate()
+    /// The fake's own suspension while it models pi waiting for a browser.
+    let loginGate = Gate()
+    /// Every fake call, in order; the stream never drops, so a test that starts late still sees all.
+    private static func makeCallNotes() -> (AsyncStream<Void>, AsyncStream<Void>.Continuation) {
+        AsyncStream<Void>.makeStream()
+    }
+    private let callNotes = makeCallNotes()
+    var callNotifications: AsyncStream<Void> { callNotes.0 }
+    func noteCall() { callNotes.1.yield() }
 }
 
 @MainActor
@@ -88,6 +111,7 @@ final class MCPStoreHarness {
         self.cli = cli
         self.secrets = secrets
         let state = state
+        cli.state = state
         state.prepareProblem = prepareProblem
         var dependencies = MCPStore.Dependencies(
             file: MCPConfigFile(url: url), secrets: secrets, http: URLSessionHTTP(), cli: cli,
@@ -361,7 +385,7 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        try await eventuallyOnMain("the sign-in to succeed") { flow.succeeded }
+        await flow.completion()
         #expect(cli.calls.first?.arguments == ["login", "notion", "--timeout", "300"])
         #expect(flow.model.phase == .done)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .done])
@@ -380,7 +404,7 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        try await eventuallyOnMain("the sign-in to fail") { flow.model.phase == .failed }
+        await flow.completion()
         #expect(flow.model.phase == .failed)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .failed])
         #expect(flow.model.steps.last?.title == "Signing in didn’t finish")
@@ -396,13 +420,14 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        try await eventuallyOnMain("pi to print its address") { flow.authorizationURL != nil }
+        let state = harness.state
+        try await bounded("the fake login to block") { await state.loginEntered.wait() }
         harness.store.closeSignIn()
         harness.store.closeSignIn()
         #expect(harness.store.signIn == nil)
-        // Bounded wait, kept: nothing observable follows a cancelled login, so give cancellation
-        // a moment to settle before asserting it never read as signed in.
-        try await Task.sleep(for: .milliseconds(50))
+        try await bounded("cancellation to reach the fake login") { await state.loginCancelled.wait() }
+        await flow.completion()
+        #expect(flow.authorizationURL?.absoluteString == "https://mcp.notion.com/authorize")
         #expect(!flow.succeeded, "a cancelled login never reads as signed in")
     }
 
@@ -411,7 +436,13 @@ struct MCPStoreTests {
         cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "needs-auth", tools: [], error: nil)])) }
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.signOut("linear")
-        try await eventuallyOnMain("sign-out to run logout, then list again") { cli.calls.count >= 2 }
+        let state = harness.state
+        try await bounded("sign-out to run logout, then list again") {
+            if cli.calls.count >= 2 { return }
+            for await _ in state.callNotifications {
+                if cli.calls.count >= 2 { return }
+            }
+        }
         await harness.store.settle()
         #expect(cli.calls.map(\.arguments).prefix(2) == [["logout", "linear"], ["list", "--json"]])
         #expect(try row(harness.store, "linear").signIn == .signIn)
@@ -455,8 +486,13 @@ struct MCPStoreTests {
         harness.store.remove("postgres")
         #expect(harness.store.entry("postgres") == nil)
         #expect(secrets.accounts(withPrefix: "") == ["secret/grafana/T"])
-        try await eventuallyOnMain("pi's logout to run for the removed server") {
-            harness.cli.calls.contains { $0.arguments == ["logout", "postgres"] }
+        let state = harness.state
+        let cli = harness.cli
+        try await bounded("pi's logout to run for the removed server") {
+            if cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { return }
+            for await _ in state.callNotifications {
+                if cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { return }
+            }
         }
     }
 
