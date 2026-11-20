@@ -246,6 +246,9 @@ private final class Corpus {
     /// The reserved space a Project's coordinator lives in, and one id no host has.
     let reservedSpace: Space
     let unknownSpace = SpaceID()
+    /// Another host, with a space of its own that this host does not have.
+    let otherHost: ScratchServer
+    let otherHostSpace: Space
     let thread: AgentFixture
     let coordinator: AgentFixture
     let automation: Automation
@@ -278,6 +281,9 @@ private final class Corpus {
         app.server.configureFleet(name: seed["fleetName"]!, advertises: false)
         var seeded = Fixture.state(spaces: [space, reserved], agents: [thread, owner])
         seeded.automations = [automation]
+        otherHost = try ScratchServer()
+        otherHostSpace = Fixture.space("acme-billing", path: otherHost.dir.path)
+        try await otherHost.server.putState(ShepherdState(spaces: [otherHostSpace]))
         try await app.start(with: seeded)
         fileEvents = FileEvents(root: app.dir, barrierDirectory: try makeScratchDirectory("barrier"))
         forks = try ForkWatch()
@@ -296,6 +302,7 @@ private final class Corpus {
         observer = nil
         fileEvents.stop()
         app.stop()
+        otherHost.stop()
     }
 
     /// A watch that saw nothing would pass every refusal: show that each sees a write and a child process before they are relied on.
@@ -369,9 +376,9 @@ private final class Corpus {
 
     // MARK: Connections
 
-    private func connect(capabilities: [String]?, name: String = "acme-phone") async throws -> Wire {
+    private func connect(capabilities: [String]?, name: String = "acme-phone", token: String? = nil) async throws -> Wire {
         let wire = try Wire(port: port)
-        let (_, reply) = try await exchange(wire, .hello(id: wire.nextID(), token: app.server.clientTokenForTests(), clientName: name,
+        let (_, reply) = try await exchange(wire, .hello(id: wire.nextID(), token: token ?? app.server.clientTokenForTests(), clientName: name,
                                                          protocolVersion: RemoteProtocol.version, capabilities: capabilities))
         guard case .object(let object) = reply, object["type"] as? String == "helloOk" else { throw WireFailure("no helloOk: \(reply)") }
         wire.offered = object["capabilities"] as? [String] ?? []
@@ -667,6 +674,20 @@ private final class Corpus {
         try await refuse("space-lifecycle/move-before-unknown", on: client) {
             .spaceLifecycle(id: $0, spaceID: space.id, action: .move(before: unknownSpace))
         }
+        // A space another host really has is as unknown here as one nobody has, whatever the action names it as.
+        try await refuse("space-lifecycle/other-hosts-space", on: client) { .spaceLifecycle(id: $0, spaceID: otherHostSpace.id, action: .remove) }
+        try await refuse("space-lifecycle/move-before-other-hosts-space", on: client) {
+            .spaceLifecycle(id: $0, spaceID: space.id, action: .move(before: otherHostSpace.id))
+        }
+        // A Mac in the fleet holds a token of its own and may not change this host's spaces, even one it is shown.
+        let peer = try await connect(capabilities: Self.current, name: "acme-peer", token: app.server.peerTokenForTests())
+        try await refuse("space-lifecycle/fleet-peer", on: peer) { .spaceLifecycle(id: $0, spaceID: space.id, action: .remove) }
+        // A host that does not offer the capability refuses before anything else, to a client that lists it.
+        let offered = app.server.advertisedCapabilities
+        app.server.advertisedCapabilities = offered.filter { $0 != RemoteProtocol.spaceLifecycleCapability }
+        defer { app.server.advertisedCapabilities = offered }
+        let old = try await connect(capabilities: Self.current)
+        try await refuse("space-lifecycle/capability-not-offered", on: old) { .spaceLifecycle(id: $0, spaceID: space.id, action: .remove) }
     }
 
     /// The Design tool is off until a client turns it on in the host's settings, as an iPhone does; then its import and catalog requests reach

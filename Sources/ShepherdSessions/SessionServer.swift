@@ -1558,6 +1558,15 @@ public final class SessionServer: @unchecked Sendable {
         return token
     }
 
+    /// Tests: a token a test's client can present as a Mac of this host's fleet (a fleet peer), held in memory like `clientTokenForTests`'s.
+    func peerTokenForTests() -> String {
+        let token = FleetProtocol.makeToken()
+        queue.sync { if fleet == nil { fleetOptions.advertises = false } }
+        startFleet()
+        queue.sync { fleet?.addTestPeer(tokenHash: FleetProtocol.hash(token)) }
+        return token
+    }
+
     /// Starts this host's fleet (`FleetService`): its identity, its links to the Macs it is paired with, its Bonjour advertisement,
     /// the pairing of Macs and devices and the fleet requests. There is no off state. It opens no port by itself: it says when it
     /// needs the listener (`onFleetListenerNeed`). `name` is what other Macs call this one (the Mac's own name unless a test names it).
@@ -7774,12 +7783,14 @@ public final class SessionServer: @unchecked Sendable {
     /// sidebar's project tree draws its projects in.
     /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`).
     func performSpaceAction(_ action: RemoteSpaceAction, on spaceID: SpaceID) async throws {
-        func updating(_ change: (inout Space) -> Void) async throws {
-            guard var space = await enqueueValue({ self.store.state.spaces.first { $0.id == spaceID } }) else {
-                throw SessionServerError.noSuchSpace(spaceID)
+        // One queued step, so a change made meanwhile (a rename, Locate Folder…) is not written back over.
+        func updating(_ change: @escaping (inout Space) -> Void) async throws {
+            try await enqueue {
+                guard let index = self.store.state.spaces.firstIndex(where: { $0.id == spaceID }) else {
+                    throw SessionServerError.noSuchSpace(spaceID)
+                }
+                try self.mutateState { change(&$0.spaces[index]) }
             }
-            change(&space)
-            try await updateSpace(space)
         }
         switch action {
         case .rename(let name): _ = try await editProject(spaceID, edit: ProjectEdit(name: name))
@@ -7802,7 +7813,14 @@ public final class SessionServer: @unchecked Sendable {
         try requireShown(spaceID)
         switch action {
         case .rename(let name): try await performSpaceAction(.rename(name: name), on: spaceID)
-        case .setSidebarHidden(let hidden): try await performSpaceAction(.setSidebarHidden(hidden: hidden), on: spaceID)
+        case .setSidebarHidden(let hidden):
+            // Eligibility and the write are one queued step that sets only `sidebarHidden`.
+            try await enqueue {
+                guard let index = self.store.state.spaces.firstIndex(where: { $0.id == spaceID && !$0.hidden }) else {
+                    throw ProjectFileError("no_such_space", "That space isn't on this host.")
+                }
+                try self.mutateState { $0.spaces[index].sidebarHidden = hidden }
+            }
         case .move(let before):
             if let before { try requireShown(before) }
             try await performSpaceAction(.move(before: before), on: spaceID)

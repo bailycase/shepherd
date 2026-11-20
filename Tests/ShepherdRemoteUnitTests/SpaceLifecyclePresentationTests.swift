@@ -51,4 +51,29 @@ struct SpaceLifecyclePresentationTests {
         #expect(SpaceLifecyclePresentation.toggleTitle(of: web) == "Hide from Sidebar")
         #expect(SpaceLifecyclePresentation.toggleTitle(of: docs) == "Show in Sidebar")
     }
+
+    /// Two Macs of a fleet hold the same space ID. A confirmation opened on one is for that one: Organize showing the other ends it, and
+    /// the answer resolves to the host that asked, which sends nothing once it is offline.
+    @MainActor @Test func aConfirmationBelongsToTheHostThatOpenedIt() {
+        let macA = UUID(), macB = UUID()
+        let dialogs = SpaceLifecycleDialogs()
+        dialogs.removal = SpaceLifecycleTarget(host: macA, space: web.id)
+        dialogs.rename = .init(target: SpaceLifecycleTarget(host: macA, space: web.id), name: "acme-site")
+
+        dialogs.keep(for: macA)
+        #expect(dialogs.removal != nil && dialogs.rename != nil, "still the host Organize shows")
+        // Mac A disconnects and Organize shows Mac B, which has a space with the same ID.
+        dialogs.keep(for: macB)
+        #expect(dialogs.removal == nil && dialogs.rename == nil)
+
+        dialogs.removal = SpaceLifecycleTarget(host: macA, space: web.id)
+        dialogs.keep(for: nil)
+        #expect(dialogs.removal == nil, "no host shown")
+
+        let hosts = [SettingsHost(id: macA, name: "Mac A", client: nil, capabilities: []),
+                     SettingsHost(id: macB, name: "Mac B", client: FakeSettingsClient(), capabilities: [RemoteProtocol.spaceLifecycleCapability])]
+        let asked = SpaceLifecycleDialogs.host(of: SpaceLifecycleTarget(host: macA, space: web.id), in: hosts)
+        #expect(asked?.id == macA && asked?.client == nil, "never Mac B's client")
+        #expect(SpaceLifecycleDialogs.host(of: SpaceLifecycleTarget(host: UUID(), space: web.id), in: hosts) == nil)
+    }
 }

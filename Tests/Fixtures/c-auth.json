@@ -3011,6 +3011,78 @@
         "stateFetch.changed": []
       },
       "step": "space-lifecycle/move-before-unknown"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.events": [],
+        "process.started": false,
+        "reply.code": "no_such_space",
+        "reply.id": 12,
+        "reply.message": "That space isn't on this host.",
+        "reply.type": "error",
+        "request.action.remove": {},
+        "request.id": 12,
+        "request.spaceID": "<id 51>",
+        "request.type": "spaceLifecycle",
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "space-lifecycle/other-hosts-space"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.events": [],
+        "process.started": false,
+        "reply.code": "no_such_space",
+        "reply.id": 14,
+        "reply.message": "That space isn't on this host.",
+        "reply.type": "error",
+        "request.action.move.before": "<id 51>",
+        "request.id": 14,
+        "request.spaceID": "<space>",
+        "request.type": "spaceLifecycle",
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "space-lifecycle/move-before-other-hosts-space"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.events": [],
+        "process.started": false,
+        "reply.code": "forbidden",
+        "reply.id": 2,
+        "reply.message": "Only this Mac's own app or a paired device changes its spaces.",
+        "reply.type": "error",
+        "request.action.remove": {},
+        "request.id": 2,
+        "request.spaceID": "<space>",
+        "request.type": "spaceLifecycle",
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "space-lifecycle/fleet-peer"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.events": [],
+        "process.started": false,
+        "reply.code": "unsupported",
+        "reply.id": 2,
+        "reply.message": "Update Shepherd on the host to manage its spaces from here.",
+        "reply.type": "error",
+        "request.action.remove": {},
+        "request.id": 2,
+        "request.spaceID": "<space>",
+        "request.type": "spaceLifecycle",
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "space-lifecycle/capability-not-offered"
     }
   ],
   "referenceRevision": "641435ce286e0095e5abfd471085012b2a0c91a2",

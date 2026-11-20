@@ -57,45 +57,55 @@ struct SpacesOrganizeScreen: View {
         .background(Color.sh.bgWindow)
         .navigationTitle("Organize spaces")
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
-        .alert("Rename \(spaces.first { $0.id == store.spaceRename?.space }?.name ?? "space")",
-               isPresented: Binding(get: { store.spaceRename != nil }, set: { if !$0 { store.spaceRename = nil } })) {
-            TextField("Name", text: Binding(get: { store.spaceRename?.name ?? "" }, set: { store.spaceRename?.name = $0 }))
+        .alert("Rename \(renaming(in: spaces, store)?.name ?? "space")",
+               isPresented: Binding(get: { renaming(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.rename = nil } })) {
+            TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" }, set: { store.spaceDialogs.rename?.name = $0 }))
             Button("Rename") {
-                if let rename = store.spaceRename, let space = spaces.first(where: { $0.id == rename.space }),
+                if let rename = store.spaceDialogs.rename, let space = renaming(in: spaces, store),
                    let new = SpaceLifecyclePresentation.renamed(rename.name, from: space.name) {
-                    send(.rename(name: new), space: space.id, host: host)
+                    send(.rename(name: new), to: rename.target, store: store)
                 }
             }
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(SpaceLifecyclePresentation.removeTitle,
-                            isPresented: Binding(get: { removal(in: spaces, store) != nil }, set: { if !$0 { store.spaceRemoval = nil } }),
+                            isPresented: Binding(get: { removal(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.removal = nil } }),
                             titleVisibility: .visible, presenting: removal(in: spaces, store)) { space in
-            Button(SpaceLifecyclePresentation.removeButton, role: .destructive) { send(.remove, space: space.id, host: host) }
+            Button(SpaceLifecyclePresentation.removeButton, role: .destructive) {
+                if let target = store.spaceDialogs.removal { send(.remove, to: target, store: store) }
+            }
         } message: { space in
             Text(SpaceLifecyclePresentation.removeMessage(name: space.name, threads: mobile.map { SpaceLifecyclePresentation.threads(in: $0.state, of: space) } ?? 0))
         }
     }
 
-    /// The space waiting on Remove Space…'s answer, if the host still has it.
+    /// The space waiting on Remove Space…'s answer, if the host it was opened on is the one shown and still has it.
     private func removal(in spaces: [Space], _ store: SettingsStore) -> Space? {
-        spaces.first { $0.id == store.spaceRemoval }
+        guard let target = store.spaceDialogs.removal, target.host == store.settingsHost?.id else { return nil }
+        return spaces.first { $0.id == target.space }
+    }
+
+    /// The space being renamed, on the same terms.
+    private func renaming(in spaces: [Space], _ store: SettingsStore) -> Space? {
+        guard let target = store.spaceDialogs.rename?.target, target.host == store.settingsHost?.id else { return nil }
+        return spaces.first { $0.id == target.space }
     }
 
     /// The space's actions, as the Mac's project menu: Rename, Hide from Sidebar, its place in the order, Remove Space….
     private func menu(for space: Space, in spaces: [Space], host: SettingsHost, store: SettingsStore) -> some View {
+        let target = SpaceLifecycleTarget(host: host.id, space: space.id)
         let up = SpaceLifecyclePresentation.moveUp(space.id, in: spaces), down = SpaceLifecyclePresentation.moveDown(space.id, in: spaces)
         return Menu {
-            Button("Rename…") { store.spaceRename = (space.id, space.name) }
+            Button("Rename…") { store.spaceDialogs.rename = .init(target: target, name: space.name) }
             Button(SpaceLifecyclePresentation.toggleTitle(of: space)) {
-                send(.setSidebarHidden(hidden: !space.sidebarHidden), space: space.id, host: host)
+                send(.setSidebarHidden(hidden: !space.sidebarHidden), to: target, store: store)
             }
-            Button("Move Up") { if let up { send(up, space: space.id, host: host) } }
+            Button("Move Up") { if let up { send(up, to: target, store: store) } }
                 .disabled(up == nil)
-            Button("Move Down") { if let down { send(down, space: space.id, host: host) } }
+            Button("Move Down") { if let down { send(down, to: target, store: store) } }
                 .disabled(down == nil)
             Divider()
-            Button("Remove Space…", role: .destructive) { store.spaceRemoval = space.id }
+            Button("Remove Space…", role: .destructive) { store.spaceDialogs.removal = target }
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.sh(.ui))
@@ -106,13 +116,14 @@ struct SpacesOrganizeScreen: View {
         .accessibilityLabel("\(space.name) actions")
     }
 
-    /// One change at a time: the host's pushed state shows it, and a refusal shows in words.
-    private func send(_ action: RemoteSpaceLifecycle, space: SpaceID, host: SettingsHost?) {
-        guard !busy, let client = host?.client as? RemoteHostClient else { return }
+    /// One change at a time, through the host the space was shown on, never the one Organize shows by now: the host's pushed state shows
+    /// it, and a refusal shows in words.
+    private func send(_ action: RemoteSpaceLifecycle, to target: SpaceLifecycleTarget, store: SettingsStore) {
+        guard !busy, let client = SpaceLifecycleDialogs.host(of: target, in: store.hosts)?.client as? RemoteHostClient else { return }
         busy = true
         problem = nil
         Task {
-            do { try await client.spaceLifecycle(action, spaceID: space) } catch { problem = SpaceLifecyclePresentation.problem(error) }
+            do { try await client.spaceLifecycle(action, spaceID: target.space) } catch { problem = SpaceLifecyclePresentation.problem(error) }
             busy = false
         }
     }

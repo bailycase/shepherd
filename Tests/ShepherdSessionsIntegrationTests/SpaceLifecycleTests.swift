@@ -114,6 +114,43 @@ struct SpaceLifecycleTests {
         guard case .state(50, _) = try await client.next() else { Issue.record("the connection stopped serving"); return }
     }
 
+    /// Hide changes `sidebarHidden` and nothing else: a rename or Locate Folder… the Mac makes while the request is in flight is never
+    /// written back over. A relocation ticks on the host's queue throughout, so the request's hops to the queue interleave with it; a
+    /// Hide that reads the space and then replaces it puts back a path the ticks have already moved on from.
+    @Test func hideNeverRevertsAConcurrentChangeToTheSpace() async throws {
+        final class Ticks: @unchecked Sendable {
+            var count = 0, stopped = false, reverted: String?
+        }
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let seed = try Seeded(in: r.host)
+        try await r.host.seed(seed.state)
+        let id = seed.web.id, server = r.server
+        let ticks = Ticks()
+        func tick() {
+            guard !ticks.stopped else { return }
+            guard let index = server.store.state.spaces.firstIndex(where: { $0.id == id }) else { return }
+            let path = server.store.state.spaces[index].path
+            if ticks.count > 0, path != "/moved/\(ticks.count)", ticks.reverted == nil { ticks.reverted = "\(path) after /moved/\(ticks.count)" }
+            ticks.count += 1
+            try? server.mutateState { $0.spaces[index].path = "/moved/\(ticks.count)" }
+            server.queue.async { tick() }
+        }
+        server.queue.async { tick() }
+        for round in 0..<20 {
+            try await server.performSpaceLifecycle(.setSidebarHidden(hidden: round % 2 == 0), on: id)
+        }
+        await server.enqueueValue {
+            ticks.stopped = true
+            let path = server.store.state.spaces.first { $0.id == id }?.path
+            if path != "/moved/\(ticks.count)", ticks.reverted == nil { ticks.reverted = "\(path ?? "none") after /moved/\(ticks.count)" }
+        }
+        #expect(ticks.reverted == nil, "a Hide put back an older path: \(ticks.reverted ?? "")")
+        #expect(ticks.count > 20, "the Mac's changes ran alongside")
+        let space = try #require(server.state.spaces.first { $0.id == id })
+        #expect(space.sidebarHidden == false && space.name == seed.web.name)
+    }
+
     @Test func aHostWithoutTheCapabilityRefusesBeforeAnything() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

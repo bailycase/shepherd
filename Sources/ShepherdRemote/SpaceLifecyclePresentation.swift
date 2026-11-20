@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import ShepherdCore
 import ShepherdProtocol
 
@@ -45,5 +46,50 @@ public enum SpaceLifecyclePresentation {
     public static func problem(_ error: Error) -> String {
         if case RemoteHostClientError.rejected("no_such_space", _) = error { return "That space is no longer on this host." }
         return settingsProblem(error)
+    }
+}
+
+/// A space on one host. Hosts of a fleet share space IDs, so the ID alone does not say which Mac an action is for.
+public struct SpaceLifecycleTarget: Equatable, Sendable {
+    public var host: UUID
+    public var space: SpaceID
+
+    public init(host: UUID, space: SpaceID) {
+        self.host = host
+        self.space = space
+    }
+}
+
+/// The Rename and Remove Space… dialogs of Organize, each bound to the host that opened it. They end when Organize shows another host, and
+/// answer only through the host that asked: an answer to Rename or Remove on one Mac never reaches another with the same space ID.
+@MainActor
+@Observable
+public final class SpaceLifecycleDialogs {
+    public struct Rename: Equatable, Sendable {
+        public var target: SpaceLifecycleTarget
+        public var name: String
+
+        public init(target: SpaceLifecycleTarget, name: String) {
+            self.target = target
+            self.name = name
+        }
+    }
+
+    /// The space being renamed with the name typed so far.
+    public var rename: Rename?
+    /// The space waiting on Remove Space…'s answer.
+    public var removal: SpaceLifecycleTarget?
+
+    public init() {}
+
+    /// Organize shows `host` now: a dialog opened for any other host is over.
+    public func keep(for host: UUID?) {
+        if rename?.target.host != host { rename = nil }
+        if removal?.host != host { removal = nil }
+    }
+
+    /// The host `target` is on, whatever Organize shows now; nil once the device no longer holds it. Its `client` is nil while it is offline.
+    public static func host(of target: SpaceLifecycleTarget, in hosts: [SettingsHost]) -> SettingsHost? {
+        hosts.first { $0.id == target.host }
     }
 }

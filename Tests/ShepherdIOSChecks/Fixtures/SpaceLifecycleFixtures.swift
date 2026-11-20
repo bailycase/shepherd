@@ -13,10 +13,10 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-spaces-organize", hosts: FixtureData.spaceHosts(), routes: [.settings(.spaces), .settings(.organizeSpaces)], tab: .settings),
             FixtureScreen(name: "settings-spaces-organize-rename", hosts: FixtureData.spaceHosts(),
                           routes: [.settings(.spaces), .settings(.organizeSpaces)], tab: .settings,
-                          prepare: { app in SettingsStore.of(app.hosts).spaceRename = (web.id, web.name) }),
+                          prepare: { app in SettingsStore.of(app.hosts).spaceDialogs.rename = .init(target: .init(host: FixtureData.studio, space: web.id), name: web.name) }),
             FixtureScreen(name: "settings-spaces-organize-remove", hosts: FixtureData.spaceHosts(),
                           routes: [.settings(.spaces), .settings(.organizeSpaces)], tab: .settings,
-                          prepare: { app in SettingsStore.of(app.hosts).spaceRemoval = web.id }),
+                          prepare: { app in SettingsStore.of(app.hosts).spaceDialogs.removal = .init(host: FixtureData.studio, space: web.id) }),
             // The iPad's list beside Spaces, which offers Organize.
             FixtureScreen(name: "settings-pad-spaces", hosts: FixtureData.spaceHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .spaces }),
