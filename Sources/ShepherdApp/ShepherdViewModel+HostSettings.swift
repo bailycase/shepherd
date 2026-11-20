@@ -66,8 +66,8 @@ enum HostSettingsMapping {
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?,
                          slashCommands: [NativeCommand] = []) -> HostSettings {
-        // The Agents, Worktrees and Experiments groups come from the host's store (`AppSettings.hostAgents`, `hostWorktrees`, `hostExperiments`); the rest still from `app`.
-        let agents = app.hostAgents, worktrees = app.hostWorktrees, experiments = app.hostExperiments
+        // The Agents, Worktrees, Fleet and Experiments groups come from the host's store (`AppSettings.hostAgents`, `hostWorktrees`, `hostFleet`, `hostExperiments`); the rest still from `app`.
+        let agents = app.hostAgents, worktrees = app.hostWorktrees, fleet = app.hostFleet, experiments = app.hostExperiments
         return HostSettings(
             shepherdVersion: shepherdVersion,
             piVersion: piVersion,
@@ -110,14 +110,14 @@ enum HostSettingsMapping {
             },
             updatePiDaily: false,
             updateExtensionsDaily: false,
-            fleetWeights: app.fleetWeights,
-            fleetThreadsCanSend: app.fleetThreadsCanSend,
-            fleetThreadCap: app.fleetThreadCap,
-            fleetAutoDispatch: app.fleetAutoDispatch,
-            fleetBatteryCountsHalf: app.fleetBatteryCountsHalf,
-            fleetUncommitted: app.fleetUncommitted,
-            fleetSnapshotExcludes: app.fleetSnapshotExcludes,
-            fleetCheckIgnores: app.fleetCheckIgnores
+            fleetWeights: fleet.weights,
+            fleetThreadsCanSend: fleet.threadsCanSend,
+            fleetThreadCap: fleet.threadCap,
+            fleetAutoDispatch: fleet.autoDispatch,
+            fleetBatteryCountsHalf: fleet.batteryCountsHalf,
+            fleetUncommitted: fleet.uncommitted,
+            fleetSnapshotExcludes: fleet.snapshotExcludes,
+            fleetCheckIgnores: fleet.checkIgnores
         )
     }
 

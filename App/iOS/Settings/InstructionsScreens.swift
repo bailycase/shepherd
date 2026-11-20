@@ -49,7 +49,9 @@ private struct InstructionsPhonePage: View {
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SH.Space.xs)
-                if let problem = model.problem {
+                if let problem = model.historyProblem(in: hosts) {
+                    SHBanner(.failed, title: problem)
+                } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
                         Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
@@ -168,13 +170,17 @@ struct InstructionsEditorScreen: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if let problem = model.problem {
-                SHBanner(.failed, title: problem) {
-                    Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+            Group {
+                if let problem = model.historyProblem(in: settingsHosts) {
+                    SHBanner(.failed, title: problem)
+                } else if let problem = model.problem {
+                    SHBanner(.failed, title: problem) {
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                    }
                 }
-                .padding(.horizontal, MobileLayout.gutter)
-                .padding(.vertical, SH.Space.s)
             }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.vertical, SH.Space.s)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if focus.editing { InstructionsKeyRow(focus: focus) }
@@ -227,9 +233,11 @@ private struct InstructionsPadPage: View {
                     .shText(.caption)
                     .foregroundStyle(Color.sh.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                actions(model, hosts: hosts, ready: snapshot != nil)
+                actions(model, hosts: hosts, historyAvailable: snapshot != nil && snapshot?.historyProblem == nil)
             }
-            if let problem = model.problem {
+            if let problem = snapshot?.historyProblem {
+                SHBanner(.failed, title: problem)
+            } else if let problem = model.problem {
                 SHBanner(.failed, title: problem) {
                     Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                 }
@@ -256,11 +264,11 @@ private struct InstructionsPadPage: View {
     }
 
     /// History and Save.
-    private func actions(_ model: ClientInstructions, hosts: [SettingsHost], ready: Bool) -> some View {
+    private func actions(_ model: ClientInstructions, hosts: [SettingsHost], historyAvailable: Bool) -> some View {
         HStack(spacing: SH.Space.m) {
             Button("History") { showsHistory = true }
                 .buttonStyle(.sh(.secondary, size: .l))
-                .disabled(!ready)
+                .disabled(!historyAvailable)
                 .popover(isPresented: $showsHistory, arrowEdge: .top) {
                     InstructionsHistoryList(entries: model.history(file, in: hosts)) { entry in
                         showsHistory = false

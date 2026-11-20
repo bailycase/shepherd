@@ -6,9 +6,12 @@ import Testing
 @testable import ShepherdSessions
 
 extension StateStoreTests {
-    // Keep the reference golden frozen. C-RECOVER replaces only its known damaged rows.
+    // Keep the reference golden frozen. StateRecoveryTests and YourPiImportEdgeTests exercise
+    // the new policies for these damaged inputs instead of asserting the old rewrites.
     private static let damagedRows: Set<String> = [
+        "instruction-history-bad-element", "instruction-history-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
+        "pi-import-bad-element", "pi-import-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
@@ -154,12 +157,12 @@ extension StateStoreTests {
             let engine = PiEngine(command: [], packageDirectory: nil, version: nil, node: .executable("/usr/bin/false"))
             let home = PiHome(directory: url.deletingLastPathComponent(), engine: engine, userHome: root.path)
             let store = YourPiImport(home: home, yourPi: nil, userHome: root.path)
-            let state = store.state()
+            let state = try #require(store.state())
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            loaded = try JSONSerialization.jsonObject(with: encoder.encode(state), options: [.fragmentsAllowed])
-            if let state { try store.save(state) }
-            else { try store.updateState { $0 = YourPiImportState(copiedAt: now, from: nil, copied: false) } }
+            loaded = try JSONSerialization.jsonObject(with: encoder.encode(state))
+            try store.updateState { $0.copied.toggle() }
+            try store.updateState { $0 = state }
         default:
             throw CocoaError(.fileReadUnsupportedScheme)
         }

@@ -24,8 +24,12 @@ struct HostSettingsStoreTests {
         let experiments = StoredHostPreferences.Experiments()
         let experimentsEncoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(experiments)) as? [String: Any])
         #expect(Set(Mirror(reflecting: experiments).children.compactMap(\.label)) == Set(experimentsEncoded.keys), "an Experiments field the file does not carry")
+        var fleet = StoredHostPreferences.Fleet()
+        fleet.autoDispatch = true // nil is left out of the file
+        let fleetEncoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(fleet)) as? [String: Any])
+        #expect(Set(Mirror(reflecting: fleet).children.compactMap(\.label)) == Set(fleetEncoded.keys), "a Fleet field the file does not carry")
         let groups = Mirror(reflecting: StoredHostPreferences()).children.compactMap(\.label)
-        #expect(Set(groups) == ["version", "agents", "worktrees", "experiments"], "a group with no check above")
+        #expect(Set(groups) == ["version", "agents", "worktrees", "fleet", "experiments"], "a group with no check above")
         #expect(try StoredHostPreferences.decode(Data("{}".utf8)) == StoredHostPreferences())
     }
 
@@ -48,6 +52,15 @@ struct HostSettingsStoreTests {
         #expect(read.experiments == StoredHostPreferences.Experiments() && read.worktrees.closeOnMerge)
         let partial = try StoredHostPreferences.decode(Data(#"{"experiments":{"designTool":true}}"#.utf8)).experiments
         #expect(partial.designTool && !partial.goals && !partial.projects && !partial.computerUse)
+    }
+
+    @Test func aFileFromBeforeFleetMovedReadsItAsDefaults() throws {
+        let read = try StoredHostPreferences.decode(Data(#"{"version":1,"worktrees":{"closeOnMerge":true}}"#.utf8))
+        #expect(read.fleet == StoredHostPreferences.Fleet() && read.worktrees.closeOnMerge)
+        #expect(read.fleet.threadCap == HostSettings.fleetThreadCapDefault && read.fleet.batteryCountsHalf && read.fleet.autoDispatch == nil)
+        let partial = try StoredHostPreferences.decode(Data(#"{"fleet":{"threadsCanSend":true,"weights":{"fleet.weight.x":"prefer"}}}"#.utf8)).fleet
+        #expect(partial.threadsCanSend && partial.weights == ["fleet.weight.x": .prefer] && partial.threadCap == HostSettings.fleetThreadCapDefault
+                && partial.uncommitted == .sendThem && partial.snapshotExcludes.isEmpty && partial.checkIgnores.isEmpty)
     }
 
     @Test func aChangeIsKeptInTheFileAndAReopenedStoreReadsIt() throws {

@@ -35,6 +35,22 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test func damagedPiImportHistory() async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = PiHome(directory: dir, engine: .missing(app: dir))
+        let imports = YourPiImport(home: home, yourPi: nil)
+        try Data(#"{"copies":42}"#.utf8).write(to: imports.stateURL)
+        let workspace = try PreviewWorkspace(yourPi: imports.survey())
+        defer { workspace.stop() }
+        for section in [SettingsSection.models, .fromYourPi] {
+            workspace.vm.settingsSection = section
+            try await Preview.render("settings-\(section.rawValue)-damaged-import", size: CGSize(width: 1280, height: 1200)) {
+                SettingsView(vm: workspace.vm)
+            }
+        }
+    }
+
     /// Settings as a modal over the window (SettingsModal), rendered through the real window root.
     @Test(arguments: SettingsSection.allCases)
     func settingsModal(section: SettingsSection) async throws {
@@ -361,6 +377,25 @@ struct SettingsPreviewTests {
                       file: .agents)
         workspace.vm.settingsSection = .instructions; workspace.vm.instructions.editing = true
         try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func settingsInstructionsDamagedHistory(editing: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = workspace.server.instructions
+        try store.save(.agents, content: Self.instructionsSample)
+        let url = store.directory.appendingPathComponent("history.json")
+        try Data(#"{"version":1,"revisions":["#.utf8).write(to: url, options: .atomic)
+        try await workspace.seed(workspace.server.state)
+        await workspace.vm.instructions.refresh()
+        #expect(workspace.vm.instructions.local?.historyProblem?.contains(url.path) == true)
+        workspace.vm.settingsSection = .instructions
+        workspace.vm.instructions.editing = editing
+        try await Preview.render(editing ? "settings-instructions-damaged-editor" : "settings-instructions-damaged-list",
+                                 size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }
     }

@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -60,14 +61,14 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
         copied = try c.decodeIfPresent(Bool.self, forKey: .copied) ?? true
         copiedAt = try c.decodeIfPresent(Date.self, forKey: .copiedAt) ?? Date(timeIntervalSince1970: 0)
         from = try c.decodeIfPresent(String.self, forKey: .from)
-        copies = (try? c.decodeIfPresent([YourPiCopy].self, forKey: .copies)) ?? []
-        extensionsOn = (try? c.decodeIfPresent([String].self, forKey: .extensionsOn)) ?? []
-        extensionFailures = (try? c.decodeIfPresent([String: YourPiExtensionFailure].self, forKey: .extensionFailures)) ?? [:]
-        extensionEntries = (try? c.decodeIfPresent([String].self, forKey: .extensionEntries)) ?? []
-        extensionsHeld = (try? c.decodeIfPresent([String].self, forKey: .extensionsHeld)) ?? []
-        legacySkills = (try? c.decodeIfPresent([String].self, forKey: .skills)) ?? []
-        legacyPrompts = (try? c.decodeIfPresent([String].self, forKey: .prompts)) ?? []
-        digests = (try? c.decodeIfPresent([String: String].self, forKey: .digests)) ?? [:]
+        copies = try c.decodeIfPresent([YourPiCopy].self, forKey: .copies) ?? []
+        extensionsOn = try c.decodeIfPresent([String].self, forKey: .extensionsOn) ?? []
+        extensionFailures = try c.decodeIfPresent([String: YourPiExtensionFailure].self, forKey: .extensionFailures) ?? [:]
+        extensionEntries = try c.decodeIfPresent([String].self, forKey: .extensionEntries) ?? []
+        extensionsHeld = try c.decodeIfPresent([String].self, forKey: .extensionsHeld) ?? []
+        legacySkills = try c.decodeIfPresent([String].self, forKey: .skills) ?? []
+        legacyPrompts = try c.decodeIfPresent([String].self, forKey: .prompts) ?? []
+        digests = try c.decodeIfPresent([String: String].self, forKey: .digests) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -113,7 +114,7 @@ public struct YourPiExtensionFailure: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         reason = try c.decode(String.self, forKey: .reason)
         modified = try c.decodeIfPresent(Double.self, forKey: .modified) ?? 0
-        lines = (try? c.decodeIfPresent([String].self, forKey: .lines)) ?? []
+        lines = try c.decodeIfPresent([String].self, forKey: .lines) ?? []
     }
 }
 
@@ -229,11 +230,13 @@ public struct YourPiSurvey: Equatable, Sendable {
     public var instructionLines: Int?
     /// Their extensions, as copied: each off until switched on.
     public var extensions: [YourPiExtensionRow] = []
-    /// Their files that couldn't be read.
+    /// Files that couldn't be read on either side.
     public var problems: [String] = []
-    /// The first copy has happened.
+    /// The repair message when the import history can't be read. Also the first problem.
+    public fileprivate(set) var stateProblem: String?
+    /// The first copy has happened or is blocked by a damaged marker.
     public var copied = false
-    /// When it did.
+    /// When it happened, if known.
     public var copiedAt: Date?
     /// Shepherd's keys, and theirs, as Settings shows them (a mask, a variable, a command), by
     /// provider.
@@ -354,33 +357,51 @@ public struct YourPiImport: Sendable {
     var auth: URL { home.directory.appendingPathComponent("auth.json") }
     var models: URL { home.directory.appendingPathComponent("models.json") }
 
+    private func loadState() -> PersistedFile<YourPiImportState> {
+        .load(from: stateURL, dateDecodingStrategy: .iso8601)
+    }
+
     /// What the first copy (or a switch) left, or nil before either, or when it can't be read.
     public func state() -> YourPiImportState? {
-        guard let data = try? Data(contentsOf: stateURL) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(YourPiImportState.self, from: data)
+        guard case .loaded(let state) = loadState() else { return nil }
+        return state
     }
 
-    /// Whether the first copy (`copyOnce`) has run, its sign-ins with it: its state is there.
+    /// Whether the first copy ran or is blocked by a damaged marker.
     public var copiedOnce: Bool {
-        var info = stat()
-        return lstat(stateURL.path, &info) == 0 && state()?.copied != false
+        switch loadState() {
+        case .loaded(let state): state.copied
+        case .missing: false
+        case .damaged: true
+        }
     }
 
-    func save(_ state: YourPiImportState) throws {
+    private func stateForUpdate() throws -> YourPiImportState? {
+        switch loadState() {
+        case .loaded(let state): return state
+        case .missing: return nil
+        case .damaged(_, let error): throw YourPiFileError(damagedStateMessage(error))
+        }
+    }
+
+    private var stateRepairGuidance: String { "Restore the file from a backup or fix its JSON." }
+
+    func damagedStateMessage(_ error: any Error) -> String {
+        "Couldn't read \(stateURL.path): \(error). \(stateRepairGuidance)"
+    }
+
+    private func save(_ state: YourPiImportState) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
         try PiHome.write(try encoder.encode(state), to: stateURL, mode: 0o600)
     }
 
-    /// Loads the state (a fresh one when there's none), applies `change` and saves it, with no
-    /// other change in between.
+    /// Only a missing file starts fresh. Refuse damage before `change`, which can write settings.
     @discardableResult
     func updateState<T>(_ change: (inout YourPiImportState) throws -> T) throws -> T {
         try Self.stateLock.withLock {
-            var state = self.state() ?? YourPiImportState(copiedAt: Date(), from: nil, copied: false)
+            var state = try stateForUpdate() ?? YourPiImportState(copiedAt: Date(), from: nil, copied: false)
             let before = state
             let value = try change(&state)
             if state != before { try save(state) }
@@ -396,11 +417,15 @@ public struct YourPiImport: Sendable {
     /// is there but can't be read counts as a copy that ran: a damaged file never copies again.
     /// A state from before files were copied (version 1) gets its files copied once, quietly.
     public func copyOnce(now: Date = Date(), progress: (@Sendable (YourPiImportProgress) -> Void)? = nil) -> YourPiImportReport {
-        var info = stat()
-        let exists = lstat(stateURL.path, &info) == 0
-        let saved = exists ? state() : nil
-        let filesOnly = saved?.copied == true && (saved?.version ?? YourPiImportState.currentVersion) < YourPiImportState.currentVersion
-        if exists, saved?.copied != false, !filesOnly { return YourPiImportReport() }
+        let saved: YourPiImportState?
+        do {
+            saved = try stateForUpdate()
+        } catch {
+            log("Shepherd didn't copy from your pi: \(error)")
+            return YourPiImportReport()
+        }
+        let filesOnly = saved.map { $0.copied && $0.version < YourPiImportState.currentVersion } ?? false
+        if saved?.copied == true, !filesOnly { return YourPiImportReport() }
         var report = YourPiImportReport()
         report.first = !filesOnly
         if let yourPi {
@@ -465,6 +490,8 @@ public struct YourPiImport: Sendable {
     @discardableResult
     public func reimport(_ item: Item) throws -> YourPiImportReport {
         guard let yourPi else { throw YourPiFileError("Shepherd found no pi of yours to copy from.") }
+        // A reimport can replace files before updateState records their digests or sources.
+        _ = try stateForUpdate()
         var report = YourPiImportReport()
         report.from = yourPi.agentDirectory.path
         switch item {
@@ -631,6 +658,11 @@ public struct YourPiImport: Sendable {
     }
 
     // MARK: Fleet sync
+
+    var stateReadError: (any Error)? {
+        if case .damaged(_, let error) = loadState() { return error }
+        return nil
+    }
 
     /// The extensions as copied here, each with whether it is on: what a fleet syncs (`FleetExtensionsSource`).
     func syncedExtensions() -> [(copy: YourPiCopy, on: Bool)] {
@@ -894,8 +926,20 @@ public struct YourPiImport: Sendable {
     /// `environmentKeys` are the provider variables their login shell sets (names only).
     public func survey(environmentKeys: Set<String> = []) -> YourPiSurvey {
         var survey = YourPiSurvey(folder: yourPi?.agentDirectory.path)
-        let state = self.state()
-        survey.copied = state?.copied == true
+        let state: YourPiImportState?
+        switch loadState() {
+        case .loaded(let saved):
+            state = saved
+            survey.copied = saved.copied
+        case .missing:
+            state = nil
+        case .damaged(_, let error):
+            state = nil
+            survey.copied = true
+            let problem = damagedStateMessage(error)
+            survey.stateProblem = problem
+            survey.problems.append(problem)
+        }
         survey.copies = state?.copies ?? []
         if let context = survey.copies(.instructions).first(where: { YourPiFiles.contextFileNames.contains($0.name) }),
            let data = try? YourPiFiles.read(home.directory.appendingPathComponent(context.destination)) {
