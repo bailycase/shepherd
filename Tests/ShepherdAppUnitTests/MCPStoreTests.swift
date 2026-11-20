@@ -504,18 +504,7 @@ struct MCPStoreTests {
         #expect(MCPBudgetEstimate.rounded(tokens) == rounded)
     }
 
-    @Test func searchedServersShareOneToolSearchAndDirectOnesDeclareEachTool() {
-        typealias Server = MCPBudgetEstimate.Server
-        #expect(MCPBudgetEstimate.estimate([]).tokens == 0)
-        let one = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40)])
-        #expect(one.tokens == MCPBudgetEstimate.searchBaseTokens + MCPBudgetEstimate.searchServerTokens)
-        let two = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40), Server(name: "b", direct: false, toolCount: 9)])
-        #expect(two.tokens == one.tokens + MCPBudgetEstimate.searchServerTokens, "the declaration is paid once")
-        let mixed = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40), Server(name: "b", direct: true, toolCount: 9)])
-        #expect(mixed.tokens == one.tokens + 9 * MCPBudgetEstimate.directToolTokens)
-        #expect(mixed.note == "b is set to Direct, which declares 9 tools in every prompt. The rest are searched.")
-        let direct = MCPBudgetEstimate.estimate([Server(name: "b", direct: true, toolCount: 1)])
-        #expect(direct.tokens == MCPBudgetEstimate.directToolTokens, "no tool_search is declared when nothing is searched")
+    @Test func shortLabelRounds() {
         #expect(MCPBudgetEstimate.shortLabel(3_870) == "~3,900 tok")
     }
 

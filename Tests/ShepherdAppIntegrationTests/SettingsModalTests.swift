@@ -5,9 +5,9 @@ import Testing
 @testable import ShepherdApp
 
 @MainActor
-@Suite("Settings full width", .mainActorExclusive)
-struct SettingsFullWidthTests {
-    @Test func everyPageSitsInTheCenteredColumnAfterNavigationAndResize() async {
+@Suite("Settings modal", .mainActorExclusive)
+struct SettingsModalTests {
+    @Test func everyPageSitsInTheModalsCenteredColumnAfterNavigationAndResize() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.checkPages() }
         }
@@ -52,8 +52,17 @@ struct SettingsFullWidthTests {
                 let page = try #require(content(), "\(section.title) content has an accessibility container")
                 let frame = window.host.convert(window.window.convertFromScreen(page.frame), from: nil)
                 #expect(abs(frame.width - 620) <= 1, "\(section.title) is one 620pt column: \(frame)")
-                #expect(abs(frame.midX - (220 + (width - 220) / 2)) <= 1, "\(section.title) is centered in the detail: \(frame)")
+                // The 980pt modal is centered in the window; the column in the detail beside its 220pt nav.
+                let modal = (width - AppLayout.settingsModalWidth) / 2
+                #expect(abs(frame.midX - (modal + 220 + (AppLayout.settingsModalWidth - 220) / 2)) <= 1, "\(section.title) is centered in the modal's detail: \(frame)")
             }
+        }
+        // ✕ closes it.
+        try ControlPress.press("Close settings", under: window.host)
+        #expect(!vm.showSettings)
+        vm.showSettings = true
+        try await eventuallyOnMain("Settings open again") {
+            window.layout(); return window.controls().contains { $0.label == "Back to Shepherd" }
         }
         // Esc: up from a sub-page, then out of Settings.
         vm.settingsSection = .fromYourPi

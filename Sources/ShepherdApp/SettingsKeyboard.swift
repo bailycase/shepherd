@@ -29,6 +29,7 @@ struct KeyboardSettings: View {
         SettingsPage(title: "Keyboard") {
             ForEach(Self.groups, id: \.title) { group in
                 SettingsGroup(title: group.title,
+                              footnote: group.title == Self.groups.last?.title ? "Click a shortcut to record a new one. Changes apply everywhere at once." : nil,
                               links: group.title == "Agents" ? [SettingsLink("Reset all") {
                                   keys.resetAll()
                                   vm.rebuildSurfaces()
@@ -40,37 +41,15 @@ struct KeyboardSettings: View {
                 }
                 if group.title == "Thread" { whileWorking }
             }
-
-            SettingsGroup(title: "Fixed", footnote: "Click a shortcut to record a new one. Changes apply everywhere at once.") {
-                SettingsRow(title: "Select agent 1–9") { SHKeycap(keys: ["⌘", "1–9"]) }
-                ForEach(SidePaneTab.allCases, id: \.self) { tab in
-                    SettingsRow(title: "Side pane: \(tab.title)") { SHKeycap(tab.shortcutDisplay) }
-                }
-                SettingsRow(title: "Settings") { SHKeycap("⌘,") }
-                SettingsRow(title: "Confirm / cancel in sheets") { SHKeycap(keys: ["⏎", "esc"]) }
-            }
         }
         // A rejected chord's reason discloses under its row.
         .shAnimation(.disclosure, value: errorText)
     }
 
-    /// The keys for sending while pi works and for the queue, as the Queue & steer boards'
-    /// Keyboard card lists them: ↩ queues, the alternate send steers now, and only the alternate
-    /// send can be rebound.
+    /// While pi works: the one key that can be rebound, the alternate send that steers now.
     private var whileWorking: some View {
         SettingsGroup(title: "While the agent is working") {
-            ForEach(WhileWorkingKey.all) { key in
-                switch key {
-                case .send:
-                    SettingsRow(title: key.title) { SHKeycap(keys.sendDisplay) }
-                case .alternateSend:
-                    shortcutRow(.alternateSend, title: key.title)
-                case .fixed(let chord):
-                    SettingsRow(title: key.title) { SHKeycap(keys: chord.keys) }
-                case .steerFocused:
-                    SettingsRow(title: key.title) { SHKeycap(keys.display(.alternateSend)) }
-                }
-            }
+            shortcutRow(.alternateSend, title: "Send and steer now")
         }
     }
 

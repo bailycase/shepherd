@@ -46,11 +46,16 @@ struct ExperimentsSettings: View {
             case .apps?:
                 SettingsPage(title: "Allowed apps") {
                     SettingsGroup(title: "macOS permissions", footnote: "Granted in System Settings ▸ Privacy & Security.") {
-                        SettingsRow(title: "Accessibility", subtitle: "Lets Shepherd click and type in other apps") {
-                            permission(allowed: permissions.accessibility, name: "Accessibility", request: permissions.requestAccessibility)
+                        // Only what still needs allowing: an allowed permission has nothing to change here.
+                        if !permissions.accessibility {
+                            SettingsRow(title: "Accessibility", subtitle: "Lets Shepherd click and type in other apps") {
+                                permission(name: "Accessibility", request: permissions.requestAccessibility)
+                            }
                         }
-                        SettingsRow(title: "Screen Recording", subtitle: "Lets Shepherd see the windows it works in") {
-                            permission(allowed: permissions.screenRecording, name: "Screen Recording", request: permissions.requestScreenRecording)
+                        if !permissions.screenRecording {
+                            SettingsRow(title: "Screen Recording", subtitle: "Lets Shepherd see the windows it works in") {
+                                permission(name: "Screen Recording", request: permissions.requestScreenRecording)
+                            }
                         }
                     }
                 }
@@ -60,6 +65,10 @@ struct ExperimentsSettings: View {
         }
         .task { await model.refresh() }
         .onAppear { permissions.refresh() }
+        // Allowed apps has nothing left once both are allowed.
+        .onChange(of: permissions.accessibility && permissions.screenRecording) { _, allowed in
+            if allowed, page == .apps { page = nil }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in permissions.refresh() }
     }
 
@@ -128,9 +137,8 @@ struct ExperimentsSettings: View {
                 SettingsRow(title: "Computer use", subtitle: "Threads can click and type in your apps") {
                     SettingsSwitch(label: "Computer use", isOn: $bindable.computerUseEnabled)
                 }
-                if settings.computerUseEnabled {
-                    SettingsDrillRow(title: "Allowed apps", subtitle: "Accessibility and Screen Recording",
-                                     value: permissions.accessibility && permissions.screenRecording ? "Allowed" : "Needs you",
+                if settings.computerUseEnabled, !(permissions.accessibility && permissions.screenRecording) {
+                    SettingsDrillRow(title: "Allowed apps", subtitle: "Accessibility and Screen Recording", value: "Needs you",
                                      action: { page = .apps })
                 }
             }
@@ -138,15 +146,10 @@ struct ExperimentsSettings: View {
         .shAnimation(.disclosure, value: model.settings.enabled)
     }
 
-    @ViewBuilder
-    private func permission(allowed: Bool, name: String, request: @escaping () -> Void) -> some View {
-        if allowed {
-            SettingsValue(text: "Allowed")
-        } else {
-            Button("Allow…", action: request)
-                .buttonStyle(.sh(.secondary, size: .s))
-                .accessibilityLabel("Allow \(name)")
-        }
+    private func permission(name: String, request: @escaping () -> Void) -> some View {
+        Button("Allow…", action: request)
+            .buttonStyle(.sh(.secondary, size: .s))
+            .accessibilityLabel("Allow \(name)")
     }
 }
 
@@ -282,77 +285,6 @@ final class ComputerUsePermissions {
     private func open(_ pane: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
         NSWorkspace.shared.open(url)
-    }
-}
-
-/// Computer use's card: its tile, name, description and switch, and while it is on, the two macOS
-/// permissions its tools need, each with Allowed or an Allow… button.
-private struct ComputerUseExperimentCard: View {
-    @Bindable var settings: AppSettings
-    @State private var permissions = ComputerUsePermissions()
-
-    var body: some View {
-        let sh = Color.sh
-        VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
-                RoundedRectangle(cornerRadius: SH.Radius.m)
-                    .fill(sh.lanternTint)
-                    .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
-                    .overlay {
-                        Image(systemName: "cursorarrow.rays")
-                            .font(.shSans(AppLayout.experimentGlyphSize))
-                            .foregroundStyle(sh.lanternText)
-                    }
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text("Computer use")
-                        .font(.shSans(AppLayout.experimentNameSize, .semibold))
-                        .foregroundStyle(sh.textPrimary)
-                    Text("New threads can use the apps on this Mac: read windows, click, type and choose menus, in the background "
-                         + "without taking your mouse or keyboard. Threads already running get it when they restart.")
-                        .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
-                        .foregroundStyle(sh.textSecondary)
-                        .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: SH.Space.xxl)
-                SettingsSwitch(label: "Computer use", isOn: $settings.computerUseEnabled)
-            }
-            .padding(.vertical, SH.Space.l + SH.Space.xxs)
-            .padding(.horizontal, SH.Space.xl)
-
-            if settings.computerUseEnabled {
-                VStack(spacing: 0) {
-                    ExperimentOptionRow(title: "Accessibility", note: "Lets Shepherd click and type in other apps.") {
-                        permission(allowed: permissions.accessibility, name: "Accessibility", request: permissions.requestAccessibility)
-                    }
-                    ExperimentOptionRow(title: "Screen Recording", note: "Lets Shepherd see the windows it works in.") {
-                        permission(allowed: permissions.screenRecording, name: "Screen Recording", request: permissions.requestScreenRecording)
-                    }
-                }
-                .background(sh.bgBase)
-                .shTransition(.disclosure)
-            }
-        }
-        .shCard(fill: sh.bgWindow, line: sh.lineStrong)
-        .onAppear { permissions.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            permissions.refresh()
-        }
-        .shAnimation(.disclosure, value: settings.computerUseEnabled)
-    }
-
-    @ViewBuilder
-    private func permission(allowed: Bool, name: String, request: @escaping () -> Void) -> some View {
-        if allowed {
-            Text("Allowed")
-                .font(.shSans(AppLayout.suggestionNameSize))
-                .foregroundStyle(Color.sh.textSecondary)
-        } else {
-            Button("Allow…", action: request)
-                .buttonStyle(.sh(.secondary, size: .s))
-                .accessibilityLabel("Allow \(name)")
-        }
     }
 }
 

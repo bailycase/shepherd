@@ -114,11 +114,9 @@ struct RootView: View {
                         Button("Close") { vm.showComponentGallery = false }
                             .buttonStyle(SHButtonStyle(.secondary)).padding(SH.Space.xl)
                     }
-            } else if vm.showSettings {
-                SettingsView(vm: vm)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .overlay { SettingsOverlay(vm: vm) }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
         .overlay { DesignGitSheetsOverlay(vm: vm) }

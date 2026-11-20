@@ -63,16 +63,13 @@ struct GeneralSettings: View {
 
     var body: some View {
         @Bindable var settings = vm.settings
-        let keeps = vm.backgroundServiceStatus?.keepsAgentsRunning ?? false
         SettingsPage(title: "General") {
-            SettingsGroup(title: "When you quit") {
-                SettingsRow(title: "Keep agents running",
-                            subtitle: keeps ? "Shepherd is in Login Items" : "Turn on Shepherd in Login Items to keep them running") {
-                    if vm.backgroundServiceStatus == .requiresApproval {
+            // Only while it needs you: otherwise the row has nothing to change.
+            if vm.backgroundServiceStatus == .requiresApproval {
+                SettingsGroup(title: "When you quit") {
+                    SettingsRow(title: "Keep agents running", subtitle: "Turn on Shepherd in Login Items to keep them running") {
                         Button("Open Login Items") { vm.backgroundService?.openLoginItems() }
                             .buttonStyle(.sh(.secondary, size: .s))
-                    } else {
-                        SettingsValue(text: keeps ? "On" : "Off")
                     }
                 }
             }
@@ -80,7 +77,6 @@ struct GeneralSettings: View {
                 SettingsRow(title: "Turn finished", subtitle: "Only for threads you aren’t viewing") {
                     SettingsSwitch(label: "Turn finished", isOn: $settings.notifyOnTurnFinished)
                 }
-                SettingsRow(title: "Questions and failures") { SettingsValue(text: "Always") }
             }
             EditorSettings(settings: vm.settings)
             SettingsGroup(title: "Updates") {
@@ -97,8 +93,8 @@ struct GeneralSettings: View {
                     }
                     .shTransition(.disclosure)
                 }
-                SettingsRow(title: "Version \(version)", subtitle: vm.pi.engine.version.map { "agent \($0)" }) {
-                    if updater.available {
+                if updater.available {
+                    SettingsRow(title: "Version \(version)", subtitle: vm.pi.engine.version.map { "agent \($0)" }) {
                         Button("Check now") { updater.checkForUpdates() }
                             .buttonStyle(.sh(.secondary, size: .s))
                     }
@@ -196,20 +192,17 @@ struct DiagnosticsSettings: View {
 }
 
 /// Settings ▸ General ▸ Updates: Shepherd picks Stable or Beta; Shepherd Nightly has one
-/// channel and names it.
+/// channel, so no row.
 struct UpdateChannelRow: View {
     let edition: ShepherdEdition
     @Binding var channel: UpdateChannel
 
     var body: some View {
-        switch edition {
-        case .main:
+        if edition == .main {
             SettingsRow(title: "Channel") {
                 SHSegmentedPicker("Update channel", selection: $channel,
                                   options: UpdateChannel.choices(for: edition).map { ($0, $0.label) })
             }
-        case .nightly:
-            SettingsRow(title: "Channel") { SettingsValue(text: UpdateChannel.nightly.label) }
         }
     }
 }
