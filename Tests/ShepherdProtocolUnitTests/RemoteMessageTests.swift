@@ -10,7 +10,9 @@ enum RemoteSamples {
     static let space = SpaceID(rawValue: "space")
     static let pane = PaneID(rawValue: "pane")
     static let tab = TabID(rawValue: "tab")
-    static let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(cwd: "/a")), second: .leaf(LeafPane(cwd: "/b")))
+    static let split = PaneNode.split(axis: .vertical, ratio: 0.5,
+                                     first: .leaf(LeafPane(id: PaneID(rawValue: "pane-a"), cwd: "/a")),
+                                     second: .leaf(LeafPane(id: PaneID(rawValue: "pane-b"), cwd: "/b")))
 
     static let fleetHost = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
     static let fleetHash = String(repeating: "ab", count: 32)
@@ -136,13 +138,13 @@ enum RemoteSamples {
         title: "", body: "", draftsMessage: false, agentWorking: false, blocked: "HEAD is detached.")
 
     static let state: ShepherdState = {
-        let parent = Space(name: "parent", path: "/elsewhere")
-        let space = Space(name: "demo", path: "/tmp/demo", parentID: parent.id, parentIsExplicit: true)
-        let pane = LeafPane(cwd: "/tmp/demo")
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let parent = Space(id: SpaceID(rawValue: "parent"), name: "parent", path: "/elsewhere")
+        let space = Space(id: Self.space, name: "demo", path: "/tmp/demo", parentID: parent.id, parentIsExplicit: true)
+        let pane = LeafPane(id: Self.pane, cwd: "/tmp/demo")
+        let tab = Tab(id: Self.tab, spaceID: space.id, order: 0, layout: .leaf(pane))
         // The live fields ride the wire (state.json drops `waitingOn` and `waitingReason`; a remote
         // client needs them).
-        let agent = Agent(name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .blocked,
+        let agent = Agent(id: Self.agent, name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .blocked,
                           lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?", waitingReason: "base?")
         return ShepherdState(spaces: [space, parent], tabs: [tab], agents: [agent])
     }()
@@ -346,7 +348,9 @@ enum RemoteSamples {
         .undo(id: op),
     ]
     static let suggestions = SuggestionsSnapshot(
-        settings: suggestionSettings,
+        // Set iteration order is not stable. Keep this wire sample to one file;
+        // the configure round trip above still covers both.
+        settings: SuggestedInstructionsSettings(enabled: true, since: 1_700_000_000, sources: [.automation], files: [.agents]),
         waiting: [
             InstructionSuggestion(id: op, line: "- Run `go mod tidy` with any dependency bump.", reason: "CI failed twice on a stale go.sum.",
                                   file: .agents, source: SuggestionSource(kind: .automation, name: "Nightly dependency bump"),
@@ -646,7 +650,7 @@ struct RemoteRequestTests {
         .fleetAction(id: 133, action: .update(hostID: RemoteSamples.dispatchID, .start(when: .idle))),
         .fleetAction(id: 134, action: .update(hostID: RemoteSamples.dispatchID, .start(when: .now))),
         .fleetAction(id: 135, action: .update(hostID: RemoteSamples.dispatchID, .cancel)),
-        .logicalProjectRuntime(id: 81, request: .action(projectID: ProjectID(), expectedRevision: 1, request: .read)),
+        .logicalProjectRuntime(id: 81, request: .action(projectID: ProjectID(rawValue: "project"), expectedRevision: 1, request: .read)),
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
         .hello(id: 2, token: "", clientName: "Alex's MacBook \"Pro\"", protocolVersion: 99),
         .hello(id: 9, token: "t", clientName: "Mac", protocolVersion: 1, capabilities: RemoteProtocol.clientCapabilities),
@@ -682,7 +686,7 @@ struct RemoteRequestTests {
         .projectExecutors(id: 7, update: .hosts([
             ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!,
                                                  bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),
-                              name: "build-01", spaces: [Space(name: "acme-web", path: "/srv/acme-web")]),
+                              name: "build-01", spaces: [Space(id: S.space, name: "acme-web", path: "/srv/acme-web")]),
             ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!,
                                                  bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B4")!), name: "old-mac"),
         ])),
@@ -959,7 +963,7 @@ struct RemoteReplyTests {
                                                   offerID: S.op, offeredVersion: "2", canInstall: true)),
         .hostUpdate(id: 91, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
                                                   offerID: S.op, offeredVersion: "2", busyThreads: 2, waitingForIdle: true)),
-        .logicalProjectRuntime(id: 81, result: .project(Project(name: "Owner"))),
+        .logicalProjectRuntime(id: 81, result: .project(Wire.project(named: "Owner"))),
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
         .uploadResult(id: 51, result: .complete(path: "/host/private/image.png")),
         .creationOptions(id: 52, options: RemoteCreationOptions(base: "origin/main", note: "cached", fetchFirst: false,
@@ -1044,7 +1048,7 @@ struct RemoteReplyTests {
         .pullRequestLinks(links: [:], notes: [:]),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
-        .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
+        .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled, admittedAt: 1_790_000_000))),
         .projectExecutionChanged(key: ProjectExecutionWireTests.key, revision: 2),
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),

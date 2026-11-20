@@ -5,9 +5,11 @@ import ShepherdProtocol
 
 @Suite("Project executor wire contracts")
 struct ProjectExecutionWireTests {
-    static let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
-    static let assignment = ProjectExecutionAssignment(key: key, taskID: ProjectTaskID(), reservedWorkerID: AgentID(),
-                                                       executorSpaceID: SpaceID(), title: "Task", prompt: "Do assigned work")
+    static let key = Wire.projectKey
+    static let assignment = ProjectExecutionAssignment(key: key, taskID: ProjectTaskID(rawValue: "task"),
+                                                       reservedWorkerID: AgentID(rawValue: "worker"),
+                                                       executorSpaceID: SpaceID(rawValue: "executor-space"),
+                                                       title: "Task", prompt: "Do assigned work")
     @Test(arguments: [ProjectExecutionRequest.execute(assignment), .snapshot(key: key, watch: true),
                       .worker(key: key), .result(key: key, offset: 8190, sha256: "exact-content-digest"),
                       .snapshot(key: key, watch: false), .cancel(key: key), .pause(key: key), .resume(key: key),

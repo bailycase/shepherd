@@ -42,6 +42,10 @@ CASES = {
         "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
         {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
     ),
+    "c-wire": Case(
+        "WireRequestSequenceTests/wireMatchesGolden|WireCodecTests/wireMatchesGolden",
+        {("codec-golden", None), ("compare-golden", None)}, "scratch-host request sequences matched the golden", "wire",
+    ),
 }
 
 

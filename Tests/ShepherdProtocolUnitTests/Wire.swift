@@ -1,8 +1,19 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 
 /// Helpers for pushing values through the real NDJSON framing.
 enum Wire {
+    static let projectKey = ProjectExecutionKey(ownerID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                                                projectID: ProjectID(rawValue: "project"),
+                                                operationID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!)
+
+    static func project(named name: String) -> Project {
+        var project = Project(id: projectKey.projectID, name: name)
+        project.ownerID = projectKey.ownerID
+        return project
+    }
+
     /// Encode as one NDJSON line and decode the payload back.
     static func roundTrip<T: Codable>(_ value: T) throws -> T {
         let line = try NDJSON.encode(value)

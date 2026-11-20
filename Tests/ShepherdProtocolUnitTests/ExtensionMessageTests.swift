@@ -32,9 +32,9 @@ struct ExtensionMessageTests {
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
-        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(), expectedRevision: 1, request: .read),
+        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(rawValue: "project"), expectedRevision: 1, request: .read),
         .projectPublish(id: 76, agentID: agent, request: .eligibility),
-        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(), sourcePath: "report.txt", artifactName: "result.txt")),
+        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!, sourcePath: "report.txt", artifactName: "result.txt")),
         .registerProject(id: 70, agentID: agent, path: "/tmp/project", name: "Project"),
         .refreshProjects(id: 71, agentID: agent),
         .editProject(id: 73, agentID: agent, projectID: SpaceID(rawValue: "p1"), request: ProjectEdit(name: "New name", parentProjectID: "", folderAction: .none)),
@@ -52,7 +52,7 @@ struct ExtensionMessageTests {
             ChildRun(runID: "r1", childIndex: 2, label: "src/jobs", state: "failed", startedAt: 1, endedAt: 2,
                      currentTool: "read", needsAttention: true, attentionText: "boom", asyncDir: "/tmp/a"),
             ChildRun(runID: "r2", label: "reviewer", state: "queued", role: "worker", name: "card-network-rules", attempt: "fresh-attempt",
-                     projectScope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: agent, sessionID: "session", generation: "generation")),
+                     projectScope: .init(key: Wire.projectKey, workerAgentID: agent, sessionID: "session", generation: "generation")),
         ]),
         .notify(agentID: agent, title: "CI passed", body: "PR #42 is green"),
         .helloAgent(agentID: agent),
@@ -471,12 +471,12 @@ struct ExtensionReplyTests {
 
     static let samples: [ExtensionReply] = [
         .childScope(id: 78, scope: nil),
-        .childScope(id: 80, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), deadline: 1_800_000),
-        .projectChildren(id: 79, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), action: .stop),
-        .projectRuntime(id: 75, project: Project(name: "Owner project")),
+        .childScope(id: 80, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), deadline: 1_800_000),
+        .projectChildren(id: 79, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), action: .stop),
+        .projectRuntime(id: 75, project: Wire.project(named: "Owner project")),
         .projectRuntime(id: 76, project: Project(name: "Owner project"), models: ["provider/a", "provider/b"]),
         .projectPublish(id: 76, result: .init(active: false)),
-        .projectResult(id: 70, space: Space(name: "Project", path: "/tmp/project"), created: true),
+        .projectResult(id: 70, space: Space(id: SpaceID(rawValue: "project"), name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),
         .parentInput,
         .childStart(id: 1, requestID: "queued-1", text: "Review this", images: [NativeImage(mimeType: "image/png", data: Data([1, 2]))]),
@@ -489,12 +489,12 @@ struct ExtensionReplyTests {
         .reviewResult(id: 7, text: "Looks good.\n\nSummary: ready to merge."),
         .appResult(id: 8, text: "Apps in payments:\n- Web app: running · port 3000"),
         .automations(id: 1, automations: [
-            AutomationInfo(id: AutomationID(), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
-            AutomationInfo(id: AutomationID(), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),
+            AutomationInfo(id: AutomationID(rawValue: "au1"), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
+            AutomationInfo(id: AutomationID(rawValue: "au2"), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),
         ]),
         .agents(id: 1, agents: [
-            AgentPeerInfo(id: AgentID(), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
-            AgentPeerInfo(id: AgentID(), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
+            AgentPeerInfo(id: AgentID(rawValue: "worker"), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
+            AgentPeerInfo(id: AgentID(rawValue: "me"), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
         .fleetHosts(id: 140, hosts: [FleetHostInfo(name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: ["muse"], hasRepo: true, weight: "Prefer"),
                                      FleetHostInfo(name: "MacBook Pro", isThisMac: true, room: "no room", connected: true, without: ["bearcli"], weight: "Normal")]),
@@ -565,7 +565,7 @@ struct ExtensionReplyTests {
             sourceReport: DesignBoardReport(created: false, bytes: 900, delta: -100),
             checkpoint: DesignCheckpointInfo(name: "before extract", createdAt: 1, boards: 4, bytes: 5, revision: 9), pruned: ["old"])),
         .designComments(id: 24, comments: DesignComments(revision: 3, comments: [
-            comment, DesignComment(number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
+            comment, DesignComment(id: UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!, number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
                                    createdAt: 3, resolvedAt: 4, detached: true),
         ])),
         .designComment(id: 25, comment: comment),
