@@ -358,8 +358,11 @@ final class FixtureHost: @unchecked Sendable {
             if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
             return []
         case .apps(let id, let command):
-            // A thread header's Run and Stop change the host; its list is a read.
-            if case .list = command { return nil }
+            // A thread header's Run and Stop change the host; its list, every run and an app's output are reads.
+            switch command {
+            case .list, .processes, .output: return nil
+            default: break
+            }
             mutation("apps")
             return [.error(id: id, code: "fixture", message: refused)]
         case .projects(let id, let request):

@@ -34,9 +34,9 @@ public enum PersistedFile<Value: Decodable> {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        guard object.count == 2, let version = object[Key.version.stringValue], let value = object[Key.value.stringValue] else {
-            return object
-        }
+        // A `value` key marks the envelope; unknown extra keys are tolerated, never read as a bare file.
+        guard let value = object[Key.value.stringValue] else { return object }
+        guard let version = object[Key.version.stringValue] else { throw CocoaError(.fileReadCorruptFile) }
         let versionData = try JSONSerialization.data(withJSONObject: version, options: [.fragmentsAllowed])
         guard try JSONDecoder().decode(Int.self, from: versionData) == 1, let value = value as? [String: Any] else {
             throw CocoaError(.fileReadCorruptFile)
@@ -48,8 +48,9 @@ public enum PersistedFile<Value: Decodable> {
         let value: Value
 
         init(from decoder: Decoder) throws {
-            if let container = try? decoder.container(keyedBy: Key.self),
-               container.allKeys.count == 2, container.contains(.version), container.contains(.value) {
+            // A `value` key marks the envelope, so an extra key can't make it fall through to a bare
+            // decode, where a missing field defaults (all hooks on). No stored model has a `value` field.
+            if let container = try? decoder.container(keyedBy: Key.self), container.contains(.value) {
                 guard try container.decode(Int.self, forKey: .version) == 1 else {
                     throw DecodingError.dataCorruptedError(forKey: .version, in: container,
                                                           debugDescription: "Unsupported persisted file version")
