@@ -70,7 +70,7 @@ struct BrowserAgentTests {
             <html><head><title>Secrets</title></head><body>
             <input type="password" aria-label="Password" value="s3cret-pass">
             <input aria-label="Card number" autocomplete="cc-number" value="4242424242424242">
-            <input aria-label="Name" value="Baily">
+            <input aria-label="Name" value="Alex">
             <button id="apply" onclick="document.title = 'applied'">Apply</button>
             </body></html>
             """,
@@ -171,11 +171,11 @@ struct BrowserAgentTests {
         try await opened(session, server, "/checkout")
         let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
         let email = try ref(in: snapshot, "textbox \"Email\"")
-        let typed = try text(await session.perform(.type(ref: email, text: "baily@acme.dev", clear: false, submit: false, note: nil)))
+        let typed = try text(await session.perform(.type(ref: email, text: "alex@acme.dev", clear: false, submit: false, note: nil)))
         #expect(typed.contains("Typed 14 characters into textbox \"Email\"."))
         let after = try text(await session.perform(.read(selector: nil, maxChars: nil)))
-        #expect(after.contains("value=\"baily@acme.dev\""))
-        #expect(after.contains("text \"typed: baily@acme.dev\""), "the page heard the input event:\n\(after)")
+        #expect(after.contains("value=\"alex@acme.dev\""))
+        #expect(after.contains("text \"typed: alex@acme.dev\""), "the page heard the input event:\n\(after)")
         // Clearing replaces what is there; without it the text is added.
         _ = try text(await session.perform(.type(ref: email, text: "!", clear: false, submit: false, note: nil)))
         _ = try text(await session.perform(.type(ref: email, text: "x@y.z", clear: true, submit: false, note: nil)))
@@ -447,7 +447,7 @@ struct BrowserAgentTests {
         let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
         #expect(snapshot.contains("textbox \"Password\" [e1] value=[hidden]"), "\(snapshot)")
         #expect(snapshot.contains("textbox \"Card number\" [e2] value=[hidden]"), "\(snapshot)")
-        #expect(snapshot.contains("value=\"Baily\""))
+        #expect(snapshot.contains("value=\"Alex\""))
         #expect(!snapshot.contains("s3cret-pass") && !snapshot.contains("4242424242424242"))
         let scoped = try text(await session.perform(.read(selector: "#apply", maxChars: nil)))
         #expect(scoped.contains("button \"Apply\" [e1]"), "\(scoped)")
