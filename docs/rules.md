@@ -186,10 +186,10 @@ they can see it (a crossing builds the row again and drops its state); rows that
 two at a time for everyone. The first draw takes the rule whole. A hidden thread's tail follows the same rule whatever rows
 arrive while it is hidden (another view of the thread polls it, a queued prompt lands), ignoring only the
 window's height, which its frozen frame does not report. While the window is dragged, and while the tail grows
-back after it, the history above the tail of a reader who follows it is drawn with no rows, in a stack of its own
-(`ThreadView.parksHistory`): a lazy stack is measured again at every width, and now and then lays out the whole history
-from its top. A geometry reader on that stack, or a spacer of its height, disturbed how the scroll view keeps a history page's
-boundary row in place (`ThreadScrollingTests`). A reply whose parse has not landed (a large one is
+back after it, the history above the tail of a reader who follows it is not drawn at all (`ThreadView.parksHistory`): a lazy
+stack is measured again at every width, and now and then lays out the whole history from its top. Nothing stands in
+for it: a geometry reader on that stack, or a spacer of its height, disturbed how the scroll view keeps a history
+page's boundary row in place (`ThreadScrollingTests`). A reply whose parse has not landed (a large one is
 parsed off the main thread) costs by its text until it does.
 
 The first rows of a thread (it opened, or its history came back) draw the eager tail alone, and `ThreadRestore`
