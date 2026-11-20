@@ -24,6 +24,7 @@ class Case:
     completion: str
     scope: str
     appearances: str = ""
+    golden: str | None = None
 
     @property
     def scenario(self):
@@ -41,6 +42,7 @@ CASES = {
     "seeded-thread-rename": Case(
         "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
         {("compare-golden", None)}, "rename, restart and sidebar matched the golden", "local host",
+        golden="Tests/Fixtures/seeded-thread-rename.json",
     ),
 }
 
@@ -131,7 +133,8 @@ def run_case(name):
     records, problems = read_steps(run, required_steps)
     failed = [step for step in records.values() if step["status"] == "failed"]
     for step in failed:
-        step["look_first"] = TOOLBAR if step["step"] == "open-commit-sheet" else case.scenario
+        step["look_first"] = (TOOLBAR if step["step"] == "open-commit-sheet"
+                              else case.golden or case.scenario)
     completion = records.get(("complete", None), {})
     missing = sorted(required_steps - records.keys())
     if failed:
@@ -167,6 +170,8 @@ def run_case(name):
             if missing:
                 print("Missing steps: " + ", ".join(f"{step} [{appearance}]" if appearance else step
                                                    for step, appearance in missing))
+            for problem in problems:
+                print(f"Evidence error: {problem}")
             print(result["log_diagnostic"])
         print(f"Evidence: {evidence_path(LOG)}")
     print(f"Report: {report.relative_to(ROOT)}")
