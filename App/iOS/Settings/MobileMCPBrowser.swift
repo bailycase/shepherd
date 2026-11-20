@@ -5,14 +5,13 @@ import SwiftUI
 
 /// Presents from the window that owns the settings view, including on iPad and Duo.
 @MainActor
-final class MobileMCPBrowser: UIView, ASWebAuthenticationPresentationContextProviding {
-    private weak var anchor: UIWindow?
+final class MobileMCPBrowser: UIView {
     private var session: ASWebAuthenticationSession?
     private var activeHandoff: URL?
     private var pending: CheckedContinuation<URL, any Error>?
 
     func authorize(_ authorization: URL, remaining: Duration) async throws -> String {
-        guard let window else { throw MobileMCPBrowserError.noWindow }
+        guard window != nil else { throw MobileMCPBrowserError.noWindow }
         // The provider still redirects to pi's registered loopback URL. Only an opaque
         // nonce goes through the app scheme; the original callback stays in memory.
         let handoff = URL(string: "shepherd://mcp-callback/\(UUID())")!
@@ -22,9 +21,14 @@ final class MobileMCPBrowser: UIView, ASWebAuthenticationPresentationContextProv
         }
         defer { relay.cancel() }
         try await relay.start()
-        anchor = window
+        guard let window else { throw MobileMCPBrowserError.noWindow }
+        let context = PresentationContext(window: window)
         activeHandoff = handoff
-        defer { anchor = nil; activeHandoff = nil }
+        defer {
+            // AuthenticationServices holds its presentation provider weakly.
+            withExtendedLifetime(context) {}
+            activeHandoff = nil
+        }
         let expiry = Task {
             try await Task.sleep(for: remaining)
             finish(.failure(MobileMCPBrowserError.expired))
@@ -43,7 +47,7 @@ final class MobileMCPBrowser: UIView, ASWebAuthenticationPresentationContextProv
                         } else { self?.finish(.failure(MobileMCPBrowserError.unavailable)) }
                     }
                 }
-                session.presentationContextProvider = self
+                session.presentationContextProvider = context
                 self.session = session
                 if !session.start() { finish(.failure(MobileMCPBrowserError.unavailable)) }
             }
@@ -54,8 +58,11 @@ final class MobileMCPBrowser: UIView, ASWebAuthenticationPresentationContextProv
         return answer
     }
 
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        anchor! // Retained by authorize for the duration of the session.
+    @MainActor
+    private final class PresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding {
+        let window: UIWindow
+        init(window: UIWindow) { self.window = window }
+        func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
     }
 
     private func finish(_ result: Result<URL, any Error>) {

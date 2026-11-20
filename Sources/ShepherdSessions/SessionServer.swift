@@ -1025,6 +1025,12 @@ public final class SessionServer: @unchecked Sendable {
     /// The grid this Mac's app's terminals last reported: a new terminal starts at it, not 80×24.
     var lastLocalGrid: (cols: Int, rows: Int)?
     private var clients: [Int32: ExtensionConnection] = [:]
+    private var projectMCPDisconnectGrace: DispatchTimeInterval = .seconds(60)
+    private var projectMCPDisconnects: [UUID: DispatchWorkItem] = [:]
+
+    func setProjectMCPDisconnectGraceForTests(_ grace: DispatchTimeInterval) {
+        queue.sync { projectMCPDisconnectGrace = grace }
+    }
     private struct PendingAgentRequest {
         let caller: ExtensionConnection
         let target: ExtensionConnection?
@@ -2450,6 +2456,8 @@ public final class SessionServer: @unchecked Sendable {
         fleetRepoFinder.value = nil
         instructions.onChange = nil
         isStarted = false
+        for work in projectMCPDisconnects.values { work.cancel() }
+        projectMCPDisconnects.removeAll()
         pushNotifications.stop()
         logicalProjectEpoch &+= 1
         automationStarts.removeAll()
@@ -3343,7 +3351,10 @@ public final class SessionServer: @unchecked Sendable {
         client.fleetDeviceID = device
         client.clientName = clientName
         if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-        if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+        if let device {
+            projectMCPDisconnects.removeValue(forKey: device)?.cancel()
+            fleet?.deviceAuthenticated(device, connection: client.fd)
+        }
         client.authenticated = true
         client.clientCapabilities = Set(capabilities ?? [])
         if client.isLocal { localAppsChanged() }
@@ -5566,8 +5577,21 @@ public final class SessionServer: @unchecked Sendable {
         client.projectMCPRequests.removeAll()
         for read in client.directoryReads.values { read.task.cancel() }
         client.directoryReads.removeAll()
-        // Device runs are still bounded by their original deadline, not by one socket.
-        if client.fleetDeviceID == nil { Task { await projects.cancelMCP(owner: client.projectMCPOwner) } }
+        if let device = client.fleetDeviceID {
+            if isStarted, !clients.values.contains(where: { $0.fleetDeviceID == device }) {
+                let cleanup = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.projectMCPDisconnects[device] = nil
+                    // Do not cancel a new login if a device reconnects while cleanup hops to the actor.
+                    let cutoff = ContinuousClock.now
+                    Task { await self.projects.cancelWaitingMCP(owner: device, startedBefore: cutoff) }
+                }
+                projectMCPDisconnects[device] = cleanup
+                queue.asyncAfter(deadline: .now() + projectMCPDisconnectGrace, execute: cleanup)
+            }
+        } else {
+            Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
         if client.isLocal, client.authenticated {

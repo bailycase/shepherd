@@ -50,6 +50,85 @@ struct ProjectMCPAuthTests {
         await service.cancelAll()
     }
 
+    @Test func theSameOwnerCanReplaceTheirWaitingLoginAtCapacity() async throws {
+        let dir = try makeScratchDirectory("mcp-relogin")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let service = ProjectMCPService(pi: try WaitingMCP.setup(in: dir))
+        let text = #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"},"one":{"url":"https://example.invalid/mcp"},"two":{"url":"https://example.invalid/mcp"},"three":{"url":"https://example.invalid/mcp"}}}"#
+        let owner = UUID(), other = UUID()
+        func request(_ action: ProjectMCPAction, owner: UUID) async throws -> ProjectMCPResult {
+            try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: text, action: action, owner: owner)
+        }
+        for server in ["one", "two", "three"] { _ = try await request(.login(server: server), owner: other) }
+        let original = try #require(try await request(.login(server: "issues"), owner: owner).id)
+        await #expect { try await request(.login(server: "issues"), owner: other) } throws: { ($0 as? ProjectFileError)?.code == "busy" }
+        let replacement = try #require(try await request(.login(server: "issues"), owner: owner).id)
+        #expect(replacement != original)
+        await #expect { try await request(.poll(id: original), owner: owner) } throws: { ($0 as? ProjectFileError)?.code == "expired" }
+        #expect(try await request(.poll(id: replacement), owner: owner).phase == .waiting)
+        await service.cancelAll()
+    }
+
+    @Test func theLastDeviceSocketStartsAGracePeriodBeforeTheMacCanSignIn() async throws {
+        let dir = try makeScratchDirectory("mcp-orphan")
+        let host = try ScratchServer(dir: dir, pi: WaitingMCP.setup(in: dir))
+        defer { host.stop() }
+        host.server.setProjectMCPDisconnectGraceForTests(.seconds(1))
+        host.server.configureFleet(name: "Acme Mac", advertises: false)
+        let project = dir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try await host.server.putState(ShepherdState(spaces: [Space(name: "Acme", path: project.path)]))
+        let tokenURL = dir.appendingPathComponent("remote-token")
+        let port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let socket = dir.appendingPathComponent("h.sock").path
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let mac = RemoteHostClient(localSocket: socket)
+        defer { mac.disconnect() }
+        _ = try await mac.connect(host: "", port: 0, token: "", clientName: "Acme Mac")
+        let token = FleetProtocol.makeToken(), deviceID = UUID()
+        let code = try #require(try await mac.fleetAction(.startDeviceCode).deviceCode).code
+        _ = try await RemoteHostClient.fleetPairDevice(host: "127.0.0.1", port: port, code: code, device: .init(
+            deviceID: deviceID, name: "Acme Phone", kind: .iphone, tokenHash: FleetProtocol.hash(token)))
+        func connect() async throws -> RemoteHostClient {
+            let client = RemoteHostClient()
+            _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "Acme Phone")
+            return client
+        }
+        func action(_ action: ProjectMCPAction, on client: RemoteHostClient) async throws -> ProjectMCPResult {
+            guard case .mcp(let result) = try await client.projects(.mcp(directory: project.path, file: ".shepherd/mcp.json", action: action)) else {
+                throw ProjectFileError("protocol", "Expected MCP result")
+            }
+            return result
+        }
+        _ = try await mac.projects(.save(directory: project.path, file: ".shepherd/mcp.json",
+                                         text: #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#, expected: nil))
+        let phone = try await connect()
+        defer { phone.disconnect() }
+        let login = ProjectMCPAction.login(server: "issues")
+        let id = try #require(try await action(login, on: phone).id)
+        phone.disconnect() // Leave the run behind without a cancel.
+        try await eventually("the host to see the device disconnect") {
+            try await mac.fleetRead().snapshot.devices?.devices.first { $0.deviceID == deviceID }?.connected == false
+        }
+        let reconnected = try await connect()
+        defer { reconnected.disconnect() }
+        let secondSocket = try await connect()
+        defer { secondSocket.disconnect() }
+        reconnected.disconnect()
+        let afterGrace = ContinuousClock.now + .milliseconds(1200)
+        try await eventually("the former socket's grace period to have passed") { ContinuousClock.now >= afterGrace }
+        #expect(try await action(.poll(id: id), on: secondSocket).phase == .waiting)
+        await #expect { try await action(login, on: mac) } throws: { error in
+            if case RemoteHostClientError.rejected(let code, _) = error { return code == "busy" }
+            return false
+        }
+        secondSocket.disconnect()
+        try await eventually("the Mac to start a new sign-in after the orphan's grace period", timeout: .seconds(5)) {
+            do { return try await action(login, on: mac).phase == .waiting }
+            catch RemoteHostClientError.rejected(let code, _) where code == "busy" { return false }
+        }
+    }
+
     @Test func remoteCredentialStatusIsScopedAndOldHostsRefuseBeforeSending() async throws {
         let host = try RemoteHost()
         defer { host.stop() }
