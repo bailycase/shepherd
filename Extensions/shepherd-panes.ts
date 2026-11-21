@@ -22,7 +22,7 @@ const PEER_TIMEOUT_MS = 130_000;
 const FLEET_SEND_RETRY_MS = 8_000;
 
 class RequestError extends Error {
-  constructor(message: string, readonly code?: string) { super(`${message} (${code})`); }
+  constructor(readonly hostMessage: string, readonly code?: string) { super(`${hostMessage} (${code})`); }
 }
 
 interface Reply {
@@ -864,11 +864,12 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   }
 
   // A refusal or failure is text for the model: "<message> (<code>)", as the host sent it.
-  async function fleetCall(payload: Record<string, unknown>, signal?: AbortSignal, timeout?: number): Promise<{ reply?: Reply; failure?: string; code?: string }> {
+  async function fleetCall(payload: Record<string, unknown>, signal?: AbortSignal, timeout?: number): Promise<{ reply?: Reply; failure?: string; code?: string; hostMessage?: string }> {
     try {
       return { reply: await request(payload, signal, timeout) };
     } catch (error) {
-      return { failure: `not done: ${error instanceof Error ? error.message : String(error)}`, code: error instanceof RequestError ? error.code : undefined };
+      const refusal = error instanceof RequestError ? error : undefined;
+      return { failure: `not done: ${error instanceof Error ? error.message : String(error)}`, code: refusal?.code, hostMessage: refusal?.hostMessage };
     }
   }
 
@@ -1039,17 +1040,26 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         // Bound when we start new attempts, without shortening the timeout of a send already on the wire.
         const deadline = performance.now() + FLEET_SEND_RETRY_MS;
         let backoff = 200;
+        let lastHostMessage = "";
         while (!signal?.aborted) {
-          const { reply, failure, code } = await fleetCall(message, signal, PEER_TIMEOUT_MS);
+          const { reply, failure, code, hostMessage } = await fleetCall(message, signal, PEER_TIMEOUT_MS);
           if (signal?.aborted) break;
           if (!failure) return text(`${delivery} sent to dispatch ${params.dispatch}${reply?.info ? `: ${reply.info.state}` : ""}`);
           if (code !== "starting") return text(failure);
+          lastHostMessage = hostMessage ?? failure;
           if (performance.now() + backoff >= deadline) break;
           await pause(backoff, undefined, { signal, ref: false }).catch(() => {});
           if (performance.now() >= deadline) break;
           backoff = Math.min(backoff * 2, 1_000);
         }
-        return text(signal?.aborted ? "send cancelled" : "not done: The thread is still starting. Send it again shortly. (starting)");
+        if (signal?.aborted) return text("send cancelled");
+        if (lastHostMessage === "The dispatch is still being prepared.") {
+          return text(`${lastHostMessage} Check it with fleet_read or wait with fleet_wait before sending again.`);
+        }
+        // Replace the receiver's existing resend advice rather than repeating it.
+        const reason = lastHostMessage === "The thread is still starting. Send it again in a moment."
+          ? "The thread is still starting." : lastHostMessage;
+        return text(`${reason} Send it again shortly.`);
       },
     });
 

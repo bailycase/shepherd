@@ -328,11 +328,24 @@ test("fleet_send gives up within the retry window without a final unused backoff
     const start = performance.now();
     const result = await h.tools.get("fleet_send").execute("c", { dispatch: "d1", text: "Follow up" });
     const elapsed = performance.now() - start;
-    assert.equal(output(result), "not done: The thread is still starting. Send it again shortly. (starting)");
+    assert.equal(output(result), "The thread is still starting. Send it again shortly.");
     assert.ok(elapsed >= 7_000 && elapsed < 10_000, `retry window was ${elapsed} ms`);
     assert.ok(performance.now() - lastReply < 350, "do not sleep after the last starting reply");
     const attempts = h.of("fleetDispatchMessage").length;
     assert.ok(attempts > 1 && attempts <= 12, `sent ${attempts} times`);
+  } finally { await h.close(); }
+});
+
+test("fleet_send gives the last preparing reply with read or wait guidance", { timeout: 15_000 }, async () => {
+  let attempts = 0;
+  const h = await harness({ onFrame(frame, write) {
+    if (frame.type !== "fleetDispatchMessage") return;
+    if (++attempts === 1) starting(frame, write);
+    else refuse(frame, write, "starting", "The dispatch is still being prepared.");
+  } });
+  try {
+    const result = await h.tools.get("fleet_send").execute("c", { dispatch: "d1", text: "Follow up" });
+    assert.equal(output(result), "The dispatch is still being prepared. Check it with fleet_read or wait with fleet_wait before sending again.");
   } finally { await h.close(); }
 });
 
