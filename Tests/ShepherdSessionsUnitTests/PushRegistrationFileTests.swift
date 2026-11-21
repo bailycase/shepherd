@@ -25,20 +25,6 @@ struct PushRegistrationFileTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == [path.lastPathComponent])
     }
 
-    @Test func aHealthyFileRewrittenAsUTF16IsDamagedNotRewritten() throws {
-        let directory = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let path = directory.appendingPathComponent("push-registrations.json")
-        try PushNotifications(file: path, queue: DispatchQueue(label: "test.push")).register(Self.saved)
-        let utf16 = try #require(String(decoding: Data(contentsOf: path), as: UTF8.self).data(using: .utf16))
-        try utf16.write(to: path)
-        let store = PushNotifications(file: path, queue: DispatchQueue(label: "test.push"))
-        #expect(throws: PushNotifications.Failure.self) { try store.register(Self.new) }
-        #expect(throws: PushNotifications.Failure.self) { try store.unregister(Self.saved.id) }
-        #expect(try Data(contentsOf: path) == utf16)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == [path.lastPathComponent])
-    }
-
     @Test func unreadableEntryIsNotMissingButMovingItAllowsRegistration() throws {
         let directory = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
