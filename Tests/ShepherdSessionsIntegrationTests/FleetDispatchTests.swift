@@ -167,6 +167,13 @@ struct FleetDispatchTests {
         /// The threads this Mac runs for other Macs.
         var dispatched: [Agent] { server.state.agents.filter { $0.dispatchedFrom != nil } }
 
+        /// The thread this Mac runs for another Mac, once it runs. `dispatched` lists it from the moment the dispatch is accepted, with the path its
+        /// worktree will have; the folder exists only after the worktree is built and its files are in place.
+        func runningThread(timeout: Duration = .seconds(60)) async throws -> Agent {
+            try await FleetDispatchTests.wait("\(name) to run the dispatched thread", timeout: timeout) { !dispatched.isEmpty && taken().first?.state == .running }
+            return try #require(dispatched.first)
+        }
+
         func connectAsPeer(_ other: Mac) async throws -> RemoteHostClient {
             let file = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: other.peersFile)) as? [String: Any])
             let peers = try #require(file["peers"] as? [[String: Any]])

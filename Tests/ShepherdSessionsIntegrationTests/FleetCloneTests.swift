@@ -85,7 +85,7 @@ struct FleetCloneTests {
         try parent.hello()
         let info = try parent.info(try await parent.dispatch("Profile the orders import.", key: "findable", title: "Profile the orders import"))
         #expect(info.host == "Mac mini")
-        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let record = try #require(a.sent().first)
         #expect(!record.reasonCodes.contains(FleetPlacementReason(.willClone)), "no clone cost: \(record.reasonCodes)")
         #expect(Self.cloneCount(b) == 0 && b.taken().first?.clone == nil)
@@ -173,7 +173,7 @@ struct FleetCloneTests {
         try parent.hello()
         let info = try await Self.send(parent)
         #expect(info.host == "Mac mini")
-        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
 
         // Cloned once, into `<Developer>/web`, and bound to the sender's own space.
         #expect(Self.cloneCount(b) == 1)
@@ -220,7 +220,7 @@ struct FleetCloneTests {
         let parent = try await a.parent()
         try parent.hello()
         _ = try await Self.send(parent)
-        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
 
         let space = try #require(Self.space(b))
         #expect(space.path.hasPrefix(b.host.dir.appendingPathComponent("fleet/repos").path), "under the fleet's own folder: \(space.path)")
@@ -234,7 +234,7 @@ struct FleetCloneTests {
         let thread = FleetUserThread(spaceID: a.space.id, task: "Profile the orders import.", host: "Mac mini")
         let record = try #require(try await a.local.fleetAction(.sendThread(thread)).dispatch)
         #expect(record.kind == .userThread && record.reasonCodes.contains(FleetPlacementReason(.willClone)))
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         #expect(Self.cloneCount(b) == 1 && Self.space(b)?.id == a.space.id)
         #expect(b.dispatched.first?.dispatchedFrom?.agentID == nil, "sent by you")
     }
@@ -273,7 +273,7 @@ struct FleetCloneTests {
         let parent = try await a.parent()
         try parent.hello()
         _ = try await Self.send(parent)
-        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
 
         let space = try #require(Self.space(b))
         #expect(Self.cloneCount(b) == 2, "origin was tried first, then the bundle")
@@ -304,7 +304,7 @@ struct FleetCloneTests {
         let parent = try await a.parent()
         try parent.hello()
         _ = try await Self.send(parent, key: "first")
-        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let key = try #require(a.sent().first?.repoKey)
         #expect(CanonicalRepoKey.isLocal(key), "named by its first commit: \(key)")
         let space = try #require(Self.space(b, repoKey: key))
@@ -394,7 +394,7 @@ struct FleetCloneTests {
         let record = try await Self.userThread(from: a, start: FleetThreadStart(place: .checkout))
         let head = try D.head(a.folder)
         #expect(record.kind == .userThread && record.commitSHA == head && record.start?.place == .checkout, "pinned at this Mac's commit")
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let thread = try #require(b.dispatched.first)
         #expect(thread.dispatchedFrom?.agentID == nil, "sent by you")
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
@@ -412,7 +412,7 @@ struct FleetCloneTests {
 
         let record = try await Self.userThread(from: a)
         #expect(record.repoKey == key && record.origin == nil && record.start?.place == .newWorktree)
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let space = try #require(Self.space(b, repoKey: key))
         #expect(space.id == a.space.id && Self.cloneCount(b) == 1, "cloned once, from the bundle: there was no origin to try")
         #expect(try git(["remote"], in: URL(fileURLWithPath: space.path)).isEmpty, "the bundle file it came from is not its origin")
@@ -431,7 +431,7 @@ struct FleetCloneTests {
         _ = try Self.dirty(a)
 
         _ = try await Self.userThread(from: a)
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         #expect(Self.cloneCount(b) == 2, "origin was tried first, then the bundle")
         let space = try #require(Self.space(b))
         #expect(try git(["remote", "get-url", "origin"], in: URL(fileURLWithPath: space.path)).trimmingCharacters(in: .whitespacesAndNewlines) == "/no/such/place/acme-web.git")
@@ -453,7 +453,7 @@ struct FleetCloneTests {
         let parent = try await a.parent()
         try parent.hello()
         _ = try await Self.send(parent, key: "behind")
-        try await D.wait("Mac mini to run the dispatched thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let sent = try #require(a.sent().first)
         #expect(sent.repoKey == key && sent.snapshotFiles == 0 && (sent.snapshotBytes ?? 0) > 0, "no edits sent: the bundle is the whole transfer")
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
@@ -469,7 +469,7 @@ struct FleetCloneTests {
         defer { a.stop(); b.stop() }
         try Self.breakOrigin(of: a)
         _ = try await Self.userThread(from: a)
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         #expect(Self.cloneCount(b) == 2 && a.sent().first?.failure == nil)
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try D.head(worktree) == D.head(a.folder))
@@ -495,7 +495,7 @@ struct FleetCloneTests {
 
         let record = try await Self.userThread(from: a, start: FleetThreadStart(place: .newWorktree, base: "origin/main"))
         #expect(record.commitSHA == base && record.start?.base == "origin/main", "pinned at the base as this Mac has it")
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try D.head(worktree) == moved, "the base's commit, fetched")
         for gone in ["NOTES.md", ".env", "docs/local.md"] { #expect(!Self.exists(worktree.appendingPathComponent(gone).path), "\(gone) stays home") }
@@ -512,7 +512,7 @@ struct FleetCloneTests {
         let develop = try git(["rev-parse", "develop"], in: a.folder).trimmingCharacters(in: .whitespacesAndNewlines)
 
         _ = try await Self.userThread(from: a, start: FleetThreadStart(place: .newWorktree, base: "develop"))
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try D.head(worktree) == develop)
         #expect(try String(contentsOf: worktree.appendingPathComponent("docs/guide.md"), encoding: .utf8) == "# The guide\n")
@@ -531,7 +531,7 @@ struct FleetCloneTests {
 
         let record = try await Self.userThread(from: a, start: FleetThreadStart(place: .existingBranch, branch: "feat/orders"))
         #expect(record.commitSHA == tip, "pinned at the branch's own commit, not the checkout's HEAD")
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let thread = try #require(b.dispatched.first)
         let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
         #expect(try D.head(worktree) == tip)
@@ -549,7 +549,7 @@ struct FleetCloneTests {
         try Self.commit("docs/orders.md", "# Orders\n", on: "feat/orders", in: a)
         let tip = try git(["rev-parse", "feat/orders"], in: a.folder).trimmingCharacters(in: .whitespacesAndNewlines)
         _ = try await Self.userThread(from: a, start: FleetThreadStart(place: .existingBranch, branch: "feat/orders"))
-        try await D.wait("Mac mini to run the thread", timeout: .seconds(60)) { !b.dispatched.isEmpty }
+        _ = try await b.runningThread()
         let worktree = URL(fileURLWithPath: try #require(b.dispatched.first?.worktreePath))
         #expect(try D.head(worktree) == tip && Self.cloneCount(b) == 2)
     }
