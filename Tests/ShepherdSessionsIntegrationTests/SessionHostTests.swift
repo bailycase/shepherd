@@ -55,37 +55,56 @@ struct SessionHostTests {
         #expect(FileManager.default.fileExists(atPath: local), "the local socket is bound")
     }
 
-    /// A newer app's `drain` reaches a host that serves a remote listener and whose server queue is busy: the host still exits once
-    /// quiet. Only main can release the parked queue, and only after shutdown has begun, so a shutdown that ran on main would
-    /// hang, as build 724 did when the app asked it to drain: it never moved to a new build.
+    /// Shutdown may wait on the server queue, but the main queue that handled SIGTERM stays free.
+    @Test func shutdownKeepsTheMainQueueAnsweringWhileItWaitsOnTheServerQueue() async throws {
+        let dir = try makeScratchDirectory("host")
+        let socket = dir.appendingPathComponent("s.sock").path
+        let state = dir.appendingPathComponent("state.json").path
+        await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
+            let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
+            SessionHost.run(server, respawn: Self.defaults, ready: {
+                Self.parkServerUntilMainCanAnswerDuringShutdown(server)
+                kill(getpid(), SIGTERM)
+            })
+        }
+        #expect(!FileManager.default.fileExists(atPath: socket), "the host stopped its server")
+    }
+
+    /// Once triggered, a drain still exits with a remote listener open and a busy server queue.
     @Test func aDrainWhileTheRemoteListenerIsOpenEndsTheHostEvenIfTheServerQueueIsBusy() async throws {
         let dir = try makeScratchDirectory("host")
         let socket = dir.appendingPathComponent("s.sock").path
         let state = dir.appendingPathComponent("state.json").path
         await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
             let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
-            let release = DispatchSemaphore(value: 0)
             DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
             SessionHost.run(server, respawn: Self.defaults, configure: { server in
                 server.setRemoteListener(port: 0) { result in
                     guard case .success(.some) = result, let drain = server.onDrainRequest else { _exit(EXIT_FAILURE) }
-                    server.queue.async { release.wait() }
-                    Task.detached {
-                        do {
-                            try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
-                                do { _ = try BoundedCommand.run(["/usr/bin/true"], timeout: 5); return false }
-                                catch BoundedCommand.Failure.terminating { return true }
-                            }
-                        } catch {
-                            _exit(EXIT_FAILURE)
-                        }
-                        DispatchQueue.main.async { release.signal() }
-                    }
+                    Self.parkServerUntilMainCanAnswerDuringShutdown(server)
                     drain()
                 }
             })
         }
         #expect(!FileManager.default.fileExists(atPath: socket), "the drained host stopped its server")
+    }
+
+    /// Only main can release the server queue, and only after shutdown has begun.
+    private static func parkServerUntilMainCanAnswerDuringShutdown(_ server: SessionServer) {
+        let release = DispatchSemaphore(value: 0)
+        server.queue.async { release.wait() }
+        Task.detached {
+            do {
+                try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
+                    do { _ = try BoundedCommand.run(["/usr/bin/true"], timeout: 5); return false }
+                    catch BoundedCommand.Failure.terminating { return true }
+                }
+            } catch {
+                _exit(EXIT_FAILURE)
+            }
+            DispatchQueue.main.async { release.signal() }
+        }
     }
 
     @Test func aHostRefusesAWorkspaceTheAppOwns() async throws {
