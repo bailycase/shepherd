@@ -327,6 +327,57 @@ struct ChangesEngineTests {
         #expect(try await h.service.branches(agentID: h.agent).recents == ["feat/ledger-v2"])
     }
 
+    @Test func damagedRecentsRefuseThePickerAndExplicitBaseUntilRemoved() async throws {
+        let repo = try ChangesRepo()
+        try repo.git("branch", "feat/ledger-v2")
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let space = Fixture.space("acme", path: repo.path)
+        let worker = Fixture.agent(in: space)
+        try await remote.host.seed(Fixture.workspace([worker], space: space))
+        let client = try await remote.typed()
+        defer { client.disconnect() }
+        let agent = worker.agent.id
+        let base = RemoteAgentQuery.changesList(scope: .branch(base: "feat/ledger-v2"), options: .init())
+        _ = try await client.agentQuery(agentID: agent, query: base)
+
+        let url = remote.server.changes.directory.appendingPathComponent("bases.json")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+        let picker = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.agentQuery(agentID: agent, query: .changesBranches())
+        }
+        let creation = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.creationBranches(spaceID: space.id)
+        }
+        let selection = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.agentQuery(agentID: agent, query: base)
+        }
+        for error in [picker, creation, selection].compactMap({ $0 }) {
+            guard case .rejected(let code, let message) = error else {
+                Issue.record("Expected a host refusal, got \(error)"); continue
+            }
+            #expect(code == ChangesError.unavailable)
+            #expect(message.contains("host Mac") && message.contains(url.path))
+            #expect(message.contains("restore a known-good copy") && message.contains("reopen the base picker"))
+        }
+        #expect(try Data(contentsOf: url) == damaged)
+        guard case .changesList = try await client.agentQuery(agentID: agent,
+                                                              query: .changesList(scope: .branch(base: nil), options: .init())) else {
+            Issue.record("The default comparison should still work"); return
+        }
+        #expect(try Data(contentsOf: url) == damaged)
+
+        let moved = url.appendingPathExtension("damaged")
+        try FileManager.default.moveItem(at: url, to: moved)
+        try await eventually("empty recents on the same host connection") {
+            try await client.creationBranches(spaceID: space.id).recents.isEmpty
+        }
+        _ = try await client.agentQuery(agentID: agent, query: base)
+        #expect(try await client.creationBranches(spaceID: space.id).recents == ["feat/ledger-v2"])
+        #expect(try Data(contentsOf: moved) == damaged)
+    }
+
     /// Copy as patch: what the engine hands out applies cleanly to the commit it was made against.
     @Test func aPatchAppliesToAClone() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\n", "gone.txt": "bye\n"])

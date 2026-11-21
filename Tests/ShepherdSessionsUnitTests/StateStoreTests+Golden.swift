@@ -16,6 +16,7 @@ extension StateStoreTests {
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",
+        "base-recents-bad-element", "base-recents-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
@@ -99,9 +100,9 @@ extension StateStoreTests {
         case "changes/bases.json":
             let store = ChangesRecents(url: url)
             let repository = "/tmp/acme"
-            let bases = store.list(repository)
+            let bases = try store.list(repository)
             loaded = bases
-            store.note(bases.first ?? "main", repository: repository)
+            try store.note(bases.first ?? "main", repository: repository)
         case "thread-origins/sample.json":
             let store = ThreadOriginStore(directory: url.deletingLastPathComponent())
             let session = store.loadSession(sessionID: "sample")

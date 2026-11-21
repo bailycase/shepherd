@@ -318,7 +318,7 @@ public final class ChangesService: @unchecked Sendable {
             guard let mergeBase = try? ChangesGit.checked(["merge-base", baseID, head], in: repository.root).trimmed, !mergeBase.isEmpty else {
                 throw ChangesError(ChangesError.unavailable, "\(headName()) and \(base) share no history.")
             }
-            if let requested { recents.note(requested, repository: repository.commonDir) }
+            if let requested { try recents.note(requested, repository: repository.commonDir) }
             let snapshot = try snapshot(repository)
             return Resolution(revision: .init(old: mergeBase, new: snapshot.tree),
                               comparison: .init(head: headName(), base: base, baseName: ChangesParse.baseName(base, remotes: remotes(repository)),
@@ -518,6 +518,7 @@ public final class ChangesService: @unchecked Sendable {
     // MARK: Branches and commits
 
     func branches(_ repository: Repository, context: AgentContext) throws -> ChangesBranches {
+        let recentBases = try recents.list(repository.commonDir)
         let current = currentBranch(repository)
         let result = try ChangesGit.checked(["for-each-ref", "--sort=-committerdate", "--count=500",
                                              "--format=%(refname)%00%(refname:short)%00%(committerdate:unix)%00%(worktreepath)",
@@ -525,7 +526,7 @@ public final class ChangesService: @unchecked Sendable {
         let pull = pullRequest(repository, branch: current)
         return ChangesBranches(defaultBase: defaultBase(repository, agentBase: context.worktreeBase),
                                pullRequestBase: pull.flatMap { pullRequestBase($0, repository: repository) },
-                               recents: recents.list(repository.commonDir).filter { commit($0, in: repository) != nil },
+                               recents: recentBases.filter { commit($0, in: repository) != nil },
                                branches: ChangesParse.branches(result.text, current: current))
     }
 
@@ -589,33 +590,33 @@ final class ChangesCache<Value>: @unchecked Sendable {
 /// Bases picked in each repository, most recent first (the base picker's recents).
 final class ChangesRecents: @unchecked Sendable {
     private let url: URL
-    private let state: ChangesLocked<[String: [String]]?> = ChangesLocked(nil)
+    private let lock = NSLock()
     static let limit = 5
 
     init(url: URL) { self.url = url }
 
-    private func load(_ value: inout [String: [String]]?) -> [String: [String]] {
-        if let value { return value }
-        let loaded = (try? JSONDecoder().decode([String: [String]].self, from: Data(contentsOf: url))) ?? [:]
-        value = loaded
-        return loaded
+    private func load() throws -> [String: [String]] {
+        switch PersistedFile<[String: [String]]>.load(from: url) {
+        case .loaded(let bases): return bases
+        case .missing: return [:]
+        case .damaged:
+            throw ChangesError(ChangesError.unavailable, "Recent comparison bases can't be read. The file is on the host Mac at:\n\(url.path)\nFix access permissions or restore a known-good copy on the host. To clear the saved recents, move or delete the file. Then reopen the base picker; no host restart is needed.")
+        }
     }
 
-    func list(_ repository: String) -> [String] {
-        state.withValue { load(&$0)[repository] ?? [] }
+    func list(_ repository: String) throws -> [String] {
+        try lock.withLock { try load()[repository] ?? [] }
     }
 
-    func note(_ base: String, repository: String) {
-        let snapshot: [String: [String]] = state.withValue { value in
-            var all = load(&value)
+    func note(_ base: String, repository: String) throws {
+        try lock.withLock {
+            var all = try load()
             var list = all[repository] ?? []
             list.removeAll { $0 == base }
             list.insert(base, at: 0)
             all[repository] = Array(list.prefix(Self.limit))
-            value = all
-            return all
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? JSONEncoder().encode(all).write(to: url, options: .atomic)
         }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
     }
 }
