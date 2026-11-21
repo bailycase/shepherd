@@ -40,8 +40,6 @@ struct ReviewFlowTests {
         if !closeBeforeFinishing {
             vm.sidebarPins = SidebarPins([.local(blocked.agent.id), .local(first.agent.id)])
         }
-        vm.sidebarThreadFilters = .init(chips: [.running])
-        #expect(vm.presentedSidebarLists.hasNoMatches)
         vm.openNewThread()
         vm.openNextNeedingYou()
         #expect(vm.selectedSidebarRow == .local(blocked.agent.id))

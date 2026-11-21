@@ -27,10 +27,8 @@ struct PadSidebar: View {
         let model = feed.model
         let designs = PadDesigns.of(hosts)
         let automations = AutomationsStore.of(hosts)
-        let sidebar = SidebarThreads.of(hosts)
-        let filters = sidebar.activeFilters(model)
-        let groups = sidebar.groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers, filters: filters)
-        let recents = groups.isFiltering ? [] : designs.recents(groups.recents)
+        let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
+        let recents = designs.recents(groups.recents)
         let selected = navigator.selectedThread
         let fleetRows = settings.fleetRows
         let pushed = navigator.padPath.last
@@ -61,12 +59,7 @@ struct PadSidebar: View {
                         navigator.open(.forge(.list))
                     }
                     .task(id: forge.sessionsKey) { await forge.loadRepos() }
-                    if !groups.isFiltering { ForgePinnedSection() }
-                }
-                MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.filterHosts)
-                    .padding(.vertical, SH.Space.s)
-                if groups.hasNoMatches {
-                    SHSidebarFilterEmpty { sidebar.filters = .init() }
+                    ForgePinnedSection()
                 }
                 if !groups.needsYou.isEmpty {
                     SidebarHeader(title: "Needs you", attention: true, count: groups.needsYou.count) {
@@ -77,16 +70,25 @@ struct PadSidebar: View {
                     }
                 }
                 // Automation runs have their own group, never among Recents; its header opens the Automations screen.
-                // A run waiting on you is in Needs you above, once: it is not counted or drawn here as well.
+                // A run waiting on you is in Needs you above, once: `groups.automationRuns` leaves it out.
                 // A triggered automation's run threads fold under one row each (`FleetRunGroup`).
-                let runCount = groups.manualRuns.count + groups.runs.count + groups.matchingRuns.count
-                if runCount > 0 {
-                    SidebarHeader(title: "Automations", count: runCount, hint: "Opens Automations") {
+                let runs = groups.automationRuns
+                if !runs.isEmpty || !groups.runs.isEmpty {
+                    SidebarHeader(title: "Automations", count: runs.count + groups.runs.count, hint: "Opens Automations") {
                         navigator.open(.home(.automations))
                     }
-                    ForEach(groups.manualRuns) { row in SidebarAutomationRun(row: row, selected: selected, compact: true) }
+                    ForEach(runs) { row in
+                        if let run = row.run {
+                            Button { navigator.open(.thread(run.agentRef)) } label: {
+                                AutomationRow(row: row, selected: run.agentRef == selected)
+                                    .equatable()
+                                    .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                            }
+                            .buttonStyle(.shRow(radius: SH.Radius.m))
+                            .contextMenu { AutomationRunMenu(row: row) }
+                        }
+                    }
                     ForEach(groups.runs) { group in RunGroupSection(group: group, selected: selected, compact: true) }
-                    ForEach(groups.matchingRuns) { row in threadRow(row, selected: selected) }
                 }
                 // The Mac's Working, Done and Pinned, in its order.
                 if !groups.working.isEmpty {
@@ -111,10 +113,7 @@ struct PadSidebar: View {
                         }
                     }
                 }
-                if groups.isFiltering, !groups.recents.isEmpty {
-                    SidebarHeader(title: "Recents")
-                    ForEach(groups.recents) { row in threadRow(row, selected: selected) }
-                } else if !recents.isEmpty {
+                if !recents.isEmpty {
                     SidebarHeader(title: "Recents")
                     ForEach(recents) { recent in
                         // One view per row, whatever it holds.
@@ -183,27 +182,6 @@ struct PadSidebar: View {
         }
         .buttonStyle(.shRow(radius: SH.Radius.m))
         .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
-    }
-}
-
-struct SidebarAutomationRun: View {
-    let row: FleetAutomationRow
-    let selected: AgentRef?
-    var compact = false
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if let run = row.run {
-                Button { navigator.open(.thread(run.agentRef)) } label: {
-                    AutomationRow(row: row, selected: run.agentRef == selected)
-                        .equatable()
-                        .clipShape(RoundedRectangle(cornerRadius: compact ? SH.Radius.m : 0))
-                }
-                .buttonStyle(.shRow(radius: compact ? SH.Radius.m : 0))
-                .contextMenu { AutomationRunMenu(row: row) }
-            }
-        }
     }
 }
 

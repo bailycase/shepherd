@@ -30,9 +30,6 @@ struct SidebarView: View {
             } else {
                 VStack(spacing: 0) {
                     SidebarDestinations(vm: vm)
-                    if vm.sidebarStyle == .activity {
-                        SidebarFilterBar(vm: vm)
-                    }
                     SidebarListsView(vm: vm)
                 }
             }
@@ -87,19 +84,6 @@ private struct SidebarDestinations: View {
 }
 
 // MARK: Lists
-
-private struct SidebarFilterBar: View {
-    var vm: ShepherdViewModel
-
-    var body: some View {
-        let filters = vm.activeSidebarThreadFilters
-        SHSidebarFilterBar(chips: SidebarThreadFilters.Chip.allCases, selection: filters.chips,
-                           hosts: vm.sidebarLists.filterHosts, host: filters.host, title: \.rawValue, hostName: \.name,
-                           toggle: { vm.sidebarThreadFilters.toggle($0) }, selectHost: { vm.sidebarThreadFilters.host = $0 })
-            .padding(.horizontal, AppLayout.sidebarPadding)
-            .padding(.bottom, SH.Space.s)
-    }
-}
 
 /// The activity groups or project tree under the destinations (Settings ▸ Appearance ▸ Organize by). One
 /// scroll view either way, so switching keeps the row on screen selected and scrolls it into view.
@@ -165,8 +149,6 @@ private struct SidebarItemView: View, Equatable {
     var body: some View {
         VStack(spacing: 0) {
             switch item {
-            case .noMatches:
-                SHSidebarFilterEmpty { vm.sidebarThreadFilters = SidebarThreadFilters() }
             case .header(let section, let count, let collapsed):
                 SHSidebarSectionHeader(section.title, count: count, isExpanded: !collapsed,
                                        attention: section == .needsYou, pulse: section == .working,
