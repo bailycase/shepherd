@@ -228,6 +228,53 @@ Two temporary probes failed to provide a usable handoff. Setting SwiftUI's `Tran
 
 The stop rule applies. Both probes were removed, no owner driver was installed, and no after-run is claimed. A viable next experiment must control the frame adjustment without replacing the clip's SwiftUI behavior or correcting the offset in a second write. Local evidence is under `.build/validation/scroll-stability-*/mac/` (`frames.json`, `scroll-jumps.json` for completed runs, and `run.log`).
 
+### Slice 4 shrink attribution
+
+On macOS 27.0.1, `.build/validation/scroll-stability-uxp2qg0u/mac/frames.json` reproduces the exact first flick in baseline run 1. The writer ledger and `SHRenderProbe` place both height changes in `flick-and-stop`, frame 1 (zero-based):
+
+| Event | Document height | Clip offset | Change in height |
+| --- | ---: | ---: | ---: |
+| At the tail | 73,787 pt | 73,281 pt | |
+| Reader scrolls up | 73,787 pt | 73,071 pt | 0 pt |
+| `sticky` becomes false; `ThreadHistoryCache.Key.detached` changes | 73,231 pt | 72,725 pt | −556 pt |
+| Clamp brings the clip back into the tail band; `sticky` becomes true and invalidates the cache again | 72,885 pt | 72,379 pt | −346 pt |
+
+**The two history cache misses remove 902 pt.** Each replaces the value of the same `LazyVStack`; SwiftUI re-estimates its unrealized prefix without adding or removing a row. All 30 available row markers retain their heights and move up exactly 902 pt in document coordinates. The app triggers the estimate change; `HostingScrollView.updateContext` sets the new size and `NSClipView._reflectDocumentViewFrameChange` clamps to the new end twice. No app scroll writer fires. The phase-only redraw before the first cache miss and the later change from touching to coasting do not change the height.
+
+| Candidate | Evidence in frame 1 | Share |
+| --- | --- | ---: |
+| L2/L4, eager tail crossing or resize return | 30 eager rows starting at `user-346` throughout; 572 history rows ending at `user-345/reply`; `eagerReturning` stays nil. | 0 pt |
+| Tail spacer, bottom inset, wait line or jump pill | The wait line stays absent and the bottom inset stays 134 pt. The pill toggles in the composer's background, outside the scroll content. The distance from the live row's top to the document end stays 600 pt. | 0 pt |
+| L11, composer | The composer stays present and the top/bottom insets stay 28/134 pt; no composer height event. | 0 pt |
+| L1, lazy stack estimates | Two cache misses just before the two native resizes. No new, missing or resized markers. The full shift lies above the first eager row. | −902 pt |
+| L5/L4, remount or parked history | Stack ID stays 0; history is never parked. This is a new cached view value, not a new stack identity. | 0 pt |
+| L3, L6–L10, L12/L13 | No restore step, prepend, chunk, parse, disclosure, image, resize or notice event. The live row stays 543 pt; the clip stays 910 × 640 pt. | 0 pt |
+
+The first streaming drag also invalidates the cache at detach: 145,386 → 123,225 pt in baseline run 1; 175,695 → 153,565 pt in the instrumented run. The latter also includes a 20,901 pt estimate loss on a subsequent drag with no cache miss, and a 16,721 pt loss during a 29 pt chunk growth. Removing the detach trigger must be checked against both scenarios; it does not change SwiftUI's estimation algorithm.
+
+### Slice 4 cache-key experiment and stop
+
+The candidate took `detached` out of the Mac history cache key. It did not move the clip, defer the rebuild with a timer, or change M3. The flick still starts at the tail, independently of where the streaming scenario ends. When necessary, the off-screen fixture returns there through the existing Next Turn command before starting the trace.
+
+| Scenario, total absolute jump displacement | Baseline 1 | Baseline 2 | Baseline 3 | Candidate 1 | Candidate 2 | Candidate 3 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Slow scroll while streaming | 337 pt | 477 pt | 477 pt | 595 pt | 595 pt | 595 pt |
+| Flick and stop | 615 pt | 615 pt | 615 pt | 0 pt | 0 pt | 0 pt |
+| Mid-history new turn | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt |
+| Page older history | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt |
+| Window resize | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt |
+| Switch away and back | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt | 0 pt |
+| Total | 952 pt | 1,092 pt | 1,092 pt | 595 pt | 595 pt | 595 pt |
+| Blank frames in the six scenarios | 0 | 0 | 0 | 0 | 0 | 0 |
+
+The candidate passed the first-move regression check in all three runs. That check failed on the unchanged app with a 902 pt loss and passed on the candidate with 0 pt loss, at an initial tail gap of 0 pt in both cases. Each candidate run still failed the streaming and history page stability assertions. Writer probes passed and history still had one transient anchor loss per run. The separately tracked in-band input residuals fell from 595 to 113 pt in each streaming run, but measured streaming jumps grew beyond the baseline range. The 595 pt is not noise.
+
+Candidate run 1, streaming frame 8, had no reader input, writer request, new marker, or eager/history structure event. The streaming reply grew by 29 pt, yet the document lost 30,280 pt. All 30 marked rows moved up 30,309 pt in the document, from the history estimate above them. On frame 11, a 28 pt wheel move with no layout event and no change in the streaming row height was enough for the estimate to drop another 17,767 pt. Both native resizes came from `HostingScrollView.updateContext` and produced the same AppKit clamp as the original flick. The cache key no longer depends on follow state, so it cannot account for these residuals.
+
+**Stop: do not ship the cache-key candidate.** It fixes the first flick but regresses the measured streaming scenario. The next experiment is a small off-screen reproduction: a `LazyVStack` of fixed, heterogeneous heights above an eager tail, with a growing last row. Keep the lazy view value fixed, use the same clip moves, and compare with a `VStack` of the same rows. Record the document size, first eager marker position, and native writes. This tests whether SwiftUI re-estimates on scroll or tail growth alone, without Shepherd's follower, history cache, or composer. Do not add another offset write to fight the clamp.
+
+Local evidence: `.build/validation/scroll-stability-{jr_aezxz,s3yedtaj,ysz7o6mk,8pah7dt_}/mac/` (regression red, then candidate runs 1 to 3). The unshipped patch and regression check are in `.orchestrator/cache-key-experiment.patch`. No iPhone or iPad behavior was changed or checked.
+
 ### Slice 4 driver contract and open checks
 
 Feed every geometry callback, including the first after a mount. Reconcile intent on release, cancel and remount, and call `turn()` on the first eligible lift when `wantsTurn` is true. Discard driver-side asks invalidated by a mount, session change or newer request.
