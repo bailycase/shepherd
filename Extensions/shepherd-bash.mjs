@@ -21,9 +21,12 @@ export function managedBash(sweep) {
     async exec(command, cwd, { onData, signal, timeout, env }) {
       signal?.throwIfAborted();
       if (timeout !== undefined && (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483.647)) throw new Error("Invalid bash timeout");
-      const scope = sweep && process.env.SHEPHERD_OWNED_THREAD ? randomUUID() : undefined;
+      const thread = process.env.SHEPHERD_OWNED_THREAD;
+      const scope = sweep && thread ? randomUUID() : undefined;
+      // Child Bash calls share the attempt's scope, including when Pi supplies a custom env.
+      const ownership = scope ?? (process.env.SHEPHERD_CHILD === "1" ? process.env.SHEPHERD_OWNED_BASH : undefined);
       const group = spawn(process.execPath, [executable, "--supervise", command], {
-        cwd, env: scope ? { ...(env ?? process.env), SHEPHERD_OWNED_THREAD: process.env.SHEPHERD_OWNED_THREAD, SHEPHERD_OWNED_BASH: scope } : env,
+        cwd, env: thread && ownership ? { ...(env ?? process.env), SHEPHERD_OWNED_THREAD: thread, SHEPHERD_OWNED_BASH: ownership } : env,
         detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
       });
       const [, , , stdout, stderr, status] = group.stdio;

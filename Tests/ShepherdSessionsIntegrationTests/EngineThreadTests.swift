@@ -519,6 +519,7 @@ final class RealPi: @unchecked Sendable {
             let provider = Process()
             provider.executableURL = engine.node
             provider.arguments = [script.path]
+            provider.currentDirectoryURL = project
             let input = Pipe(), output = Pipe()
             provider.standardInput = input
             provider.standardOutput = output
@@ -566,7 +567,9 @@ final class RealPi: @unchecked Sendable {
                 let children = try ChildrenExtension.installedPath(in: directory, snapshot: EmbeddedExtensions.snapshot)
                 env["SHEPHERD_NATIVE_CHILDREN"] = "1"
                 env["SHEPHERD_EXT_CHILDREN"] = children
-                installed.append(children)
+                let publisher = directory.appendingPathComponent("shepherd-subagents.ts")
+                try EmbeddedExtensions.install("shepherd-subagents.ts", at: publisher)
+                installed += [children, publisher.path]
             }
             let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
                                           extensions: [fixture.path] + extensions + installed)

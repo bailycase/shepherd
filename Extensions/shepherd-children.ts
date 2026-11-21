@@ -167,9 +167,13 @@ const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 // design tools its bridge proxies to the parent (relaySpecs).
 export function childLaunch({ run, bridge, inherited = [], parentEnv = process.env, relay = [] }) {
   const env = { ...parentEnv };
-  // A helper is cut off from the host: none of the parent's SHEPHERD_* reaches it (its agent id,
-  // socket and design are the parent's alone), nor the parent's session or model variables.
+  // The parent's agent id, socket, design, session and model are its own. Only its process
+  // ownership marker crosses into the child, with a fresh scope for this launch attempt.
   for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
+  if (parentEnv.SHEPHERD_OWNED_THREAD && run.attempt) {
+    env.SHEPHERD_OWNED_THREAD = parentEnv.SHEPHERD_OWNED_THREAD;
+    env.SHEPHERD_OWNED_BASH = run.attempt;
+  }
   env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
   env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
   if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
@@ -488,11 +492,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const runs = new Map(), workflows = new Map(), cliRuns = new Map(), dropped = new Map();
   const admission = lifecycleWaiters(), savedStates = new WeakMap();
   let cancelCli;
-  const bash = managedBash((bashScope) => {
+  function requestBashSweep(bashScope) {
     try {
       if (control && !control.destroyed) control.write(JSON.stringify({ type: "stopBashProcesses", agentID: process.env.SHEPHERD_AGENT_ID, bashScope }) + "\n");
-    } catch { /* The supervisor still stops its process group when the host isn't available. */ }
-  });
+    } catch { /* Only tracked cleanup is available without the host. */ }
+  }
+  const bash = managedBash(requestBashSweep);
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
   const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
   const continuationScopes = new Set(), settleWaiters = new Set();
@@ -792,6 +797,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   function finish(run, code, signal) {
     if (run.exited) return;
     run.exited = true;
+    // Both cancellation and normal completion drain here. The host matches this attempt
+    // and the parent thread, so it cannot sweep a sibling or a resumed attempt.
+    if (process.env.SHEPHERD_OWNED_THREAD) requestBashSweep(run.attempt);
     abortRelays(run);
     clearTimeout(run.drainTimer);
     run.exitCode = code ?? undefined;

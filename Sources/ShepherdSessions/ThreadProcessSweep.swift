@@ -46,7 +46,7 @@ struct ThreadProcessSweep: Sendable {
     }
 
     // Darwin checks the token's PID version in the kernel, unlike kill(pid, sig).
-    private static func signal(_ sig: Int32, to identity: audit_token_t) -> Int32 {
+    static func signal(_ sig: Int32, to identity: audit_token_t) -> Int32 {
         var token = identity
         return proc_signal_with_audittoken(&token, sig)
     }
