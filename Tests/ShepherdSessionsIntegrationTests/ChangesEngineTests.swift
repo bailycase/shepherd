@@ -329,7 +329,7 @@ struct ChangesEngineTests {
 
     @Test func damagedRecentsRefuseThePickerAndExplicitBaseUntilRemoved() async throws {
         let repo = try ChangesRepo()
-        try repo.git("branch", "feat/ledger-v2")
+        try repo.git("checkout", "-q", "-b", "feat/ledger-v2")
         let remote = try RemoteHost()
         defer { remote.stop() }
         let space = Fixture.space("acme", path: repo.path)
