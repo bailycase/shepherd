@@ -34,7 +34,8 @@ struct QuestionRecordTests {
                 guard !reading, captured.withValue({ $0 == nil }), let thread else { return }
                 reading = true
                 defer { reading = false }
-                thread.handle(.snapshot()) { result in
+                // Read this revision in the same queue turn, without a full snapshot's disk recheck.
+                thread.handle(.snapshot(afterRevision: thread.revision &- 1)) { result in
                     guard let snapshot = result.snapshotValue, predicate(snapshot) else { return }
                     captured.withValue { if $0 == nil { $0 = snapshot } }
                 }

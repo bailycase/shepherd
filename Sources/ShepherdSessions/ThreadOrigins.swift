@@ -157,6 +157,17 @@ final class ThreadOriginStore: @unchecked Sendable {
         }
     }
 
+    enum Change: Sendable {
+        case origin(id: String, edit: @Sendable (inout Record) -> Void)
+        case question(Question)
+    }
+
+    static func keep(_ question: Question, in questions: inout [Question]) {
+        questions.removeAll { $0.id == question.id }
+        questions.append(question)
+        if questions.count > questionLimit { questions.removeFirst(questions.count - questionLimit) }
+    }
+
     private struct Entry: Codable, Equatable {
         var id: String
         var record: Record
@@ -185,6 +196,7 @@ final class ThreadOriginStore: @unchecked Sendable {
         var missing = false
         var generation: UInt64 = 0
         var problem: String?
+        var loggedRefusal = false
 
         var snapshot: Snapshot {
             Snapshot(entries: file.entries.map { ($0.id, $0.record) }, questions: file.questions ?? [],
@@ -219,16 +231,46 @@ final class ThreadOriginStore: @unchecked Sendable {
               generation: UInt64, refused: ((Snapshot) -> Void)? = nil) {
         let entries = records.suffix(Self.limit).map { Entry(id: $0.id, record: $0.record) }
         let questions = Array(questions.suffix(Self.questionLimit))
+        write(sessionID: sessionID, generation: generation, rebase: false, build: { _ in
+            File(entries: entries, questions: questions.isEmpty ? nil : questions)
+        }, receive: { if let snapshot = $0 { refused?(snapshot) } })
+    }
+
+    /// Rebuild only the new change on the latest readable file. Never replay a refused change.
+    func update(sessionID: String, change: Change, generation: UInt64, receive: @escaping (Snapshot?) -> Void) {
+        write(sessionID: sessionID, generation: generation, rebase: true, build: { file in
+            var file = file
+            switch change {
+            case .origin(let id, let edit):
+                var record = file.entries.last(where: { $0.id == id })?.record ?? Record()
+                edit(&record)
+                file.entries.removeAll { $0.id == id }
+                file.entries.append(Entry(id: id, record: record))
+                if file.entries.count > Self.limit { file.entries.removeFirst(file.entries.count - Self.limit) }
+            case .question(let question):
+                var questions = file.questions ?? []
+                Self.keep(question, in: &questions)
+                file.questions = questions
+            }
+            return file
+        }, receive: receive)
+    }
+
+    /// A callback carries a snapshot when memory needs to catch up with the store.
+    private func write(sessionID: String, generation: UInt64, rebase: Bool, build: @escaping (File) -> File,
+                       receive: @escaping (Snapshot?) -> Void) {
         let url = url(for: sessionID)
         io.async {
+            var current = self.refresh(url, force: true)
+            let changed = generation != current.generation
+            guard current.problem == nil, rebase || !changed else {
+                self.logRefusal(at: url, current: &current)
+                receive(current.snapshot)
+                return
+            }
             do {
-                let file = File(entries: entries, questions: questions.isEmpty ? nil : questions)
+                let file = build(current.file)
                 let data = try JSONEncoder().encode(file)
-                var current = self.refresh(url, force: true)
-                guard current.problem == nil, generation == current.generation else {
-                    refused?(current.snapshot)
-                    return
-                }
                 try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
                 current.file = file
@@ -238,6 +280,7 @@ final class ThreadOriginStore: @unchecked Sendable {
             } catch {
                 ShepherdLog.warning("thread origins not saved at \(url.path): \(error.localizedDescription)")
             }
+            receive(changed ? current.snapshot : nil)
         }
     }
 
@@ -247,11 +290,12 @@ final class ThreadOriginStore: @unchecked Sendable {
     private func refresh(_ url: URL, force: Bool = false) -> Cached {
         var current = cache[url] ?? Cached()
         let stamp = Stamp(url)
-        if !force, let stamp, stamp == current.stamp { return current }
+        if !force, current.problem == nil, let stamp, stamp == current.stamp { return current }
+        let generation = current.generation
         let wasDamaged = current.problem != nil
         switch PersistedFile<File>.load(from: url, exactEnvelope: true) {
         case .loaded(let file):
-            if wasDamaged || (cache[url] != nil && (file != current.file || stamp != current.stamp)) { current.generation &+= 1 }
+            if wasDamaged || (cache[url] != nil && file != current.file) { current.generation &+= 1 }
             current.file = file
             current.missing = false
             current.problem = nil
@@ -274,9 +318,18 @@ final class ThreadOriginStore: @unchecked Sendable {
             if !wasDamaged { ShepherdLog.warning(problem) }
         }
         if wasDamaged, current.problem == nil { ShepherdLog.info("Thread history metadata recovered at \(url.path)") }
+        if generation != current.generation { current.loggedRefusal = false }
         current.stamp = stamp
         cache[url] = current
         return current
+    }
+
+    private func logRefusal(at url: URL, current: inout Cached) {
+        guard !current.loggedRefusal else { return }
+        let reason = current.problem == nil ? "the saved history changed" : "the saved history is unreadable"
+        ShepherdLog.warning("Thread history metadata write refused at \(url.path): \(reason).")
+        current.loggedRefusal = true
+        cache[url] = current
     }
 
     private func url(for sessionID: String) -> URL {

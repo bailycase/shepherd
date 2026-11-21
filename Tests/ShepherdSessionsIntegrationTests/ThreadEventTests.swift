@@ -103,6 +103,56 @@ struct ThreadEventTests {
         #expect(legacy.questions.isEmpty)
     }
 
+    @Test func metadataOnlyChangeDoesNotRefuseAnOriginsSave() throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        let url = dir.appendingPathComponent("session.json")
+        try Data(#"{"version":1,"entries":[{"id":"old","record":{"steered":true}}]}"#.utf8).write(to: url)
+        let before = store.loadSession(sessionID: "session")
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: url.path)
+        store.save(sessionID: "session", records: before.entries + [("new", .init(command: "/new"))],
+                   generation: before.generation)
+        store.flush()
+        #expect(ThreadOriginStore(directory: dir).load(sessionID: "session").map(\.id) == ["old", "new"])
+    }
+
+    @Test func refreshRetriesATransientReadFailureWithoutAFileChange() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try Self.retryAfterDescriptorExhaustion() }
+        }
+    }
+
+    private static func retryAfterDescriptorExhaustion() throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        let url = dir.appendingPathComponent("session.json")
+        try Data(#"{"version":1,"entries":[{"id":"old","record":{"steered":true}}]}"#.utf8).write(to: url)
+        let blocked: ThreadOriginStore.Snapshot
+        do {
+            // The exit test owns its descriptor table. stat still succeeds when open fails.
+            var limit = rlimit()
+            try #require(getrlimit(RLIMIT_NOFILE, &limit) == 0)
+            var reduced = limit
+            reduced.rlim_cur = min(64, limit.rlim_cur)
+            try #require(setrlimit(RLIMIT_NOFILE, &reduced) == 0)
+            defer { _ = setrlimit(RLIMIT_NOFILE, &limit) }
+            let source = open("/dev/null", O_RDONLY)
+            try #require(source >= 0)
+            var held = [source]
+            defer { held.forEach { _ = close($0) } }
+            while case let fd = dup(source), fd >= 0 { held.append(fd) }
+            let exhausted = errno == EMFILE
+            try #require(exhausted)
+            blocked = store.loadSession(sessionID: "session")
+        }
+        try #require(blocked.problem?.contains("The file could not be read.") == true)
+        let refreshed = store.loadSession(sessionID: "session")
+        #expect(refreshed.problem == nil)
+        #expect(refreshed.entries.map(\.id) == ["old"])
+    }
+
     @Test(.timeLimit(.minutes(1))) func threadSnapshotNamesDamageAndClearsOnRepair() async throws {
         let dir = try makeScratchDirectory("origins")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -127,6 +177,44 @@ struct ThreadEventTests {
             let repaired = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recovered)) as? [String: Any]
             return repaired?["originsProblem"] == nil && recovered.messages.contains { $0.question?.answer == "This one" }
         }
+    }
+
+    @Test func aDamagedThreadRefusesWritesAndTheNextEditUsesTheRecoveredHistory() async throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        let affected = try Thread(originStore: store)
+        defer { affected.stop() }
+        let healthy = try Thread(env: ["STUB_PI_SESSION_ID": "other-session"], originStore: store)
+        defer { healthy.stop() }
+        let affectedReady = try await affected.ready()
+        let healthyReady = try await healthy.ready()
+        #expect(affectedReady.piSessionID != healthyReady.piSessionID)
+        let url = dir.appendingPathComponent("stub-session.json")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+
+        affected.queue.sync { affected.state.recordReferences(["unsaved-ref"], entryID: "user:1") }
+        healthy.queue.sync { healthy.state.recordCommand("/healthy", entryID: "user:2") }
+        store.flush()
+        #expect(try Data(contentsOf: url) == damaged)
+        #expect(try await affected.snapshot().originsProblem?.contains(url.path) == true)
+        #expect(try await healthy.snapshot().originsProblem == nil)
+        #expect(ThreadOriginStore(directory: dir).load(sessionID: "other-session").map(\.record.command) == ["/healthy"])
+
+        let backup = #"{"version":1,"entries":[{"id":"user:1","record":{"references":["backup-ref"]}}],"questions":[{"id":"backup","endedAt":2,"record":{"kind":"input","question":"Which one?","answer":"This one","outcome":"answered","askedAt":1}}]}"#
+        try Data(backup.utf8).write(to: url, options: .atomic)
+        // Don't refresh first. The save itself must discover the repair and keep only the new edit.
+        affected.queue.sync { affected.state.recordCommand("/after-repair", entryID: "user:1") }
+        store.flush()
+        let persisted = ThreadOriginStore(directory: dir).loadSession(sessionID: "stub-session")
+        #expect(persisted.entries.map(\.record) == [.init(references: ["backup-ref"], command: "/after-repair")])
+        #expect(persisted.questions.map(\.record.answer) == ["This one"])
+        try await eventually("the repaired history to reach the thread") {
+            let snapshot = try await affected.snapshot()
+            return snapshot.originsProblem == nil && snapshot.messages.contains { $0.question?.answer == "This one" }
+        }
+        #expect(affected.queue.sync { affected.state.origins["user:1"] } == persisted.entries.first?.record)
     }
 
     @Test func startupQuestionsWinCollisionsWithinTheLimitAndDoNotLeakAcrossSessions() async throws {

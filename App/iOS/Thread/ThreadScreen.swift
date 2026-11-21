@@ -224,11 +224,8 @@ struct ThreadScreen: View {
         }
         if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
-        if let error = store.loadError { return error }
-        if let problem = store.snapshot?.originsProblem { return problem }
         // A stopped pi's problem is the composer's banner (`StartProblemBanner`), with Retry where the host takes it.
-        if let notice = store.clipNotice { return notice.text }
-        return nil
+        return store.loadError
     }
 }
 
@@ -316,6 +313,15 @@ struct ThreadTranscript: View {
                                 .buttonStyle(.sh(.secondary))
                                 .disabled(connecting)
                         }
+                    }
+                    // These are transcript notices, independent of host and pane status.
+                    if let problem = store.snapshot?.originsProblem {
+                        Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let notice = store.clipNotice {
+                        Text(notice.text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
                         ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)

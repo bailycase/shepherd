@@ -634,6 +634,7 @@ final class RPCThreadState {
     let originStore: ThreadOriginStore?
     private var originsGeneration: UInt64?
     private var originsProblem: String?
+    private var pendingOriginChanges: [(id: UUID, change: ThreadOriginStore.Change)] = []
     private var originsPending = false
     private var afterOpeningOriginReads: [() -> Void] = []
     var origins: [String: ThreadOriginStore.Record] = [:]
@@ -2547,6 +2548,7 @@ final class RPCThreadState {
         originOrder.removeAll()
         originsGeneration = nil
         originsProblem = nil
+        pendingOriginChanges.removeAll()
         commandNotices.removeAll()
         cancelWaitingInputs()
         inputLaneID = nil
@@ -2584,22 +2586,25 @@ final class RPCThreadState {
 
     // MARK: - Live rows
 
-    private func applyOrigins(_ loaded: ThreadOriginStore.Snapshot, initial: Bool = false) {
-        let previous = originsGeneration
-        guard initial || previous != loaded.generation || originsProblem != loaded.problem else { return }
+    private func applyOrigins(_ loaded: ThreadOriginStore.Snapshot, initial: Bool = false, rebased: Bool = false) {
+        guard initial || rebased || originsGeneration != loaded.generation || originsProblem != loaded.problem else { return }
         originsGeneration = loaded.generation
         originsProblem = loaded.problem
         // Keep displaying the live lists if a file we already loaded goes bad.
         if initial || loaded.problem == nil {
             origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
             originOrder = loaded.entries.map(\.id)
-            let startup = initial ? questions : []
-            let startupIDs = Set(startup.map(\.id))
-            questions = Array((loaded.questions.filter { !startupIDs.contains($0.id) } + startup).suffix(ThreadOriginStore.questionLimit))
-            if !startup.isEmpty { saveOrigins() }
+            questions = loaded.questions
+            // A write acknowledgement can arrive after the thread records a newer change.
+            // Keep those changes visible; never replay changes the store already refused.
+            for pending in pendingOriginChanges { applyOriginChange(pending.change) }
+            let questionIDs = Set(questions.map(\.id))
+            live.removeAll { if case .question(let id) = $0.kind { !questionIDs.contains(id) } else { false } }
             if !initial { refreshMessages() }
         }
-        if !initial { commit() }
+        if initial {
+            for pending in pendingOriginChanges { saveOriginChange(pending.change, id: pending.id) }
+        } else { commit() }
     }
 
     /// Full snapshot requests check for damage or repair. Incremental updates use memory only.
@@ -2615,48 +2620,56 @@ final class RPCThreadState {
     }
 
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
-        guard var record = ThreadOriginStore.Record(origin) else { return }
-        record.references = origins[entryID]?.references
-        record.command = origins[entryID]?.command
-        keepOrigin(record, entryID: entryID)
+        guard let details = ThreadOriginStore.Record(origin) else { return }
+        keepOriginChange(.origin(id: entryID) { record in
+            record.steered = details.steered
+            record.parts = details.parts
+        })
     }
 
     /// Records the prompt template command the user typed for the message `entryID`, so the
     /// thread names the template instead of showing its text (and after a relaunch).
     func recordCommand(_ command: String, entryID: String) {
-        var record = origins[entryID] ?? ThreadOriginStore.Record()
-        record.command = command
-        keepOrigin(record, entryID: entryID)
+        keepOriginChange(.origin(id: entryID) { $0.command = command })
     }
 
     /// Records that the user sent the message `entryID` in this thread with these design
     /// references' copies, so the thread draws its fence as chips (and after a relaunch).
     func recordReferences(_ payloads: [String], entryID: String) {
-        var record = origins[entryID] ?? ThreadOriginStore.Record(references: payloads)
-        record.references = payloads
-        keepOrigin(record, entryID: entryID)
+        keepOriginChange(.origin(id: entryID) { $0.references = payloads })
     }
 
-    private func keepOrigin(_ record: ThreadOriginStore.Record, entryID: String) {
-        origins[entryID] = record
-        originOrder.removeAll { $0 == entryID }
-        originOrder.append(entryID)
-        if originOrder.count > ThreadOriginStore.limit {
-            for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
-            originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+    private func applyOriginChange(_ change: ThreadOriginStore.Change) {
+        switch change {
+        case .origin(let id, let edit):
+            edit(&origins[id, default: ThreadOriginStore.Record()])
+            originOrder.removeAll { $0 == id }
+            originOrder.append(id)
+            if originOrder.count > ThreadOriginStore.limit {
+                for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
+                originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+            }
+        case .question(let question):
+            ThreadOriginStore.keep(question, in: &questions)
         }
-        saveOrigins()
     }
 
-    /// Writes the session's origins and questions.
-    func saveOrigins() {
+    func keepOriginChange(_ change: ThreadOriginStore.Change) {
+        applyOriginChange(change)
+        guard originStore != nil else { return }
+        let id = UUID()
+        pendingOriginChanges.append((id, change))
+        saveOriginChange(change, id: id)
+    }
+
+    private func saveOriginChange(_ change: ThreadOriginStore.Change, id: UUID) {
         guard let piSessionID, let originStore, let originsGeneration else { return }
         let builtIn = generation
-        originStore.save(sessionID: piSessionID, records: originOrder.compactMap { id in origins[id].map { (id, $0) } },
-                         questions: questions, generation: originsGeneration) { [weak self] loaded in
+        originStore.update(sessionID: piSessionID, change: change, generation: originsGeneration) { [weak self] loaded in
             self?.queue.async { [weak self] in
                 guard let self, self.generation == builtIn else { return }
-                self.applyOrigins(loaded)
+                self.pendingOriginChanges.removeAll { $0.id == id }
+                if let loaded { self.applyOrigins(loaded, rebased: loaded.problem == nil) }
             }
         }
     }
