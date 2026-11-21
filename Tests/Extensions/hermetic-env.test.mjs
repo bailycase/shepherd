@@ -30,11 +30,23 @@ test("hermetic-env keeps every runner control and nothing else", () => {
   assert.deepEqual(surviving({ ...controls, SHEPHERD_EXT_VISION: "/v", PI_MODEL: "m" }), controls);
 });
 
+// The scrub import must be the first statement: only blank lines and comments may precede it.
+const scrubFirst = (source) => /^(?:\s|\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*import\s*"\.\/hermetic-env\.mjs"\s*;/.test(source);
+
+test("the scrub-first check accepts only the scrub as the first statement", () => {
+  const scrub = 'import "./hermetic-env.mjs";\n';
+  assert.ok(scrubFirst(scrub + 'import test from "node:test";\n'));
+  assert.ok(scrubFirst('// note\n/* block\n import x from "y"; */\n\n  ' + scrub));
+  assert.ok(!scrubFirst('import{test} from "node:test";\n' + scrub));
+  assert.ok(!scrubFirst('  import test from "node:test";\n' + scrub));
+  assert.ok(!scrubFirst('import test from "node:test";\n' + scrub));
+  assert.ok(!scrubFirst('const x = 1;\n' + scrub));
+});
+
 test("every extension test file imports hermetic-env before anything else", () => {
   const files = fs.readdirSync(dir).filter((name) => name.endsWith(".test.mjs"));
   assert.ok(files.length > 0, "found no test files to check");
   for (const file of files) {
-    const first = fs.readFileSync(path.join(dir, file), "utf8").split("\n").find((line) => line.trimStart().startsWith("import "));
-    assert.equal(first?.trim(), 'import "./hermetic-env.mjs";', `${file} must start with import "./hermetic-env.mjs"`);
+    assert.ok(scrubFirst(fs.readFileSync(path.join(dir, file), "utf8")), `${file} must start with import "./hermetic-env.mjs"`);
   }
 });

@@ -97,6 +97,7 @@ test("a pi that ignores SIGTERM is sent SIGTERM first and killed after the deadl
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stubborn-"));
   const ready = path.join(bin, "ready"), sigterm = path.join(bin, "sigterm");
   let child;
+  ownServers(t); // withPi starts a provider even with a custom launcher
   // The test owns the stub: it is killed here whatever the harness did, so a regression cannot leave it running.
   t.after(() => { child?.kill("SIGKILL"); fs.rmSync(bin, { recursive: true, force: true }); });
   fs.writeFileSync(path.join(bin, "stub.js"), `const fs = require("fs");
