@@ -418,6 +418,24 @@ struct ProjectPlacementFlowTests {
         #expect(r.executor.server.state.projectExecutions.count == 4)
     }
 
+    /// The cause of `ownerRestartReconcilesOfflineResultsWithoutDispatchingTheFourthTask` timing out about half the time:
+    /// `refreshProjectHosts` remembers what it sent as `ObjectIdentifier(client)`. A restarted host's new client is often
+    /// allocated at the freed old client's address, so the memo matches, nothing is sent, and the new host never learns
+    /// which Macs the app reaches. Here the host forgets what it was told while the app's memo still names its client,
+    /// the state an address-reusing client produces.
+    @Test func appResendsReachableHostsToAHostThatForgotThem() async throws {
+        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let server = r.owner.server
+        try await server.enqueue { @Sendable in server.applyProjectExecutors(.hosts([])) }
+        #expect(await server.appProjectExecutors().isEmpty)
+        r.owner.vm.refreshProjectHosts()
+        try await withKnownIssue("bug: refreshProjectHosts skips the send when a new client has the old client's ObjectIdentifier") {
+            try await eventuallyAsync("the host reaches the executor again", timeout: .seconds(2)) {
+                await server.appProjectExecutors().contains { $0.reference == r.host }
+            }
+        }
+    }
+
     @Test func remoteViewerUsesOwnersIdentityAndLostExecuteReplyReconcilesTheSameReservation() async throws {
         let r = try Rig(); defer { r.stop() }; try await r.start()
         let tokenURL = r.owner.dir.appendingPathComponent("viewer-token")
