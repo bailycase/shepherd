@@ -30,8 +30,8 @@ struct ComposerAttachments: Equatable {
     var images: [NativeImage] { items.map(\.image) }
 
     /// Adds what fits, in order. A nil attachment is a file that is not an image.
-    mutating func add(_ candidates: [(name: String, attachment: ImageAttachment?)]) {
-        rejection = nil
+    mutating func add(_ candidates: [(name: String, attachment: ImageAttachment?)], clearingError: Bool = true) {
+        if clearingError { rejection = nil }
         for candidate in candidates {
             guard !isFull else {
                 rejection = "At most \(NativeImage.maxPerSend) images per message."
