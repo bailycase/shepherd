@@ -201,6 +201,8 @@ Each slice below states its scenarios and passes only if every scenario holds th
 
 Order: 1, 2 and 3 are independent and can merge in any order after 1. Slices 4 and 5 are independent; the case's baseline picks which goes first (the one with the larger displacement or blank count), default 4 then 5. Slice 8 needs 4 to 7. Slices 9 to 11 need 3 and 2, and can run in parallel with the Mac slices on a second branch.
 
+The Mac hold approach in #849 is superseded by [Measured-height history](#measured-height-history).
+
 Per slice:
 
 - Update only the docs the change makes wrong. The first doc to move is the "Rules that bite" tail and eager-tail paragraphs in `docs/rules.md` (lines about 180 to 261), at slice 7.
@@ -233,3 +235,114 @@ Run the full pure walk with `python3 scripts/validate.py --case scroll-owner`. I
 - The line counts and the "300 plus two drivers" estimate are not measured.
 - D1 and D2 depend on how SwiftUI's lazy stack and `ScrollPosition` behave on macOS 27 and iOS 27.0/27.1, which I did not run. The plan's shape holds either way; the driver's internals may change.
 - The owner assumes the row markers give a measured top-of-viewport row cheaply. `ThreadHistoryAnchor.Marker.viewportTop` and the guards' markers do this today for one row and for visibility; reading it for every layout turn is not measured. Slice 5's first commit is to measure that cost with the render probe before building on it, and slice 10's first commit does the same for the iOS marker once it carries a row ID.
+
+## Measured-height history
+
+Plan only. Base: nightly plus #850. #849 closes when slice 1 passes. Evidence: T5 control results in the comments on #849 and band measurements in #850.
+
+### What the control settled
+
+With every history row built (T5), slow scroll, flick, wheel walk and both cross-band scenarios measured 0 pt and no blank, three runs each. Paging failed: 22,710 pt for one sample, because `ScrollPosition` (M5) is applied one SwiftUI update after the document grows. Building every row costs 3.0 s and 737 MiB against 0.33 s and 115 MiB.
+
+The invariant to build: the document's height is a sum of heights Shepherd holds, never a lazy stack's guess. Every change to that sum is paired with at most one offset write, in the layout pass that applies it.
+
+### 1. Design: a windowed stack of slots
+
+`historyColumn` (`ThreadView.swift:620` on nightly) becomes a plain `VStack` whose `ForEach` makes one `ThreadRowSlot` per row.
+
+- **Slot:** the built row (`rowView`, unchanged) when the row is in the built set, else `Color.clear` at the table's height, hidden from accessibility. Both carry `.id(row.id)`, so every row keeps an exact frame and stays a scroll target.
+- **Built set:** every row within two viewports of the clip (`AppLayout.eagerTailViewports`), computed from the table on a geometry change and published as one range, written only when it changes.
+- **Who reads it:** `ThreadHistoryColumn`, which adds it to `ThreadHistoryCache.Key`. `ThreadView.body` does not.
+
+Why not the others:
+
+- **Custom `Layout`:** it receives every subview, so SwiftUI builds every row (T5's cost) unless rows are placeholders anyway. It then only replaces `VStack`'s sum. Keep it as an optimization if 5,000 slots cost too much.
+- **AppKit list:** it replaces the `ScrollView` that M1 to M4, M9 to M12, the guard, the ledger and seven suites are written against. Each row gets its own hosting view, and it still needs this height table. It is the fallback if slice 1 stops.
+
+Heights live in `ThreadRowHeights`, a pure value in `ShepherdRemote` with unit tests:
+
+- **Contents:** height by row ID for one column width, `NativeRowHeight.row` for the rest, prefix sums, the built range for a clip rect, and the signed change above an index.
+- **Owner:** a `@MainActor` holder in `ThreadView` `@State`, `@ObservationIgnored` except the range. It survives a thread switch (no remount) and the M8 rebuild.
+- **Writer:** the row's existing native marker (`ThreadTailGuard.RowMarker`) in its AppKit `layout()`.
+- **Invalidation:**
+  - Built rows report their own changes (stream growth, disclosure, parse, image).
+  - A width change keeps the old heights until the width rests, then re-keys (slice 3).
+  - A text scale or density change clears the table.
+  - An unbuilt row whose store cost changes falls back to its estimate.
+
+### 2. Rows never measured
+
+A first draw changes one row from estimate to real by δ. The anchor of a detached reader is the top row in the reading area.
+
+- δ in a row above the anchor adds δ to the clip origin.
+- δ at or below the anchor writes nothing.
+- A follower writes nothing: M3 holds the bottom (D1).
+
+The write is the existing clip writer (`ThreadHistoryAnchor.correct`). It is called synchronously in the AppKit pass that placed the row, from the marker's `layout()` or the column finder's frame change. It never follows a queue hop and never goes through `ScrollPosition`. No slack is parked anywhere: that was the hold.
+
+Size: `NativeRowHeight` is low by design (images and diagrams count 0), so δ can be hundreds of points for a row and, by my estimate, tens of thousands over a walk to the top. If the write is in the pass, the reader sees only the scroller knob drift.
+
+Proof: `wheel-walk-to-top`, `cross-band-slow` and `cross-band-flick` at 2 pt or less, with a new ledger actor `thread.write.H1` showing one write per corrected frame.
+
+Exact estimates are not cheap. CoreText off the main thread should bring plain prose close, but it cannot size images, tables or web blocks, and its error against SwiftUI's layout is unmeasured. Slice 6 adds better estimates or an idle pre-measure only if slice 1's ledger shows the drift matters.
+
+### 3. Prepend
+
+Paged rows enter as placeholders. Their total D (estimates plus spacing) is known from the table before layout. The document grows by exactly D, and the same pass adds D to the clip origin. The window then builds the nearest rows, and section 2 absorbs each δ.
+
+Slice 2 deletes M5, M6, `position`, `.scrollPosition`, `savedTop` and the two `main.async` hops. `ThreadHistoryAnchor` keeps the paging token and `cancel()`, or goes.
+
+### 4. Eager tail, seam and guard
+
+- **Seam:** slice 1 keeps the eager tail. The hole should go, because the history beside it is built by distance from the clip, not by a lazy stack.
+- **One column:** slice 4 folds the tail in. The built set becomes the distance window plus the cost rule's tail (`NativeThreadStore.eagerTailRows`). `ThreadEagerTail` crossings, `parksHistory`, `eagerReturning` and `ThreadHistoryBuilt` go.
+- **Guard:** `ThreadTailGuard` stays. A giant reply still has lazy chunks inside one row (`SHProseChunks`). `ThreadBlankScreenTests` (six tests, including the giant and landing replies) pass unchanged in every slice.
+- **Placeholders in view:** they have no marker, so the guard reads them as blank. That is right as a detector, but the repair there is "build at the clip", not a walk.
+- **Walks:** deleted in slice 5, only once `thread.tailRepair` reads zero. `ThreadTailGuardTests` change in that slice and say so.
+
+### 5. Paths
+
+- **Unchanged code through slice 3:** M1, `ThreadTailAnchor` (M2 to M4), send (M9), Jump to latest (M10), restore (M12), `ThreadRestore`, the composer inset, and thread switch (`StackID`, `withdrawStack`).
+- **Same code, better landing:** turn jumps and Find (M11). `proxy.scrollTo(row)` lands on an exact frame, then section 2 applies.
+- **Changed:** paging (slice 1), resize (slice 3), mount and restore (slice 4).
+
+Mount bar on the fixture: at most 380 ms and 127 MiB (nightly 330 ms, 115 MiB), no new `thread.rowBuilder` ticks per chunk, and a `ListPerformanceTests` budget for 5,000 slots.
+
+### 6. Slices
+
+Every slice runs the nine scenarios three times, plus `ThreadTailFlowTests`, `ThreadSendScrollTests`, `ThreadScrollingTests`, `ThreadBlankScreenTests`, `ThreadTailGuardTests`, `ScrollTrace` and `--case scroll-owner`. No slice adds a gate to pass.
+
+| # | Slice | Files | Must hold | Stop |
+| --- | --- | --- | --- | --- |
+| 1 | Behind DEBUG `SHEPHERD_SCROLL_MEASURED_HISTORY`. First commit: T5's eager stack plus the same-pass prepend write, to prove the hook. Then slots, table, and a built set that only grows (rows leave as today) | `ShepherdRemote/ThreadRowHeights.swift` and its unit tests, `ThreadView.swift`, `ThreadHistoryAnchor.swift`, `ThreadTailGuard.swift`, `ThreadScrollValidation.swift`, `validate.py` | On: slow, flick, both cross-band, paging and wheel walk at 2 pt or less; no frame above 8 pt; no detached guard walk; other rows 0; mount bar. Off: nightly's table | Paging or wheel walk above 2 pt with both hooks: report the pass each write ran in |
+| 2 | Default on. Delete the lazy path, M5, M6, the `detached` key and the switch | `ThreadView.swift`, `ThreadHistoryAnchor.swift`, tests that name M5, `docs/rules.md` | Slice 1's table; `ThreadHistoryRetentionTests` | A suite needs a new gate |
+| 3 | Width and settings: heights frozen during live resize and width animation, one batched write at rest | `ThreadView.swift`, `AppLayout+Thread.swift` | `window-resize` 0, plus a new detached sidebar-toggle step; `ThreadEagerTailTests` | Above 2 pt at rest |
+| 4 | One column (section 4) | `ThreadView.swift`, `ThreadEagerTail.swift`, `ThreadRestore`, `NativeThreadStore.swift` | Table, mount bar, `ThreadBlankScreenTests`; `ThreadEagerTailTests` rewritten | Mount bar or a blank test fails |
+| 5 | Guard walks deleted; slots inside `SHProseChunks` | `ThreadTailGuard.swift`, `ProseChunks.swift` | `thread.tailRepair` 0; giant reply tests | Any repair fires |
+| 6 | Optional: estimates or idle pre-measure | `NativeRowHeight.swift` | H1 write total falls | No gain |
+| 7 | iPhone and iPad | section 7 | iOS fixtures | |
+
+`ThreadScrollOwner` is not wired here and is not needed for the reported jumps. Its `reveal` and D3 case 1 become moot, because every row has a frame. It remains the plan for merging M1 and M9 to M12 afterwards. D2 needs an exception (question 2).
+
+### 7. iPhone and iPad
+
+- **Shared:** the store, the rows, `ScrollIntent`, and `ThreadRowHeights` once it is in `ShepherdRemote`.
+- **Not shared:** `ThreadScreen` has one `LazyVStack` and no eager tail, the I1 position binding, and a `UIScrollView`.
+- **Same structure:** it applies with its own slot view and driver. `NativeRowHeight` is tuned for the Mac.
+- **Order:** Mac first. The nine scenarios are Mac only, and iOS forks at 27.1. Slices 1 to 6 leave iOS unchanged and say so in each PR.
+
+### 8. Risks and what ends this
+
+- **Same-pass write:** only the slice 5 spike's clip write, made after forced layout, reached its frame. Replacing the clip view blanked the thread. If neither hook lands in the pass, abandon for the AppKit list.
+- **Scroller drag:** a knob over a growing document moves content. Hold corrections while `ScrollIntent.physicalScrollerHeld`.
+- **Momentum:** a write during a coast may fight AppKit. Stop if `flick-and-stop` shows a residual.
+- **Row state:** from slice 4 a row that leaves the built set loses an open disclosure, which is one δ. Selection is per block today, so nothing spans rows.
+- **Find and VoiceOver:** Find is by entry ID, so it is unaffected. Placeholders are hidden from VoiceOver.
+- **Long single rows:** inner lazy chunks still guess until slice 5.
+- **Scroll targets:** 600 targets in a non-lazy stack is an unmeasured cost. T5 ran 602.
+
+### 9. Questions for the user
+
+1. Mac first, iPhone and iPad after? (yes or no)
+2. May the app adjust the scroll offset while you scroll, only to keep text still when a message above gets its real height? This overrides D2. (yes or no)
+3. If SwiftUI cannot take that write in the same frame, rebuild the Mac thread list on AppKit, or stop? (rebuild or stop)

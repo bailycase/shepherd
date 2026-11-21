@@ -1,4 +1,5 @@
 """The named validation command must not turn missing or failed evidence green."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import contextlib
 import io
 import json
@@ -348,7 +349,7 @@ class ValidateTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(completed.stderr.strip(), "selection not implemented")
 
-    def run_case(self, records, swift_exit=0, case="changes-review"):
+    def run_case(self, records, swift_exit=0, case="changes-review", wrapper=None):
         test = {"changes-review": "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
                 "seeded-thread-rename": "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
                 "c-state": "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
@@ -360,7 +361,7 @@ class ValidateTests(unittest.TestCase):
             output = io.StringIO()
 
             def swift_test(command, *, cwd, env, stdout, stderr):
-                self.assertEqual(command, ["swift", "test", "-j", "4", "--filter", test])
+                self.assertEqual(command, ([wrapper] if wrapper else []) + ["swift", "test", "-j", "4", "--filter", test])
                 self.assertEqual(cwd, root)
                 self.assertNotIn("SHEPHERD_LIVE_MODEL", env)
                 self.assertEqual(stderr, subprocess.STDOUT)
@@ -380,7 +381,8 @@ class ValidateTests(unittest.TestCase):
                   patch.object(validate, "source_identity", return_value=source),
                   patch.object(validate.subprocess, "check_output", return_value=b"Swift version fixture"),
                   patch.object(validate.subprocess, "run", side_effect=swift_test) as swift,
-                  patch.dict(os.environ, {"SHEPHERD_LIVE_MODEL": "must-not-reach-swift"}),
+                  patch.dict(os.environ, {"SHEPHERD_LIVE_MODEL": "must-not-reach-swift",
+                                          **({"SHEPHERD_BUILD_WRAPPER": wrapper} if wrapper else {})}),
                   contextlib.redirect_stdout(output)):
                 code = validate.main(["--case", case])
                 swift.assert_called_once()
@@ -407,6 +409,13 @@ class ValidateTests(unittest.TestCase):
         [step] = result["steps"]
         self.assertEqual(step["actual"], record["actual"])
         self.assertIn("Sources/ShepherdApp/DiffReviewView.swift", step["look_first"])
+
+    def test_build_wrapper_prefixes_the_command_only_when_set(self):
+        complete = {"step": "complete", "status": "passed", "evidence": [],
+                    "expected": "light and dark scenarios finished", "actual": "light and dark scenarios finished"}
+        self.assertNotIn("SHEPHERD_BUILD_WRAPPER", os.environ)
+        self.run_case([complete])  # run_case asserts the bare ["swift", "test", ...] command
+        self.run_case([complete], wrapper="/usr/bin/env")  # and the prefixed one
 
     def test_zero_exit_without_completion_evidence_fails(self):
         for records in ([], [{"step": "complete", "status": "passed", "evidence": [],

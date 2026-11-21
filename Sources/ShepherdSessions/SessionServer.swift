@@ -4,6 +4,9 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+#if DEBUG
+import os
+#endif
 
 public enum SessionServerError: Error, CustomStringConvertible {
     case socketPathTooLong(path: String)
@@ -929,6 +932,10 @@ public final class SessionServer: @unchecked Sendable {
     var publicationTransfers: Set<UUID> = []
     var publicationTransferQueue: [ProjectArtifactReceipt] = []
     var publicationTransferDuration = ProjectArtifactReceipt.transferSeconds
+    #if DEBUG
+    /// An isolated file backlog for publication preflight; other file work must still be able to drain.
+    let publicationFileBacklog = OSAllocatedUnfairLock<(queue: DispatchQueue, didEnqueue: @Sendable () -> Void)?>(initialState: nil)
+    #endif
     /// Test barrier after preparation, outside both state and file queues.
     var publicationBeforeCommit: (@Sendable () async -> Void)?
     /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.
@@ -1802,14 +1809,17 @@ public final class SessionServer: @unchecked Sendable {
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
-                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
-                            return continuation.resume(returning: false)
+                        guard let self, let thread = self.rpcThread(forAgent: agentID) else {
+                            return continuation.resume(returning: .refused)
+                        }
+                        guard thread.isServable else {
+                            return continuation.resume(returning: thread.session.isAlive && thread.bootstrapFailure == nil ? .starting : .refused)
                         }
                         thread.lastInputFromPerson = false
                         thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
-                            if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
+                            if case .accepted = result { continuation.resume(returning: .accepted) } else { continuation.resume(returning: .refused) }
                         }
-                    } ?? continuation.resume(returning: false)
+                    } ?? continuation.resume(returning: .refused)
                 }
             },
             threadFacts: { [weak self] agentID in
@@ -8413,9 +8423,13 @@ public final class SessionServer: @unchecked Sendable {
             }
             if let closingDispatch {
                 let thread = self.rpcThread(forAgent: agentID)
+                // A cancelled pi can retain its last busy flag and queue after being killed.
+                // Keep the normal checks if the person has since restarted the thread.
+                let discardsQueue = self.fleet?.dispatch.inbound[closingDispatch]?.record.state == .cancelled
+                    && thread.map { !$0.session.isAlive || self.startRecords[$0.session.id]?.stop == .requested } == true
                 guard agent.dispatchedFrom?.dispatchID == closingDispatch, agent.movedTo == nil,
-                      agent.status != .working, agent.status != .blocked,
-                      thread?.piBusy != true, thread?.items.isEmpty != false else {
+                      discardsQueue || (agent.status != .working && agent.status != .blocked
+                          && thread?.piBusy != true && thread?.items.isEmpty != false) else {
                     throw FleetDispatchRefusal(code: "not_settled", message: "The thread is active, has queued work, or has moved. It was not closed.")
                 }
             }

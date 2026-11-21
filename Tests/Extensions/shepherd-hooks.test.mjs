@@ -2,6 +2,7 @@
 // parsing (JSON and the Codex TOML subset), matchers, the off switch, exit codes, decision merging,
 // updatedInput, the Stop send-back cap, additionalContext, and a proposal's write.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/shepherd-hooks.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

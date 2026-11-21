@@ -2,6 +2,7 @@
 // sidebar shows beside a thread waiting on you.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/question-reason.test.mjs
 // Everything runs in a temporary HOME against a local fake provider.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

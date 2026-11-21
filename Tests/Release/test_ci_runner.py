@@ -1,4 +1,5 @@
 """Evaluate the native CI runner fence without GitHub or a YAML dependency."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import re
 import unittest
 

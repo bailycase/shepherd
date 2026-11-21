@@ -1,5 +1,6 @@
 // The vision extension with in-memory model completions, then a real pi on the fake provider:
 // a text-only thread model is sent words, the session keeps the image. No network.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

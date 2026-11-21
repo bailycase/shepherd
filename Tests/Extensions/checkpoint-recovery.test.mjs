@@ -1,4 +1,5 @@
 // FAKE loopback provider only. Run with PI_PACKAGE_DIR pointing at the verified patched SDK.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";

@@ -2,6 +2,7 @@
 // an MCP tool's result is cleared like any other tool's, and a tool_search result that went out of the request does not take
 // the tools it loaded with it. Real pi in RPC mode, three stand-in MCP servers, a fake provider that records every request.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/context-mcp.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { startThread } from "./context-harness.mjs";

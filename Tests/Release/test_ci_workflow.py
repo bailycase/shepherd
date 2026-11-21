@@ -3,6 +3,7 @@
 The workflow is read as text (the repository's tests are stdlib only). Run:
 python3 -m unittest discover -s Tests/Release -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import json
 import os
 import re

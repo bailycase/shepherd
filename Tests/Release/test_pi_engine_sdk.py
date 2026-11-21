@@ -2,6 +2,7 @@
 
 SHEPHERD_ENGINE_SMOKE=.build/pi-engine python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import os
 from pathlib import Path
 import subprocess

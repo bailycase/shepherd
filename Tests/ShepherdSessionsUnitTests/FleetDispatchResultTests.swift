@@ -1,10 +1,19 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import Testing
 @testable import ShepherdSessions
 
 @Suite("Fleet dispatch result")
 struct FleetDispatchResultTests {
+    @Test func theTaskBranchTakesPriorityOverTheStartingBranch() {
+        let task = "Push to the existing branch fix/payment."
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "Studio Mac", parentTitle: "Payment review",
+                                         title: "Check payments", task: task, repoKey: "github.com/acme/web", createdAt: 1)
+        let footer = "Payment review on Studio Mac to do the task above. You start on fleet/check-payments; commit and push (git push -u origin fleet/check-payments) unless the task names another branch. Your last message goes back to whoever sent you."
+        #expect(FleetDispatch.prompt(for: record, branch: "fleet/check-payments") == task + FleetDispatchProtocol.promptSeparator + footer)
+    }
+
     @Test func theCheckoutNoticeIsSeparateFromCommittedWork() {
         let branch = "fleet/checkout-notes"
         let committed = "Branch fleet/checkout-notes: 1 commit ahead of the start, pushed to origin, 1 file changed (+2 -1)."

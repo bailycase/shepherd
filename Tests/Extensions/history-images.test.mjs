@@ -1,6 +1,7 @@
 // The pinned engine's image references: `get_messages` with `images: "refs"` names each saved image by its
 // SHA-256, size and pixel dimensions instead of carrying its bytes, and `get_image` returns the bytes by hash.
 // Run: PI_PACKAGE_DIR=.build/pi-engine/Resources/pi-engine node --test Tests/Extensions/history-images.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

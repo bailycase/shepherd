@@ -3,6 +3,7 @@
 // image; an error result; the tool list read once per driver build; the driver started on the first call and killed at
 // session_shutdown; and the driver's environment (its own home, no telemetry, none of Shepherd's variables). A stand-in
 // driver answers over stdio; no desktop is touched.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -17,8 +18,6 @@ if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
 const require = createRequire(path.join(pkg, "package.json"));
 const { createJiti } = require("jiti");
 const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": path.join(pkg, "dist/index.js") } });
-// A model that can't view images gets words unless the vision extension describes the picture; this host's is not ours.
-delete process.env.SHEPHERD_EXT_VISION;
 const extension = await jiti.import(path.join(root, "Extensions/shepherd-computer-use.ts"));
 
 const KEYS = ["SHEPHERD_COMPUTER_USE", "SHEPHERD_COMPUTER_USE_HOME", "SHEPHERD_CHILD", "SHEPHERD_DESIGN_ID", "SHEPHERD_AUTOMATION",

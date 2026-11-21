@@ -1,4 +1,5 @@
 // Both public SDK entry points, with a native FAKE provider. No HTTP or default resources.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

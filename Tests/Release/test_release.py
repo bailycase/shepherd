@@ -2,6 +2,7 @@
 
 Run: python3 -m unittest discover -s Tests/Release -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import base64
 import contextlib
 import hashlib

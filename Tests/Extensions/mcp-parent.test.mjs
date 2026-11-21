@@ -2,6 +2,7 @@
 // `.shepherd/mcp.json` servers. Real pi in RPC mode against the stand-in stdio server, a loopback fake provider and a temporary
 // home. pi runs in `work/apps/web`, a subproject of `work`, with SHEPHERD_PARENT_PROJECT naming `work`.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/mcp-parent.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

@@ -1,4 +1,5 @@
 """Execute Release's publication shell against fake gh/Sparkle and a scratch git remote."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import json
 import os
 from pathlib import Path

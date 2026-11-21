@@ -1,6 +1,7 @@
 """Fleet's iCloud rendezvous in the release: the entitlements, the provisioning profile and what the workflow does with and
 without the secret. CloudKit itself is not reachable from here. Run: python3 -m unittest discover -s Tests/Release -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import base64
 import importlib.util
 import os

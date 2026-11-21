@@ -1,4 +1,5 @@
 """Auto-merge stays author-scoped, bounded, and uses a release-capable token."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import os
 from pathlib import Path
 import subprocess

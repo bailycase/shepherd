@@ -1,4 +1,5 @@
 // Real staged modular and bundled SDKs, reopened sessions and a local FAKE provider. No network/spend.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

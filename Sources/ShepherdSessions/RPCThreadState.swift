@@ -91,7 +91,7 @@ final class RPCThreadState {
     let queue: DispatchQueue
     private(set) var piSessionID: String?
     /// A readiness failure, independent of whether any client is watching this thread.
-    private var bootstrapFailure: String?
+    private(set) var bootstrapFailure: String?
     private var bootstrapTimeout: TimeInterval?
     private var bootstrapWaitingForHuman: Bool?
     private var bootstrapDeadline = UUID()
