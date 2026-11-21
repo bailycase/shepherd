@@ -168,7 +168,8 @@ final class FleetMaterializer {
     func scan(name: String, credentialsOnly: Bool = false) -> [FleetOp] {
         var emitted: [FleetOp] = []
         var changed = false
-        for source in sources where source.isReady && (!credentialsOnly || source.isCredential) {
+        // Kind first: a source that isn't asked about is not read, and `isReady` can be a read of its own files.
+        for source in sources where (!credentialsOnly || source.isCredential) && source.isReady {
             source.prepare()
             let present = source.fingerprints()
             for unit in units(of: source, holding: present) {

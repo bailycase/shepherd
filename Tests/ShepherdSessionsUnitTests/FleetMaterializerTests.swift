@@ -17,6 +17,8 @@ struct FleetMaterializerTests {
         var written: [(unit: String, value: String?, origin: String)] = []
         var asynchronous = false
         var ready = true
+        /// How often a pass asked whether it can read at all.
+        var readinessChecks = 0
 
         init(units: [String], blobUnits: Set<String> = [], values: [String: String] = [:]) {
             self.units = units
@@ -24,7 +26,7 @@ struct FleetMaterializerTests {
             self.values = values.mapValues { Data($0.utf8) }
         }
 
-        var isReady: Bool { ready }
+        var isReady: Bool { readinessChecks += 1; return ready }
         var writesAsynchronously: Bool { asynchronous }
         func storesBlob(_ unit: String) -> Bool { blobUnits.contains(unit) }
         func read() -> [String: Data] { values }
@@ -224,6 +226,18 @@ struct FleetMaterializerTests {
         #expect(mac.scan().isEmpty && mac.apply().notices.isEmpty)
         mac.source.ready = true
         #expect(mac.scan().map(\.unit) == [Self.setting])
+    }
+
+    /// The fence before pi starts reads sign-ins only: a source that isn't one is not even asked whether it can read
+    /// (for the skills it is a read of `skills.json`).
+    @Test func aCredentialScanDoesNotAskASourceThatIsNotACredential() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let mac = try Mac(Self.macA, dir: dir, values: [Self.setting: "\"a\""])
+        #expect(mac.materializer.scan(name: "Mac A", credentialsOnly: true).isEmpty)
+        #expect(mac.source.readinessChecks == 0)
+        #expect(mac.scan().map(\.unit) == [Self.setting])
+        #expect(mac.source.readinessChecks == 1)
     }
 
     @Test func anAsynchronousWriteIsWaitedForNotTakenForAnEdit() throws {

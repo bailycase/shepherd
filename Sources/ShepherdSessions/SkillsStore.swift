@@ -455,24 +455,38 @@ public final class SkillsStore: @unchecked Sendable {
         var source: SkillSource?
     }
 
-    /// Every skill here, on and off (the ones pi loads from elsewhere are not Shepherd's to sync).
-    func syncedSkills() -> [Synced] {
+    /// What a Fleet pass reads of the records, read once and valid: a skill with no known source would
+    /// sync as Local, and auto-update as off, so a pass that can't have this reads nothing.
+    struct SyncedView {
+        fileprivate var sources: [String: SkillSource]
+        var autoUpdate: Bool
+    }
+
+    /// The records for one Fleet pass; nil while they can't be read.
+    func syncedView() -> SyncedView? {
         lock.withLock {
-            let records = (try? loadRecords()) ?? Records()
+            guard let records = try? loadRecords() else { return nil }
+            return SyncedView(sources: records.skills.mapValues(\.source), autoUpdate: records.autoUpdate)
+        }
+    }
+
+    /// Every skill here, on and off (the ones pi loads from elsewhere are not Shepherd's to sync).
+    func syncedSkills(_ view: SyncedView) -> [Synced] {
+        lock.withLock {
             var skills: [String: Synced] = [:]
             for (base, isOn) in [(offDirectory, false), (directory, true)] {
                 for name in skillNames(in: base) {
                     skills[name] = Synced(name: name, folder: base.appendingPathComponent(name, isDirectory: true), isOn: isOn,
-                                          source: records.skills[name]?.source)
+                                          source: view.sources[name])
                 }
             }
             return skills.values.sorted { $0.name < $1.name }
         }
     }
 
-    /// The folder of a skill here, on or off.
-    func syncedFolder(_ name: String) -> URL? {
-        lock.withLock { locate(name)?.folder }
+    /// Where a skill is here, and whether it is on; its records are not read.
+    func syncedPlace(_ name: String) -> (folder: URL, isOn: Bool)? {
+        lock.withLock { locate(name) }
     }
 
     /// One file of a skill that is here, on or off, even before its SKILL.md has arrived (a skill whose
@@ -496,6 +510,8 @@ public final class SkillsStore: @unchecked Sendable {
     func writeSynced(_ name: String, path: String, data: Data?, on: Bool) throws {
         try Self.check(name)
         try lock.withLock {
+            // Before any file or folder is touched: a sync of files can't land while the records are damaged.
+            _ = try loadRecords()
             let folder = locate(name)?.folder ?? (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
             if let data {
                 try FleetFileTree.write(data, to: path, under: folder)
@@ -542,42 +558,16 @@ public final class SkillsStore: @unchecked Sendable {
 
     // MARK: Records
 
-    // A key that is there must decode: an explicit null or a wrong type is damage, not a default.
     private struct Record: Codable {
         var source: SkillSource
         var installedAt: Double
         var update: SkillUpdate?
-
-        init(source: SkillSource, installedAt: Double) {
-            self.source = source
-            self.installedAt = installedAt
-        }
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            source = try c.decode(SkillSource.self, forKey: .source)
-            installedAt = try c.decode(Double.self, forKey: .installedAt)
-            update = try c.contains(.update) ? c.decode(SkillUpdate.self, forKey: .update) : nil
-        }
     }
 
     private struct Removed: Codable {
         var wasOn: Bool
         var record: Record?
         var removedAt: Double
-
-        init(wasOn: Bool, record: Record?, removedAt: Double) {
-            self.wasOn = wasOn
-            self.record = record
-            self.removedAt = removedAt
-        }
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            wasOn = try c.decode(Bool.self, forKey: .wasOn)
-            record = try c.contains(.record) ? c.decode(Record.self, forKey: .record) : nil
-            removedAt = try c.decode(Double.self, forKey: .removedAt)
-        }
     }
 
     private struct Records: Codable {
@@ -591,11 +581,11 @@ public final class SkillsStore: @unchecked Sendable {
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            version = try c.contains(.version) ? c.decode(Int.self, forKey: .version) : 1
-            autoUpdate = try c.contains(.autoUpdate) ? c.decode(Bool.self, forKey: .autoUpdate) : false
-            checkedAt = try c.contains(.checkedAt) ? c.decode(Double.self, forKey: .checkedAt) : nil
-            skills = try c.contains(.skills) ? c.decode([String: Record].self, forKey: .skills) : [:]
-            removed = try c.contains(.removed) ? c.decode([String: Removed].self, forKey: .removed) : [:]
+            version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+            autoUpdate = try c.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? false
+            checkedAt = try c.decodeIfPresent(Double.self, forKey: .checkedAt)
+            skills = try c.decodeIfPresent([String: Record].self, forKey: .skills) ?? [:]
+            removed = try c.decodeIfPresent([String: Removed].self, forKey: .removed) ?? [:]
         }
     }
 
@@ -614,7 +604,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// The records, or `damagedRecords` when the file is there and can't be read: nothing may then be
     /// saved over it. Read on every use, so a repaired or deleted file takes over at once.
     private func loadRecords() throws -> Records {
-        switch PersistedFile<Records>.load(from: recordsURL) {
+        switch Self.readRecords(at: recordsURL) {
         case .loaded(let records):
             if loggedRecordsDamage { ShepherdLog.info("skills.json is readable again at \(recordsURL.path)") }
             loggedRecordsDamage = false
@@ -623,17 +613,7 @@ public final class SkillsStore: @unchecked Sendable {
             loggedRecordsDamage = false
             return Records()
         case .damaged(let original, let cause):
-            let detail: String
-            switch cause {
-            case DecodingError.dataCorrupted(let context), DecodingError.typeMismatch(_, let context),
-                 DecodingError.valueNotFound(_, let context), DecodingError.keyNotFound(_, let context):
-                detail = context.debugDescription
-            default:
-                detail = original == nil ? "The file could not be read." : cause.localizedDescription
-            }
-            let problem = "Couldn't read where your skills came from at \(recordsURL.path). \(detail) "
-                + "Installing, updating, removing and restoring skills, and Fleet sync of skills, are paused. "
-                + "Restore the file from a backup or repair its JSON; nothing is lost until then."
+            let problem = Self.damageMessage(at: recordsURL, original: original, cause: cause)
             if !loggedRecordsDamage {
                 ShepherdLog.error(problem)
                 loggedRecordsDamage = true
@@ -642,13 +622,53 @@ public final class SkillsStore: @unchecked Sendable {
         }
     }
 
+    /// The disk reader: only what this store wrote reads. The shared decoder is told to take the
+    /// envelope exactly, and `requireWritten` holds the rest.
+    private static func readRecords(at url: URL) -> PersistedFile<Records> {
+        PersistedFile<Records>.load(from: url, exactEnvelope: true, validateBytes: requireWritten)
+    }
+
+    /// Foundation's JSON decoder also reads UTF-16 and repairs invalid UTF-8, and the wire types turn
+    /// an explicit null into "absent". The next save would then write over what was really there.
+    private static func requireWritten(_ data: Data) throws {
+        func damaged(_ why: String) -> DecodingError { .dataCorrupted(.init(codingPath: [], debugDescription: why)) }
+        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else { throw damaged("The file isn't UTF-8 text.") }
+        func hasNull(_ value: Any) -> Bool {
+            if value is NSNull { return true }
+            if let object = value as? [String: Any] { return object.values.contains(where: hasNull) }
+            return (value as? [Any])?.contains(where: hasNull) ?? false
+        }
+        if let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]), hasNull(object) {
+            throw damaged("The file holds an explicit null, which this version never writes.")
+        }
+    }
+
+    private static func damageMessage(at url: URL, original: Data?, cause: any Error) -> String {
+        let detail: String
+        switch cause {
+        case DecodingError.dataCorrupted(let context), DecodingError.typeMismatch(_, let context),
+             DecodingError.valueNotFound(_, let context), DecodingError.keyNotFound(_, let context):
+            detail = context.debugDescription
+        default:
+            detail = original == nil ? "The file could not be read." : cause.localizedDescription
+        }
+        return "Couldn't read where your skills came from at \(url.path). \(detail) "
+            + "Installing, updating, removing and restoring skills, and Fleet sync of skills, are paused. "
+            + "Restore the file from a backup or repair its JSON; nothing is lost until then."
+    }
+
+    /// Why the records in `stateDirectory` can't be read, nil when they can or aren't there. For a
+    /// writer outside the store that would replace a skill's folder (copying again from your pi).
+    public static func recordsProblem(stateDirectory: URL) -> String? {
+        let url = stateDirectory.appendingPathComponent("skills.json")
+        guard case .damaged(let original, let cause) = readRecords(at: url) else { return nil }
+        return damageMessage(at: url, original: original, cause: cause)
+    }
+
     /// For a read-only answer: the records, or empty ones with the problem to show beside them.
     private func recordsOrProblem() -> (records: Records, problem: String?) {
         do { return (try loadRecords(), nil) } catch { return (Records(), "\(error)") }
     }
-
-    /// Fleet leaves skills alone while the records can't be read: a skill with no known source would sync as Local.
-    var recordsAreReadable: Bool { lock.withLock { (try? loadRecords()) != nil } }
 
     private func save(_ records: Records) throws {
         try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)

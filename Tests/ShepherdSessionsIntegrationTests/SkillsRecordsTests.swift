@@ -42,6 +42,11 @@ struct SkillsRecordsTests {
         }
     }
 
+    static let invalidUTF8InAString: Data = {
+        let parts = legacy.components(separatedBy: "acme/skills")
+        return Data(parts[0].utf8) + Data("acme/".utf8) + Data([0xff]) + Data("skills".utf8) + Data(parts[1].utf8)
+    }()
+
     /// Every way the file can exist and still not be a records file.
     static let damage: [(String, Data)] = [
         ("truncated", Data(#"{"version":1,"skills":{"#.utf8)),
@@ -53,6 +58,14 @@ struct SkillsRecordsTests {
         ("null removed record", Data(#"{"removed":{"pdf":{"wasOn":true,"record":null,"removedAt":1}}}"#.utf8)),
         ("a list", Data("[]".utf8)),
         ("invalid UTF-8", Data([0x7b, 0x22, 0xff, 0xfe, 0x22, 0x7d])),
+        // The next two are whole, well formed JSON that a plain decoder reads: only the bytes are wrong.
+        ("invalid UTF-8 inside a string", invalidUTF8InAString),
+        ("UTF-16", Data(legacy.utf16.flatMap { [UInt8($0 & 0xff), UInt8($0 >> 8)] })),
+        ("an envelope with an extra key", Data((String(envelope.dropLast()) + #","notes":"kept by hand"}"#).utf8)),
+        ("null committedAt in a source", Data(legacy.replacingOccurrences(of: #""commit":"abc123""#, with: #""commit":"abc123","committedAt":null"#).utf8)),
+        ("null committedAt in an update", Data(legacy.replacingOccurrences(
+            of: #""installedAt":1"#, with: #""installedAt":1,"update":{"commit":"def456","committedAt":null,"filesChanged":2}"#).utf8)),
+        ("null where nothing reads it", Data(legacy.replacingOccurrences(of: #""removed":{}"#, with: #""removed":{},"extra":null"#).utf8)),
         ("an unknown envelope version", Data(envelope.replacingOccurrences(of: #""version":1,"value""#, with: #""version":2,"value""#).utf8)),
     ]
 
@@ -84,7 +97,7 @@ struct SkillsRecordsTests {
         let problem = try #require(snapshot.problem, "\(shape.0)")
         #expect(problem.contains(fixture.records.path))
         #expect(problem.contains("backup"))
-        #expect(!fixture.store.recordsAreReadable)
+        #expect(!FleetSkillsSource(fixture.store).isReady)
         #expect(snapshot.skills.map(\.name) == ["pdf"], "the skills themselves still show")
 
         func refused(_ change: () throws -> Void) {
@@ -118,7 +131,7 @@ struct SkillsRecordsTests {
         try fixture.write("{")
         #expect(fixture.store.snapshot().problem != nil)
         try fixture.write(Self.legacy)
-        #expect(fixture.store.recordsAreReadable)
+        #expect(FleetSkillsSource(fixture.store).isReady)
         let snapshot = try fixture.store.configure(autoUpdate: false)
         #expect(snapshot.problem == nil)
         #expect(snapshot.skill("pdf")?.source?.commit == "abc123", "the repaired file's records were kept, not replaced")
@@ -189,6 +202,57 @@ struct SkillsRecordsTests {
         #expect(!fixture.skillIsInstalled)
         let restored = try fixture.store.restore("pdf")
         #expect(restored.skill("pdf")?.source?.commit == "abc123")
+    }
+
+    /// The records can't be saved after the skill has already moved (`removed/` exists, so the move works):
+    /// the skill goes back where it was and a retry succeeds.
+    @Test func aRemovalThatFailsAtTheSavePutsTheSkillBackAndItsRecordsStay() throws {
+        let fixture = try Fixture()
+        try fixture.write(Self.legacy)
+        let removed = fixture.state.appendingPathComponent("removed", isDirectory: true)
+        try FileManager.default.createDirectory(at: removed, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.state.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.state.path) }
+        #expect(throws: SkillsStore.StoreError.self) { try fixture.store.remove("pdf") }
+        #expect(fixture.skillIsInstalled)
+        #expect(!FileManager.default.fileExists(atPath: removed.appendingPathComponent("pdf").path))
+        #expect(try fixture.bytes() == Data(Self.legacy.utf8))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.state.path)
+        _ = try fixture.store.remove("pdf")
+        #expect(!fixture.skillIsInstalled)
+    }
+
+    @Test func aRestoreThatCannotBeRecordedLeavesTheSkillRemovedAndSucceedsOnRetry() throws {
+        let fixture = try Fixture()
+        try fixture.write(Self.legacy)
+        _ = try fixture.store.remove("pdf")
+        let recorded = try fixture.bytes()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.state.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.state.path) }
+        #expect(throws: SkillsStore.StoreError.self) { try fixture.store.restore("pdf") }
+        #expect(!fixture.skillIsInstalled, "the failed restore moved it back to Undo")
+        #expect(try fixture.bytes() == recorded)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.state.path)
+        let restored = try fixture.store.restore("pdf")
+        #expect(fixture.skillIsInstalled)
+        #expect(restored.skill("pdf")?.source?.commit == "abc123")
+    }
+
+    /// Touching the file or rewriting the same bytes is not damage and not a different file: the next
+    /// save builds on what is there and keeps it.
+    @Test func aTouchedOrIdenticallyRewrittenFileIsSavedOnWithItsRecordsKept() throws {
+        let fixture = try Fixture()
+        try fixture.write(Self.legacy)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: fixture.records.path)
+        try fixture.write(Self.legacy)
+        _ = try fixture.store.configure(autoUpdate: false)
+        let saved = try fixture.bytes()
+        #expect(String(decoding: saved, as: UTF8.self).contains("abc123"))
+        let snapshot = fixture.store.snapshot()
+        #expect(snapshot.problem == nil && !snapshot.autoUpdate && snapshot.checkedAt == 5)
+        #expect(snapshot.skill("pdf")?.source?.commit == "abc123")
     }
 
     @Test func fleetLeavesSkillsAloneWhileTheRecordsAreDamaged() throws {
