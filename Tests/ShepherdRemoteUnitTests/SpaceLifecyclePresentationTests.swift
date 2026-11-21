@@ -100,33 +100,61 @@ struct SpaceLifecyclePresentationTests {
         #expect(dialogs.confirmRemoval(b, shown: macB) == nil, "already answered or dismissed")
     }
 
-    /// A's dialog callbacks fire late, after B's confirmation replaced it: typing and dismissing for A touch nothing of B's, and no client
-    /// is asked.
-    @MainActor @Test func aStaleDialogsCallbacksLeaveTheNewOnesAlone() {
+    /// A's dialog callbacks, the ones Organize installs, fire late after B's confirmation replaced it (the store is shared by every iPad
+    /// window): typing, dismissing, Rename and Remove touch nothing of B's, and no client is asked. B's own callbacks still work.
+    @MainActor @Test func aStaleDialogsCallbacksLeaveTheNewOnesAlone() async throws {
         let macA = UUID(), macB = UUID()
         let clientA = FakeSettingsClient(), clientB = FakeSettingsClient()
         let hosts = [SettingsHost(id: macA, name: "Mac A", client: clientA, capabilities: [RemoteProtocol.spaceLifecycleCapability]),
                      SettingsHost(id: macB, name: "Mac B", client: clientB, capabilities: [RemoteProtocol.spaceLifecycleCapability])]
         let a = SpaceLifecycleTarget(host: macA, space: web.id), b = SpaceLifecycleTarget(host: macB, space: web.id)
         let dialogs = SpaceLifecycleDialogs()
+        var shown: UUID? = macA
+        var sent: [(RemoteSpaceLifecycle, SpaceLifecycleTarget)] = []
+        func callbacks(_ target: SpaceLifecycleTarget) -> SpaceLifecycleDialogs.Callbacks {
+            dialogs.callbacks(for: target, name: "acme-web", shown: { shown }, send: { sent.append(($0, $1)) })
+        }
+        // What the send path does with each: the host the target is on, through its own client.
+        func deliver() async throws {
+            for (action, target) in sent { try await SpaceLifecycleDialogs.host(of: target, in: hosts)?.client?.spaceLifecycle(action, spaceID: target.space) }
+            sent = []
+        }
+
+        dialogs.removal = a
+        dialogs.rename = .init(target: a, name: "acme-site")
+        let stale = callbacks(a)
+        // B's confirmation replaces A's.
         dialogs.removal = b
         dialogs.rename = .init(target: b, name: "acme-shop")
 
-        dialogs.type("acme-site", into: a)
-        dialogs.dismissRename(a)
-        dialogs.dismissRemoval(a)
-        #expect(dialogs.rename == .init(target: b, name: "acme-shop"), "B's draft")
-        #expect(dialogs.removal == b, "B's confirmation")
-        // A's Rename and Remove buttons, as it was presented, send nothing while B is shown; B's still can.
-        #expect(dialogs.confirmRename(a, shown: macB) == nil && dialogs.confirmRemoval(a, shown: macB) == nil)
+        for hostShown in [macA, macB] {
+            shown = hostShown
+            stale.type("acme-site")
+            stale.dismissRename()
+            stale.dismissRemoval()
+            stale.rename()
+            stale.remove()
+            #expect(dialogs.rename == .init(target: b, name: "acme-shop"), "B's draft, with \(hostShown == macA ? "A" : "B") shown")
+            #expect(dialogs.removal == b, "B's confirmation, with \(hostShown == macA ? "A" : "B") shown")
+        }
+        try await deliver()
         #expect(clientA.requests.isEmpty && clientB.requests.isEmpty)
-        #expect(SpaceLifecycleDialogs.host(of: b, in: hosts)?.id == macB)
 
-        // The pending one is edited and dismissed by its own callbacks.
-        dialogs.type("acme-store", into: b)
+        // B's own callbacks edit, answer and dismiss it, and only on B.
+        let current = callbacks(b)
+        current.type("acme-store")
         #expect(dialogs.rename?.name == "acme-store")
-        dialogs.dismissRename(b)
-        dialogs.dismissRemoval(b)
+        shown = macA
+        current.rename()
+        current.remove()
+        #expect(sent.isEmpty, "B's answers while A is shown")
+        shown = macB
+        current.rename()
+        current.remove()
+        try await deliver()
+        #expect(clientA.requests.isEmpty && clientB.requests.count == 2)
+        current.dismissRename()
+        current.dismissRemoval()
         #expect(dialogs.rename == nil && dialogs.removal == nil)
     }
 

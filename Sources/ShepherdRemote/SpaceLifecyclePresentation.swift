@@ -120,6 +120,34 @@ public final class SpaceLifecycleDialogs {
         if removal == presented { removal = nil }
     }
 
+    /// What Organize installs on the Rename or Remove dialog it presents for `presented`. Every callback acts on that target only and
+    /// re-checks it against the pending confirmation and the host shown when it fires, so a stale dialog never touches another's
+    /// draft or confirmation and never sends. `name` is the space's current name, for Rename.
+    public struct Callbacks {
+        public let type: (String) -> Void
+        public let dismissRename: () -> Void
+        public let dismissRemoval: () -> Void
+        public let rename: () -> Void
+        public let remove: () -> Void
+    }
+
+    public func callbacks(for presented: SpaceLifecycleTarget, name: String?, shown: @escaping () -> UUID?,
+                          send: @escaping (RemoteSpaceLifecycle, SpaceLifecycleTarget) -> Void) -> Callbacks {
+        Callbacks(
+            type: { [self] in type($0, into: presented) },
+            dismissRename: { [self] in dismissRename(presented) },
+            dismissRemoval: { [self] in dismissRemoval(presented) },
+            rename: { [self] in
+                if let rename = confirmRename(presented, shown: shown()), let name,
+                   let new = SpaceLifecyclePresentation.renamed(rename.name, from: name) {
+                    send(.rename(name: new), rename.target)
+                }
+            },
+            remove: { [self] in
+                if let target = confirmRemoval(presented, shown: shown()) { send(.remove, target) }
+            })
+    }
+
     /// The host `target` is on, whatever Organize shows now; nil once the device no longer holds it. Its `client` is nil while it is offline.
     public static func host(of target: SpaceLifecycleTarget, in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { $0.id == target.host }

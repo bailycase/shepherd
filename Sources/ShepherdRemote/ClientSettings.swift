@@ -20,6 +20,8 @@ public protocol SettingsClient: SkillsClient {
     func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult
     /// The host's model catalog, for its model menus.
     func listModels() async throws -> ModelListing
+    /// Renames, hides, reorders or removes one of the host's spaces (`spaces.lifecycle.v1`).
+    func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws
 }
 
 extension SettingsClient {
@@ -33,6 +35,10 @@ extension SettingsClient {
     }
 
     public func listModels() async throws -> ModelListing { ModelListing(models: [], defaultModel: nil) }
+
+    public func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        throw RemoteHostClientError.rejected(code: "update_required", message: "This host's spaces can't be changed from here.")
+    }
 }
 
 extension RemoteHostClient: SettingsClient {}

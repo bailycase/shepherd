@@ -19,8 +19,14 @@ struct SpacesOrganizeScreen: View {
         let mobile = host.flatMap { hosts.host($0.id) }
         let spaces = mobile.map { SpaceLifecyclePresentation.spaces(in: $0.state) } ?? []
         // The confirmations as presented now: every callback below acts on these targets, never on whatever the shared store holds later.
-        let renamePresented = renaming(in: spaces, store).map { SpaceLifecycleTarget(host: host?.id ?? UUID(), space: $0.id) }
-        let removalPresented = removal(in: spaces, store).map { SpaceLifecycleTarget(host: host?.id ?? UUID(), space: $0.id) }
+        let renamed = renaming(in: spaces, store), removed = removal(in: spaces, store)
+        let callbacks = { (space: Space?) in
+            space.map { space in
+                store.spaceDialogs.callbacks(for: SpaceLifecycleTarget(host: host?.id ?? UUID(), space: space.id), name: space.name,
+                                             shown: { store.settingsHost?.id }, send: { send($0, to: $1, store: store) })
+            }
+        }
+        let renameCallbacks = callbacks(renamed), removalCallbacks = callbacks(removed)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text("Rename, hide, reorder or remove the spaces in the order \(host?.name ?? "the host") keeps them. A change shows on its Mac too.")
@@ -60,31 +66,19 @@ struct SpacesOrganizeScreen: View {
         .background(Color.sh.bgWindow)
         .navigationTitle("Organize spaces")
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
-        .alert("Rename \(renaming(in: spaces, store)?.name ?? "space")",
-               isPresented: Binding(get: { renamePresented != nil },
-                                    set: { if !$0, let renamePresented { store.spaceDialogs.dismissRename(renamePresented) } }),
-               presenting: renamePresented) { presented in
-            TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" },
-                                            set: { store.spaceDialogs.type($0, into: presented) }))
-            Button("Rename") {
-                // The confirmation as it was presented, still pending and on the host shown now; else nothing is sent.
-                if let rename = store.spaceDialogs.confirmRename(presented, shown: store.settingsHost?.id),
-                   let space = spaces.first(where: { $0.id == presented.space }),
-                   let new = SpaceLifecyclePresentation.renamed(rename.name, from: space.name) {
-                    send(.rename(name: new), to: rename.target, store: store)
-                }
-            }
+        .alert("Rename \(renamed?.name ?? "space")",
+               isPresented: Binding(get: { renameCallbacks != nil },
+                                    set: { if !$0 { renameCallbacks?.dismissRename() } }),
+               presenting: renameCallbacks) { presented in
+            TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" }, set: presented.type))
+            Button("Rename", action: presented.rename)
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(SpaceLifecyclePresentation.removeTitle,
-                            isPresented: Binding(get: { removal(in: spaces, store) != nil },
-                                                 set: { if !$0, let removalPresented { store.spaceDialogs.dismissRemoval(removalPresented) } }),
-                            titleVisibility: .visible, presenting: removal(in: spaces, store)) { space in
-            Button(SpaceLifecyclePresentation.removeButton, role: .destructive) {
-                // The confirmation as it was presented, still pending and on the host shown now; else nothing is sent.
-                let presented = SpaceLifecycleTarget(host: host?.id ?? UUID(), space: space.id)
-                if let target = store.spaceDialogs.confirmRemoval(presented, shown: store.settingsHost?.id) { send(.remove, to: target, store: store) }
-            }
+                            isPresented: Binding(get: { removalCallbacks != nil },
+                                                 set: { if !$0 { removalCallbacks?.dismissRemoval() } }),
+                            titleVisibility: .visible, presenting: removed) { _ in
+            Button(SpaceLifecyclePresentation.removeButton, role: .destructive) { removalCallbacks?.remove() }
         } message: { space in
             Text(SpaceLifecyclePresentation.removeMessage(name: space.name, threads: mobile.map { SpaceLifecyclePresentation.threads(in: $0.state, of: space) } ?? 0))
         }
@@ -130,7 +124,7 @@ struct SpacesOrganizeScreen: View {
     /// One change at a time, through the host the space was shown on, never the one Organize shows by now: the host's pushed state shows
     /// it, and a refusal shows in words.
     private func send(_ action: RemoteSpaceLifecycle, to target: SpaceLifecycleTarget, store: SettingsStore) {
-        guard !busy, let client = SpaceLifecycleDialogs.host(of: target, in: store.hosts)?.client as? RemoteHostClient else { return }
+        guard !busy, let client = SpaceLifecycleDialogs.host(of: target, in: store.hosts)?.client else { return }
         busy = true
         problem = nil
         Task {
