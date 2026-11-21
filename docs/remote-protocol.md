@@ -416,7 +416,9 @@
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them
-    the skills its pi loads from elsewhere (`SkillsSnapshot.pi`, `skills.pi.v1`, read-only). The
+    the skills its pi loads from elsewhere (`SkillsSnapshot.pi`, `skills.pi.v1`, read-only). A
+    snapshot carries `problem` (path, reason, how to fix) while the host can't read `skills.json`;
+    changes that write it then answer `write_failed` with the same text. Older clients ignore it. The
     server runs them on its own queue (they fetch with git) and tells the host's page about each
     change
   - `hooks` (`hooks.v1`): Settings › Hooks on the host (fetch, a hook's off switch by hash, a
