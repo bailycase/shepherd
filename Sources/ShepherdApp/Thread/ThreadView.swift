@@ -922,11 +922,7 @@ struct ThreadView: View {
         tailGuard.userScrolling = follower.userScrolling
         #if DEBUG
         if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard {
-            let wheel = wheelIntent()
-            trace.wheel = { [weak trace] delta in
-                trace?.wheelInput(moved: delta != 0)
-                wheel(delta)
-            }
+            trace.wheel = wheelIntent()
             trace.phase = scrollPhaseChanged
             trace.historyVisibility = historyVisibilityChanged
         }

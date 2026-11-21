@@ -35,6 +35,7 @@ SCROLL_EXPECTED_WRITERS = {
 SCROLL_EXTRA_SCENARIOS = ("key-paging", "scroller-drag", "released-thread")
 SCROLL_COMPLETION = "six Dev scroll motion scenarios and three capture scenarios finished"
 MISSING_WRITER_EXIT = 3
+INTENT_MISMATCH_EXIT = 4
 
 
 class MissingWriterProbes(ValueError):
@@ -407,8 +408,11 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
     if anchor_off:
         env["SHEPHERD_SCROLL_ANCHOR_OFF"] = anchor_off
     app = ROOT / ".build/scroll-dev/Build/Products/Debug/Shepherd.app/Contents/MacOS/Shepherd"
-    subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
-                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
+    fixture = subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
+                             stdout=log, stderr=subprocess.STDOUT, timeout=90)
+    if fixture.returncode == INTENT_MISMATCH_EXIT:
+        return INTENT_MISMATCH_EXIT
+    fixture.check_returncode()
     scenarios = json.loads(trace.read_text(encoding="utf-8"))
     summaries = scroll_evidence(scenarios)
     if anchor_off:
@@ -516,6 +520,8 @@ def run_case(name, anchor_off=None, ios_frames=None):
     missing = sorted(required_steps - records.keys())
     if scroll and result["exit_status"] == MISSING_WRITER_EXIT and ("writer-probes", None) in records:
         status, reason = "writer_probe_failed", None
+    elif scroll and result["exit_status"] == INTENT_MISMATCH_EXIT:
+        status, reason = "intent_mismatch", log_diagnostic(run / LOG)
     elif failed:
         status, reason = "assertion_failed", None
     elif setup_error:
@@ -558,7 +564,7 @@ def run_case(name, anchor_off=None, ios_frames=None):
     for problem in problems:
         print(f"Evidence error: {problem}")
     print(f"Report: {report.relative_to(ROOT)}")
-    return {"passed": 0, "writer_probe_failed": MISSING_WRITER_EXIT}.get(status, 1)
+    return {"passed": 0, "writer_probe_failed": MISSING_WRITER_EXIT, "intent_mismatch": INTENT_MISMATCH_EXIT}.get(status, 1)
 
 
 def main(argv=None):

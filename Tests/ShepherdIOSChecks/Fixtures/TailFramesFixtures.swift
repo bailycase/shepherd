@@ -86,7 +86,7 @@ enum TailFrames {
         try? await Task.sleep(for: .seconds(2))
         let draft = (1...8).map { "Line \($0) of a long message to the agent" }.joined(separator: "\n")
         await measure("idle") { await pause(0.5) }
-        // Opt-in (FIXTURE_SCROLL_PAGING=voiceover, with FIXTURE_SCROLL_LEDGER=1): only what VoiceOver's three-finger scroll does.
+        // Opt-in (FIXTURE_SCROLL_PAGING=voiceover): try the accessibility action and measure non-touch paging.
         if ProcessInfo.processInfo.environment["FIXTURE_SCROLL_PAGING"] == "voiceover" {
             await voiceOverPaging()
             return
@@ -141,9 +141,8 @@ enum TailFrames {
         }
     }
 
-    /// The scroll view's own `accessibilityScroll`, the call VoiceOver makes, with no finger and no command of ours: toward the
-    /// history a page at a time, then back down. No VoiceOver, focus or input is involved. The marks are ledger events of kind
-    /// "fixture" so the frames that follow them can be read against the intent.
+    /// Try the accessibility action without running VoiceOver. If UIKit rejects the call, use a native animated offset
+    /// as a proxy for non-touch paging. Neither action is logged as an app command.
     private static func voiceOverPaging() async {
         for (name, direction) in [("voiceover pages toward history", UIAccessibilityScrollDirection.down),
                                   ("voiceover pages toward the tail", .up)] {
@@ -152,9 +151,18 @@ enum TailFrames {
                     guard let scroll = FollowFixture.threadScrollView() else { return }
                     let before = scroll.contentOffset.y
                     let handled = scroll.accessibilityScroll(direction)
-                    SHRenderProbe.scrollEvent("fixture.voiceOverScroll", "accessibilityScroll(\(direction.rawValue))", kind: "fixture")
-                    FixtureCheck.report("FIXTURE CHECK ok: \(name) (\(page)) handled \(handled), offset \(Int(before)) -> \(Int(scroll.contentOffset.y))")
+                    if !handled {
+                        let inset = scroll.adjustedContentInset
+                        let height = scroll.bounds.height - inset.top - inset.bottom
+                        let step = direction == .down ? -height : height
+                        let target = min(max(before + step, -inset.top), scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+                        SHRenderProbe.scrollEvent("fixture.nonTouchPage", "UIKit animated offset", kind: "fixture")
+                        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: true)
+                    } else {
+                        SHRenderProbe.scrollEvent("fixture.voiceOverScroll", "accessibilityScroll(\(direction.rawValue))", kind: "fixture")
+                    }
                     await pause(1.5)
+                    FixtureCheck.report("FIXTURE CHECK ok: \(name) (\(page)) handled \(handled), offset \(Int(before)) -> \(Int(scroll.contentOffset.y))")
                 }
             }
         }
@@ -210,6 +218,7 @@ enum TailFrames {
 
         func start() {
             if capture {
+                ThreadTailGuard.measured?.resetTraceIntent()
                 SHRenderProbe.scrollEvents = { [weak self] event, source in
                     guard let self, let guardian = ThreadTailGuard.measured, source == nil || source === guardian else { return }
                     var event = event

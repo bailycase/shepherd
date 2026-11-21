@@ -151,6 +151,7 @@ class ValidateTests(unittest.TestCase):
             def dev_fixture(command, **kwargs):
                 if "--validate-scroll-stability" in command:
                     Path(kwargs["env"]["SHEPHERD_SCROLL_TRACE"]).write_text(json.dumps(scenarios), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
 
             with (patch.object(validate, "ROOT", root), patch.object(validate.sys, "platform", "darwin"),
                   patch.object(validate, "source_identity", return_value={}),
@@ -167,6 +168,27 @@ class ValidateTests(unittest.TestCase):
             self.assertEqual(steps["complete"]["status"], "passed")
             summary = json.loads((report.parent / "mac/scroll-jumps.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["switch-away-back"]["jumps"][0]["delta_pt"], 8)
+
+    def test_intent_mismatch_is_distinct_from_setup_and_motion_failures(self):
+        diagnostic = "error: flick-and-stop: expected idle, saw coasting"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+
+            def dev_fixture(command, **kwargs):
+                if "--validate-scroll-stability" in command:
+                    print(diagnostic, file=kwargs["stdout"])
+                    return subprocess.CompletedProcess(command, 4)
+                return subprocess.CompletedProcess(command, 0)
+
+            with (patch.object(validate, "ROOT", root), patch.object(validate.sys, "platform", "darwin"),
+                  patch.object(validate, "source_identity", return_value={}),
+                  patch.object(validate.subprocess, "check_output", return_value=b"Xcode fixture"),
+                  patch.object(validate.subprocess, "run", side_effect=dev_fixture), contextlib.redirect_stdout(io.StringIO())):
+                code = validate.main(["--case", "scroll-stability"])
+            [report] = (root / ".build/validation").glob("*/result.json")
+            result = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual((code, result["exit_status"], result["status"]), (4, 4, "intent_mismatch"))
+            self.assertIn(diagnostic, result["reason"])
 
     def test_bare_invocation_fails_loudly(self):
         completed = subprocess.run([sys.executable, str(ROOT / "scripts/validate.py")],
