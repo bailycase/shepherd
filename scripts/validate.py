@@ -24,6 +24,12 @@ SCROLL_SCENARIOS = {
     "window-resize": ("fixture.windowResize",),
     "switch-away-back": ("fixture.switchAway", "fixture.switchBack"),
 }
+SCROLL_EXPECTED_WRITERS = {
+    "slow-scroll-streaming": {"L7"},
+    "page-older-history": {"M5", "M6", "L6"},
+    "window-resize": {"L4", "L12"},
+    "switch-away-back": {"L14"},
+}
 SCROLL_COMPLETION = "six Dev scroll scenarios finished"
 
 
@@ -131,8 +137,6 @@ def log_diagnostic(path):
 
 
 def native_scroll_path(event):
-    if event.get("detail") == "fixture.clip.scroll":
-        return "fixture.clip.scroll"
     stack = event.get("stack", [])
     # Skip the bounds notification itself and name the code driving the write.
     start = next((i for i, line in enumerate(stack) if " _postBoundsChangeNotification]" in line), -1)
@@ -143,6 +147,8 @@ def native_scroll_path(event):
     ):
         if any(symbol in line for line in stack):
             return label
+    if event.get("detail") == "fixture.clip.scroll":
+        return "fixture.clip.scroll"
     for line in stack:
         fields = line.split(maxsplit=3)
         if len(fields) == 4 and fields[1] == "AppKit":
@@ -303,8 +309,8 @@ def scroll_ledger(frames, summary=None):
     from itertools import combinations
     from statistics import median
 
-    entries = [[event for event in frame["events"] if event["caller"].startswith("thread.write.")]
-               for frame in frames]
+    entries = [[event for event in frame["events"] if event["caller"].startswith("thread.write.")
+                and event.get("kind") != "fixture"] for frame in frames]
     counts = Counter(event["caller"] for events in entries for event in events)
     samples = []
     for i, frame in enumerate(frames):
@@ -332,7 +338,7 @@ def scroll_ledger(frames, summary=None):
             i = observation["frame"]
             related = entries[max(0, i - 1)] + [event for _, event in observation["events"]]
             observation["writer_candidates"] = list(dict.fromkeys(event["caller"] for event in related
-                                                                  if event.get("kind") in {"write", "fixture", "binding"}))
+                                                                  if event.get("kind") in {"write", "binding"}))
             observation["layout_changes"] = list(dict.fromkeys(event["caller"] for event in related
                                                                if event.get("kind") == "layout"))
             if any(event["caller"] == "NSClipView.bounds" for _, event in observation["events"]):
@@ -355,8 +361,12 @@ def scroll_evidence(scenarios):
         summary = measure_scroll(frames)
         if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
             raise ValueError(f"{name}: too few comparable settle frames")
-        summary["ledger"] = scroll_ledger(frames, summary)
-        summary["hz"] = summary["ledger"].pop("hz")
+        ledger = scroll_ledger(frames, summary)
+        expected = {f"thread.write.{writer}" for writer in SCROLL_EXPECTED_WRITERS.get(name, ())}
+        if missing := expected - ledger["writer_counts"].keys():
+            raise ValueError(f"{name}: missing writer probes {sorted(missing)}")
+        summary["ledger"] = ledger
+        summary["hz"] = ledger.pop("hz")
         summaries[name] = summary
     return summaries
 

@@ -371,9 +371,11 @@ struct ThreadTranscript: View {
                 tailGuard.noteOfferedPosition(id)
                 return id
             }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
+            #if DEBUG
             .onChange(of: banner) { _, _ in
                 SHRenderProbe.scrollEvent("thread.write.L13", "thread.banner", from: tailGuard, kind: "layout")
             }
+            #endif
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()

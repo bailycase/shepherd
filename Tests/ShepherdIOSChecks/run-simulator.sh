@@ -277,7 +277,9 @@ for screen in "${screens[@]}"; do
         grep "^FIXTURE CHECK" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
         if [[ "$screen" == tail-frames && "${FIXTURE_SCROLL_LEDGER:-}" == 1 ]]; then
             container=$("${simctl[@]}" get_app_container "$device" com.shepherd.ios-fixture data)
-            cp "$container/tmp/scroll-frames.json" "$out/$screen-$label-$suffix-scroll-frames.json"
+            if [[ -f "$container/tmp/scroll-frames.json" ]]; then
+                cp "$container/tmp/scroll-frames.json" "$out/$screen-$label-$suffix-scroll-frames.json"
+            fi
         fi
         if grep -q "^FIXTURE CHECK FAILED" "$log" 2>/dev/null; then status=1; fi
         if grep -q "^FIXTURE MUTATION" "$log" 2>/dev/null; then

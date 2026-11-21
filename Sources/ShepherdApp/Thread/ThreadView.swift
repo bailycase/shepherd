@@ -283,9 +283,11 @@ struct ThreadView: View {
                         FleetMoveCardView(card: move, cancel: { actions.cancelMove($0) }, dismiss: { actions.dismissMove($0) }).equatable()
                     }
                 }
+                #if DEBUG
                 .onChange(of: fleetThread?.move != nil) { _, _ in
                     SHRenderProbe.scrollEvent("thread.write.L13", "fleet.notice", from: tailGuard, kind: "layout")
                 }
+                #endif
                 .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
@@ -480,9 +482,11 @@ struct ThreadView: View {
         .task(id: eagerReturning != nil) {
             if eagerReturning != nil { await returnEagerTail() }
         }
+        #if DEBUG
         .onChange(of: active) { _, active in
             SHRenderProbe.scrollEvent("thread.write.L14", active ? "thread.revealed" : "thread.hidden", from: tailGuard, kind: "layout")
         }
+        #endif
         .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
             guard active else {
