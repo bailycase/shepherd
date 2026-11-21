@@ -5782,7 +5782,6 @@ public final class SessionServer: @unchecked Sendable {
             // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
             changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
-            recordChildSpend(agentID: agentID, runs: children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
             let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
             hopToMain { [weak self] in
@@ -7252,35 +7251,6 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingOn = question
             $0.agents[index].waitingReason = reason
         }
-        let committedState = store.state
-        scheduleRemoteState()
-        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
-    }
-
-    /// Server queue: pi reported a thread's session totals. Keeps the agent's spend (`AgentSpend`) and, when it moved, broadcasts it
-    /// like a status: live state, written along with the next change. The model is the one the thread runs, which the growth is for;
-    /// the day is this host's, stamped with its zone so every viewer agrees which day is today.
-    func recordSpend(agentID: AgentID, stats: NativeThreadStats, model: String?, sessionID: String? = nil, now: Date = Date(),
-                     zone: TimeZone = .current) {
-        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
-        let next = AgentSpend.updated(agent.spend, tokens: stats.totalTokens, cost: stats.cost, model: model ?? agent.model,
-                                      day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier, sessionID: sessionID)
-        applySpend(next, to: agentID)
-    }
-
-    /// Server queue: the agent's background subagents published their rows. Each runs in its own pi process, so its usage (tokens and
-    /// cost of its own messages, not the history a fork inherited) joins the thread's spend once, by what each run grew by.
-    func recordChildSpend(agentID: AgentID, runs: [ChildRun], now: Date = Date(), zone: TimeZone = .current) {
-        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
-        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal,
-                                          startedAt: $0.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }) }
-        let next = AgentSpend.addingChildren(agent.spend, usage, day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier)
-        applySpend(next, to: agentID)
-    }
-
-    private func applySpend(_ next: AgentSpend?, to agentID: AgentID) {
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }), next != store.state.agents[index].spend else { return }
-        store.updateLive { $0.agents[index].spend = next }
         let committedState = store.state
         scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -9925,10 +9895,6 @@ public final class SessionServer: @unchecked Sendable {
                         server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.notificationLabel)
                     }
                 }
-            }
-            thread.onStatsChanged = { [weak serverWeak, weak thread] stats, piSessionID in
-                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
-                server.recordSpend(agentID: agentID, stats: stats, model: thread?.model, sessionID: piSessionID)
             }
             thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, server.isStarted else { return true }

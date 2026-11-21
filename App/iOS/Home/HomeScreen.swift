@@ -18,7 +18,6 @@ struct HomeScreen: View {
                 if model.hosts.isEmpty {
                     NoHostsState()
                 } else {
-                    SpendToday(spend: model.spendToday)
                     HomeSections(model: model, selected: navigator.selectedThread)
                 }
             }
