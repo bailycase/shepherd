@@ -58,8 +58,6 @@ final class HomeFeed {
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var again = false
-    /// Wakes `derive()` when a day changes for a thread's spend, so Home's "Spent today" resets without a state push.
-    @ObservationIgnored private var midnight: Task<Void, Never>?
 
     /// Between polls of the threads that run or wait.
     static let interval: Duration = .seconds(3)
@@ -124,15 +122,6 @@ final class HomeFeed {
     private func derive() {
         pending = false
         let next = FleetModel(hosts: inputs, digests: digests)
-        midnight?.cancel()
-        let now = Date()
-        if let change = SpendDay.nextChange(of: inputs.flatMap { $0.state.agents.compactMap(\.spend) }, after: now) {
-            midnight = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(change.timeIntervalSince(now) + 1))
-                guard !Task.isCancelled else { return }
-                self?.derive()
-            }
-        }
         let sidebarState = sidebar.state
         let modelChanged = next != model
         guard modelChanged || sidebarState != queueSidebarState else { return }

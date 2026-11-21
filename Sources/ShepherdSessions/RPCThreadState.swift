@@ -431,8 +431,6 @@ final class RPCThreadState {
     private var goalCommand: UUID?
     private var goalCommandFailure: String?
     var onGoalChanged: ((NativeGoal?) -> Void)?
-    /// pi reported the session's totals (`get_session_stats`) for the pi session with this id: the host keeps the spend the agent's sidebar row and the day's rollup read.
-    var onStatsChanged: ((NativeThreadStats, String?) -> Void)?
 
     func setGoalsEnabled(_ enabled: Bool, notifyController: Bool = true) {
         let changed = goalsEnabled != enabled
@@ -2308,7 +2306,6 @@ final class RPCThreadState {
             guard !acceptLateResponse || self.generation == generation,
                   case .success(let response) = result, response.success, let data = response.data else { return }
             self.stats = Self.projectStats(data)
-            if let stats = self.stats { self.onStatsChanged?(stats, data["sessionId"]?.stringValue ?? self.piSessionID) }
             if verifiesHistory, self.generation == generation { self.verifyHistoryCount(SavedMessageCounts(stats: data)) }
             self.updateContext()
             self.commit()

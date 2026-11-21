@@ -85,7 +85,7 @@ struct ThreadRow: View, Equatable {
     var body: some View {
         // The sidebar says a failed last turn (iPadThreadError): a failed dot and "failed".
         let failed = compact && row.failed
-        SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, spend: compact ? nil : row.runningSpend, clock: compact ? nil : row.clock?.rowClock,
+        SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, clock: compact ? nil : row.clock?.rowClock,
                   leading: row.design != nil ? .symbol("pencil.tip") : .state(failed ? .failed : AgentState(row.status)),
                   trailing: failed ? .meta("failed") : compact ? .none : row.hostTag.map { .host($0) } ?? .none,
                   chevron: false, selected: selected, dimmed: row.offline, compact: compact)
@@ -96,16 +96,12 @@ struct ThreadRow: View, Equatable {
 
 extension FleetThreadRow {
     /// Home's line under the title: what a working thread does now ("Running python",
-    /// "Thinking"), else the repo it works in, else what the host says of it, then what it spent.
+    /// "Thinking"), else the repo it works in, else what the host says of it.
     var inboxLine: String {
         if design != nil { return detail }
-        // A running thread's line is the busy one (what it does, and a clock): its spend gets its own line.
         if status == .working, !offline { return doing ?? place ?? detail }
-        return saying(spendAfter: place ?? detail)
+        return place ?? detail
     }
-
-    /// A running thread's spend, drawn under its line.
-    var runningSpend: String? { design == nil && status == .working && !offline ? spend : nil }
 }
 
 /// Something waiting on you, as one row (Home's preview, the sidebar).

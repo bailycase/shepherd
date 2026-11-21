@@ -194,4 +194,35 @@ struct StateStoreTests {
         #expect(loaded.agents.map(\.id) == [agent.id])
         #expect(loaded.agents.first?.piSessionID == "old-session")
     }
+
+    /// Files and hosts from the token and cost rollup (#752) carry a per-agent `spend` key; it is ignored, nothing else is lost,
+    /// and it is not written back.
+    @Test func anAgentSpendKeyFromTheRemovedRollupIsIgnored() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("state.json")
+        let state = Self.validState()
+        let agent = state.agents[0]
+        let json = """
+        {"spaces":[{"id":"\(state.spaces[0].id.rawValue)","name":"alpha","path":"/tmp/alpha"}],
+         "tabs":[{"id":"\(state.tabs[0].id.rawValue)","spaceID":"\(state.spaces[0].id.rawValue)","order":0,
+                  "layout":{"type":"leaf","pane":{"id":"\(agent.paneID!.rawValue)","cwd":"/tmp/alpha","agentID":"\(agent.id.rawValue)"}}}],
+         "agents":[{"id":"\(agent.id.rawValue)","name":"pi-1","spaceID":"\(state.spaces[0].id.rawValue)",
+                    "tabID":"\(state.tabs[0].id.rawValue)","paneID":"\(agent.paneID!.rawValue)","status":"working",
+                    "piSessionID":"old-session","worktreeBranch":"feat/x",
+                    "spend":{"tokens":3100000,"cost":4.2,"day":"2026-05-11","zone":"UTC","sessionID":"s1",
+                             "today":[{"model":"acme/small","tokens":1000,"cost":0.5}]}}]}
+        """
+        try Data(json.utf8).write(to: url)
+
+        let loaded = StateStore(url: url).state
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["state.json"], "loads without quarantine or repair")
+        #expect(loaded.agents.map(\.id) == [agent.id])
+        #expect(loaded.agents.first?.piSessionID == "old-session")
+        #expect(loaded.agents.first?.worktreeBranch == "feat/x")
+        let written = try JSONEncoder().encode(loaded.agents[0])
+        let object = try #require(try JSONSerialization.jsonObject(with: written) as? [String: Any])
+        #expect(object["spend"] == nil)
+        #expect(object["worktreeBranch"] as? String == "feat/x")
+    }
 }

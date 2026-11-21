@@ -259,9 +259,6 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// Where this thread came from when another Mac moved it here, for its header and the divider in its conversation. Persisted,
     /// written only when set, and sent to every client with the rest of the state.
     public var movedFrom: MovedFrom? = nil
-    /// What the thread has spent: pi's token total and cost estimate for the session as the host last read them, and today's growth
-    /// by model (`AgentSpend`). Persisted, written only when known; nil until pi has reported, and from older state files and hosts.
-    public var spend: AgentSpend? = nil
 
     /// What the host says of the latest completion: true once it was opened on some device, false
     /// while it wasn't, nil when the host doesn't track it (an older host: each device decides).
@@ -336,7 +333,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeOriginalBranch, reviewTarget, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom, startedBy, movedTo, movedFrom, spend
+        case designGrants, serviceTier, goalState, lastFailure, automationOrigin, completedAt, seenCompletedAt, pushMuted, dispatchedFrom, startedBy, movedTo, movedFrom
     }
 
     public init(from decoder: Decoder) throws {
@@ -390,8 +387,6 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         startedBy = try? c.decodeIfPresent(StartedBy.self, forKey: .startedBy)
         movedTo = try? c.decodeIfPresent(MovedTo.self, forKey: .movedTo)
         movedFrom = try? c.decodeIfPresent(MovedFrom.self, forKey: .movedFrom)
-        // Absent before spend was tracked; a value this build can't read is no spend.
-        spend = try? c.decodeIfPresent(AgentSpend.self, forKey: .spend)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -433,7 +428,6 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(startedBy, forKey: .startedBy)
         try c.encodeIfPresent(movedTo, forKey: .movedTo)
         try c.encodeIfPresent(movedFrom, forKey: .movedFrom)
-        try c.encodeIfPresent(spend, forKey: .spend)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
