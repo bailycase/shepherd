@@ -105,7 +105,7 @@ struct ChildProcessLifecycleTests {
 
         let op = UUID()
         #expect(try await pi.request(.subagentCommand(expectedSessionID: waiting.piSessionID, generation: waiting.generation,
-            operationID: op, runID: child.runID, action: .resume, text: "Use alpha")) == .accepted(operationID: op))
+            operationID: op, runID: child.runID, action: .message, text: "Use alpha")) == .accepted(operationID: op))
         _ = try await pi.snapshot("the resumed child to finish") {
             $0.subagents?.contains { $0.runID == child.runID && $0.attempt != child.attempt && $0.state == "complete" && $0.question == nil } == true
         }
