@@ -133,6 +133,63 @@ class ValidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expected all six"):
             validate.scroll_evidence({})
 
+    def test_missing_writer_site_keeps_motion_and_step_evidence_with_its_own_exit(self):
+        scenarios = {name: [frame(i / 100, "a", {"a": 0}) for i in range(10)]
+                     for name in (*validate.SCROLL_SCENARIOS, *validate.SCROLL_EXTRA_SCENARIOS)}
+        for name, sites in validate.SCROLL_EXPECTED_WRITERS.items():
+            scenarios[name][1]["events"] = [{"caller": f"thread.write.{writer}", "detail": detail}
+                                           for writer, detail in sites]
+        switch = scenarios["switch-away-back"]
+        # Same ID, wrong site. The old ID-only check let this through.
+        cancel = next(event for event in switch[1]["events"] if event["detail"] == "history.cancel")
+        cancel["detail"] = "history.materialize"
+        switch[1]["rows"]["a"] = 8  # A motion failure must not hide the missing probe.
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+
+            def dev_fixture(command, **kwargs):
+                if "--validate-scroll-stability" in command:
+                    Path(kwargs["env"]["SHEPHERD_SCROLL_TRACE"]).write_text(json.dumps(scenarios), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+
+            with (patch.object(validate, "ROOT", root), patch.object(validate.sys, "platform", "darwin"),
+                  patch.object(validate, "source_identity", return_value={}),
+                  patch.object(validate.subprocess, "check_output", return_value=b"Xcode fixture"),
+                  patch.object(validate.subprocess, "run", side_effect=dev_fixture),
+                  patch.object(validate, "check_scroll_actions"), contextlib.redirect_stdout(io.StringIO())):
+                code = validate.main(["--case", "scroll-stability"])
+            [report] = (root / ".build/validation").glob("*/result.json")
+            result = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual((code, result["exit_status"], result["status"]), (3, 3, "writer_probe_failed"))
+            steps = {step["step"]: step for step in result["steps"]}
+            self.assertEqual(steps["switch-away-back"]["status"], "failed")
+            self.assertIn("switch-away-back: M5 history.cancel", steps["writer-probes"]["actual"])
+            self.assertEqual(steps["complete"]["status"], "passed")
+            summary = json.loads((report.parent / "mac/scroll-jumps.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["switch-away-back"]["jumps"][0]["delta_pt"], 8)
+
+    def test_intent_mismatch_is_distinct_from_setup_and_motion_failures(self):
+        diagnostic = "error: flick-and-stop: expected idle, saw coasting"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+
+            def dev_fixture(command, **kwargs):
+                if "--validate-scroll-stability" in command:
+                    print(diagnostic, file=kwargs["stdout"])
+                    return subprocess.CompletedProcess(command, 4)
+                return subprocess.CompletedProcess(command, 0)
+
+            with (patch.object(validate, "ROOT", root), patch.object(validate.sys, "platform", "darwin"),
+                  patch.object(validate, "source_identity", return_value={}),
+                  patch.object(validate.subprocess, "check_output", return_value=b"Xcode fixture"),
+                  patch.object(validate.subprocess, "run", side_effect=dev_fixture), contextlib.redirect_stdout(io.StringIO())):
+                code = validate.main(["--case", "scroll-stability"])
+            [report] = (root / ".build/validation").glob("*/result.json")
+            result = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual((code, result["exit_status"], result["status"]), (4, 4, "intent_mismatch"))
+            self.assertIn(diagnostic, result["reason"])
+
     def test_bare_invocation_fails_loudly(self):
         completed = subprocess.run([sys.executable, str(ROOT / "scripts/validate.py")],
                                    capture_output=True, text=True)

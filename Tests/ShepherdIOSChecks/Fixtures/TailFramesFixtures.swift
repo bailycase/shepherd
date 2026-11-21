@@ -22,9 +22,8 @@ extension FixtureCatalog {
 /// higher (a gap open above it), against the composer's drawn background and against the scroll
 /// view's bottom inset, and the first frames away from rest. A question card's and the pane's
 /// frames measure the card's layers and a lazy stack's estimates too: read them against the other
-/// build's. It reports and never fails: run it on two builds and compare the lines, with `-p`
-/// products of one tree and, for the baseline, the merge base's `ThreadScreen.swift` in place of
-/// the pin (the PR records both).
+/// build's. Tail gaps are reported, not asserted. With ledger capture enabled, layout-only
+/// scenarios fail on reader `touching` intent.
 @MainActor
 enum TailFrames {
     /// A gap this small is the tail resting; more is a frame drawn away from it.
@@ -86,6 +85,11 @@ enum TailFrames {
         try? await Task.sleep(for: .seconds(2))
         let draft = (1...8).map { "Line \($0) of a long message to the agent" }.joined(separator: "\n")
         await measure("idle") { await pause(0.5) }
+        // Opt-in (FIXTURE_SCROLL_PAGING=voiceover): try the accessibility action and measure non-touch paging.
+        if ProcessInfo.processInfo.environment["FIXTURE_SCROLL_PAGING"] == "voiceover" {
+            await voiceOverPaging()
+            return
+        }
         for cycle in 1...cycles {
             await measure("keyboard rises (\(cycle))") { FollowFixture.focusComposer(); await pause(1.5) }
             await measure("keyboard falls (\(cycle))") { FollowFixture.composerField()?.resignFirstResponder(); await pause(1.5) }
@@ -107,7 +111,7 @@ enum TailFrames {
                 await measure("question card opens (\(cycle))") { withSHAnimation(.disclosure) { hiding.questionHiding.show() }; await pause(1.2) }
             }
         } else {
-            FixtureCheck.report("FIXTURE CHECK ok: no question card to fold")
+            FixtureCheck.fail("No question card to fold")
         }
         await measure("question card leaves") {
             stage.advance()
@@ -136,6 +140,33 @@ enum TailFrames {
         }
     }
 
+    /// Try the accessibility action without running VoiceOver. If UIKit rejects the call, use a native animated offset
+    /// as a proxy for non-touch paging. Neither action is logged as an app command.
+    private static func voiceOverPaging() async {
+        for (name, direction) in [("voiceover pages toward history", UIAccessibilityScrollDirection.down),
+                                  ("voiceover pages toward the tail", .up)] {
+            for page in 1...3 {
+                await measure("\(name) (\(page))", allowsReaderIntent: true) {
+                    guard let scroll = FollowFixture.threadScrollView() else { return }
+                    let before = scroll.contentOffset.y
+                    let handled = scroll.accessibilityScroll(direction)
+                    if !handled {
+                        let inset = scroll.adjustedContentInset
+                        let height = scroll.bounds.height - inset.top - inset.bottom
+                        let step = direction == .down ? -height : height
+                        let target = min(max(before + step, -inset.top), scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+                        SHRenderProbe.scrollEvent("fixture.nonTouchPage", "UIKit animated offset", kind: "fixture")
+                        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: true)
+                    } else {
+                        SHRenderProbe.scrollEvent("fixture.voiceOverScroll", "accessibilityScroll(\(direction.rawValue))", kind: "fixture")
+                    }
+                    await pause(1.5)
+                    FixtureCheck.report("FIXTURE CHECK ok: \(name) (\(page)) handled \(handled), offset \(Int(before)) -> \(Int(scroll.contentOffset.y))")
+                }
+            }
+        }
+    }
+
     private static func pause(_ seconds: Double) async {
         try? await Task.sleep(for: .seconds(seconds))
     }
@@ -149,17 +180,24 @@ enum TailFrames {
         let timestamp: Double
         let refreshInterval: Double
         let motion: String
+        let intent: String
         let first: String?
         let rows: [String: Double]
         let events: [SHRenderProbe.ScrollEvent]
     }
 
-    private static func measure(_ what: String, _ action: () async -> Void) async {
+    private static func measure(_ what: String, allowsReaderIntent: Bool = false, _ action: () async -> Void) async {
         let recorder = Recorder()
         recorder.start()
         await action()
         FixtureCheck.report("FIXTURE CHECK ok: \(what): \(recorder.stop())")
-        if !recorder.ledger.isEmpty { ledger[what] = recorder.ledger }
+        guard recorder.capture else { return }
+        guard !recorder.ledger.isEmpty else { FixtureCheck.fail("\(what): no intent frames recorded") }
+        ledger[what] = recorder.ledger
+        let touching = recorder.ledger.count { $0.intent == "touching" }
+        let summary = "\(what): \(touching)/\(recorder.ledger.count) touching intent frames"
+        if !allowsReaderIntent, touching != 0 { FixtureCheck.fail(summary) }
+        FixtureCheck.report("FIXTURE CHECK ok: \(summary)")
     }
 
     /// Reads the thread's scroll view and the composer's layers on every display frame.
@@ -181,15 +219,17 @@ enum TailFrames {
         private var observer: NSObjectProtocol?
         private(set) var ledger: [LedgerFrame] = []
         private var pending: [SHRenderProbe.ScrollEvent] = []
-        private let capture = ProcessInfo.processInfo.environment["FIXTURE_SCROLL_LEDGER"] == "1"
+        let capture = ProcessInfo.processInfo.environment["FIXTURE_SCROLL_LEDGER"] == "1"
 
         func start() {
             if capture {
+                ThreadTailGuard.measured?.resetTraceIntent()
                 SHRenderProbe.scrollEvents = { [weak self] event, source in
                     guard let self, let guardian = ThreadTailGuard.measured, source == nil || source === guardian else { return }
                     var event = event
                     event.motion = guardian.traceMotion
                     event.anchor = ledger.last?.first
+                    guardian.noteTrace(event)
                     pending.append(event)
                 }
             }
@@ -213,7 +253,8 @@ enum TailFrames {
                     ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
                 }?.key
                 ledger.append(LedgerFrame(timestamp: link.timestamp, refreshInterval: link.targetTimestamp - link.timestamp,
-                                          motion: guardian?.traceMotion ?? "idle", first: first,
+                                          motion: guardian?.traceMotion ?? "idle",
+                                          intent: scroll.flatMap { guardian?.traceIntent(in: $0) }?.rawValue ?? "idle", first: first,
                                           rows: rows.mapValues { Double($0.minY) }, events: pending))
                 pending.removeAll(keepingCapacity: true)
             }

@@ -26,12 +26,21 @@ SCROLL_SCENARIOS = {
     "switch-away-back": ("fixture.switchAway", "fixture.switchBack"),
 }
 SCROLL_EXPECTED_WRITERS = {
-    "slow-scroll-streaming": {"L7"},
-    "page-older-history": {"M5", "M6", "L6"},
-    "window-resize": {"L4", "L12"},
-    "switch-away-back": {"L14"},
+    "slow-scroll-streaming": {("L7", "thread.version")},
+    "page-older-history": {("M5", "history.materialize"), ("M6", "history.correct"), ("L6", "history.prepended"),
+                           ("L1", "row.markerRegistered"), ("L2", "eagerTail.crossing")},
+    "window-resize": {("L4", "liveResize.begin"), ("L12", "viewport.resized")},
+    "switch-away-back": {("M5", "history.cancel"), ("L14", "thread.hidden"), ("L14", "thread.revealed")},
+    "released-thread": {("L14", "thread.dormant")},
 }
-SCROLL_COMPLETION = "six Dev scroll scenarios finished"
+SCROLL_EXTRA_SCENARIOS = ("key-paging", "scroller-drag", "released-thread")
+SCROLL_COMPLETION = "six Dev scroll motion scenarios and three capture scenarios finished"
+MISSING_WRITER_EXIT = 3
+INTENT_MISMATCH_EXIT = 4
+
+
+class MissingWriterProbes(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -46,7 +55,8 @@ class Case:
 
 
 CASES = {
-    SCROLL_CASE: Case("Shepherd (Dev) / ThreadScrollValidation", {(scenario, None) for scenario in SCROLL_SCENARIOS},
+    SCROLL_CASE: Case("Shepherd (Dev) / ThreadScrollValidation",
+                      {(scenario, None) for scenario in (*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS, "writer-probes")},
                       SCROLL_COMPLETION, "offscreen Dev app", scenario="Sources/ShepherdApp/Thread/ThreadView.swift"),
     SCROLL_OWNER_CASE: Case(
         "ThreadScrollOwner", {(f"{platform}-{walk}", None) for platform in ("mac", "ios") for walk in ("broad", "requests")},
@@ -322,6 +332,8 @@ def scroll_ledger(frames, summary=None):
     for i, frame in enumerate(frames):
         sample = {"frame": i, "motion": frame.get("motion"), "row": frame.get("first"),
                   "writes": entries[i]}
+        if "intent" in frame:
+            sample["intent"] = frame["intent"]
         if i:
             previous = frames[i - 1]
             row = previous.get("first")
@@ -358,8 +370,8 @@ def scroll_ledger(frames, summary=None):
 
 
 def scroll_evidence(scenarios):
-    if set(scenarios) != set(SCROLL_SCENARIOS):
-        raise ValueError("expected all six scroll scenarios")
+    if set(scenarios) != set((*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS)):
+        raise ValueError("expected all six scroll motion scenarios and all three capture scenarios")
     summaries = {}
     for name, required in SCROLL_SCENARIOS.items():
         frames = scenarios[name]
@@ -368,13 +380,22 @@ def scroll_evidence(scenarios):
         if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
             raise ValueError(f"{name}: too few comparable settle frames")
         ledger = scroll_ledger(frames, summary)
-        expected = {f"thread.write.{writer}" for writer in SCROLL_EXPECTED_WRITERS.get(name, ())}
-        if missing := expected - ledger["writer_counts"].keys():
-            raise ValueError(f"{name}: missing writer probes {sorted(missing)}")
         summary["ledger"] = ledger
         summary["hz"] = ledger.pop("hz")
         summaries[name] = summary
+    for name in SCROLL_EXTRA_SCENARIOS:
+        summaries[name] = {"ledger": scroll_ledger(scenarios[name])}
     return summaries
+
+
+def missing_writer_probes(summaries):
+    missing = []
+    for name, required in SCROLL_EXPECTED_WRITERS.items():
+        sites = {(event["caller"], event.get("detail"))
+                 for frame in summaries[name]["ledger"]["frames"] for event in frame["writes"]}
+        missing.extend(f"{name}: {writer} {detail}" for writer, detail in sorted(required)
+                       if (f"thread.write.{writer}", detail) not in sites)
+    return missing
 
 
 def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None):
@@ -393,8 +414,11 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
     if anchor_off:
         env["SHEPHERD_SCROLL_ANCHOR_OFF"] = anchor_off
     app = ROOT / ".build/scroll-dev/Build/Products/Debug/Shepherd.app/Contents/MacOS/Shepherd"
-    subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
-                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
+    fixture = subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
+                             stdout=log, stderr=subprocess.STDOUT, timeout=90)
+    if fixture.returncode == INTENT_MISMATCH_EXIT:
+        return INTENT_MISMATCH_EXIT
+    fixture.check_returncode()
     scenarios = json.loads(trace.read_text(encoding="utf-8"))
     summaries = scroll_evidence(scenarios)
     if anchor_off:
@@ -412,7 +436,8 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
         (steps / f"{step}.json").write_text(json.dumps(dict(step=step, status=status, expected=expected,
             actual=actual, evidence=["mac/frames.json", "mac/scroll-jumps.json"])), encoding="utf-8")
 
-    for name, summary in summaries.items():
+    for name in SCROLL_SCENARIOS:
+        summary = summaries[name]
         jumps, drift, losses = summary["jumps"], summary["drift"], summary["anchor_losses"]
         actual = (f"{len(jumps)} jumps, {len(drift)} drift excursions, {len(losses)} anchor swaps/losses, "
                   f"{len(summary['sticky_follows'])} expected sticky follows, "
@@ -428,7 +453,15 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
                 paths = sorted({path for observation in observations for path in observation["paths"]})
                 actual += f"\n{label}: {', '.join(paths)}"
         record(name, "failed" if jumps or drift or losses else "passed", "0 jumps or drift >2 pt and no anchor swaps/losses", actual)
+    for name in ("key-paging", "scroller-drag"):
+        record(name, "passed", "Dev fixture observed movement and matching intent", "Dev fixture verified both")
+    record("released-thread", "passed", "hidden transcript released", "Dev fixture observed release")
+    missing = missing_writer_probes(summaries)
+    record("writer-probes", "failed" if missing else "passed", "all required writer sites fired",
+           "missing writer probes:\n" + "\n".join(missing) if missing else "all required writer sites fired")
     record("complete", "passed", SCROLL_COMPLETION, SCROLL_COMPLETION)
+    if missing:
+        raise MissingWriterProbes("missing writer probes: " + "; ".join(missing))
     return 0
 
 
@@ -470,6 +503,9 @@ def run_case(name, anchor_off=None, ios_frames=None):
                     result["exit_status"] = run_scroll_case(mac, command, wrapper, log, anchor_off, ios_frames)
                 else:
                     result["exit_status"] = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
+        except MissingWriterProbes as error:
+            result["exit_status"] = MISSING_WRITER_EXIT
+            print(error, file=log)
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
             setup_error = str(error)
             print(setup_error, file=log)
@@ -490,7 +526,11 @@ def run_case(name, anchor_off=None, ios_frames=None):
                               else case.golden or case.scenario or case.test)
     completion = records.get(("complete", None), {})
     missing = sorted(required_steps - records.keys())
-    if failed:
+    if scroll and result["exit_status"] == MISSING_WRITER_EXIT and ("writer-probes", None) in records:
+        status, reason = "writer_probe_failed", None
+    elif scroll and result["exit_status"] == INTENT_MISMATCH_EXIT:
+        status, reason = "intent_mismatch", log_diagnostic(run / LOG)
+    elif failed:
         status, reason = "assertion_failed", None
     elif setup_error:
         status = "build_or_setup_failed" if scroll and start is not None else "not_run"
@@ -532,7 +572,7 @@ def run_case(name, anchor_off=None, ios_frames=None):
     for problem in problems:
         print(f"Evidence error: {problem}")
     print(f"Report: {report.relative_to(ROOT)}")
-    return 0 if status == "passed" else 1
+    return {"passed": 0, "writer_probe_failed": MISSING_WRITER_EXIT, "intent_mismatch": INTENT_MISMATCH_EXIT}.get(status, 1)
 
 
 def main(argv=None):
