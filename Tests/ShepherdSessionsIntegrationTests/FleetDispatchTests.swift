@@ -147,7 +147,7 @@ struct FleetDispatchTests {
 
         /// Stop, as the thread's own view of it (the abort request ends here).
         func pressStop(_ agent: AgentID) {
-            server.queue.sync { server.rpcThread(forAgent: agent)?.stop { _ in } }
+            server.queue.sync { server.rpcThread(forAgent: agent)?.stop(explicit: true) { _ in } }
         }
 
         /// This Mac's own space.
