@@ -32,7 +32,7 @@ final class AutomationRunLog: @unchecked Sendable {
     private var publishedProblem: String?
     /// Damage the queued writer saw, taken over by the next `refresh` (guarded by `openLock`).
     private var writerDamage: AutomationFileDamage?
-    /// Bumped each time the writer finds damage (guarded by `openLock`). A write queued under an
+    /// Bumped each time the writer or the server finds damage (guarded by `openLock`). A write queued under an
     /// older number was built before that was known and is dropped, so it can't replace a restore.
     private var generation = 0
     /// Why the file can't be read; changes are refused while it is set.
@@ -362,22 +362,22 @@ final class AutomationRunLog: @unchecked Sendable {
     /// has nothing to change. False, with nothing changed, while the file is damaged or when
     /// `change` had nothing to do. The disk is checked before the save because it can go bad while
     /// the host runs. If the queued writer found damage meanwhile, the check may have recovered a
-    /// restored file under the copy, so `change` is applied again to that history. `change` runs
-    /// on a copy and may run twice.
+    /// restored file under the copy, so `change` is applied again to that history until none is
+    /// found, and the write carries the generation its copy was built under. `change` runs on a
+    /// copy and may run more than once.
     @discardableResult
     private func mutate(_ change: (inout [AutomationID: [AutomationRun]]) -> Bool) -> Bool {
-        let seen = writerGeneration
-        guard refresh(reading: false) else { return false }
-        var next = runs
-        guard change(&next) else { return false }
-        guard refresh(reading: true) else { return false }
-        if writerGeneration != seen {
+        var seen: Int
+        var next: [AutomationID: [AutomationRun]]
+        repeat {
+            seen = writerGeneration
+            guard refresh(reading: true) else { return false }
             next = runs
             guard change(&next) else { return false }
-        }
+        } while writerGeneration != seen
         runs = next
         publish()
-        save()
+        save(built: seen)
         return true
     }
 
@@ -398,9 +398,13 @@ final class AutomationRunLog: @unchecked Sendable {
         case .missing:
             guard damage != nil else { return true }
             runs = lastGood ?? [:]
-            if lastGood != nil { writeAll() }
+            if lastGood != nil { writeAll(built: writerGeneration) }
         case .damaged(let original, let error):
-            if damage == nil { lastGood = runs }
+            if damage == nil {
+                lastGood = runs
+                // Writes already queued predate the damage and must not replace a restore.
+                openLock.withLock { generation += 1 }
+            }
             setDamage(AutomationFileDamage("run history", at: url, original: original, error: error))
             return false
         }
@@ -429,15 +433,15 @@ final class AutomationRunLog: @unchecked Sendable {
         openLock.withLock { publishedProblem = text }
     }
 
-    private func save() {
+    /// `built` is the generation the history was built under; the write is dropped if the writer has found damage since.
+    private func save(built: Int) {
         changed()
-        writeAll()
+        writeAll(built: built)
     }
 
-    private func writeAll() {
+    private func writeAll(built: Int) {
         let file = File(runs: Dictionary(uniqueKeysWithValues: runs.map { ($0.key.rawValue, $0.value) }))
         let url = url
-        let built = writerGeneration
         writes.async { [self] in
             // Built before the writer found damage: the history it holds predates a possible restore.
             guard built == writerGeneration else { return }
