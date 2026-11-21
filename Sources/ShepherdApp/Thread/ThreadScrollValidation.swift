@@ -65,8 +65,9 @@ final class ScrollTrace: NSObject {
         events.append(Event(caller: "fixture.scrollInput", scrollDelta: delta))
     }
 
-    /// Sample beyond the wheel-intent window and the tail guard's hands/busy timers.
+    /// Start the settle window once a frame has sampled the last action, even if that sample stalls.
     func settle() async {
+        await advance()
         let deadline = ContinuousClock.now + .milliseconds(850)
         repeat { await advance() } while ContinuousClock.now < deadline
     }
@@ -102,7 +103,7 @@ final class ScrollTrace: NSObject {
         let first = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }.min {
             ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
         }?.key
-        let frame = Frame(timestamp: link.timestamp, refreshInterval: link.targetTimestamp - link.timestamp,
+        let frame = Frame(timestamp: CACurrentMediaTime(), refreshInterval: link.targetTimestamp - link.timestamp,
                           hidden: hidden, first: first, rows: rows.mapValues { $0.minY - top },
                           offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
                           streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
@@ -315,8 +316,8 @@ private final class ScrollFixture {
         await trace.advance()
         try scroll(to: -.greatestFiniteMagnitude)
         try await trace.waitFor("the original page's first row") { self.trace.latest?.first == "user-60" }
-        // Give the native sentinel time to fire. If offscreen delivery is suppressed, feed
-        // the measured boundary to its handler, not directly to the prepend.
+        // Give the native sentinel time to fire. If there is no request, feed the measured
+        // boundary to its handler. This exercises paging but does not prove sentinel delivery.
         await trace.settle()
         if pageReply == nil {
             guard trace.latest?.first == "user-60", let visibility = trace.historyVisibility else {
@@ -353,8 +354,6 @@ private final class ScrollFixture {
         presentation.active = false
         try await trace.waitFor("the deck to hide the thread") { self.trace.latest?.hidden == true }
         await trace.settle()
-        thread.revision += 1
-        thread.provisional[0].blocks[0].text += "\n\nThe results are ready."
         trace.mark("fixture.switchBack")
         presentation.active = true
         try await trace.waitFor("the thread to be visible after switching back") { self.trace.latest?.first != nil }

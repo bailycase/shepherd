@@ -214,7 +214,7 @@ def check_scroll_actions(name, frames, required):
 
 
 def measure_scroll(frames):
-    jumps, drift, anchor_losses, sticky_follows = [], [], [], []
+    jumps, drift, anchor_losses, sticky_follows, in_band_inputs = [], [], [], [], []
     previous = frames[0]
     anchor = previous["first"]
     baseline = previous["rows"][anchor]
@@ -226,21 +226,26 @@ def measure_scroll(frames):
         if frame["hidden"]:
             continue  # Compare with the last visible frame when the same thread returns.
         inputs = [e["scrollDelta"] for _, e in pending if e["caller"] == "fixture.scrollInput"]
+        scripted_delta = sum(inputs)
         streaming |= any(e["caller"] in ("fixture.stickyChunk", "fixture.streamChunk") for _, e in pending)
 
         row = previous["first"] if inputs else anchor
+        observation = {"frame": i, "row": row, "scripted_clip_delta_pt": scripted_delta,
+                       "first_after": frame.get("first"), "paths": scroll_paths(previous, frame, pending),
+                       "following_before": previous["following"], "following": frame["following"],
+                       "distance_before": previous["distance"], "distance": frame["distance"],
+                       "events": pending.copy()}
         if frame.get("first") and row in frame["rows"]:
-            delta = frame["rows"][row] - previous["rows"][row] + sum(inputs)
+            delta = frame["rows"][row] - previous["rows"][row] + scripted_delta
             measured = "row"
         elif frame.get("first") and inputs:
             # Large scripted moves can evict the old row. Still check the clip for extra motion.
-            delta = previous["offset"] - frame["offset"] + sum(inputs)
+            delta = previous["offset"] - frame["offset"] + scripted_delta
             measured = "clip offset"
         else:
             # Keep the original anchor across a transient swap. Its return is not a second loss.
             if lost is None:
-                lost = {"frame": i, "row": anchor, "first_after": frame.get("first"),
-                        "paths": scroll_paths(previous, frame, pending), "events": pending}
+                lost = {**observation, "row": anchor}
                 anchor_losses.append(lost)
             settled_frames = 0
             continue
@@ -252,16 +257,20 @@ def measure_scroll(frames):
         compared += 1
         settled_frames = settled_frames + 1 if not inputs else 0
         growth = frame.get("streamingRowHeight", 0) - previous.get("streamingRowHeight", 0)
-        observation = {"frame": i, "row": row, "delta_pt": round(delta, 3), "measured": measured,
-                       "scripted_clip_delta_pt": sum(inputs), "first_after": frame.get("first"),
-                       "paths": scroll_paths(previous, frame, pending), "events": pending}
+        observation.update(delta_pt=round(delta, 3), measured=measured)
         # NativeScrollFollower.threshold is 80 pt. A detached reader reattaching is not expected follow.
-        if (streaming and not inputs and previous["following"] and frame["following"] and previous["distance"] <= 80
-                and frame["documentHeight"] != previous["documentHeight"] and growth > 2 and abs(delta + growth) <= 2):
+        sticky_in_band = streaming and previous["following"] and frame["following"] and previous["distance"] <= 80
+        if (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
+                and growth > 2 and abs(delta + growth) <= 2):
             sticky_follows.append(observation)
             baseline -= growth
         elif abs(delta) > 2:
-            jumps.append(observation)
+            # Only separate an upward-input residual that matches a return from inside the band to the tail.
+            if (sticky_in_band and scripted_delta < 0 and previous["distance"] >= 0 and abs(frame["distance"]) <= 2
+                    and abs(delta - (scripted_delta - previous["distance"] - growth)) <= 2):
+                in_band_inputs.append(observation)
+            else:
+                jumps.append(observation)
 
         if inputs:
             anchor, excursion = frame["first"], None
@@ -277,8 +286,12 @@ def measure_scroll(frames):
                 excursion["delta_pt"] = round(displacement, 3)
         previous, pending = frame, []
 
+    if lost is not None:
+        # An anchor that never returns can hide a jump. Report it without guessing the displacement.
+        jumps.append({**lost, "delta_pt": None, "measured": "unrestored anchor loss"})
     return {"frames": len(frames), "compared_frames": compared, "final_comparable_frames": settled_frames,
-            "jumps": jumps, "drift": drift, "anchor_losses": anchor_losses, "sticky_follows": sticky_follows}
+            "jumps": jumps, "drift": drift, "anchor_losses": anchor_losses, "sticky_follows": sticky_follows,
+            "in_band_inputs": in_band_inputs}
 
 
 def scroll_evidence(scenarios):
@@ -311,7 +324,8 @@ def run_scroll_case(mac, command, wrapper, log):
     app = ROOT / ".build/scroll-dev/Build/Products/Debug/Shepherd.app/Contents/MacOS/Shepherd"
     subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
-    summaries = scroll_evidence(json.loads(trace.read_text(encoding="utf-8")))
+    scenarios = json.loads(trace.read_text(encoding="utf-8"))
+    summaries = scroll_evidence(scenarios)
     (mac / "scroll-jumps.json").write_text(json.dumps(summaries, indent=2) + "\n", encoding="utf-8")
     steps = mac / "steps"
     steps.mkdir()
@@ -323,7 +337,13 @@ def run_scroll_case(mac, command, wrapper, log):
     for name, summary in summaries.items():
         jumps, drift, losses = summary["jumps"], summary["drift"], summary["anchor_losses"]
         actual = (f"{len(jumps)} jumps, {len(drift)} drift excursions, {len(losses)} anchor swaps/losses, "
-                  f"{len(summary['sticky_follows'])} expected sticky follows across {summary['frames']} frames")
+                  f"{len(summary['sticky_follows'])} expected sticky follows, "
+                  f"{len(summary['in_band_inputs'])} in-band input residuals across {summary['frames']} frames")
+        if any(jump["delta_pt"] is None for jump in jumps):
+            actual += "\nUnrestored anchor loss counted as a jump of unknown magnitude."
+        if name == "page-older-history" and any(e["caller"] == "fixture.historyVisibilityFallback"
+                                                 for f in scenarios[name] for e in f["events"]):
+            actual += "\nfixture.historyVisibilityFallback used; sentinel delivery not verified."
         print(f"{name}: {actual}")
         for label, observations in (("Jump paths", jumps), ("Drift paths", drift), ("Anchor swap/loss paths", losses)):
             if observations:

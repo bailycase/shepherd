@@ -45,7 +45,7 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual([jump["delta_pt"] for jump in summary["jumps"]], [5])
         self.assertEqual([drift["delta_pt"] for drift in summary["drift"]], [3])
         frames[1]["first"], frames[1]["rows"], frames[1]["offset"] = "b", {"b": 0}, -5
-        [jump] = validate.measure_scroll(frames)["jumps"]
+        [jump] = validate.measure_scroll(frames[:2])["jumps"]
         self.assertEqual((jump["measured"], jump["delta_pt"]), ("clip offset", 5))
 
     def test_paging_anchor_swap_counts_once_and_has_no_invented_delta(self):
@@ -56,6 +56,25 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual((loss["row"], loss["first_after"], loss["restored_frame"]), ("user-60", "user-0", 3))
         self.assertFalse(summary["jumps"])
         self.assertNotIn("delta_pt", loss)
+
+        [jump] = validate.measure_scroll(frames[:-1])["jumps"]
+        self.assertEqual((jump["frame"], jump["measured"], jump["delta_pt"]), (1, "unrestored anchor loss", None))
+
+    def test_only_a_matching_sticky_repin_is_separated_from_input_frame_jumps(self):
+        before = frame(0, "a", {"a": 0}, following=True)
+        before["distance"] = 57
+        after = frame(0.01, "a", {"a": -57}, "fixture.streamChunk", following=True)
+        after["events"].append({"caller": "fixture.scrollInput", "scrollDelta": -28})
+        summary = validate.measure_scroll([before, after])
+        [repin] = summary["in_band_inputs"]
+        self.assertEqual((repin["delta_pt"], repin["distance_before"], repin["distance"], repin["following"]),
+                         (-85, 57, 0, True))
+        self.assertFalse(summary["jumps"])
+
+        after["rows"]["a"] = 0  # A cancelled 28 pt input alone is not a 57 pt return to the tail.
+        summary = validate.measure_scroll([before, after])
+        self.assertFalse(summary["in_band_inputs"])
+        self.assertEqual([jump["delta_pt"] for jump in summary["jumps"]], [-28])
 
     def test_only_growth_while_already_sticky_in_band_is_expected_following(self):
         frames = [frame(0, "a", {"a": 0}, following=True),
