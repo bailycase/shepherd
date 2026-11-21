@@ -757,6 +757,48 @@ struct FleetDispatchTests {
         return (decoy, next)
     }
 
+    @Test(arguments: [false, true])
+    func closeWithQueuedFleetWorkRequiresCancellation(cancel: Bool) async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver's pi to run the dispatch") {
+            guard let thread = b.dispatched.first else { return false }
+            return await b.server.enqueueValue {
+                b.server.rpcThread(forAgent: thread.id).map { $0.isServable && $0.running } == true
+            }
+        }
+        let thread = try #require(b.dispatched.first)
+        let followUp = "Check the payment logs next."
+        _ = try parent.info(try await parent.call {
+            .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: followUp, delivery: .followUp)
+        })
+        try await eventuallyOnMain("the follow-up to queue on the receiver") {
+            await b.server.enqueueValue {
+                b.server.rpcThread(forAgent: thread.id)?.items.contains { $0.entry.text.contains(followUp) } == true
+            }
+        }
+        if cancel { try #require(try await parent.cancel(info).state == "cancelled") }
+        let closed = try await parent.call { .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID) }
+        if cancel {
+            guard case .fleetDispatch(_, let receipt) = closed else {
+                Issue.record("Expected a cancelled dispatch with queued work to close, got \(closed)")
+                return
+            }
+            #expect(receipt.closeReport?.contains("Thread removed") == true)
+            #expect(b.dispatched.isEmpty)
+        } else {
+            guard case .error(_, "not_settled", _) = closed else {
+                Issue.record("Expected a live dispatch with queued work to refuse close, got \(closed)")
+                return
+            }
+            #expect(b.dispatched.first?.id == thread.id)
+            #expect(await b.server.enqueueValue { b.server.rpcThread(forAgent: thread.id)?.items.isEmpty == false })
+        }
+    }
+
     @Test func cancellingADispatchStopsItsBackgroundProcessAndKeepsItsThread() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
