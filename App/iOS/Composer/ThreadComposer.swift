@@ -415,13 +415,11 @@ struct ThreadComposer: View {
         guard state.pendingImports == 0 else { return Task {} }
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
-        let earlier = Set(store.submissions.map(\.id))
         return Task {
-            let accepted = await store.send(images: images, delivery: delivery)
-            // Taken, or kept by the store as a refused or unknown send (its images with it): the
-            // composer lets go of the images it sent. Images added meanwhile stay; a send the
-            // store never took keeps them where they were.
-            if accepted || store.submissions.contains(where: { !earlier.contains($0.id) }) {
+            // The store keeps the captured images with the send's record (a refusal restores them), so the composer lets go of
+            // them the moment the store captures the send, not after the host answers: reconciliation could free Send before
+            // then. Images added meanwhile stay; a send the store never captured keeps them where they were.
+            _ = await store.send(images: images, delivery: delivery) {
                 for id in submitted { state.remove(id) }
                 if state.attachments.isEmpty { state.clearAttachments() }
             }
