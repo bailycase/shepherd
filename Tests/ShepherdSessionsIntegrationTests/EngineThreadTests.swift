@@ -278,7 +278,7 @@ struct EngineThreadTests {
         #expect(try await ThreadImagesTests.fetch(ref.id, from: pi.agent, session: ready.piSessionID).data == png)
     }
 
-    @Test @MainActor func localRenamesUsePiAndReachAnAlreadyConnectedDevice() async throws {
+    @Test func localRenamesUsePiAndReachAnAlreadyConnectedDevice() async throws {
         let engine = try #require(EngineSmoke.engine)
         let remote = try RemoteHost()
         defer { remote.stop() }
