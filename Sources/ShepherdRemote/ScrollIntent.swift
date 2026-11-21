@@ -19,6 +19,8 @@ public struct ScrollIntent {
     private var scrollerHeld = false
     public private(set) var physicalScrollerHeld = false
     private var commandFramesRemaining = 0
+    private var commandAnimating = false
+    private var layoutFramesRemaining = 0
 
     public init() {}
 
@@ -75,11 +77,23 @@ public struct ScrollIntent {
         commandFramesRemaining = 2
     }
 
+    public mutating func noteIOSLayout() {
+        layoutFramesRemaining = 2
+    }
+
     public mutating func sampleIOS(phase: Phase, offsetDelta: Double, layoutChanged: Bool) -> State {
-        defer { commandFramesRemaining = max(0, commandFramesRemaining - 1) }
-        if phase == .touching { return .touching }
-        if phase == .coasting { return .coasting }
-        if abs(offsetDelta) > 0.5, !layoutChanged, commandFramesRemaining == 0 { return .touching }
+        defer {
+            commandFramesRemaining = max(0, commandFramesRemaining - 1)
+            layoutFramesRemaining = max(0, layoutFramesRemaining - 1)
+        }
+        // Only an animation that starts within a command's grace keeps its attribution.
+        commandAnimating = phase == .animating && (commandAnimating || commandFramesRemaining > 0)
+        if phase == .touching || phase == .coasting {
+            commandFramesRemaining = 0
+            return phase == .touching ? .touching : .coasting
+        }
+        if commandAnimating || commandFramesRemaining > 0 { return .programmatic }
+        if abs(offsetDelta) > 0.5, !layoutChanged, layoutFramesRemaining == 0 { return .touching }
         return phase == .animating ? .programmatic : .idle
     }
 }

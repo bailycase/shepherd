@@ -22,9 +22,8 @@ extension FixtureCatalog {
 /// higher (a gap open above it), against the composer's drawn background and against the scroll
 /// view's bottom inset, and the first frames away from rest. A question card's and the pane's
 /// frames measure the card's layers and a lazy stack's estimates too: read them against the other
-/// build's. It reports and never fails: run it on two builds and compare the lines, with `-p`
-/// products of one tree and, for the baseline, the merge base's `ThreadScreen.swift` in place of
-/// the pin (the PR records both).
+/// build's. Tail gaps are reported, not asserted. With ledger capture enabled, layout-only
+/// scenarios fail on reader `touching` intent.
 @MainActor
 enum TailFrames {
     /// A gap this small is the tail resting; more is a frame drawn away from it.
@@ -112,7 +111,7 @@ enum TailFrames {
                 await measure("question card opens (\(cycle))") { withSHAnimation(.disclosure) { hiding.questionHiding.show() }; await pause(1.2) }
             }
         } else {
-            FixtureCheck.report("FIXTURE CHECK ok: no question card to fold")
+            FixtureCheck.fail("No question card to fold")
         }
         await measure("question card leaves") {
             stage.advance()
@@ -147,7 +146,7 @@ enum TailFrames {
         for (name, direction) in [("voiceover pages toward history", UIAccessibilityScrollDirection.down),
                                   ("voiceover pages toward the tail", .up)] {
             for page in 1...3 {
-                await measure("\(name) (\(page))") {
+                await measure("\(name) (\(page))", allowsReaderIntent: true) {
                     guard let scroll = FollowFixture.threadScrollView() else { return }
                     let before = scroll.contentOffset.y
                     let handled = scroll.accessibilityScroll(direction)
@@ -187,12 +186,18 @@ enum TailFrames {
         let events: [SHRenderProbe.ScrollEvent]
     }
 
-    private static func measure(_ what: String, _ action: () async -> Void) async {
+    private static func measure(_ what: String, allowsReaderIntent: Bool = false, _ action: () async -> Void) async {
         let recorder = Recorder()
         recorder.start()
         await action()
         FixtureCheck.report("FIXTURE CHECK ok: \(what): \(recorder.stop())")
-        if !recorder.ledger.isEmpty { ledger[what] = recorder.ledger }
+        guard recorder.capture else { return }
+        guard !recorder.ledger.isEmpty else { FixtureCheck.fail("\(what): no intent frames recorded") }
+        ledger[what] = recorder.ledger
+        let touching = recorder.ledger.count { $0.intent == "touching" }
+        let summary = "\(what): \(touching)/\(recorder.ledger.count) touching intent frames"
+        if !allowsReaderIntent, touching != 0 { FixtureCheck.fail(summary) }
+        FixtureCheck.report("FIXTURE CHECK ok: \(summary)")
     }
 
     /// Reads the thread's scroll view and the composer's layers on every display frame.
@@ -214,7 +219,7 @@ enum TailFrames {
         private var observer: NSObjectProtocol?
         private(set) var ledger: [LedgerFrame] = []
         private var pending: [SHRenderProbe.ScrollEvent] = []
-        private let capture = ProcessInfo.processInfo.environment["FIXTURE_SCROLL_LEDGER"] == "1"
+        let capture = ProcessInfo.processInfo.environment["FIXTURE_SCROLL_LEDGER"] == "1"
 
         func start() {
             if capture {

@@ -63,10 +63,25 @@ struct ScrollIntentTests {
         #expect(intent.sampleIOS(phase: .coasting, offsetDelta: 20, layoutChanged: false) == .coasting)
         #expect(intent.sampleIOS(phase: .idle, offsetDelta: 0.25, layoutChanged: false) == .idle)
         #expect(intent.sampleIOS(phase: .idle, offsetDelta: 20, layoutChanged: true) == .idle)
-        intent.noteIOSCommand()
-        #expect(intent.sampleIOS(phase: .idle, offsetDelta: 20, layoutChanged: false) == .idle)
-        #expect(intent.sampleIOS(phase: .animating, offsetDelta: 20, layoutChanged: false) == .programmatic)
         #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
+    }
+
+    @Test func layoutEventExplainsDisplacementOnThisFrameAndTheNext() {
+        var intent = ScrollIntent()
+        intent.noteIOSLayout()
+        #expect(intent.sampleIOS(phase: .idle, offsetDelta: 20, layoutChanged: false) == .idle)
+        #expect(intent.sampleIOS(phase: .idle, offsetDelta: 20, layoutChanged: false) == .idle)
+        #expect(intent.sampleIOS(phase: .idle, offsetDelta: 20, layoutChanged: false) == .touching)
+    }
+
+    @Test func commandedFindScrollStaysProgrammaticUntilAnimationEnds() {
+        var intent = ScrollIntent()
+        intent.noteIOSCommand()
+        #expect(intent.sampleIOS(phase: .idle, offsetDelta: 0, layoutChanged: false) == .programmatic)
+        for _ in 0..<4 {
+            #expect(intent.sampleIOS(phase: .animating, offsetDelta: 20, layoutChanged: false) == .programmatic)
+        }
         #expect(intent.sampleIOS(phase: .idle, offsetDelta: 0, layoutChanged: false) == .idle)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
     }
 }

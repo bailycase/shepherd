@@ -93,9 +93,13 @@ final class ThreadTailGuard {
         if let scroll = scrollView { _ = traceIntent(in: scroll) }
     }
 
-    /// Layout events move rows, not commands. Fixture marks are not ours.
+    /// Layout can move rows on the next frame without starting a scroll animation.
     func noteTrace(_ event: SHRenderProbe.ScrollEvent) {
-        if event.kind != "layout", event.kind != "fixture" { intent.noteIOSCommand() }
+        switch event.kind {
+        case "layout": intent.noteIOSLayout()
+        case "fixture": break
+        default: intent.noteIOSCommand()
+        }
     }
 
     /// Displacement with no command or layout change can be reader input without a finger.

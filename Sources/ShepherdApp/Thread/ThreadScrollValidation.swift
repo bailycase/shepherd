@@ -140,7 +140,11 @@ final class MacScrollValidationTrace: NSObject {
     func scrollerRelease() { intent.scrollerRelease() }
 
     private func sampleIntent(visible: Bool) -> ScrollIntent.State {
-        guard visible else { intent = ScrollIntent(); return .idle }
+        guard visible else {
+            intent = ScrollIntent()
+            phaseState = .idle
+            return .idle
+        }
         return intent.sampleMac(phase: phaseState.intentPhase, now: .now,
                                 leftMouseDown: intent.physicalScrollerHeld && NSEvent.pressedMouseButtons & 1 != 0)
     }
@@ -208,13 +212,14 @@ final class MacScrollValidationTrace: NSObject {
         let first = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }.min {
             ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
         }?.key
+        let sampledIntent = sampleIntent(visible: scroll != nil && !hidden)
         let frame = Frame(timestamp: CACurrentMediaTime(), refreshInterval: link.targetTimestamp - link.timestamp,
                           hidden: hidden, first: first, rows: rows.mapValues { $0.minY - top },
                           offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
                           streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
                           clipSize: clip.map { [Double($0.bounds.width), Double($0.bounds.height)] },
                           following: guardian.following, distance: guardian.distance, events: events, motion: motion,
-                          intent: sampleIntent(visible: scroll != nil && !hidden))
+                          intent: sampledIntent)
         latest = frame
         if !scenario.isEmpty { frames[scenario, default: []].append(frame) }
         events.removeAll(keepingCapacity: true)
@@ -556,6 +561,18 @@ private final class ScrollFixture {
         trace.mark("fixture.scrollerRelease")
         trace.scrollerRelease()
         await trace.settle()
+        try requireIntent(.idle)
+
+        trace.mark("fixture.scrollerGrabBeforeHide")
+        trace.scrollerGrab(at: location, in: scroll, physical: false)
+        await trace.advance()
+        try requireIntent(.touching)
+        // Leave both sources of touching active across the visibility flip, without posting input.
+        trace.phaseChanged(to: .interacting)
+        presentation.active = false
+        try await trace.waitFor("the thread to hide with the scroller held") { self.trace.latest?.hidden == true }
+        presentation.active = true
+        try await trace.waitFor("the thread to show after hiding with the scroller held") { self.trace.latest?.first != nil }
         try requireIntent(.idle)
     }
 
