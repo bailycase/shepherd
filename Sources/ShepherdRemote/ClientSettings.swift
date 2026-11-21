@@ -374,6 +374,7 @@ public final class ClientSuggestions {
     private var snapshots: [UUID: SuggestionsSnapshot] = [:]
     public private(set) var unavailable: [UUID: String] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
+    @ObservationIgnored private var disconnected: Set<UUID> = []
 
     public func forget(host: UUID) {
         forgotten.insert(host)
@@ -386,20 +387,27 @@ public final class ClientSuggestions {
 
     public init() {}
 
+    /// Connection changes clear warnings even when no refresh is triggered.
+    public func use(_ hosts: [SettingsHost]) {
+        disconnected = Set(hosts.lazy.filter { !$0.isConnected }.map(\.id))
+        for id in disconnected { unavailable[id] = nil }
+    }
+
     /// Reads every connected host's suggestions.
     public func refresh(_ hosts: [SettingsHost]) async {
         for host in hosts where !forgotten.contains(host.id) {
             guard let client = host.client, host.supports(.suggestions) else {
                 snapshots[host.id] = nil
+                unavailable[host.id] = nil
                 continue
             }
             do {
                 let snapshot = try await client.suggestions(.fetch)
                 guard !forgotten.contains(host.id) else { continue }
                 snapshots[host.id] = snapshot
-                if let message = unavailable.removeValue(forKey: host.id), problem == message { problem = nil }
+                unavailable[host.id] = nil
             } catch RemoteHostClientError.rejected("suggestions_unavailable", let message) {
-                guard !forgotten.contains(host.id) else { continue }
+                guard !forgotten.contains(host.id), !disconnected.contains(host.id) else { continue }
                 unavailable[host.id] = message
             } catch { continue }
         }
@@ -502,9 +510,10 @@ public final class ClientSuggestions {
                 unavailable[host.id] = nil
             } catch {
                 guard !forgotten.contains(host.id) else { continue }
-                problem = settingsProblem(error)
                 if case RemoteHostClientError.rejected("suggestions_unavailable", let message) = error {
-                    unavailable[host.id] = message
+                    if !disconnected.contains(host.id) { unavailable[host.id] = message }
+                } else {
+                    problem = settingsProblem(error)
                 }
             }
         }

@@ -521,6 +521,36 @@ struct ClientSettingsTests {
         #expect(model.hosts(hosts).map(\.id) == hosts.map(\.id))
     }
 
+    @Test func mutationDamageIsOnlyReportedAsAHostWarning() async {
+        let client = FakeSettingsClient()
+        let host = Self.host("acme-studio", client)
+        let model = ClientSuggestions()
+        await model.refresh([host])
+
+        let message = "Couldn't read /tmp/acme/instructions/suggestions.json on the host."
+        client.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        await model.configure([host]) { $0.enabled = true }
+        #expect(client.requests.contains("suggestions.configure"))
+        #expect(model.unavailable == [host.id: message])
+        #expect(model.problem == nil)
+    }
+
+    @Test func disconnectClearsOnlyThatHostsSuggestionsWarningWithoutARefresh() async {
+        let studio = FakeSettingsClient(), build = FakeSettingsClient()
+        let message = "Couldn't read suggestions.json on the host."
+        studio.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        build.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        let first = Self.host("acme-studio", studio), second = Self.host("acme-build", build)
+        let model = ClientSuggestions()
+        await model.refresh([first, second])
+        #expect(model.unavailable == [first.id: message, second.id: message])
+
+        model.use([Self.host(first.name, nil, id: first.id), second])
+        #expect(model.unavailable == [second.id: message])
+        model.use([Self.host(first.name, nil, id: first.id), Self.host(second.name, nil, id: second.id)])
+        #expect(model.unavailable.isEmpty)
+    }
+
     @Test func theExperimentChangesOnEveryHost() async {
         let first = FakeSettingsClient(suggestions: SuggestionsSnapshot())
         let second = FakeSettingsClient(suggestions: SuggestionsSnapshot())
