@@ -23,7 +23,7 @@ struct DesignGitTests {
         let design = Design(name: "Checkout funnel dashboard", createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: h.server, perRow: 3)
-        try Self.setIdentity("Baily", in: h)
+        try Self.setIdentity("Alex", in: h)
         return (h, design)
     }
 
@@ -227,7 +227,7 @@ struct DesignGitTests {
         let phoneElement = try #require(DesignTemplate(board: phoneSource)?.elements.first { $0.parent != nil })
         let named = try await author.server.addDesignComment(design.id, draft: DesignCommentDraft(
             board: try DesignPath.validate("A-phone.dc.html"), tid: phoneElement.tid, path: phoneElement.path, text: "Shorter labels here."))
-        #expect(named.comment.authorName == "Baily")
+        #expect(named.comment.authorName == "Alex")
 
         // The author changes a board: a local change, then Commit & push.
         let a = try DesignPath.validate("A.dc.html")
@@ -252,7 +252,7 @@ struct DesignGitTests {
         #expect(try await coworker.server.pullDesign(opened.id) == .updated)
         try await eventually("the pull's revision push") { pushes.current >= 1 }
         #expect(try await coworker.server.designBoard(opened.id, path: a).source.contains("<!-- counts -->"))
-        #expect(try await coworker.server.designComments(opened.id).comments.contains { $0.authorName == "Baily" && $0.text == "Shorter labels here." })
+        #expect(try await coworker.server.designComments(opened.id).comments.contains { $0.authorName == "Alex" && $0.text == "Shorter labels here." })
         #expect(try await coworker.server.designSnapshot(opened.id).revision == revision + 1)
         #expect(try await coworker.server.designVersions(opened.id, path: a).count == 1, "the pulled-over board's old content is a version")
         #expect(try await coworker.server.pullDesign(opened.id) == .upToDate)
@@ -296,7 +296,7 @@ struct DesignGitTests {
                                                        baseRevision: nil)
         _ = try await coworker.server.commitDesign(opened.id, message: "Clarify phone step labels", push: true)
         let ours = try await author.server.designBoard(design.id, path: phone).source
-        let mine = ours.replacingOccurrences(of: "</x-dc>", with: "<!-- Baily --></x-dc>")
+        let mine = ours.replacingOccurrences(of: "</x-dc>", with: "<!-- Alex --></x-dc>")
         _ = try await author.server.writeDesignBoard(design.id, path: phone, source: mine, baseRevision: nil)
         _ = try await author.server.commitDesign(design.id, message: "Show absolute counts in the checkout funnel", push: false)
 
@@ -326,7 +326,7 @@ struct DesignGitTests {
         _ = try await coworker.server.writeDesignBoard(opened.id, path: phone, source: base.replacingOccurrences(of: "</x-dc>", with: "<!-- Sam --></x-dc>"),
                                                        baseRevision: nil)
         _ = try await coworker.server.commitDesign(opened.id, message: "Clarify phone step labels", push: true)
-        _ = try await author.server.writeDesignBoard(design.id, path: phone, source: base.replacingOccurrences(of: "</x-dc>", with: "<!-- Baily --></x-dc>"),
+        _ = try await author.server.writeDesignBoard(design.id, path: phone, source: base.replacingOccurrences(of: "</x-dc>", with: "<!-- Alex --></x-dc>"),
                                                      baseRevision: nil)
         _ = try await author.server.commitDesign(design.id, message: "Counts", push: false)
         guard case .needsMerge(let merge) = try await author.server.pullDesign(design.id) else { Issue.record("no merge"); return }
@@ -338,7 +338,7 @@ struct DesignGitTests {
         #expect(DesignGit.checkMergeCopy(copy).contains { $0.contains("conflict markers") })
 
         // Resolved by hand (as the agent would): both kept.
-        let resolved = base.replacingOccurrences(of: "</x-dc>", with: "<!-- Baily --><!-- Sam --></x-dc>")
+        let resolved = base.replacingOccurrences(of: "</x-dc>", with: "<!-- Alex --><!-- Sam --></x-dc>")
         try Data(resolved.utf8).write(to: copy.appendingPathComponent("project/A-phone.dc.html"))
         #expect(DesignGit.checkMergeCopy(copy).isEmpty)
         await author.server.markDesignMergeReadyForTests(design.id)
@@ -370,7 +370,7 @@ struct DesignGitTests {
         let design = Design(name: "Busy", agentID: agent.agent.id, createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await h.server.setAgentDesignForTests(agent.agent.id, design: design.id)
-        try Self.setIdentity("Baily", in: h)
+        try Self.setIdentity("Alex", in: h)
         try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: h.server, perRow: 1)
         let remote = try emptyRemote()
         _ = try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Add")
@@ -397,7 +397,7 @@ struct DesignGitTests {
         let design = Design(name: "Merge", agentID: agent.agent.id, createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await h.server.setAgentDesignForTests(agent.agent.id, design: design.id)
-        try Self.setIdentity("Baily", in: h)
+        try Self.setIdentity("Alex", in: h)
         try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: h.server, perRow: 1)
         let remote = try emptyRemote()
         _ = try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Add")

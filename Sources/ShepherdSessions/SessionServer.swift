@@ -1025,6 +1025,12 @@ public final class SessionServer: @unchecked Sendable {
     /// The grid this Mac's app's terminals last reported: a new terminal starts at it, not 80×24.
     var lastLocalGrid: (cols: Int, rows: Int)?
     private var clients: [Int32: ExtensionConnection] = [:]
+    private var projectMCPDisconnectGrace: DispatchTimeInterval = .seconds(60)
+    private var projectMCPDisconnects: [UUID: DispatchWorkItem] = [:]
+
+    func setProjectMCPDisconnectGraceForTests(_ grace: DispatchTimeInterval) {
+        queue.sync { projectMCPDisconnectGrace = grace }
+    }
     private struct PendingAgentRequest {
         let caller: ExtensionConnection
         let target: ExtensionConnection?
@@ -1623,6 +1629,7 @@ public final class SessionServer: @unchecked Sendable {
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
+                    Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
                 fleet = service
                 fleetRepoFinder.value = service.dispatch.finder
@@ -2449,6 +2456,8 @@ public final class SessionServer: @unchecked Sendable {
         fleetRepoFinder.value = nil
         instructions.onChange = nil
         isStarted = false
+        for work in projectMCPDisconnects.values { work.cancel() }
+        projectMCPDisconnects.removeAll()
         pushNotifications.stop()
         logicalProjectEpoch &+= 1
         automationStarts.removeAll()
@@ -3342,7 +3351,10 @@ public final class SessionServer: @unchecked Sendable {
         client.fleetDeviceID = device
         client.clientName = clientName
         if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-        if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+        if let device {
+            projectMCPDisconnects.removeValue(forKey: device)?.cancel()
+            fleet?.deviceAuthenticated(device, connection: client.fd)
+        }
         client.authenticated = true
         client.clientCapabilities = Set(capabilities ?? [])
         if client.isLocal { localAppsChanged() }
@@ -3863,14 +3875,19 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers."), to: client)
                 return
             }
+            guard !request.requiresMCP || client.fleetPeerID == nil else {
+                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Use a paired device to manage space MCP sign-in."), to: client)
+                return
+            }
             guard !request.requiresMCP || client.projectMCPRequests.count < 16 else {
                 send(.error(id: id, code: "busy", message: "Too many MCP requests are pending."), to: client)
                 return
             }
             let state = store.state, projects = projects
+            let owner = client.fleetDeviceID ?? client.projectMCPOwner
             let task = Task { [weak self] in
                 let result: Result<RemoteProjectsResult, Error>
-                do { result = .success(try await projects.request(request, state: state, owner: client.projectMCPOwner)) }
+                do { result = .success(try await projects.request(request, state: state, owner: owner)) }
                 catch { result = .failure(error) }
                 self?.queue.async { [weak self] in
                     guard let self, self.clients[client.fd] === client else { return }
@@ -4377,16 +4394,16 @@ public final class SessionServer: @unchecked Sendable {
             guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
             return answer { .status(await triggers.status(of: automation)) }
         case .pause:
-            return answer { await triggers.pause(automationID); return .ok }
+            return answer { try await triggers.pause(automationID); return .ok }
         case .resume:
-            return answer { await triggers.resume(automationID); await triggers.tick(); return .ok }
+            return answer { try await triggers.resume(automationID); await triggers.tick(); return .ok }
         case .dismissEvent(let eventID):
-            return answer { await triggers.dismiss(automationID, eventID: eventID); return .ok }
+            return answer { try await triggers.dismiss(automationID, eventID: eventID); return .ok }
         case .runEvent(let eventID):
             guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
             return answer { try await triggers.runPending(automation, eventID: eventID); return .ok }
         case .setAllPaused(let paused):
-            return answer { await triggers.setAllPaused(paused); return .ok }
+            return answer { try await triggers.setAllPaused(paused); return .ok }
         case .setEnabled(let enabled):
             routed = .update(automationID: automationID, name: nil, prompt: nil, cwd: nil, enabled: enabled)
         case .run:
@@ -5565,7 +5582,21 @@ public final class SessionServer: @unchecked Sendable {
         client.projectMCPRequests.removeAll()
         for read in client.directoryReads.values { read.task.cancel() }
         client.directoryReads.removeAll()
-        Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        if let device = client.fleetDeviceID {
+            if isStarted, !clients.values.contains(where: { $0.fleetDeviceID == device }) {
+                let cleanup = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.projectMCPDisconnects[device] = nil
+                    // Do not cancel a new login if a device reconnects while cleanup hops to the actor.
+                    let cutoff = ContinuousClock.now
+                    Task { await self.projects.cancelWaitingMCP(owner: device, startedBefore: cutoff) }
+                }
+                projectMCPDisconnects[device] = cleanup
+                queue.asyncAfter(deadline: .now() + projectMCPDisconnectGrace, execute: cleanup)
+            }
+        } else {
+            Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
         if client.isLocal, client.authenticated {
@@ -11153,8 +11184,11 @@ extension SessionServer {
         changes.agentName = { [weak self] agentID in
             self?.state.agents.first { $0.id == agentID }?.name
         }
-        changes.onTurnsChanged = { [weak self] agentID, turns in
-            self?.queue.async { self?.setTurnChanges(turns, for: agentID) }
+        changes.onTurnsChanged = { [weak self] agentID, _ in
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.setTurnChanges(self.changes.turns(agentID: agentID), for: agentID)
+            }
         }
     }
 

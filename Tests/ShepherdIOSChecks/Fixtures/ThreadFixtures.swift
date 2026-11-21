@@ -536,19 +536,19 @@ enum ThreadFixtures {
     private static func asking(_ dialog: NativeThreadDialog) -> NativeThreadSnapshot {
         typealias F = FixtureData
         return rpc(F.snapshot([
-            F.user("d1", "Deploy the new media stack to Horizon."),
+            F.user("d1", "Deploy the new media stack to Orbit."),
             F.tool("d2", "bash", args: #"{"command":"git status && git fetch"}"#, output: "Your branch is behind 'origin/master' by 50 commits.",
                    at: 4_000),
-            F.assistant("d3", "Horizon's checkout isn't clean, so I stopped before pulling:\n\n- 50 commits behind GitHub\n- 11 uncommitted files, one an encrypted secret\n- The Homarr removal is already merged",
+            F.assistant("d3", "Orbit's checkout isn't clean, so I stopped before pulling:\n\n- 50 commits behind GitHub\n- 11 uncommitted files, one an encrypted secret\n- The Homarr removal is already merged",
                         at: 9_000),
         ], running: true, dialogs: [dialog]))
     }
 
     /// MobileQuestion: two answers, the first recommended by the asker, and a timeout.
     static func select() -> NativeThreadSnapshot {
-        asking(NativeThreadDialog(id: "d-select", kind: .select, title: "How should I handle Horizon's uncommitted edits?", options: [
-            "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged. Nothing on Horizon is overwritten.",
-            "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits. The deploy uses a fresh clone.",
+        asking(NativeThreadDialog(id: "d-select", kind: .select, title: "How should I handle Orbit's uncommitted edits?", options: [
+            "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged. Nothing on Orbit is overwritten.",
+            "Leave Orbit alone and deploy from a clean checkout\nOrbit keeps its edits. The deploy uses a fresh clone.",
         ]))
     }
 
@@ -565,17 +565,17 @@ enum ThreadFixtures {
             NativeThreadMessage(entryID: "q:" + id, role: "question", blocks: [], timestamp: F.start + offset, question: question)
         }
         return rpc(F.snapshot([
-            F.user("d1", "Deploy the new media stack to Horizon."),
+            F.user("d1", "Deploy the new media stack to Orbit."),
             F.tool("d2", "bash", args: #"{"command":"git status && git fetch"}"#, output: "Your branch is behind 'origin/master' by 50 commits.",
                    at: 4_000),
-            F.assistant("d3", "Horizon's checkout isn't clean, so I stopped before pulling:\n\n- 50 commits behind GitHub\n- 11 uncommitted files, one an encrypted secret\n- The Homarr removal is already merged",
+            F.assistant("d3", "Orbit's checkout isn't clean, so I stopped before pulling:\n\n- 50 commits behind GitHub\n- 11 uncommitted files, one an encrypted secret\n- The Homarr removal is already merged",
                         at: 9_000),
             record("d-select", NativeQuestionRecord(
-                kind: .select, question: "How should I handle Horizon's uncommitted edits?",
+                kind: .select, question: "How should I handle Orbit's uncommitted edits?",
                 answer: "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
                 outcome: .answered, askedAt: F.start + 10_000), at: 300_000),
-            F.tool("d4", "bash", args: #"{"command":"git push origin HEAD:horizon/media-support"}"#, output: "", at: 330_000),
-            F.assistant("d5", "Four of the eleven files were already in the merged Homarr PR. The other seven are on `horizon/media-support`. The encrypted secret stays on Horizon.",
+            F.tool("d4", "bash", args: #"{"command":"git push origin HEAD:orbit/media-support"}"#, output: "", at: 330_000),
+            F.assistant("d5", "Four of the eleven files were already in the merged Homarr PR. The other seven are on `orbit/media-support`. The encrypted secret stays on Orbit.",
                         at: 340_000),
             record("d-confirm", NativeQuestionRecord(kind: .confirm, question: "Push the deploy branch to origin?", outcome: .expired,
                                                      askedAt: F.start + 341_000), at: 401_000),

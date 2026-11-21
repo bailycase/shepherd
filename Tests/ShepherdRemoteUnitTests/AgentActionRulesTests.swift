@@ -8,16 +8,16 @@ import ShepherdProtocol
 @Suite("Agent action rules")
 struct AgentActionRulesTests {
     static let shepherd = SpaceID(rawValue: "shepherd")
-    static let horizon = SpaceID(rawValue: "horizon")
+    static let orbit = SpaceID(rawValue: "orbit")
 
     static func agent(_ id: String, space: SpaceID = shepherd, worktree: String? = nil) -> Agent {
         Agent(id: AgentID(rawValue: id), name: id, spaceID: space, tabID: TabID(rawValue: "tab-" + id), nameIsFinal: true,
               worktreeBranch: worktree)
     }
 
-    /// a, b, c plain in Shepherd; w1, w2 its worktrees; h in horizon, between them in the host's order.
+    /// a, b, c plain in Shepherd; w1, w2 its worktrees; h in orbit, between them in the host's order.
     static let agents = [
-        agent("a"), agent("w1", worktree: "worktree/one"), agent("h", space: horizon), agent("b"),
+        agent("a"), agent("w1", worktree: "worktree/one"), agent("h", space: orbit), agent("b"),
         agent("w2", worktree: "worktree/two"), agent("c"),
     ]
 

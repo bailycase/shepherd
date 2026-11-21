@@ -11,10 +11,13 @@ actor ProjectMCPService {
     private struct Run {
         var owner: UUID?
         var namespace: String
+        var loginServer: String?
+        var started: ContinuousClock.Instant
         var directory: String
         var file: String
         var bridge: PiSignInBridge
         var result: ProjectMCPResult
+        var submittedRedirect = false
         var task: Task<Void, Never>?
         var expiry: Task<Void, Never>?
     }
@@ -31,9 +34,11 @@ actor ProjectMCPService {
             guard let run = runs[id], run.owner == owner, run.directory == directory, run.file == file else {
                 throw ProjectFileError("expired", "This sign-in is no longer available. Try again.")
             }
-            if case .cancel = action { finish(id, message: "Cancelled."); runs[id] = nil; return .init() }
-            if case .complete(_, let redirect) = action {
+            if case .cancel = action { remove(id); return .init() }
+            if case .complete(_, let redirect) = action, run.result.phase == .waiting, !run.submittedRedirect {
                 guard redirect.utf8.count <= 8192 else { throw ProjectFileError("invalid", "The redirect URL is too long.") }
+                // A device can retry after losing the reply; the bridge receives the callback once.
+                runs[id]?.submittedRedirect = true
                 run.bridge.send(.answer(id: "redirect", value: redirect))
             }
             return runs[id]?.result ?? run.result
@@ -57,9 +62,6 @@ actor ProjectMCPService {
             // `projectTrusted` stays true for older clients, which would otherwise draw a space as blocked.
             return .init(signedIn: signed.sorted(), projectTrusted: ProjectConfiguration.isMCP(file) ? true : nil)
         case .login(let server), .logout(let server):
-            guard runs.values.filter({ $0.result.phase == .waiting }).count + preparing.count < 4 else {
-                throw ProjectFileError("busy", "Too many sign-ins are running. Close one and try again.")
-            }
             guard let entry = try servers(text)[server], let url = entry["url"] as? String,
                   let parsed = URL(string: url), ["https", "http"].contains(parsed.scheme), parsed.host != nil,
                   !((entry["headers"] as? [String: Any]) ?? [:]).keys.contains(where: { $0.lowercased() == "authorization" }),
@@ -67,12 +69,22 @@ actor ProjectMCPService {
                 throw ProjectFileError("unsupported", "Only HTTP servers without an Authorization header use OAuth.")
             }
             let namespace = server.replacingOccurrences(of: "-", with: "_")
+            let isLogin = if case .login = action { true } else { false }
+            if isLogin, let previous = runs.first(where: { _, run in
+                run.owner == owner && run.directory == directory && run.file == file
+                    && run.loginServer == server && run.result.phase == .waiting
+            })?.key {
+                remove(previous)
+            }
+            guard runs.values.filter({ $0.result.phase == .waiting }).count + preparing.count < 4 else {
+                throw ProjectFileError("busy", "Too many sign-ins are running. Close one and try again.")
+            }
             // One OAuth flow per namespace, even across projects, avoids overwriting pi's PKCE state.
             guard !preparing.values.contains(where: { $0.namespace == namespace }),
                   !runs.values.contains(where: { $0.namespace == namespace && $0.result.phase == .waiting }) else {
                 throw ProjectFileError("busy", "This server already has a sign-in running. Close it and try again.")
             }
-            let started = Date()
+            let started = ContinuousClock.now
             let preparation = UUID()
             preparing[preparation] = Preparation(owner: owner, namespace: namespace)
             defer { preparing[preparation] = nil }
@@ -80,30 +92,28 @@ actor ProjectMCPService {
                 throw ProjectFileError("pi", problem.message)
             }
             guard preparing[preparation] != nil, !Task.isCancelled else { throw CancellationError() }
-            guard Date().timeIntervalSince(started) < timeout else { throw ProjectFileError("timeout", "The sign-in preparation timed out.") }
-            if runs.count >= 16, let completed = runs.first(where: { $0.value.result.phase != .waiting })?.key {
-                runs[completed]?.expiry?.cancel(); remove(completed)
-            }
+            let deadline = started + .seconds(timeout)
+            guard ContinuousClock.now < deadline else { throw ProjectFileError("timeout", "The sign-in preparation timed out.") }
+            if runs.count >= 16, let completed = runs.first(where: { $0.value.result.phase != .waiting })?.key { remove(completed) }
             guard let package = pi.engine.packageDirectory else { throw ProjectFileError("pi", "Shepherd's pi SDK is unavailable.") }
             let script = try ProjectMCPScript.install(in: pi.home)
             let sdk = URL(fileURLWithPath: package).appendingPathComponent(BundledPiEngine.libraryPath).path
             let bridge = PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files))
             let id = UUID()
-            runs[id] = Run(owner: owner, namespace: namespace, directory: directory, file: file, bridge: bridge,
-                           result: .init(id: id, phase: .waiting))
+            runs[id] = Run(owner: owner, namespace: namespace, loginServer: isLogin ? server : nil, started: started,
+                           directory: directory, file: file, bridge: bridge, result: .init(id: id, phase: .waiting))
             runs[id]?.task = Task { [weak self] in
                 for await reply in bridge.replies { await self?.hear(reply, id: id) }
                 await self?.ended(id)
             }
-            let timeout = max(0, timeout - Date().timeIntervalSince(started))
             runs[id]?.expiry = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(timeout))
+                try? await Task.sleep(until: deadline, clock: .continuous)
                 guard !Task.isCancelled else { return }
                 await self?.finish(id, message: "Signing in didn't finish within 300 seconds.")
                 try? await Task.sleep(for: .seconds(30))
                 await self?.remove(id)
             }
-            let command: String = if case .logout = action { "logout" } else { "login" }
+            let command = isLogin ? "login" : "logout"
             let payload: [String: Any] = ["server": server, "config": entry, "shared": file == ".mcp.json", "directory": directory, "space": space, "command": command]
             let data = try JSONSerialization.data(withJSONObject: payload)
             bridge.send(.answer(id: "config", value: String(decoding: data, as: UTF8.self)))
@@ -169,15 +179,21 @@ actor ProjectMCPService {
         run.bridge.close()
         runs[id] = run
     }
-    private func remove(_ id: UUID) { runs[id]?.bridge.close(); runs[id]?.expiry?.cancel(); runs[id] = nil }
+    private func remove(_ id: UUID) {
+        guard let run = runs.removeValue(forKey: id) else { return }
+        run.bridge.close(); run.expiry?.cancel(); run.task?.cancel()
+    }
     func cancelAll() {
         preparing.removeAll()
-        for id in runs.keys { runs[id]?.task?.cancel(); remove(id) }
+        for id in runs.keys { remove(id) }
     }
     func cancel(owner: UUID) {
         for id in preparing.keys.filter({ preparing[$0]?.owner == owner }) { preparing[id] = nil }
-        for id in runs.keys.filter({ runs[$0]?.owner == owner }) {
-            runs[id]?.expiry?.cancel(); runs[id]?.task?.cancel(); remove(id)
+        for id in runs.keys.filter({ runs[$0]?.owner == owner }) { remove(id) }
+    }
+    func cancelWaiting(owner: UUID, startedBefore cutoff: ContinuousClock.Instant) {
+        for (id, run) in runs where run.owner == owner && run.result.phase == .waiting && run.started < cutoff {
+            remove(id)
         }
     }
 }

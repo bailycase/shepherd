@@ -91,7 +91,7 @@ extension PreviewTests {
         defer { workspace.stop(); host.server.stop() }
         let vm = workspace.vm
         _ = try await host.connect(workspace)
-        vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
+        vm.remoteHosts.addHost(name: "orbit", host: "127.0.0.1", port: 1, token: "x")
         vm.collapsedProjects.insert(SidebarProjectID.local(try #require(vm.state.spaces.first?.id)).key)
         try await Preview.render("sidebar-projects-remote",
                                  size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 640),
@@ -136,7 +136,7 @@ extension PreviewTests {
                 VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
                     SHSidebarSection(.host("This Mac", unreachable: false))
                     SHProjectRow("shepherd", count: 5, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
-                    SHSidebarSection(.host("horizon", unreachable: true))
+                    SHSidebarSection(.host("orbit", unreachable: true))
                     SHProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
                     SHProjectRow("case-battles-release-monitor", count: 1, expanded: false, missing: true, toggle: {}, newThread: nil) { EmptyView() }
                 }

@@ -19,8 +19,8 @@ extension DesignPreviewTests {
         let vm = workspace.vm
         let server = workspace.server
         let config = try #require(ProcessInfo.processInfo.environment["GIT_CONFIG_GLOBAL"])
-        _ = try? git(["config", "--file", config, "user.name", "Baily"], in: workspace.dir)
-        _ = try? git(["config", "--file", config, "user.email", "baily@example.com"], in: workspace.dir)
+        _ = try? git(["config", "--file", config, "user.name", "Alex"], in: workspace.dir)
+        _ = try? git(["config", "--file", config, "user.email", "alex@acme.dev"], in: workspace.dir)
         vm.selectSidebarRow(.design(checkout.id))
         let screen = vm.designScreen(checkout.id)
         await screen.refresh()
@@ -115,8 +115,8 @@ extension DesignPreviewTests {
         let vm = workspace.vm
         let server = workspace.server
         let config = try #require(ProcessInfo.processInfo.environment["GIT_CONFIG_GLOBAL"])
-        _ = try? git(["config", "--file", config, "user.name", "Baily"], in: workspace.dir)
-        _ = try? git(["config", "--file", config, "user.email", "baily@example.com"], in: workspace.dir)
+        _ = try? git(["config", "--file", config, "user.name", "Alex"], in: workspace.dir)
+        _ = try? git(["config", "--file", config, "user.email", "alex@acme.dev"], in: workspace.dir)
         let remote = try makeScratchDirectory("remote").appendingPathComponent("checkout-design.git")
         _ = try git(["init", "-q", "--bare", "-b", "main", remote.path], in: remote.deletingLastPathComponent())
         _ = try await server.shareDesignWithGit(checkout.id, url: remote.path, message: "Add checkout funnel design")

@@ -108,6 +108,23 @@ struct FleetPairingTests {
         }
     }
 
+    @Test func aFleetPeerCannotSubmitASpaceMCPOAuthCallback() async throws {
+        let host = try await Mac("Acme Studio"), peer = try await Mac("Acme Mini")
+        defer { host.stop(); peer.stop() }
+        try await peer.pair(with: host, code: try await host.startJoin())
+        let token = try #require(peer.record(of: host.name)["myToken"] as? String)
+        let client = RemoteHostClient()
+        _ = try await client.connect(host: "127.0.0.1", port: host.port, token: token, clientName: peer.name)
+        defer { client.disconnect() }
+        await #expect {
+            try await client.projects(.mcp(directory: "/work/acme-web", file: ".shepherd/mcp.json",
+                                           action: .complete(id: UUID(), redirectURL: "http://127.0.0.1:1234/callback")))
+        } throws: { error in
+            if case RemoteHostClientError.rejected(let code, _) = error { return code == FleetProtocol.Code.forbidden }
+            return false
+        }
+    }
+
     /// Each host keeps its identity and its pairings through a restart, and the link comes back.
     @Test(arguments: [true, false])
     func thePairingSurvivesARestartOfEitherHost(restartingTheJoiner: Bool) async throws {
