@@ -369,6 +369,39 @@ struct ProjectHistoryTests {
         #expect(restarted.resultPage == page && rig.agents.current[task.workerAgentID]?.stdin("prompt").count == beforePrompts)
     }
 
+    @Test func smallRemoteWorkerSnapshotKeepsItsWireBytesAndRefusesChangedIdentity() async throws {
+        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let assignment = try await rig.assignment()
+        let client = try await rig.remote.typed(); defer { client.disconnect() }
+        _ = try await client.projectExecution(.execute(assignment))
+        try await eventually("remote settled") { rig.receipt(assignment)?.phase == .settled }
+        let worker = try await rig.pi(assignment)
+        try await worker.historySettled()
+        let snapshot = try await worker.snapshot()
+        let receipt = try #require(rig.receipt(assignment))
+        let expected = ProjectExecutionResult(receipt: receipt, thread: snapshot, workerTakenOver: false)
+        let expectedFrame = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: expected))
+        try #require(expectedFrame.count < NDJSON.maxPayloadBytes)
+        let reply = try await client.projectExecution(.worker(key: assignment.key))
+        #expect(try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: reply)) == expectedFrame)
+
+        let scope = try await rig.host.server.enqueue {
+            let scope = try #require(rig.host.server.projectChildScope(receipt))
+            rig.host.server.projectChildTakenOver.insert(scope)
+            return scope
+        }
+        await #expect(throws: Error.self) { try await client.projectExecution(.worker(key: assignment.key)) }
+        try await worker.thread { thread in
+            _ = rig.host.server.projectChildTakenOver.remove(scope)
+            #expect(thread.session.send(.newSession))
+        }
+        _ = try await worker.snapshot("worker replaced its native session") {
+            !$0.piSessionID.isEmpty && $0.piSessionID != snapshot.piSessionID && $0.generation != snapshot.generation
+        }
+        let stale = try await client.projectExecution(.worker(key: assignment.key))
+        #expect(stale.receipt == receipt && stale.thread == nil)
+    }
+
     @Test func remoteExactResultSurvivesBothRestartsAndRevokedBindingNeverFallsBack() async throws {
         let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
         var assignment = try await rig.assignment("tools:0 long:14000")
@@ -409,13 +442,27 @@ struct ProjectHistoryTests {
         #expect(routedWorker.tasks.count == 1 && routedWorker.tasks[0].workerAgentID == exact.reservedWorkerID)
         #expect(routedWorker.tasks[0].destination == binding)
         let nativeSource = try await client.projectExecution(.worker(key: exact.key))
-        #expect(nativeSource.receipt.key == exact.key && nativeSource.thread?.piSessionID == nativeSource.receipt.sessionID)
+        let proof = try #require(nativeSource.thread)
+        #expect(nativeSource.receipt.key == exact.key && proof.piSessionID == nativeSource.receipt.sessionID && proof.generation == nativeSource.receipt.generation)
+        #expect(proof.clipped && proof.clips?.history == true && proof.messages.isEmpty && proof.provisional.isEmpty)
+        let worker = try await rig.pi(exact)
+        let full = try await worker.snapshot()
+        var unclipped = nativeSource
+        unclipped.thread = full
+        let clock = ContinuousClock()
+        let start = clock.now
+        let fullBytes = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: unclipped)).count - 1
+        let fullTime = start.duration(to: clock.now)
+        let proofStart = clock.now
+        let proofBytes = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: nativeSource)).count - 1
+        print("Exact worker reply sizing: full \(fullBytes) B in \(fullTime), proof \(proofBytes) B in \(proofStart.duration(to: clock.now))")
+        #expect(fullBytes > NDJSON.maxPayloadBytes && proofBytes <= NDJSON.maxPayloadBytes)
         let ownerRead = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: read)
         let page = try #require(ownerRead.resultPage), identity = try #require(page.identity)
         #expect(page.availability == .complete)
         var content = page.data
         var cursor = page.nextOffset
-        #expect((page.totalBytes ?? 0) > NDJSON.maxPayloadBytes)
+        #expect(page.totalBytes > NDJSON.maxPayloadBytes)
         while let offset = cursor {
             let nextRead = ProjectRuntimeRequest.result(taskID: exact.taskID, operationID: exact.key.operationID, offset: offset, sha256: page.sha256)
             let next = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: nextRead)

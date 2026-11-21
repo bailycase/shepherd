@@ -154,7 +154,7 @@ extension SessionServer {
             guard remote.receipt.key == assignment.key, remote.receipt.assignment == assignment,
                   remote.receipt.sessionID == task.executionReceipt?.sessionID,
                   remote.receipt.generation == task.executionReceipt?.generation,
-                  let thread = remote.thread,
+                  remote.workerTakenOver != true, let thread = remote.thread,
                   thread.piSessionID == remote.receipt.sessionID, thread.generation == remote.receipt.generation else {
                 throw LogicalProjectsError("stale_execution", "The original executor cannot provide the exact native worker source.")
             }
