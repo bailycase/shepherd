@@ -63,14 +63,12 @@ struct MobileCommandTarget {
     private var walkRows: [FleetRef] {
         let hosts = app.hosts
         let model = HomeFeed.of(hosts).model
-        let sidebar = SidebarThreads.of(hosts)
         let automations = AutomationsStore.of(hosts)
-        let groups = sidebar.groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers,
-                                    filters: sidebar.activeFilters(model))
+        let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         // The sidebar's order, without projects, designs, or runs in collapsed groups.
         let asks = groups.needsYou.filter { $0.origin != .project }.map(\.ref)
-        let automationRuns = groups.manualRuns.compactMap(\.run)
-            + groups.runs.filter(\.expanded).flatMap { $0.rows.map(\.ref) } + groups.matchingRuns.map(\.ref)
+        let automationRuns = groups.automationRuns.compactMap(\.run)
+            + groups.runs.filter(\.expanded).flatMap { $0.rows.map(\.ref) }
         return asks + automationRuns + groups.working.map(\.ref) + groups.done.map(\.ref)
             + groups.pinned.map(\.ref) + groups.recents.filter { $0.design == nil }.map(\.ref)
     }

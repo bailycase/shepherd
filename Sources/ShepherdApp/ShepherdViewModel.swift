@@ -53,10 +53,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var queuedReview: SidebarRowID?
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
-    /// Those lists with the sidebar filters and sent-thread folds applied, cached on the lists and criteria.
-    @ObservationIgnored var filteredSidebarListsCache: (lists: SidebarLists, filters: SidebarThreadFilters, openFolds: Set<String>, filtered: SidebarLists)?
-    /// How often the filter ran, for the tests of that cache.
-    @ObservationIgnored var filteredSidebarListsRuns = 0
     @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
     var sidebarCompletions = SidebarCompletions()
     /// Prompted creations belong in Working before pi reports its first turn.
@@ -270,7 +266,6 @@ final class ShepherdViewModel {
     }
     static let dismissedDispatchesKey = "shepherd.sidebar.dismissedDispatches"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
-    var sidebarThreadFilters = SidebarThreadFilters()
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
     }
