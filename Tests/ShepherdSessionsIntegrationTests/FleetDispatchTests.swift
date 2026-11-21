@@ -500,6 +500,20 @@ struct FleetDispatchTests {
         #expect(a.sent().first?.commitSHA == origin.sha, "the start pin did not change")
     }
 
+    @Test func aCheckedOutLocalOnlyBranchDoesNotReplaceTheAssignedBranchInTheResult() throws {
+        let origin = try Self.makeOrigin()
+        let checkout = try makeScratchDirectory("report").appendingPathComponent("checkout")
+        try git(["clone", "-q", origin.url.path, checkout.path], in: origin.url)
+        let branch = "fleet/check-payments"
+        try git(["branch", branch], in: checkout)
+        try git(["switch", "-qc", "fix/local-only"], in: checkout)
+        try git(["-c", "user.name=Shepherd Tests", "-c", "user.email=tests@example.com",
+                 "commit", "--allow-empty", "-qm", "Local-only work"], in: checkout)
+
+        let facts = FleetDispatchGit.branchFacts(worktree: checkout.path, branch: branch, start: origin.sha)
+        #expect(facts.branch == branch && facts.head == origin.sha && facts.ahead == 0 && !facts.pushed)
+    }
+
     @Test func anUnreachableOriginDoesNotReportAStaleTrackingRefAsPushed() throws {
         let origin = try Self.makeOrigin()
         let checkout = try makeScratchDirectory("report").appendingPathComponent("checkout")
@@ -513,6 +527,9 @@ struct FleetDispatchTests {
         #expect(facts.head == origin.sha && facts.ahead == 0)
         #expect(facts.originCheckFailed == true && !facts.pushed)
         #expect(facts.uncommittedModified == 0 && facts.uncommittedUntracked == 0 && facts.uncommittedCheckFailed == nil)
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", title: "Check payments",
+                                         task: "Check payments", repoKey: Self.repoKey, branch: branch, resultBranchFacts: facts, createdAt: 1)
+        #expect(FleetDispatch.resultMessage(record).contains("Branch \(branch): 0 commits ahead of the start, could not verify origin,"))
 
         try Data().write(to: checkout.appendingPathComponent("new notes.txt"))
         let noBranch = FleetDispatchGit.branchFacts(worktree: checkout.path, branch: "fleet/missing", start: origin.sha)

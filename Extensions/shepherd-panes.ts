@@ -886,7 +886,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     if (facts?.head) {
       const push = facts.originCheckFailed ? "could not verify origin" : facts.pushed ? "pushed" : "not pushed";
       const base = facts.comparedTo ? ` of ${facts.comparedTo}` : "";
-      lines.push(`branch work at result: ${facts.ahead} commit(s) ahead${base}, ${facts.filesChanged} file(s) +${facts.insertions} -${facts.deletions}, ${push}`);
+      const branch = facts.branch !== info.branch ? ` (${facts.branch})` : "";
+      lines.push(`branch work at result${branch}: ${facts.ahead} commit(s) ahead${base}, ${facts.filesChanged} file(s) +${facts.insertions} -${facts.deletions}, ${push}`);
     } else if (info.branch && (info.state === "done" || info.state === "delivering")) {
       lines.push("branch work at result: unavailable");
     }

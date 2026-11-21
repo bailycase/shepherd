@@ -254,7 +254,7 @@ extension FleetDispatch {
         let sender = record.kind == .userThread || record.parentTitle.isEmpty ? "the person" : record.parentTitle
         let tail = record.kind == .userThread ? "" : " Your last message goes back to whoever sent you."
         return record.task + FleetDispatchProtocol.promptSeparator + "\(sender) on \(record.parentHostName) to do the task above. "
-            + "You start on \(branch); if the task names another branch, follow the task." + tail
+            + "You start on \(branch); commit and push (git push -u origin \(branch)) unless the task names another branch." + tail
     }
 
     private func prepared(_ id: UUID, _ outcome: Result<AgentID, RemoteCreateAgentError>) {

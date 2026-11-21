@@ -10,7 +10,7 @@ struct FleetDispatchResultTests {
         let task = "Push to the existing branch fix/payment."
         let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "Studio Mac", parentTitle: "Payment review",
                                          title: "Check payments", task: task, repoKey: "github.com/acme/web", createdAt: 1)
-        let footer = "Payment review on Studio Mac to do the task above. You start on fleet/check-payments; if the task names another branch, follow the task. Your last message goes back to whoever sent you."
+        let footer = "Payment review on Studio Mac to do the task above. You start on fleet/check-payments; commit and push (git push -u origin fleet/check-payments) unless the task names another branch. Your last message goes back to whoever sent you."
         #expect(FleetDispatch.prompt(for: record, branch: "fleet/check-payments") == task + FleetDispatchProtocol.promptSeparator + footer)
     }
 
