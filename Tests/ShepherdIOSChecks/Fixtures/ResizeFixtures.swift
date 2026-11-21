@@ -104,7 +104,7 @@ enum ResizeFixtures {
         ("Sources/ShepherdApp/DesktopNativeThreadView.swift", "src/pages/Cart.tsx"),
         ("App/iOS/ThreadView.swift", "src/components/CartRow.tsx"),
         ("/Users/dev/Shepherd", "/Users/dev/acme-web"), ("/Users/dev/code/shepherd", "/Users/dev/code/acme-web"),
-        ("/Users/dev/horizon", "/Users/dev/acme-api"), ("/Users/dev/.shepherd/worktrees", "/Users/dev/.acme/worktrees"),
+        ("/Users/dev/.shepherd/worktrees", "/Users/dev/.acme/worktrees"),
         ("Investigate SwiftUI live preview", "Investigate slow cart page"), ("Plan shepherd extensions", "Plan promo code rollout"),
         ("Dock review pane", "Move order summary"), ("Fix remote subagent deletion", "Fix stale cart totals"),
         ("Fix terminal output buffer", "Fix order export buffer"), ("Queue steering polish", "Polish the cart drawer"),
@@ -136,31 +136,36 @@ enum ResizeFixtures {
         ("a review of the buffer flush found two copies of each", "a review of the export flush found two copies of each"),
     ]
 
-    /// `value` with every `rewrites` entry applied to the text it encodes to (a snapshot, a state, a reply).
-    nonisolated static func rewritten<T: Codable>(_ value: T) -> T {
+    /// The report's two repos, written out here: the shared fixtures' first and second repo (ids, names, paths) become these.
+    static let web = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/Users/dev/acme-web")
+    static let api = Space(id: SpaceID(rawValue: "space-acme-api"), name: "acme-api", path: "/Users/dev/acme-api")
+
+    /// `value` with every `rewrites` entry and each `swaps` pair applied to the text it encodes to (a snapshot, a state, a reply).
+    nonisolated static func rewritten<T: Codable>(_ value: T, swaps: [(String, String)] = []) -> T {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         func escaped(_ text: String) -> String {
             (try? encoder.encode(text)).flatMap { String(data: $0, encoding: .utf8) }.map { String($0.dropFirst().dropLast()) } ?? text
         }
         guard let data = try? encoder.encode(value), var json = String(data: data, encoding: .utf8) else { return value }
-        for (from, to) in rewrites { json = json.replacingOccurrences(of: escaped(from), with: escaped(to)) }
+        for (from, to) in rewrites + swaps { json = json.replacingOccurrences(of: escaped(from), with: escaped(to)) }
         return (try? JSONDecoder().decode(T.self, from: Data(json.utf8))) ?? value
     }
 
     /// The made-up names the report shows: every fixture host's repos, threads, paths and answers are acme's.
     static func acme(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
         var hosts = hosts
-        let names = [FixtureData.shepherdSpace.id: "acme-web", FixtureData.horizonSpace.id: "acme-api"]
+        let replacements = Dictionary(uniqueKeysWithValues: zip(FixtureData.hosts()[0].state.spaces, [web, api]).map { ($0.id, ($0, $1)) })
+        let swaps = replacements.values.flatMap { [($0.id.rawValue, $1.id.rawValue), ($0.path, $1.path)] }
         for index in hosts.indices {
             for (spaceIndex, space) in hosts[index].state.spaces.enumerated() {
-                guard let name = names[space.id] else { continue }
-                hosts[index].state.spaces[spaceIndex].name = name
-                hosts[index].state.spaces[spaceIndex].path = "/Users/dev/\(name)"
+                guard let (_, made) = replacements[space.id] else { continue }
+                hosts[index].state.spaces[spaceIndex].name = made.name
+                hosts[index].state.spaces[spaceIndex].path = made.path
             }
-            hosts[index].state = rewritten(hosts[index].state)
-            hosts[index].threads = rewritten(hosts[index].threads)
-            if let reply = hosts[index].reply { hosts[index].reply = { request in reply(request).map { rewritten($0) } } }
+            hosts[index].state = rewritten(hosts[index].state, swaps: swaps)
+            hosts[index].threads = rewritten(hosts[index].threads, swaps: swaps)
+            if let reply = hosts[index].reply { hosts[index].reply = { request in reply(request).map { rewritten($0, swaps: swaps) } } }
         }
         return hosts
     }
@@ -237,7 +242,7 @@ enum ResizeFixtures {
         await model.open(path)
         guard let original = model.edits[path]?.text else { FixtureCheck.fail("The file did not open in the editor") }
         model.setText(draftEdit + original, for: path)
-        await FixtureCheck.wait("the editor shows the edit", seconds: 10) { shows(draftEdit) }
+        await FixtureCheck.wait("the editor shows the edit", seconds: 10) { visibleEditorShowsCheckout() }
         navigator.present(NewThreadFixtures.compose)
         await NewThreadFixtures.form { $0.prompt = sheetText }
         await FixtureCheck.wait("the sheet shows its text", seconds: 10) { shows(sheetText) }
@@ -250,10 +255,18 @@ enum ResizeFixtures {
         func look(_ stage: String, editorVisible: Bool) async {
             try? await Task.sleep(for: .seconds(2))
             let edit = model.edits[path]
-            // Once the editor is back on screen its own text counts too: a model that kept the edit is not enough if the editor lost it.
-            let onScreen = editorVisible ? shows(draftEdit) : true
+            // Once the window is regular again, expose the Files pane and look at the editor a person would see: a model that
+            // kept the edit is not enough if the pane is blank.
+            var onScreen = true
+            if editorVisible {
+                navigator.sidePane.show(.files)
+                try? await Task.sleep(for: .seconds(1)) // a pane the switch just removed is gone by now
+                let deadline = Date().addingTimeInterval(10)
+                while !visibleEditorShowsCheckout(), Date() < deadline { try? await Task.sleep(for: .milliseconds(100)) }
+                onScreen = visibleEditorShowsCheckout()
+            }
             report("editor", stage, edit?.isDirty == true && edit?.text.hasPrefix(draftEdit) == true && onScreen,
-                   "the unsaved edit \(edit?.isDirty == true ? "is" : "is not") in the file's model\(editorVisible ? ", editor text on screen: \(onScreen)" : "")")
+                   "the unsaved edit \(edit?.isDirty == true ? "is" : "is not") in the file's model\(editorVisible ? ", visible editor shows Checkout.tsx with the edit: \(onScreen)" : "")")
             report("terminal", stage, session.surface.map(ObjectIdentifier.init) == terminalView,
                    "its session \(session.surface == nil ? "has no view" : session.surface.map(ObjectIdentifier.init) == terminalView ? "keeps the same view" : "got a new view")")
             let model = NewThreadModel.active
@@ -297,6 +310,21 @@ enum ResizeFixtures {
     static func layout(_ navigator: MobileNavigator) -> String {
         "\(navigator.layout == .pad ? "split view" : "phone shell"), tab \(navigator.sidePane.tab.rawValue), pane \(navigator.sidePane.isOpen ? "open" : "closed"), "
             + "pad path \(navigator.padPath.count), home path \(navigator.homePath.count)"
+    }
+
+    /// Whether the Files editor (the text view labelled "File contents") that a person sees in the fixture's window holds
+    /// Checkout.tsx's code under the unsaved edit. A hidden or offscreen editor, or one in another window, does not count.
+    static func visibleEditorShowsCheckout() -> Bool {
+        guard let window = FixtureWindows.shared.framed ?? window(), !window.isHidden else { return false }
+        func visible(_ view: UIView) -> Bool {
+            if view.isHidden || view.alpha < 0.01 { return false }
+            if let text = view as? UITextView, text.accessibilityLabel == "File contents" {
+                let frame = text.convert(text.bounds, to: window).intersection(window.bounds)
+                return !frame.isEmpty && text.text.hasPrefix(draftEdit) && text.text.contains("export function Checkout")
+            }
+            return view.subviews.contains(where: visible)
+        }
+        return visible(window)
     }
 
     /// Whether any text field, text view or label on screen holds `text`.
