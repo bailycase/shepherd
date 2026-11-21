@@ -76,7 +76,8 @@ struct PiSessionPreviewTests {
         defer { remove() }
         let origins = url.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true)
         let store = ThreadOriginStore(directory: origins)
-        store.save(sessionID: "s", records: [("user:1000", ThreadOriginStore.Record(references: [copy]))])
+        store.save(sessionID: "s", records: [("user:1000", ThreadOriginStore.Record(references: [copy]))],
+                   generation: store.loadSession(sessionID: "s").generation)
         store.flush()
 
         let preview = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s", origins: origins))

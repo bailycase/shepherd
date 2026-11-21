@@ -315,6 +315,8 @@ public enum SettingsRoute: Hashable, Codable, Sendable {
     /// A host's spaces by folder. Older saved routes did not record the host.
     case spaces
     case space(String)
+    /// Rename, hide, reorder and remove the host's spaces (`spaces.lifecycle.v1`). Opened from Spaces.
+    case organizeSpaces
     case spaceConfiguration(host: UUID, directory: String, name: String, section: SpaceConfigurationSection? = nil)
     /// The root instructions every session Shepherd starts reads.
     case instructions

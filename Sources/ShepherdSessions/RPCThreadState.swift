@@ -170,7 +170,7 @@ final class RPCThreadState {
     /// the first snapshot still shows it (#449).
     private var stagingOpening: OpeningPrompt?
     /// Requests get a snapshot rather than `native_starting`.
-    var isServable: Bool { piSessionID != nil && !historyPending }
+    var isServable: Bool { piSessionID != nil && !historyPending && !originsPending }
     private(set) var generation = UUID().uuidString
     private(set) var revision: UInt64 = 0
     /// Called on the session queue each time `revision` moves.
@@ -637,6 +637,11 @@ final class RPCThreadState {
 
     /// Where messages Shepherd delivered came from, by entry id (persisted per pi session).
     let originStore: ThreadOriginStore?
+    private var originsGeneration: UInt64?
+    private var originsProblem: String?
+    private var pendingOriginChanges: [(id: UUID, change: ThreadOriginStore.Change)] = []
+    private var originsPending = false
+    private var afterOpeningOriginReads: [() -> Void] = []
     var origins: [String: ThreadOriginStore.Record] = [:]
     /// Entry ids in `origins`, oldest first.
     var originOrder: [String] = []
@@ -710,7 +715,8 @@ final class RPCThreadState {
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self, self.bootstrapDeadline == deadline, self.generation == generation,
                   !self.isServable, self.session.isAlive else { return }
-            let waiting = [self.piSessionID == nil ? "get_state" : nil, self.historyPending ? "get_messages" : nil].compactMap { $0 }.joined(separator: ", ")
+            let waiting = [self.piSessionID == nil ? "get_state" : nil, self.historyPending ? "get_messages" : nil,
+                           self.originsPending ? "thread metadata" : nil].compactMap { $0 }.joined(separator: ", ")
             self.bootstrapFailure = "The agent is running but was not ready within \(timeout.formatted()) seconds (waiting for \(waiting)). Your first message is kept. Check Settings > Pi; Reconnect checks readiness again."
             ShepherdLog.warning("rpc session \(self.session.id) readiness deadline: waiting for \(waiting)")
             self.onRevision?()
@@ -1197,7 +1203,16 @@ final class RPCThreadState {
                 completion(.unchanged(piSessionID: piSessionID, generation: generation, revision: revision))
                 return
             }
-            completion(snapshot(beforeEntryID: beforeEntryID))
+            if beforeEntryID == nil, afterRevision == nil {
+                let requestedIn = generation
+                recheckOrigins { [weak self] in
+                    guard let self, self.generation == requestedIn else {
+                        completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                        return
+                    }
+                    completion(self.snapshot(beforeEntryID: nil))
+                }
+            } else { completion(snapshot(beforeEntryID: beforeEntryID)) }
         case .transcriptSnapshot:
             completion(.failure(code: "invalid", message: "A transcript copy requires the host's saved session."))
         case .image(let expectedSessionID, let imageID, let offset):
@@ -1742,7 +1757,10 @@ final class RPCThreadState {
         session.request(.getAvailableThinkingLevels, timeout: timeout,
                         onLateResponse: acceptLateResponse ? { receiveLevels(.success($0)) } : nil, completion: receiveLevels)
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
-            defer { done?(result); self?.refreshSkillsIfIdle() }
+            var waitsForOrigins = false
+            defer {
+                if !waitsForOrigins { done?(result); self?.refreshSkillsIfIdle() }
+            }
             guard let self, (!acceptLateResponse || self.generation == generation),
                   case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
@@ -1750,7 +1768,25 @@ final class RPCThreadState {
                 let goalController = self.goalsAvailable
                 if switched { self.resetForNewSession() }
                 self.piSessionID = id
-                self.loadOrigins(sessionID: id)
+                if let store = self.originStore {
+                    waitsForOrigins = true
+                    self.originsPending = true
+                    let requestedIn = self.generation, queue = self.queue
+                    store.loadSession(sessionID: id) { [weak self] loaded in
+                        queue.async { [weak self] in
+                            defer { done?(result) }
+                            guard let self, self.generation == requestedIn else { return }
+                            self.applyOrigins(loaded, initial: true)
+                            self.originsPending = false
+                            let waiting = self.afterOpeningOriginReads
+                            self.afterOpeningOriginReads.removeAll()
+                            waiting.forEach { $0() }
+                            self.commit()
+                            self.announceIfServable()
+                            self.refreshSkillsIfIdle()
+                        }
+                    }
+                }
                 if switched {
                     self.refreshMessages(timeout: timeout)
                     self.refreshStats(timeout: timeout, verifiesHistory: true)
@@ -1904,8 +1940,13 @@ final class RPCThreadState {
                 }
             }
         }
+        let receiveAfterOrigins: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self else { return }
+            if self.originsPending { self.afterOpeningOriginReads.append { receive(result) } }
+            else { receive(result) }
+        }
         session.request(.getMessages, timeout: timeout,
-                        onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
+                        onLateResponse: bootstrap ? { receiveAfterOrigins(.success($0)) } : nil, completion: receiveAfterOrigins)
         return sequence
     }
 
@@ -2508,6 +2549,11 @@ final class RPCThreadState {
         liveLeftOut = 0
         operationsByEntry.removeAll()
         questions.removeAll()
+        origins.removeAll()
+        originOrder.removeAll()
+        originsGeneration = nil
+        originsProblem = nil
+        pendingOriginChanges.removeAll()
         commandNotices.removeAll()
         cancelWaitingInputs()
         inputLaneID = nil
@@ -2545,57 +2591,92 @@ final class RPCThreadState {
 
     // MARK: - Live rows
 
-    /// The session's record of where delivered messages came from.
-    private func loadOrigins(sessionID: String) {
-        guard let originStore else { return }
-        let loaded = originStore.loadSession(sessionID: sessionID)
-        origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
-        originOrder = loaded.entries.map(\.id)
-        let startupQuestions = questions
-        let startupIDs = Set(startupQuestions.map(\.id))
-        questions = Array((loaded.questions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
-        if !startupQuestions.isEmpty { saveOrigins() }
+    private func applyOrigins(_ loaded: ThreadOriginStore.Snapshot, initial: Bool = false, rebased: Bool = false) {
+        guard initial || rebased || originsGeneration != loaded.generation || originsProblem != loaded.problem else { return }
+        originsGeneration = loaded.generation
+        originsProblem = loaded.problem
+        // Keep displaying the live lists if a file we already loaded goes bad.
+        if initial || loaded.problem == nil {
+            origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
+            originOrder = loaded.entries.map(\.id)
+            questions = loaded.questions
+            // A write acknowledgement can arrive after the thread records a newer change.
+            // Keep those changes visible; never replay changes the store already refused.
+            for pending in pendingOriginChanges { applyOriginChange(pending.change) }
+            let questionIDs = Set(questions.map(\.id))
+            live.removeAll { if case .question(let id) = $0.kind { !questionIDs.contains(id) } else { false } }
+            if !initial { refreshMessages() }
+        }
+        if initial {
+            for pending in pendingOriginChanges { saveOriginChange(pending.change, id: pending.id) }
+        } else { commit() }
+    }
+
+    /// Full snapshot requests check for damage or repair. Incremental updates use memory only.
+    private func recheckOrigins(_ done: @escaping () -> Void) {
+        guard let store = originStore, let id = piSessionID else { done(); return }
+        let requestedIn = generation, queue = queue
+        store.loadSession(sessionID: id) { [weak self] loaded in
+            queue.async { [weak self] in
+                if let self, self.generation == requestedIn { self.applyOrigins(loaded) }
+                done()
+            }
+        }
     }
 
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
-        guard var record = ThreadOriginStore.Record(origin) else { return }
-        record.references = origins[entryID]?.references
-        record.command = origins[entryID]?.command
-        keepOrigin(record, entryID: entryID)
+        guard let details = ThreadOriginStore.Record(origin) else { return }
+        keepOriginChange(.origin(id: entryID) { record in
+            record.steered = details.steered
+            record.parts = details.parts
+        })
     }
 
     /// Records the prompt template command the user typed for the message `entryID`, so the
     /// thread names the template instead of showing its text (and after a relaunch).
     func recordCommand(_ command: String, entryID: String) {
-        var record = origins[entryID] ?? ThreadOriginStore.Record()
-        record.command = command
-        keepOrigin(record, entryID: entryID)
+        keepOriginChange(.origin(id: entryID) { $0.command = command })
     }
 
     /// Records that the user sent the message `entryID` in this thread with these design
     /// references' copies, so the thread draws its fence as chips (and after a relaunch).
     func recordReferences(_ payloads: [String], entryID: String) {
-        var record = origins[entryID] ?? ThreadOriginStore.Record(references: payloads)
-        record.references = payloads
-        keepOrigin(record, entryID: entryID)
+        keepOriginChange(.origin(id: entryID) { $0.references = payloads })
     }
 
-    private func keepOrigin(_ record: ThreadOriginStore.Record, entryID: String) {
-        origins[entryID] = record
-        originOrder.removeAll { $0 == entryID }
-        originOrder.append(entryID)
-        if originOrder.count > ThreadOriginStore.limit {
-            for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
-            originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+    private func applyOriginChange(_ change: ThreadOriginStore.Change) {
+        switch change {
+        case .origin(let id, let edit):
+            edit(&origins[id, default: ThreadOriginStore.Record()])
+            originOrder.removeAll { $0 == id }
+            originOrder.append(id)
+            if originOrder.count > ThreadOriginStore.limit {
+                for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
+                originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+            }
+        case .question(let question):
+            ThreadOriginStore.keep(question, in: &questions)
         }
-        saveOrigins()
     }
 
-    /// Writes the session's origins and questions.
-    func saveOrigins() {
-        guard let piSessionID, let originStore else { return }
-        originStore.save(sessionID: piSessionID, records: originOrder.compactMap { id in origins[id].map { (id, $0) } },
-                         questions: questions)
+    func keepOriginChange(_ change: ThreadOriginStore.Change) {
+        applyOriginChange(change)
+        guard originStore != nil else { return }
+        let id = UUID()
+        pendingOriginChanges.append((id, change))
+        saveOriginChange(change, id: id)
+    }
+
+    private func saveOriginChange(_ change: ThreadOriginStore.Change, id: UUID) {
+        guard let piSessionID, let originStore, let originsGeneration else { return }
+        let builtIn = generation
+        originStore.update(sessionID: piSessionID, change: change, generation: originsGeneration) { [weak self] loaded in
+            self?.queue.async { [weak self] in
+                guard let self, self.generation == builtIn else { return }
+                self.pendingOriginChanges.removeAll { $0.id == id }
+                if let loaded { self.applyOrigins(loaded, rebased: loaded.problem == nil) }
+            }
+        }
     }
 
     /// The id history will give a live user message, so the row keeps it when it settles: a
@@ -3159,6 +3240,8 @@ final class RPCThreadState {
         hasher.combine(goal)
         hasher.combine(goalsAvailable)
         hasher.combine(historyUnread)
+        hasher.combine(originsProblem)
+        hasher.combine(originsPending)
         hasher.combine(liveLeftOut)
         hasher.combine(running || retryDispatch != nil)
         hasher.combine(checkpointRecovery)
@@ -3252,6 +3335,7 @@ final class RPCThreadState {
             initializing: initializing ? true : nil, checkpointRecovery: initializing ? nil : checkpointRecovery
         )
         base.hookStatus = running ? hookStatus : nil
+        base.originsProblem = originsProblem
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
         let baseBytes = measured(base) + Self.queueFieldBytes + queueBytes(queue)

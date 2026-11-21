@@ -533,7 +533,7 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .spaceLifecycle, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
              .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
@@ -543,7 +543,7 @@ struct RemoteRequestTests {
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 76
+    static let caseCount = 77
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -681,6 +681,11 @@ struct RemoteRequestTests {
         .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
         .spaceAction(id: 5, spaceID: S.space, action: .delete),
         .spaceAction(id: 5, spaceID: S.space, action: .relocate(path: "/Users/demo/Developer/acme-web")),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .rename(name: "acme-web")),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .setSidebarHidden(hidden: true)),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .move(before: nil)),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .move(before: S.space)),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .remove),
         .projectRequest(id: 5, request: .register(path: "/Users/demo/Developer/acme-web", name: "acme-web")),
         .projectRequest(id: 5, request: .edit(spaceID: S.space, edit: ProjectEdit(parentProjectID: ""))),
         .projectRequest(id: 5, request: .child(parentPath: "/Users/demo/Developer/acme", path: "/Users/demo/Developer/acme/web", name: "web", create: true)),
@@ -1502,7 +1507,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability, RemoteProtocol.hostSettingsTextGenerationModelCapability, RemoteProtocol.hostSettingsVisionModelCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.spaceLifecycleCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability, RemoteProtocol.pullRequestLinkCapability,
             RemoteProtocol.branchStatusCapability, RemoteProtocol.hostSettingsSubThreadsCapability,
             RemoteProtocol.designContextCapability,
@@ -1566,6 +1571,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.projectInheritanceCapability == "projects.inheritance.v1")
         #expect(RemoteProtocol.projectInheritedResourcesCapability == "projects.inheritance.resources.v1")
         #expect(RemoteProtocol.projectParentCapability == "projects.parent.v1")
+        #expect(RemoteProtocol.spaceLifecycleCapability == "spaces.lifecycle.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")

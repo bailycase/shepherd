@@ -41,6 +41,12 @@ public enum PiSessionPreview {
 
     /// `snapshot(file:sessionID:)` reading windows of these sizes (tests make them small).
     static func snapshot(file: URL, sessionID: String, initialWindow: Int, maxWindow: Int, origins: URL? = nil) -> NativeThreadSnapshot? {
+        snapshot(file: file, sessionID: sessionID, initialWindow: initialWindow, maxWindow: maxWindow,
+                 originStore: origins.map { ThreadOriginStore(directory: $0) })
+    }
+
+    static func snapshot(file: URL, sessionID: String, initialWindow: Int = initialWindow, maxWindow: Int = maxWindow,
+                         originStore: ThreadOriginStore?) -> NativeThreadSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
@@ -76,11 +82,14 @@ public enum PiSessionPreview {
                let level = newestThinkingLevel(in: handle, before: oldest) {
                 settings.thinking = level
             }
-            let sent = origins.map { ThreadOriginStore(directory: $0).load(sessionID: sessionID) } ?? []
+            let originSnapshot = originStore?.loadSession(sessionID: sessionID)
+            let sent = originSnapshot?.entries ?? []
             let references = Dictionary(sent.compactMap { entry in entry.record.references.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
             let commands = Dictionary(sent.compactMap { entry in entry.record.command.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
-            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references,
-                            commands: commands)
+            var preview = snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references,
+                                   commands: commands)
+            preview.originsProblem = originSnapshot?.problem
+            return preview
         }
     }
 
