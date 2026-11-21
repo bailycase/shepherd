@@ -491,6 +491,25 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test func settingsShowsDamagedSuggestions() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let url = workspace.server.suggestions.url
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{broken".utf8).write(to: url)
+        try await workspace.seed(ShepherdState())
+        await workspace.vm.suggestions.refresh()
+        #expect(workspace.vm.suggestions.unavailable?.contains(url.path) == true)
+        workspace.vm.settingsSection = .experiments
+        try await Preview.render("settings-suggestions-damaged", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+        workspace.vm.experimentsPage = .waiting
+        try await Preview.render("settings-waiting-damaged", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Settings ▸ Advanced ▸ Updates as each app shows it. Sparkle only runs in a bundled app,
     /// so the Advanced page above renders without this group.
     @Test func updateChannelRows() async throws {

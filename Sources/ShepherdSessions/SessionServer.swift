@@ -4563,7 +4563,7 @@ public final class SessionServer: @unchecked Sendable {
             let snapshot: SuggestionsSnapshot
             switch request {
             case .fetch:
-                snapshot = suggestions.snapshot()
+                snapshot = try suggestions.snapshot()
             case .configure(let settings):
                 snapshot = try suggestions.configure(settings)
             case .add(let suggestionID, let line, let file):
@@ -4584,6 +4584,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if request != .fetch { announceSuggestions(snapshot) }
             send(.suggestions(id: id, snapshot: snapshot), to: client)
+        } catch SuggestionsStore.StoreError.damaged(let url) {
+            send(.error(id: id, code: "suggestions_unavailable", message: SuggestionsStore.StoreError.damaged(url).description), to: client)
         } catch SuggestionsStore.StoreError.noSuchSuggestion {
             send(.error(id: id, code: "no_such_suggestion", message: SuggestionsStore.StoreError.noSuchSuggestion.description), to: client)
         } catch {
@@ -4601,22 +4603,22 @@ public final class SessionServer: @unchecked Sendable {
         }
         let kind: SuggestionSource.Kind = Self.unattendedAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
         let file = file ?? .agents
-        guard suggestions.snapshot().settings.files(for: kind).contains(file) else {
-            reply(.error(id: id, code: "suggestions_off",
-                         message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
-            return
-        }
-        if let problem = InstructionsText.suggestionProblem(line) {
-            reply(.error(id: id, code: "invalid", message: problem), to: client)
-            return
-        }
         do {
+            guard try suggestions.snapshot().settings.files(for: kind).contains(file) else {
+                reply(.error(id: id, code: "suggestions_off",
+                             message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
+                return
+            }
+            if let problem = InstructionsText.suggestionProblem(line) {
+                reply(.error(id: id, code: "invalid", message: problem), to: client)
+                return
+            }
             let result = try suggestions.suggest(line: line, reason: String(reason.prefix(600)), file: file,
                                                  source: SuggestionSource(kind: kind, name: agent.name))
             if result.outcome == .waiting { announceSuggestions(result.snapshot) }
             reply(.suggestion(id: id, outcome: result.outcome), to: client)
         } catch {
-            reply(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+            reply(.error(id: id, code: "write_failed", message: "Suggested instructions are unavailable. Tell the user to open Settings › Experiments."), to: client)
         }
     }
 
