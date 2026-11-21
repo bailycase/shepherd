@@ -444,7 +444,7 @@ final class FleetService: @unchecked Sendable {
     // MARK: - Authentication (server queue)
 
     /// The Mac whose peer token this is.
-    func authenticate(token: String) -> UUID? { peers.authenticate(token: token) }
+    func authenticate(token: String) -> UUID? { peers.authenticate(token: token) ?? (testPeers.isEmpty ? nil : testPeers[FleetProtocol.hash(token)]) }
 
     /// The device whose own token this is.
     func authenticateDevice(token: String) -> UUID? {
@@ -455,6 +455,11 @@ final class FleetService: @unchecked Sendable {
     /// memory only: no device is made, listed, saved or synced, and the listener isn't needed for them.
     private var testClients: [String: UUID] = [:]
     func addTestClient(tokenHash: String) { testClients[tokenHash] = UUID() }
+
+    /// Tests: a token a test's client presents as a paired Mac's own (`SessionServer.peerTokenForTests`). In memory only, like `testClients`:
+    /// no record is saved, no link is dialed and nothing syncs.
+    private var testPeers: [String: UUID] = [:]
+    func addTestPeer(tokenHash: String) { testPeers[tokenHash] = UUID() }
 
     /// A device connected on `connection` with its own token.
     func deviceAuthenticated(_ deviceID: UUID, connection: Int32) {

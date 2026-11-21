@@ -17,6 +17,8 @@ public struct MessageSpec: Hashable, Sendable {
         case localOnly(refusal: String)
         /// Only a Mac in the fleet; anyone else is refused `forbidden`.
         case fleetPeer(refusal: String)
+        /// This Mac's own app or a paired device; a Mac in the fleet is refused `forbidden`.
+        case notFleetPeer(refusal: String)
     }
 
     /// A capability the host must offer and, when `negotiated`, the client must also have listed in
@@ -95,6 +97,8 @@ public struct MessageSpec: Hashable, Sendable {
         .hostUpdateGate: MessageSpec(.localOnly(refusal: "Only this Mac's app installs this host's updates.")),
         .addSpace: MessageSpec(.authenticated),
         .spaceAction: MessageSpec(.localOnly(refusal: "Only this Mac's own app changes its spaces.")),
+        .spaceLifecycle: MessageSpec(.notFleetPeer(refusal: "Only this Mac's own app or a paired device changes its spaces."),
+                                     requires: .offered(.spaceLifecycle, "Update Shepherd on the host to manage its spaces from here.")),
         .projectRequest: MessageSpec(.localOnly(refusal: "Only this Mac's own app changes its spaces.")),
         .startThread: MessageSpec(.localOnly(refusal: "Only this Mac's own app starts threads this way.")),
         .focusThread: MessageSpec(.localOnly(refusal: "Only this Mac's own app says what it shows.")),

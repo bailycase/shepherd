@@ -22,6 +22,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "design-pad", hosts: DesignPadFixtures.hosts(),
                           routes: [.padDesign(.list), .padDesign(.design(design))],
                           prepare: { app in await DesignPadFixtures.settle(app) }),
+            FixtureScreen(name: "design-pad-origins-damaged", hosts: DesignPadFixtures.hosts(damagedOrigins: true),
+                          routes: [.padDesign(.list), .padDesign(.design(design))],
+                          prepare: { app in await DesignPadFixtures.settle(app) }),
             // A board's element tapped: its ring and tag, and the Tweak tab's controls for it.
             FixtureScreen(name: "design-pad-tweak", hosts: DesignPadFixtures.hosts(),
                           routes: [.padDesign(.list), .padDesign(.design(design))],
@@ -97,7 +100,7 @@ enum DesignPadFixtures {
     /// The fixture hosts with Studio serving the design: its Design tool on, the design and its
     /// agent in its state, the agent's chat among its threads. `split` gives the agent the reply
     /// iPadSplitView draws.
-    static func hosts(split: Bool = false, large: Bool = false) -> [FixtureHostData] {
+    static func hosts(split: Bool = false, large: Bool = false, damagedOrigins: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
         let design = Design(id: designID, name: "Checkout funnel dashboard", agentID: agentID,
@@ -109,7 +112,8 @@ enum DesignPadFixtures {
         agent.designID = designID
         hosts[index].state.agents.append(agent)
         hosts[index].state.designs = [design, settings]
-        hosts[index].threads[agentID] = split ? splitThread() : chat()
+        let thread = split ? splitThread() : chat()
+        hosts[index].threads[agentID] = damagedOrigins ? thread.withDamagedOrigins() : thread
         hosts[index].designs = FixtureDesigns(designs: [checkout(design), empty(settings)], systems: [acmeWeb])
         if large {
             let wall = Design(id: largeID, name: "Every checkout screen", systemNamespace: "acme-web", createdAt: FixtureData.start,

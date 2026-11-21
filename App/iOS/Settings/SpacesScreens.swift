@@ -4,7 +4,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// Settings ▸ Spaces edits folders on a paired host over projects.v2. These are not logical Projects.
+// Settings ▸ Spaces edits folders on a paired host over projects.v2. These are not logical Projects. Organize renames, hides, reorders and
+// removes them (`SpacesOrganizeScreen`).
 
 /// Settings ▸ Spaces: the host's spaces by folder, each with what its configuration holds.
 struct SpacesScreen: View {
@@ -36,6 +37,15 @@ struct SpacesScreen: View {
                     } else if !host.serves(RemoteProtocol.projectsV2Capability) {
                         SettingsFootnote("\(host.name)'s Shepherd is too old to share its spaces. Update it to see them here.")
                     } else {
+                        if host.serves(RemoteProtocol.spaceLifecycleCapability) {
+                            SHListCard {
+                                Button { navigator.open(.settings(.organizeSpaces)) } label: {
+                                    SHListRow("Organize spaces", subtitle: "Rename, hide, reorder or remove", subtitleMono: false,
+                                              leading: .symbol("arrow.up.arrow.down"))
+                                }
+                                .buttonStyle(.shRow(radius: 0))
+                            }
+                        }
                         switch phase {
                         case .loading:
                             ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)

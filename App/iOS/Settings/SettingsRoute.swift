@@ -22,6 +22,7 @@ struct SettingsDestination: View {
         case .subagents: SubagentProfilesScreen()
         case .subagent(let file): SubagentProfileScreen(file: file)
         case .spaces: SpacesScreen()
+        case .organizeSpaces: SpacesOrganizeScreen()
         case .space: SpacesScreen() // A legacy route doesn't identify the host to edit.
         case .spaceConfiguration(let host, let directory, let name, let section):
             SpaceScreen(hostID: host, directory: directory, name: name, section: section)

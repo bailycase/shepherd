@@ -39,6 +39,8 @@ enum ProjectFixtures {
                 check(await app.projects.model.setPaused(ref, true), "projects: Pause goes to the owner and comes back paused")
             }),
             FixtureScreen(name: "project-task", hosts: [host], routes: [.projects(.task(ref, waitingID))], prepare: prepare),
+            FixtureScreen(name: "project-task-origins-damaged", hosts: [ProjectFixtureBackend(damagedOrigins: true).host],
+                          routes: [.projects(.task(ref, waitingID))], prepare: prepare),
             FixtureScreen(name: "project-files", hosts: [host], routes: [.projects(.files(ref, path: ""))], prepare: prepare),
             FixtureScreen(name: "project-settings", hosts: [host], routes: [.projects(.settings(ref))], prepare: prepare),
             FixtureScreen(name: "project-new", hosts: [host], presented: .projects(.create(host: FixtureData.studio)), prepare: prepare),
@@ -136,7 +138,10 @@ private final class ProjectFixtureBackend: @unchecked Sendable {
     var messageOperations: [UUID] { lock.withLock { operations } }
     func failNextMessage() { lock.withLock { refuseMessage = true } }
 
-    @MainActor init(taskCount: Int = 3) {
+    private let damagedOrigins: Bool
+
+    @MainActor init(taskCount: Int = 3, damagedOrigins: Bool = false) {
+        self.damagedOrigins = damagedOrigins
         var question = ProjectTask(id: ProjectFixtures.waitingID, operationID: UUID(), workerAgentID: FixtureData.dock,
                                    spaceID: FixtureData.shepherdSpace.id, title: "Choose the release target", prompt: "Confirm the target.", phase: .waiting)
         question.question = "Which release target should I use?"
@@ -266,7 +271,7 @@ private final class ProjectFixtureBackend: @unchecked Sendable {
                 FixtureData.user("p1", "Finish the iPhone and iPad client, and keep me in the loop when a release decision needs me."),
                 FixtureData.assistant("p2", "The adaptive layout is underway. One thread is checking accessibility, and the release thread has a question for you.", at: 15_000),
             ])
-            return .snapshot(value: snapshot)
+            return .snapshot(value: damagedOrigins && worker ? snapshot.withDamagedOrigins() : snapshot)
         }
         switch request {
         case .send(_, _, let operation, _, _, _, _, _, _), .answer(_, _, let operation, _, _), .abort(_, _, let operation):

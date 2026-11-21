@@ -29,7 +29,7 @@ enum SettingsSearch {
                  "While it runs", "Show", "Status while it runs", "Delete hook",
                  "Read Claude Code hooks", "Read Codex hooks"],
         .spaces: ["Spaces", "Resources", "Skills, extensions and MCP servers",
-                  "Instructions", "Extensions", "MCP servers"],
+                  "Instructions", "Extensions", "MCP servers", "Organize spaces"],
         .git: ["Base branch", "Fetch before creating", "Draft commit messages",
                "Deleting a worktree agent", "Close threads when their pull request merges", "Worktree"],
         .apps: ["Run", "Stop", "Restart", "Output", "Command", "Folder", "Quick action", "Agents can start it"],

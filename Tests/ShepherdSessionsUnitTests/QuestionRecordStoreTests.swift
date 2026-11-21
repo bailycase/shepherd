@@ -60,7 +60,8 @@ struct QuestionRecordStoreTests {
         let store = ThreadOriginStore(directory: dir)
         let steered = try #require(ThreadOriginStore.Record(.steered))
         let questions = [Self.question("a", endedAt: 30), Self.question("b", endedAt: 40, outcome: .expired)]
-        store.save(sessionID: "s", records: [("user:1", steered)], questions: questions)
+        store.save(sessionID: "s", records: [("user:1", steered)], questions: questions,
+                   generation: store.loadSession(sessionID: "s").generation)
         store.flush()
         #expect(store.loadQuestions(sessionID: "s") == questions)
         #expect(store.load(sessionID: "s").map(\.id) == ["user:1"])
@@ -73,7 +74,7 @@ struct QuestionRecordStoreTests {
         let store = ThreadOriginStore(directory: dir)
         store.save(sessionID: "s", records: [], questions: (0..<(ThreadOriginStore.questionLimit + 2)).map {
             Self.question("\($0)", endedAt: Double($0))
-        })
+        }, generation: store.loadSession(sessionID: "s").generation)
         store.flush()
         let loaded = store.loadQuestions(sessionID: "s")
         #expect(loaded.count == ThreadOriginStore.questionLimit && loaded.first?.id == "2")

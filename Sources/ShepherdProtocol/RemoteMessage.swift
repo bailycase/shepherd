@@ -181,6 +181,10 @@ public enum RemoteProtocol {
     public static let projectInheritedResourcesCapability = Capability.projectInheritedResources.rawValue
     /// The host sets a space's parent space and name (`RemoteProjectsRequest.organize`).
     public static let projectParentCapability = Capability.projectParent.rawValue
+    /// The host renames, hides, reorders and removes its own spaces for a paired device
+    /// (`RemoteRequest.spaceLifecycle`). Never for a Mac in the fleet. Removing forgets the space in Shepherd's record and stops its
+    /// agents; its folder and files stay.
+    public static let spaceLifecycleCapability = Capability.spaceLifecycle.rawValue
     /// The host serves `RemoteRequest.skills`: the agent skills its pi reads (on, off,
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
@@ -348,7 +352,7 @@ public enum RemoteProtocol {
     /// The host saves a file of a thread's folder (`RemoteAgentQuery.fileWrite`), only over the text the client
     /// edited from (`ThreadFileSaveResult.changed` otherwise). Served only to a client offered `filesCapability`.
     public static let filesWriteCapability = Capability.filesWrite.rawValue
-    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, nativeThreadTranscriptCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, createAgentNoSpaceCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, computerUseExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, branchStatusCapability, hostSettingsSubThreadsCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetDispatchCloseCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability, fleetUpdateViewCapability]
+    public static let capabilities = [nativeThreadRevisionsCapability, worktreeRecordCapability, worktreeMoveCapability, nativeFleetDigestCapability, filesCapability, filesWriteCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, nativeThreadTranscriptCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, automationTriggersCapability, forgeCapability, forgeBrowseCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostSettingsTextGenerationModelCapability, hostSettingsVisionModelCapability, hostInventoryCapability, changesRevertCapability, changesCwdCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectResourcesCapability, projectInheritanceCapability, skillsCapability, piSkillsCapability, hooksCapability, createAgentImagesCapability, createAgentNoSpaceCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designAgentCapability, designLifecycleCapability, designSystemsCapability, designReferencesCapability, designImportCapability, designBoardsCapability, designThreadNotesCapability, designGitCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability, designToolExperimentCapability, computerUseExperimentCapability, hostSettingsV2Capability, hostSettingsCloseOnMergeCapability, hostSettingsBackgroundServiceCapability, hostConfigCapability, appsCapability, appsV2Capability, agentRestartCapability, completionSeenCapability, projectInheritedResourcesCapability, projectParentCapability, spaceLifecycleCapability, pushMuteCapability, checkoutReadCapability, pullRequestLinkCapability, branchStatusCapability, hostSettingsSubThreadsCapability, fleetCapability, fleetSyncCapability, fleetDevicesCapability, fleetPressureCapability, fleetCheckCapability, fleetViewCapability, fleetFollowCapability, fleetMoveViewCapability, fleetSnapshotCapability, fleetDispatchCapability, fleetDispatchCloseCapability, fleetMoveCapability, fleetRendezvousCapability, fleetLinkCapability, fleetPairLinkCapability, fleetUpdateCapability, fleetUpdateViewCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -568,6 +572,18 @@ public enum RemoteSpaceAction: Codable, Hashable, Sendable {
     /// Locate Folder…: points it, and everything recorded inside its old folder, at `path`. Its
     /// threads stop and their conversations move; the app starts them again (`restartPi`).
     case relocate(path: String)
+}
+
+/// What a paired device does to a space of its own host (`RemoteRequest.spaceLifecycle`, `spaceLifecycleCapability`): a part of
+/// `RemoteSpaceAction`, so a device cannot point a space at another folder or change its worktree base. Each is the Mac's own:
+/// the sidebar's rename, Hide from Sidebar, drag to reorder and Remove Space….
+public enum RemoteSpaceLifecycle: Codable, Hashable, Sendable {
+    case rename(name: String)
+    case setSidebarHidden(hidden: Bool)
+    /// Before `target`, or last (nil).
+    case move(before: SpaceID?)
+    /// Stops its agents and forgets it in Shepherd's record; its folder and files stay.
+    case remove
 }
 
 /// What this Mac's own app asks of its background host's space registry (`RemoteRequest.projectRequest`),
@@ -951,6 +967,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Local clients only (`localCapability`): this Mac's own app changes one of its background
     /// host's spaces. Answered `ok`.
     case spaceAction(id: Int, spaceID: SpaceID, action: RemoteSpaceAction)
+    /// A paired device (or this Mac's own app) renames, hides, reorders or removes one of its host's shown spaces
+    /// (`spaceLifecycleCapability`; never a Mac in the fleet). Answered `ok`, or `no_such_space` for a space the host does not show.
+    case spaceLifecycle(id: Int, spaceID: SpaceID, action: RemoteSpaceLifecycle)
     /// Local clients only (`localCapability`): this Mac's own app registers, edits or adds a child
     /// to one of its background host's spaces. Answered `spaceAdded` with the space.
     case projectRequest(id: Int, request: RemoteProjectRequest)
@@ -1068,7 +1087,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, nativeThreadSubscribe, fleetDigest, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, projectRequest, startThread, focusThread, projectExecutors, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
+        case listDir, listModels, drain, hostUpdateGate, addSpace, spaceAction, spaceLifecycle, projectRequest, startThread, focusThread, projectExecutors, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation, forge
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -1127,6 +1146,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .hostUpdateGate: .hostUpdateGate
         case .addSpace: .addSpace
         case .spaceAction: .spaceAction
+        case .spaceLifecycle: .spaceLifecycle
         case .projectRequest: .projectRequest
         case .startThread: .startThread
         case .focusThread: .focusThread
@@ -1385,6 +1405,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 spaceID: try c.decode(SpaceID.self, forKey: .spaceID),
                 action: try c.decode(RemoteSpaceAction.self, forKey: .action)
+            )
+        case .spaceLifecycle:
+            self = .spaceLifecycle(
+                id: try c.decode(Int.self, forKey: .id),
+                spaceID: try c.decode(SpaceID.self, forKey: .spaceID),
+                action: try c.decode(RemoteSpaceLifecycle.self, forKey: .action)
             )
         case .createAgent:
             self = .createAgent(
@@ -1726,6 +1752,11 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(request, forKey: .request)
         case .spaceAction(let id, let spaceID, let action):
             try c.encode(Kind.spaceAction, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(spaceID, forKey: .spaceID)
+            try c.encode(action, forKey: .action)
+        case .spaceLifecycle(let id, let spaceID, let action):
+            try c.encode(Kind.spaceLifecycle, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(spaceID, forKey: .spaceID)
             try c.encode(action, forKey: .action)
