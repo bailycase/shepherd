@@ -332,6 +332,15 @@ struct AutomationRunLogDamageTests {
         log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
         log.flush()
         #expect(try Data(contentsOf: url) == Data("{".utf8))
+        // Only the writer saw the damage. A backup restored now must survive the next change.
+        log.changed = {}
+        try Data(Self.legacy.utf8).write(to: url)
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        let written = try String(contentsOf: url, encoding: .utf8)
+        #expect(written.contains("00000000-0000-4000-8000-000000000010"))
+        let ids = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect((ids["runs"] as? [String: [Any]])?["a"]?.count == 2)
     }
 
     /// A backup restored while the log still shows the damage: the first change builds on it, not on what was in memory.

@@ -10,9 +10,11 @@ import ShepherdRemote
 /// agent's status. Confined to the server queue,
 /// except `openRuns` and `problem`; writes go to disk off it, in order.
 ///
-/// Only a missing file means no history. A file that can't be read (`damage`) is never rewritten:
+/// Only a missing file means no history. A file that can't be read (`damage`) is not rewritten:
 /// every change is refused and the host starts no run (a run couldn't be recorded, and the live
-/// count that gates the next one comes from here) until a re-read is clean again.
+/// count that gates the next one comes from here) until a re-read is clean again. The check is a
+/// read before an atomic rename, not a conditional replace, so an outside editor that saves
+/// between the two can still be overwritten.
 final class AutomationRunLog: @unchecked Sendable {
     static let limit = 30
 
@@ -28,6 +30,8 @@ final class AutomationRunLog: @unchecked Sendable {
     private let openLock = NSLock()
     private var published: [AutomationID: AutomationRun] = [:]
     private var publishedProblem: String?
+    /// Damage the queued writer saw, taken over by the next `refresh` (guarded by `openLock`).
+    private var writerDamage: AutomationFileDamage?
     /// Why the file can't be read; changes are refused while it is set.
     private var damage: AutomationFileDamage?
     /// The history when the file went bad, written back if the file is then removed. Nil when it
@@ -367,6 +371,10 @@ final class AutomationRunLog: @unchecked Sendable {
     /// healthy it reads only if `reading`, and otherwise trusts what is in memory (a save may not
     /// have landed yet).
     private func refresh(reading: Bool) -> Bool {
+        if let seen = openLock.withLock({ () -> AutomationFileDamage? in defer { writerDamage = nil }; return writerDamage }), damage == nil {
+            lastGood = runs
+            setDamage(seen)
+        }
         guard damage != nil || reading else { return true }
         switch PersistedFile<File>.load(from: url) {
         case .loaded(let file):
@@ -414,10 +422,12 @@ final class AutomationRunLog: @unchecked Sendable {
     private func writeAll() {
         let file = File(runs: Dictionary(uniqueKeysWithValues: runs.map { ($0.key.rawValue, $0.value) }))
         let url = url
-        writes.async {
-            // The file can go bad after the change was accepted, before this write runs.
-            if case .damaged = PersistedFile<File>.load(from: url) {
-                ShepherdLog.warning("automation runs not saved: the file is unreadable and left untouched")
+        writes.async { [self] in
+            // The file can go bad after the change was accepted, before this write runs. The log
+            // learns of it here, so the next change recovers from a restore instead of overwriting it.
+            if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
+                ShepherdLog.warning("automation runs not saved: the file is unreadable and was not rewritten")
+                openLock.withLock { writerDamage = AutomationFileDamage("run history", at: url, original: original, error: error) }
                 return
             }
             do {
