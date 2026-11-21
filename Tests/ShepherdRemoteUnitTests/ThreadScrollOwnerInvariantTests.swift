@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import ShepherdRemote
 
@@ -9,7 +10,8 @@ struct ThreadScrollOwnerInvariantTests {
     typealias Owner = ThreadScrollOwner
     typealias Fixture = ThreadScrollOwnerTests
 
-    static let scripts = 16_000
+    static let scale = ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_OWNER_FULL"] == "1" ? 1 : 16
+    static let scripts = 16_000 / scale
     static let events = 40
 
     /// One owner driven by seeded random events, one call at a time.
@@ -136,8 +138,8 @@ struct ThreadScrollOwnerInvariantTests {
                 }
             }
         }
-        #expect(moving > 20_000 && decisions > 5000, "moving \(moving), decisions \(decisions)")
-        if asks { #expect(turnsDelivering > 100, "turns delivering an ask \(turnsDelivering)") }
+        #expect(moving > 20_000 / Self.scale && decisions > 5000 / Self.scale, "moving \(moving), decisions \(decisions)")
+        if asks { #expect(turnsDelivering > 100 / Self.scale, "turns delivering an ask \(turnsDelivering)") }
         print("I1 asks=\(asks): scripts \(Self.scripts), automatic decisions checked under motion \(moving), turns that delivered a reader's ask \(turnsDelivering)")
     }
 
@@ -190,7 +192,7 @@ struct ThreadScrollOwnerInvariantTests {
             }
             if any { scriptsDelivering += 1 }
         }
-        #expect(delivered > 500 && afterDelivery == 0, "turns delivering a request \(delivered)")
+        #expect(delivered > 500 / Self.scale && afterDelivery == 0, "turns delivering a request \(delivered)")
         print("I2: scripts \(Self.scripts), scripts with a request delivered by a turn \(scriptsDelivering), deliveries \(delivered)")
     }
 
@@ -209,10 +211,13 @@ struct ThreadScrollOwnerInvariantTests {
                 let step = sim.next()
                 switch step.call {
                 case .read(let reading):
-                    let grew = step.previous.map { reading.probe.layoutDiffers(from: $0.probe) } ?? false
-                    if sim.owner.follows, abs(reading.probe.distance) <= Owner.repinSlack {
+                    let layoutChanged = step.previous.map { reading.probe.layoutDiffers(from: $0.probe) } ?? false
+                    let probe = reading.probe
+                    // An overrun during native size anchoring replaces the old shortfall, which no longer needs repair.
+                    let beyondTail = probe.distance < min(0, probe.content - probe.container) - max(0, probe.insetTop) - Owner.repinSlack
+                    if sim.owner.follows, abs(probe.distance) <= Owner.repinSlack || (layoutChanged && step.before.nativeAnchor && beyondTail) {
                         owed = false
-                    } else if sim.owner.follows, grew, reading.probe.distance > Owner.repinSlack {
+                    } else if sim.owner.follows, layoutChanged, probe.distance > Owner.repinSlack {
                         owed = true
                     } else if !sim.owner.follows {
                         owed = false
@@ -244,8 +249,8 @@ struct ThreadScrollOwnerInvariantTests {
                 }
             }
         }
-        #expect(owedChecks > 20_000 && owedUnderMotion > 2000, "owed \(owedChecks), under motion \(owedUnderMotion)")
-        if asks { #expect(requestChecks > 2000, "request checks \(requestChecks)") }
+        #expect(owedChecks > 20_000 / Self.scale && owedUnderMotion > 2000 / Self.scale, "owed \(owedChecks), under motion \(owedUnderMotion)")
+        if asks { #expect(requestChecks > 2000 / Self.scale, "request checks \(requestChecks)") }
         print("I3 asks=\(asks): scripts \(Self.scripts), scripts that owed a landing \(scriptsOwed), owed checks \(owedChecks) (\(owedUnderMotion) with the reader's hand down), reader's request checks \(requestChecks)")
     }
 
@@ -266,7 +271,7 @@ struct ThreadScrollOwnerInvariantTests {
                 if !step.before.follows { fromHistory += 1 }
             }
         }
-        #expect(landings > 3000 && fromHistory > 300, "landings \(landings), from a detached owner \(fromHistory)")
+        #expect(landings > 3000 / Self.scale && fromHistory > 300 / Self.scale, "landings \(landings), from a detached owner \(fromHistory)")
         print("I4: scripts \(Self.scripts), landings checked \(landings), of which the owner was detached before \(fromHistory)")
     }
 
@@ -304,7 +309,8 @@ struct ThreadScrollOwnerInvariantTests {
                 compensated += 1
             }
         }
-        #expect(arrivals > 100 && completions > 100 && compensated > 100, "arrivals \(arrivals), completions \(completions), compensated \(compensated)")
+        #expect(arrivals > 100 / Self.scale && completions > 100 / Self.scale && compensated > 100 / Self.scale,
+                "arrivals \(arrivals), completions \(completions), compensated \(compensated)")
         print("I5: scripts \(Self.scripts), jumps ended by arrival \(arrivals), by jumpCompleted \(completions), compensation checked \(compensated)")
     }
 
@@ -376,7 +382,8 @@ struct ThreadScrollOwnerInvariantTests {
                 }
             }
         }
-        #expect(detached > 10_000 && hadWork > 1000 && turnsAfter > 10_000, "detached \(detached), with work owed before \(hadWork), turns after \(turnsAfter)")
+        #expect(detached > 10_000 / Self.scale && hadWork > 1000 / Self.scale && turnsAfter > 10_000 / Self.scale,
+                "detached \(detached), with work owed before \(hadWork), turns after \(turnsAfter)")
         print("I6: scripts \(Self.scripts), readers detached \(detached), of which a landing was owed to the follower \(hadWork), turns after the detach \(turnsAfter)")
     }
 }

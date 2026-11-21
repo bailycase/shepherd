@@ -40,6 +40,19 @@ struct TerminalSessionTests {
         #expect(await h.server.sessionInfo(sessionID: info.id)?.isAlive == false)
     }
 
+    @Test func aTerminalDoesNotInheritProcessOwnershipMarkers() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let output = h.dir.appendingPathComponent("terminal-env")
+        let info = try await h.server.createSession(params: CreateSessionParams(
+            cwd: h.dir.path,
+            command: ["/bin/sh", "-c", #"printf '%s|%s|%s' "${SHEPHERD_OWNED_THREAD-unset}" "${SHEPHERD_OWNED_BASH-unset}" "$KEEP_ME" > terminal-env"#],
+            env: ["SHEPHERD_OWNED_THREAD": "outer-thread", "SHEPHERD_OWNED_BASH": "outer-call", "KEEP_ME": "kept"]
+        ))
+        try await h.waitForExit(info.id)
+        #expect(try String(contentsOf: output, encoding: .utf8) == "unset|unset|kept")
+    }
+
     @Test func outputFromBeforeAttachArrivesOnlyThroughTheReplay() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

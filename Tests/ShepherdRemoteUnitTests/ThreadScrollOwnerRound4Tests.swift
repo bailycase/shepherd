@@ -14,12 +14,13 @@ struct ThreadScrollOwnerRound4Tests {
 
     // MARK: 1. A completed Jump to Latest does not land a second time
 
-    @Test func aTailAskThatAGrowthReadingLandedIsNotLandedAgainOnTheReadersNextCoast() {
+    @Test func aTailAskDeliveredAfterGrowthIsNotLandedAgainOnTheReadersNextCoast() {
         var owner = Fixture.pinned(at: 700, ask: false)
         owner.setIntent(.touching)
         #expect(owner.jumpToLatest() == .none)
-        // The first idle event is a growth reading, before any turn: it lands the ask.
-        #expect(owner.read(Fixture.reading(content: 2400, offset: 700), intent: .idle) == .land)
+        // Growth cannot land ahead of the waiting ask. Deliver it exactly once on the idle turn.
+        #expect(owner.read(Fixture.reading(content: 2400, offset: 700), intent: .idle) == .none)
+        #expect(owner.turn() == .land)
         #expect(owner.read(Fixture.reading(content: 2400, offset: Self.tail(2400)), intent: .idle) == .none)
         // The reader drags into history and lifts into a coast: nothing pulls them back.
         _ = owner.read(Fixture.reading(content: 2400, offset: 900), intent: .touching)

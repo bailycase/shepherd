@@ -1096,3 +1096,68 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the parent's Bash asks its control socket to sweep only stopped, aborted or timed-out calls", { timeout: 60000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-bash-sweep-"));
+  const frames = [], sockets = new Set();
+  const control = net.createServer((socket) => {
+    sockets.add(socket); socket.on("error", () => {});
+    socket.on("data", mod.jsonLines((frame) => frames.push(frame), () => {}));
+  });
+  const saved = { ...process.env };
+  let h;
+  try {
+    process.env.HOME = dir;
+    process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
+    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR, { recursive: true });
+    process.env.PI_OFFLINE = "1";
+    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "sweep-agent";
+    process.env.SHEPHERD_OWNED_THREAD = "thread-marker";
+    process.env.SHEPHERD_SOCKET = path.join(dir, "shepherd.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    await new Promise((r) => control.listen(process.env.SHEPHERD_SOCKET, r));
+    h = await harness(dir, []);
+    await until(() => frames.some((f) => f.type === "helloChildren"));
+    assert.equal(frames[0].type, "helloChildren", "the sweep request follows the agent's own hello");
+    assert.equal(frames[0].agentID, "sweep-agent");
+
+    const bash = h.tools.get("bash");
+    const run = (name, params, signal) => {
+      const file = path.join(dir, name);
+      const done = bash.execute(name, { command: `printf '%s|%s' "$SHEPHERD_OWNED_THREAD" "$SHEPHERD_OWNED_BASH" > '${file}'; sleep 30`, ...params }, signal, undefined, h.ctx);
+      return { done, scope: async () => { await until(() => fs.existsSync(file) && fs.readFileSync(file, "utf8").includes("|")); return fs.readFileSync(file, "utf8").split("|"); } };
+    };
+    // A normal return asks for nothing.
+    const normal = await bash.execute("normal", { command: "exit 0" }, undefined, undefined, h.ctx);
+    assert.ok(normal);
+    const controller = new AbortController();
+    const aborted = run("aborted", {}, controller.signal);
+    const [abortedThread, abortedScope] = await aborted.scope();
+    controller.abort();
+    await assert.rejects(aborted.done);
+    const timedOut = run("timed", { timeout: 1 });
+    const [, timedScope] = await timedOut.scope();
+    await assert.rejects(timedOut.done);
+    const stopController = new AbortController();
+    const stopped = run("stopped", { timeout: 5 }, stopController.signal);
+    const stoppedResult = assert.rejects(stopped.done, /supervisor exited without reporting a status/);
+    const [, stoppedScope] = await stopped.scope();
+    // The host sends this before clear_queue and abort. Bash can settle before the abort arrives.
+    sockets.values().next().value.write('{"type":"stopManagedBash"}\n');
+    await stoppedResult;
+    stopController.abort();
+    assert.equal(abortedThread, "thread-marker");
+    assert.equal(new Set([abortedScope, timedScope, stoppedScope]).size, 3);
+    await until(() => frames.some((f) => f.type === "stopBashProcesses" && f.bashScope === stoppedScope), 2000);
+    assert.deepEqual(frames.filter((f) => f.type === "stopBashProcesses"), [
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: abortedScope },
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: timedScope },
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: stoppedScope },
+    ]);
+  } finally {
+    await h?.shutdown();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((r) => control.close(r));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

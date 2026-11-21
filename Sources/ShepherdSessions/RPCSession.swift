@@ -43,6 +43,7 @@ final class RPCSession: @unchecked Sendable {
     /// it is the one that runs the agent's extensions (an extension connection speaks for its
     /// agent only from this pid: `SessionServer.isPiProcess`).
     var processIdentifier: pid_t { childPID }
+    var trackedProcessBirths: Set<OwnedProcessTree.Birth> { ownedProcesses.trackedBirths }
     /// The agent this pi was launched for: the app names it in the child's environment
     /// (`SHEPHERD_AGENT_ID`), and the server knows the pi speaks for it before any pane holds it
     /// (`SessionServer.isPiProcess`).
@@ -164,15 +165,16 @@ final class RPCSession: @unchecked Sendable {
         SessionInfo(id: id, cwd: cwd, command: command, cols: 0, rows: 0, isAlive: isAlive)
     }
 
-    convenience init(id: SessionID = SessionID(), params: CreateSessionParams, queue: DispatchQueue) throws {
-        try self.init(id: id, params: params, queue: queue, workBudget: .shared)
+    convenience init(id: SessionID = SessionID(), params: CreateSessionParams, queue: DispatchQueue, processMarker: String? = nil) throws {
+        try self.init(id: id, params: params, queue: queue, workBudget: .shared, processMarker: processMarker)
     }
 
     init(
         id: SessionID = SessionID(),
         params: CreateSessionParams,
         queue: DispatchQueue,
-        workBudget: ThreadReadCache
+        workBudget: ThreadReadCache,
+        processMarker: String? = nil
     ) throws {
         self.id = id
         self.queue = queue
@@ -188,6 +190,8 @@ final class RPCSession: @unchecked Sendable {
         if let extra = params.env {
             env.merge(extra) { _, new in new }
         }
+        env[ThreadProcessSweep.threadKey] = processMarker
+        env.removeValue(forKey: ThreadProcessSweep.bashKey)
         // Same sanitising as PTYSession: the child is not hosted by whichever
         // terminal launched the app. No TERM: there is no terminal at all.
         for key in [
