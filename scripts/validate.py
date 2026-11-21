@@ -309,9 +309,21 @@ def measure_scroll(frames):
         # NativeScrollFollower.threshold is 80 pt. A detached reader reattaching is not expected follow.
         sticky_in_band = streaming and previous["following"] and frame["following"] and previous["distance"] <= 80
         if unexplained_eviction:
-            # Matching the scripted clip offset cannot rule out a relayout without a shared row.
+            # A row can leave the reading area yet still be mounted in both samples.
+            # Report its displacement, but keep the eviction graded as a jump even at 0 pt.
             if abs(delta) <= 2:
-                observation.update(delta_pt=None, measured="unexplained input eviction")
+                if measured == "row":
+                    observation.update(measured="mounted row during unexplained input eviction")
+                else:
+                    shared = set(previous["rows"]) & set(frame["rows"])
+                    nearby = shared & set(frame["visibleRows"])
+                    if nearby:
+                        marker = min(nearby, key=lambda r: (frame["rows"][r], r))
+                        shift = frame["rows"][marker] - previous["rows"][marker] + scripted_delta
+                        observation.update(row=marker, delta_pt=round(shift, 3),
+                                           measured="mounted row during unexplained input eviction")
+                    else:
+                        observation.update(delta_pt=None, measured="unexplained input eviction")
             jumps.append(observation)
         elif (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
                 and growth > 2 and abs(delta + growth) <= 2):
