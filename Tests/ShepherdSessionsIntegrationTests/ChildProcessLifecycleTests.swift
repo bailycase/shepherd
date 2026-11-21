@@ -115,6 +115,8 @@ struct ChildProcessLifecycleTests {
     @Test func workflowDeadlineStopsTheChildButLeavesItsEscapedJobUntilThreadClose() async throws {
         let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
         defer { pi.stop() }
+        // The workflow's deadline starts before its script launches the child. The job must
+        // be adopted during that same workflow, so the test cannot wait for adoption first.
         let escaped = try await job("wren", in: pi, prompt: "workflow orphan job wren deadline")
         let ended = try await pi.settled("the workflow deadline to stop its child") {
             $0.subagents?.contains { $0.name == "wren" && $0.state == "stopped" } == true
