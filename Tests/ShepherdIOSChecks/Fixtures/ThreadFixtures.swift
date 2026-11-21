@@ -18,6 +18,8 @@ extension FixtureCatalog {
         return [
             // MobileThread, iPadThread: a finished turn, tokens in the header, the changes card.
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-origins-damaged", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.thread().withDamagedOrigins()),
+                          routes: [.thread(preview)]),
             // AppsRunning: the header's Run shows the space's app running with its port; then its
             // menu open, listing the space's quick actions with what each does next.
             FixtureScreen(name: "thread-apps", hosts: ThreadFixtures.apps(ThreadFixtures.hosts()), routes: [.thread(preview)]),

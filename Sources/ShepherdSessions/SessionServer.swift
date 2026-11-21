@@ -2849,11 +2849,11 @@ public final class SessionServer: @unchecked Sendable {
                                       completion: @escaping (NativeOutcome) -> Void) {
         let sessionID = agent.effectivePiSessionID
         let root = pi.sessionsRoot
-        let origins = originStore.directory
+        let origins = originStore
         let model = agent.model, thinking = agent.thinkingLevel?.rawValue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var snapshot = PiSessionPreview.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root)
-                .flatMap { PiSessionPreview.snapshot(file: $0, sessionID: sessionID, origins: origins) }
+                .flatMap { PiSessionPreview.snapshot(file: $0, sessionID: sessionID, originStore: origins) }
                 ?? PiSessionPreview.empty(sessionID: sessionID, model: model, thinking: thinking)
             snapshot.preview = true
             snapshot.supportedActions = []

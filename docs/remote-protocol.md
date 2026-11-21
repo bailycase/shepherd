@@ -110,6 +110,8 @@
     A client that does not list it can wake pi with an ordinary snapshot. For an agent whose pi
     stopped, the preview carries `startProblem` and the client wakes nothing; a client that does
     not list the capability gets the problem alone.
+    A live or preview snapshot may include `originsProblem`, a host path, reason and repair
+    advice when saved question and message details cannot be read. Older clients ignore it.
   - `native.transcript.v1`: `transcriptSnapshot` pages through the saved branch's user and
     assistant text, including turns before compaction. It never starts pi. Follow `olderCursor`
     with the first page's `piSessionID`, and discard the copy if the session or file generation changes.

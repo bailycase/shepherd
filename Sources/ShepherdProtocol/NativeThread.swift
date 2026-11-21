@@ -629,6 +629,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// What a running hook says while it runs (its status message, `setStatus` with key
     /// `shepherd.hook`), for the thread's live line. nil when none runs, and from older hosts.
     public var hookStatus: String?
+    /// Read-only warning from the host for damaged thread origins and saved questions.
+    public var originsProblem: String?
 
     /// Startup has asked a question before history is ready. Only answering is available;
     /// messages are not an authoritative history page yet. Absent from older hosts.
