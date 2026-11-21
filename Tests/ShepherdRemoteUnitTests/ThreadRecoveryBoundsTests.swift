@@ -168,6 +168,7 @@ struct ThreadRecoveryBoundsTests {
         store.draft = "edited while readiness was held"
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         #expect(await sending.value == false)
         #expect(seen.count == 1 && seen.first?.typed == store.draft)
         #expect(seen.first?.state == .sending)
