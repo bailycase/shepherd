@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s Tests/Release -v
 
 Nothing here reaches the network or a real pi: staging runs against archives built in memory.
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import base64
 import copy
 import errno

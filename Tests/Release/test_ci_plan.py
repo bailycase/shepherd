@@ -1,4 +1,5 @@
 """Protect selective PR coverage without treating filenames as Swift suite names."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import contextlib
 import io
 import json

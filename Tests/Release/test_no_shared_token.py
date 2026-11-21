@@ -6,6 +6,7 @@ name the file to prove a leftover one is ignored; Sources and App may not.
 
 Run: python3 -m unittest discover -s Tests/Release -p 'test_no_shared_token.py' -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import os
 import unittest
 from pathlib import Path
