@@ -292,6 +292,8 @@ struct ThreadScrollOwnerInvariantTests {
                 guard ended else { continue }
                 #expect(!sim.owner.isJumping, "script \(script): still jumping after \(step.call)")
                 guard case .pinned(let anchor?) = sim.owner.mode, let last = sim.previous else { continue }
+                // A reader's ask still waiting for the finger wins: the row they are leaving is not held on the way.
+                guard !ThreadScrollOwnerGateTests.isReadersAsk(sim.owner.outstanding) else { continue }
                 // Growth above the reader moves the row 40 pt: it is held where it was kept.
                 var next = sim.owner
                 var probe = last.probe

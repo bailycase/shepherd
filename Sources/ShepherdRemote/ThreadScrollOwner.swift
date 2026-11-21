@@ -24,8 +24,11 @@ import Foundation
 ///   (`issue`), whichever path emits it, so nothing can recreate it. Honoring the ask for the tail makes the owner follow in that
 ///   same operation.
 /// - A `jumping` target survives layout, not the reader: the reader's intent (`touching` or `coasting` with the offset moving,
-///   either way) ends it, whatever layout did in the same reading. So does arriving at the row, or the driver saying the animation
-///   is over (`jumpCompleted()`): no jump outlives its animation.
+///   either way) ends it, whatever layout did in the same reading. So does arriving at the row (checked on the first reading too),
+///   the row leaving the order, or the driver saying the animation is over (`jumpCompleted()`): no jump outlives its animation. Where
+///   the view is on the way ends nothing.
+/// - The reader's ask wins over what nobody asked for: while one waits (a row ask held by a finger on iOS, the tail), no landing,
+///   hold or reveal goes out. A row ask that is cancelled gives a follower the landing the layout wanted meanwhile (`tailOwed`).
 /// - Automatic tail work is for a follower: it is recorded while the follower is off the tail, even when the reader's hand blocks
 ///   it, goes at the first idle turn, and is cancelled when the reader leaves the tail or the view is back on it.
 /// - The tail landing keeps the budget `NativeTailRepin` has always given it: a layout that never settles stops being chased.
@@ -132,6 +135,9 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     private var commanded = false
     /// A mount gave the reader back a kept row: the first reading puts it where it was kept, whatever else it differs in.
     private var placing = false
+    /// The layout moved a follower off the tail and nothing has landed it since. Kept beside `outstanding` for the one case that
+    /// slot is taken (the reader's row ask) and then given up: the landing is owed again.
+    private var tailOwed = false
     /// What is owed, if anything. For a driver or a test to see; the owner is its only writer.
     public private(set) var outstanding = Outstanding.none
 
@@ -169,8 +175,10 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         guard let old = last else {
             if placing {
                 placing = false
-                return settle(reading, reader: intent != .idle) ?? automatic { $0.place(reading) }
+                return settle(reading, reader: intent != .idle) ?? (readerAsked ? .none : automatic { $0.place(reading) })
             }
+            // A jump whose row is already at the top of the first reading ended before it was seen.
+            if arrived(reading) { observe(reading, userIntent: false, endsJump: true) }
             if case .pinned(nil) = mode { mode = .pinned(measured(reading)) }
             return .none
         }
@@ -178,11 +186,11 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         let gesture = readerMoves
         let moved = reading.probe.offset != old.probe.offset
         let up = gesture && reading.probe.distance > old.probe.distance && !layoutChanged
-        // What ends a jump. The reader: their intent with a scroll, in any direction, whatever layout did in the same reading. Or the
-        // row arriving at the top of the view, or the view itself moving up out of the band with the layout as it was (the animation
-        // landed on an earlier turn). A layout change that moves the clip or grows the document is none of these, however far it
-        // leaves the view from the tail. The driver's `jumpCompleted()` is the last way.
-        let jumpEnds = (gesture && moved) || arrived(reading) || (!layoutChanged && reading.probe.offset < old.probe.offset && reading.probe.distance > Self.threshold)
+        // What ends a jump: the reader (their intent with a scroll, in any direction, whatever layout did in the same reading), the row
+        // arriving at the top of the view, the row leaving the order (`rowsChanged`), or the driver's `jumpCompleted()`. Where the view
+        // is on the way (an offset that moves up, a layout that grows) is none of these: the reader asked for the row, and nothing
+        // else puts them somewhere before it arrives.
+        let jumpEnds = (gesture && moved) || arrived(reading)
         // Layout and recovery can clamp a detached viewport into the bottom band; a reader moving down may remeasure lazy rows, but
         // clamping a shrunken document moves up.
         let returning = gesture && reading.probe.offset > old.probe.offset && reading.probe.distance < old.probe.distance
@@ -205,10 +213,14 @@ public struct ThreadScrollOwner: Equatable, Sendable {
             let distance = NativeTailRepin.distance(of: probe, belowMarker: markerGap)
             self.repin.reading(distance: distance, wants: wants, resized: resized)
             if abs(distance) <= Self.repinSlack {
+                tailOwed = false
                 if outstanding == .autoTail { outstanding = .none }
-            } else if wants, outstanding == .none {
-                outstanding = .autoTail
+            } else if wants {
+                tailOwed = true
+                if outstanding == .none { outstanding = .autoTail }
             }
+            // The reader's ask for a row wins over a landing the layout wanted: it waits for the lift, and the landing is still owed.
+            if case .readerRow = outstanding { return .none }
             return automatic { $0.repin.takeInPass() ? .land : .none }
         }
         repin.reading(distance: NativeTailRepin.distance(of: reading.probe, belowMarker: markerGap), wants: false, resized: false)
@@ -218,9 +230,17 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         guard case .pinned = mode else { return .none }
         // The reader moves or the driver animates: where the view is, is where it is kept.
         if let done = settle(reading, reader: intent != .idle || displaced) { return done }
-        // The reader asked for the tail: the row they are leaving is not put back on the way.
-        if outstanding == .readerLatest { return .none }
+        // The reader asked for the tail or a row: the row they are leaving is not put back on the way.
+        if readerAsked { return .none }
         return automatic { $0.place(reading) }
+    }
+
+    /// The reader's own ask (the tail or a row) has not been delivered.
+    private var readerAsked: Bool {
+        switch outstanding {
+        case .readerLatest, .readerRow: true
+        case .none, .autoTail: false
+        }
     }
 
     /// While the reader moves, the driver animates or a displacement was nobody's doing: keep what the view shows, decide nothing.
@@ -366,6 +386,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     private mutating func dropAutomaticTail() {
         repin.hold()
         repin.release()
+        tailOwed = false
         if outstanding == .autoTail { outstanding = .none }
         if outstanding == .readerLatest { repin.asked() }
     }
@@ -384,6 +405,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         case .none: return .none
         case .land:
             if outstanding == .readerLatest || outstanding == .autoTail { outstanding = .none }
+            tailOwed = false
             mode = .following
             unseen = false
             revealing = false
@@ -473,11 +495,18 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         let previous = order
         order = next
         let survivors = Set(next)
-        if case .readerRow(let row) = outstanding, !survivors.contains(row) { outstanding = .none }
+        if case .readerRow(let row) = outstanding, !survivors.contains(row) { cancelRowRequest() }
         // A structure change is not the reader's ask: it writes only through the gate.
         switch mode {
         case .jumping(let row) where !survivors.contains(row):
-            mode = .pinned(nil)
+            // The animation is cancelled where the view is: still in the band, the reader is at the tail; anywhere else the next
+            // reading anchors them.
+            if let last, last.probe.distance <= Self.threshold {
+                mode = .following
+                unseen = false
+            } else {
+                mode = .pinned(nil)
+            }
             return .none
         case .pinned(let anchor?) where !survivors.contains(anchor.row):
             revealing = false
@@ -504,6 +533,14 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         default:
             return .none
         }
+    }
+
+    /// The reader's row ask is gone before it went. A follower the layout left off the tail while it waited is owed its landing again.
+    private mutating func cancelRowRequest() {
+        outstanding = .none
+        guard follows, tailOwed, let last else { return }
+        repin.reading(distance: NativeTailRepin.distance(of: last.probe, belowMarker: markerGap), wants: true, resized: false)
+        if repin.pending { outstanding = .autoTail }
     }
 
     /// The row of `old` nearest to `row` that is still in `survivors`: above before below at the same distance.
@@ -549,6 +586,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         revealing = false
         placing = false
         outstanding = .none
+        tailOwed = false
         last = nil
         repin.newThread(refillingPass: true)
     }
