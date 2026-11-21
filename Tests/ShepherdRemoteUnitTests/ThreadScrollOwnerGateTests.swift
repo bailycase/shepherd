@@ -112,8 +112,16 @@ struct ThreadScrollOwnerGateTests {
         }
     }
 
+    static func isReadersAsk(_ outstanding: Owner.Outstanding) -> Bool {
+        switch outstanding {
+        case .readerLatest, .readerRow: true
+        case .none, .autoTail: false
+        }
+    }
+
     /// Random event sequences: whatever the events, no decision comes out of an automatic one while the intent is not `idle`. With
-    /// `asks` the reader's own requests are in the mix, and a `turn()` is left out of the check (it may be their ask landing).
+    /// `asks` the reader's own requests are in the mix, and a `turn()` may decide under motion only when what it delivers is their
+    /// ask (`outstanding`).
     @Test(arguments: [false, true])
     func noAutomaticDecisionWhileTheReaderMovesOrTheDriverAnimates(asks: Bool) {
         var generator = Generator(state: asks ? 7 : 11)
@@ -135,16 +143,19 @@ struct ThreadScrollOwnerGateTests {
                 case 3:
                     intent = [.idle, .touching, .coasting, .programmatic][generator.next(4)]
                     owner.setIntent(intent)
-                case 4: decision = owner.turn(); automatic = !asks
+                case 4, 9:
+                    automatic = !Self.isReadersAsk(owner.outstanding)
+                    decision = owner.turn()
                 case 5: decision = owner.mount()
                 case 6: owner.contentArrived()
-                case 7: owner.quietPassed()
+                case 7:
+                    owner.quietPassed()
+                    owner.jumpCompleted()
                 case 8:
                     var next = Fixture.order
                     for _ in 0..<generator.next(4) { next.remove(at: generator.next(next.count)) }
                     if generator.next(4) == 0 { next = ["new-0", "new-1"] }
                     decision = owner.rowsChanged(next)
-                case 9: decision = owner.turn(); automatic = !asks
                 case 10: owner.newSession()
                 case 11: decision = owner.jumpToLatest(); automatic = false
                 case 12: decision = owner.jumpToRow("row-\(generator.next(10))"); automatic = false
