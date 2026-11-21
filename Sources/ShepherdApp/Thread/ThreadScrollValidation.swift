@@ -17,6 +17,24 @@ import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
 
+private extension ScrollPhase {
+    var intentPhase: ScrollIntent.Phase {
+        switch self {
+        case .tracking, .interacting: .touching
+        case .decelerating: .coasting
+        case .animating: .animating
+        default: .idle
+        }
+    }
+}
+
+private extension NSEvent.Phase {
+    var intentPhase: ScrollIntent.WheelPhase {
+        if isEmpty { return .absent }
+        return intersection([.began, .changed, .stationary]).isEmpty ? .inactive : .active
+    }
+}
+
 @MainActor
 final class MacScrollValidationTrace: NSObject {
     struct Frame: Encodable {
@@ -33,6 +51,7 @@ final class MacScrollValidationTrace: NSObject {
         let distance: Double
         let events: [Event]
         let motion: String
+        let intent: ScrollIntent.State
     }
 
     struct Event: Encodable {
@@ -50,7 +69,9 @@ final class MacScrollValidationTrace: NSObject {
 
     static weak var current: MacScrollValidationTrace?
     let guardian = ThreadTailGuard()
-    var scenario = ""
+    var scenario = "" {
+        didSet { FileHandle.standardError.write(Data("scroll fixture: \(scenario)\n".utf8)) }
+    }
     var wheel: ((CGFloat) -> Void)?
     var phase: ((ScrollPhase, ScrollPhase, CGFloat) -> Void)?
     var historyVisibility: ((Bool) -> Void)?
@@ -62,9 +83,71 @@ final class MacScrollValidationTrace: NSObject {
     private var nextFrame: CheckedContinuation<Void, Never>?
     private weak var clip: NSClipView?
     private var offset: CGFloat?
-    var phaseState = ScrollPhase.idle
+    private var phaseState = ScrollPhase.idle
     var wheelUntil = ContinuousClock.now
     private var scriptedWrite = false
+    private var intent = ScrollIntent()
+
+    func phaseChanged(to phase: ScrollPhase) {
+        intent.phaseChanged(from: phaseState.intentPhase, to: phase.intentPhase, now: .now)
+        phaseState = phase
+    }
+
+    func wheelInput(phase: NSEvent.Phase = [], momentum: NSEvent.Phase = [], moved: Bool) {
+        intent.wheelInput(phase: phase.intentPhase, momentum: momentum.intentPhase, moved: moved, now: .now)
+    }
+
+    func observe(_ event: NSEvent, responder: NSResponder?) {
+        guard let scroll = guardian.scrollView(), let window = scroll.window,
+              event.window === window, !scroll.isHiddenOrHasHiddenAncestor else { return }
+        switch event.type {
+        case .keyDown:
+            guard let key = event.charactersIgnoringModifiers?.utf16.first else { return }
+            keyInput(Int(key), modifiers: event.modifierFlags, responder: responder, in: scroll)
+        case .scrollWheel:
+            if intent.wheelInFlight(at: .now) || scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil)) {
+                wheelInput(phase: event.phase, momentum: event.momentumPhase, moved: event.scrollingDeltaY != 0)
+            }
+        case .leftMouseDown:
+            scrollerGrab(at: event.locationInWindow, in: scroll, physical: true)
+        case .leftMouseUp:
+            scrollerRelease()
+        default: break
+        }
+    }
+
+    func keyInput(_ key: Int, modifiers: NSEvent.ModifierFlags, responder: NSResponder?, in scroll: NSScrollView) {
+        guard !modifiers.contains(.option), !modifiers.contains(.control),
+              !modifiers.contains(.command) || [NSUpArrowFunctionKey, NSDownArrowFunctionKey].contains(key) else { return }
+        switch key {
+        case NSPageUpFunctionKey, NSPageDownFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
+             NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSHomeFunctionKey, NSEndFunctionKey, 32:
+            break
+        default: return
+        }
+        if let view = responder as? NSView {
+            guard (view === scroll || view.isDescendant(of: scroll)), !(view is NSTextView), !(view is NSControl) else { return }
+        } else if responder !== scroll.window { return }
+        intent.keyInput(at: .now)
+    }
+
+    func scrollerGrab(at point: NSPoint, in scroll: NSScrollView, physical: Bool) {
+        guard let scroller = scroll.verticalScroller, scroller.isEnabled,
+              !scroller.isHiddenOrHasHiddenAncestor, scroller.testPart(point) == .knob else { return }
+        intent.scrollerGrab(physical: physical)
+    }
+
+    func scrollerRelease() { intent.scrollerRelease() }
+
+    private func sampleIntent(visible: Bool) -> ScrollIntent.State {
+        guard visible else {
+            intent = ScrollIntent()
+            phaseState = .idle
+            return .idle
+        }
+        return intent.sampleMac(phase: phaseState.intentPhase, now: .now,
+                                leftMouseDown: intent.physicalScrollerHeld && NSEvent.pressedMouseButtons & 1 != 0)
+    }
 
     private var motion: String {
         switch phaseState {
@@ -129,12 +212,14 @@ final class MacScrollValidationTrace: NSObject {
         let first = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }.min {
             ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
         }?.key
+        let sampledIntent = sampleIntent(visible: scroll != nil && !hidden)
         let frame = Frame(timestamp: CACurrentMediaTime(), refreshInterval: link.targetTimestamp - link.timestamp,
                           hidden: hidden, first: first, rows: rows.mapValues { $0.minY - top },
                           offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
                           streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
                           clipSize: clip.map { [Double($0.bounds.width), Double($0.bounds.height)] },
-                          following: guardian.following, distance: guardian.distance, events: events, motion: motion)
+                          following: guardian.following, distance: guardian.distance, events: events, motion: motion,
+                          intent: sampledIntent)
         latest = frame
         if !scenario.isEmpty { frames[scenario, default: []].append(frame) }
         events.removeAll(keepingCapacity: true)
@@ -152,6 +237,11 @@ final class MacScrollValidationTrace: NSObject {
 }
 
 private struct ValidationError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
+
+private struct IntentMismatch: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
 }
@@ -185,7 +275,7 @@ public enum ThreadScrollValidation {
             } catch {
                 try? encoder.encode(fixture.trace.frames).write(to: url, options: .atomic)
                 print("error: \(error)")
-                exit(2)
+                exit(error is IntentMismatch ? 4 : 2)
             }
         }
         app.run()
@@ -263,7 +353,12 @@ private final class ScrollFixture {
         SHRenderProbe.disabledScrollAnchor = ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_ANCHOR_OFF"]
         let link = screen.displayLink(target: trace, selector: #selector(MacScrollValidationTrace.sample(_:)))
         link.add(to: .main, forMode: .common)
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .scrollWheel, .leftMouseDown, .leftMouseUp]) { [weak trace] event in
+            trace?.observe(event, responder: event.window?.firstResponder)
+            return event
+        }
         defer {
+            if let monitor { NSEvent.removeMonitor(monitor) }
             link.invalidate(); window.orderOut(nil); window.contentView = nil
             SHRenderProbe.scrollEvents = nil
             NativeThreadStore.scrollTraceParsed = nil
@@ -322,14 +417,17 @@ private final class ScrollFixture {
         for delta in [210.0, 160, 110] {
             try scroll(up: delta, wheel: false)
             await trace.advance()
+            try requireIntent(.touching)
         }
         try phase(from: .interacting, to: .decelerating)
         for delta in [70.0, 45, 20] {
             try scroll(up: delta, wheel: false)
             await trace.advance()
+            try requireIntent(.coasting)
         }
         try phase(from: .decelerating, to: .idle)
         await trace.settle()
+        try requireIntent(.idle)
 
         trace.scenario = "mid-history-new-turn"
         await trace.advance()
@@ -397,6 +495,85 @@ private final class ScrollFixture {
         try await trace.waitFor("the thread to be visible after switching back") { self.trace.latest?.first != nil }
         guard try scrollView() === retained else { throw ValidationError("deck remounted the thread scroll view") }
         await trace.settle()
+        try await captureOtherInputs(in: retained)
+
+        // Keep this out of the motion baseline: the original switch retains all of its rows.
+        trace.scenario = "released-thread"
+        presentation.active = false
+        try await trace.waitFor("the retained transcript to hide") { self.trace.latest?.hidden == true }
+        store.releaseTranscript(keepingLastScreen: true)
+        guard store.transcriptReleased else { throw ValidationError("fixture did not release its hidden rows") }
+        await trace.settle()
+    }
+
+    private func requireIntent(_ expected: ScrollIntent.State) throws {
+        guard trace.latest?.intent == expected else {
+            throw IntentMismatch("\(trace.scenario): expected \(expected), saw \(String(describing: trace.latest?.intent))")
+        }
+    }
+
+    private func captureOtherInputs(in scroll: NSScrollView) async throws {
+        trace.scenario = "key-paging"
+        await trace.advance()
+        trace.mark("fixture.pageDown")
+        trace.keyInput(NSPageDownFunctionKey, modifiers: [.function], responder: scroll, in: scroll)
+        // AppKit routes the action through the key window. Keep this test offscreen and use
+        // the clip's measured page instead.
+        let previous = scroll.contentView.bounds.minY
+        try self.scroll(to: previous + scroll.contentView.bounds.height, wheel: false)
+        // layoutSubtreeIfNeeded can itself sample the key; check that frame, not a later one.
+        func pageFrame() -> MacScrollValidationTrace.Frame? {
+            trace.frames[trace.scenario]?.first { frame in frame.events.contains { $0.caller == "fixture.pageDown" } }
+        }
+        try await trace.waitFor("the page down frame") { pageFrame() != nil }
+        guard let frame = pageFrame(), (frame.offset ?? previous) > previous else {
+            throw ValidationError("page down did not move the viewport")
+        }
+        guard frame.intent == .touching else {
+            throw IntentMismatch("key-paging: expected touching, saw \(frame.intent)")
+        }
+        try phase(from: .idle, to: .animating)
+        await trace.advance()
+        try requireIntent(.coasting)
+        try phase(from: .animating, to: .idle)
+        await trace.settle()
+        try requireIntent(.idle)
+
+        trace.scenario = "scroller-drag"
+        // Use a visible native knob in the scratch window, independent of the OS scrollbar preference.
+        scroll.scrollerStyle = .legacy
+        scroll.hasVerticalScroller = true
+        scroll.tile()
+        await trace.settle()
+        guard let scroller = scroll.verticalScroller else { throw ValidationError("missing vertical scroller") }
+        let knob = scroller.rect(for: .knob)
+        let location = scroller.convert(NSPoint(x: knob.midX, y: knob.midY), to: nil)
+        trace.mark("fixture.scrollerGrab")
+        trace.scrollerGrab(at: location, in: scroll, physical: false)
+        // Run the native hit-test without posting input or entering AppKit's tracking loop.
+        let before = scroll.contentView.bounds.minY
+        try self.scroll(to: before + 240, wheel: false)
+        await trace.advance(2)
+        guard trace.latest.map({ ($0.offset ?? before) > before }) == true else {
+            throw ValidationError("scroller fixture did not move the viewport")
+        }
+        try requireIntent(.touching)
+        trace.mark("fixture.scrollerRelease")
+        trace.scrollerRelease()
+        await trace.settle()
+        try requireIntent(.idle)
+
+        trace.mark("fixture.scrollerGrabBeforeHide")
+        trace.scrollerGrab(at: location, in: scroll, physical: false)
+        await trace.advance()
+        try requireIntent(.touching)
+        // Leave both sources of touching active across the visibility flip, without posting input.
+        trace.phaseChanged(to: .interacting)
+        presentation.active = false
+        try await trace.waitFor("the thread to hide with the scroller held") { self.trace.latest?.hidden == true }
+        presentation.active = true
+        try await trace.waitFor("the thread to show after hiding with the scroller held") { self.trace.latest?.first != nil }
+        try requireIntent(.idle)
     }
 
     private func streamChunk(_ index: Int, marker: String) async throws {
@@ -435,8 +612,10 @@ private final class ScrollFixture {
         let scroll = try scrollView()
         let clip = scroll.contentView
         if wheel {
-            guard let intent = trace.wheel else { throw ValidationError("missing wheel intent handler") }
-            intent(clip.bounds.minY - y)
+            guard let wheelHandler = trace.wheel else { throw ValidationError("missing wheel intent handler") }
+            let delta = clip.bounds.minY - y
+            trace.wheelInput(moved: delta != 0)
+            wheelHandler(delta)
         }
         var bounds = clip.bounds
         bounds.origin.y = y
