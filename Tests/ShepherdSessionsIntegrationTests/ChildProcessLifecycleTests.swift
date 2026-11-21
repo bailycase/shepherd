@@ -41,7 +41,22 @@ struct ChildProcessLifecycleTests {
         #expect(rootDecoy.isAlive && childDecoy.isAlive)
     }
 
-    @Test func childCancelAndFinishSweepOnlyTheirAttemptAndParentStopLeavesOtherJobs() async throws {
+    @Test func closingOneThreadOnAHostLeavesTheOtherThreadsChildJobAlive() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let pi = try await RealPi.launch(engine: engine, nativeChildren: true)
+        defer { pi.stop() }
+        let other = try await RealPi.launch(engine: engine, nativeChildren: true, on: pi.host)
+        defer { other.stop() }
+
+        let escaped = try await job("wren", in: pi, prompt: "launch orphan job wren")
+        let decoy = try await job("wren", in: other, prompt: "launch orphan job wren")
+        try await pi.host.server.deleteAgent(pi.agent.agent.id)
+        #expect(!escaped.isAlive && decoy.isAlive)
+        try await other.host.server.deleteAgent(other.agent.agent.id)
+        #expect(!decoy.isAlive)
+    }
+
+    @Test func childCancelSweepsOnlyItsAttemptAndParentStopLeavesOtherJobs() async throws {
         let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
         defer { pi.stop() }
         let parentJob = try await job("finch", in: pi, prompt: "orphan job finch finish")
@@ -55,14 +70,6 @@ struct ChildProcessLifecycleTests {
         try await eventually("the cancelled child's job to exit", timeout: .seconds(8)) { !cancelled.isAlive }
         #expect(parentJob.isAlive && sibling.isAlive)
 
-        // A fast child may finish before the test picks up its PID receipt. Hold its provider
-        // response until the test has observed the job, then let the child settle normally.
-        let finished = try await job("robin", in: pi, prompt: "launch orphan job robin gated")
-        try Data().write(to: pi.host.dir.appendingPathComponent("project/robin.finish"))
-        _ = try await pi.snapshot("the second child to finish") { $0.subagents?.contains { $0.name == "robin" && $0.state == "complete" } == true }
-        try await eventually("the finished child's job to exit", timeout: .seconds(8)) { !finished.isAlive }
-        #expect(parentJob.isAlive && sibling.isAlive)
-
         _ = try await pi.send("slow", from: try await pi.ready())
         let busy = try await pi.snapshot("a turn in progress") { $0.running }
         #expect(try await pi.request(.abort(expectedSessionID: busy.piSessionID, generation: busy.generation, operationID: UUID())).failureCode == nil)
@@ -70,6 +77,51 @@ struct ChildProcessLifecycleTests {
         #expect(parentJob.isAlive && sibling.isAlive)
         try await pi.host.server.deleteAgent(pi.agent.agent.id)
         #expect(!parentJob.isAlive && !sibling.isAlive)
+    }
+
+    @Test(arguments: [false, true])
+    func childExitLeavesItsEscapedJobAliveUntilThreadClose(failure: Bool) async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let escaped = try await job("robin", in: pi, prompt: "launch orphan job robin \(failure ? "failure" : "gated")")
+        try Data().write(to: pi.project.appendingPathComponent("robin.finish"))
+        let state = failure ? "failed" : "complete"
+        _ = try await pi.snapshot("the child to report \(state)") { $0.subagents?.contains { $0.name == "robin" && $0.state == state } == true }
+        try await survivesSweepWindow(escaped, "exiting with state \(state)")
+        try await pi.host.server.deleteAgent(pi.agent.agent.id)
+        #expect(!escaped.isAlive)
+    }
+
+    @Test func childQuestionAndResumeLeaveItsEscapedJobAlive() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let escaped = try await job("robin", in: pi, prompt: "launch orphan job robin question")
+        try Data().write(to: pi.project.appendingPathComponent("robin.finish"))
+        let waiting = try await pi.settled("the child to exit and wait for its answer") {
+            $0.subagents?.contains { $0.name == "robin" && $0.state == "complete" && $0.question != nil } == true
+        }
+        let child = try #require(waiting.subagents?.first { $0.name == "robin" })
+        try await survivesSweepWindow(escaped, "waiting for an answer")
+
+        let op = UUID()
+        #expect(try await pi.request(.subagentCommand(expectedSessionID: waiting.piSessionID, generation: waiting.generation,
+            operationID: op, runID: child.runID, action: .resume, text: "Use alpha")) == .accepted(operationID: op))
+        _ = try await pi.snapshot("the resumed child to finish") {
+            $0.subagents?.contains { $0.runID == child.runID && $0.attempt != child.attempt && $0.state == "complete" && $0.question == nil } == true
+        }
+        try await survivesSweepWindow(escaped, "finishing the resumed attempt")
+    }
+
+    @Test func parentStopSweepsOnlyTheWorkflowChildItAborts() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let background = try await job("linnet", in: pi, prompt: "launch orphan job linnet")
+        _ = try await pi.settled("the background launch to return") { $0.subagents?.contains { $0.name == "linnet" } == true }
+        let workflow = try await job("wren", in: pi, prompt: "workflow orphan job wren")
+        let busy = try await pi.snapshot("the parent to wait on its workflow") { $0.running && $0.subagents?.contains { $0.name == "wren" } == true }
+        #expect(try await pi.request(.abort(expectedSessionID: busy.piSessionID, generation: busy.generation, operationID: UUID())).failureCode == nil)
+        try await eventually("the aborted workflow child's job to exit", timeout: .seconds(8)) { !workflow.isAlive }
+        #expect(background.isAlive)
     }
 
     @Test func sweepSignalRejectsAStalePIDVersion() async throws {
@@ -91,8 +143,17 @@ struct ChildProcessLifecycleTests {
         var isAlive: Bool { ThreadProcessSweep.token(pid)?.val.7 == identity.val.7 }
     }
 
+    private func survivesSweepWindow(_ job: Job, _ activity: String) async throws {
+        // The host batches for one second before signalling, so checking only at report time misses the regression.
+        let deadline = ContinuousClock.now + .seconds(3)
+        try await eventually("the job to outlive the sweep window", timeout: .seconds(5)) {
+            try #require(job.isAlive, "the escaped job was stopped after \(activity)")
+            return ContinuousClock.now >= deadline
+        }
+    }
+
     private func job(_ name: String, in pi: RealPi, prompt: String) async throws -> Job {
-        let receipt = pi.host.dir.appendingPathComponent("project/\(name).pid")
+        let receipt = pi.project.appendingPathComponent("\(name).pid")
         let op = UUID()
         #expect(try await pi.send(prompt, operationID: op, from: try await pi.ready()) == .accepted(operationID: op))
         func adopted() -> pid_t? {

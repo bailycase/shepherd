@@ -158,6 +158,24 @@ test("each Bash call gets its own scope next to the thread marker, and a normal 
   });
 });
 
+test("a child's Bash keeps its real ownership when Pi supplies an env without markers or with forged ones", async () => {
+  const saved = { child: process.env.SHEPHERD_CHILD, scope: process.env.SHEPHERD_OWNED_BASH };
+  process.env.SHEPHERD_CHILD = "1"; process.env.SHEPHERD_OWNED_BASH = "attempt-1";
+  const bash = managedBash();
+  try {
+    await withThreadMarker("thread-marker", async () => {
+      for (const env of [{ PATH: process.env.PATH, CALLER: "kept" }, { PATH: process.env.PATH, SHEPHERD_OWNED_THREAD: "forged-thread", SHEPHERD_OWNED_BASH: "forged-scope" }]) {
+        let output = "";
+        assert.equal((await bash.exec(markers, process.cwd(), { onData: (chunk) => { output += chunk; }, env })).exitCode, 0);
+        assert.equal(output, "thread-marker|attempt-1");
+      }
+    });
+  } finally {
+    bash.stopAll();
+    for (const [key, value] of [["SHEPHERD_CHILD", saved.child], ["SHEPHERD_OWNED_BASH", saved.scope]]) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
+});
+
 test("Stop then abort, abort alone, and timeout each sweep only their own in-flight call once", async () => {
   await withThreadMarker("thread-marker", async () => {
     const swept = [], bash = managedBash((scope) => swept.push(scope));

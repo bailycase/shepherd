@@ -50,17 +50,30 @@ const server = http.createServer(async (req, res) => {
       function: { name: "bash", arguments: JSON.stringify({ command: recoveryTools ? "echo recovered" : "exit 1" }) } }] }));
     return finish("tool_calls");
   }
-  const orphan = /^(launch )?orphan job ([a-z]+)( finish| gated)?$/.exec(text);
+  const orphan = /^(?:(launch|workflow) )?orphan job ([a-z]+)( finish| gated| question| failure)?$/.exec(text);
   if (orphan) {
-    const [, launch, name, settle = ""] = orphan;
-    if (last.role === "tool" && !launch) {
+    const [, dispatch, name, settle = ""] = orphan;
+    const call = (tool, args) => {
+      res.write(chunk({ tool_calls: [{ index: 0, id: `call_${tool}`, type: "function",
+        function: { name: tool, arguments: JSON.stringify(args) } }] }));
+      return finish("tool_calls");
+    };
+    if (last.role === "tool" && !dispatch) {
       if (!settle) return; // Keep the helper active until it is stopped.
-      if (settle === " gated") {
+      if (settle !== " finish") {
         const deadline = Date.now() + 30000;
         while (!closed && !existsSync(`${name}.finish`) && Date.now() < deadline) await sleep(30);
       }
+      if (settle === " question" && lastTool === "bash") {
+        return call("shepherd_parent_message", { message: "Which test answer?", needsReply: true });
+      }
+      if (settle === " failure") return finish("length");
     } else if (last.role !== "tool") {
-      const tool = launch ? "shepherd_child_start" : "bash";
+      const task = { task: `orphan job ${name}${settle}`, name, agent: "worker", delivery: "report" };
+      if (dispatch === "launch") return call("shepherd_child_start", task);
+      if (dispatch === "workflow") return call("shepherd_workflow", {
+        async: false, workflowScript: `return await runs.run(${JSON.stringify(name)}, ${JSON.stringify(task)})`,
+      });
       const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
       // The fixture leaves its group and ancestry. Removing the scratch directory
       // also releases it, so fixture cleanup never signals a raw PID.
@@ -69,11 +82,7 @@ const server = http.createServer(async (req, res) => {
         setTimeout(() => clearInterval(timer), 45000).unref();
         fs.writeFileSync('${name}.pid', String(process.pid));`;
       const detach = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(job)}], {detached: true, stdio: 'ignore'}).unref()`;
-      const args = launch ? { task: `orphan job ${name}${settle}`, name, agent: "worker", delivery: "report" }
-        : { command: `${quote(process.execPath)} -e ${quote(detach)}` };
-      res.write(chunk({ tool_calls: [{ index: 0, id: "call_orphan", type: "function",
-        function: { name: tool, arguments: JSON.stringify(args) } }] }));
-      return finish("tool_calls");
+      return call("bash", { command: `${quote(process.execPath)} -e ${quote(detach)}` });
     }
   }
   if (last.role === "tool" && text !== "slow after tool failure") {

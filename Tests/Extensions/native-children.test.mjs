@@ -1097,6 +1097,21 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
   }
 });
 
+test("a helper launch keeps only the parent's thread marker, with a fresh attempt scope", () => {
+  const run = { attempt: "attempt-2", tools: ["read"], cwd: os.tmpdir(), dir: os.tmpdir(), sessionFile: path.join(os.tmpdir(), "s.jsonl"), model: "fixture/fixture", thinking: "low" };
+  const parentEnv = {
+    PATH: "/usr/bin", CALLER: "kept",
+    SHEPHERD_AGENT_ID: "parent-agent", SHEPHERD_SOCKET: "/tmp/parent.sock", SHEPHERD_OWNED_THREAD: "thread-marker", SHEPHERD_OWNED_BASH: "old-scope",
+    PI_SESSION_ID: "parent-session", PI_MODEL: "parent-model",
+  };
+  const { env } = mod.childLaunch({ run, bridge: source, parentEnv });
+  assert.deepEqual(env, {
+    PATH: "/usr/bin", CALLER: "kept",
+    SHEPHERD_OWNED_THREAD: "thread-marker", SHEPHERD_OWNED_BASH: "attempt-2",
+    SHEPHERD_CHILD: "1", PI_OFFLINE: "1", SHEPHERD_CHILD_TOOLS: JSON.stringify(["read", "shepherd_parent_message"]),
+  });
+});
+
 test("the parent's Bash asks its control socket to sweep only stopped, aborted or timed-out calls", { timeout: 60000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-bash-sweep-"));
   const frames = [], sockets = new Set();
