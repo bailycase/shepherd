@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { startProvider } from "../fake-provider.mjs";
 
 export const pkg = process.env.PI_PACKAGE_DIR;
@@ -86,12 +87,9 @@ export function requestSummary(entry) {
 export async function withPi(t, options, body) {
   const { settings = {}, files = () => ({}), project, args = [], env: extraEnv = {}, onRequest, cwd } = options;
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-rpc-")));
-  t.after(() => {
-    if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true });
-    else console.log(`Retained private Pi fixture: ${dir}`);
-  });
+  // after hooks run in the order registered and a throwing one skips the rest, so the pi process is killed and
+  // the provider stopped first and the directory removed last; a pi still writing into it fails the removal.
   const provider = await startProvider({ onRequest, usage: options.usage });
-  t.after(() => provider.stop());
   const home = options.agentDir ?? path.join(dir, "home");
   const work = path.join(dir, "work");
   fs.mkdirSync(home, { recursive: true });
@@ -116,7 +114,14 @@ export async function withPi(t, options, body) {
       "--model", "fixture/fixture", ...args, ...resumeArgs], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
     bind();
   };
-  t.after(() => child.kill("SIGKILL"));
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const exited = once(child, "exit"); child.kill("SIGKILL"); await exited; }
+  });
+  t.after(() => provider.stop());
+  t.after(() => {
+    if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    else console.log(`Retained private Pi fixture: ${dir}`);
+  });
   const events = [];
   let out = "", err = "", next = 0;
   function bind() {

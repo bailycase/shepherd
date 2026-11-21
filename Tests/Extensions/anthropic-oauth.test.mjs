@@ -1,5 +1,6 @@
 // Offline serialization/stream parity with unmodified pi-anthropic-oauth v0.3.9.
 // PI_PACKAGE_DIR=<patched pinned package> node --test Tests/Extensions/anthropic-oauth.test.mjs
+import "./hermetic-env.mjs";
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

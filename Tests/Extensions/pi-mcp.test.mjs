@@ -5,6 +5,7 @@
 // built-ins on over the home's switch, the `pi mcp` commands and OAuth against a local authorization server, and what
 // /mcp and a changed mcp.json do in a running session.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/pi-mcp.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

@@ -1,6 +1,7 @@
 // Shepherd's root instructions reach pi's system prompt where Settings ▸ Instructions says they
 // do, rendered by pi's own prompt builder; suggest_instruction drafts a line over a stand-in
 // Shepherd socket. No model provider, only temporary files.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

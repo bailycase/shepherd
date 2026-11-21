@@ -1,6 +1,7 @@
 // The design tools a design agent's helpers use through their parent: the registry the design extension
 // publishes, and the parent's side of a relayed call (allowlist, sizes, cancellation, errors), against a
 // stand-in Shepherd socket. The helpers themselves, real pi processes, are in native-children-design.test.mjs.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

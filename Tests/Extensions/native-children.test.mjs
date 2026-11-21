@@ -1,5 +1,6 @@
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children.test.mjs
 // All child sessions/configuration use a temporary directory and a local fake provider.
+import "./hermetic-env.mjs";
 import test, { after, mock } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -846,13 +847,14 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
       const reportsBefore = requests.length;
       await rpc("prompt", {message:"/shepherd-subagents-doctor"});
       assert.equal(requests.length, reportsBefore, "doctor never calls a provider");
-      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/switch-child'` });
+      // `wait` keeps the child running, so the parent's replacement (not the child finishing on its own) is what ends it.
+      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/switch-child'; wait` });
       await until(() => fs.existsSync(path.join(dir, "switch-child")));
       const switchPID = Number(fs.readFileSync(path.join(dir, "switch-child")));
       const replacement = await rpc("new_session"); assert.equal(replacement.cancelled, false);
       await until(() => !live(switchPID));
       const state = await rpc("get_state"); assert.equal(state.messageCount, 0);
-      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/reload-child'` });
+      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/reload-child'; wait` });
       await until(() => fs.existsSync(path.join(dir, "reload-child")));
       const reloadPID = Number(fs.readFileSync(path.join(dir, "reload-child")));
       await rpc("prompt", { message: "/fixture-reload" });

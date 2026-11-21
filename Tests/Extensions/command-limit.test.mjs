@@ -1,6 +1,7 @@
 // A bash call with no timeout gets Shepherd's default command limit (20 minutes), so a watcher, a dev server or a
 // deadlocked test cannot hold a tool call open for hours. Real pi, a fake provider, a tiny limit through
 // SHEPHERD_COMMAND_LIMIT_SECONDS. Run: PI_PACKAGE_DIR=/path/to/pi/package node --test Tests/Extensions/command-limit.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

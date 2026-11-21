@@ -4,6 +4,7 @@
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/builtin-extensions.test.mjs
 // Real pi in RPC mode against a loopback fake provider, in a temporary HOME. No extensions of Shepherd's load: the
 // question is what pi itself adds.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

@@ -1,5 +1,6 @@
 // The built-in skill on how to work in Shepherd (Extensions/shepherd-skill/, installed by
 // PanesExtension.installedSkillDirectory with shepherd.md as SKILL.md) and the panes extension handing it to pi.
+import "./hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as fs from "node:fs";

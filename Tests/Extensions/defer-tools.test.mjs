@@ -4,6 +4,7 @@
 // loads a whole family when the best match of a search is one of its tools. Real pi in RPC mode on a fake provider that records every
 // request, with a stand-in for the app's extension socket that answers the tools, and unit checks of the status extension.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/defer-tools.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";

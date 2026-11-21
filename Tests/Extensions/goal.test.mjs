@@ -1,4 +1,5 @@
 // Goal controller restore, fences and queue yield against a fake extension host. No processes.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";

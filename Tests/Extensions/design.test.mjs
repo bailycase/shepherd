@@ -1,6 +1,7 @@
 // The design agent's extension: inert without its design, its tools' frames and replies over a
 // stand-in Shepherd socket, the skill pi discovers, and design_check against a scratch project's
 // tokens. No model provider, only temporary files.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

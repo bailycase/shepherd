@@ -1,3 +1,4 @@
+import "./hermetic-env.mjs";
 import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // A subagent asks its parent, and the parent answers it or asks the user, with a REAL parent pi (`pi --mode rpc`)
 // that loads the children extension and a real child pi, both on one scripted local provider.
