@@ -38,7 +38,9 @@ struct SkillsScreen: View {
                         .padding(.horizontal, SH.Space.xs)
                     SHTouchSearchField("Search skills.sh", text: $query, focus: $searchFocused)
                 }
-                if let problem = model.problem {
+                if let problem = model.recordsProblem(in: skillsHosts) {
+                    SHBanner(.failed, title: problem)
+                } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
                         Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
@@ -632,7 +634,9 @@ struct SkillDetailScreen: View {
             }
         }
         .padding(.horizontal, SH.Space.xs)
-        if let problem = model.problem {
+        if let problem = model.recordsProblem(in: hosts) {
+            SHBanner(.failed, title: problem)
+        } else if let problem = model.problem {
             SHBanner(.failed, title: problem) {
                 Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
             }

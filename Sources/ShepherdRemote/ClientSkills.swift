@@ -251,6 +251,11 @@ public final class ClientSkills {
         rows(in: hosts).first { $0.name == name }
     }
 
+    /// Why the edited host can't change its skills' records (the file that says where each came from), when it can't.
+    public func recordsProblem(in hosts: [SkillsHost]) -> String? {
+        reference(in: hosts).flatMap { state(of: $0).snapshot?.problem }
+    }
+
     /// When the host last looked for updates.
     public func checkedAt(in hosts: [SkillsHost]) -> Double? {
         reference(in: hosts).flatMap { state(of: $0).snapshot?.checkedAt }

@@ -187,6 +187,35 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The host can't read skills.json (where each skill came from): the list and an open skill say so, with no source shown.
+    @Test(arguments: [false, true]) func settingsSkillsDamagedRecords(open: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/pdf/reference.md": "# Reference\n",
+            "skills/frontend-design/SKILL.md": "---\nname: frontend-design\ndescription: Production-grade UI that doesn’t look generic.\n---\n",
+        ])
+        let store = workspace.server.skills
+        try store.install(repo: "file://" + repo.path, paths: ["skills/pdf", "skills/frontend-design"], commit: nil, invocation: nil)
+        try Data("{".utf8).write(to: store.stateDirectory.appendingPathComponent("skills.json"))
+        try await workspace.seed(ShepherdState())
+        let vm = workspace.vm
+        vm.settingsSection = .skills
+        if open {
+            try await Preview.render("settings-skill-damaged", size: CGSize(width: 1180, height: 640), ready: { vm.skills.recordsProblem(in: vm.skillsHosts) != nil }) {
+                SkillsSettings(vm: vm, model: vm.skills, open: "pdf")
+                    .padding(SH.Space.xxl)
+                    .frame(height: 640, alignment: .top)
+                    .background(Color.sh.bgWindow)
+            }
+        } else {
+            try await Preview.render("settings-skills-damaged", size: CGSize(width: 1440, height: 900), ready: { vm.skills.recordsProblem(in: vm.skillsHosts) != nil }) {
+                SettingsView(vm: vm)
+            }
+        }
+    }
+
     /// Skills beside the ones pi loads from elsewhere, read-only: pi's own folder and settings
     /// (one shadowing an installed skill), then pi packages (one a same-named installed skill
     /// shadows). pi's answer is a fixture, never this machine's pi.

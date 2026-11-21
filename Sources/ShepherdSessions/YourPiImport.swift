@@ -573,6 +573,12 @@ public struct YourPiImport: Sendable {
                     }
                     continue
                 }
+                // Adding or replacing a skill folder is a change to the skills Settings ▸ Skills keeps records of:
+                // not while the file that says where each came from can't be read.
+                if kind == .skills, let problem = SkillsStore.recordsProblem(stateDirectory: offSkills.deletingLastPathComponent()) {
+                    if !report.problems.contains(problem) { report.problems.append(problem) }
+                    continue
+                }
                 do {
                     let result = try YourPiTree.copy(found.source, to: destination, staging: staging, limits: found.limits,
                                                      fileName: found.singleFileSkill ? "SKILL.md" : nil)
