@@ -245,8 +245,7 @@ final class FleetMaterializer {
         var notices: [Notice] = []
         var failed = false
         var changed = false
-        for source in sources {
-            guard source.isReady else { failed = true; continue }
+        for source in sources where source.isReady {
             guard var present = try? source.fingerprints() else { failed = true; continue }
             var (keptObserved, keptPending, keptChanged) = (observed, pending, changed)
             let noticeCount = notices.count
@@ -286,10 +285,13 @@ final class FleetMaterializer {
                 do {
                     try source.write(unit, target, origin: winner.macName.isEmpty ? "another Mac" : winner.macName)
                     changed = true
-                    // A later refusal can't undo a successful write. Keep what the next scan must know.
-                    keptObserved[unit] = observed[unit]
-                    keptPending[unit] = pending[unit]
-                    keptChanged = true
+                    // A skill file deletion can return before the state write removes the folder.
+                    // Keep content writes only; the scan already absorbs deletions that landed.
+                    if target != nil {
+                        keptObserved[unit] = observed[unit]
+                        keptPending[unit] = pending[unit]
+                        keptChanged = true
+                    }
                     if replacedSeed { notices.append(Notice(unit: unit, from: winner.macName)) }
                 } catch SkillsStore.StoreError.damagedRecords {
                     damaged = true

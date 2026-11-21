@@ -218,7 +218,7 @@ struct SkillsFleetRecordsTests {
         #expect(mac.scan().isEmpty)
     }
 
-    @Test func removingAFileThatLandedBeforeDamagePublishesADeletionAfterRepair() throws {
+    @Test(arguments: [false, true]) func aFileThatLandedBeforeDamageOnlyPublishesAnEditIfRemovedAfterRepair(removeLandedFile: Bool) throws {
         let mac = try Mac(); defer { mac.remove() }
         let files = ["SKILL.md": Self.skillText, "notes.md": "# Notes\n"]
         try Sender(mac.dir).skill("pdf", files, to: mac)
@@ -227,12 +227,42 @@ struct SkillsFleetRecordsTests {
         #expect(mac.passFailed())
         try FileManager.default.removeItem(at: mac.records)
         let landed = try #require(mac.skills.syncedFile("pdf", "SKILL.md"))
+        if !removeLandedFile {
+            #expect(mac.scan().isEmpty, "the landed file is not echoed back as an edit")
+            return
+        }
         try FileManager.default.removeItem(at: landed)
 
         let edits = mac.scan()
         #expect(edits.map(\.unit) == [FleetUnit.skillFile("pdf", "SKILL.md")],
                 "only the file that landed can be deleted; the refused write was never observed")
         #expect(edits.first?.change == .deletion)
+    }
+
+    @Test func aPeerRemovedSkillIsNotRepublishedAfterRepair() throws {
+        let mac = try Mac(); defer { mac.remove() }
+        try mac.installPDF()
+        let healthy = try Data(contentsOf: mac.records)
+        let peer = try Sender(mac.dir).store
+        for op in mac.scan() { _ = peer.receive(op) }
+        for unit in [FleetUnit.skillFile("pdf", "SKILL.md"), FleetUnit.skill("pdf")] {
+            let deletion = try #require(peer.appendLocal(unit: unit, change: .deletion, seed: false, name: "Mac mini"))
+            try #require(mac.store.receive(deletion) == .stored(won: true))
+        }
+
+        mac.afterWrite = { [unowned mac] in
+            mac.afterWrite = {}
+            try? mac.damage()
+        }
+        #expect(mac.passFailed(), "the state write hits damaged records")
+        #expect(try Data(contentsOf: mac.records) == Data("{".utf8))
+        let file = try #require(mac.skills.syncedFile("pdf", "SKILL.md"))
+        #expect(FileManager.default.fileExists(atPath: file.path), "the file deletion waits for the state write")
+
+        try healthy.write(to: mac.records)
+        #expect(mac.scan().isEmpty, "the file of a peer-removed skill must not be republished")
+        #expect(!mac.passFailed())
+        #expect(!FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path))
     }
 
     @Test func aSyncedWriteOrDeletionOverDamagedRecordsTouchesNothing() throws {
