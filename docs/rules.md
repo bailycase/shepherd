@@ -244,7 +244,9 @@ the remote thread stores has its own budget.
 
 Showing a thread that let rows go draws that last screen in the pass that shows it and builds
 nothing there (the deck lays the host out as it unhides one, so no frame has the layout without
-them). A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
+them), unless it is shorter than the window: it then draws the rows that cover the window by the low
+height estimate (`ThreadRestore.firstFrameRows`), as many as owe no more than a step beyond it, for the
+rest of the window would stay blank until the pull. A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
 each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead, unless the thread kept only its
 tail (`NativeThreadStore.releaseToTail`), that tail is bound by cost and more rows wait above it: it draws that tail and
 nothing above it, as rows that arrive do. The rest
