@@ -296,6 +296,27 @@ The history stack did not supply any marked rows at the positions the fixture sc
 
 Local evidence: `.build/validation/scroll-stability-t42mqs2b/mac/frames.json` and `run.log` (Dev build succeeded; fixture exited 2 at the timeout). The unshipped patch is `.orchestrator/pinned-height-experiment.patch`.
 
+### Slice 4 conditional history height experiment and stop
+
+On macOS 27.0.1, the off-screen Dev app measured the lazy history's natural height and gave it a bottom-aligned fixed frame only near the tail during or after detach. The frame held the old height before the drag or the cache rebuild. It accepted growth and released a pending shrink when following resumed or when the smaller document would leave at least one viewport below the reader. The candidate kept `ThreadHistoryCache.Key.detached` and M3. It added no position writes or changes to view identity.
+
+| Scenario, total absolute jump displacement | Baseline 1 | Baseline 2 | Baseline 3 | Candidate 1 | Candidate 1 blank frames |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Slow scroll while streaming | 337 pt | 477 pt | 477 pt | 0 pt | 0 |
+| Flick and stop | 615 pt | 615 pt | 615 pt | 0 pt | 0 |
+| Mid-history new turn | 0 pt | 0 pt | 0 pt | 43,922 pt | 5 |
+| Page older history | 0 pt | 0 pt | 0 pt | 28 pt plus one unknown jump | 0 |
+| Window resize | 0 pt | 0 pt | 0 pt | 0 pt | 0 |
+| Switch away and back | 0 pt | 0 pt | 0 pt | 0 pt | 0 |
+
+The first-move check failed on the unchanged app, where the document lost 879 pt, and passed in candidate run 1 with no loss. Both flicks started at a 0 pt tail gap. The unchanged app matched baseline run 1 on all six displacement totals, had no blanks, and restored its one transient page anchor loss. The candidate fixture reached all six scenarios, but the validator rejected the run because the page request occurred in the preceding scenario. The candidate totals above come from `measure_scroll` applied to the raw frames, not a passing validator report.
+
+On the first move to mid-history, the frame released a pending 1,491 pt shrink with 39,457 pt of tail gap. AppKit accepted the scripted clip move without clamping, but the document grew by 3,931 pt on the same drawn frame and a surviving row moved that far beyond the input. This trace does not separate the release from the lazy remeasurement on that frame. The existing M7 guard then walked to the top. Its walk produced the five blank frames, the remaining 39,991 pt of measured movement, and the premature page request. The paging scenario reached the old boundary at its usual top margin before the reply came back, but the earlier request's anchor had already been canceled. The prepend replaced `user-60` with `user-0` in view and did not restore the old anchor, unlike the transient loss in the baseline.
+
+**Stop: do not ship.** The first candidate run regressed mid-history and paging. Runs 2 and 3, release restricted to idle, and a separate cache-key change were not run. A margin check avoided clamping on release but did not keep the reader's row in place. Neither slice 4's driver nor slice 5's detached row anchoring changes in this experiment. No iPhone or iPad behavior changed or was checked.
+
+Local evidence: `.build/validation/scroll-stability-gblxeqd0/` (unchanged app, first-move check red) and `.build/validation/scroll-stability-bm1leynu/` (candidate run 1). The reverted candidate and its first-move check are in `.orchestrator/conditional-height-experiment.patch`.
+
 ### Slice 4 driver contract and open checks
 
 Feed every geometry callback, including the first after a mount. Reconcile intent on release, cancel and remount, and call `turn()` on the first eligible lift when `wantsTurn` is true. Discard driver-side asks invalidated by a mount, session change or newer request.
