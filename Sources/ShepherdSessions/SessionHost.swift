@@ -44,6 +44,28 @@ public enum SessionHost {
                            pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
                            banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
                            ready: () -> Void = {}) -> Never {
+        run(server, bundle: Bundle.main.bundleURL, supervised: supervised, respawn: respawn, configure: configure,
+            threads: threads, automations: automations, pullRequests: pullRequests, banners: banners, ready: ready)
+    }
+
+    static func run(_ server: SessionServer, bundle: URL, supervised: Bool = false, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
+                    configure: (@MainActor (SessionServer) -> Void)? = nil,
+                    threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
+                    automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
+                    pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
+                    banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
+                    ready: () -> Void = {}) -> Never {
+        do {
+            try EmbeddedExtensions.preload()
+        } catch {
+            ShepherdLog.error("host could not read its bundled extensions: \(error)")
+            exit(EXIT_FAILURE)
+        }
+        // If the bundle changed during startup, don't serve with a snapshot from the wrong build.
+        if bundle.pathExtension == "app", BundleVersionWatch.version(of: bundle) != server.hostBuild {
+            ShepherdLog.error("Shepherd's app bundle changed while its host was starting. Restart the host.")
+            exit(EXIT_FAILURE)
+        }
         // Signals arrive through dispatch sources, so the default action (die without
         // stopping pi processes) is turned off before anything starts.
         // `server.stop()` waits for the server queue and the listener's port (up to 6 s): not on the main queue, whose
@@ -104,7 +126,6 @@ public enum SessionHost {
             // The app's own child is the app's build already, and stops with it.
             let drain = HostDrain(server: server, exit: stop)
             if !supervised { server.onDrainRequest = { drain.begin("a newer app asked") } }
-            let bundle = Bundle.main.bundleURL
             if !supervised, bundle.pathExtension == "app" {
                 watch = BundleVersionWatch(bundle: bundle, running: server.hostBuild) {
                     drain.begin("bundle version \(server.hostBuild ?? "?") is now \($0 ?? "gone")")
