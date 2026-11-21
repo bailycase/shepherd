@@ -521,10 +521,11 @@ struct FleetDispatchTests {
         b.server.queue.sync {
             if let dispatch = b.server.fleet?.dispatch {
                 let message = dispatch.host.messageThread
-                dispatch.host.messageThread = { id, text, delivery in
-                    let sent = await message(id, text, delivery)
-                    await gate.pass()
-                    return sent
+                dispatch.host.messageThread = { id, text, delivery, answer in
+                    let answer = Unchecked(value: answer)
+                    message(id, text, delivery) { sent in
+                        Task { await gate.pass(); b.server.queue.async { answer.value(sent) } }
+                    }
                 }
             }
         }
@@ -549,67 +550,251 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("both dispatch records to finish the second turn") { a.sent().first?.state == .done && b.taken().first?.state == .done }
     }
 
+    // MARK: Follow-ups to a thread that is still starting
+
     /// What the receiver's thread holds from the person or the sender, as text, in order.
-    private static func userTexts(_ mac: Mac, _ agent: AgentID) -> [String] {
-        mac.server.queue.sync {
+    private static func userTexts(_ mac: Mac, _ agent: AgentID) async -> [String] {
+        await mac.server.enqueueValue { @Sendable in
             guard let thread = mac.server.rpcThread(forAgent: agent) else { return [] }
             return (thread.history + thread.live.map(\.value)).filter { $0.role == "user" }.map { $0.blocks.map(\.text).joined() }
         }
     }
 
-    @Test func aFollowUpSentWhileTheReceiversThreadIsStartingIsDeliveredOnceItServesInOrder() async throws {
-        // The checkout's pi holds at startup until `release-pi` appears in its worktree (`stub-pi-startup.json`).
-        let (a, b, _) = try await Self.pair(originExtra: ["stub-pi-startup.json": #"{"gate": "release-pi"}"#])
-        defer { a.stop(); b.stop() }
-        let parent = try await a.parent()
-        try parent.hello()
-        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
-        try await eventuallyOnMain("both Macs to hold the dispatch as running") { b.taken().first?.state == .running && a.sent().first?.state == .running }
-        let thread = try #require(b.dispatched.first)
-        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
-        #expect(b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable } == false, "the thread is still starting")
+    private static func isServing(_ mac: Mac, _ agent: AgentID) async -> Bool {
+        await mac.server.enqueueValue { @Sendable in mac.server.rpcThread(forAgent: agent)?.isServable == true }
+    }
 
-        // Two follow-ups on the sender's one connection, the second sent once the receiver holds the first.
-        try parent.extension.send(.fleetDispatchMessage(id: 901, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "First follow up.", delivery: .followUp))
-        try await eventuallyOnMain("the receiver to hold the first follow-up") { b.server.queue.sync { b.server.heldFleetMessageCount(thread.id) } == 1 }
-        try parent.extension.send(.fleetDispatchMessage(id: 902, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "Second follow up.", delivery: .followUp))
-        try await eventuallyOnMain("the receiver to hold both follow-ups") { b.server.queue.sync { b.server.heldFleetMessageCount(thread.id) } == 2 }
-        try Data().write(to: worktree.appendingPathComponent("release-pi"))
+    private static func held(_ mac: Mac, _ agent: AgentID) async -> Int {
+        await mac.server.enqueueValue { @Sendable in mac.server.fleetFollowUpCount(agent) }
+    }
 
-        var answered: Set<Int> = []
-        while answered.count < 2 {
-            switch try await parent.read() {
-            case .fleetDispatch(let id, _): answered.insert(id)
-            case .error(let id, let code, let message): throw WireError("follow-up \(id) was refused: \(code) \(message)")
-            default: continue
-            }
-        }
-        try await eventuallyOnMain("both follow-ups to reach the thread, once each, in order") {
-            Self.userTexts(b, thread.id).filter { $0.contains("follow up.") } == ["First follow up.", "Second follow up."]
+    /// A dispatched thread whose pi holds at startup until `release()`, with the connection a sender's follow-ups go over.
+    @MainActor private struct StartingThread {
+        var a: Mac, b: Mac
+        var parent: Parent
+        var info: FleetDispatchInfo
+        var thread: Agent
+        var worktree: URL
+        func release() throws { try Data().write(to: worktree.appendingPathComponent("release-pi")) }
+        func send(_ id: Int, _ text: String, on client: ExtensionClient? = nil) throws {
+            let client = client ?? parent.extension
+            try client.send(.fleetDispatchMessage(id: id, agentID: parent.agent.id, dispatchID: info.dispatchID, text: text, delivery: .followUp))
         }
     }
 
-    @Test func aFollowUpToAThreadThatNeverStartsFailsAfterTheHoldAndIsNotDeliveredLater() async throws {
-        let (a, b, _) = try await Self.pair(originExtra: ["stub-pi-startup.json": #"{"gate": "release-pi"}"#])
-        defer { a.stop(); b.stop() }
-        b.server.queue.sync { b.server.fleetFollowUpHold = 0.3 }
+    private static func startingThread(hold: TimeInterval? = nil) async throws -> StartingThread {
+        // The checkout's pi holds at startup until `release-pi` appears in its worktree (`stub-pi-startup.json`).
+        let (a, b, _) = try await pair(originExtra: ["stub-pi-startup.json": #"{"gate": "release-pi"}"#])
+        if let hold { b.server.queue.async { b.server.fleetFollowUpHold = hold } }
         let parent = try await a.parent()
         try parent.hello()
         let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
         try await eventuallyOnMain("both Macs to hold the dispatch as running") { b.taken().first?.state == .running && a.sent().first?.state == .running }
         let thread = try #require(b.dispatched.first)
-        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        #expect(await isServing(b, thread.id) == false, "the thread is still starting")
+        return StartingThread(a: a, b: b, parent: parent, info: info, thread: thread, worktree: URL(fileURLWithPath: try #require(thread.worktreePath)))
+    }
 
-        let reply = try await parent.call { .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "Too early.", delivery: .followUp) }
-        guard case .error(_, "not_running", _) = reply else { throw WireError("expected a refusal, got \(reply)") }
-        #expect(b.server.queue.sync { b.server.heldFleetMessageCount(thread.id) } == 0)
-
-        try Data().write(to: worktree.appendingPathComponent("release-pi"))
-        try await eventuallyOnMain("the receiver's pi to serve the thread") {
-            b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+    /// The answers to follow-ups `ids`, as (id, delivered), in the order they arrive: each id exactly once.
+    private static func answers(_ parent: Parent, _ ids: Set<Int>) async throws -> [(id: Int, delivered: Bool)] {
+        var seen: [(id: Int, delivered: Bool)] = []
+        while Set(seen.map(\.id)) != ids {
+            switch try await parent.read() {
+            case .fleetDispatch(let id, _) where ids.contains(id): seen.append((id, true))
+            case .error(let id, _, _) where ids.contains(id): seen.append((id, false))
+            default: continue
+            }
         }
-        try await eventuallyOnMain("the opening prompt to reach the thread") { Self.userTexts(b, thread.id).contains { $0.contains("Fix the flaky payment test.") } }
-        #expect(!Self.userTexts(b, thread.id).contains { $0.contains("Too early.") }, "a follow-up the sender was told failed is not delivered")
+        return seen
+    }
+
+    /// Holds a thread's recovery saves, which a send waits on, so a test can keep a follow-up claimed (its send started, not yet answered).
+    /// Touched on the server queue only.
+    private final class SaveHold: @unchecked Sendable {
+        var holding = true
+        var pending: [(save: () -> Void, fail: () -> Void)] = []
+        /// Lets the held saves go. `failing` refuses the oldest one (`persist_failed`: nothing was accepted, the send is tried again).
+        func release(failing: Bool = false) {
+            holding = false
+            let saves = pending
+            pending = []
+            for (index, held) in saves.enumerated() { if failing && index == 0 { held.fail() } else { held.save() } }
+        }
+    }
+
+    private static func holdSaves(_ mac: Mac, _ agent: AgentID) async -> SaveHold {
+        let hold = SaveHold()
+        await mac.server.enqueueValue { @Sendable in
+            guard let thread = mac.server.rpcThread(forAgent: agent), let original = thread.onPrepareRecovery else { return }
+            thread.onPrepareRecovery = { candidate, progress, authorized, done in
+                if hold.holding {
+                    hold.pending.append(({ original(candidate, progress, authorized, done) }, { done(false) }))
+                } else {
+                    original(candidate, progress, authorized, done)
+                }
+            }
+        }
+        return hold
+    }
+
+    private static func waitForOpening(_ mac: Mac, _ agent: AgentID) async throws {
+        try await wait("the thread to serve and take its opening prompt") {
+            guard await isServing(mac, agent) else { return false }
+            return await userTexts(mac, agent).contains { $0.contains("Fix the flaky payment test.") }
+        }
+    }
+
+    /// A black-box check, no probe of the receiver: it fails on a build that refuses a follow-up while the thread starts.
+    @Test func aFollowUpSentWhileTheReceiversThreadIsStartingIsDeliveredOnceItServes() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        try s.send(901, "Follow up.")
+        // The thread cannot take it yet, so nothing answers: a refusal here is the follow-up being dropped.
+        let deadline = ContinuousClock.now + .milliseconds(500)
+        while ContinuousClock.now < deadline {
+            guard let reply = try? await s.parent.read(timeout: .milliseconds(100)) else { continue }
+            switch reply {
+            case .error(901, let code, let message): throw WireError("the follow-up was refused while the thread started: \(code) \(message)")
+            case .fleetDispatch(901, _): throw WireError("the follow-up was answered before the thread could take it")
+            default: continue
+            }
+        }
+        try s.release()
+        #expect(try await Self.answers(s.parent, [901]).map(\.delivered) == [true])
+        try await Self.wait("the follow-up to reach the thread") { await Self.userTexts(s.b, s.thread.id).contains("Follow up.") }
+        #expect(await Self.userTexts(s.b, s.thread.id).filter { $0 == "Follow up." }.count == 1)
+    }
+
+    @Test func twoFollowUpsAreDeliveredInOrderEvenWhileTheFirstIsMidSendAndRetrying() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        try s.release()
+        try await Self.waitForOpening(s.b, s.thread.id)
+        // The opening prompt is in: from here a send waits on its save until the test lets it go.
+        let saves = await Self.holdSaves(s.b, s.thread.id)
+        // The first one's send starts at once and waits on its save: the thread is ready, and the second still goes behind it.
+        try s.send(901, "First follow up.")
+        try await Self.wait("the first follow-up's send to start") { await s.b.server.enqueueValue { @Sendable in saves.pending.count } == 1 }
+        try s.send(902, "Second follow up.")
+        try await Self.wait("the second follow-up to wait behind the first") { await Self.held(s.b, s.thread.id) == 2 }
+        #expect(!(await Self.userTexts(s.b, s.thread.id)).contains("Second follow up."))
+        // The first send is refused (`persist_failed`) and tried again after a pause: the second still does not overtake it.
+        await s.b.server.enqueueValue { @Sendable in saves.release(failing: true) }
+        #expect(try await Self.answers(s.parent, [901, 902]).map(\.id) == [901, 902])
+        try await Self.wait("both follow-ups to reach the thread") { await Self.userTexts(s.b, s.thread.id).filter { $0.contains("follow up.") }.count == 2 }
+        #expect(await Self.userTexts(s.b, s.thread.id).filter { $0.contains("follow up.") } == ["First follow up.", "Second follow up."])
+    }
+
+    @Test func aFollowUpThatExpiredIsNeverDeliveredLater() async throws {
+        let s = try await Self.startingThread(hold: 0.3)
+        defer { s.a.stop(); s.b.stop() }
+        // Nothing serves yet: the follow-up expires after the hold and is refused.
+        try s.send(901, "Too early.")
+        #expect(try await Self.answers(s.parent, [901]).map(\.delivered) == [false])
+        #expect(await Self.held(s.b, s.thread.id) == 0)
+        try s.release()
+        try await Self.waitForOpening(s.b, s.thread.id)
+        #expect(!(await Self.userTexts(s.b, s.thread.id)).contains("Too early."), "a follow-up the sender was told failed is not delivered")
+    }
+
+    @Test func anEntryWhoseSendHasStartedIsNeverRefusedByTheDeadline() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        try s.release()
+        try await Self.waitForOpening(s.b, s.thread.id)
+        // The opening prompt is in: from here a send waits on its save until the test lets it go.
+        let saves = await Self.holdSaves(s.b, s.thread.id)
+        await s.b.server.enqueueValue { @Sendable in s.b.server.fleetFollowUpHold = 0.3 }
+        // The first follow-up's send starts at once and waits on its save. A second waits behind it, and its deadline comes after the
+        // first one's, so by the time it is refused the first one's has passed and must have done nothing.
+        try s.send(901, "Claimed follow up.")
+        try await Self.wait("its send to start") { await s.b.server.enqueueValue { @Sendable in saves.pending.count } == 1 }
+        try s.send(902, "Waiting follow up.")
+        #expect(try await Self.answers(s.parent, [902]).map(\.delivered) == [false], "the waiting entry expires")
+        #expect(await Self.held(s.b, s.thread.id) == 1, "the claimed entry is still its send's to answer")
+        await s.b.server.enqueueValue { @Sendable in saves.release() }
+        #expect(try await Self.answers(s.parent, [901]).map(\.delivered) == [true])
+        try await Self.wait("the claimed follow-up to reach the thread") { await Self.userTexts(s.b, s.thread.id).contains("Claimed follow up.") }
+        #expect(!(await Self.userTexts(s.b, s.thread.id)).contains("Waiting follow up."))
+    }
+
+    @Test func aPiThatExitsFailsEveryHeldFollowUpOnceAndDeliversNone() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        try s.send(901, "First follow up.")
+        try s.send(902, "Second follow up.")
+        try await Self.wait("the receiver to hold both") { await Self.held(s.b, s.thread.id) == 2 }
+        await s.b.server.enqueueValue { @Sendable in s.b.server.rpcThread(forAgent: s.thread.id)?.session.kill() }
+        let answers = try await Self.answers(s.parent, [901, 902])
+        #expect(answers.count == 2 && answers.allSatisfy { !$0.delivered })
+        #expect(await Self.held(s.b, s.thread.id) == 0)
+        #expect(await Self.userTexts(s.b, s.thread.id).filter { $0.contains("follow up.") }.isEmpty)
+    }
+
+    @Test func aPiThatExitsWhileAFollowUpIsClaimedFailsItAndTheOnesBehindItOnce() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        try s.release()
+        try await Self.waitForOpening(s.b, s.thread.id)
+        let saves = await Self.holdSaves(s.b, s.thread.id)
+        try s.send(901, "Claimed follow up.")
+        try await Self.wait("its send to start") { await s.b.server.enqueueValue { @Sendable in saves.pending.count } == 1 }
+        try s.send(902, "Waiting follow up.")
+        try await Self.wait("the second to wait behind it") { await Self.held(s.b, s.thread.id) == 2 }
+        await s.b.server.enqueueValue { @Sendable in s.b.server.rpcThread(forAgent: s.thread.id)?.session.kill() }
+        let answers = try await Self.answers(s.parent, [901, 902])
+        #expect(answers.count == 2 && answers.allSatisfy { !$0.delivered })
+        // Letting the held save go after the exit changes nothing.
+        await s.b.server.enqueueValue { @Sendable in saves.release() }
+        #expect(await Self.held(s.b, s.thread.id) == 0)
+        #expect(await Self.userTexts(s.b, s.thread.id).filter { $0.contains("follow up.") }.isEmpty)
+    }
+
+    @Test func aThreadDeletedWhileFollowUpsAreHeldFailsThemOnce() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        try s.send(901, "First follow up.")
+        try s.send(902, "Second follow up.")
+        try await Self.wait("the receiver to hold both") { await Self.held(s.b, s.thread.id) == 2 }
+        try await s.b.server.deleteAgent(s.thread.id)
+        let answers = try await Self.answers(s.parent, [901, 902])
+        #expect(answers.count == 2 && answers.allSatisfy { !$0.delivered })
+        #expect(await Self.held(s.b, s.thread.id) == 0)
+    }
+
+    @Test func followUpsFromTwoConnectionsToOneStartingThreadAreAllDeliveredOnce() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop(); s.b.stop() }
+        let second = Parent(agent: s.parent.agent, extension: try ExtensionClient(path: s.a.host.socketPath), mac: s.a)
+        try second.hello()
+        try s.send(901, "One a.")
+        try s.send(801, "Two a.", on: second.extension)
+        try s.send(902, "One b.")
+        try s.send(802, "Two b.", on: second.extension)
+        try await Self.wait("the receiver to hold all four") { await Self.held(s.b, s.thread.id) == 4 }
+        try s.release()
+        #expect(try await Self.answers(s.parent, [901, 902]).allSatisfy(\.delivered))
+        #expect(try await Self.answers(second, [801, 802]).allSatisfy(\.delivered))
+        try await Self.wait("all four to reach the thread") {
+            await Self.userTexts(s.b, s.thread.id).filter { $0.hasSuffix(" a.") || $0.hasSuffix(" b.") }.count == 4
+        }
+        #expect(Set(await Self.userTexts(s.b, s.thread.id).filter { $0.hasSuffix(" a.") || $0.hasSuffix(" b.") }) == ["One a.", "Two a.", "One b.", "Two b."])
+    }
+
+    @Test func aServerThatStopsWhileFollowUpsAreHeldAnswersThemOnce() async throws {
+        let s = try await Self.startingThread()
+        defer { s.a.stop() }
+        // The follow-ups are handed to the host's hook as the receiver does, so the answers can be counted on this side.
+        let answered = Locked<[Bool]>([])
+        let agent = s.thread.id
+        await s.b.server.enqueueValue { @Sendable in
+            for text in ["First follow up.", "Second follow up."] {
+                s.b.server.fleet?.dispatch.host.messageThread(agent, text, .followUp) { sent in answered.withValue { $0.append(sent) } }
+            }
+        }
+        #expect(await Self.held(s.b, agent) == 2)
+        s.b.stop()
+        #expect(answered.current == [false, false])
     }
 
     @Test func ordinaryStopTellsTheThreadToStopItsRetainedBashGroups() async throws {

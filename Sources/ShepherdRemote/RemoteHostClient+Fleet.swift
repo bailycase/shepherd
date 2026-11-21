@@ -172,7 +172,8 @@ extension RemoteHostClient {
     }
 
     /// Asks the Mac a dispatch runs on about it, stops it, or messages its thread. Throws `unknown_dispatch`
-    /// when that Mac holds no such dispatch.
+    /// when that Mac holds no such dispatch. A message waits on the request timeout (10 s), which must outlast the
+    /// receiver's 8 s hold of a follow-up for a thread that is still starting (`SessionServer.fleetFollowUpHold`).
     public func fleetDispatchControl(_ dispatchID: UUID, _ control: FleetDispatchControl) async throws -> FleetDispatchRecord {
         let closing = control == .close
         return try Self.dispatchRecord(from: try await request(timeout: closing ? 120 : Self.requestTimeout, keepConnectionOnTimeout: closing) {

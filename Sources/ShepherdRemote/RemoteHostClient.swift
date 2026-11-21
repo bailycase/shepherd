@@ -241,6 +241,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// teardown or a timer never waits behind a stream that stays readable.
     static let readTurnBytes = 1024 * 1024
 
+    /// A Fleet follow-up (`fleetDispatchControl` `.message`) is held by the receiving Mac for up to `SessionServer.fleetFollowUpHold`
+    /// (8 s) plus a few short send retries, and is then answered: keep this above that, so the sender hears the receiver's answer
+    /// instead of timing out on a message the receiver still holds and sending it again.
     static let requestTimeout: TimeInterval = 10
     static let localHandshakeTimeout: TimeInterval = 60
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024

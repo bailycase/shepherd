@@ -80,8 +80,9 @@ struct FleetDispatchHost: @unchecked Sendable {
     var stopThread: @Sendable (AgentID) -> Void = { _ in }
     var terminateThread: @Sendable (AgentID) -> Void = { _ in }
     var closeThread: @Sendable (AgentID, UUID) async throws -> FleetCloseProcesses = { _, _ in .init(sessionsStopped: false, sweep: nil) }
-    /// Sends a message into a thread's queue; false when it can't take one.
-    var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> Bool = { _, _, _ in false }
+    /// Sends a message into a thread's queue (server queue) and answers once, on the server queue, with false when it can't take one.
+    /// Called in the order the receiver read the messages, so two follow-ups reach the thread in that order.
+    var messageThread: @Sendable (AgentID, String, NativeThreadDelivery, @escaping (Bool) -> Void) -> Void = { _, _, _, answer in answer(false) }
     /// What a thread is doing (server queue); nil when it is gone. Does not read its transcript.
     var threadFacts: @Sendable (AgentID) -> FleetThreadFacts? = { _ in nil }
     /// The text of the last assistant message, read only when a run ends (server queue).

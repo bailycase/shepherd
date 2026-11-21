@@ -354,33 +354,29 @@ extension FleetDispatch {
                   let before = host.threadFacts(agent) else {
                 return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to message (it is \(entry.record.state.rawValue)).")))
             }
-            let message = host.messageThread
-            Task.detached { [weak self] in
-                let sent = await message(agent, text, delivery == .steer ? .steer : .followUp)
-                self?.queue.async {
-                    guard let self, var entry = self.inbound[id] else { return }
-                    guard sent, !self.closingThreads.contains(id), entry.record.state != .cancelled else {
-                        return reply(.failure(.init(code: "not_running", message: "The thread didn't take the message.")))
-                    }
-                    // A finished dispatch starts a new run on the same thread, and that run's end is a new result.
-                    entry.record.state = .running
-                    entry.expectsResult = true
-                    entry.finishingRun = nil
-                    let current = self.host.threadFacts(agent)
-                    entry.record.activity = current.map(Self.activity)
-                    entry.startedWorking = current?.status == .working || current?.status == .blocked
-                    entry.acceptedAt = self.now
-                    entry.record.resultText = nil
-                    entry.record.resultBranchFacts = nil
-                    entry.record.updatedAt = self.now
-                    entry.unsent = true
-                    self.inbound[id] = entry
-                    self.save()
-                    reply(.success(entry.record))
-                    self.pushPending()
-                    if let current, current.status == .done, current.completedAt != before.completedAt {
-                        self.finishRun(id, entry, facts: current)
-                    }
+            host.messageThread(agent, text, delivery == .steer ? .steer : .followUp) { [weak self] sent in
+                guard let self else { return }
+                guard var entry = self.inbound[id], sent, !self.closingThreads.contains(id), entry.record.state != .cancelled else {
+                    return reply(.failure(.init(code: "not_running", message: "The thread didn't take the message.")))
+                }
+                // A finished dispatch starts a new run on the same thread, and that run's end is a new result.
+                entry.record.state = .running
+                entry.expectsResult = true
+                entry.finishingRun = nil
+                let current = self.host.threadFacts(agent)
+                entry.record.activity = current.map(Self.activity)
+                entry.startedWorking = current?.status == .working || current?.status == .blocked
+                entry.acceptedAt = self.now
+                entry.record.resultText = nil
+                entry.record.resultBranchFacts = nil
+                entry.record.updatedAt = self.now
+                entry.unsent = true
+                self.inbound[id] = entry
+                self.save()
+                reply(.success(entry.record))
+                self.pushPending()
+                if let current, current.status == .done, current.completedAt != before.completedAt {
+                    self.finishRun(id, entry, facts: current)
                 }
             }
         }
