@@ -189,6 +189,24 @@ struct RemoteAutomationTests {
         #expect(try await client.automationRuns(h.automation.id) == [])
     }
 
+    /// Damage that arrives while the host runs is reported by the very next read, with no write in between.
+    @Test func runsReportsDamageThatJustArrived() async throws {
+        let h = try await Host()
+        defer { h.stop() }
+        let url = h.remote.host.dir.appendingPathComponent("automation-runs.json")
+        let client = try await h.remote.typed()
+        defer { client.disconnect() }
+        #expect(try await client.automationRuns(h.automation.id) == [])
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url)
+        let error = await #expect(throws: RemoteHostClientError.self) { try await client.automationRuns(h.automation.id) }
+        guard case .rejected(RemoteAutomationRequest.runHistoryDamagedCode, _)? = error else {
+            Issue.record("expected the run history error, got \(String(describing: error))")
+            return
+        }
+        #expect(try Data(contentsOf: url) == damaged)
+    }
+
     @Test func aHandlerFailureReachesTheClient() async throws {
         let h = try await Host()
         defer { h.stop() }

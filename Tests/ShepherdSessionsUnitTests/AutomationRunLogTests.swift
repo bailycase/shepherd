@@ -221,6 +221,7 @@ struct AutomationRunLogDamageTests {
 
     @Test(arguments: ["{", "", "null", "[]", #"{"runs":[]}"#, #"{"version":1,"runs":null}"#, #"{"runs":{"a":[null]}}"#,
                       #"{"runs":{"a":[{"startedAt":1}]}}"#, #"{"version":1,"value":null}"#, #"{"version":2,"value":{"runs":{}}}"#,
+                      #"{"records":{}}"#, "{}", #"{"runs":{"a":[{"id":"00000000-0000-4000-8000-000000000010","startedAt":12,"result":"finished","unread":null}]}}"#,
                       "unreadable"])
     func aDamagedFileIsNeverRewrittenAndNothingIsRecorded(input: String) throws {
         let (dir, url) = try Self.scratch()
@@ -320,6 +321,31 @@ struct AutomationRunLogDamageTests {
         log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Third", now: Self.newRun)
         #expect(log.runs[id]?.count == 2)
         log.flush()
+    }
+
+    /// The file goes bad after a change was accepted and before its queued write runs.
+    @Test func aQueuedWriteDoesNotOverwriteDamageThatArrivedBeforeIt() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        log.changed = { try? Data("{".utf8).write(to: url) }
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        #expect(try Data(contentsOf: url) == Data("{".utf8))
+    }
+
+    /// A backup restored while the log still shows the damage: the first change builds on it, not on what was in memory.
+    @Test func theFirstChangeAfterARepairKeepsTheRestoredHistory() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("{".utf8).write(to: url)
+        let log = AutomationRunLog(url: url)
+        try Data(Self.legacy.utf8).write(to: url)
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.flush()
+        #expect(log.runs[AutomationRunLogTests.automation.id]?.count == 2)
+        let written = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect((written["runs"] as? [String: [Any]])?["a"]?.count == 2)
     }
 
     @Test func removingAFileThatWasDamagedAtStartupMeansNoHistory() throws {

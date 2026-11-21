@@ -954,7 +954,7 @@ public final class SessionServer: @unchecked Sendable {
     private let originStore: ThreadOriginStore
     private let agentRecovery: AgentRecoveryStore
     /// How each automation's runs went (support directory), for remote clients.
-    private let runLog: AutomationRunLog
+    let runLog: AutomationRunLog
     /// Fires triggered automations (schedules, GitHub). `serveAutomations` installs its host.
     public let automationTriggers: AutomationTriggers
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
@@ -4378,7 +4378,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .runs:
             // A history that can't be read is an error, never an empty list: the page says why.
-            if let problem = runLog.recheck(reading: false) { return fail(RemoteAutomationRequest.runHistoryDamagedCode, problem) }
+            if let problem = runLog.recheck() { return fail(RemoteAutomationRequest.runHistoryDamagedCode, problem) }
             send(.automationResult(id: id, result: .runs(runLog.runs(for: automationID, in: store.state))), to: client)
             return
         case .markRead(let runID):

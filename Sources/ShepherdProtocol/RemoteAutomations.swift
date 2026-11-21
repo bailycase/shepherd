@@ -87,7 +87,8 @@ public struct AutomationRun: Codable, Hashable, Sendable, Identifiable {
         trigger = try c.decodeIfPresent(String.self, forKey: .trigger)
         triggerURL = try c.decodeIfPresent(String.self, forKey: .triggerURL)
         pullRequestURL = try c.decodeIfPresent(String.self, forKey: .pullRequestURL)
-        unread = try c.decodeIfPresent(Bool.self, forKey: .unread) ?? false
+        // Older files omit it; a present null is damage, not false.
+        unread = try c.contains(.unread) ? c.decode(Bool.self, forKey: .unread) : false
         failure = try c.decodeIfPresent(String.self, forKey: .failure)
     }
 
