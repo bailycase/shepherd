@@ -155,26 +155,64 @@ function withText(content: unknown, text: string): unknown {
 
 // MARK: the stubs
 
-export const resultStub = (tool: string, about: string, tokens: number) =>
-  `[${tool || "tool"}${about ? ` ${about}` : ""} output removed from context: about ${kilo(tokens)} tokens. It was shown earlier in this conversation; run it again if you need it.]`;
+// Each stub is built from these pieces, and `isStub` takes them apart again, so the two cannot drift.
+const RESULT = { mark: " output removed from context: about ", tail: " tokens. It was shown earlier in this conversation; run it again if you need it.]" };
+const CUSTOM = { mark: " message removed from context: about ", tail: " tokens. It was shown earlier in this conversation.]" };
+const sized = (head: string, part: { mark: string; tail: string }, tokens: number) => `[${head}${part.mark}${kilo(tokens)}${part.tail}`;
+
+export const resultStub = (tool: string, about: string, tokens: number) => sized(`${tool || "tool"}${about ? ` ${about}` : ""}`, RESULT, tokens);
 
 export const imageStub = (count: number) => `[${count === 1 ? "image" : `${count} images`} removed from context. It was shown earlier in this conversation.]`;
 
-export const customStub = (type: string, tokens: number) => `[${type || "custom"} message removed from context: about ${kilo(tokens)} tokens. It was shown earlier in this conversation.]`;
+export const customStub = (type: string, tokens: number) => sized(type || "custom", CUSTOM, tokens);
 
 // An argument's stub sits where a real value was, so the model sees its own earlier calls carrying it and can copy it
 // into a new call: the stub says it is no value, and `placeholderIn` refuses a call that carries one.
-export const argumentStub = (chars: number) => `[${chars} characters removed from context. This marks old text, not a value: never send it as an argument.]`;
+export const argumentStub = (chars: number) => `[${chars} characters removed from context. Not a value: never send it.]`;
+// What sessions from before the reword hold, and what a model may have written out.
+const legacyArgumentStub = (chars: number) => `[${chars} characters removed from context]`;
 
-const STUB_SHAPE = /^\s*\[[^\[\]]*removed from context[^\[\]]*\]\s*$/;
+// True when the whole string, give or take whitespace, is one of the stubs above. One anchored check and one backward
+// search for the marker, so a large string costs a single pass at most.
+function isStub(value: string): boolean {
+  const text = value.trim();
+  if (text[0] !== "[" || text[text.length - 1] !== "]") return false;
+  if (text === imageStub(1)) return true;
+  const count = /^\[(\d{1,15}) /.exec(text);
+  if (count) {
+    const n = Number(count[1]);
+    if (text === argumentStub(n) || text === legacyArgumentStub(n) || text === imageStub(n)) return true;
+  }
+  for (const part of [RESULT, CUSTOM]) {
+    if (!text.endsWith(part.tail)) continue;
+    const end = text.length - part.tail.length;
+    const at = text.lastIndexOf(part.mark, end - part.mark.length);
+    if (at > 1 && /^\d+(\.\d)?k?$/.test(text.slice(at + part.mark.length, end))) return true;
+  }
+  return false;
+}
 
 /** The path of the first string in `value` that is exactly one of the stubs above (a whole argument, not text that mentions one). */
-export function placeholderIn(value: unknown, path = "arguments", depth = 0): string | undefined {
-  if (typeof value === "string") return STUB_SHAPE.test(value) ? path : undefined;
-  if (!value || typeof value !== "object" || depth > 8) return undefined;
-  for (const [key, item] of Object.entries(value)) {
-    const found = placeholderIn(item, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`, depth + 1);
-    if (found) return found;
+export function placeholderIn(value: unknown): string | undefined {
+  // Iterative, so a leaf at any depth is reached, as `clearStrings` reaches it. Paths are built only for the one found.
+  const nodes: Array<{ key: string; parent: number }> = [{ key: "arguments", parent: -1 }];
+  const stack: Array<[unknown, number]> = [[value, 0]];
+  const seen = new Set<object>();
+  while (stack.length > 0) {
+    const [item, at] = stack.pop()!;
+    if (typeof item === "string") {
+      if (!isStub(item)) continue;
+      const keys: string[] = [];
+      for (let i = at; i >= 0; i = nodes[i].parent) keys.push(nodes[i].key);
+      return keys.reverse().join("");
+    }
+    if (!item || typeof item !== "object" || seen.has(item)) continue;
+    seen.add(item);
+    const entries = Object.entries(item);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      nodes.push({ key: Array.isArray(item) ? `[${entries[i][0]}]` : `.${entries[i][0]}`, parent: at });
+      stack.push([entries[i][1], nodes.length - 1]);
+    }
   }
   return undefined;
 }
@@ -403,7 +441,7 @@ export default function shepherdContext(pi: ExtensionAPI) {
     try {
       const where = placeholderIn(event?.input);
       if (!where) return undefined;
-      return { block: true, reason: `The "${event.toolName}" call was not run: ${where} is a placeholder Shepherd leaves where it removed old text from your context, not a value. Send the real text in full (for a long file or brief, write it in smaller pieces).` };
+      return { block: true, reason: `The "${event.toolName}" call was not run: ${where} is a placeholder Shepherd leaves where it removed old text from your context, not a value. Read the source file or reconstruct the argument from available context. If you can't recover it, ask for the missing text rather than retrying the placeholder.` };
     } catch {
       return undefined;
     }
