@@ -171,15 +171,21 @@ struct FleetDispatchTests {
         /// lists the thread from the moment the dispatch is accepted, with the path its worktree will have; the folder exists only after the
         /// worktree is built and its files are in place. Never settles on a thread of another dispatch: with several and none named, it waits
         /// until the timeout names the problem.
-        func runningThread(dispatch id: UUID? = nil, timeout: Duration = .seconds(60)) async throws -> Agent {
-            func running() -> Agent? {
-                let threads = dispatched.filter { id == nil || $0.dispatchedFrom?.dispatchID == id }
-                guard threads.count == 1, let thread = threads.first, let own = thread.dispatchedFrom?.dispatchID,
-                      taken().contains(where: { $0.id == own && $0.state == .running }) else { return nil }
-                return thread
+        @MainActor func runningThread(dispatch id: UUID? = nil, timeout: Duration = .seconds(60)) async throws -> Agent {
+            var running: Agent?
+            try await FleetDispatchTests.wait("\(name) to run \(id.map { "dispatch \($0)" } ?? "the one dispatched thread")", timeout: timeout) {
+                running = await server.queue.testHop {
+                    let threads = self.server.store.state.agents.filter {
+                        guard let from = $0.dispatchedFrom else { return false }
+                        return id == nil || from.dispatchID == id
+                    }
+                    guard threads.count == 1, let thread = threads.first, let own = thread.dispatchedFrom?.dispatchID,
+                          self.server.fleet?.dispatch.inbound[own]?.record.state == .running else { return nil }
+                    return thread
+                }
+                return running != nil
             }
-            try await FleetDispatchTests.wait("\(name) to run \(id.map { "dispatch \($0)" } ?? "the one dispatched thread")", timeout: timeout) { running() != nil }
-            return try #require(running())
+            return try #require(running)
         }
 
         func connectAsPeer(_ other: Mac) async throws -> RemoteHostClient {
