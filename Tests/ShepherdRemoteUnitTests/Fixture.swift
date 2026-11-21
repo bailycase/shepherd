@@ -44,12 +44,13 @@ enum Fixture {
         actions: [String] = ["send", "abort", "answer", "setModel", "setThinking", "subagents"],
         messages: [NativeThreadMessage] = [], provisional: [NativeThreadMessage] = [],
         dialogs: [NativeThreadDialog] = [], olderCursor: String? = nil, model: String? = nil,
-        subagents: [ChildRun]? = nil, queue: NativeQueue? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil
+        subagents: [ChildRun]? = nil, queue: NativeQueue? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil,
+        commands: [NativeCommand]? = nil
     ) -> NativeThreadSnapshot {
         NativeThreadSnapshot(
             piSessionID: session, generation: generation, revision: revision, running: running, model: model,
             supportedActions: actions, dialogsSupported: true, dialogs: dialogs, messages: messages,
-            olderCursor: olderCursor, provisional: provisional, clipped: false, runtime: "rpc", subagents: subagents,
+            olderCursor: olderCursor, provisional: provisional, clipped: false, runtime: "rpc", commands: commands, subagents: subagents,
             queue: queue, serviceTier: serviceTier, serviceTiers: serviceTiers
         )
     }

@@ -225,7 +225,10 @@ public final class NativeThreadStore {
     /// (`NativeThreadMessage.sendingStatus`), and whether it waits behind the reply still streaming.
     @ObservationIgnored private var outgoing: [UUID: (message: NativeThreadMessage, queued: Bool)] = [:]
     /// The capture anchor, user rows already seen (including live rows), and the send's place in line.
-    private struct Capture { var after: String?; var earlier: Set<String>; var live: Set<String>; var idle: Bool; var order: Int }
+    private struct Capture { var after: String?; var earlier: Set<String>; var live: Set<String>; var idle: Bool; var order: Int
+        /// The host will not tag this send: an extension command runs at once and leaves no `pending:` row or queue item.
+        var untagged = false
+    }
     /// Once the host shows a delivered user row with an operation id, do not guess for this session.
     @ObservationIgnored private var sawTaggedUser = false
     @ObservationIgnored private var captured: [UUID: Capture] = [:]
@@ -694,22 +697,30 @@ public final class NativeThreadStore {
         row.role == "user" && row.operationID != nil && !row.entryID.hasPrefix("pending:")
     }
 
-    /// A host that tags (it sent a tagged user row, or a snapshot with `queue`, which every protocol v3 host sends) names a send by
-    /// its operation id alone, so an untagged row never stands for one. A legacy host is matched by position: each user row after
+    /// Whether the host runs this text as an extension command, which it never tags (`isExtensionCommand` in RPCThreadState+Queue).
+    private static func isExtensionCommand(_ text: String, in commands: [NativeCommand]?) -> Bool {
+        guard text.hasPrefix("/") else { return false }
+        let name = text.dropFirst().prefix { !$0.isWhitespace }
+        return commands?.contains { $0.name == name && $0.source == "extension" } == true
+    }
+
+    /// A host that tags (it sent a tagged user row, or a snapshot with `queue`, a capability of a live protocol v3 host; previews
+    /// and start-problem snapshots can omit it) names a send by its operation id alone, so an untagged row never stands for one,
+    /// except a send the host will not tag (`Capture.untagged`). Every other send is matched by position: each user row after
     /// `Capture.after` (minus `Capture.live` turns that vanished) replaces one copy, oldest send first, `taken` once, and an
     /// idle send's finished reply can stand in when no row follows. `claimed` keeps a row or reply from a second send. Only a tag settles a send.
     private func landings() -> [UUID: (named: Bool, row: NativeThreadMessage)] {
         let live = (snapshot?.provisional ?? []).filter { messageIndex[$0.entryID] == nil }
         var found: [UUID: (named: Bool, row: NativeThreadMessage)] = [:]
-        if sawTaggedUser || snapshot?.queue != nil {
+        let tags = sawTaggedUser || snapshot?.queue != nil
+        if tags {
             for row in messages + live where Self.tagsSend(row) {
                 if let id = row.operationID, captured[id] != nil, found[id] == nil { found[id] = (true, row) }
             }
-            return found
         }
         let liveIDs = Set(live.map(\.entryID))
         var taken: Set<String> = []
-        for (id, capture) in captured.sorted(by: { $0.value.order < $1.value.order }) {
+        for (id, capture) in captured.sorted(by: { $0.value.order < $1.value.order }) where found[id] == nil && (!tags || capture.untagged) {
             var tail = ArraySlice(messages)
             if let after = capture.after {
                 guard let index = messageIndex[after] else { continue } // A renumbered page cannot establish what is new.
@@ -3009,7 +3020,8 @@ public final class NativeThreadStore {
             captureCount += 1
             captured[operation] = Capture(after: messages.last?.entryID,
                                           earlier: Set(messages.filter { $0.role == "user" }.map(\.entryID) + live.map(\.entryID)),
-                                          live: Set(live.map(\.entryID)), idle: !current.running, order: captureCount)
+                                          live: Set(live.map(\.entryID)), idle: !current.running, order: captureCount,
+                                          untagged: Self.isExtensionCommand(sentText, in: current.commands))
             if submission != nil {
                 // While a turn runs it waits below the reply streaming (whatever its delivery: the host holds it in Up next, or an
                 // older host's echo follows the turn), so the reply's own rows are never moved by it.

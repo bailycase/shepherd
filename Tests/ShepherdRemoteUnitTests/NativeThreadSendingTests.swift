@@ -389,19 +389,40 @@ struct NativeThreadSendingTests {
         #expect(await send.value)
     }
 
-    /// The same for a send that left no user message: a finished reply on a host with a queue says nothing about it.
+    private static let review = [NativeCommand(name: "review", source: "extension")]
+
+    /// The same for an idle send that left no user message: a finished reply on a host with a queue says nothing about it.
     @Test func aFinishedReplyOnAHostWithAQueueDoesNotHideAnIdleSendsCopy() async throws {
         let hold = SendHold()
-        let start = F.snapshot(messages: [hi], queue: NativeQueue())
+        let start = F.snapshot(messages: [hi], queue: NativeQueue(), commands: Self.review)
+        let host = FakeHost(start)
+        let (store, loop) = await started(start, hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "hello"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("done", id: "a2")], queue: NativeQueue(), commands: Self.review)
+        await store.refresh()
+        #expect(userRows(store).count == 1 && userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// An extension command is the one send a host with a queue does not tag (it runs at once: no `pending:` row, no Up next
+    /// item), so, as on nightly, its copy goes once the finished reply is the last row. The record stays until the host answers.
+    @Test func anExtensionCommandOnAHostWithAQueueIsMatchedByPosition() async throws {
+        let hold = SendHold()
+        let start = F.snapshot(messages: [hi], queue: NativeQueue(), commands: Self.review)
         let host = FakeHost(start)
         let (store, loop) = await started(start, hold: hold, host: host)
         defer { hold.held = false; loop.cancel(); store.stop() }
         store.draft = "/review"
         let send = Task { await store.send(delivery: .followUp) }
         await until { hold.operation != nil }
-        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("done", id: "a2")], queue: NativeQueue())
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("done", id: "a2")], queue: NativeQueue(), commands: Self.review)
         await store.refresh()
-        #expect(userRows(store).count == 1 && userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
+        #expect(userMessages(store).isEmpty, "the finished reply is the last row, so no Sending… copy follows it")
+        #expect(store.submissions.first?.state == .sending && store.busy, "the recovery record stays until the host answers")
         hold.held = false
         #expect(await send.value)
     }
