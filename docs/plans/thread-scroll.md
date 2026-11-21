@@ -209,6 +209,8 @@ Per slice:
 
 ## 6. What this plan does not prove
 
+- In slice 1's iOS simulator runs (#820), I1, I5, I6, I8, L6, L7, L8, L9, L10 and L13 never fired. L7 counts thread version observer firings, not stream chunks. I2 is a native anchor and has no counted probe.
+
 - None of the "can fire while the user scrolls" and F1 to F14 entries were observed. Slice 1 records explicit writes with motion state and displacement on drawn frames, which can confirm or refute a collision between explicit writers; it cannot see a native anchor move the viewport, which needs the A/B, and it reads F8 from displacement alone. The review of this plan (r1) checked rows by code path, not by running the app. Entries I am least sure of: F2 on the Mac (whether the native anchor really pulls back in the first drag frames), F3 (which non-wheel scrolls reach it), F4 and F5 (timing of the main-queue hops).
 - The 70-of-205 count is files-touched, found with `git log -i --grep=scroll` crossed with the file list; commit subjects were read for about 50 of them, not every diff.
 - The line counts and the "300 plus two drivers" estimate are not measured.

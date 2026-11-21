@@ -82,6 +82,41 @@ final class ThreadTailGuard {
         return phase == .animating ? "programmatic" : "idle"
     }
 
+    private var intent = ScrollIntent()
+    private weak var sampledScroll: UIScrollView?
+    private var sampledGeometry: (offset: CGFloat, size: CGSize, bounds: CGSize, inset: UIEdgeInsets)?
+
+    func resetTraceIntent() {
+        intent = ScrollIntent()
+        sampledScroll = nil
+        sampledGeometry = nil
+        if let scroll = scrollView { _ = traceIntent(in: scroll) }
+    }
+
+    /// Layout can move rows on the next frame without starting a scroll animation.
+    func noteTrace(_ event: SHRenderProbe.ScrollEvent) {
+        switch event.kind {
+        case "layout": intent.noteIOSLayout()
+        case "fixture": break
+        default: intent.noteIOSCommand(animated: event.detail == "find")
+        }
+    }
+
+    /// Displacement with no command or layout change can be reader input without a finger.
+    func traceIntent(in scroll: UIScrollView) -> ScrollIntent.State {
+        guard scroll === scrollView else { return .idle }
+        let now = (offset: scroll.contentOffset.y, size: scroll.contentSize, bounds: scroll.bounds.size, inset: scroll.adjustedContentInset)
+        let before = sampledScroll === scroll ? sampledGeometry : nil
+        sampledGeometry = now
+        sampledScroll = scroll
+        let native: ScrollIntent.Phase
+        if phase == .interacting || phase == .tracking || scroll.isDragging || scroll.isTracking { native = .touching }
+        else if phase == .decelerating || scroll.isDecelerating { native = .coasting }
+        else { native = phase == .animating ? .animating : .idle }
+        return intent.sampleIOS(phase: native, offsetDelta: Double(now.offset - (before?.offset ?? now.offset)),
+                                layoutChanged: before.map { $0.size != now.size || $0.bounds != now.bounds || $0.inset != now.inset } ?? false)
+    }
+
     /// UIKit's model offset can already be at the destination while a frame still shows the animation.
     func traceRows(in scroll: UIScrollView) -> [String: CGRect] {
         guard scroll === scrollView else { return [:] }

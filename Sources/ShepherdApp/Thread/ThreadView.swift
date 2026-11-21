@@ -1038,7 +1038,7 @@ struct ThreadView: View {
     private func scrollPhaseChanged(from old: ScrollPhase, to phase: ScrollPhase, distance: CGFloat) {
         // Only live interaction counts as intent, not momentum or a programmatic scroll.
         #if DEBUG
-        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard { trace.phaseState = phase }
+        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard { trace.phaseChanged(to: phase) }
         #endif
         historyAnchor.animating = phase == .animating
         follower.userScrolling = phase == .interacting
