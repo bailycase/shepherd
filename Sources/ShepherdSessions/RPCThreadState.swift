@@ -516,7 +516,8 @@ final class RPCThreadState {
     var dispatches: [Dispatch] = []
     /// A Retry on its way (`RPCThreadState+Retry.swift`): its dispatch, until the run it starts
     /// does (or pi says it started none).
-    var retryDispatch: UUID?
+    /// Starting or clearing one moves the thread's served running state, so it restarts the run-versus-status count like `running` does.
+    var retryDispatch: UUID? { didSet { if (retryDispatch != nil) != (oldValue != nil) { runDisagreement.reset() } } }
     var recoveryPending: (id: UUID, completion: (NativeThreadResult) -> Void)?
     var checkpointRecovery: NativeCheckpointRecovery?
     var paused = false
