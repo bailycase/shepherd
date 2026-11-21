@@ -21,6 +21,9 @@
 //      a restart, on another branch only where the entry is, and across a compaction. A provider's prompt cache
 //      is therefore broken once per batch (about once in 25 to 35 calls), not on every call.
 //
+// A call that arrives carrying one of those lines as an argument (the model copied it from its own old calls) is
+// blocked with an error that says so, whatever the tool.
+//
 // Never cleared: user messages, assistant text, thinking text, the compaction summary, the newest calls, and
 // the call's own name and path. The transcript, the session file and the thread keep every result in full: only
 // the request changes. Compaction uses the same clipping and remembered clearing boundary for its summary inputs.
@@ -159,7 +162,22 @@ export const imageStub = (count: number) => `[${count === 1 ? "image" : `${count
 
 export const customStub = (type: string, tokens: number) => `[${type || "custom"} message removed from context: about ${kilo(tokens)} tokens. It was shown earlier in this conversation.]`;
 
-export const argumentStub = (chars: number) => `[${chars} characters removed from context]`;
+// An argument's stub sits where a real value was, so the model sees its own earlier calls carrying it and can copy it
+// into a new call: the stub says it is no value, and `placeholderIn` refuses a call that carries one.
+export const argumentStub = (chars: number) => `[${chars} characters removed from context. This marks old text, not a value: never send it as an argument.]`;
+
+const STUB_SHAPE = /^\s*\[[^\[\]]*removed from context[^\[\]]*\]\s*$/;
+
+/** The path of the first string in `value` that is exactly one of the stubs above (a whole argument, not text that mentions one). */
+export function placeholderIn(value: unknown, path = "arguments", depth = 0): string | undefined {
+  if (typeof value === "string") return STUB_SHAPE.test(value) ? path : undefined;
+  if (!value || typeof value !== "object" || depth > 8) return undefined;
+  for (const [key, item] of Object.entries(value)) {
+    const found = placeholderIn(item, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
 
 // MARK: clearing what is old
 
@@ -378,6 +396,16 @@ export default function shepherdContext(pi: ExtensionAPI) {
       preparation.turnPrefixMessages = prefix;
     } catch {
       // Leave Pi's default compaction available if its preparation contract changes.
+    }
+  });
+  // The model sometimes copies a stub into a new call; the tool would run with the stub as its argument.
+  pi.on("tool_call", (event) => {
+    try {
+      const where = placeholderIn(event?.input);
+      if (!where) return undefined;
+      return { block: true, reason: `The "${event.toolName}" call was not run: ${where} is a placeholder Shepherd leaves where it removed old text from your context, not a value. Send the real text in full (for a long file or brief, write it in smaller pieces).` };
+    } catch {
+      return undefined;
     }
   });
   pi.on("context", (event, ctx) => {
