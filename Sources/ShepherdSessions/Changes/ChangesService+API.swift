@@ -101,11 +101,18 @@ extension ChangesService {
     // MARK: Overview
 
     func overviewNow(agentID: AgentID?, context: AgentContext) throws -> ChangesOverview {
+        var turns: [TurnRecord] = []
+        var turnHistoryProblem: String?
+        if let agentID {
+            do { turns = try turnStore.history(agentID).records }
+            catch { turnHistoryProblem = (error as? ChangesError)?.message ?? String(describing: error) }
+        }
         let repository: Repository
         do {
             repository = try self.repository(context.cwd)
         } catch let error as ChangesError {
-            return ChangesOverview(repository: nil, reason: error.message, defaultScope: .uncommitted)
+            return ChangesOverview(repository: nil, reason: error.message, defaultScope: .uncommitted,
+                                   turnHistoryProblem: turnHistoryProblem)
         }
         let branch = currentBranch(repository)
         // gh answers over the network: asked alongside the git work, not after it.
@@ -122,7 +129,7 @@ extension ChangesService {
         let working = try snapshot(repository).tree
         let index = try? indexTree(repository)
         let base = defaultBase(repository, agentBase: context.worktreeBase)
-        let lastTurn = agentID.flatMap { turnStore.published($0).last }
+        let lastTurn = TurnStore.published(turns).last
 
         func entry(_ scope: ChangesScope, _ old: String?, _ new: String?, unavailable: String? = nil) -> ChangesOverview.Entry {
             guard let old, let new, unavailable == nil else { return .init(scope: scope, unavailable: unavailable ?? "Not available.") }
@@ -139,12 +146,12 @@ extension ChangesService {
         }
 
         var entries: [ChangesOverview.Entry] = []
-        if let agentID, let record = turnStore.latest(agentID) {
+        if let record = turns.last {
             let usable = record.startTree.map { exists($0, in: repository) } ?? false
             entries.append(entry(.lastTurn, usable ? record.startTree : nil, record.endTree ?? working,
                                  unavailable: usable ? nil : (record.turn.reason ?? "The turn’s starting point is gone.")))
         } else {
-            entries.append(.init(scope: .lastTurn, unavailable: "No turn yet."))
+            entries.append(.init(scope: .lastTurn, unavailable: turnHistoryProblem ?? "No turn yet."))
         }
         entries.append(entry(.uncommitted, head ?? empty, working))
         entries.append(entry(.unstaged, index, working, unavailable: index == nil ? "The index has unresolved conflicts." : nil))
@@ -170,7 +177,7 @@ extension ChangesService {
         return ChangesOverview(repository: repository.root, branch: branch, head: head.map(shortID),
                                defaultScope: worktree && base != nil ? .branch(base: nil) : .uncommitted,
                                defaultBase: base, entries: entries, commits: history.commits, commitsBase: history.base,
-                               pullRequest: pull, lastTurn: lastTurn)
+                               pullRequest: pull, lastTurn: lastTurn, turnHistoryProblem: turnHistoryProblem)
     }
 
     // MARK: Remote

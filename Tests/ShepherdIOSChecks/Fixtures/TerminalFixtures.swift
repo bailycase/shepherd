@@ -44,12 +44,12 @@ enum TerminalFixture {
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
         var state = hosts[index].state
         let tabID = TabID(rawValue: "tab-" + FixtureData.preview.rawValue)
-        var layout = PaneNode.leaf(LeafPane(id: threadPane, cwd: "/Users/dev/Shepherd", agentID: FixtureData.preview))
+        var layout = PaneNode.leaf(LeafPane(id: threadPane, cwd: "/Users/dev/acme-web", agentID: FixtureData.preview))
         // Opened with + three times: each beside the thread, the newer nearer it.
         for terminal in [
-            LeafPane(id: beside, sessionID: besideSession, cwd: "/Users/dev/Shepherd"),
+            LeafPane(id: beside, sessionID: besideSession, cwd: "/Users/dev/acme-web"),
             LeafPane(id: psql, sessionID: psqlSession, cwd: "/Users/dev/payments"),
-            LeafPane(id: shell, sessionID: shellSession, cwd: "/Users/dev/Shepherd"),
+            LeafPane(id: shell, sessionID: shellSession, cwd: "/Users/dev/acme-web"),
         ] {
             layout = .split(axis: .horizontal, ratio: 0.5, first: layout, second: .leaf(terminal))
         }

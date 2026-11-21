@@ -53,10 +53,6 @@ final class ShepherdViewModel {
     @ObservationIgnored var queuedReview: SidebarRowID?
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
-    /// Those lists with the sidebar filters and sent-thread folds applied, cached on the lists and criteria.
-    @ObservationIgnored var filteredSidebarListsCache: (lists: SidebarLists, filters: SidebarThreadFilters, openFolds: Set<String>, filtered: SidebarLists)?
-    /// How often the filter ran, for the tests of that cache.
-    @ObservationIgnored var filteredSidebarListsRuns = 0
     @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
     var sidebarCompletions = SidebarCompletions()
     /// Prompted creations belong in Working before pi reports its first turn.
@@ -270,7 +266,6 @@ final class ShepherdViewModel {
     }
     static let dismissedDispatchesKey = "shepherd.sidebar.dismissedDispatches"
     static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
-    var sidebarThreadFilters = SidebarThreadFilters()
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
     }
@@ -374,11 +369,6 @@ final class ShepherdViewModel {
     let fleet = FleetSettingsModel()
     /// The Fleet page and the sidebar's Fleet corner: the cards derived from `fleet`'s snapshot.
     let fleetPage = FleetPageModel()
-    /// What every thread this Mac sees (its own and each connected host's) spent today, for the Fleet page. A host that is offline adds
-    /// what it last said; a thread whose day isn't today adds nothing.
-    @ObservationIgnored lazy var spendToday = SpendTodayModel { [unowned self] in
-        state.agents.compactMap(\.spend) + remoteHosts.connections.flatMap { $0.state.agents.compactMap(\.spend) }
-    }
     /// What the buttons on dispatch cards do (`configureFleetThreadActions`).
     let fleetThreadActions = FleetThreadActions()
     /// This app's connections to the Macs of the fleet (`FleetConnections`).
@@ -465,6 +455,9 @@ final class ShepherdViewModel {
     /// This Mac's automations' runs as the run log kept them, oldest first (read for the
     /// Automations page).
     var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// Why a host could not give an automation's runs (its run history file is damaged), by
+    /// automation, This Mac's under `PageHost.localID`. The Automations page shows it.
+    var automationRunProblems: [AutomationKey: String] = [:]
     /// Each triggered automation's trigger state (paused, pending events, next run), and the
     /// host-wide Pause all triggers switch.
     var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]
@@ -1212,8 +1205,9 @@ final class ShepherdViewModel {
             openDestination(.designs)
         }
         // The host's push removed the selected agent (deleted here first, then restated by an
-        // earlier push, or deleted elsewhere): nothing points at it.
-        if selectedAgentID != nil, selectedAgent == nil { selectedAgentID = nil }
+        // earlier push, or deleted elsewhere): nothing points at it. Not while Run Now is replacing
+        // it: the new run takes its place, and the fallback below waits for that.
+        if selectedAgentID != nil, selectedAgent == nil, selectedAgentID != replacingRun { selectedAgentID = nil }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }
         // With nothing on screen (the shown agent went away, or the app just launched), the

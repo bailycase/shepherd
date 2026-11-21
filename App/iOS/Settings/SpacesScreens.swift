@@ -486,6 +486,10 @@ private struct SpaceInheritedRow: View {
 private struct SpaceMCP: View {
     let model: ClientSpaceConfiguration
     @Environment(\.spaceSettingsConnection) private var connection
+    @State private var browser = MobileMCPBrowser()
+    @State private var active: ClientSpaceConfiguration.Server.ID?
+    @State private var authTask: Task<Void, Never>?
+    @State private var problem: String?
     private var host: SettingsHost? { connection?.host }
 
     var body: some View {
@@ -499,18 +503,45 @@ private struct SpaceMCP: View {
         SettingsSection("Defined here") {
             SHLazyListCard(model.servers) { server in
                 let signedIn = model.signedIn[server.file]?.contains(server.name) == true
+                let signingIn = active == server.id
+                let status = host?.isConnected == true ? "Signing in…" : "Waiting for host…"
                 HStack(spacing: SH.Space.m) {
-                    SHListRow(server.name, subtitle: server.endpoint, subtitleMono: true, chevron: false)
-                    if model.canUseMCP, server.usesOAuth, signedIn {
-                        Button("Sign out") { Task { await model.signOut(server) } }
+                    SHListRow(server.name, subtitle: signingIn ? status : server.endpoint, subtitleMono: !signingIn, chevron: false)
+                    if signingIn {
+                        Button("Cancel") { authTask?.cancel() }
                             .buttonStyle(.sh(.secondary, size: .l))
-                            .disabled(host?.isConnected != true || model.busy || model.drafts[server.file]?.isEdited == true)
                             .padding(.trailing, SH.Space.l)
+                    } else if model.canUseMCP, server.usesOAuth {
+                        Button(signedIn ? "Sign out" : "Sign in") {
+                            if signedIn { Task { await model.signOut(server) } }
+                            else { signIn(server) }
+                        }
+                        .buttonStyle(.sh(.secondary, size: .l))
+                        .disabled(host?.isConnected != true || model.busy || model.drafts[server.file]?.isEdited == true || (!signedIn && active != nil))
+                        .padding(.trailing, SH.Space.l)
                     }
                 }
             }
             SpaceFileLinks(files: model.files?[.mcp] ?? [], model: model)
-            SettingsFootnote("Sign in on the host. Credentials stay there.")
+            if let problem { SettingsFootnote(problem, tone: .failed) }
+            SettingsFootnote(model.canUseMCP ? "Credentials stay on the host." : "Sign in on the host. Credentials stay there.")
+        }
+        .background { MobileMCPBrowserAnchor(browser: browser).allowsHitTesting(false) }
+    }
+
+    private func signIn(_ server: ClientSpaceConfiguration.Server) {
+        guard active == nil else { return }
+        active = server.id
+        problem = nil
+        // Leaving the view doesn't cancel an active sheet. Requests still use the route's pinned host.
+        authTask = Task {
+            defer { active = nil; authTask = nil }
+            do { try await model.signIn(server, authorize: browser.authorize) }
+            catch is CancellationError {}
+            catch {
+                problem = (error as? ProjectFileError)?.description ?? (error as? MCPCallbackError)?.description
+                    ?? (error as? LocalizedError)?.errorDescription ?? settingsProblem(error)
+            }
         }
     }
 }

@@ -84,6 +84,7 @@ final class ThreadImageLoad {
                 }.value
             }
             guard !Task.isCancelled, let self else { return }
+            SHRenderProbe.scrollEvent("thread.write.L10", "image.loadFinished", kind: "layout")
             self.state = switch outcome {
             case .image(let data): thumbnail.map { State.picture(data, NSImage(cgImage: $0.image, size: $0.size)) } ?? .unavailable
             case .unavailable: .unavailable

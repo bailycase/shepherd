@@ -15,7 +15,124 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import validate
 
 
+def frame(t, first, rows, *callers, hidden=False, height=500, following=False, clip=(200, 100)):
+    return {"timestamp": t, "refreshInterval": 0.01, "first": first, "rows": rows, "hidden": hidden,
+            "offset": 10, "documentHeight": height, "streamingRowHeight": height - 450,
+            "following": following, "distance": 0, "clipSize": clip,
+            "events": [{"caller": caller} for caller in callers]}
+
+
 class ValidateTests(unittest.TestCase):
+    def test_scroll_compares_the_same_row_when_the_deck_reveals_it(self):
+        frames = [
+            frame(0, "a", {"a": -1, "b": 5}),
+            frame(0.01, None, {}, "fixture.switchAway", hidden=True),
+            frame(0.02, "b", {"a": -9, "b": 8}, "fixture.switchBack", "ThreadView.historyMaterialize", "NSClipView.bounds"),
+        ]
+        frames[2]["events"][-1]["stack"] = [
+            "7 AppKit 0x1 -[NSView _postBoundsChangeNotification] + 96",
+            "8 AppKit 0x2 -[NSView setBoundsOrigin:] + 240",
+            "9 SwiftUI 0x3 $s7SwiftUI17HostingScrollViewC13updateContext + 5328",
+        ]
+        [jump] = validate.measure_scroll(frames)["jumps"]
+        self.assertEqual((jump["frame"], jump["row"], jump["delta_pt"]), (2, "a", -8))
+        self.assertEqual(jump["paths"], ["ThreadView.historyMaterialize", "SwiftUI.HostingScrollView.updateContext"])
+
+    def test_scroll_ledger_keeps_row_identity_and_reports_adjacent_writes(self):
+        frames = [frame(0, "a", {"a": 0, "b": 60}),
+                  frame(0.01, "b", {"a": -65, "b": -5, "c": 55}),
+                  frame(0.02, "c", {"b": -20, "c": 40}),
+                  frame(0.03, "d", {"d": 2}), frame(0.04, "d", {"d": 1})]
+        frames[1]["events"] = [{"caller": "thread.write.M5", "kind": "write", "motion": "idle", "anchor": "a"},
+                               {"caller": "fixture.scrollInput", "scrollDelta": 65}]
+        frames[2]["events"] = [{"caller": "thread.write.M6", "kind": "write", "motion": "coasting", "anchor": "b"},
+                               {"caller": "thread.write.fixture", "kind": "fixture"}]
+        summary = validate.measure_scroll(frames)
+        ledger = validate.scroll_ledger(frames, summary)
+        jump = summary["jumps"][0]
+        self.assertEqual((jump["frame"], jump["writer_candidates"]), (2, ["thread.write.M5", "thread.write.M6"]))
+        self.assertEqual(ledger["hz"], 100)
+        self.assertEqual(ledger["writer_counts"], {"thread.write.M5": 1, "thread.write.M6": 1})
+        _, crossing, correction, handoff, settled = ledger["frames"]
+        self.assertEqual((crossing["row"], crossing["delta_pt"]), ("a", 0))
+        self.assertEqual((correction["row"], correction["delta_pt"], correction["writer_pairs"]),
+                         ("b", -15, [("thread.write.M5", "thread.write.M6")]))
+        self.assertEqual(handoff["handoff"], {"from": "c", "to": "d"})
+        self.assertNotIn("delta_pt", handoff)
+        self.assertEqual(settled["delta_pt"], -1)
+
+    def test_native_offset_write_can_be_nested_under_fixture_scroll(self):
+        event = {"caller": "NSClipView.bounds", "detail": "fixture.clip.scroll", "stack": [
+            "7 AppKit 0x1 -[NSView _postBoundsChangeNotification] + 96",
+            "8 AppKit 0x2 -[NSView translateOriginToPoint:] + 240",
+        ]}
+        self.assertEqual(validate.native_scroll_path(event), "fixture.clip.scroll")
+        event["stack"].insert(2, "9 AppKit 0x3 -[NSClipView _reflectDocumentViewFrameChange] + 100")
+        self.assertEqual(validate.native_scroll_path(event), "AppKit.NSClipView._reflectDocumentViewFrameChange")
+
+    def test_input_does_not_hide_a_jump_and_small_steps_can_add_up_to_drift(self):
+        frames = [frame(i / 100, "a", {"a": y}) for i, y in enumerate((0, 15, 16, 17, 18))]
+        frames[1]["events"].append({"caller": "fixture.scrollInput", "scrollDelta": -10})
+        summary = validate.measure_scroll(frames)
+        self.assertEqual([jump["delta_pt"] for jump in summary["jumps"]], [5])
+        self.assertEqual([drift["delta_pt"] for drift in summary["drift"]], [3])
+        frames[1]["first"], frames[1]["rows"], frames[1]["offset"] = "b", {"b": 0}, -5
+        [jump] = validate.measure_scroll(frames[:2])["jumps"]
+        self.assertEqual((jump["measured"], jump["delta_pt"]), ("clip offset", 5))
+
+    def test_paging_anchor_swap_counts_once_and_has_no_invented_delta(self):
+        frames = [frame(0, "user-60", {"user-60": -1}), frame(0.01, "user-0", {"user-0": -1}),
+                  frame(0.02, "user-0", {"user-0": -1}), frame(0.03, "user-60", {"user-60": -1})]
+        summary = validate.measure_scroll(frames)
+        [loss] = summary["anchor_losses"]
+        self.assertEqual((loss["row"], loss["first_after"], loss["restored_frame"]), ("user-60", "user-0", 3))
+        self.assertFalse(summary["jumps"])
+        self.assertNotIn("delta_pt", loss)
+
+        [jump] = validate.measure_scroll(frames[:-1])["jumps"]
+        self.assertEqual((jump["frame"], jump["measured"], jump["delta_pt"]), (1, "unrestored anchor loss", None))
+
+    def test_only_a_matching_sticky_repin_is_separated_from_input_frame_jumps(self):
+        before = frame(0, "a", {"a": 0}, following=True)
+        before["distance"] = 57
+        after = frame(0.01, "a", {"a": -57}, "fixture.streamChunk", following=True)
+        after["events"].append({"caller": "fixture.scrollInput", "scrollDelta": -28})
+        summary = validate.measure_scroll([before, after])
+        [repin] = summary["in_band_inputs"]
+        self.assertEqual((repin["delta_pt"], repin["distance_before"], repin["distance"], repin["following"]),
+                         (-85, 57, 0, True))
+        self.assertFalse(summary["jumps"])
+
+        after["rows"]["a"] = 0  # A cancelled 28 pt input alone is not a 57 pt return to the tail.
+        summary = validate.measure_scroll([before, after])
+        self.assertFalse(summary["in_band_inputs"])
+        self.assertEqual([jump["delta_pt"] for jump in summary["jumps"]], [-28])
+
+    def test_only_growth_while_already_sticky_in_band_is_expected_following(self):
+        frames = [frame(0, "a", {"a": 0}, following=True),
+                  frame(0.01, "a", {"a": -29}, "fixture.stickyChunk", height=529, following=True),
+                  frame(0.02, "a", {"a": -58}, "fixture.streamChunk", height=558)]
+        summary = validate.measure_scroll(frames)
+        self.assertEqual([motion["frame"] for motion in summary["sticky_follows"]], [1])
+        self.assertEqual([jump["frame"] for jump in summary["jumps"]], [2])
+        frames[0]["distance"] = 81
+        self.assertFalse(validate.measure_scroll(frames)["sticky_follows"])
+
+    def test_markers_without_layout_changes_or_a_settle_window_are_not_evidence(self):
+        name = "window-resize"
+        required = validate.SCROLL_SCENARIOS[name]
+        frames = [frame(0, "a", {"a": 0})]
+        frames.extend(frame(i / 10, "a", {"a": 0}, "fixture.windowResize", clip=(200 + i, 100)) for i in range(1, 4))
+        frames.append(frame(1.2, "a", {"a": 0}, clip=(203, 100)))
+        validate.check_scroll_actions(name, frames, required)
+        with self.assertRaisesRegex(ValueError, "settle samples"):
+            validate.check_scroll_actions(name, frames[:-1], required)
+        frames[2]["clipSize"] = frames[1]["clipSize"]
+        with self.assertRaisesRegex(ValueError, "did not change clipSize"):
+            validate.check_scroll_actions(name, frames, required)
+        with self.assertRaisesRegex(ValueError, "expected all six"):
+            validate.scroll_evidence({})
+
     def test_bare_invocation_fails_loudly(self):
         completed = subprocess.run([sys.executable, str(ROOT / "scripts/validate.py")],
                                    capture_output=True, text=True)

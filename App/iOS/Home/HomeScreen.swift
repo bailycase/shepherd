@@ -18,7 +18,6 @@ struct HomeScreen: View {
                 if model.hosts.isEmpty {
                     NoHostsState()
                 } else {
-                    SpendToday(spend: model.spendToday)
                     HomeSections(model: model, selected: navigator.selectedThread)
                 }
             }
@@ -62,24 +61,12 @@ private struct HomeSections: View {
 
     var body: some View {
         let automations = AutomationsStore.of(hosts)
-        let sidebar = SidebarThreads.of(hosts)
-        let filters = sidebar.activeFilters(model)
-        let groups = sidebar.groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers, filters: filters)
+        let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         if !model.offlineHosts.isEmpty {
             SHListCard {
                 ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
             }
         }
-        MobileSidebarFilterBar(sidebar: sidebar, filters: filters, hosts: model.filterHosts)
-        if groups.isFiltering {
-            HomeReviewQueueRow()
-            filteredGroups(groups, sidebar: sidebar)
-        } else {
-            unfilteredGroups(groups, automations: automations)
-        }
-    }
-
-    @ViewBuilder private func unfilteredGroups(_ groups: FleetSidebarGroups, automations: AutomationsStore) -> some View {
         if !groups.needsYou.isEmpty {
             section("Needs you", attention: true, count: groups.needsYou.count) {
                 SHListCard {
@@ -161,49 +148,6 @@ private struct HomeSections: View {
         }
     }
 
-    @ViewBuilder private func filteredGroups(_ groups: FleetSidebarGroups, sidebar: SidebarThreads) -> some View {
-        if groups.hasNoMatches {
-            SHSidebarFilterEmpty { sidebar.filters = .init() }
-        } else {
-            if !groups.needsYou.isEmpty {
-                section("Needs you", attention: true, count: groups.needsYou.count) {
-                    SHLazyListCard(groups.needsYou) { attentionRow($0) }
-                }
-            }
-            if !groups.working.isEmpty {
-                section("Working", count: groups.working.count) {
-                    SHLazyListCard(groups.working) { threadRow($0) }
-                }
-            }
-            if !groups.done.isEmpty {
-                section("Done", count: groups.done.count, trailing: MarkAllSeenChip(rows: groups.done)) {
-                    SHLazyListCard(groups.done) { threadRow($0) }
-                }
-            }
-            if !groups.pinned.isEmpty {
-                section("Pinned", count: groups.pinned.count) {
-                    SHLazyListCard(groups.pinned) { pinned in
-                        switch pinned {
-                        case .thread(let row): threadRow(row)
-                        case .attention(let item): attentionRow(item)
-                        }
-                    }
-                }
-            }
-            if !groups.manualRuns.isEmpty || !groups.matchingRuns.isEmpty {
-                section("Automation runs", count: groups.manualRuns.count + groups.matchingRuns.count) {
-                    SHLazyListCard(groups.manualRuns) { SidebarAutomationRun(row: $0, selected: selected) }
-                    SHLazyListCard(groups.matchingRuns) { threadRow($0) }
-                }
-            }
-            if !groups.recents.isEmpty {
-                section("Recents", count: groups.recents.count) {
-                    SHLazyListCard(groups.recents) { threadRow($0) }
-                }
-            }
-        }
-    }
-
     private func section(_ title: String, attention: Bool = false, count: Int?, trailing: MarkAllSeenChip? = nil,
                          @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
@@ -241,18 +185,6 @@ private struct HomeSections: View {
         Button { navigator.open(projects.route(item)) } label: { AttentionRow(item: item).equatable() }
             .buttonStyle(.shRow(radius: 0))
             .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
-    }
-}
-
-struct MobileSidebarFilterBar: View {
-    let sidebar: SidebarThreads
-    let filters: SidebarThreadFilters
-    let hosts: [SidebarThreadFilters.Host]
-
-    var body: some View {
-        SHSidebarFilterBar(chips: SidebarThreadFilters.Chip.allCases, selection: filters.chips,
-                           hosts: hosts, host: filters.host, title: \.rawValue, hostName: \.name,
-                           toggle: { sidebar.filters.toggle($0) }, selectHost: { sidebar.filters.host = $0 })
     }
 }
 

@@ -331,10 +331,13 @@ public struct ChangesOverview: Codable, Hashable, Sendable {
     public var commitsBase: String?
     public var pullRequest: ChangesPullRequest?
     public var lastTurn: ChangesTurn?
+    /// Why turn history cannot be used. Working-tree comparisons still work.
+    public var turnHistoryProblem: String?
 
     public init(repository: String?, reason: String? = nil, branch: String? = nil, head: String? = nil, defaultScope: ChangesScope,
                 defaultBase: String? = nil, entries: [ChangesOverview.Entry] = [], commits: [ChangesCommit] = [],
-                commitsBase: String? = nil, pullRequest: ChangesPullRequest? = nil, lastTurn: ChangesTurn? = nil) {
+                commitsBase: String? = nil, pullRequest: ChangesPullRequest? = nil, lastTurn: ChangesTurn? = nil,
+                turnHistoryProblem: String? = nil) {
         self.repository = repository
         self.reason = reason
         self.branch = branch
@@ -346,6 +349,7 @@ public struct ChangesOverview: Codable, Hashable, Sendable {
         self.commitsBase = commitsBase
         self.pullRequest = pullRequest
         self.lastTurn = lastTurn
+        self.turnHistoryProblem = turnHistoryProblem
     }
 }
 

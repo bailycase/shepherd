@@ -434,6 +434,7 @@ struct ActivityLineView: View, Equatable {
     }
 
     private func toggle() {
+        SHRenderProbe.scrollEvent("thread.write.L9", "activity.disclosure", kind: "layout")
         withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
     }
 
@@ -452,6 +453,7 @@ struct ActivityLineView: View, Equatable {
             review(path)
         } else if call.expandable {
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+                SHRenderProbe.scrollEvent("thread.write.L9", "activity.callDisclosure", kind: "layout")
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
         }

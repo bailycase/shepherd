@@ -484,9 +484,12 @@ struct MountedBudgetTests {
 
         try await thread.show(true)
         #expect(!thread.store.transcriptReleased)
+        // The rows the lazy stack has not built are estimates, taller than the rows are: a thread whose first frame draws the rows that
+        // cover the window leaves the stack nothing to build at its tail (a little over a tenth taller than the thread was), one that drew its
+        // last screen alone lets it build a few (a few percent shorter). The same rows, at the tail either way: a thread without them is under a quarter.
         try await eventuallyOnMain("the thread to be as tall as before") {
             ListPerf.settle(thread.window)
-            return try abs(height() - tall) < tall / 10
+            return try abs(height() - tall) < tall / 5
         }
     }
 

@@ -34,7 +34,7 @@ public final class HostDrain {
     public func begin(_ reason: String) {
         guard !draining else { return }
         draining = true
-        ShepherdLog.info("host draining: \(reason)")
+        ShepherdLog.info("host draining (build \(server.hostBuild ?? "?")): \(reason)")
         let deadline = ContinuousClock.now.advanced(by: cap)
         // ponytail: polls every few seconds; a state observer if exits need to be prompter.
         task = Task { [weak self] in

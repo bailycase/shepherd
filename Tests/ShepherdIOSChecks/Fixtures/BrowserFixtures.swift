@@ -76,9 +76,9 @@ enum BrowserFixture {
             return hosts
         }
         let servers = [
-            DevServer(script: "dev", command: "pnpm dev", packageName: "widget-gallery", directory: "/Users/dev/Shepherd",
+            DevServer(script: "dev", command: "pnpm dev", packageName: "widget-gallery", directory: "/Users/dev/acme-web",
                       manifest: "package.json", port: port),
-            DevServer(script: "storybook", command: "pnpm storybook", packageName: "widget-gallery", directory: "/Users/dev/Shepherd",
+            DevServer(script: "storybook", command: "pnpm storybook", packageName: "widget-gallery", directory: "/Users/dev/acme-web",
                       manifest: "package.json", port: 6006),
         ]
         hosts[index].reply = { request in

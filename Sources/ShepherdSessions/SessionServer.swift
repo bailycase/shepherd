@@ -954,7 +954,7 @@ public final class SessionServer: @unchecked Sendable {
     private let originStore: ThreadOriginStore
     private let agentRecovery: AgentRecoveryStore
     /// How each automation's runs went (support directory), for remote clients.
-    private let runLog: AutomationRunLog
+    let runLog: AutomationRunLog
     /// Fires triggered automations (schedules, GitHub). `serveAutomations` installs its host.
     public let automationTriggers: AutomationTriggers
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
@@ -1025,6 +1025,12 @@ public final class SessionServer: @unchecked Sendable {
     /// The grid this Mac's app's terminals last reported: a new terminal starts at it, not 80×24.
     var lastLocalGrid: (cols: Int, rows: Int)?
     private var clients: [Int32: ExtensionConnection] = [:]
+    private var projectMCPDisconnectGrace: DispatchTimeInterval = .seconds(60)
+    private var projectMCPDisconnects: [UUID: DispatchWorkItem] = [:]
+
+    func setProjectMCPDisconnectGraceForTests(_ grace: DispatchTimeInterval) {
+        queue.sync { projectMCPDisconnectGrace = grace }
+    }
     private struct PendingAgentRequest {
         let caller: ExtensionConnection
         let target: ExtensionConnection?
@@ -1623,6 +1629,7 @@ public final class SessionServer: @unchecked Sendable {
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
+                    Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
                 fleet = service
                 fleetRepoFinder.value = service.dispatch.finder
@@ -2449,6 +2456,8 @@ public final class SessionServer: @unchecked Sendable {
         fleetRepoFinder.value = nil
         instructions.onChange = nil
         isStarted = false
+        for work in projectMCPDisconnects.values { work.cancel() }
+        projectMCPDisconnects.removeAll()
         pushNotifications.stop()
         logicalProjectEpoch &+= 1
         automationStarts.removeAll()
@@ -2766,6 +2775,7 @@ public final class SessionServer: @unchecked Sendable {
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
+        if case .snapshot = request { logRunDisagreement(agentID: agentID, status: agent.status, thread: thread) }
         // Arm before dispatch: pi can exit before acknowledging a prompt.
         let previousPush = (thread.pushRunArmed, thread.pushAwaitingStart)
         if isSend {
@@ -3342,7 +3352,10 @@ public final class SessionServer: @unchecked Sendable {
         client.fleetDeviceID = device
         client.clientName = clientName
         if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-        if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
+        if let device {
+            projectMCPDisconnects.removeValue(forKey: device)?.cancel()
+            fleet?.deviceAuthenticated(device, connection: client.fd)
+        }
         client.authenticated = true
         client.clientCapabilities = Set(capabilities ?? [])
         if client.isLocal { localAppsChanged() }
@@ -3863,14 +3876,19 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers."), to: client)
                 return
             }
+            guard !request.requiresMCP || client.fleetPeerID == nil else {
+                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Use a paired device to manage space MCP sign-in."), to: client)
+                return
+            }
             guard !request.requiresMCP || client.projectMCPRequests.count < 16 else {
                 send(.error(id: id, code: "busy", message: "Too many MCP requests are pending."), to: client)
                 return
             }
             let state = store.state, projects = projects
+            let owner = client.fleetDeviceID ?? client.projectMCPOwner
             let task = Task { [weak self] in
                 let result: Result<RemoteProjectsResult, Error>
-                do { result = .success(try await projects.request(request, state: state, owner: client.projectMCPOwner)) }
+                do { result = .success(try await projects.request(request, state: state, owner: owner)) }
                 catch { result = .failure(error) }
                 self?.queue.async { [weak self] in
                     guard let self, self.clients[client.fd] === client else { return }
@@ -4360,6 +4378,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         switch request {
         case .runs:
+            // A history that can't be read is an error, never an empty list: the page says why.
+            if let problem = runLog.recheck() { return fail(RemoteAutomationRequest.runHistoryDamagedCode, problem) }
             send(.automationResult(id: id, result: .runs(runLog.runs(for: automationID, in: store.state))), to: client)
             return
         case .markRead(let runID):
@@ -5565,7 +5585,21 @@ public final class SessionServer: @unchecked Sendable {
         client.projectMCPRequests.removeAll()
         for read in client.directoryReads.values { read.task.cancel() }
         client.directoryReads.removeAll()
-        Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        if let device = client.fleetDeviceID {
+            if isStarted, !clients.values.contains(where: { $0.fleetDeviceID == device }) {
+                let cleanup = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.projectMCPDisconnects[device] = nil
+                    // Do not cancel a new login if a device reconnects while cleanup hops to the actor.
+                    let cutoff = ContinuousClock.now
+                    Task { await self.projects.cancelWaitingMCP(owner: device, startedBefore: cutoff) }
+                }
+                projectMCPDisconnects[device] = cleanup
+                queue.asyncAfter(deadline: .now() + projectMCPDisconnectGrace, execute: cleanup)
+            }
+        } else {
+            Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
         if client.isLocal, client.authenticated {
@@ -5751,7 +5785,6 @@ public final class SessionServer: @unchecked Sendable {
             // Ahead of the rows: a run anyone can see is one the Changes engine has heard of.
             changes.noteChildren(agentID: agentID, runs: children)
             rpcThread(forAgent: agentID)?.setSubagents(children)
-            recordChildSpend(agentID: agentID, runs: children)
             if wasActive, !active(children) { noteChildrenSettled(agentID) }
             let touchedFiles = CheckoutMonitor.childrenTouchedFiles(from: before, to: children)
             hopToMain { [weak self] in
@@ -7113,6 +7146,16 @@ public final class SessionServer: @unchecked Sendable {
         source.activate()
     }
 
+    /// A thread that serves `running` (what a client's Stop button follows) while its agent's status, which the sidebar shows, says
+    /// it is not working, for longer than a run takes to report its start: logged once, with what holds the run state. This runs only
+    /// when a client asks for a snapshot, so a line proves the host holds the state and its absence proves nothing (a resting client
+    /// asks for none). Any status or run change restarts the count.
+    private func logRunDisagreement(agentID: AgentID, status: AgentStatus, thread: RPCThreadState) {
+        let hostRunning = thread.running || thread.retryDispatch != nil
+        guard thread.runDisagreement.shouldWarn(disagrees: hostRunning && (status == .done || status == .idle)) else { return }
+        ShepherdLog.warning("agent \(agentID): thread serves running (rpc=\(thread.running) retryDispatch=\(thread.retryDispatch != nil) doneHeld=\(thread.doneHeld) piBusy=\(thread.piBusy) settleCapture=\(thread.settleCapture != nil)) but its status is \(status.rawValue) for \(thread.runDisagreement.seconds())s; pi last spoke \(thread.secondsSinceLastEvent)s ago")
+    }
+
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
         let thread = rpcThread(forAgent: agentID)
         let goal = thread?.goal
@@ -7145,6 +7188,7 @@ public final class SessionServer: @unchecked Sendable {
                 hopToMain { [weak self] in self?.onAgentStatus?(agentID, status, failure) }
                 return
             }
+            thread?.runDisagreement.reset()
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
@@ -7221,35 +7265,6 @@ public final class SessionServer: @unchecked Sendable {
             $0.agents[index].waitingOn = question
             $0.agents[index].waitingReason = reason
         }
-        let committedState = store.state
-        scheduleRemoteState()
-        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
-    }
-
-    /// Server queue: pi reported a thread's session totals. Keeps the agent's spend (`AgentSpend`) and, when it moved, broadcasts it
-    /// like a status: live state, written along with the next change. The model is the one the thread runs, which the growth is for;
-    /// the day is this host's, stamped with its zone so every viewer agrees which day is today.
-    func recordSpend(agentID: AgentID, stats: NativeThreadStats, model: String?, sessionID: String? = nil, now: Date = Date(),
-                     zone: TimeZone = .current) {
-        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
-        let next = AgentSpend.updated(agent.spend, tokens: stats.totalTokens, cost: stats.cost, model: model ?? agent.model,
-                                      day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier, sessionID: sessionID)
-        applySpend(next, to: agentID)
-    }
-
-    /// Server queue: the agent's background subagents published their rows. Each runs in its own pi process, so its usage (tokens and
-    /// cost of its own messages, not the history a fork inherited) joins the thread's spend once, by what each run grew by.
-    func recordChildSpend(agentID: AgentID, runs: [ChildRun], now: Date = Date(), zone: TimeZone = .current) {
-        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
-        let usage = runs.map { ChildUsage(id: $0.id, model: $0.model, tokens: $0.tokens, cost: $0.cost, finished: $0.isTerminal,
-                                          startedAt: $0.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }) }
-        let next = AgentSpend.addingChildren(agent.spend, usage, day: SpendDay.key(now, zone: zone.identifier), zone: zone.identifier)
-        applySpend(next, to: agentID)
-    }
-
-    private func applySpend(_ next: AgentSpend?, to agentID: AgentID) {
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }), next != store.state.agents[index].spend else { return }
-        store.updateLive { $0.agents[index].spend = next }
         let committedState = store.state
         scheduleRemoteState()
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -8178,6 +8193,12 @@ public final class SessionServer: @unchecked Sendable {
     /// GUI reads whether a run is live (`AutomationRun.isLive`) from it.
     public var openAutomationRuns: [AutomationID: AutomationRun] {
         runLog.openRuns
+    }
+
+    /// Why the run history can't be read (the file, the reason, how to fix it), or nil. No
+    /// automation starts while it is set.
+    public func automationRunHistoryProblem() async -> String? {
+        await enqueueValue { self.runLog.recheck() }
     }
 
     /// The runs the host kept for an automation, oldest first; a run's agent only while it exists.
@@ -9895,10 +9916,6 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
-            thread.onStatsChanged = { [weak serverWeak, weak thread] stats, piSessionID in
-                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
-                server.recordSpend(agentID: agentID, stats: stats, model: thread?.model, sessionID: piSessionID)
-            }
             thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, server.isStarted else { return true }
                 if thread.restoringRecovery, thread.isServable, !thread.historyUnread, thread.recoveryAtLaunch != nil {
@@ -11153,8 +11170,11 @@ extension SessionServer {
         changes.agentName = { [weak self] agentID in
             self?.state.agents.first { $0.id == agentID }?.name
         }
-        changes.onTurnsChanged = { [weak self] agentID, turns in
-            self?.queue.async { self?.setTurnChanges(turns, for: agentID) }
+        changes.onTurnsChanged = { [weak self] agentID, _ in
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.setTurnChanges(self.changes.turns(agentID: agentID), for: agentID)
+            }
         }
     }
 

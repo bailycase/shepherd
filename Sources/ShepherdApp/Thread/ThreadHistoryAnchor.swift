@@ -35,7 +35,10 @@ final class ThreadHistoryAnchor {
     }
 
     func cancel() {
-        if rowID != nil { position = ScrollPosition(idType: String.self) }
+        if rowID != nil {
+            ThreadScrollTrace.write("thread.write.M5", "history.cancel", in: scroll, target: rowID)
+            position = ScrollPosition(idType: String.self)
+        }
         generation &+= 1
         savedTop = nil
         scroll = nil
@@ -101,6 +104,7 @@ final class ThreadHistoryAnchor {
             let clip = scroll.contentView
             var bounds = clip.bounds
             bounds.origin.y += delta
+            ThreadScrollTrace.write("thread.write.M6", "history.correct", in: scroll, target: self.rowID)
             clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
             scroll.reflectScrolledClipView(clip)
         }

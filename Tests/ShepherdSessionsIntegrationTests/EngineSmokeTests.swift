@@ -51,6 +51,23 @@ struct EngineSmokeTests {
         try await EngineSmoke.run(node: engine.node, engine: engine)
     }
 
+    // Control for ChildrenExtensionTests: the newer entry point alone reproduces the load error.
+    @Test func piRejectsAnUpdatedEntryPointWithoutItsNewHelper() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("ext-update")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let entry = scratch.appendingPathComponent("shepherd-children.ts")
+        try Data("import './new-helper.mjs'; export default function () {}".utf8).write(to: entry)
+        let pi = try RPCProcess(executable: engine.node.path,
+                                arguments: [engine.entry.path, "--mode", "rpc", "--no-session", "-e", entry.path],
+                                directory: scratch, environment: ["HOME": scratch.path, "TMPDIR": scratch.path,
+                                                                   "PATH": "/usr/bin:/bin", "PI_CODING_AGENT_DIR": scratch.appendingPathComponent("pi").path,
+                                                                   "PI_OFFLINE": "1"])
+        defer { pi.stop() }
+        #expect(try await pi.finish() != 0, "\(pi.errors)")
+        #expect(pi.errors.contains("Cannot find module './new-helper.mjs'"), "\(pi.errors)")
+    }
+
     /// Through Shepherd's real launcher in a scratch Shepherd home: pi never sees the
     /// `NODE_OPTIONS` it was started with, and an RPC `bash` command finds `pi` at the launcher
     /// and gets that `NODE_OPTIONS` back (`restore-env.sh`, through `shellCommandPrefix`).

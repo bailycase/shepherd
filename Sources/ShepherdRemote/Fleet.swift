@@ -185,7 +185,6 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// The host's name when rows from several hosts mix; nil with one host.
     public var hostTag: String?
     public var worktree: Bool
-    public var hasChanges = false
     /// Its host is not connected: the row is its last known state.
     public var offline: Bool
     /// Its last turn failed (iPadThreadError: a `failed` dot and "failed" in the sidebar).
@@ -208,8 +207,6 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// The design this agent draws, where its host serves designs: the row is the design's
     /// (MobileAgents: the nib and "design · 4 boards"), and it opens the design.
     public var design: FleetDesign?
-    /// What the thread spent, as "est. $4.20 · 3.1M tok" (tokens alone with no cost); nil while unknown (`SpendFormat`).
-    public var spend: String?
 
     public var id: FleetRef { ref }
 
@@ -226,11 +223,6 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
         }
         if let hostTag { parts.append(hostTag) }
         return parts.isEmpty ? FleetModel.statusWord(status) : parts.joined(separator: " · ")
-    }
-
-    /// `line` with what the thread spent after it ("Running python · est. $4.20 · 3.1M tok"), as every row says its spend.
-    public func saying(spendAfter line: String) -> String {
-        spend.map { "\(line) · \($0)" } ?? line
     }
 
     /// When it last moved (ms since epoch), for a finished thread's time and day.
@@ -343,8 +335,6 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
     public var hostTag: String?
     /// When the thread last moved (ms since epoch).
     public var since: Double?
-    public var worktree = false
-    public var hasChanges = false
 
     public var id: String { "\(ref.host.uuidString)/\(ref.agent.rawValue)/\(dialogID ?? "blocked")" }
 
@@ -406,8 +396,6 @@ public struct FleetAutomationRow: Identifiable, Equatable, Sendable {
     /// Its run's agent, while one exists.
     public var run: FleetRef?
     public var runStatus: AgentStatus?
-    public var worktree = false
-    public var hasChanges = false
     /// "running", "needs you", "done", "stopped", "off".
     public var stateWord: String
     public var hostName: String
@@ -439,9 +427,6 @@ public struct FleetModel: Equatable, Sendable {
     /// A triggered automation's run threads (`Agent.automationOrigin`, its automation still on the host), by the
     /// automation that started them: the sidebar folds each automation's under one row (`FleetSidebarState.groups`).
     public var runOrigins: [FleetRef: AutomationID] = [:]
-    /// What every host's threads spent today, as Home's header says it; nil while nothing was. Derived with the model, and again at
-    /// midnight (`HomeFeed`), so a view only draws it.
-    public var spendToday: SpendSummary?
 
     public init() {}
 
@@ -468,9 +453,8 @@ public struct FleetModel: Equatable, Sendable {
         offlineCount == 0 ? nil : "\(offlineCount) host\(offlineCount == 1 ? "" : "s") offline"
     }
 
-    public init(hosts: [FleetHost], digests: [FleetRef: FleetDigest], now: Date = Date()) {
+    public init(hosts: [FleetHost], digests: [FleetRef: FleetDigest]) {
         tagsHosts = hosts.count > 1
-        spendToday = SpendSummary(hosts.flatMap { $0.state.agents.compactMap(\.spend) }, now: now)
         var recents: [(row: FleetThreadRow, order: Int, key: Double)] = []
         var order = 0
         for host in hosts {
@@ -533,7 +517,6 @@ public struct FleetModel: Equatable, Sendable {
                     host: host.id, automationID: automation.id, name: automation.name, prompt: automation.prompt,
                     place: Self.lastComponent(automation.cwd), enabled: automation.enabled,
                     run: agent.map { FleetRef(host: host.id, agent: $0.id) }, runStatus: agent?.status,
-                    worktree: agent?.worktreeBranch != nil, hasChanges: (agent?.checkout?.changedFiles ?? 0) > 0,
                     stateWord: Self.automationWord(automation, agent: agent), hostName: host.name, hostTag: tag,
                     offline: !connected))
             }
@@ -572,14 +555,12 @@ public struct FleetModel: Equatable, Sendable {
             items.append(FleetAttention(ref: ref, origin: origin, thread: agent.name, question: question.title,
                                         message: question.message, reason: shortReason(agent.waitingReason) ?? "asked you", reply: reply,
                                         dialogID: question.dialogID, session: digest?.session, hostName: hostName,
-                                        hostTag: hostTag, since: since, worktree: agent.worktreeBranch != nil,
-                                        hasChanges: (agent.checkout?.changedFiles ?? 0) > 0))
+                                        hostTag: hostTag, since: since))
         } else if agent.status == .blocked {
             // The host's live state names the question before (or without) the thread's snapshot.
             items.append(FleetAttention(ref: ref, origin: origin, thread: agent.name, question: agent.waitingOn ?? "Waiting on you",
                                         reason: shortReason(agent.waitingReason) ?? "needs you", reply: .open, session: digest?.session,
-                                        hostName: hostName, hostTag: hostTag, since: since, worktree: agent.worktreeBranch != nil,
-                                        hasChanges: (agent.checkout?.changedFiles ?? 0) > 0))
+                                        hostName: hostName, hostTag: hostTag, since: since))
         }
         return items
     }
@@ -617,7 +598,7 @@ public struct FleetModel: Equatable, Sendable {
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
         var row = FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
                                  doing: live ? digest?.doing : nil, place: space?.name, clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
-                                 hasChanges: (agent.checkout?.changedFiles ?? 0) > 0, offline: offline, failed: agent.status != .working && (digest?.lastTurnFailed == true || agent.lastFailure != nil),
+                                 offline: offline, failed: agent.status != .working && (digest?.lastTurnFailed == true || agent.lastFailure != nil),
                                  subagents: live ? digest?.subagentsLive ?? 0 : 0,
                                  subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
         row.subagentsDone = live ? digest?.subagentsDone ?? 0 : 0
@@ -628,7 +609,6 @@ public struct FleetModel: Equatable, Sendable {
         row.goal = digest?.goal
         row.result = digest?.result
         row.session = digest?.session
-        row.spend = SpendFormat.line(agent.spend)
         return row
     }
 

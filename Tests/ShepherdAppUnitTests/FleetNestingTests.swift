@@ -270,6 +270,20 @@ struct FleetNestingTests {
         #expect(open.done.map(\.title) == ["Task 4"], "the one that is finished is in Done either way")
     }
 
+    @Test func shortcutTargetsSkipThreadsUnderAClosedSender() {
+        let (sender, children, records) = self.sender(sending: [.running, .running, .delivering, .done])
+        let source = source(local: [sender], hosts: [host(children)], records: records)
+        let key = SidebarSent.foldKey(.local(sender.id))
+        let unfolded = SidebarDerivation.lists(source)
+        #expect(unfolded.shortcutRows(collapsed: [], openFolds: []).map(\.title) == ["Speed up checkout CI", "Task 4"], "closed: the starter, no Task 1-3")
+        #expect(unfolded.shortcutRows(collapsed: [], openFolds: [key]).map(\.title) == ["Speed up checkout CI", "Task 1", "Task 2", "Task 3", "Task 4"])
+        let presented = unfolded.presented(selected: nil, shortcuts: true)
+        let rows = unfolded.shortcutRows(collapsed: [], openFolds: [])
+        let badges = (presented.working + presented.done).filter { $0.accessory != SHSidebarRow.Accessory.none }
+        #expect(badges.map(\.title) == rows.map(\.title), "the badges and ⌘1–9 name the same rows")
+        #expect(badges.map(\.accessory) == [.shortcut("⌘1"), .shortcut("⌘2")])
+    }
+
     @Test func aThreadAThreadStartedNestsFlatUnderTheTopOne() {
         let top = agent("Speed up checkout CI", .working, in: space)
         let middle = agent("Split slow UI tests", .working, in: remoteSpace, at: 20, from: (Self.thisMac, "MacBook Pro", top.id), dispatch: UUID())

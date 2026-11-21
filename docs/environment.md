@@ -100,6 +100,8 @@
   and `PiSessionFileTests`' runtime-state check.
 - **`SHEPHERD_VALIDATION_DIR`** is set by `scripts/validate.py` to the run's `mac/` artifact directory.
   The named tests write step records and any other evidence there.
+- **`SHEPHERD_BUILD_WRAPPER`** is an optional executable for `scripts/validate.py` to run build and
+  test commands through. Without it, the validator calls the tools directly.
 - **`SHEPHERD_GOLDEN_CAPTURE`** is a file path: the `c-settings` case writes its observations there instead of comparing them with `Tests/Fixtures/settings-write-paths.json`. Set it by hand to capture a golden.
 - **`SHEPHERD_DESIGN_CANVAS`** points `DesignCanvasFidelityCheck` at a design folder (one holding
   `project/canvas.json`): it renders every board at its canvas size, with Google Fonts, reports

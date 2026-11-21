@@ -1,7 +1,7 @@
 import Foundation
 import Testing
+import ShepherdRemote
 import ShepherdTestSupport
-@testable import ShepherdApp
 
 @Suite("Remote MCP callback", .integrationTimeLimit)
 struct MCPCallbackRelayTests {
@@ -32,6 +32,30 @@ struct MCPCallbackRelayTests {
             defer { next.cancel() }
             do { try await next.start(); return true } catch { return false }
         }
+    }
+
+    @Test func mobileHandoffRedirectsWithOnlyTheAppNonce() async throws {
+        let port = try await RemoteBrowserDriveTests.unusedPort()
+        let callback = "http://127.0.0.1:\(port)/oauth/callback"
+        let handoff = try #require(URL(string: "shepherd://mcp-callback/fixture-nonce"))
+        var parts = URLComponents(string: "https://example.invalid/authorize")!
+        parts.queryItems = [.init(name: "redirect_uri", value: callback), .init(name: "state", value: "expected")]
+        let received = Locked<String?>(nil)
+        let relay = try MCPCallbackRelay(authorizationURL: parts.url!, handoff: handoff) { value in received.withValue { $0 = value } }
+        try await relay.start()
+        defer { relay.cancel() }
+        let session = URLSession(configuration: .ephemeral, delegate: NoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let valid = callback + "?code=fixture-code&state=expected"
+        let (_, response) = try await session.data(from: URL(string: valid)!)
+        #expect((response as? HTTPURLResponse)?.statusCode == 302)
+        #expect((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location") == handoff.absoluteString)
+        #expect(received.withValue { $0 } == valid)
+    }
+
+    private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     }
 
     @Test func publicOrNonHTTPRedirectListenersAreRejected() throws {

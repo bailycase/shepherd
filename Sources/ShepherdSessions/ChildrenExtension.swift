@@ -3,30 +3,29 @@ import ShepherdProtocol
 
 /// Installs the opt-in, extension-owned native child runtime.
 public enum ChildrenExtension {
+    private static let entry = "shepherd-children.ts"
+    private static let helpers = [
+        "shepherd-lines.mjs", "shepherd-children-config.ts", "shepherd-workflow.ts",
+        "shepherd-children-ui.ts", "shepherd-cli.ts", "shepherd-cli-client.mjs",
+        "shepherd-bash.mjs", "shepherd-inspect.mjs",
+    ]
+
     public static func installedPath() throws -> String {
-        let directory = ShepherdPaths.supportDirectory()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        for (name, text) in sources {
-            let url = directory.appendingPathComponent(name)
-            let source = Data(text.utf8)
-            if (try? Data(contentsOf: url)) != source {
-                try source.write(to: url, options: .atomic)
-            }
+        try installedPath(in: ShepherdPaths.supportDirectory(), snapshot: EmbeddedExtensions.snapshot)
+    }
+
+    static func installedPath(in directory: URL, snapshot: EmbeddedExtensions.Snapshot) throws -> String {
+        for name in helpers {
+            try snapshot.install(name, at: directory.appendingPathComponent(name))
         }
-        let url = directory.appendingPathComponent("shepherd-children.ts")
-        return url.path
+        // Don't publish a new entry point until all its imports have been installed.
+        return try snapshot.install(entry, at: directory.appendingPathComponent(entry)).path
     }
 
     public static var sources: [(String, String)] {
-        [("shepherd-lines.mjs", EmbeddedExtensions.source("shepherd-lines.mjs")),
-         ("shepherd-children.ts", extensionSource), ("shepherd-children-config.ts", configSource),
-         ("shepherd-workflow.ts", workflowSource),
-         ("shepherd-children-ui.ts", uiSource), ("shepherd-cli.ts", EmbeddedExtensions.source("shepherd-cli.ts")),
-         ("shepherd-cli-client.mjs", EmbeddedExtensions.source("shepherd-cli-client.mjs")),
-         ("shepherd-bash.mjs", EmbeddedExtensions.source("shepherd-bash.mjs")),
-         ("shepherd-inspect.mjs", InspectExtension.extensionSource)]
+        (helpers + [entry]).map { ($0, EmbeddedExtensions.source($0)) }
     }
-    public static var extensionSource: String { EmbeddedExtensions.source("shepherd-children.ts") }
+    public static var extensionSource: String { EmbeddedExtensions.source(entry) }
     public static var configSource: String { EmbeddedExtensions.source("shepherd-children-config.ts") }
     public static var workflowSource: String { EmbeddedExtensions.source("shepherd-workflow.ts") }
     public static var uiSource: String { EmbeddedExtensions.source("shepherd-children-ui.ts") }

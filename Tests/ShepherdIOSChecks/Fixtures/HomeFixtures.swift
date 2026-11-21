@@ -14,36 +14,6 @@ extension FixtureCatalog {
         return [
             FixtureScreen(name: "home", prepare: settle),
             FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
-            // Home's header: what every host's threads spent today, per model (a thread of a subscription model has tokens alone).
-            FixtureScreen(name: "home-spend", hosts: HomeFixtureData.spending(), prepare: settle),
-            // The Running filter lifts the working threads, each with its spend on a line of its own, above the fold.
-            FixtureScreen(name: "home-spend-running", hosts: HomeFixtureData.spending(), prepare: { app in
-                await settle(app)
-                SidebarThreads.of(app.hosts).filters = .init(chips: [.running])
-            }),
-            FixtureScreen(name: "overview-spend", hosts: HomeFixtureData.spending(), prepare: { app in
-                await settle(app)
-                await OverviewOpenCheck.hideSidebar(app)
-            }),
-            FixtureScreen(name: "sidebar-filters-off", hosts: HomeFixtureData.filterHosts(), prepare: settle),
-            FixtureScreen(name: "sidebar-filters-on", hosts: HomeFixtureData.filterHosts(), prepare: { app in
-                await settle(app)
-                let sidebar = SidebarThreads.of(app.hosts)
-                sidebar.filters = .init(chips: [.hasChanges, .worktree], host: FixtureData.buildBox)
-            }),
-            FixtureScreen(name: "sidebar-filters-empty", hosts: HomeFixtureData.filterHosts(), prepare: { app in
-                await settle(app)
-                SidebarThreads.of(app.hosts).filters = .init(chips: [.needsYou, .worktree], host: FixtureData.buildBox)
-            }),
-            // Needs you leaves out a Project's ask; the host picker offers the two connected hosts, not the offline laptop.
-            FixtureScreen(name: "sidebar-filters-needsyou", hosts: HomeFixtureData.filterHostsWithProjectAsk(), prepare: { app in
-                await settle(app)
-                SidebarThreads.of(app.hosts).filters = .init(chips: [.needsYou])
-            }),
-            FixtureScreen(name: "sidebar-filters-running", hosts: HomeFixtureData.filterHostsWithProjectAsk(), prepare: { app in
-                await settle(app)
-                SidebarThreads.of(app.hosts).filters = .init(chips: [.running])
-            }),
             FixtureScreen(name: "home-empty", hosts: []),
             // iPad: hosts with no threads, so the overview is its empty state.
             FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
@@ -244,25 +214,6 @@ enum HomeFixtureData {
         return hosts
     }
 
-    /// `fleet` with what six of its threads spent today (two of them finished): two models with a cost estimate and one subscription model with none.
-    static func spending() -> [FixtureHostData] {
-        var hosts = fleet()
-        let zone = TimeZone.current.identifier
-        let day = SpendDay.key(Date(), zone: zone)
-        func spend(_ host: Int, _ id: AgentID, tokens: Int, cost: Double?, _ today: [ModelSpend]) {
-            guard let index = hosts[host].state.agents.firstIndex(where: { $0.id == id }) else { return }
-            hosts[host].state.agents[index].spend = AgentSpend(tokens: tokens, cost: cost, day: day, zone: zone, today: today)
-        }
-        spend(0, FixtureData.preview, tokens: 3_100_000, cost: 4.2,
-              [ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 2_400_000, cost: 3.1), ModelSpend(model: "openai/gpt-5-mini", tokens: 400_000, cost: 0.3)])
-        spend(0, FixtureData.extensions, tokens: 820_000, cost: 1.15, [ModelSpend(model: "anthropic/claude-sonnet-4", tokens: 820_000, cost: 1.15)])
-        spend(1, restyle, tokens: 12_400, cost: nil, [ModelSpend(model: "acme-subscription/pro", tokens: 12_400, cost: nil)])
-        spend(0, FixtureData.deletion, tokens: 205_000, cost: 0.62, [ModelSpend(model: "openai/gpt-5-mini", tokens: 205_000, cost: 0.62)])
-        spend(1, migrations, tokens: 1_900_000, cost: nil, [ModelSpend(model: "acme-subscription/pro", tokens: 1_900_000, cost: nil)])
-        spend(1, triage, tokens: 640_000, cost: 8.9, [ModelSpend(model: "anthropic/claude-opus-4", tokens: 640_000, cost: 8.9)])
-        return hosts
-    }
-
     static func fleet() -> [FixtureHostData] {
         let started = Date().timeIntervalSince1970 * 1000
         return [
@@ -277,9 +228,9 @@ enum HomeFixtureData {
                 ],
                 automations: [
                     Automation(id: AutomationID(rawValue: "auto-merge"), name: "Merge PR #24 after CI", prompt: "Merge PR #24 once CI is green",
-                               cwd: "/Users/dev/Shepherd", agentID: merge),
+                               cwd: "/Users/dev/acme-web", agentID: merge),
                     Automation(id: AutomationID(rawValue: "auto-cleanup"), name: "Stale branch cleanup", prompt: "Delete merged branches",
-                               cwd: "/Users/dev/orbit", enabled: false),
+                               cwd: "/Users/dev/acme-api", enabled: false),
                 ]),
                 threads: [
                     FixtureData.preview: command("git push origin main", startedAgo: 21_000, at: started),
@@ -315,38 +266,6 @@ enum HomeFixtureData {
                 ]),
             FixtureHostData(id: FixtureData.laptop, name: "MacBook Air", state: ShepherdState(), online: false),
         ]
-    }
-
-    static func filterHosts() -> [FixtureHostData] {
-        let space = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/tmp/acme-web")
-        let now = Date().timeIntervalSince1970 * 1000
-        return [
-            FixtureHostData(id: FixtureData.studio, name: "acme-studio", state: ShepherdState(spaces: [space], agents: [
-                FixtureData.agent(FixtureData.preview, "Refresh checkout", .working, space: space, worktree: "feat/checkout", changed: 2),
-                FixtureData.agent(FixtureData.dock, "Review sign-in copy", .blocked, space: space),
-                FixtureData.agent(FixtureData.deletion, "Index the changelog", .done, space: space),
-                FixtureData.agent(FixtureData.extensions, "Tidy test fixtures", .idle, space: space),
-            ]), threads: [FixtureData.preview: command("swift test", startedAgo: 48_000, at: now),
-                          FixtureData.dock: question(at: now), FixtureData.deletion: finished(at: now - 600_000)]),
-            FixtureHostData(id: FixtureData.buildBox, name: "acme-build", state: ShepherdState(spaces: [space], agents: [
-                FixtureData.agent(restyle, "Update search index", .working, space: space),
-                FixtureData.agent(FixtureData.buffer, "Polish error states", .idle, space: space, worktree: "feat/errors", changed: 1),
-            ]), threads: [restyle: command("swift build", startedAgo: 120_000, at: now)]),
-        ]
-    }
-
-    /// `filterHosts` with a Project worker asking a question on Studio and a disconnected laptop with a thread of its own.
-    static func filterHostsWithProjectAsk() -> [FixtureHostData] {
-        var hosts = filterHosts()
-        let space = hosts[0].state.spaces[0]
-        let now = Date().timeIntervalSince1970 * 1000
-        let worker = AgentID(rawValue: "agent-project-worker")
-        var ask = FixtureData.agent(worker, "Migrate billing tables", .blocked, space: space)
-        ask.executionFor = ProjectExecutionKey(ownerID: FixtureData.studio, projectID: ProjectID(rawValue: "acme-billing"), operationID: UUID())
-        hosts[0].state.agents.append(ask)
-        hosts[0].threads[worker] = question(at: now)
-        hosts.append(FixtureHostData(id: FixtureData.laptop, name: "acme-laptop", state: ShepherdState(), online: false))
-        return hosts
     }
 
     /// The fleet with a second live run on build-01 (and, with `longName`, a very long name on Studio's), so the group lists

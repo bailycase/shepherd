@@ -30,6 +30,7 @@ extension SessionServer {
                     guard automation.enabled else {
                         throw LogicalProjectsError("automation_disabled", "Enable the automation before running it.")
                     }
+                    if let problem = self.runLog.recheck() { throw LogicalProjectsError("run_history_damaged", problem) }
                     guard let admit = self.onProjectAutomationRun else {
                         throw LogicalProjectsError("unsupported", "Project automation admission is unavailable on this owner; no run was started.")
                     }

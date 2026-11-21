@@ -143,7 +143,7 @@ final class FixtureHost: @unchecked Sendable {
 
     private func answer(_ request: RemoteRequest) -> [RemoteReply] {
         switch request {
-        case .logicalProjects, .logicalProjectRuntime:
+        case .logicalProjects, .logicalProjectRuntime, .projects:
             if let reply = data.projectReply?(request) {
                 note(Self.kind(request))
                 return [reply]
