@@ -82,6 +82,36 @@ final class ThreadTailGuard {
         return phase == .animating ? "programmatic" : "idle"
     }
 
+    private var intent = ScrollIntent()
+    private var sampledGeometry: (offset: CGFloat, size: CGSize, bounds: CGSize, inset: UIEdgeInsets)?
+    /// Frames since a command of ours wrote or asked (`kind` write, request or binding): one that lands on a later layout pass
+    /// still explains the displacement it causes.
+    private var sinceCommand = Int.max
+
+    /// A ledger event reached the recorder. Layout events are what moves rows, not commands, and fixture marks are not ours.
+    func noteTrace(_ event: SHRenderProbe.ScrollEvent) {
+        if event.kind != "layout", event.kind != "fixture" { sinceCommand = 0 }
+    }
+
+    /// The reader's intent this display frame, from UIKit's own flags. Displacement of the model offset that no command and no
+    /// layout change of the scroll view explains is the reader moving without a finger (VoiceOver's scroll), as section 4.1 says.
+    func traceIntent(in scroll: UIScrollView) -> ScrollIntent.State {
+        guard scroll === scrollView else { return .idle }
+        let now = (offset: scroll.contentOffset.y, size: scroll.contentSize, bounds: scroll.bounds.size, inset: scroll.adjustedContentInset)
+        defer {
+            sampledGeometry = now
+            sinceCommand = sinceCommand == .max ? .max : sinceCommand + 1
+        }
+        var unexplained = false
+        if let before = sampledGeometry {
+            let relaid = before.size != now.size || before.bounds != now.bounds || before.inset != now.inset
+            unexplained = abs(now.offset - before.offset) > 0.5 && !relaid && sinceCommand > 1
+        }
+        return intent.sample(touching: phase == .interacting || phase == .tracking || scroll.isDragging || scroll.isTracking,
+                             coasting: phase == .decelerating || scroll.isDecelerating, programmatic: phase == .animating,
+                             unexplainedDisplacement: unexplained)
+    }
+
     /// UIKit's model offset can already be at the destination while a frame still shows the animation.
     func traceRows(in scroll: UIScrollView) -> [String: CGRect] {
         guard scroll === scrollView else { return [:] }

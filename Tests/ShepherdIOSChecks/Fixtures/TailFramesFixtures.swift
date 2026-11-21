@@ -86,6 +86,11 @@ enum TailFrames {
         try? await Task.sleep(for: .seconds(2))
         let draft = (1...8).map { "Line \($0) of a long message to the agent" }.joined(separator: "\n")
         await measure("idle") { await pause(0.5) }
+        // Opt-in (FIXTURE_SCROLL_PAGING=voiceover, with FIXTURE_SCROLL_LEDGER=1): only what VoiceOver's three-finger scroll does.
+        if ProcessInfo.processInfo.environment["FIXTURE_SCROLL_PAGING"] == "voiceover" {
+            await voiceOverPaging()
+            return
+        }
         for cycle in 1...cycles {
             await measure("keyboard rises (\(cycle))") { FollowFixture.focusComposer(); await pause(1.5) }
             await measure("keyboard falls (\(cycle))") { FollowFixture.composerField()?.resignFirstResponder(); await pause(1.5) }
@@ -136,6 +141,25 @@ enum TailFrames {
         }
     }
 
+    /// The scroll view's own `accessibilityScroll`, the call VoiceOver makes, with no finger and no command of ours: toward the
+    /// history a page at a time, then back down. No VoiceOver, focus or input is involved. The marks are ledger events of kind
+    /// "fixture" so the frames that follow them can be read against the intent.
+    private static func voiceOverPaging() async {
+        for (name, direction) in [("voiceover pages toward history", UIAccessibilityScrollDirection.down),
+                                  ("voiceover pages toward the tail", .up)] {
+            for page in 1...3 {
+                await measure("\(name) (\(page))") {
+                    guard let scroll = FollowFixture.threadScrollView() else { return }
+                    let before = scroll.contentOffset.y
+                    let handled = scroll.accessibilityScroll(direction)
+                    SHRenderProbe.scrollEvent("fixture.voiceOverScroll", "accessibilityScroll(\(direction.rawValue))", kind: "fixture")
+                    FixtureCheck.report("FIXTURE CHECK ok: \(name) (\(page)) handled \(handled), offset \(Int(before)) -> \(Int(scroll.contentOffset.y))")
+                    await pause(1.5)
+                }
+            }
+        }
+    }
+
     private static func pause(_ seconds: Double) async {
         try? await Task.sleep(for: .seconds(seconds))
     }
@@ -149,6 +173,7 @@ enum TailFrames {
         let timestamp: Double
         let refreshInterval: Double
         let motion: String
+        let intent: String
         let first: String?
         let rows: [String: Double]
         let events: [SHRenderProbe.ScrollEvent]
@@ -190,6 +215,7 @@ enum TailFrames {
                     var event = event
                     event.motion = guardian.traceMotion
                     event.anchor = ledger.last?.first
+                    guardian.noteTrace(event)
                     pending.append(event)
                 }
             }
@@ -213,7 +239,8 @@ enum TailFrames {
                     ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
                 }?.key
                 ledger.append(LedgerFrame(timestamp: link.timestamp, refreshInterval: link.targetTimestamp - link.timestamp,
-                                          motion: guardian?.traceMotion ?? "idle", first: first,
+                                          motion: guardian?.traceMotion ?? "idle",
+                                          intent: scroll.flatMap { guardian?.traceIntent(in: $0) }?.rawValue ?? "idle", first: first,
                                           rows: rows.mapValues { Double($0.minY) }, events: pending))
                 pending.removeAll(keepingCapacity: true)
             }
