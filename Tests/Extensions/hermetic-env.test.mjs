@@ -21,9 +21,12 @@ test("hermetic-env drops the surrounding thread's PI_ and SHEPHERD_ variables", 
   assert.deepEqual(surviving(thread), {});
 });
 
+// Pinned here on purpose: the implementation's own list must not be the oracle for what survives.
+const expectedControls = ["PI_PACKAGE_DIR", "PI_FAKE_BUNDLED_CLI", "PI_TEST_KEEP_FIXTURES", "SHEPHERD_TEST_PI_LAUNCHER", "SHEPHERD_TEST_PI_HOME", "SHEPHERD_TEST_SPECKIT_PYTHON"];
+
 test("hermetic-env keeps every runner control and nothing else", () => {
-  assert.ok(runnerControls.length > 0);
-  const controls = Object.fromEntries(runnerControls.map((key) => [key, `value of ${key}`]));
+  assert.deepEqual([...runnerControls].sort(), [...expectedControls].sort());
+  const controls = Object.fromEntries(expectedControls.map((key) => [key, `value of ${key}`]));
   assert.deepEqual(surviving({ ...controls, SHEPHERD_EXT_VISION: "/v", PI_MODEL: "m" }), controls);
 });
 
@@ -31,7 +34,7 @@ test("every extension test file imports hermetic-env before anything else", () =
   const files = fs.readdirSync(dir).filter((name) => name.endsWith(".test.mjs"));
   assert.ok(files.length > 0, "found no test files to check");
   for (const file of files) {
-    const first = fs.readFileSync(path.join(dir, file), "utf8").split("\n").find((line) => line.startsWith("import "));
-    assert.equal(first, 'import "./hermetic-env.mjs";', `${file} must start with import "./hermetic-env.mjs"`);
+    const first = fs.readFileSync(path.join(dir, file), "utf8").split("\n").find((line) => line.trimStart().startsWith("import "));
+    assert.equal(first?.trim(), 'import "./hermetic-env.mjs";', `${file} must start with import "./hermetic-env.mjs"`);
   }
 });

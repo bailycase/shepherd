@@ -107,13 +107,15 @@ export async function withPi(t, options, body) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-rpc-")));
   let provider, child;
   // One cleanup, registered before anything else can throw, that copes with whatever setup got as far as creating:
-  // pi is stopped first and the provider next, the directory last (a pi still writing into it fails the removal),
+  // pi is stopped first and the provider next (each bounded: a step that never finishes fails by name), the directory last (a pi still writing into it fails the removal),
   // and each step runs even when an earlier one failed. Any failure fails the test.
   t.after(async () => {
     const failures = [];
     const attempt = async (what, step) => { try { await step(); } catch (error) { failures.push(`${what}: ${error?.message ?? error}`); } };
     await attempt("stopping pi", () => stopChild(child));
-    await attempt("stopping the fake provider", () => provider?.stop());
+    await attempt("stopping the fake provider", async () => {
+      if (provider && !(await within(provider.stop(), 5000))) throw Error("the fake provider's server did not close within 5000 ms");
+    });
     await attempt("removing the fixture directory", () => {
       if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       else console.log(`Retained private Pi fixture: ${dir}`);
