@@ -696,8 +696,9 @@ public final class NativeThreadStore {
 
     /// Once a tagged user row has been seen (`sawTaggedUser`), only a row with a send's operation id lands that send, so an
     /// untagged row never hides a copy. Before that, by position: each delivered user row after `Capture.after` (less
-    /// `Capture.live` turns that vanished) replaces one copy, oldest send first, `taken` once. An idle send's finished reply
-    /// can stand in when no row follows. `claimed` keeps a row or reply from a second send. Only a tag settles a send.
+    /// `Capture.live` turns that vanished) replaces one copy, oldest send first, `taken` once. Failing that, an idle capture
+    /// on a stopped snapshot is stood in for by an assistant reply that is the first user or assistant row after the anchor
+    /// (later rows may follow). `claimed` keeps a row or reply from a second send. Only a tag settles a send.
     private func landings() -> [UUID: (named: Bool, row: NativeThreadMessage)] {
         let live = (snapshot?.provisional ?? []).filter { messageIndex[$0.entryID] == nil }
         var found: [UUID: (named: Bool, row: NativeThreadMessage)] = [:]

@@ -135,12 +135,28 @@ struct ComposerSubmissionTests {
         #expect(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions)
         host.answer = .refuse
         input.attachments.add([("kept.png", image("kept.png"))])
+        input.attachments.reject("notes.pdf is not an image Shepherd can attach.")
         store.draft = "one more"
         let sends = host.sends
         #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) == false)
         #expect(host.sends == sends)
         #expect(store.draft == "one more")
         #expect(input.attachments.items.map(\.name) == ["kept.png"], "nothing captured: the images stay")
+        #expect(input.attachments.error != nil, "nothing captured: the error stays too")
+    }
+
+    /// A text-only send has no image to remove, so the error an earlier import left (shown with zero images) must go with it.
+    @Test func aTextOnlySendClearsAnEarlierImportError() async {
+        let host = Host()
+        host.answer = .accept
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("notes.pdf", nil)])
+        #expect(input.attachments.error != nil && input.attachments.isEmpty)
+        store.draft = "words only"
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
+        #expect(input.attachments.error == nil, "the stale error is gone once the send went through")
     }
 }
 

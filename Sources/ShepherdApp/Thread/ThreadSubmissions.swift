@@ -154,7 +154,13 @@ enum ComposerImageCapture {
         func accepted() {
             guard !finished else { return }
             finished = true
+            release()
+        }
+
+        /// The store has these images; a text-only send has none to release, but still ends an earlier import's error.
+        private func release() {
             for id in submitted { input.attachments.remove(id) }
+            if input.attachments.isEmpty { input.attachments.clearError() }
         }
 
         /// One look at the store's records; idempotent.
@@ -165,14 +171,14 @@ enum ComposerImageCapture {
             guard let current else {
                 // Accepted (its record gone) or never captured: either way this send is over once it returned.
                 if record != nil || done {
-                    if record != nil { for id in submitted { input.attachments.remove(id) } }
+                    if record != nil { release() }
                     finished = true
                 }
                 return
             }
             if record == nil {
                 record = current.id
-                for id in submitted { input.attachments.remove(id) }
+                release()
             }
             switch current.state {
             case .sending: break
