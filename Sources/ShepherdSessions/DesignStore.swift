@@ -852,13 +852,8 @@ public final class DesignStore: @unchecked Sendable {
             let bytes = try readNotesBytes(url)
             let result: PersistedFile<DesignThreadNotes>
             if let bytes {
-                // A literal NUL is not JSON. Reject it before JSONDecoder can sniff BOM-less UTF-16/32.
-                if !bytes.contains(0), String(data: bytes, encoding: .utf8) != nil {
-                    result = .decode(bytes, exactEnvelope: true) {
-                        guard $0.version == 1 else { throw NotesProblem.unsupportedVersion }
-                    }
-                } else {
-                    result = .damaged(original: bytes, error: NotesProblem.invalidUTF8)
+                result = .decode(bytes, exactEnvelope: true) {
+                    guard $0.version == 1 else { throw NotesProblem.unsupportedVersion }
                 }
             } else {
                 result = .missing
@@ -867,7 +862,7 @@ public final class DesignStore: @unchecked Sendable {
             switch result {
             case .loaded(let notes): file = notes
             case .missing: file = DesignThreadNotes()
-            case .damaged(_, let error): throw (error as? NotesProblem) ?? .invalidJSON
+            case .damaged(_, let error): throw error is NotUTF8Text ? .invalidUTF8 : (error as? NotesProblem) ?? .invalidJSON
             }
             if damagedNotes.remove(url) != nil { Self.notesLog.notice("Thread notes readable again at \(url.path, privacy: .public)") }
             return (file, bytes)

@@ -33,6 +33,9 @@ public enum PersistedFile<Value: Decodable> {
     package static func decode(_ data: Data, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
                                exactEnvelope: Bool = false, validate: (Value) throws -> Void = { _ in }) -> Self {
         do {
+            // Foundation's decoder reads UTF-16 and may repair invalid UTF-8, so the next save would write
+            // over what was really there. Every writer emits UTF-8 with NUL escaped; anything else is damage.
+            guard !data.contains(0), String(data: data, encoding: .utf8) != nil else { throw NotUTF8Text() }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = dateDecodingStrategy
             decoder.userInfo[exactEnvelopeKey] = exactEnvelope
@@ -88,6 +91,12 @@ public enum PersistedFile<Value: Decodable> {
         static var version: Self { .init(stringValue: "version") }
         static var value: Self { .init(stringValue: "value") }
     }
+}
+
+/// Why `PersistedFile` reports bytes that are not UTF-8 text (or hold a literal NUL) as damaged.
+public struct NotUTF8Text: Error, CustomStringConvertible {
+    public init() {}
+    public var description: String { "The file isn't UTF-8 text." }
 }
 
 /// Decodes each element independently and retains its JSON, including fields the model ignores.

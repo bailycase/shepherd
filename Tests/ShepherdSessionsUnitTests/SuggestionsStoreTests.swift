@@ -180,6 +180,19 @@ struct SuggestionsStoreTests {
         #expect(host.instructions.snapshot() == instructions)
     }
 
+    @Test func aHealthyFileRewrittenAsUTF16IsDamagedNotRewritten() throws {
+        let host = try Host()
+        defer { try? FileManager.default.removeItem(at: host.dir) }
+        let store = host.suggestions
+        _ = try host.suggest("Prefer explicit joins.")
+        let utf16 = try #require(String(decoding: Data(contentsOf: store.url), as: UTF8.self).data(using: .utf16))
+        try utf16.write(to: store.url)
+        let refusal = SuggestionsStore.StoreError.damaged(store.url)
+        #expect(throws: refusal) { try store.snapshot() }
+        #expect(throws: refusal) { try store.configure(.init(enabled: true)) }
+        #expect(try Data(contentsOf: store.url) == utf16)
+    }
+
     @Test func aV1EnvelopeReadsButWritesTheLegacyShape() throws {
         let host = try Host()
         defer { try? FileManager.default.removeItem(at: host.dir) }

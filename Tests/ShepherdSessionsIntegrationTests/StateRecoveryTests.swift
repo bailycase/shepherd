@@ -57,6 +57,43 @@ struct StateRecoveryTests {
         #expect(try Data(contentsOf: copy) == original)
     }
 
+    /// A state.json that is not UTF-8 is damaged now. The original must survive byte for byte in a
+    /// backup before anything is written, and a file with nothing to reject must be refused, not rewritten.
+    @Test(arguments: [true, false])
+    func aUTF16StateIsPreservedByteForByteBeforeAnyWrite(oneRecordIsBad: Bool) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("state.json")
+        let keep = Fixture.space("Keep"), drop = Fixture.space("Drop")
+        let good = Fixture.agent(in: keep), bad = Fixture.agent(in: drop)
+        let input = ShepherdState(spaces: [keep, drop], tabs: [good.tab, bad.tab], agents: [good.agent, bad.agent])
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+        if oneRecordIsBad {
+            var agents = try #require(json["agents"] as? [[String: Any]])
+            agents[1]["name"] = 123
+            json["agents"] = agents
+        }
+        let utf8 = try JSONSerialization.data(withJSONObject: json)
+        let original = try #require(String(decoding: utf8, as: UTF8.self).data(using: .utf16))
+        try original.write(to: url)
+
+        let store = StateStore(url: url)
+        #expect(try Data(contentsOf: url) == original)
+        let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        let copy = try #require(files.first { $0.lastPathComponent.hasPrefix("state.json.recovery-") })
+        #expect(try Data(contentsOf: copy) == original)
+        if oneRecordIsBad {
+            #expect(store.state.agents == [good.agent])
+            try store.update { $0.spaces[0].name = "Renamed" }
+        } else {
+            // Nothing for the lossy decoder to reject, so it is not a graph it can repair.
+            #expect(store.recoveryError != nil)
+            #expect(throws: StateStoreError.self) { try store.update { $0.spaces[0].name = "Renamed" } }
+            #expect(try Data(contentsOf: url) == original)
+        }
+        #expect(try Data(contentsOf: copy) == original)
+    }
+
     @Test func startupSettlesRecoveredAgentsWithoutRewritingTheOriginal() async throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
