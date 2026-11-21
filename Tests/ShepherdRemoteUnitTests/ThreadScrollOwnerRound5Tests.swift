@@ -26,6 +26,38 @@ struct ThreadScrollOwnerRound5Tests {
         #expect(owner.mode == .pinned(Anchor(row: "row-2", offset: 0)))
     }
 
+    @Test(arguments: [true, false])
+    func aFractionalArrivalKeepsTheRequestedRow(asksInterruptTouch: Bool) {
+        var owner = Self.atTail(ask: asksInterruptTouch)
+        #expect(owner.jumpToRow("row-2") == .scroll(toRow: "row-2", animated: true))
+        #expect(owner.read(Fixture.reading(content: 2100, offset: 399.5), intent: .programmatic) == .none)
+        #expect(owner.read(Fixture.reading(content: 2200, offset: 399.5, shift: -0.5), intent: .idle) == .none)
+        #expect(owner.mode == .pinned(Anchor(row: "row-2", offset: 0.5)))
+    }
+
+    @Test func aReplacementDoesNotRevealTheFallbackAheadOfAWaitingAsk() {
+        var owner = Self.atTail(ask: false)
+        #expect(owner.read(Fixture.reading(offset: 1200), intent: .idle) == .none)
+        owner.setIntent(.touching)
+        #expect(owner.jumpToRow("row-2") == .none)
+        owner.setIntent(.idle)
+        #expect(owner.rowsChanged(Fixture.order.filter { $0 != "row-6" }) == .none)
+        #expect(owner.mode == .pinned(Anchor(row: "row-5", offset: 0)))
+        #expect(owner.turn() == .scroll(toRow: "row-2", animated: true))
+        #expect(owner.turn() == .none)
+    }
+
+    @Test(arguments: [true, false])
+    func aSendWithItsTurnAlreadyPresentDoesNotForgetAnOwedLanding(asksInterruptTouch: Bool) {
+        var owner = Self.atTail(ask: asksInterruptTouch)
+        owner.setIntent(.touching)
+        #expect(owner.read(Fixture.reading(content: 2400), intent: .touching) == .none)
+        #expect(owner.sent(queued: false, turnPresent: true) == .none)
+        owner.setIntent(.idle)
+        #expect(owner.turn() == .land)
+        #expect(owner.turn() == .none)
+    }
+
     @Test func aJumpWhoseRowIsAtTheTopOfItsFirstReadingHasArrived() {
         var owner = Owner(mode: .jumping(row: "row-2"))
         _ = owner.rowsChanged(Fixture.order)
@@ -42,6 +74,7 @@ struct ThreadScrollOwnerRound5Tests {
         owner.setIntent(.idle)
         #expect(owner.wantsTurn)
         #expect(owner.turn() == .land)
+        #expect(owner.turn() == .none)
     }
 
     @Test func growthBeforeAnAskAndTheAsksRemovalAfterIt() {
