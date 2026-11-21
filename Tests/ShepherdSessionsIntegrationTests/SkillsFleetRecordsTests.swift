@@ -20,8 +20,9 @@ struct SkillsFleetRecordsTests {
         let skills: SkillsStore
         let source: FleetSkillsSource
         var afterWrite: () -> Void = {}
-        /// Runs in a scan after the source says it is ready and before it reads: an install can land there.
-        var betweenReads: () -> Void = {}
+        /// Runs after the source says it is ready and before it reads: an install can land there.
+        var betweenReads: () throws -> Void = {}
+        var beforeValue: (String) throws -> Void = { _ in }
         var records: URL { skills.stateDirectory.appendingPathComponent("skills.json") }
 
         init() throws {
@@ -31,29 +32,33 @@ struct SkillsFleetRecordsTests {
             skills = SkillsStore(directory: dir.appendingPathComponent("skills"), stateDirectory: dir.appendingPathComponent("skills-state"))
             let hook = Hook()
             source = FleetSkillsSource(skills, written: { hook.run() })
-            materializer.add(Interposed(source, before: { [weak self] in self?.betweenReads() }))
+            materializer.add(Interposed(source, before: { [weak self] in try self?.betweenReads() },
+                                        beforeValue: { [weak self] in try self?.beforeValue($0) }))
             hook.owner = self
             try FileManager.default.createDirectory(at: skills.stateDirectory, withIntermediateDirectories: true)
         }
 
-        /// The skills source, with a step between a scan's `isReady` and its reads (`prepare` is where the scan calls it).
+        /// The real source, with hooks at the reads a test needs to interpose.
         final class Interposed: FleetUnitSource {
             let inner: FleetSkillsSource
-            let before: () -> Void
-            init(_ inner: FleetSkillsSource, before: @escaping () -> Void) { self.inner = inner; self.before = before }
+            let before: () throws -> Void
+            let beforeValue: (String) throws -> Void
+            init(_ inner: FleetSkillsSource, before: @escaping () throws -> Void, beforeValue: @escaping (String) throws -> Void) {
+                self.inner = inner
+                self.before = before
+                self.beforeValue = beforeValue
+            }
             var units: [String] { inner.units }
             var isReady: Bool { inner.isReady }
-            var passIsCurrent: Bool { inner.passIsCurrent }
             var watchedFiles: [URL] { inner.watchedFiles }
             var watchedTrees: [URL] { inner.watchedTrees }
             func owns(_ unit: String) -> Bool { inner.owns(unit) }
             func storesBlob(_ unit: String) -> Bool { inner.storesBlob(unit) }
-            func read() -> [String: Data] { inner.read() }
-            func fingerprints() -> [String: String] { inner.fingerprints() }
-            func value(of unit: String) -> Data? { inner.value(of: unit) }
+            func read() throws -> [String: Data] { try inner.read() }
+            func fingerprints() throws -> [String: String] { try before(); return try inner.fingerprints() }
+            func value(of unit: String) throws -> Data? { try beforeValue(unit); return try inner.value(of: unit) }
             func isSeedable(_ unit: String, _ value: Data) -> Bool { inner.isSeedable(unit, value) }
             func write(_ unit: String, _ value: Data?, origin: String) throws { try inner.write(unit, value, origin: origin) }
-            func prepare() { before(); inner.prepare() }
             func attach(fleetValue: @escaping (String) -> Data?) { inner.attach(fleetValue: fleetValue) }
             func attach(fleetWinners: @escaping (String) -> [String: String]) { inner.attach(fleetWinners: fleetWinners) }
         }
@@ -89,17 +94,6 @@ struct SkillsFleetRecordsTests {
         func remove() { try? FileManager.default.removeItem(at: dir) }
     }
 
-    @Test func aReadFailureAfterTheValidatedReadNeverPublishesALocalSkillOrAutoUpdateOff() throws {
-        let mac = try Mac(); defer { mac.remove() }
-        try mac.installPDF()
-        #expect(mac.source.isReady)
-        try mac.damage()
-        let values = mac.source.read()
-        let state = try JSONDecoder().decode(FleetSkillsSource.State.self, from: try #require(values[FleetUnit.skill("pdf")]))
-        #expect(state.source?.commit == "abc123", "the records the pass validated, not Local")
-        #expect(values[FleetSkillsSource.autoUpdate] == Data("true".utf8))
-    }
-
     @Test func aPassOverDamagedRecordsPublishesNothingAndTheNextAfterARepairPublishesTheirSources() throws {
         let mac = try Mac(); defer { mac.remove() }
         try mac.installPDF()
@@ -119,107 +113,75 @@ struct SkillsFleetRecordsTests {
         #expect(mac.scan().isEmpty)
     }
 
-    /// An install commits its folder and its record under the store's lock. One that lands between a scan's
-    /// reads must not be seen as a folder with no record, which would publish a repository skill as Local.
-    @Test func aSkillInstalledInTheMiddleOfAScanIsNeverPublishedAsLocal() throws {
+    @Test(arguments: [false, true]) func aRepositoryInstallAfterReadinessIsPublishedWithItsSource(inboundWinner: Bool) throws {
+        let mac = try Mac(); defer { mac.remove() }
+        let text = Self.skillText + "from the repository\n"
+        let repo = try makeScratchRepo(files: ["skills/pdf/SKILL.md": text])
+        let commit = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Replacing a byte-identical Local skill must still pick up the repository record.
+        try mac.put(text, at: "SKILL.md")
+        if inboundWinner {
+            let local = try #require(try mac.stateValue(mac.scan()))
+            #expect(local.source == nil && local.on)
+            try Sender(mac.dir).skill("pdf", ["SKILL.md": text], to: mac, on: false)
+        }
+        mac.betweenReads = { [unowned mac] in
+            mac.betweenReads = {}
+            _ = try mac.skills.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
+        }
+        if inboundWinner {
+            #expect(!mac.passFailed())
+            #expect(mac.skills.snapshot().skill("pdf")?.isOn == true, "the Local winner does not overwrite the install")
+        }
+        let state = try #require(try mac.stateValue(mac.scan()))
+        #expect(state.source?.commit == commit)
+        #expect(state.source?.path == "skills/pdf")
+        #expect(state.on)
+    }
+
+    @Test func aFailedValueReadDiscardsEarlierChangesAndObservations() throws {
         let mac = try Mac(); defer { mac.remove() }
         try mac.installPDF()
-        var installed = false
-        mac.betweenReads = {
-            guard !installed else { return }
-            installed = true
-            try? mac.put(Self.skillText.replacingOccurrences(of: "pdf", with: "docx"), at: "SKILL.md", in: "docx")
-            let record = SkillsRecordsTests.record
-            try? Data(SkillsRecordsTests.legacy.replacingOccurrences(of: record, with: record + #","docx":"# + record).utf8).write(to: mac.records)
+        let old = mac.skills.directory.appendingPathComponent("old")
+        try mac.put(Self.skillText.replacingOccurrences(of: "pdf", with: "old"), at: "SKILL.md", in: "old")
+        #expect(try mac.stateValue(mac.scan())?.source?.commit == "abc123")
+        let observed = mac.dir.appendingPathComponent("store/observed.json")
+        let before = try Data(contentsOf: observed)
+        let vector = mac.store.vector
+
+        try FileManager.default.removeItem(at: old)
+        _ = try mac.skills.configure(autoUpdate: false)
+        let healthy = try Data(contentsOf: mac.records)
+        try mac.put(Self.skillText + "edited\n", at: "SKILL.md")
+        let file = FleetUnit.skillFile("pdf", "SKILL.md")
+        mac.beforeValue = { [unowned mac] unit in
+            if unit == file { try mac.damage() }
         }
-        let during = mac.scan()
-        #expect(installed)
-        #expect(try mac.stateValue(during)?.source?.commit == "abc123")
-        #expect(during.filter { $0.unit.contains("docx") }.isEmpty, "a skill the pass didn't see whole is left to the next one")
+        #expect(mac.scan().isEmpty, "neither auto-update nor the old skill's deletion is published")
+        #expect(try Data(contentsOf: mac.records) == Data("{".utf8), "the value read was reached")
+        #expect(mac.store.vector == vector)
+        #expect(try Data(contentsOf: observed) == before)
 
-        let next = mac.scan()
-        #expect(try mac.stateValue(next, "docx")?.source?.commit == "abc123", "from its record, never Local")
-    }
-
-    /// The pass pins the folder by URL, and a repository install can replace that folder with other files and
-    /// a source before the pass hashes it. Those files must not go out under the source it saw (none: Local).
-    @Test func aSkillReplacedByAnInstallInTheMiddleOfAScanIsNeverPublishedAsLocal() throws {
-        let mac = try Mac(); defer { mac.remove() }
-        let repo = try makeScratchRepo(files: ["skills/pdf/SKILL.md": Self.skillText + "from the repository\n"])
-        try mac.put(Self.skillText + "local\n", at: "SKILL.md")
-        var installed = false
-        mac.betweenReads = {
-            guard !installed else { return }
-            installed = true
-            _ = try? mac.skills.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
-        }
-        let during = mac.scan()
-        #expect(installed)
-        #expect(mac.skills.snapshot().skill("pdf")?.source != nil, "the install replaced the Local skill")
-        #expect(during.filter { $0.unit.contains("pdf") }.isEmpty, "the pass saw the skill before the install: nothing of it goes out")
-
-        let next = mac.scan()
-        let state = try #require(try mac.stateValue(next))
-        #expect(state.source != nil, "from its record, never Local")
-        let file = try #require(next.first { $0.unit == FleetUnit.skillFile("pdf", "SKILL.md") })
-        guard case .blob(let hash, _) = file.change else { Issue.record("a file travels by hash"); return }
-        #expect(mac.store.blob(hash) == Data((Self.skillText + "from the repository\n").utf8))
-        #expect(state.digest == FleetTreeDigest.of(["SKILL.md": hash]))
-    }
-
-    /// Copying skills again from the user's pi replaces a folder the store has records of, with no store call.
-    /// A pass that pinned the folders before it must be dropped, as it is for an install.
-    @Test func aSkillReplacedByACopyFromYourPiInTheMiddleOfAScanIsNotPublished() throws {
-        let mac = try Mac(); defer { mac.remove() }
-        let home = PiHome(directory: mac.dir, engine: PiEngine(command: ["/nonexistent/pi"], packageDirectory: nil, version: nil, node: .onPath("node")))
-        let yours = mac.dir.appendingPathComponent("yours", isDirectory: true)
-        let theirs = yours.appendingPathComponent("skills/pdf/SKILL.md")
-        try FileManager.default.createDirectory(at: theirs.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data((Self.skillText + "from your pi\n").utf8).write(to: theirs)
-        let skills = mac.skills
-        let importer = YourPiImport(home: home, yourPi: YourPi(agentDirectory: yours), userHome: mac.dir.path,
-                                    offSkills: skills.stateDirectory.appendingPathComponent("off", isDirectory: true), log: { _ in },
-                                    skillsChanged: { skills.skillFoldersChanged() })
-        _ = try importer.reimport(.files(.skills))
-        let repo = try makeScratchRepo(files: ["skills/pdf/SKILL.md": Self.skillText + "from the repository\n"])
-        _ = try skills.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
-
-        var copied = false
-        mac.betweenReads = {
-            guard !copied else { return }
-            copied = true
-            _ = try? importer.reimport(.files(.skills))
-        }
-        let during = mac.scan()
-        #expect(copied)
-        #expect(try String(contentsOf: skills.directory.appendingPathComponent("pdf/SKILL.md"), encoding: .utf8).hasSuffix("from your pi\n"), "the copy replaced the folder")
-        #expect(during.filter { $0.unit.contains("pdf") }.isEmpty, "the pass pinned the folder before the copy: nothing of it goes out")
-    }
-
-    /// Only a change to the skills drops a pass: reading them, or a request that changes nothing, does not.
-    @Test func aPassWithNoChangeToTheSkillsStillPublishes() throws {
-        let mac = try Mac(); defer { mac.remove() }
-        try mac.installPDF()
-        mac.betweenReads = {
-            _ = mac.skills.snapshot()
-            _ = try? mac.skills.perform(.fetch)
-        }
-        let ops = mac.scan()
-        #expect(try mac.stateValue(ops)?.source?.commit == "abc123")
-        #expect(ops.contains { $0.unit == FleetUnit.skillFile("pdf", "SKILL.md") })
+        mac.beforeValue = { _ in }
+        try healthy.write(to: mac.records)
+        let repaired = mac.scan()
+        #expect(repaired.contains { $0.unit == FleetSkillsSource.autoUpdate && $0.change == .value("false") })
+        #expect(repaired.contains { $0.unit == FleetUnit.skill("old") && $0.change == .deletion })
+        #expect(repaired.contains { $0.unit == file })
+        #expect(try mac.stateValue(mac.scan())?.source?.commit == "abc123")
     }
 
     private struct Sender {
         let store: FleetStore
         init(_ dir: URL) throws { store = try FleetStore(directory: dir.appendingPathComponent("sender"), mac: UUID()) }
 
-        func skill(_ name: String, _ files: [String: String], to mac: Mac) {
+        func skill(_ name: String, _ files: [String: String], to mac: Mac, on: Bool = true) {
             for (path, text) in files.sorted(by: { $0.key < $1.key }) {
                 let hash = store.putBlob(Data(text.utf8))!
                 _ = store.appendLocal(unit: FleetUnit.skillFile(name, path), change: .blob(hash: hash, size: text.utf8.count), seed: false, name: "Mac mini")
             }
             let digest = FleetTreeDigest.of(files.mapValues { FleetSyncProtocol.hash(Data($0.utf8)) })
-            let state = FleetSkillsSource.json(.init(on: true, source: nil, digest: digest))
+            let state = FleetSkillsSource.json(.init(on: on, source: nil, digest: digest))
             _ = store.appendLocal(unit: FleetUnit.skill(name), change: .value(String(decoding: state, as: UTF8.self)), seed: false, name: "Mac mini")
             for op in store.ops(after: mac.store.vector) {
                 _ = mac.store.receive(op)

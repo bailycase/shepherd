@@ -333,19 +333,14 @@ public struct YourPiImport: Sendable {
     /// Where Settings ▸ Skills keeps the skills that are switched off (`SkillsStore`): a copied
     /// skill found there is copied again there, and the first copy never adds a second of its name.
     public let offSkills: URL
-    /// Told after a skill folder is replaced or added, for the `SkillsStore` that shares this process
-    /// (`skillFoldersChanged`); a copy in another process has no store to tell.
-    public let skillsChanged: @Sendable () -> Void
 
     public init(home: PiHome, yourPi: YourPi?, userHome: String = NSHomeDirectory(), offSkills: URL? = nil,
-                log: @escaping @Sendable (String) -> Void = { ShepherdLog.info($0) },
-                skillsChanged: @escaping @Sendable () -> Void = {}) {
+                log: @escaping @Sendable (String) -> Void = { ShepherdLog.info($0) }) {
         self.home = home
         self.yourPi = yourPi
         self.userHome = userHome
         self.offSkills = offSkills ?? YourPiImport.offSkillsDirectory(home: home)
         self.log = log
-        self.skillsChanged = skillsChanged
     }
 
     /// `<support directory>/skills/off`, beside the home, where `SkillsStore` moves a skill that is off.
@@ -599,8 +594,6 @@ public struct YourPiImport: Sendable {
                 } catch {
                     report.problems.append("Your \(Self.noun(kind)) \(found.copy.name) (\(found.copy.source)) wasn't copied: \(error).")
                 }
-                // Even a copy that failed part way may have changed the folder.
-                if kind == .skills { skillsChanged() }
             }
         }
     }

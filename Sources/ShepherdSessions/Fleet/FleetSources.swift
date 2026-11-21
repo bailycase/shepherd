@@ -219,16 +219,7 @@ final class FleetSkillsSource: FleetUnitSource {
 
     /// A skill's state is a few words, so it travels inline; its files by hash.
     func storesBlob(_ unit: String) -> Bool { FleetUnit.skillParts(of: unit)?.path != nil }
-    /// What a pass reads of the records: read once here, and valid. A later read failure can't turn an
-    /// installed skill into a Local one, or auto-update off, because nothing reads them again.
-    private var records: SkillsStore.SyncedView?
-    var isReady: Bool {
-        records = store.syncedView()
-        return records != nil
-    }
-    /// False once the store has changed since `isReady` read: a replaced skill's new files would be
-    /// published with the old source. Nothing is emitted from such a pass; the next one starts over.
-    var passIsCurrent: Bool { records.map(store.isCurrent) ?? false }
+    var isReady: Bool { (try? store.syncedAutoUpdate()) != nil }
     var watchedFiles: [URL] { [store.syncedRecords] }
     var watchedTrees: [URL] { store.syncedFolders }
 
@@ -246,30 +237,23 @@ final class FleetSkillsSource: FleetUnitSource {
     }
 
     /// A skill's files on disk: path to hash. nil when it is over the limits.
-    private func files(of name: String, in folder: URL) -> [String: String]? {
-        guard let files = FleetFileTree.files(under: folder.resolvingSymlinksInPath().path,
+    private func files(of skill: SkillsStore.Synced) -> [String: String]? {
+        guard let files = FleetFileTree.files(under: skill.folder.resolvingSymlinksInPath().path,
                                                skipping: { FleetFileTree.isNoise($0) || $0 == "node_modules" },
                                                limits: FleetFileTree.skillLimits) else { return nil }
         var hashes: [String: String] = [:]
         for file in files {
-            let unit = FleetUnit.skillFile(name, file.relative)
+            let unit = FleetUnit.skillFile(skill.name, file.relative)
             guard FleetUnit.isValid(unit), file.size <= FleetSyncProtocol.maxBlobBytes, let hash = hasher.hash(file) else { continue }
             hashes[file.relative] = hash
         }
         return hashes
     }
 
-    /// The pass's records (`isReady` read them); a source read without one reads them now.
-    private func passRecords() -> SkillsStore.SyncedView? {
-        if records == nil { _ = isReady }
-        return records
-    }
-
-    func fingerprints() -> [String: String] {
+    func fingerprints() throws -> [String: String] {
         var result: [String: String] = [:]
-        guard let view = passRecords() else { return result }
-        for skill in view.skills {
-            guard let hashes = files(of: skill.name, in: skill.folder) else {
+        for skill in try store.syncedSkills() {
+            guard let hashes = files(of: skill) else {
                 if oversized.insert(skill.name).inserted {
                     ShepherdLog.info("fleet: the skill \(skill.name) is too big to sync, so it stays on this Mac")
                 }
@@ -297,32 +281,26 @@ final class FleetSkillsSource: FleetUnitSource {
                   let file = FleetFileTree.files(under: url.path, limits: FleetFileTree.skillLimits)?.first, let hash = hasher.hash(file) else { continue }
             result[unit] = hash
         }
-        result[Self.autoUpdate] = FleetSyncProtocol.hash(Self.autoUpdateJSON(view.autoUpdate))
+        result[Self.autoUpdate] = FleetSyncProtocol.hash(Self.autoUpdateJSON(try store.syncedAutoUpdate()))
         return result
     }
 
-    func read() -> [String: Data] {
+    func read() throws -> [String: Data] {
         var values: [String: Data] = [:]
-        for unit in fingerprints().keys { values[unit] = value(of: unit) }
+        for unit in try fingerprints().keys { values[unit] = try value(of: unit) }
         return values
     }
 
-    func value(of unit: String) -> Data? {
-        guard let view = passRecords() else { return nil }
-        if unit == Self.autoUpdate { return Self.autoUpdateJSON(view.autoUpdate) }
+    func value(of unit: String) throws -> Data? {
+        if unit == Self.autoUpdate { return Self.autoUpdateJSON(try store.syncedAutoUpdate()) }
         guard let (name, path) = FleetUnit.skillParts(of: unit) else { return nil }
-        let value: Data?
-        if let path {
-            value = store.syncedFile(name, path).flatMap { try? Data(contentsOf: $0) }
-        } else {
-            value = view.skills.first(where: { $0.name == name }).flatMap { skill in
-                files(of: skill.name, in: skill.folder).map {
-                    Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of($0)))
-                }
-            }
+        guard let path else {
+            guard let skill = try store.syncedSkills().first(where: { $0.name == name }), let hashes = files(of: skill) else { return nil }
+            return Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of(hashes)))
         }
-        // Read after the change it would be wrong for: nil is "changed again", and the next scan reads it.
-        return passIsCurrent ? value : nil
+        _ = try store.syncedAutoUpdate() // A file-only edit must not publish over damaged records either.
+        guard let url = store.syncedFile(name, path) else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     private static func autoUpdateJSON(_ on: Bool) -> Data { Data((on ? "true" : "false").utf8) }
@@ -342,7 +320,10 @@ final class FleetSkillsSource: FleetUnitSource {
         if let path {
             // The fleet removing the skill moves the whole folder to Removed (where Undo is) when its state
             // is applied: its files are not taken one by one.
-            if value == nil, fleetWinners(FleetUnit.skill(name))[FleetUnit.skill(name)] == "-" { return }
+            if value == nil, fleetWinners(FleetUnit.skill(name))[FleetUnit.skill(name)] == "-" {
+                _ = try store.syncedAutoUpdate()
+                return
+            }
             // A skill that isn't here yet is written where pi doesn't read, and moved into place whole.
             try store.writeSynced(name, path: path, data: value, on: false)
             if value != nil, let state = fleetValue(FleetUnit.skill(name)).flatMap({ try? JSONDecoder().decode(State.self, from: $0) }) {
@@ -364,8 +345,8 @@ final class FleetSkillsSource: FleetUnitSource {
 
     /// Puts a skill as its state says (on or off, from where) once its files are all here. False while they aren't.
     private func settle(_ name: String, _ state: State) throws -> Bool {
-        if let digest = state.digest, let skill = store.syncedPlace(name) {
-            let hashes = files(of: name, in: skill.folder)
+        if let digest = state.digest, let skill = try store.syncedSkills().first(where: { $0.name == name }) {
+            let hashes = files(of: skill)
             // Off and wanted on: it moves in only when whole. One already on is updated where it is.
             if !skill.isOn, state.on, hashes.map(FleetTreeDigest.of) != digest { return false }
         }
