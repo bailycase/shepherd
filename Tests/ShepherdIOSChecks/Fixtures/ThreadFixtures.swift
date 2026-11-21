@@ -227,7 +227,7 @@ enum ThreadFixtures {
     }
 
     /// Everything an RPC agent offers: the composer's chips and the paperclip show.
-    private static func rpc(_ snapshot: NativeThreadSnapshot, contextTokens: Int? = 42_300) -> NativeThreadSnapshot {
+    static func rpc(_ snapshot: NativeThreadSnapshot, contextTokens: Int? = 42_300) -> NativeThreadSnapshot {
         var snapshot = snapshot
         snapshot.supportedActions = ["send", "abort", "answer", "queue", "subagents", "setModel", "setThinking", "sendImages"]
         snapshot.stats = NativeThreadStats(contextTokens: contextTokens, contextWindow: 200_000)

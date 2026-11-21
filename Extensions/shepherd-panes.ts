@@ -62,7 +62,11 @@ interface FleetDispatchInfo {
   hostRunningDispatches?: number | null;
   closeReport?: string | null;
   resultText?: string | null;
-  branchFacts?: { branch: string; head?: string | null; ahead: number; comparedTo?: string; pushed: boolean; originCheckFailed?: boolean; filesChanged: number; insertions: number; deletions: number } | null;
+  branchFacts?: {
+    branch: string; head?: string | null; ahead: number; comparedTo?: string; pushed: boolean; originCheckFailed?: boolean;
+    filesChanged: number; insertions: number; deletions: number;
+    uncommittedModified?: number; uncommittedUntracked?: number; uncommittedCheckFailed?: boolean;
+  } | null;
   failure?: string | null;
   detail?: string | null;
   without?: string[] | null;
@@ -885,6 +889,15 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       lines.push(`branch work at result: ${facts.ahead} commit(s) ahead${base}, ${facts.filesChanged} file(s) +${facts.insertions} -${facts.deletions}, ${push}`);
     } else if (info.branch && (info.state === "done" || info.state === "delivering")) {
       lines.push("branch work at result: unavailable");
+    }
+    const modified = facts?.uncommittedModified ?? 0;
+    const untracked = facts?.uncommittedUntracked ?? 0;
+    const total = modified + untracked;
+    if (facts?.uncommittedCheckFailed) {
+      lines.push("Could not check the checkout for uncommitted work.");
+    } else if (Number.isSafeInteger(modified) && Number.isSafeInteger(untracked) && Number.isSafeInteger(total) && modified >= 0 && untracked >= 0 && total > 0) {
+      const parts = [modified > 0 ? `${modified} modified` : "", untracked > 0 ? `${untracked} untracked` : ""].filter(Boolean);
+      lines.push(`Uncommitted in the checkout on ${info.host ?? "another Mac"}: ${total} ${total === 1 ? "file" : "files"} (${parts.join(", ")}). Counts include any edits sent with the dispatch.`);
     }
     if (info.state === "running") {
       lines.push(`last reported thread activity: ${info.activity ? String(info.activity).split("\n")[0] : "unknown"}`);

@@ -315,6 +315,77 @@ struct FleetDispatchTests {
         #expect(a.dispatched.isEmpty, "nothing ran on the sender")
     }
 
+    @Test func aDispatchWithNoCommitsReportsUncommittedWorkInItsResultAndCloseReply() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("Update checkout notes.", title: "Checkout notes", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try await eventuallyOnMain("the stub to start in the worktree") {
+            StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == thread.id.rawValue }
+        }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+
+        try Data("updated notes\n".utf8).write(to: worktree.appendingPathComponent("README.md"))
+        try Data("staged notes\n".utf8).write(to: worktree.appendingPathComponent("apps/web/index.js"))
+        try git(["add", "apps/web/index.js"], in: worktree)
+        try Data("more notes\n".utf8).write(to: worktree.appendingPathComponent("apps/web/index.js"))
+        try Data().write(to: worktree.appendingPathComponent("new notes.txt"))
+        try Data().write(to: worktree.appendingPathComponent("ignored.log"))
+        try Data().write(to: b.folder.appendingPathComponent("outside.txt"))
+        let status = try git(["status", "--porcelain=v1"], in: worktree)
+        try b.report(thread.id, .done)
+
+        let result = try #require(await parent.nextMessage())
+        #expect(result.text.contains("Branch fleet/checkout-notes: 0 commits ahead of origin/main, not on origin, 0 files changed (+0 -0). Uncommitted in the checkout on Mac mini: 3 files (2 modified, 1 untracked). Counts include any edits sent with the dispatch."))
+        #expect(!result.text.contains("new notes.txt") && !result.text.contains("updated notes"))
+        try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
+        let facts = try #require(try await parent.status(info).branchFacts)
+        #expect(facts.ahead == 0 && facts.filesChanged == 0 && facts.uncommittedModified == 2 && facts.uncommittedUntracked == 1)
+        #expect(try git(["status", "--porcelain=v1"], in: worktree) == status, "reporting leaves the index and worktree alone")
+
+        // The close reply describes what is kept now, not the earlier result snapshot.
+        try Data().write(to: worktree.appendingPathComponent("later notes.txt"))
+        let beforeClose = try git(["status", "--porcelain=v1"], in: worktree)
+        let closed = try parent.info(try await parent.call { .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID) })
+        let report = try #require(closed.closeReport)
+        #expect(report.contains("Kept the checkout, branches, and saved conversation, including 4 uncommitted files in the checkout"))
+        #expect(try git(["status", "--porcelain=v1"], in: worktree) == beforeClose)
+        #expect(try Self.head(worktree) == origin.sha)
+    }
+
+    @Test func aDispatchThatMakesNoEditsReportsTheUncommittedWorkItReceived() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        try Data("sender notes\n".utf8).write(to: a.folder.appendingPathComponent("README.md"))
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("Read checkout notes.", title: "Read notes", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        #expect(try Self.head(worktree) == origin.sha)
+        #expect(try git(["status", "--porcelain=v1"], in: worktree) == " M README.md\n")
+        try await eventuallyOnMain("the stub to start in the worktree") {
+            StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == thread.id.rawValue }
+        }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+        try b.report(thread.id, .done)
+
+        let result = try #require(await parent.nextMessage())
+        #expect(result.text.contains("Uncommitted in the checkout on Mac mini: 1 file (1 modified). Counts include any edits sent with the dispatch."))
+        try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
+        let closed = try parent.info(try await parent.call { .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID) })
+        let report = try #require(closed.closeReport)
+        #expect(report.contains("including 1 uncommitted file in the checkout;"))
+        #expect(report.contains("Counts include any edits sent with the dispatch."))
+    }
+
     @Test func theResultAndReadReportThePushedDispatchBranchNotTheCheckedOutHead() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
@@ -344,7 +415,8 @@ struct FleetDispatchTests {
         #expect(result.text.contains("Branch \(branch): 1 commit ahead of origin/main, pushed to origin, 1 file changed (+1 -0)."))
         try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
         let read = try await parent.status(info)
-        var expected = FleetBranchFacts(branch: branch, head: pushed, ahead: 1, pushed: true, filesChanged: 1, insertions: 1)
+        var expected = FleetBranchFacts(branch: branch, head: pushed, ahead: 1, pushed: true, filesChanged: 1, insertions: 1,
+                                        uncommittedModified: 0, uncommittedUntracked: 0)
         expected.comparedTo = "origin/main"
         #expect(read.branchFacts == expected)
         #expect(try Self.head(a.folder) == origin.sha)
@@ -402,10 +474,16 @@ struct FleetDispatchTests {
         try git(["update-ref", "refs/remotes/origin/\(branch)", origin.sha], in: checkout)
         try git(["remote", "set-url", "origin", checkout.appendingPathComponent("no-such-origin").path], in: checkout)
 
-        let facts = try #require(FleetDispatchGit.branchFacts(worktree: checkout.path, branch: branch, start: origin.sha))
+        let facts = FleetDispatchGit.branchFacts(worktree: checkout.path, branch: branch, start: origin.sha)
         #expect(facts.head == origin.sha && facts.ahead == 0)
         #expect(facts.originCheckFailed == true && !facts.pushed)
-        #expect(FleetDispatchGit.branchFacts(worktree: checkout.path, branch: "fleet/missing", start: origin.sha) == nil)
+        #expect(facts.uncommittedModified == 0 && facts.uncommittedUntracked == 0 && facts.uncommittedCheckFailed == nil)
+
+        try Data().write(to: checkout.appendingPathComponent("new notes.txt"))
+        let noBranch = FleetDispatchGit.branchFacts(worktree: checkout.path, branch: "fleet/missing", start: origin.sha)
+        #expect(noBranch == FleetBranchFacts(branch: "fleet/missing", uncommittedModified: 0, uncommittedUntracked: 1))
+        let noCheckout = FleetDispatchGit.branchFacts(worktree: checkout.appendingPathComponent("missing").path, branch: branch, start: origin.sha)
+        #expect(noCheckout == FleetBranchFacts(branch: branch, uncommittedCheckFailed: true))
     }
 
     @Test func aProviderErrorMarksTheDispatchFailedOnBothMacs() async throws {

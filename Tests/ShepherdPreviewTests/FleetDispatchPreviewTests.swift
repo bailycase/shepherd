@@ -71,6 +71,28 @@ struct FleetDispatchPreviewTests {
         }
     }
 
+    @Test func checkoutNoticesOnTheResultCard() async throws {
+        let title = "Checkout notes", host = "Build Mac"
+        let prefix = "[from: \(title) on \(host), an agent, not the user. Reply with agent_send only if this asks for a reply.] Result from \(title) on \(host):\nUpdated the checkout notes.\n\n"
+        let branch = "Branch fleet/checkout-notes: 0 commits ahead of origin/main, not on origin, 0 files changed (+0 -0)."
+        let record = Self.record(.done, title: title, host: host)
+        let card = Self.surface([record]).cards.first
+        let notices = [
+            ("mac-uncommitted", "Uncommitted in the checkout on Build Mac: 1 file (1 modified). Counts include any edits sent with the dispatch."),
+            ("mac-could-not-check", "Could not check the checkout for uncommitted work."),
+        ]
+        let size = CGSize(width: 700, height: 184)
+        for (name, notice) in notices {
+            let result = try #require(FleetResultMessage.parse(prefix + branch + " " + notice))
+            try await Preview.render(name, size: size) {
+                FleetResultCard(result: result, time: "10:24", card: card)
+                    .padding(SH.Space.xl)
+                    .frame(width: size.width, height: size.height)
+                    .background(Color.sh.bgWindow)
+            }
+        }
+    }
+
     @Test func aProviderErrorShowsTheFailedThreadAndItsError() async throws {
         let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
         let fixture = ThreadFixture(Self.parentSnapshot(done: false))

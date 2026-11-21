@@ -408,7 +408,8 @@ extension FleetDispatch {
                 let processes = stopped.summary + (stopped.allowsBuildCleanup ? "" : " Build output kept.")
                 let bytes = cleaned?.bytes ?? 0
                 let detail = cleaned.flatMap { $0.removed.isEmpty ? nil : " Removed \($0.removed.joined(separator: ", "))." } ?? ""
-                result = .success("Thread removed. \(processes) \(bytes) allocated bytes freed from build output.\(detail) Kept the checkout, branches, and saved conversation; unverified output was left alone.")
+                let count = path.flatMap { FleetDispatchGit.uncommittedFiles(worktree: $0) }.map { $0.modified + $0.untracked }
+                result = .success("Thread removed. \(processes) \(bytes) allocated bytes freed from build output.\(detail) \(Self.closeCheckoutReport(count))")
             } catch let refusal as FleetDispatchRefusal {
                 result = .failure(refusal)
             } catch {
@@ -431,6 +432,14 @@ extension FleetDispatch {
                 }
             }
         }
+    }
+
+    static func closeCheckoutReport(_ count: Int?) -> String {
+        let kept = "Kept the checkout, branches, and saved conversation"
+        let output = "unverified output was left alone."
+        guard let count else { return "\(kept); \(output) Could not check the checkout for uncommitted work." }
+        guard count > 0 else { return "\(kept); \(output)" }
+        return "\(kept), including \(count) uncommitted \(count == 1 ? "file" : "files") in the checkout; \(output) Counts include any edits sent with the dispatch."
     }
 
     static func activity(_ facts: FleetThreadFacts) -> String {
@@ -488,9 +497,7 @@ extension FleetDispatch {
             base.hasPrefix("origin/") ? String(base.dropFirst("origin/".count)) : nil
         }
         Task.detached { [weak self] in
-            let summary = worktree.flatMap { path in
-                branch.flatMap { FleetDispatchGit.branchFacts(worktree: path, branch: $0, start: start, comparison: comparison) }
-            }
+            let summary = branch.map { FleetDispatchGit.branchFacts(worktree: worktree, branch: $0, start: start, comparison: comparison) }
             self?.queue.async {
                 guard let self, var entry = self.inbound[id], entry.record.state == .running, entry.finishingRun == token else { return }
                 entry.finishingRun = nil
