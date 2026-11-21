@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { setImmediate } from "node:timers/promises";
+import { setImmediate, setTimeout as sleep } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, symlink, unlink, rmdir } from "node:fs/promises";
+import { mkdtemp, readFile, symlink, unlink, rmdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -123,4 +123,81 @@ test("a managed Bash timeout kills orphaned descendants", async () => {
     assert.ok(Number.isSafeInteger(pid) && pid > 0);
     await eventually(() => !alive(pid));
   } finally { bash.stopAll(); }
+});
+
+// Starts a supervisor and keeps its stdin open, as pi does, so only its own reaping can end it.
+// Exit is observed through a listener registered at spawn, so nothing here ever signals a pid
+// that might have been recycled.
+async function startSupervisor(command, args = []) {
+  const child = spawn(process.execPath, [...args, supervisorPath, "--supervise", command], {
+    detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
+  });
+  const exit = once(child, "exit");
+  child.stdio[3].resume(); child.stdio[4].resume(); child.stdio[5].resume();
+  child.stdin.on("error", () => {});
+  await once(child.stdio[5], "end");
+  return { child, exit };
+}
+// Resolves with [code, signal], or fails if the supervisor is still running after ms.
+async function exitsWithin(exit, ms) {
+  const timer = new AbortController();
+  const result = await Promise.race([exit, sleep(ms, "timeout", { signal: timer.signal })]);
+  timer.abort();
+  assert.notEqual(result, "timeout", `supervisor still alive after ${ms} ms`);
+  return result;
+}
+
+test("the supervisor exits by itself once its command is done and nothing else is in the group", { timeout: 40000 }, async () => {
+  const { child, exit } = await startSupervisor("exit 0");
+  try { assert.deepEqual(await exitsWithin(exit, 30000), [0, null]); }
+  finally { child.stdin.destroy(); }
+});
+
+test("a probe that spawns without stdout, then errors, is retried once and the supervisor survives", { timeout: 40000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shepherd-bash-"));
+  const calls = join(dir, "calls");
+  // The first pgrep spawn fails as EMFILE does: a child with no stdout that emits error on the next tick.
+  const preload = `import cp from 'node:child_process';
+    import { appendFileSync } from 'node:fs';
+    import { EventEmitter } from 'node:events';
+    import { syncBuiltinESMExports } from 'node:module';
+    const spawn = cp.spawn;
+    let probes = 0;
+    cp.spawn = (file, ...args) => {
+      if (file !== '/usr/bin/pgrep') return spawn(file, ...args);
+      appendFileSync(${JSON.stringify(calls)}, 'x');
+      if (probes++ > 0) return spawn(file, ...args);
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('error', Object.assign(new Error('spawn pgrep EMFILE'), { code: 'EMFILE' })));
+      return child;
+    };
+    syncBuiltinESMExports();`;
+  const { child, exit } = await startSupervisor("exit 0", ["--import", `data:text/javascript,${encodeURIComponent(preload)}`]);
+  try {
+    assert.deepEqual(await exitsWithin(exit, 30000), [0, null], "an unhandled probe error would crash it");
+    assert.equal((await readFile(calls, "utf8")).length, 2, "one failed probe schedules exactly one retry");
+  } finally {
+    child.stdin.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the supervisor outlives a background job until the test releases it, then exits", { timeout: 100000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shepherd-bash-"));
+  const hold = join(dir, "hold");
+  await writeFile(hold, "");
+  // The job runs until the test deletes the file, so it cannot finish before the check below.
+  const { child, exit } = await startSupervisor(`(while [ -e '${hold}' ]; do /bin/sleep 0.1; done) </dev/null >/dev/null 2>&1 &`);
+  let exited = false;
+  exit.then(() => { exited = true; });
+  try {
+    await sleep(1500); // several probes at the 100 ms backoff start; a late wakeup cannot weaken the check
+    assert.ok(!exited, "supervisor must stay while the job is in its group");
+    await unlink(hold);
+    // The back-off caps at 30 s: allow a probe that just missed the release plus one more interval and margin.
+    assert.deepEqual(await exitsWithin(exit, 75000), [0, null]);
+  } finally {
+    child.stdin.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
