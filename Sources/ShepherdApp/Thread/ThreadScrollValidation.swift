@@ -87,6 +87,7 @@ final class MacScrollValidationTrace: NSObject {
     var wheel: ((CGFloat) -> Void)?
     var phase: ((ScrollPhase, ScrollPhase, CGFloat) -> Void)?
     var historyVisibility: ((Bool) -> Void)?
+    weak var measuredHistory: ThreadMeasuredHistory?
     var deckPage: ((AgentLayoutModel) -> AnyView)?
     var streamingRowID: String?
     var historyBoundary: (() -> (lazy: String, eager: String)?)?
@@ -489,7 +490,12 @@ private final class ScrollFixture {
 
         trace.scenario = "mid-history-new-turn"
         await trace.advance()
-        try scroll(to: try scrollView().contentView.documentRect.height / 2)
+        let destination = try scrollView().contentView.documentRect.height / 2
+        if let measuredHistory = trace.measuredHistory {
+            try measuredHistory.landJump { try scroll(to: destination) }
+        } else {
+            try scroll(to: destination)
+        }
         await trace.settle()
         let oldHeight = trace.latest?.documentHeight
         trace.mark("fixture.newTurn")

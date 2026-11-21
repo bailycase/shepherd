@@ -975,6 +975,7 @@ struct ThreadView: View {
             trace.wheel = wheelIntent()
             trace.phase = scrollPhaseChanged
             trace.historyVisibility = historyVisibilityChanged
+            if ThreadScrollValidation.measuredHistory { trace.measuredHistory = measuredHistory }
         }
         #endif
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }

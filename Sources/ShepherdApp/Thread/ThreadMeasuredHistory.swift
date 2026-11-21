@@ -13,6 +13,7 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored private var pending: [String: CGFloat] = [:]
     @ObservationIgnored private weak var stack: StackMarker?
     @ObservationIgnored private var windowQueued = false
+    @ObservationIgnored private var landingJump = false
     @ObservationIgnored private var lastDocumentHeight: CGFloat?
     @ObservationIgnored private var stackSize: CGSize = .zero
     @ObservationIgnored private var settings: Settings?
@@ -37,6 +38,12 @@ final class ThreadMeasuredHistory {
     }
 
     func height(of id: String) -> CGFloat? { table.height(for: id) }
+
+    func landJump(_ layout: () throws -> Void) rethrows {
+        landingJump = true
+        defer { landingJump = false }
+        try layout()
+    }
 
     private func queueWindow() {
         guard !windowQueued else { return }
@@ -95,7 +102,9 @@ final class ThreadMeasuredHistory {
         }
         table = updated
         pending.removeAll(keepingCapacity: true)
-        guard !prepended, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
+        // At an explicit landing there is no previous reader position to preserve. Keep
+        // the measurements, and let the next layout anchor to the landed clip instead.
+        guard !landingJump, !prepended, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
               MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
         ThreadHistoryAnchor.correct(delta, in: scroll, rowID: anchor < table.rows.count ? table.rows[anchor].id : nil,
                                     actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height)")
