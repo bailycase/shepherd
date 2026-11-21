@@ -100,6 +100,31 @@ struct ThreadReleasedTailTests {
         #expect(store.running && store.hostRunning, "the host never stopped: the thread says so")
     }
 
+    /// A turn ends and Stop stays for the 400 ms hold. A pull that lands inside it and finds nothing new (the host says "unchanged")
+    /// is not a new word from the host: it must not start the hold over.
+    @Test func anUnchangedPullKeepsTheEndOfRunHoldInFlight() async throws {
+        let prompt = F.user("go", id: "u")
+        let host = FakeHost(F.snapshot(running: true, messages: [prompt]))
+        host.answersUnchanged = true
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        let (hold, release) = AsyncStream<Void>.makeStream()
+        store.settlePause = { _ in for await _ in hold {} }
+        defer { release.finish() }
+        host.snapshot = F.snapshot(revision: 2, messages: [prompt, F.assistant("Done.", id: "a")])
+        await store.refresh()
+        let settling = try #require(store.settleTask)
+        #expect(store.settledRunning, "Stop stays through the hold")
+
+        await store.refresh()
+        #expect(host.requests.last.map { if case .snapshot(_, _, let after) = $0 { after == 2 } else { false } } == true)
+        #expect(store.settleTask == settling && !settling.isCancelled, "the pending hold is the one that ends the turn")
+        release.finish()
+        await settling.value
+        #expect(!store.settledRunning)
+    }
+
     /// The rows the host adds while a turn runs (its question and the reply so far) are not history: the tail starts in history, and they stay.
     @Test func theLiveRowsOfAThreadThatLeftRunningStayAfterTheTail() async {
         let all = session(turns: 100)
