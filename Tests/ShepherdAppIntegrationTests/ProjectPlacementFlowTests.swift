@@ -438,9 +438,8 @@ struct ProjectPlacementFlowTests {
         let r = try Rig(); defer { r.stop() }; try await r.start()
         let server = r.owner.server
         try await server.enqueue { @Sendable in server.applyProjectExecutors(.hosts([])) }
-        r.owner.vm.refreshProjectHosts()
-        // A request after the refresh's, on the same link: the host has handled a resend by the time this returns.
-        await Task.yield()
+        // Deterministic: an unchanged refresh must decide not to send, so it returns no send task.
+        #expect(r.owner.vm.refreshProjectHosts() == nil)
         let client = try #require(r.owner.vm.localHost?.browserClient)
         try await client.projectExecutors(.changed(host: .local, key: nil))
         #expect(await server.appProjectExecutors().isEmpty)

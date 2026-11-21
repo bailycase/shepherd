@@ -267,13 +267,15 @@ extension RemoteHostStore {
 extension ShepherdViewModel {
     /// The paired hosts a Project may place work on, sent to the background host
     /// (`projectExecutors`) when they change.
-    func refreshProjectHosts() {
+    /// Returns the send, or nil when nothing needed sending.
+    @discardableResult
+    func refreshProjectHosts() -> Task<Void, Never>? {
         let options = remoteHosts.projectHostOptions
-        guard let host = localHost, host.phase == .connected, let client = host.browserClient else { return }
-        guard sentProjectHostsClient !== client || sentProjectHosts != options else { return }
+        guard let host = localHost, host.phase == .connected, let client = host.browserClient else { return nil }
+        guard sentProjectHostsClient !== client || sentProjectHosts != options else { return nil }
         sentProjectHostsClient = client
         sentProjectHosts = options
-        Task { [weak self] in
+        return Task { [weak self] in
             do { try await client.projectExecutors(.hosts(options)) } catch { self?.sentProjectHosts = nil }
         }
     }
