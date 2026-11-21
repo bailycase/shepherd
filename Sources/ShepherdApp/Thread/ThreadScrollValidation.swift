@@ -268,7 +268,8 @@ private final class ScrollFixture {
         guard !trace.guardian.following, trace.guardian.distance > ThreadTailGuard.band else {
             throw ValidationError("scripted drag did not detach the reader before streaming")
         }
-        for i in 2...17 {
+        try await streamChunk(2, marker: "fixture.streamChunk")
+        for i in 3...17 {
             try scroll(up: 28)
             await trace.advance()
             try await streamChunk(i, marker: "fixture.streamChunk")
