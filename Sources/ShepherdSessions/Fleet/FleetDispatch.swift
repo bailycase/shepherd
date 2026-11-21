@@ -123,6 +123,8 @@ struct FleetThreadFacts: Sendable {
     var completedAt: Double?
     var worktree: String?
     var failure: TurnFailure?
+    /// The bound pi already exited; retained by the host even if Fleet had no run to notify yet.
+    var stopProblem: NativeStartProblem? = nil
 }
 
 /// Dispatch (`fleet.dispatch.v1`): a thread on this Mac sends work to another, which makes a fresh
