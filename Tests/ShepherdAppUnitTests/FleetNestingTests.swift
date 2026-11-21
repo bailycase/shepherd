@@ -278,8 +278,10 @@ struct FleetNestingTests {
         #expect(unfolded.shortcutRows(collapsed: [], openFolds: []).map(\.title) == ["Speed up checkout CI", "Task 4"], "closed: the starter, no Task 1-3")
         #expect(unfolded.shortcutRows(collapsed: [], openFolds: [key]).map(\.title) == ["Speed up checkout CI", "Task 1", "Task 2", "Task 3", "Task 4"])
         let presented = unfolded.presented(selected: nil, shortcuts: true)
-        let badged = (presented.working + presented.done).filter { $0.accessory != SHSidebarRow.Accessory.none }.map(\.title)
-        #expect(badged == unfolded.shortcutRows(collapsed: [], openFolds: []).map(\.title), "the badges and ⌘1–9 name the same rows")
+        let rows = unfolded.shortcutRows(collapsed: [], openFolds: [])
+        let badges = (presented.working + presented.done).filter { $0.accessory != SHSidebarRow.Accessory.none }
+        #expect(badges.map(\.title) == rows.map(\.title), "the badges and ⌘1–9 name the same rows")
+        #expect(badges.map(\.accessory) == [.shortcut("⌘1"), .shortcut("⌘2")])
     }
 
     @Test func aThreadAThreadStartedNestsFlatUnderTheTopOne() {
