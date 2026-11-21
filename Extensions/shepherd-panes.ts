@@ -37,6 +37,8 @@ interface Reply {
   automations?: AutomationInfo[];
   agents?: AgentPeerInfo[];
   text?: string;
+  oldName?: string;
+  newName?: string;
   delivery?: "task" | "report";
   requestID?: string;
   targetAgentID?: string;
@@ -799,6 +801,24 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       await request({ type: "moveAgent", targetAgentID: params.agentID, spaceID: params.spaceID }, signal, 60_000);
       return text(`moved thread ${params.agentID} to space ${params.spaceID}; conversation kept`);
+    },
+  });
+
+  if (!isAutomationAgent) pi.registerTool({
+    name: "agent_rename",
+    label: "Rename Agent Thread",
+    description: "Renames a thread, like the user's /name: yours when agentID is omitted. Another thread (id from agent_list) only when the user explicitly asks you to rename it, in this conversation; never on your own initiative. " +
+      "Replies with the old and new name, or why it did not change. " + ACCESS_POLICY,
+    ...later(deferPeers, PEERS),
+    parameters: Type.Object({
+      name: Type.String({ description: "The new name" }),
+      agentID: Type.Optional(Type.String({ description: "Another thread's id from agent_list; omit for yourself" })),
+    }),
+    async execute(_id, params, signal) {
+      const reply = await request({ type: "renameAgent", name: params.name,
+        ...(params.agentID ? { targetAgentID: params.agentID } : {}) }, signal, PEER_TIMEOUT_MS);
+      if (reply.type !== "agentRenamed" || typeof reply.newName !== "string") return text("rename requested; the host did not confirm the new name");
+      return text(`renamed ${reply.oldName ? `"${reply.oldName}"` : "the thread"} to "${reply.newName}"`);
     },
   });
 

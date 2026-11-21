@@ -135,6 +135,33 @@ test("agent_move sends the authenticated move request and reports host refusal",
   finally { await automation.close(); }
 });
 
+test("agent_rename renames the caller without a target, another thread only by its id, and reports what the host said", async () => {
+  let answer = (frame) => ({ type: "agentRenamed", id: frame.id, oldName: "Old", newName: frame.name.trim() });
+  const h = await harness({ defer: true, onFrame(frame, write) {
+    if (frame.type === "renameAgent") write(answer(frame));
+  } });
+  try {
+    const tool = h.tools.get("agent_rename");
+    assert.match(tool.description, /yours when agentID is omitted/);
+    assert.match(tool.description, /only when the user explicitly asks you to rename it, in this conversation/);
+    assert.deepEqual(tool.parameters.required, ["name"], "agentID is optional");
+    assert.equal(output(await tool.execute("self", { name: " New " })), 'renamed "Old" to "New"', "the reply's cleaned name, not the one asked for");
+    const own = h.frames.find((f) => f.type === "renameAgent");
+    assert.equal(own.agentID, "agent-1");
+    assert.equal(own.name, " New ", "the tool does not clean the name: the host does");
+    assert.equal("targetAgentID" in own, false, "no target means the calling thread");
+    await tool.execute("other", { name: "Other", agentID: "target" });
+    assert.equal(h.frames.filter((f) => f.type === "renameAgent")[1].targetAgentID, "target");
+    answer = (frame) => ({ type: "error", id: frame.id, code: "no_such_agent", message: "no such agent: target" });
+    await assert.rejects(tool.execute("gone", { name: "X", agentID: "target" }), /no such agent/);
+    answer = (frame) => ({ type: "ok", id: frame.id });
+    assert.match(output(await tool.execute("bare", { name: "X" })), /did not confirm/, "a reply without the names is not success");
+  } finally { await h.close(); }
+  const automation = await harness({ automation: true });
+  try { assert.equal(automation.tools.has("agent_rename"), false); }
+  finally { await automation.close(); }
+});
+
 test("every tool that touches another thread leads with the rule and gives a wrong and a right use", async () => {
   const h = await harness();
   try {
@@ -295,7 +322,7 @@ test("stopping a pending send tells the host", async () => {
   } finally { await h.close(); }
 });
 
-const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move"];
+const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move", "agent_rename"];
 const AUTOMATION = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 
 test("with deferral on, the tools that touch other threads and the automation tools are deferred and keep every word, and the terminal tools and notify stay direct", async () => {

@@ -278,6 +278,75 @@ struct EngineThreadTests {
         #expect(try await ThreadImagesTests.fetch(ref.id, from: pi.agent, session: ready.piSessionID).data == png)
     }
 
+    @Test @MainActor func localRenamesUsePiAndReachAnAlreadyConnectedDevice() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let caller = try await RealPi.launch(engine: engine, on: remote.host)
+        defer { caller.stop() }
+        let target = try await RealPi.launch(engine: engine, status: true, on: remote.host)
+        defer { target.stop() }
+        _ = try await caller.ready()
+        let ready = try await target.ready()
+        let targetID = target.agent.agent.id
+        let callerID = caller.agent.agent.id
+        let extensionSocket = try ExtensionClient(path: remote.host.socketPath)
+        let phone = try await remote.typed()
+        defer { phone.disconnect() }
+        let pushes = Locked([ShepherdState]())
+        phone.onStateChanged = { state in pushes.withValue { $0.append(state) } }
+
+        func rename(_ id: Int, _ name: String, target: AgentID? = nil) async throws -> ExtensionReply {
+            try extensionSocket.send(.renameAgent(id: id, agentID: callerID, targetAgentID: target, name: name))
+            return try await extensionSocket.reply()
+        }
+
+        #expect(try await rename(101, "  Caller\nro\u{1B}le  ") == .agentRenamed(id: 101, oldName: "rpc", newName: "Caller role"))
+        let blank = try await rename(102, " \n\u{7} ", target: targetID)
+        #expect(blank == .error(id: 102, code: "rename_refused", message: "Session name cannot be empty"))
+        guard case .error(103, "no_such_agent", _) = try await rename(103, "Missing", target: AgentID()) else {
+            Issue.record("Expected a missing local thread refusal"); return
+        }
+
+        // The fixture command uses Pi's SessionManager setter, just as the interactive /name does.
+        _ = try await target.send("/probe-name Hand named", from: ready)
+        try await eventually("the hand-entered Pi title to arrive") {
+            remote.server.state.agents.first { $0.id == targetID }?.name == "Hand named"
+        }
+        let title = String(repeating: "X", count: 60)
+        #expect(try await rename(104, title + "overflow", target: targetID) == .agentRenamed(id: 104, oldName: "Hand named", newName: title))
+
+        _ = try await target.send("slow please", from: try await target.ready())
+        _ = try await target.snapshot("the target to be mid-turn") { $0.running }
+        #expect(try await rename(105, "During turn", target: targetID) == .agentRenamed(id: 105, oldName: title, newName: "During turn"))
+        #expect(try await target.request(.snapshot()).snapshotValue?.running == true)
+        try extensionSocket.send(.setAgentName(agentID: targetID, name: "Automatic title", sessionID: target.sessionID))
+        _ = try await target.settled("the target's first turn to finish") { !$0.messages.isEmpty }
+        try await eventually("the target to be done") {
+            remote.server.state.agents.first { $0.id == targetID }?.completedAt != nil
+        }
+        #expect(remote.server.state.agents.first { $0.id == targetID }?.name == "During turn")
+        #expect(try await rename(106, "After turn", target: targetID) == .agentRenamed(id: 106, oldName: "During turn", newName: "After turn"))
+
+        try await eventually("a live state push to the paired-device client, without reconnecting or fetching") {
+            pushes.current.contains { state in
+                state.agents.first { $0.id == targetID }?.name == "After turn"
+                    && state.agents.first { $0.id == callerID }?.name == "Caller role"
+            }
+        }
+        #expect(try remote.host.persisted().agents.first { $0.id == targetID }?.nameIsFinal == true)
+        let savedSession = try String(contentsOf: target.sessionFile, encoding: .utf8)
+        #expect(savedSession.contains("\"type\":\"session_info\""))
+        #expect(savedSession.contains("\"name\":\"After turn\""))
+
+        remote.server.killSession(target.agent.sessionID)
+        try await remote.host.waitForExit(target.agent.sessionID)
+        guard case .error(107, "not_running", _) = try await rename(107, "Offline", target: targetID) else {
+            Issue.record("Expected a stopped Pi refusal"); return
+        }
+        #expect(remote.server.state.agents.first { $0.id == targetID }?.name == "After turn")
+    }
+
     /// Stop on a streaming turn and a message queued behind it: the partial reply is kept as
     /// stopped, the host keeps the queue, and the thread takes the next turn.
     @Test func stoppingAStreamingTurnKeepsItsPartialReplyAndTheQueue() async throws {
@@ -497,6 +566,9 @@ final class RealPi: @unchecked Sendable {
         export default function (pi: any): void {
           pi.registerCommand("probe-cmd", { description: "Say what it was given", handler: async (args: string, ctx: any) => {
             ctx.ui.notify("probed:" + args, "info");
+          } });
+          pi.registerCommand("probe-name", { description: "Set Pi's session name", handler: async (args: string) => {
+            pi.setSessionName(args);
           } });
           pi.registerCommand("ask-me", { description: "Ask a question", handler: async (_args: string, ctx: any) => {
             const choice = await ctx.ui.select("Pick one", ["alpha", "beta"]);

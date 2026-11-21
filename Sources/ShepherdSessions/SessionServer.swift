@@ -1091,6 +1091,23 @@ public final class SessionServer: @unchecked Sendable {
     public var onAgentPeerCancellation: ((String) -> Void)?
 
     private var agentMessagePolicy: AgentMessagePolicy = .default
+
+    private final class LiveRename {
+        let session: SessionID
+        let generation: String
+        let name: String
+        let finish: (Result<(oldName: String, newName: String), ProjectFileError>) -> Void
+        var observed = false
+
+        init(session: SessionID, generation: String, name: String,
+             finish: @escaping (Result<(oldName: String, newName: String), ProjectFileError>) -> Void) {
+            self.session = session
+            self.generation = generation
+            self.name = name
+            self.finish = finish
+        }
+    }
+    private var liveRenames: [AgentID: LiveRename] = [:]
     /// Retained for existing consumers; agent calls no longer request UI approval.
     public var onAgentApprovalRequest: ((AgentApprovalPrompt) -> Void)?
 
@@ -5770,7 +5787,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+            case .childScope, .spawnAgent, .moveAgent, .renameAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
                  .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
@@ -5977,6 +5994,17 @@ public final class SessionServer: @unchecked Sendable {
                 pending.received = true
                 peerDeliveries[deliveryID] = pending
                 dispatchPeerTask(deliveryID)
+            }
+        case .renameAgent(let id, let agentID, let targetAgentID, let name):
+            let target = targetAgentID ?? agentID
+            guard !refusesDesignPeer(id: id, sender: agentID, target: target, client: client),
+                  target == agentID || agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
+            renameLiveThread(target, to: name) { [weak self, weak client] result in
+                guard let self, let client else { return }
+                switch result {
+                case .success(let names): self.reply(.agentRenamed(id: id, oldName: names.oldName, newName: names.newName), to: client)
+                case .failure(let error): self.reply(.error(id: id, code: error.code, message: error.description), to: client)
+                }
             }
         case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
             guard agentID != targetAgentID else {
@@ -7147,7 +7175,7 @@ public final class SessionServer: @unchecked Sendable {
              .fleetHosts(let id, _), .fleetDispatch(let id, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
-             .agentResult(let id, _),
+             .agentResult(let id, _), .agentRenamed(let id, _, _),
              .suggestion(let id, _),
              .designList(let id, _),
              .design(let id, _),
@@ -7425,6 +7453,81 @@ public final class SessionServer: @unchecked Sendable {
             state.agents[index].piSessionID = trimmed
             state.agents[index].nameIsFinal = false
         })
+    }
+
+    /// Same display limit as the namer's /name reports. Line breaks become spaces, and other
+    /// control characters are dropped. Pi still validates and saves the session name itself.
+    private static func cleanSessionName(_ name: String) -> String {
+        let singleLine = name.components(separatedBy: .newlines).joined(separator: " ")
+        let printable = String(singleLine.unicodeScalars.filter { $0.properties.generalCategory != .control })
+        let trimmed = printable.trimmingCharacters(in: .whitespacesAndNewlines)
+        var units = 0
+        return String(trimmed.prefix { character in
+            units += character.utf16.count
+            return units <= 60
+        }).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Server queue. A Fleet receiver can use this once it resolves a dispatch to a local thread.
+    func renameLiveThread(_ agentID: AgentID, to name: String,
+                          completion: @escaping (Result<(oldName: String, newName: String), ProjectFileError>) -> Void) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            if let fleet, fleet.dispatch.outbound.values.contains(where: {
+                $0.targetHostID != nil && $0.targetHostID != fleet.hostID && ($0.remoteAgentID == agentID || UUID(uuidString: agentID.rawValue) == $0.id)
+            }) {
+                return completion(.failure(ProjectFileError("other_host", "That thread is on another Mac. agent_rename only works on this Mac.")))
+            }
+            return completion(.failure(ProjectFileError("no_such_agent", "No thread with that ID exists on this Mac. Only local agent_list IDs are supported.")))
+        }
+        guard store.state.isOrdinaryThread(agent) else {
+            return completion(.failure(ProjectFileError("not_a_thread", "That agent is not an ordinary thread.")))
+        }
+        guard let thread = rpcThread(forAgent: agentID), thread.session.isAlive, thread.isServable else {
+            return completion(.failure(ProjectFileError("not_running", "The thread has no ready Pi process. Start or reconnect it before renaming.")))
+        }
+        guard liveRenames[agentID] == nil else {
+            return completion(.failure(ProjectFileError("rename_pending", "A rename is already in progress for this thread.")))
+        }
+        let pending = LiveRename(session: thread.session.id, generation: thread.generation, name: Self.cleanSessionName(name), finish: completion)
+        liveRenames[agentID] = pending
+        thread.session.request(.setSessionName(pending.name)) { [weak self] result in
+            guard let self, self.liveRenames[agentID] === pending, !pending.observed else { return }
+            self.liveRenames[agentID] = nil
+            if case .success(let response) = result, !response.success, let error = response.error {
+                pending.finish(.failure(ProjectFileError("rename_refused", error)))
+            } else {
+                pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi did not confirm the rename. Check the current thread name before retrying.")))
+            }
+        }
+    }
+
+    /// Both /name and set_session_name produce this event. Explicit titles always win over the namer.
+    private func sessionNameChanged(_ raw: String, agentID: AgentID, owner: RPCThreadState) {
+        let name = Self.cleanSessionName(raw)
+        guard !name.isEmpty, let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        let generation = owner.generation
+        let pending = liveRenames[agentID].flatMap {
+            !$0.observed && $0.session == owner.session.id && $0.generation == generation && $0.name == name ? $0 : nil
+        }
+        pending?.observed = true
+        scheduleStateMutation({ state in
+            guard self.rpcThread(forAgent: agentID) === owner, owner.generation == generation,
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            state.agents[index].name = name
+            state.agents[index].nameIsFinal = true
+        }) { result in
+            if let pending {
+                self.liveRenames[agentID] = nil
+                switch result {
+                case .success: pending.finish(.success((agent.name, name)))
+                case .failure: pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi set the name, but Shepherd could not save it.")))
+                }
+            } else if case .failure(let error) = result {
+                ShepherdLog.warning("Could not save Pi session name: \(error)")
+            }
+        }
     }
 
     /// Apply a namer-proposed title. Provisional names only: a user rename (or
@@ -10101,6 +10204,12 @@ public final class SessionServer: @unchecked Sendable {
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread, weak serverWeak] event in
+                if case .sessionInfoChanged(let name) = event {
+                    if let name, let thread, let server = serverWeak, let agentID = server.agentID(forSession: sid) {
+                        server.sessionNameChanged(name, agentID: agentID, owner: thread)
+                    }
+                    return
+                }
                 thread?.handle(event)
                 if case .messageEnd(let message) = event, message.role == "assistant", message.stopReason == "error",
                    let provider = message.provider, let error = message.errorMessage, let server = serverWeak,

@@ -17,7 +17,7 @@ struct ExtensionMessageTests {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming, .nativeQueueBoundary,
              .helloChildren, .stopBashProcesses, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
-             .sendPaneInput, .readPane, .requestReview, .app, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
+             .sendPaneInput, .readPane, .requestReview, .app, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .renameAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designList, .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
@@ -78,6 +78,8 @@ struct ExtensionMessageTests {
         .spawnAgent(id: 19, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", model: "claude-fable-5-1", thinking: "low"),
         .spawnAgent(id: 20, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", place: .worktree, branch: "agent/split-ui-tests"),
         .moveAgent(id: 118, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), spaceID: SpaceID(rawValue: "s2")),
+        .renameAgent(id: 119, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), name: "Peer title"),
+        .renameAgent(id: 120, agentID: agent, targetAgentID: nil, name: "Own title"),
         .fleetListHosts(id: 130, agentID: agent),
         .fleetDispatch(id: 131, agentID: agent, dispatchID: nil, task: "Fix the flaky test.", title: nil, host: nil, model: nil, thinking: nil),
         .fleetDispatch(id: 132, agentID: agent, dispatchID: "toolu_01", task: "Fix the flaky test.", title: "Flaky test", host: "Mac mini", model: "claude-fable-5-1", thinking: "low"),
@@ -437,7 +439,7 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .parentInput, .stopManagedBash, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
-             .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
+             .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .agentRenamed, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
              .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
@@ -513,6 +515,7 @@ struct ExtensionReplyTests {
         .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
                       request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
         .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
+        .agentRenamed(id: 119, oldName: "Before", newName: "After"),
         .suggestion(id: 20, outcome: .dismissed),
         .designList(id: 80, designs: [Design(id: DesignID(rawValue: "d1"), name: "Checkout", createdAt: 1)]),
         .design(id: 21, snapshot: snapshot),
