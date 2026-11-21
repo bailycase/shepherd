@@ -55,33 +55,53 @@ struct SessionHostTests {
         #expect(FileManager.default.fileExists(atPath: local), "the local socket is bound")
     }
 
-    /// Shutdown waits on the server queue (and the port); the main queue, which received the signal, keeps answering meanwhile.
-    /// Here the queue is parked and only main can release it: a shutdown that ran on main would never get that far. Main is
-    /// asked to release it only once shutdown has begun (it has told `BoundedCommand` to stop, which refuses new commands from
-    /// then on; the wait releases main on that failure alone), so a signal that arrives late cannot let an inline stop pass by finding the queue already free.
-    @Test func shutdownKeepsTheMainQueueAnsweringWhileItWaitsOnTheServerQueue() async throws {
+    /// A newer app's `drain` reaches a host that serves a remote listener: it exits once quiet, as an idle host must, and
+    /// does not wait on the listener. Build 724 hung here after the app asked it to drain, so it never moved to a new build.
+    @Test func aDrainWhileTheRemoteListenerIsOpenEndsTheHost() async throws {
+        let dir = try makeScratchDirectory("host")
+        let socket = dir.appendingPathComponent("s.sock").path
+        let state = dir.appendingPathComponent("state.json").path
+        await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
+            let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
+            DispatchQueue.global().asyncAfter(deadline: .now() + 20) { _exit(EXIT_FAILURE) }
+            SessionHost.run(server, respawn: Self.defaults, configure: { server in
+                server.setRemoteListener(port: 0) { result in
+                    guard case .success(.some) = result, let drain = server.onDrainRequest else { _exit(EXIT_FAILURE) }
+                    drain()
+                }
+            })
+        }
+        #expect(!FileManager.default.fileExists(atPath: socket), "the drained host stopped its server")
+    }
+
+    /// Once an idle host drains, shutdown must keep main free even if the server queue is busy.
+    /// Only main can release the parked queue, and only after shutdown has begun.
+    @Test func drainedHostKeepsTheMainQueueAnsweringWhileShutdownWaitsOnTheServerQueue() async throws {
         let dir = try makeScratchDirectory("host")
         let socket = dir.appendingPathComponent("s.sock").path
         let state = dir.appendingPathComponent("state.json").path
         await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
             let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
             let release = DispatchSemaphore(value: 0)
-            SessionHost.run(server, respawn: Self.defaults, ready: {
-                server.queue.async { release.wait() }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
-                // Only `.terminating` means shutdown entered stop; any other error (a spawn failure) fails the run.
-                Task.detached {
-                    do {
-                        try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
-                            do { _ = try BoundedCommand.run(["/usr/bin/true"], timeout: 5); return false }
-                            catch BoundedCommand.Failure.terminating { return true }
+            SessionHost.run(server, respawn: Self.defaults, configure: { server in
+                // Let startup dispatch the listener bind before parking the queue.
+                DispatchQueue.main.async {
+                    server.queue.async { release.wait() }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
+                    Task.detached {
+                        do {
+                            try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
+                                do { _ = try BoundedCommand.run(["/usr/bin/true"], timeout: 5); return false }
+                                catch BoundedCommand.Failure.terminating { return true }
+                            }
+                        } catch {
+                            _exit(EXIT_FAILURE)
                         }
-                    } catch {
-                        _exit(EXIT_FAILURE)
+                        DispatchQueue.main.async { release.signal() }
                     }
-                    DispatchQueue.main.async { release.signal() }
+                    guard let drain = server.onDrainRequest else { _exit(EXIT_FAILURE) }
+                    drain()
                 }
-                kill(getpid(), SIGTERM)
             })
         }
     }
