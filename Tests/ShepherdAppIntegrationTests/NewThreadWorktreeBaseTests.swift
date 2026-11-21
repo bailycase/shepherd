@@ -46,8 +46,10 @@ struct NewThreadWorktreeBaseTests {
         #expect(agent.worktreeBase == "release", "the agent records the picked base")
         let branch = try #require(agent.worktreeBranch)
         let path = try #require(agent.worktreePath)
-        #expect(FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("release.txt").path),
-                "the worktree has release's commit, which main (checked out) does not")
+        // The thread shows at once; the host makes its worktree while it does.
+        try await eventuallyOnMain("the worktree to be checked out", timeout: .seconds(60)) {
+            FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("release.txt").path)
+        }
         #expect(try git(["rev-parse", branch], in: repo) == (try git(["rev-parse", "release"], in: repo)))
         #expect(draft.worktreeBase == nil, "the pick is spent with the thread")
     }
@@ -187,7 +189,12 @@ extension NewThreadWorktreeBaseTests {
         try await eventuallyOnMain("the thread to start", timeout: .seconds(60)) { vm.selectedAgentID != nil && !draft.starting }
         let agent = try #require(vm.state.agents.first)
         #expect(agent.worktreeBase == "origin/main", "the pick is kept whatever the fetch did")
-        let head = try git(["rev-parse", try #require(agent.worktreeBranch)], in: sandbox.repo)
+        let branch = try #require(agent.worktreeBranch)
+        // The thread shows at once; the host fetches, then makes its branch, while it does.
+        try await eventuallyOnMain("the worktree's branch to be made", timeout: .seconds(60)) {
+            (try? git(["rev-parse", "--verify", "--quiet", branch], in: sandbox.repo)) != nil
+        }
+        let head = try git(["rev-parse", branch], in: sandbox.repo)
         #expect(head == (fetch ? newest : cached))
     }
 
@@ -355,8 +362,9 @@ extension NewThreadWorktreeBaseTests {
         draft.send(vm)
         try await eventuallyOnMain("the thread to start", timeout: .seconds(60)) { !draft.starting && (vm.selectedAgentID != nil || draft.error != nil) }
         #expect(draft.error == nil)
+        // The thread shows at once; the host makes its worktree, then records the base it started from.
+        try await eventuallyOnMain("the worktree to be made from the project's base", timeout: .seconds(60)) { vm.state.agents.first?.worktreeBase == "release" }
         let agent = try #require(vm.state.agents.first)
-        #expect(agent.worktreeBase == "release")
         #expect(try git(["rev-parse", try #require(agent.worktreeBranch)], in: repo) == (try git(["rev-parse", "release"], in: repo)))
         #expect(draft.worktree, "the next thread here is in a worktree too")
 
