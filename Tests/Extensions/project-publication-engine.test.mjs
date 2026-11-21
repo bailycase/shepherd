@@ -1,4 +1,5 @@
 // PI_PACKAGE_DIR must name a staged pinned SDK, never the user's pi command/home.
+import "./hermetic-env.mjs";
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';

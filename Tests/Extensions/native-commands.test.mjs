@@ -3,6 +3,7 @@
 // message (pi's `notify` reaches the host as an `extension_ui_request` the thread never draws).
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-commands.test.mjs
 // Everything runs in a temporary HOME; no model is called.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

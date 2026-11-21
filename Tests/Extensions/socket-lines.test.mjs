@@ -1,3 +1,4 @@
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { StringDecoder } from "node:string_decoder";

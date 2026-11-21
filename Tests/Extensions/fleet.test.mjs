@@ -2,6 +2,7 @@
 // messages and cancels it. The extension only asks the host over Shepherd's socket; every refusal comes back as the
 // tool's text, never as a throw, and what another agent wrote is labelled as data.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/fleet.test.mjs
+import "./hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as net from "node:net";

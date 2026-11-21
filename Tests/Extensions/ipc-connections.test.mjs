@@ -1,4 +1,5 @@
 // Actual extension tools over a scratch Unix socket; no pi session or provider.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

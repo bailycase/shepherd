@@ -3,6 +3,7 @@
 // watch agent gets only agent_send, a refusal reaches the model as a short error, and a call
 // that takes longer to finish is not cut off early. The last test runs a real pi against
 // a local fake provider and reads what reached the wire: the system prompt and the tool schemas.
+import "./hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { test, mock } from "node:test";
 import * as http from "node:http";

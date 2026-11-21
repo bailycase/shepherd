@@ -1,5 +1,6 @@
 // The retired extension command must refuse visibly. Recovery lives in the guarded engine API,
 // not in a command that rewinds or manufactures a user message.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";

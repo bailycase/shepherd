@@ -1,4 +1,5 @@
 // Deterministic checks use only temporary files and restricted workers, never a model provider.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

@@ -1,3 +1,4 @@
+import "./hermetic-env.mjs";
 import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // Native helper launch isolation and actionable errors for missing profiles and providers.
 import test from "node:test";

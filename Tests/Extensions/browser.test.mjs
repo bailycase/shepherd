@@ -3,6 +3,7 @@
 // tool's request frame over a stand-in Shepherd socket; text, image and no-image-model results;
 // error replies; a cancelled call and a late reply; a closed connection and the reconnect; and that
 // neither its socket nor its timers keep pi alive. No model provider, only temporary files.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
