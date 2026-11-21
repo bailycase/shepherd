@@ -801,7 +801,7 @@ struct ChildRunTests {
         #expect(rows[1].name == "restyle-tokens" && rows[0].name == nil, "a run from an older publisher decodes without a label")
         #expect(rows[1].step == ChildStep(index: 1, total: 3))
         #expect(rows[1].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
-        #expect(rows[1].cost == 3.25 && rows[0].cost == nil, "a child's cost estimate; an older publisher sends none")
+        // The sample's "cost" is the removed field an older publisher still sends; the row decodes without it.
         #expect(rows[1].contextPercent == 62 && rows[1].paused == true && rows[1].toolCallID == "call_1")
         #expect(rows[2].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"],
                                                   short: "token names?"))
