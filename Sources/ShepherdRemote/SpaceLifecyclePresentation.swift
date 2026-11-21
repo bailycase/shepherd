@@ -105,6 +105,21 @@ public final class SpaceLifecycleDialogs {
         return rename
     }
 
+    /// Typing in the Rename dialog `presented` opened: written only while it is still the pending one, so a stale dialog never edits another's draft.
+    public func type(_ name: String, into presented: SpaceLifecycleTarget) {
+        if rename?.target == presented { rename?.name = name }
+    }
+
+    /// The Rename dialog `presented` closed: ends only that one, never another host's that has since replaced it.
+    public func dismissRename(_ presented: SpaceLifecycleTarget) {
+        if rename?.target == presented { rename = nil }
+    }
+
+    /// The same for Remove Space….
+    public func dismissRemoval(_ presented: SpaceLifecycleTarget) {
+        if removal == presented { removal = nil }
+    }
+
     /// The host `target` is on, whatever Organize shows now; nil once the device no longer holds it. Its `client` is nil while it is offline.
     public static func host(of target: SpaceLifecycleTarget, in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { $0.id == target.host }

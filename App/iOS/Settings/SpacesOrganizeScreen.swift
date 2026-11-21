@@ -18,6 +18,9 @@ struct SpacesOrganizeScreen: View {
         let host = store.settingsHost
         let mobile = host.flatMap { hosts.host($0.id) }
         let spaces = mobile.map { SpaceLifecyclePresentation.spaces(in: $0.state) } ?? []
+        // The confirmations as presented now: every callback below acts on these targets, never on whatever the shared store holds later.
+        let renamePresented = renaming(in: spaces, store).map { SpaceLifecycleTarget(host: host?.id ?? UUID(), space: $0.id) }
+        let removalPresented = removal(in: spaces, store).map { SpaceLifecycleTarget(host: host?.id ?? UUID(), space: $0.id) }
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text("Rename, hide, reorder or remove the spaces in the order \(host?.name ?? "the host") keeps them. A change shows on its Mac too.")
@@ -58,9 +61,11 @@ struct SpacesOrganizeScreen: View {
         .navigationTitle("Organize spaces")
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .alert("Rename \(renaming(in: spaces, store)?.name ?? "space")",
-               isPresented: Binding(get: { renaming(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.rename = nil } }),
-               presenting: renaming(in: spaces, store).map { SpaceLifecycleTarget(host: host?.id ?? UUID(), space: $0.id) }) { presented in
-            TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" }, set: { store.spaceDialogs.rename?.name = $0 }))
+               isPresented: Binding(get: { renamePresented != nil },
+                                    set: { if !$0, let renamePresented { store.spaceDialogs.dismissRename(renamePresented) } }),
+               presenting: renamePresented) { presented in
+            TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" },
+                                            set: { store.spaceDialogs.type($0, into: presented) }))
             Button("Rename") {
                 // The confirmation as it was presented, still pending and on the host shown now; else nothing is sent.
                 if let rename = store.spaceDialogs.confirmRename(presented, shown: store.settingsHost?.id),
@@ -72,7 +77,8 @@ struct SpacesOrganizeScreen: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(SpaceLifecyclePresentation.removeTitle,
-                            isPresented: Binding(get: { removal(in: spaces, store) != nil }, set: { if !$0 { store.spaceDialogs.removal = nil } }),
+                            isPresented: Binding(get: { removal(in: spaces, store) != nil },
+                                                 set: { if !$0, let removalPresented { store.spaceDialogs.dismissRemoval(removalPresented) } }),
                             titleVisibility: .visible, presenting: removal(in: spaces, store)) { space in
             Button(SpaceLifecyclePresentation.removeButton, role: .destructive) {
                 // The confirmation as it was presented, still pending and on the host shown now; else nothing is sent.

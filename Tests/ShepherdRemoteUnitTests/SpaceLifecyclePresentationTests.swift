@@ -100,6 +100,36 @@ struct SpaceLifecyclePresentationTests {
         #expect(dialogs.confirmRemoval(b, shown: macB) == nil, "already answered or dismissed")
     }
 
+    /// A's dialog callbacks fire late, after B's confirmation replaced it: typing and dismissing for A touch nothing of B's, and no client
+    /// is asked.
+    @MainActor @Test func aStaleDialogsCallbacksLeaveTheNewOnesAlone() {
+        let macA = UUID(), macB = UUID()
+        let clientA = FakeSettingsClient(), clientB = FakeSettingsClient()
+        let hosts = [SettingsHost(id: macA, name: "Mac A", client: clientA, capabilities: [RemoteProtocol.spaceLifecycleCapability]),
+                     SettingsHost(id: macB, name: "Mac B", client: clientB, capabilities: [RemoteProtocol.spaceLifecycleCapability])]
+        let a = SpaceLifecycleTarget(host: macA, space: web.id), b = SpaceLifecycleTarget(host: macB, space: web.id)
+        let dialogs = SpaceLifecycleDialogs()
+        dialogs.removal = b
+        dialogs.rename = .init(target: b, name: "acme-shop")
+
+        dialogs.type("acme-site", into: a)
+        dialogs.dismissRename(a)
+        dialogs.dismissRemoval(a)
+        #expect(dialogs.rename == .init(target: b, name: "acme-shop"), "B's draft")
+        #expect(dialogs.removal == b, "B's confirmation")
+        // A's Rename and Remove buttons, as it was presented, send nothing while B is shown; B's still can.
+        #expect(dialogs.confirmRename(a, shown: macB) == nil && dialogs.confirmRemoval(a, shown: macB) == nil)
+        #expect(clientA.requests.isEmpty && clientB.requests.isEmpty)
+        #expect(SpaceLifecycleDialogs.host(of: b, in: hosts)?.id == macB)
+
+        // The pending one is edited and dismissed by its own callbacks.
+        dialogs.type("acme-store", into: b)
+        #expect(dialogs.rename?.name == "acme-store")
+        dialogs.dismissRename(b)
+        dialogs.dismissRemoval(b)
+        #expect(dialogs.rename == nil && dialogs.removal == nil)
+    }
+
     /// Forgetting the shown host while another remains: the hosts change, the dialog opened on the forgotten one ends.
     @MainActor @Test func forgettingTheShownHostEndsItsConfirmations() {
         let macA = UUID(), macB = UUID()

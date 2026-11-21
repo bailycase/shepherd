@@ -17,6 +17,23 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-spaces-organize-remove", hosts: FixtureData.spaceHosts(),
                           routes: [.settings(.spaces), .settings(.organizeSpaces)], tab: .settings,
                           prepare: { app in SettingsStore.of(app.hosts).spaceDialogs.removal = .init(host: FixtureData.studio, space: web.id) }),
+            // Two Macs; the one Organize shows is forgotten with its Rename and Remove Space… open: both end, the other Mac stays.
+            FixtureScreen(name: "settings-spaces-organize-forgotten", hosts: FixtureData.spaceHosts() + [FixtureHostData(id: FixtureData.buildBox, name: "Build box", state: ShepherdState())],
+                          routes: [.settings(.spaces), .settings(.organizeSpaces)], tab: .settings,
+                          verify: { app in
+                              let store = SettingsStore.of(app.hosts)
+                              guard store.settingsHost?.id == FixtureData.studio, store.hosts.count == 2 else {
+                                  return FixtureCheck.report("FIXTURE CHECK FAILED: Organize shows \(String(describing: store.settingsHost?.id)) of \(store.hosts.count) hosts")
+                              }
+                              let target = SpaceLifecycleTarget(host: FixtureData.studio, space: web.id)
+                              store.spaceDialogs.rename = .init(target: target, name: web.name)
+                              store.spaceDialogs.removal = target
+                              SettingsStore.forget(host: FixtureData.studio, in: app.hosts)
+                              let ended = store.spaceDialogs.rename == nil && store.spaceDialogs.removal == nil
+                              FixtureCheck.report(ended && store.settingsHost?.id == FixtureData.buildBox
+                                  ? "FIXTURE CHECK ok: forgetting the shown host ends its Rename and Remove Space…"
+                                  : "FIXTURE CHECK FAILED: rename \(String(describing: store.spaceDialogs.rename)), removal \(String(describing: store.spaceDialogs.removal)), shown \(String(describing: store.settingsHost?.id))")
+                          }),
             // The iPad's list beside Spaces, which offers Organize.
             FixtureScreen(name: "settings-pad-spaces", hosts: FixtureData.spaceHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .spaces }),
