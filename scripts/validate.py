@@ -17,10 +17,10 @@ LOG = "mac/run.log"
 TOOLBAR = "the narrow toolbar in Sources/ShepherdApp/DiffReviewView.swift"
 SCROLL_CASE = "scroll-stability"
 SCROLL_SCENARIOS = {
-    "slow-scroll-streaming": ("fixture.streamChunk", "fixture.scrollInput"),
-    "flick-and-stop": ("fixture.scrollInput",),
+    "slow-scroll-streaming": ("fixture.stickyChunk", "fixture.streamChunk", "fixture.scrollInput"),
+    "flick-and-stop": ("fixture.scrollInput", "fixture.phase.interacting", "fixture.phase.decelerating", "fixture.phase.idle"),
     "mid-history-new-turn": ("fixture.newTurn", "fixture.scrollInput"),
-    "page-older-history": ("fixture.pageRequested", "fixture.pageReply"),
+    "page-older-history": ("fixture.scrollInput", "fixture.pageRequested", "fixture.pageReply"),
     "window-resize": ("fixture.windowResize",),
     "switch-away-back": ("fixture.switchAway", "fixture.switchBack"),
 }
@@ -158,48 +158,147 @@ def scroll_paths(previous, frame, events):
     return list(dict.fromkeys(writes + native))
 
 
+def check_scroll_actions(name, frames, required):
+    if (len(frames) < 2 or any(a["timestamp"] >= b["timestamp"] for a, b in zip(frames, frames[1:]))
+            or any(f["refreshInterval"] <= 0 for f in frames)):
+        raise ValueError(f"{name}: missing or unordered display frames")
+    if not frames[0].get("first") or frames[0]["hidden"]:
+        raise ValueError(f"{name}: no initial visible row")
+
+    actions = [(i, event["caller"]) for i, frame in enumerate(frames) for event in frame["events"]
+               if event["caller"] in required]
+    callers = {caller for _, caller in actions}
+    if missing := set(required) - callers:
+        raise ValueError(f"{name}: missing actions {sorted(missing)}")
+    if "fixture.scrollInput" in required and not any(
+            e["scrollDelta"] for f in frames for e in f["events"] if e["caller"] == "fixture.scrollInput"):
+        raise ValueError(f"{name}: no scripted clip movement")
+    # Require a sampled baseline and a wall-clock settle after the last action, not one quiet frame.
+    if actions[0][0] == 0 or frames[-1]["timestamp"] - frames[actions[-1][0]]["timestamp"] < 0.75:
+        raise ValueError(f"{name}: missing pre-action or settle samples")
+    if name == "switch-away-back":
+        away = next(i for i, caller in actions if caller == "fixture.switchAway")
+        back = next(i for i, caller in actions if caller == "fixture.switchBack")
+        if not any(f["hidden"] for f in frames[away:back]) or frames[-1]["hidden"]:
+            raise ValueError(f"{name}: deck did not hide and reveal the thread")
+
+    geometry_actions = {
+        "fixture.stickyChunk": ("documentHeight", 1), "fixture.streamChunk": ("documentHeight", 16),
+        "fixture.newTurn": ("documentHeight", 1), "fixture.pageReply": ("documentHeight", 1),
+        "fixture.windowResize": ("clipSize", 3),
+    }
+    first_chunk = next((i for i, caller in actions if caller == "fixture.streamChunk"), None)
+    if first_chunk is not None and frames[first_chunk - 1]["following"]:
+        raise ValueError(f"{name}: first streaming chunk did not start detached")
+
+    for caller in set(required) & geometry_actions.keys():
+        key, count = geometry_actions[caller]
+        if sum(action == caller for _, action in actions) != count:
+            raise ValueError(f"{name}: expected {count} {caller} actions")
+        for j, (i, action) in enumerate(actions):
+            if action != caller:
+                continue
+            before = frames[i - 1]
+            stop = actions[j + 1][0] if j + 1 < len(actions) else len(frames)
+            samples = frames[i:stop]
+            if caller in ("fixture.stickyChunk", "fixture.streamChunk"):
+                if caller == "fixture.stickyChunk" and not before["following"]:
+                    raise ValueError(f"{name}: sticky control did not start following")
+                height = before["streamingRowHeight"]
+                changed = any(frame[key] != before[key] and frame.get("streamingRowHeight", 0) > height
+                              for frame in samples)
+            else:
+                changed = any(frame[key] != before[key] for frame in samples)
+            if not changed:
+                raise ValueError(f"{name}: {caller} did not change {key}")
+
+
+def measure_scroll(frames):
+    jumps, drift, anchor_losses, sticky_follows = [], [], [], []
+    previous = frames[0]
+    anchor = previous["first"]
+    baseline = previous["rows"][anchor]
+    pending, lost, excursion = [], None, None
+    compared, settled_frames = 0, 0
+    streaming = False
+    for i, frame in enumerate(frames[1:], 1):
+        pending.extend((i, event) for event in frame["events"])
+        if frame["hidden"]:
+            continue  # Compare with the last visible frame when the same thread returns.
+        inputs = [e["scrollDelta"] for _, e in pending if e["caller"] == "fixture.scrollInput"]
+        streaming |= any(e["caller"] in ("fixture.stickyChunk", "fixture.streamChunk") for _, e in pending)
+
+        row = previous["first"] if inputs else anchor
+        if frame.get("first") and row in frame["rows"]:
+            delta = frame["rows"][row] - previous["rows"][row] + sum(inputs)
+            measured = "row"
+        elif frame.get("first") and inputs:
+            # Large scripted moves can evict the old row. Still check the clip for extra motion.
+            delta = previous["offset"] - frame["offset"] + sum(inputs)
+            measured = "clip offset"
+        else:
+            # Keep the original anchor across a transient swap. Its return is not a second loss.
+            if lost is None:
+                lost = {"frame": i, "row": anchor, "first_after": frame.get("first"),
+                        "paths": scroll_paths(previous, frame, pending), "events": pending}
+                anchor_losses.append(lost)
+            settled_frames = 0
+            continue
+        if lost is not None:
+            if anchor in frame["rows"]:
+                lost["restored_frame"] = i
+                lost["restore_paths"] = scroll_paths(previous, frame, pending)
+            lost = None
+        compared += 1
+        settled_frames = settled_frames + 1 if not inputs else 0
+        growth = frame.get("streamingRowHeight", 0) - previous.get("streamingRowHeight", 0)
+        observation = {"frame": i, "row": row, "delta_pt": round(delta, 3), "measured": measured,
+                       "scripted_clip_delta_pt": sum(inputs), "first_after": frame.get("first"),
+                       "paths": scroll_paths(previous, frame, pending), "events": pending}
+        # NativeScrollFollower.threshold is 80 pt. A detached reader reattaching is not expected follow.
+        if (streaming and not inputs and previous["following"] and frame["following"] and previous["distance"] <= 80
+                and frame["documentHeight"] != previous["documentHeight"] and growth > 2 and abs(delta + growth) <= 2):
+            sticky_follows.append(observation)
+            baseline -= growth
+        elif abs(delta) > 2:
+            jumps.append(observation)
+
+        if inputs:
+            anchor, excursion = frame["first"], None
+            baseline = frame["rows"][anchor]
+        elif anchor in frame["rows"]:
+            displacement = frame["rows"][anchor] - baseline
+            if abs(displacement) <= 2:
+                excursion = None
+            elif excursion is None:
+                excursion = {**observation, "row": anchor, "delta_pt": round(displacement, 3)}
+                drift.append(excursion)
+            elif abs(displacement) > abs(excursion["delta_pt"]):
+                excursion["delta_pt"] = round(displacement, 3)
+        previous, pending = frame, []
+
+    return {"frames": len(frames), "compared_frames": compared, "final_comparable_frames": settled_frames,
+            "jumps": jumps, "drift": drift, "anchor_losses": anchor_losses, "sticky_follows": sticky_follows}
+
+
 def scroll_evidence(scenarios):
     if set(scenarios) != set(SCROLL_SCENARIOS):
         raise ValueError("expected all six scroll scenarios")
     summaries = {}
     for name, required in SCROLL_SCENARIOS.items():
         frames = scenarios[name]
-        if len(frames) < 2 or any(a["timestamp"] >= b["timestamp"] for a, b in zip(frames, frames[1:])):
-            raise ValueError(f"{name}: missing or unordered display frames")
-        callers = {event["caller"] for frame in frames for event in frame["events"]}
-        if not callers.issuperset(required):
-            raise ValueError(f"{name}: missing actions {sorted(set(required) - callers)}")
-        jumps, anchor_losses = [], []
-        previous, pending = None, []
-        compared = 0
-        for i, frame in enumerate(frames):
-            pending.extend((i, event) for event in frame["events"])
-            if frame["hidden"]:
-                continue  # Compare with the last visible frame when the same thread returns.
-            if previous is not None and not any(e["caller"] == "fixture.scrollInput" for _, e in pending):
-                anchor, origin = previous["first"], previous["rows"][previous["first"]]
-                if anchor not in frame["rows"]:
-                    anchor_losses.append({"frame": i, "row": anchor, "first_after": frame.get("first"),
-                                          "paths": scroll_paths(previous, frame, pending), "events": pending})
-                else:
-                    compared += 1
-                    delta = frame["rows"][anchor] - origin
-                    if abs(delta) > 2:
-                        jumps.append({"frame": i, "row": anchor, "delta_pt": round(delta, 3), "first_after": frame.get("first"),
-                                      "paths": scroll_paths(previous, frame, pending), "events": pending})
-            previous = frame if frame.get("first") else None
-            pending = []
-        if not compared:
-            raise ValueError(f"{name}: no comparable non-input frames")
-        summaries[name] = {"frames": len(frames), "compared_frames": compared,
-                           "jumps": jumps, "anchor_losses": anchor_losses}
+        check_scroll_actions(name, frames, required)
+        summary = measure_scroll(frames)
+        if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
+            raise ValueError(f"{name}: too few comparable settle frames")
+        summaries[name] = summary
     return summaries
 
 
-def run_scroll_case(mac, command, log):
+def run_scroll_case(mac, command, wrapper, log):
     pin = ROOT / ".build/pi-engine/pin.json"
     if not pin.is_file() or pin.read_bytes() != (ROOT / "scripts/pi-engine-pin.json").read_bytes():
-        subprocess.run([command[0], sys.executable, "scripts/pi_engine.py", "stage"], cwd=ROOT,
+        subprocess.run([*wrapper, sys.executable, "scripts/pi_engine.py", "stage"], cwd=ROOT,
                        stdout=log, stderr=subprocess.STDOUT, check=True)
     subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
     scratch = mac / "scratch"
@@ -222,14 +321,15 @@ def run_scroll_case(mac, command, log):
             actual=actual, evidence=["mac/frames.json", "mac/scroll-jumps.json"])), encoding="utf-8")
 
     for name, summary in summaries.items():
-        jumps, losses = summary["jumps"], summary["anchor_losses"]
-        actual = f"{len(jumps)} jumps, {len(losses)} anchor losses across {summary['frames']} frames"
+        jumps, drift, losses = summary["jumps"], summary["drift"], summary["anchor_losses"]
+        actual = (f"{len(jumps)} jumps, {len(drift)} drift excursions, {len(losses)} anchor swaps/losses, "
+                  f"{len(summary['sticky_follows'])} expected sticky follows across {summary['frames']} frames")
         print(f"{name}: {actual}")
-        for label, observations in (("Jump paths", jumps), ("Anchor loss paths", losses)):
+        for label, observations in (("Jump paths", jumps), ("Drift paths", drift), ("Anchor swap/loss paths", losses)):
             if observations:
                 paths = sorted({path for observation in observations for path in observation["paths"]})
                 actual += f"\n{label}: {', '.join(paths)}"
-        record(name, "failed" if jumps or losses else "passed", "0 jumps >2 pt and no lost anchors", actual)
+        record(name, "failed" if jumps or drift or losses else "passed", "0 jumps or drift >2 pt and no anchor swaps/losses", actual)
     record("complete", "passed", SCROLL_COMPLETION, SCROLL_COMPLETION)
     return 0
 
@@ -244,7 +344,8 @@ def run_case(name):
     mac = run / "mac"
     mac.mkdir()
     scroll = name == SCROLL_CASE
-    command = ([str(Path.home() / "Developer/Shepherd-worktrees/bin/gated"), "xcodebuild", "-project",
+    wrapper = [path] if (path := os.environ.get("SHEPHERD_BUILD_WRAPPER")) else []
+    command = wrapper + (["xcodebuild", "-project",
                 "Shepherd.xcodeproj", "-scheme", "Shepherd (Dev)", "-destination", "platform=macOS",
                 "-derivedDataPath", str(ROOT / ".build/scroll-dev"), "-onlyUsePackageVersionsFromResolvedFile",
                 "-jobs", "4", "build"] if scroll else ["swift", "test", "-j", "4", "--filter", case.test])
@@ -266,7 +367,7 @@ def run_case(name):
                 result["toolchain"] = version.decode(errors="replace").strip()
                 start = time.monotonic()
                 if scroll:
-                    result["exit_status"] = run_scroll_case(mac, command, log)
+                    result["exit_status"] = run_scroll_case(mac, command, wrapper, log)
                 else:
                     result["exit_status"] = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:

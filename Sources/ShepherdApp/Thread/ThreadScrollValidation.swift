@@ -10,28 +10,29 @@ enum ThreadScrollTrace {
         #endif
     }
 
-    #if DEBUG
-    static func bindPaging(to guardian: ThreadTailGuard, _ prepend: @escaping () -> Void) {
-        guard let trace = ScrollTrace.current, trace.guardian === guardian else { return }
-        trace.prepend = prepend
-    }
-    #endif
 }
 
 #if DEBUG
 import QuartzCore
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
 
 @MainActor
-private final class ScrollTrace: NSObject {
+final class ScrollTrace: NSObject {
     struct Frame: Encodable {
         let timestamp: Double
+        let refreshInterval: Double
         let hidden: Bool
         let first: String?
         let rows: [String: Double]
         let offset: Double?
+        let documentHeight: Double?
+        let streamingRowHeight: Double?
+        let clipSize: [Double]?
+        let following: Bool
+        let distance: Double
         let events: [Event]
     }
 
@@ -40,13 +41,17 @@ private final class ScrollTrace: NSObject {
         var from: Double? = nil
         var to: Double? = nil
         var stack: [String]? = nil
+        var scrollDelta: Double? = nil
     }
 
     static weak var current: ScrollTrace?
     let guardian = ThreadTailGuard()
     var scenario = ""
-    var shown = true
-    var prepend: (() -> Void)?
+    var wheel: ((CGFloat) -> Void)?
+    var phase: ((ScrollPhase, ScrollPhase, CGFloat) -> Void)?
+    var historyVisibility: ((Bool) -> Void)?
+    var deckPage: ((AgentLayoutModel) -> AnyView)?
+    var streamingRowID: String?
     private(set) var frames: [String: [Frame]] = [:]
     private(set) var latest: Frame?
     private var events: [Event] = []
@@ -55,6 +60,16 @@ private final class ScrollTrace: NSObject {
     private var offset: CGFloat?
 
     func mark(_ caller: String) { events.append(Event(caller: caller)) }
+
+    func scrollInput(_ delta: CGFloat) {
+        events.append(Event(caller: "fixture.scrollInput", scrollDelta: delta))
+    }
+
+    /// Sample beyond the wheel-intent window and the tail guard's hands/busy timers.
+    func settle() async {
+        let deadline = ContinuousClock.now + .milliseconds(850)
+        repeat { await advance() } while ContinuousClock.now < deadline
+    }
 
     func advance(_ count: Int = 1) async {
         for _ in 0..<count { await withCheckedContinuation { nextFrame = $0 } }
@@ -80,14 +95,19 @@ private final class ScrollTrace: NSObject {
                     name: NSView.boundsDidChangeNotification, object: clip)
             }
         }
-        let rows = shown ? scroll.map { guardian.scrollTraceRows(in: $0) } ?? [:] : [:]
+        let hidden = scroll?.isHiddenOrHasHiddenAncestor == true
+        let rows = hidden ? [:] : scroll.map { guardian.scrollTraceRows(in: $0) } ?? [:]
         let top = scroll?.contentInsets.top ?? 0
         let bottom = (clip?.bounds.height ?? 0) - (scroll?.contentInsets.bottom ?? 0)
         let first = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }.min {
             ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
         }?.key
-        let frame = Frame(timestamp: link.timestamp, hidden: !shown, first: first,
-                          rows: rows.mapValues { $0.minY - top }, offset: clip.map { Double($0.bounds.minY) }, events: events)
+        let frame = Frame(timestamp: link.timestamp, refreshInterval: link.targetTimestamp - link.timestamp,
+                          hidden: hidden, first: first, rows: rows.mapValues { $0.minY - top },
+                          offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
+                          streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
+                          clipSize: clip.map { [Double($0.bounds.width), Double($0.bounds.height)] },
+                          following: guardian.following, distance: guardian.distance, events: events)
         latest = frame
         if !scenario.isEmpty { frames[scenario, default: []].append(frame) }
         events.removeAll(keepingCapacity: true)
@@ -154,12 +174,11 @@ private final class ScrollFixture {
 
     struct Root: View {
         let fixture: ScrollFixture
-        let presentation: Presentation
 
         var body: some View {
-            ThreadView(store: fixture.store, active: presentation.active, isFocused: false, request: fixture.request,
-                       listModels: { .empty }, retainedInput: fixture.input, retainedTailGuard: fixture.trace.guardian)
-                .environment(\.liveResizing, presentation.resizing)
+            AgentLayoutDeck(scrollFixtureModels: fixture.models)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environment(\.liveResizing, fixture.presentation.resizing)
                 .environment(\.composerModelDefaults, fixture.defaults)
         }
     }
@@ -174,9 +193,16 @@ private final class ScrollFixture {
     let input = ThreadInput()
     let defaults = UserDefaults(suiteName: "shepherd.scroll-validation.\(UUID())")!
     private let presentation = Presentation()
-    private lazy var host = DeckHost(rootView: Root(fixture: self, presentation: presentation))
-    private let alternate = DeckHost(rootView: Text("Other fixture thread"))
-    private let container = NSView()
+    private let tabs: [ShepherdCore.Tab] = {
+        let space = SpaceID()
+        return (0..<2).map { ShepherdCore.Tab(spaceID: space, order: $0, layout: .leaf(LeafPane(cwd: "/tmp", isReview: true))) }
+    }()
+    private var models: [AgentLayoutModel] {
+        tabs.enumerated().map { index, tab in
+            AgentLayoutModel(tab: tab, isVisible: index == (presentation.active ? 0 : 1), thread: nil,
+                             focusedPaneID: nil, inspectingRunID: nil, review: nil)
+        }
+    }
     private let window = Window(contentRect: NSRect(x: -30_000, y: -30_000, width: 910, height: 640),
                                 styleMask: [.borderless], backing: .buffered, defer: false)
     private var pageReply: CheckedContinuation<NativeThreadResult, Never>?
@@ -209,97 +235,148 @@ private final class ScrollFixture {
         thread.running = true
         thread.messages.append(Self.message("stream-user", "user", "Review the remaining cases."))
         thread.provisional = [Self.message("provisional:assistant:1", "assistant", "## Working notes\n\n", status: "streaming")]
-        window.contentView = container
-        for view in [host as NSView, alternate as NSView] {
-            view.frame = container.bounds
-            view.autoresizingMask = [.width, .height]
-            container.addSubview(view)
+        trace.deckPage = { [unowned self] model in
+            if model.tab.id == tabs[0].id {
+                return AnyView(ThreadView(store: store, active: model.isVisible, isFocused: false, request: request,
+                                          listModels: { .empty }, retainedInput: input, retainedTailGuard: trace.guardian))
+            }
+            return AnyView(Color.clear)
         }
-        alternate.isHidden = true
+        window.contentView = NSHostingView(rootView: Root(fixture: self))
         window.orderBack(nil)
         try await trace.waitFor("the streaming tail to mount") { self.store.liveRow != nil && self.trace.latest?.first != nil }
-        await trace.advance(20)
+        trace.streamingRowID = store.liveRow?.id
+        await trace.advance()
+        // The first live layout replaces the stack's initial height estimate. Warm it before measuring.
+        try await streamChunk(0, marker: "fixture.warmupChunk")
+        await trace.settle()
 
         trace.scenario = "slow-scroll-streaming"
         await trace.advance()
-        for i in 0..<16 {
+        try await trace.waitFor("the reader inside the sticky band") {
+            self.trace.latest.map { $0.following && $0.distance <= ThreadTailGuard.band } == true
+        }
+        try await streamChunk(1, marker: "fixture.stickyChunk")
+        try phase(from: .idle, to: .interacting)
+        // End the scripted drag at the actual clip position before the next SwiftUI layout.
+        try scroll(up: 140, wheel: false, endDrag: true)
+        try await trace.waitFor("the follower to release its bottom anchor") { self.trace.latest?.following == false }
+        // The old bottom anchor can consume that first drag before SwiftUI removes it.
+        if trace.guardian.distance <= ThreadTailGuard.band {
+            try scroll(up: 140)
+        }
+        try await trace.waitFor("the reader to detach before streaming") {
+            self.trace.latest.map { !$0.following && $0.distance > ThreadTailGuard.band } == true
+        }
+        for i in 2...17 {
             try scroll(up: 28)
             await trace.advance()
-            trace.mark("fixture.streamChunk")
-            thread.provisional[0].blocks[0].text += "Inspecting fixture group \(i). The query returns the rows in ascending order.\n\n"
-            await publish()
-            await trace.advance(3)
+            try await streamChunk(i, marker: "fixture.streamChunk")
         }
-        await trace.advance(24)
+        await trace.settle()
 
         trace.scenario = "flick-and-stop"
         await trace.advance()
-        // Script the flick's deltas on the clip, then stop all writes. No posted events or device inertia.
-        for delta in [210.0, 160, 110, 70, 45, 20] {
-            try scroll(up: delta)
+        // Drive the production phase handler without posting events or relying on device inertia.
+        try phase(from: .idle, to: .interacting)
+        for delta in [210.0, 160, 110] {
+            try scroll(up: delta, wheel: false)
             await trace.advance()
         }
-        await trace.advance(40)
+        try phase(from: .interacting, to: .decelerating)
+        for delta in [70.0, 45, 20] {
+            try scroll(up: delta, wheel: false)
+            await trace.advance()
+        }
+        try phase(from: .decelerating, to: .idle)
+        await trace.settle()
 
         trace.scenario = "mid-history-new-turn"
         await trace.advance()
         try scroll(to: try scrollView().contentView.documentRect.height / 2)
-        await trace.advance(25)
+        await trace.settle()
+        let oldHeight = trace.latest?.documentHeight
         trace.mark("fixture.newTurn")
         thread.messages.append(Self.message("stream-reply", "assistant", thread.provisional[0].blocks[0].text))
         thread.messages.append(Self.message("new-user", "user", "Check the fixture table again."))
         thread.provisional = [Self.message("provisional:assistant:2", "assistant", "I am checking the fixture table.", status: "streaming")]
         await publish()
-        try await trace.waitFor("the new turn") { self.store.messages.last?.entryID == "new-user" }
+        try await trace.waitFor("the new turn to change the document height") {
+            self.store.messages.last?.entryID == "new-user" && self.trace.latest?.documentHeight != oldHeight
+        }
         for _ in 0..<8 {
             try scroll(up: 45)
             await trace.advance(3)
         }
-        await trace.advance(24)
+        await trace.settle()
 
         trace.scenario = "page-older-history"
         await trace.advance()
         try scroll(to: -.greatestFiniteMagnitude)
         try await trace.waitFor("the original page's first row") { self.trace.latest?.first == "user-60" }
-        // The offscreen scroll doesn't reliably fire SwiftUI's visibility sentinel. Start the
-        // same prepend at the visible boundary, including the real anchor capture and restore.
-        if pageReply == nil { trace.prepend?() }
+        // Give the native sentinel time to fire. If offscreen delivery is suppressed, feed
+        // the measured boundary to its handler, not directly to the prepend.
+        await trace.settle()
+        if pageReply == nil {
+            guard trace.latest?.first == "user-60", let visibility = trace.historyVisibility else {
+                throw ValidationError("missing history sentinel at the older boundary")
+            }
+            trace.mark("fixture.historyVisibilityFallback")
+            visibility(true)
+        }
         try await trace.waitFor("the older page request") { self.pageReply != nil }
-        await trace.advance(12)
+        await trace.advance()
         trace.mark("fixture.pageReply")
         pageReply?.resume(returning: .snapshot(value: Self.snapshot(messages: Array(history.prefix(while: { $0.entryID != "user-60" })))))
         pageReply = nil
         try await trace.waitFor("the older page to prepend") { self.store.messages.first?.entryID == "user-0" }
-        await trace.advance(55)
+        await trace.settle()
 
         trace.scenario = "window-resize"
         await trace.advance()
         presentation.resizing = true
         for size in [NSSize(width: 660, height: 760), NSSize(width: 1020, height: 510), NSSize(width: 910, height: 640)] {
+            let oldSize = trace.latest?.clipSize
             trace.mark("fixture.windowResize")
             window.setContentSize(size)
-            await trace.advance(12)
+            try await trace.waitFor("the clip to resize") { self.trace.latest?.clipSize != oldSize }
+            await trace.settle()
         }
         presentation.resizing = false
-        await trace.advance(35)
+        await trace.settle()
 
         trace.scenario = "switch-away-back"
         await trace.advance()
+        let retained = try scrollView()
         trace.mark("fixture.switchAway")
-        trace.shown = false
         presentation.active = false
-        alternate.isHidden = false
-        hideDeckHost(host, in: container)
-        await trace.advance(25)
+        try await trace.waitFor("the deck to hide the thread") { self.trace.latest?.hidden == true }
+        await trace.settle()
         thread.revision += 1
         thread.provisional[0].blocks[0].text += "\n\nThe results are ready."
         trace.mark("fixture.switchBack")
-        host.isHidden = false
         presentation.active = true
-        hideDeckHost(alternate, in: container)
-        trace.shown = true
-        await trace.advance(55)
         try await trace.waitFor("the thread to be visible after switching back") { self.trace.latest?.first != nil }
+        guard try scrollView() === retained else { throw ValidationError("deck remounted the thread scroll view") }
+        await trace.settle()
+    }
+
+    private func streamChunk(_ index: Int, marker: String) async throws {
+        let oldHeight = trace.latest?.documentHeight
+        guard let oldRowHeight = trace.latest?.streamingRowHeight else { throw ValidationError("missing streaming row") }
+        trace.mark(marker)
+        thread.provisional[0].blocks[0].text += "Inspecting fixture group \(index). The query returns the rows in ascending order.\n\n"
+        await publish()
+        try await trace.waitFor("stream chunk \(index) to grow the row and change the document height") {
+            (self.trace.latest?.streamingRowHeight ?? 0) > oldRowHeight && self.trace.latest?.documentHeight != oldHeight
+        }
+        await trace.advance(2)
+    }
+
+    private func phase(from old: ScrollPhase, to phase: ScrollPhase, distance: CGFloat? = nil) throws {
+        guard let handler = trace.phase else { throw ValidationError("missing scroll phase handler") }
+        handler(old, phase, distance ?? trace.guardian.distance)
+        trace.mark("fixture.phase.\(phase)")
     }
 
     private func publish() async {
@@ -312,22 +389,29 @@ private final class ScrollFixture {
         return scroll
     }
 
-    private func scroll(up points: CGFloat) throws {
-        try scroll(to: scrollView().contentView.bounds.minY - points)
+    private func scroll(up points: CGFloat, wheel: Bool = true, endDrag: Bool = false) throws {
+        try scroll(to: scrollView().contentView.bounds.minY - points, wheel: wheel, endDrag: endDrag)
     }
 
-    private func scroll(to y: CGFloat) throws {
+    private func scroll(to y: CGFloat, wheel: Bool = true, endDrag: Bool = false) throws {
         let scroll = try scrollView()
         let clip = scroll.contentView
-        trace.mark("fixture.scrollInput")
-        input.readerScrolled(upward: y < clip.bounds.minY)
-        trace.guardian.readerMoved()
+        if wheel {
+            guard let intent = trace.wheel else { throw ValidationError("missing wheel intent handler") }
+            intent(clip.bounds.minY - y)
+        }
         var bounds = clip.bounds
         bounds.origin.y = y
-        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        let target = clip.constrainBoundsRect(bounds).origin
+        trace.scrollInput(target.y - clip.bounds.minY)
+        clip.scroll(to: target)
+        if endDrag {
+            let distance = clip.documentRect.maxY - clip.bounds.maxY + scroll.contentInsets.bottom
+            try phase(from: .interacting, to: .idle, distance: distance)
+        }
         scroll.reflectScrolledClipView(clip)
         window.layoutIfNeeded()
-        host.layoutSubtreeIfNeeded()
+        window.contentView?.layoutSubtreeIfNeeded()
     }
 
     private static func snapshot(messages: [NativeThreadMessage], older: String? = nil) -> NativeThreadSnapshot {
