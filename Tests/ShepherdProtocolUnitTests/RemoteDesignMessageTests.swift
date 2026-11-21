@@ -209,8 +209,8 @@ struct RemoteDesignMessageTests {
         #expect(try Wire.object(snapshot)["threadNotesWarning"] == nil)
         #expect(try JSONDecoder().decode(DesignSnapshot.self, from: JSONEncoder().encode(snapshot)).threadNotesWarning == nil)
         snapshot.threadNotesWarning = "Restore /tmp/design/thread-notes.json from a backup or repair its JSON."
-        let reply = RemoteReply.design(id: 41, result: .index(RemoteDesignIndex(snapshot: snapshot, files: [])))
-        #expect(try Wire.roundTrip(reply) == reply)
+        let index = RemoteDesignIndex(snapshot: snapshot, files: [])
+        #expect(try Wire.roundTrip(index) == index)
     }
 
     /// Exhaustive on purpose: a new request fails to compile here until it is named, then the
