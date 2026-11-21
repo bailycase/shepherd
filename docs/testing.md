@@ -34,7 +34,7 @@ PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Help
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
 ```
 
-Run the extension tests with the Node that `pi_engine.py stage` puts in `.build/pi-engine/Helpers/node`, never the system `node`: an older Node fails `anthropic-oauth.test.mjs` with "The property 'options.mode' must be one of: 'strip'. Received 'transform'". Use `Tests/Extensions/*.test.mjs` for the whole suite.
+Use the staged Node locally: older Node versions may lack the TypeScript transform mode that `anthropic-oauth.test.mjs` needs. Use `Tests/Extensions/*.test.mjs` for the whole suite.
 
 `swift test` builds before running; a separate `swift build` is unnecessary. Keep build flags and
 configuration consistent across runs. Use `--skip-build` only after a successful build with the
