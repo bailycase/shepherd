@@ -20,18 +20,6 @@ struct BackgroundServiceTests {
         #expect(!BackgroundService.mayRegister(bundleIdentifier: nightly, bundlePath: stable, environment: [:], adHoc: true))
     }
 
-    @Test func aRefreshRebindsOnlyAnEnabledService() {
-        var status = BackgroundService.Status.enabled
-        var operations: [String] = []
-        let service = BackgroundService(status: { status }, register: { operations.append("register"); status = .enabled },
-                                        unregister: { operations.append("unregister"); status = .notRegistered }, openLoginItems: {})
-        #expect(service.refreshRegistration())
-        #expect(operations == ["unregister", "register"])
-        status = .requiresApproval
-        #expect(!service.refreshRegistration())
-        #expect(operations == ["unregister", "register"], "a disabled job must stay disabled")
-    }
-
     @Test func onlyAJobNeverRegisteredIsRegisteredAndOneTurnedOffStaysOff() {
         final class Launchd { var status = BackgroundService.Status.notRegistered; var registered = 0 }
         let launchd = Launchd()

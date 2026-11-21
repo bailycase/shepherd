@@ -20,12 +20,10 @@
   `capabilities`), and closing the TCP listener leaves them connected. `helloOk` carries the
   host's build (`hostBuild`, `CFBundleVersion`), absent from older hosts. A host that drains
   offers local clients `host.drain.v1` and takes `drain` (answered `ok`, refused to TCP clients),
-  which an app with a higher build number sends once connected (`RemoteHostStore`):
+  which an app with a higher build number sends once connected (`BackgroundHostClient.asksToDrain`):
   it keeps serving and exits once no agent is working, blocked or starting, or after two hours
   (`HostDrain`). It drains on its own when its bundle's `CFBundleVersion` on disk changes or the
-  bundle is gone (`BundleVersionWatch`). The Mac app shows the handoff until an updated host
-  connects. If launchd fails to start the replacement, or the old host stays past its drain window
-  and shutdown grace, the app refreshes an enabled service's registration. Local clients alone may send `spaceAction` (rename,
+  bundle is gone (`BundleVersionWatch`). Local clients alone may send `spaceAction` (rename,
   base, hide, reorder or remove a space), `projectRequest` (register, edit or add a child space,
   answered `spaceAdded`) and `startThread` (a thread with a fork's session, an
   existing checkout, a new worktree on an existing branch, its own folder, a name or an id; the

@@ -37,63 +37,26 @@ struct LocalClientTests {
         return (vm, hosts, idle, connection, clientDir, defaults)
     }
 
-    @Test(arguments: [false, true])
-    func anUpdatedAppWaitsForDrainAndVerifiesTheReplacementHost(stalls: Bool) async throws {
-        let dir = try makeScratchDirectory("handoff")
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let old = try ScratchServer(dir: dir)
-        defer { old.stop(keepFiles: true) }
-        old.server.hostBuild = "724"
-        let space = Fixture.space("acme-web", path: dir.path)
-        var state = Fixture.state(spaces: [space], agents: [Fixture.agent("Fix the checkout", in: space, status: .working)])
-        try await old.server.putState(state)
-        let finished = Locked(false)
-        let drain = HostDrain(server: old.server, poll: .milliseconds(10)) { finished.withValue { $0 = true } }
+    @Test func aNewerAppAsksItsHostToDrainAndReconnectsWhenItsHostIsGone() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.hostBuild = "1201"
         let asked = Locked(0)
-        old.server.onDrainRequest = {
-            asked.withValue { $0 += 1 }
-            if !stalls { MainActor.assumeIsolated { drain.begin("new app") } }
-        }
-        let socket = dir.appendingPathComponent("h.sock").path
-        let tokenURL = dir.appendingPathComponent("remote-token")
-        try old.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        host.server.onDrainRequest = { asked.withValue { $0 += 1 } }
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        try host.server.startLocalListener(path: socket, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let hosts = RemoteHostStore(defaults: ScratchDefaults())
-        hosts.appBuild = "796"
-        if stalls { hosts.hostHandoffWait = .seconds(1) }
-        var restarts = 0
-        hosts.restartBackgroundService = { restarts += 1; return true }
+        let hosts = RemoteHostStore(defaults: ScratchDefaults(), childRefreshInterval: .milliseconds(200))
+        hosts.appBuild = "1202"
         let connection = hosts.addLocalHost(name: "This Mac", socket: socket)
         defer { hosts.removeHost(id: connection.id) }
-        try await eventuallyOnMain("the app to wait for the old host to drain") {
-            connection.phase == .connected && hosts.hostHandoff == .waiting && asked.current == 1
-        }
-        #expect(restarts == 0 && !finished.current)
+        try await eventuallyOnMain("the app to connect") { connection.phase == .connected }
+        try await eventuallyOnMain("the older host to be asked to drain") { asked.current == 1 }
 
-        if stalls {
-            try await eventuallyOnMain("the missed drain to trigger a service restart") {
-                hosts.hostHandoff == .restarting && restarts == 1
-            }
-        } else {
-            state.agents[0].status = .done
-            try await old.server.putState(state)
-            try await eventuallyOnMain("the drained host to finish") { finished.current }
-            #expect(restarts == 0)
-        }
-        await Task.detached { old.stop(keepFiles: true) }.value
-        try await eventuallyOnMain("the app to see the old host leave") { connection.phase != .connected }
-        #expect(hosts.hostHandoff != nil, "disconnecting does not prove the new build is running")
-
-        let updated = try ScratchServer(dir: dir)
-        defer { updated.stop(keepFiles: true) }
-        updated.server.hostBuild = "796"
-        try updated.server.startLocalListener(path: socket, tokenURL: tokenURL)
-        try await eventuallyOnMain("the updated host to take over and clear the notice") {
-            connection.phase == .connected && hosts.hostHandoff == nil
-        }
-        #expect(try hosts.thisMacHost()?.hostBuild == "796")
-        #expect(connection.state.agents.first?.name == "Fix the checkout")
-        #expect(restarts == (stalls ? 1 : 0))
+        host.stop()
+        try await eventuallyOnMain("the app to see its host is gone") { connection.phase != .connected }
     }
 
     @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysShepherdIsNotOpen() async throws {

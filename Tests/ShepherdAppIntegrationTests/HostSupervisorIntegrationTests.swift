@@ -111,36 +111,6 @@ struct HostSupervisorIntegrationTests {
         await #expect(throws: HostSupervisor.StartFailed.self) { try await Self.start(supervisor) }
     }
 
-    @Test func aMissingReplacementServiceIsRefreshedBeforeAChildTakesOver() async throws {
-        let fixture = try Fixture()
-        defer { try? FileManager.default.removeItem(at: fixture.folder) }
-        func owner() -> Process {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-            process.arguments = [fixture.script, "owner", fixture.socket, fixture.folder.path]
-            return process
-        }
-        let old = owner(), replacement = owner()
-        defer {
-            for process in [old, replacement] where process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        }
-        try old.run()
-        try await eventually("the old service to serve") { RemoteHostClient.localSocketAnswers(fixture.socket) }
-        var configuration = fixture.configuration("serve")
-        configuration.preferOwner = { true }
-        configuration.ownerGrace = .seconds(2)
-        configuration.refreshOwner = { (try? replacement.run()) != nil }
-        let supervisor = HostSupervisor(configuration)
-        defer { supervisor.stop() }
-        try await Self.start(supervisor)
-        #expect(!replacement.isRunning)
-        kill(old.processIdentifier, SIGKILL)
-        try await eventually("the refreshed service to serve") {
-            replacement.isRunning && RemoteHostClient.localSocketAnswers(fixture.socket)
-        }
-        #expect(supervisor.childPID == nil)
-    }
-
     @Test func anOwnerIsFollowedAndAChildStartsOnlyOnceItGoes() async throws {
         let fixture = try Fixture()
         let owner = Process()

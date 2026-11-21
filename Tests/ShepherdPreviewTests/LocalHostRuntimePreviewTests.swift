@@ -13,33 +13,6 @@ import Testing
 /// Projects run on the host (`RuntimeHosting`) and draw as This Mac's own, as the in-process
 /// app drew them.
 extension PreviewTests {
-    @Test func backgroundHostHandoffNotice() async throws {
-        let host = try ScratchServer()
-        defer { host.stop() }
-        let socket = host.dir.appendingPathComponent("h.sock").path
-        host.server.hostBuild = "724"
-        try host.server.startLocalListener(path: socket)
-        let hosts = RemoteHostStore(defaults: ScratchDefaults())
-        hosts.appBuild = "796"
-        hosts.hostHandoffWait = .seconds(5)
-        var finishRestart = false
-        hosts.restartBackgroundService = {
-            try? await eventuallyOnMain("the restart notice to render") { finishRestart }
-            return false
-        }
-        let connection = hosts.addLocalHost(name: "This Mac", socket: socket)
-        defer { hosts.removeHost(id: connection.id) }
-        let size = CGSize(width: 540, height: 110)
-        for (name, phase) in [("waiting", RemoteHostStore.HostHandoff.waiting), ("restarting", .restarting), ("failed", .failed)] {
-            try await eventuallyOnMain("the host handoff to be \(name)", timeout: .seconds(10)) { hosts.hostHandoff == phase }
-            let handoff = try #require(hosts.hostHandoff)
-            try await Preview.render("host-update-\(name)", size: size) {
-                HostHandoffNotice(handoff: handoff).frame(maxHeight: .infinity).background(Color.sh.bgWindow)
-            }
-            if phase == .restarting { finishRestart = true }
-        }
-    }
-
     /// The Projects page and the sidebar with a Project's working threads, its workers started by the
     /// runtime on the stub engine.
     @Test func localHostProjectsMatchTheInProcessBaseline() async throws {

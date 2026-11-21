@@ -70,8 +70,6 @@ final class HostSupervisor: @unchecked Sendable {
         /// Whether launchd's host should own the workspace (the service is on): it is waited for
         /// (`ownerGrace`) before the app starts a child of its own.
         var preferOwner: @Sendable () -> Bool = { false }
-        /// Rebinds an enabled job to the current bundle when launchd fails to start it.
-        var refreshOwner: @Sendable () -> Bool = { false }
         var ownerGrace: Duration = .seconds(5)
         /// How long an owner holding the lock may stay silent before the launch says it is starting.
         var silentOwner: Duration = .seconds(5)
@@ -85,14 +83,13 @@ final class HostSupervisor: @unchecked Sendable {
         var environment: [String: String]?
 
         /// The app's own executable as the host, on the app's support directory.
-        static func app(preferOwner: @escaping @Sendable () -> Bool,
-                        refreshOwner: @escaping @Sendable () -> Bool) -> Configuration {
+        static func app(preferOwner: @escaping @Sendable () -> Bool) -> Configuration {
             let support = ShepherdPaths.supportDirectory()
             return Configuration(executable: Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]),
                                  arguments: [ShepherdHost.argument, ShepherdHost.supervisedArgument],
                                  socket: support.appendingPathComponent("host.sock").path,
                                  lock: support.appendingPathComponent("server.lock").path,
-                                 preferOwner: preferOwner, refreshOwner: refreshOwner)
+                                 preferOwner: preferOwner)
         }
     }
 
@@ -101,8 +98,6 @@ final class HostSupervisor: @unchecked Sendable {
     var onFailure: (@MainActor (StartFailed) -> Void)?
 
     private let lock = NSLock()
-    /// A refresh briefly unregisters the job. Don't mistake that interval for the user turning it off.
-    private let ownerRegistration = NSLock()
     private var stopping = false
     private var child: Process?
     private var childExited: DispatchGroup?
@@ -159,31 +154,14 @@ final class HostSupervisor: @unchecked Sendable {
 
     private var isStopping: Bool { lock.withLock { stopping } }
 
-    /// Also called off main by the app if an old host stays past the drain cap. A failed
-    /// automatic relaunch, by contrast, may only refresh a vacant workspace.
-    func refreshOwner(onlyIfVacant: Bool = false) -> Bool {
-        ownerRegistration.withLock {
-            guard !isStopping, configuration.preferOwner(), !onlyIfVacant || !ownerHoldsLock() else { return false }
-            return configuration.refreshOwner()
-        }
-    }
-
-    private func prefersOwner() -> Bool {
-        ownerRegistration.withLock { configuration.preferOwner() }
-    }
-
     private func supervise() {
         var policy = RestartPolicy()
-        var waitForOwner = prefersOwner()
+        var waitForOwner = configuration.preferOwner()
         while !isStopping {
             if waitForOwner || ownerHoldsLock() {
-                // Give launchd the first try. After a bundle swap its old registration can
-                // fail to spawn; rebind it before a supervised child takes the workspace.
-                var sawOwner = follow(grace: waitForOwner ? configuration.ownerGrace : .zero)
-                if !sawOwner, waitForOwner, refreshOwner(onlyIfVacant: true) {
-                    sawOwner = follow(grace: configuration.ownerGrace)
-                }
-                waitForOwner = sawOwner && prefersOwner()
+                // An owner that left while the service is on is launchd's, restarting: wait for it again.
+                let sawOwner = follow(grace: waitForOwner ? configuration.ownerGrace : .zero)
+                waitForOwner = sawOwner && configuration.preferOwner()
                 continue
             }
             let (status, served) = runChild()

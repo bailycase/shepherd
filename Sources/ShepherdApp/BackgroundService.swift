@@ -39,20 +39,6 @@ struct BackgroundService {
             openLoginItems: { SMAppService.openSystemSettingsLoginItems() })
     }
 
-    /// An enabled job can still point at the replaced bundle and fail to spawn. Refresh its
-    /// registration from this app. Never try to re-enable a job turned off in Login Items.
-    func refreshRegistration() -> Bool {
-        guard status() == .enabled else { return false }
-        do {
-            try unregister()
-            try register()
-        } catch {
-            NSLog("Shepherd: background service registration could not be refreshed: \(error)")
-            return false
-        }
-        return status() == .enabled
-    }
-
     /// Whether this launch may register the job: Shepherd and Shepherd Nightly, never with a
     /// support folder moved (Dev, tests), and only from a stable, signed bundle. BTM records the
     /// path it registers, so a translocated copy (opened from the DMG or Downloads) or an ad-hoc
