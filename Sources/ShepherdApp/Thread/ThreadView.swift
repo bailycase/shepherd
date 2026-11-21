@@ -296,6 +296,7 @@ struct ThreadView: View {
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
                 .onChange(of: rows.first?.id) { _, first in
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { [weak historyAnchor] id in
+                        ThreadScrollTrace.write("ThreadView.historyMaterialize", in: tailGuard.scrollView())
                         historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
                 }
@@ -324,6 +325,7 @@ struct ThreadView: View {
                     // tray all land back on the tail as they arrive.
                     // The guard walks the scroll view itself while it repairs one, and is not fought.
                     if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: nativeTail), !tailGuard.repairing {
+                        ThreadScrollTrace.write("ThreadView.scrollGeometryFollower", in: tailGuard.scrollView())
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                     tailGuard.distance = new.distance
@@ -361,6 +363,7 @@ struct ThreadView: View {
                         // follower lands the echo and the collapsing tray together as their layout
                         // arrives, instead of two competing jumps.
                         if !wasFollowing {
+                            ThreadScrollTrace.write("ThreadView.sentCount", in: tailGuard.scrollView())
                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
                         }
                         tailGuard.asked()
@@ -390,6 +393,7 @@ struct ThreadView: View {
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()
                                  follower.jumpToLatest()
+                                 ThreadScrollTrace.write("ThreadView.jumpToLatest", in: tailGuard.scrollView())
                                  proxy.scrollTo(Self.bottomID, anchor: .bottom)
                                  tailGuard.asked()
                              } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
@@ -899,7 +903,13 @@ struct ThreadView: View {
         tailGuard.active = active
         tailGuard.following = follower.sticky
         tailGuard.userScrolling = follower.userScrolling
-        tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+        #if DEBUG
+        ThreadScrollTrace.bindPaging(to: tailGuard) { prependVisibleHistory() }
+        #endif
+        tailGuard.land = { [weak guardRef = tailGuard] in
+            ThreadScrollTrace.write("ThreadView.tailGuard.land", in: guardRef?.scrollView())
+            proxy.scrollTo(Self.bottomID, anchor: .bottom)
+        }
         tailGuard.rebuild = { [historyAnchor, weak guardian = tailGuard, revision = $transcriptRevision] in
             historyAnchor.cancel()
             guardian?.targets([])
@@ -919,6 +929,10 @@ struct ThreadView: View {
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
+        prependVisibleHistory()
+    }
+
+    private func prependVisibleHistory() {
         let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey)
         Task {
             await store.loadOlder()
@@ -959,12 +973,14 @@ struct ThreadView: View {
             guard userTurns.indices.contains(target) else {
                 jumpedTurn = nil
                 follower.jumpToLatest()
+                ThreadScrollTrace.write("ThreadView.turnCommand.latest", in: tailGuard.scrollView())
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 tailGuard.asked()
                 return
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
+            ThreadScrollTrace.write("ThreadView.turnCommand.target", in: tailGuard.scrollView())
             withSHAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
         }
     }
@@ -983,6 +999,7 @@ struct ThreadView: View {
         guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
         jumpedTurn = nil
         follower.beginJump()
+        ThreadScrollTrace.write("ThreadView.find", in: tailGuard.scrollView())
         withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 

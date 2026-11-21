@@ -16,6 +16,34 @@ import validate
 
 
 class ValidateTests(unittest.TestCase):
+    def test_scroll_compares_the_same_row_and_excludes_input_and_hidden_frames(self):
+        def frame(t, first, rows, *callers, hidden=False):
+            return {"timestamp": t, "first": first, "rows": rows, "hidden": hidden, "offset": 10,
+                    "events": [{"caller": caller} for caller in callers]}
+
+        scenarios = {name: [frame(0, "a", {"a": 1}, *actions), frame(1, "a", {"a": 1})]
+                     for name, actions in validate.SCROLL_SCENARIOS.items()}
+        scenarios["switch-away-back"] = [
+            frame(0, "a", {"a": -1, "b": 5}),
+            frame(1, None, {}, "fixture.switchAway", hidden=True),
+            frame(2, "b", {"a": -9, "b": 8}, "fixture.switchBack", "ThreadView.historyMaterialize", "NSClipView.bounds"),
+            frame(3, "c", {"c": 1}, "fixture.scrollInput"),
+            frame(4, "c", {"c": 3}),  # Exactly 2pt is not a jump.
+            frame(5, "d", {"d": 0}),  # Unmeasurable, not a zero or a made-up jump size.
+        ]
+        scenarios["switch-away-back"][2]["events"][-1]["stack"] = [
+            "7 AppKit 0x1 -[NSView _postBoundsChangeNotification] + 96",
+            "8 AppKit 0x2 -[NSView setBoundsOrigin:] + 240",
+            "9 SwiftUI 0x3 $s7SwiftUI17HostingScrollViewC13updateContext + 5328",
+        ]
+        summary = validate.scroll_evidence(scenarios)["switch-away-back"]
+        [jump] = summary["jumps"]
+        self.assertEqual((jump["frame"], jump["row"], jump["delta_pt"]), (2, "a", -8))
+        self.assertEqual(jump["paths"], ["ThreadView.historyMaterialize", "SwiftUI.HostingScrollView.updateContext"])
+        self.assertEqual([loss["frame"] for loss in summary["anchor_losses"]], [5])
+        with self.assertRaisesRegex(ValueError, "expected all six"):
+            validate.scroll_evidence({})
+
     def test_bare_invocation_fails_loudly(self):
         completed = subprocess.run([sys.executable, str(ROOT / "scripts/validate.py")],
                                    capture_output=True, text=True)

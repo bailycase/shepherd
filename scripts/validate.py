@@ -15,6 +15,16 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 LOG = "mac/run.log"
 TOOLBAR = "the narrow toolbar in Sources/ShepherdApp/DiffReviewView.swift"
+SCROLL_CASE = "scroll-stability"
+SCROLL_SCENARIOS = {
+    "slow-scroll-streaming": ("fixture.streamChunk", "fixture.scrollInput"),
+    "flick-and-stop": ("fixture.scrollInput",),
+    "mid-history-new-turn": ("fixture.newTurn", "fixture.scrollInput"),
+    "page-older-history": ("fixture.pageRequested", "fixture.pageReply"),
+    "window-resize": ("fixture.windowResize",),
+    "switch-away-back": ("fixture.switchAway", "fixture.switchBack"),
+}
+SCROLL_COMPLETION = "six Dev scroll scenarios finished"
 
 
 @dataclass(frozen=True)
@@ -29,6 +39,8 @@ class Case:
 
 
 CASES = {
+    SCROLL_CASE: Case("Shepherd (Dev) / ThreadScrollValidation", {(scenario, None) for scenario in SCROLL_SCENARIOS},
+                      SCROLL_COMPLETION, "offscreen Dev app", scenario="Sources/ShepherdApp/Thread/ThreadView.swift"),
     "changes-review": Case(
         "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
         {(step, appearance)
@@ -118,6 +130,110 @@ def log_diagnostic(path):
     return "\n".join(errors[-5:] or lines[-5:]) or "swift test produced no output"
 
 
+def native_scroll_path(event):
+    stack = event.get("stack", [])
+    # Skip the bounds notification itself and name the code driving the write.
+    start = next((i for i, line in enumerate(stack) if " _postBoundsChangeNotification]" in line), -1)
+    stack = stack[start + 1:]
+    for symbol, label in (
+        (" _reflectDocumentViewFrameChange]", "AppKit.NSClipView._reflectDocumentViewFrameChange"),
+        ("HostingScrollViewC13updateContext", "SwiftUI.HostingScrollView.updateContext"),
+    ):
+        if any(symbol in line for line in stack):
+            return label
+    for line in stack:
+        fields = line.split(maxsplit=3)
+        if len(fields) == 4 and fields[1] == "AppKit":
+            return f"AppKit {fields[3].rsplit(' + ', 1)[0]}"
+    return "NSClipView.bounds (native caller unavailable)"
+
+
+def scroll_paths(previous, frame, events):
+    writes = [event["caller"] for _, event in events if event["caller"].startswith("Thread")]
+    native = [native_scroll_path(event) for _, event in events if event["caller"] == "NSClipView.bounds"]
+    if not native:
+        native = ["SwiftUI row layout (clip offset unchanged)" if frame.get("offset") == previous.get("offset")
+                  else "unattributed clip offset change"]
+    # A requested write isn't necessarily the cause of the native change. Keep both.
+    return list(dict.fromkeys(writes + native))
+
+
+def scroll_evidence(scenarios):
+    if set(scenarios) != set(SCROLL_SCENARIOS):
+        raise ValueError("expected all six scroll scenarios")
+    summaries = {}
+    for name, required in SCROLL_SCENARIOS.items():
+        frames = scenarios[name]
+        if len(frames) < 2 or any(a["timestamp"] >= b["timestamp"] for a, b in zip(frames, frames[1:])):
+            raise ValueError(f"{name}: missing or unordered display frames")
+        callers = {event["caller"] for frame in frames for event in frame["events"]}
+        if not callers.issuperset(required):
+            raise ValueError(f"{name}: missing actions {sorted(set(required) - callers)}")
+        jumps, anchor_losses = [], []
+        previous, pending = None, []
+        compared = 0
+        for i, frame in enumerate(frames):
+            pending.extend((i, event) for event in frame["events"])
+            if frame["hidden"]:
+                continue  # Compare with the last visible frame when the same thread returns.
+            if previous is not None and not any(e["caller"] == "fixture.scrollInput" for _, e in pending):
+                anchor, origin = previous["first"], previous["rows"][previous["first"]]
+                if anchor not in frame["rows"]:
+                    anchor_losses.append({"frame": i, "row": anchor, "first_after": frame.get("first"),
+                                          "paths": scroll_paths(previous, frame, pending), "events": pending})
+                else:
+                    compared += 1
+                    delta = frame["rows"][anchor] - origin
+                    if abs(delta) > 2:
+                        jumps.append({"frame": i, "row": anchor, "delta_pt": round(delta, 3), "first_after": frame.get("first"),
+                                      "paths": scroll_paths(previous, frame, pending), "events": pending})
+            previous = frame if frame.get("first") else None
+            pending = []
+        if not compared:
+            raise ValueError(f"{name}: no comparable non-input frames")
+        summaries[name] = {"frames": len(frames), "compared_frames": compared,
+                           "jumps": jumps, "anchor_losses": anchor_losses}
+    return summaries
+
+
+def run_scroll_case(mac, command, log):
+    pin = ROOT / ".build/pi-engine/pin.json"
+    if not pin.is_file() or pin.read_bytes() != (ROOT / "scripts/pi-engine-pin.json").read_bytes():
+        subprocess.run([command[0], sys.executable, "scripts/pi_engine.py", "stage"], cwd=ROOT,
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+    subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+    scratch = mac / "scratch"
+    scratch.mkdir(mode=0o700)
+    (scratch / "tmp").mkdir()
+    trace = mac / "frames.json"
+    env = {"HOME": str(scratch), "CFFIXED_USER_HOME": str(scratch), "TMPDIR": str(scratch / "tmp"),
+           "SHEPHERD_SUPPORT_DIR": str(scratch / "support"), "SHEPHERD_SCROLL_TRACE": str(trace),
+           "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    app = ROOT / ".build/scroll-dev/Build/Products/Debug/Shepherd.app/Contents/MacOS/Shepherd"
+    subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
+                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
+    summaries = scroll_evidence(json.loads(trace.read_text(encoding="utf-8")))
+    (mac / "scroll-jumps.json").write_text(json.dumps(summaries, indent=2) + "\n", encoding="utf-8")
+    steps = mac / "steps"
+    steps.mkdir()
+
+    def record(step, status, expected, actual):
+        (steps / f"{step}.json").write_text(json.dumps(dict(step=step, status=status, expected=expected,
+            actual=actual, evidence=["mac/frames.json", "mac/scroll-jumps.json"])), encoding="utf-8")
+
+    for name, summary in summaries.items():
+        jumps, losses = summary["jumps"], summary["anchor_losses"]
+        actual = f"{len(jumps)} jumps, {len(losses)} anchor losses across {summary['frames']} frames"
+        print(f"{name}: {actual}")
+        for label, observations in (("Jump paths", jumps), ("Anchor loss paths", losses)):
+            if observations:
+                paths = sorted({path for observation in observations for path in observation["paths"]})
+                actual += f"\n{label}: {', '.join(paths)}"
+        record(name, "failed" if jumps or losses else "passed", "0 jumps >2 pt and no lost anchors", actual)
+    record("complete", "passed", SCROLL_COMPLETION, SCROLL_COMPLETION)
+    return 0
+
+
 def run_case(name):
     case = CASES[name]
     parent = ROOT / ".build/validation"
@@ -127,12 +243,17 @@ def run_case(name):
     run = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=parent))
     mac = run / "mac"
     mac.mkdir()
-    command = ["swift", "test", "-j", "4", "--filter", case.test]
+    scroll = name == SCROLL_CASE
+    command = ([str(Path.home() / "Developer/Shepherd-worktrees/bin/gated"), "xcodebuild", "-project",
+                "Shepherd.xcodeproj", "-scheme", "Shepherd (Dev)", "-destination", "platform=macOS",
+                "-derivedDataPath", str(ROOT / ".build/scroll-dev"), "-onlyUsePackageVersionsFromResolvedFile",
+                "-jobs", "4", "build"] if scroll else ["swift", "test", "-j", "4", "--filter", case.test])
     result = {"case": f"mac/{name}", "selected_checks": [case.test], "command": command,
               "log": LOG, "source": None, "toolchain": None, "exit_status": None, "build_test_seconds": None}
     env = {**os.environ, "SHEPHERD_VALIDATION_DIR": str(mac)}
     env.pop("SHEPHERD_LIVE_MODEL", None)
     setup_error = None
+    start = None
     with (run / LOG).open("w", encoding="utf-8") as log:
         try:
             result["source"] = source_identity()
@@ -140,16 +261,25 @@ def run_case(name):
                 setup_error = f"{name} requires macOS and AppKit"
                 print(setup_error, file=log)
             else:
-                version = subprocess.check_output(["swift", "--version"], cwd=ROOT, env=env, stderr=subprocess.STDOUT)
+                version = subprocess.check_output(["xcodebuild", "-version"] if scroll else ["swift", "--version"],
+                                                  cwd=ROOT, env=env, stderr=subprocess.STDOUT)
                 result["toolchain"] = version.decode(errors="replace").strip()
                 start = time.monotonic()
-                result["exit_status"] = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
-                result["build_test_seconds"] = round(time.monotonic() - start, 2)
-        except (OSError, subprocess.CalledProcessError) as error:
+                if scroll:
+                    result["exit_status"] = run_scroll_case(mac, command, log)
+                else:
+                    result["exit_status"] = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
             setup_error = str(error)
             print(setup_error, file=log)
-            if isinstance(error, subprocess.CalledProcessError) and error.output:
-                print(error.output.decode(errors="replace").strip(), file=log)
+            if isinstance(error, subprocess.CalledProcessError):
+                if scroll and start is not None:
+                    result["exit_status"] = error.returncode
+                if error.output:
+                    print(error.output.decode(errors="replace").strip(), file=log)
+        finally:
+            if start is not None:
+                result["build_test_seconds"] = round(time.monotonic() - start, 2)
 
     required_steps = case.steps | {("complete", None)}
     records, problems = read_steps(run, required_steps)
@@ -162,12 +292,14 @@ def run_case(name):
     if failed:
         status, reason = "assertion_failed", None
     elif setup_error:
-        status, reason = "not_run", log_diagnostic(run / LOG)
+        status = "build_or_setup_failed" if scroll and start is not None else "not_run"
+        reason = log_diagnostic(run / LOG)
     elif result["exit_status"] and not records and not problems:
         status, reason = "build_or_setup_failed", log_diagnostic(run / LOG)
     elif (result["exit_status"] != 0 or missing or problems or completion.get("actual") != case.completion
           or completion.get("expected") != case.completion):
-        status, reason = "incomplete", "no valid completion evidence (requires every step and a zero Swift exit)"
+        status, reason = "incomplete", ("no valid completion evidence (requires every step and a zero Dev app exit)"
+                                        if scroll else "no valid completion evidence (requires every step and a zero Swift exit)")
         result.update(missing_steps=missing, log_diagnostic=log_diagnostic(run / LOG))
     else:
         status, reason = "passed", None
