@@ -45,7 +45,7 @@ enum CommitFixture {
 
     static func info(working: Bool = false, drafts: Bool = true) -> RemoteCommitInfo {
         let plain = reviewCommitFallbackMessage(files)
-        return RemoteCommitInfo(repository: "/Users/dev/Shepherd", branch: "main", head: "abc", upstream: "origin/main", pushRemote: "origin",
+        return RemoteCommitInfo(repository: "/Users/dev/acme-web", branch: "main", head: "abc", upstream: "origin/main", pushRemote: "origin",
                                 defaultBranch: "main", files: files, title: plain.title, body: plain.body, draftsMessage: drafts,
                                 agentWorking: working, blocked: nil)
     }

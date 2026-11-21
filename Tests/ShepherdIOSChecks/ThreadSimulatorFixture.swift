@@ -57,6 +57,14 @@ private struct FixturePrimaryWindow: View {
 
     var body: some View {
         let split = FixtureWindows.shared.split
+        if let width = FixtureWindows.shared.frameWidth {
+            Color.black.ignoresSafeArea().background(FramedWindow(app: app, width: width))
+        } else {
+            windows(split)
+        }
+    }
+
+    private func windows(_ split: MobileWindowSeed?) -> some View {
         HStack(spacing: split == nil ? 0 : SH.Space.xs) {
             MobileRoot(app: app)
                 // Rounded beside a split's second window; alone it clips nothing, so a shot keeps
@@ -71,6 +79,40 @@ private struct FixturePrimaryWindow: View {
     }
 }
 
+/// The app in its own window of a fixed width, centred in the scene like a Stage Manager window: UIKit lays the window's
+/// content, and every sheet it presents, out at that width, while the size class stays the scene's (regular on iPad).
+private struct FramedWindow: UIViewRepresentable {
+    let app: MobileApp
+    let width: CGFloat
+
+    func makeUIView(context: Context) -> Anchor {
+        let view = Anchor()
+        view.app = app
+        view.width = width
+        return view
+    }
+
+    func updateUIView(_ view: Anchor, context: Context) {}
+
+    final class Anchor: UIView {
+        var app: MobileApp?
+        var width: CGFloat = 0
+        private var window_: UIWindow?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window_ == nil, let scene = window?.windowScene, let app else { return }
+            let bounds = scene.coordinateSpace.bounds
+            let framed = UIWindow(windowScene: scene)
+            framed.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: bounds.height)
+            framed.rootViewController = UIHostingController(rootView: MobileRoot(app: app).environment(\.scenePhase, .active))
+            framed.makeKeyAndVisible()
+            window_ = framed
+            FixtureWindows.shared.framed = framed
+        }
+    }
+}
+
 /// Opens more windows for a screen, and closes the ones an earlier run left behind (the system
 /// restores a killed app's windows).
 @MainActor
@@ -80,6 +122,10 @@ final class FixtureWindows {
 
     /// A second window beside the screen's own.
     private(set) var split: MobileWindowSeed?
+    /// The width of the one window the app runs in (`FixtureScreen.frameWidth`); nil is the whole scene.
+    var frameWidth: CGFloat?
+    /// That window, for a screen that resizes it while it runs (as dragging a Stage Manager window's edge does).
+    var framed: UIWindow?
     @ObservationIgnored var openWindow: OpenWindowAction?
     @ObservationIgnored var primary: UIWindowScene?
     /// Windows this run opened.
@@ -173,6 +219,7 @@ final class FixtureRunner {
             print("FIXTURE FAILED \(failure!)")
             return
         }
+        FixtureWindows.shared.frameWidth = screen.frameWidth
         do {
             hosts = try screen.hosts.map { data in
                 let host = FixtureHost(data)
