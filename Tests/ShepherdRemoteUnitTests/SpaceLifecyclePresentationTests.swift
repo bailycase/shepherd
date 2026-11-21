@@ -100,9 +100,9 @@ struct SpaceLifecyclePresentationTests {
         #expect(dialogs.confirmRemoval(b, shown: macB) == nil, "already answered or dismissed")
     }
 
-    /// A's dialog callbacks, the ones Organize installs, fire late after B's confirmation replaced it (the store is shared by every iPad
-    /// window): typing, dismissing, Rename and Remove touch nothing of B's, and no client is asked. B's own callbacks still work.
-    @MainActor @Test func aStaleDialogsCallbacksLeaveTheNewOnesAlone() async throws {
+    /// A's bindings and actions, built by the factory Organize uses verbatim, fire late after B's confirmation replaced it (the store is
+    /// shared by every iPad window): typing, dismissing, Rename and Remove touch nothing of B's, and nothing is sent. B's own still work.
+    @MainActor @Test func aStaleDialogsBindingsLeaveTheNewOnesAlone() async throws {
         let macA = UUID(), macB = UUID()
         let clientA = FakeSettingsClient(), clientB = FakeSettingsClient()
         let hosts = [SettingsHost(id: macA, name: "Mac A", client: clientA, capabilities: [RemoteProtocol.spaceLifecycleCapability]),
@@ -111,8 +111,8 @@ struct SpaceLifecyclePresentationTests {
         let dialogs = SpaceLifecycleDialogs()
         var shown: UUID? = macA
         var sent: [(RemoteSpaceLifecycle, SpaceLifecycleTarget)] = []
-        func callbacks(_ target: SpaceLifecycleTarget) -> SpaceLifecycleDialogs.Callbacks {
-            dialogs.callbacks(for: target, name: "acme-web", shown: { shown }, send: { sent.append(($0, $1)) })
+        func make() -> SpaceDialogBindings {
+            SpaceDialogBindings.make(dialogs: dialogs, spaces: [web], shown: { shown }, send: { sent.append(($0, $1)) })
         }
         // What the send path does with each: the host the target is on, through its own client.
         func deliver() async throws {
@@ -122,16 +122,18 @@ struct SpaceLifecyclePresentationTests {
 
         dialogs.removal = a
         dialogs.rename = .init(target: a, name: "acme-site")
-        let stale = callbacks(a)
+        let stale = make()
+        #expect(stale.renamed?.id == web.id && stale.removed?.id == web.id)
+        #expect(stale.isRenaming.wrappedValue && stale.isRemoving.wrappedValue)
         // B's confirmation replaces A's.
         dialogs.removal = b
         dialogs.rename = .init(target: b, name: "acme-shop")
 
         for hostShown in [macA, macB] {
             shown = hostShown
-            stale.type("acme-site")
-            stale.dismissRename()
-            stale.dismissRemoval()
+            stale.name.wrappedValue = "acme-site"
+            stale.isRenaming.wrappedValue = false
+            stale.isRemoving.wrappedValue = false
             stale.rename()
             stale.remove()
             #expect(dialogs.rename == .init(target: b, name: "acme-shop"), "B's draft, with \(hostShown == macA ? "A" : "B") shown")
@@ -140,9 +142,11 @@ struct SpaceLifecyclePresentationTests {
         try await deliver()
         #expect(clientA.requests.isEmpty && clientB.requests.isEmpty)
 
-        // B's own callbacks edit, answer and dismiss it, and only on B.
-        let current = callbacks(b)
-        current.type("acme-store")
+        // B's own edit, answer and dismiss it, and only on B.
+        shown = macB
+        let current = make()
+        #expect(current.isRenaming.wrappedValue && current.isRemoving.wrappedValue)
+        current.name.wrappedValue = "acme-store"
         #expect(dialogs.rename?.name == "acme-store")
         shown = macA
         current.rename()
@@ -153,8 +157,8 @@ struct SpaceLifecyclePresentationTests {
         current.remove()
         try await deliver()
         #expect(clientA.requests.isEmpty && clientB.requests.count == 2)
-        current.dismissRename()
-        current.dismissRemoval()
+        current.isRenaming.wrappedValue = false
+        current.isRemoving.wrappedValue = false
         #expect(dialogs.rename == nil && dialogs.removal == nil)
     }
 

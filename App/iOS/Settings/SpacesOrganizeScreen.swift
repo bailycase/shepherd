@@ -18,15 +18,8 @@ struct SpacesOrganizeScreen: View {
         let host = store.settingsHost
         let mobile = host.flatMap { hosts.host($0.id) }
         let spaces = mobile.map { SpaceLifecyclePresentation.spaces(in: $0.state) } ?? []
-        // The confirmations as presented now: every callback below acts on these targets, never on whatever the shared store holds later.
-        let renamed = renaming(in: spaces, store), removed = removal(in: spaces, store)
-        let callbacks = { (space: Space?) in
-            space.map { space in
-                store.spaceDialogs.callbacks(for: SpaceLifecycleTarget(host: host?.id ?? UUID(), space: space.id), name: space.name,
-                                             shown: { store.settingsHost?.id }, send: { send($0, to: $1, store: store) })
-            }
-        }
-        let renameCallbacks = callbacks(renamed), removalCallbacks = callbacks(removed)
+        let dialogs = SpaceDialogBindings.make(dialogs: store.spaceDialogs, spaces: spaces, shown: { store.settingsHost?.id },
+                                               send: { send($0, to: $1, store: store) })
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text("Rename, hide, reorder or remove the spaces in the order \(host?.name ?? "the host") keeps them. A change shows on its Mac too.")
@@ -66,34 +59,17 @@ struct SpacesOrganizeScreen: View {
         .background(Color.sh.bgWindow)
         .navigationTitle("Organize spaces")
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
-        .alert("Rename \(renamed?.name ?? "space")",
-               isPresented: Binding(get: { renameCallbacks != nil },
-                                    set: { if !$0 { renameCallbacks?.dismissRename() } }),
-               presenting: renameCallbacks) { presented in
-            TextField("Name", text: Binding(get: { store.spaceDialogs.rename?.name ?? "" }, set: presented.type))
-            Button("Rename", action: presented.rename)
+        .alert("Rename \(dialogs.renamed?.name ?? "space")", isPresented: dialogs.isRenaming) {
+            TextField("Name", text: dialogs.name)
+            Button("Rename", action: dialogs.rename)
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog(SpaceLifecyclePresentation.removeTitle,
-                            isPresented: Binding(get: { removalCallbacks != nil },
-                                                 set: { if !$0 { removalCallbacks?.dismissRemoval() } }),
-                            titleVisibility: .visible, presenting: removed) { _ in
-            Button(SpaceLifecyclePresentation.removeButton, role: .destructive) { removalCallbacks?.remove() }
+        .confirmationDialog(SpaceLifecyclePresentation.removeTitle, isPresented: dialogs.isRemoving,
+                            titleVisibility: .visible, presenting: dialogs.removed) { _ in
+            Button(SpaceLifecyclePresentation.removeButton, role: .destructive, action: dialogs.remove)
         } message: { space in
             Text(SpaceLifecyclePresentation.removeMessage(name: space.name, threads: mobile.map { SpaceLifecyclePresentation.threads(in: $0.state, of: space) } ?? 0))
         }
-    }
-
-    /// The space waiting on Remove Space…'s answer, if the host it was opened on is the one shown and still has it.
-    private func removal(in spaces: [Space], _ store: SettingsStore) -> Space? {
-        guard let target = store.spaceDialogs.removal, target.host == store.settingsHost?.id else { return nil }
-        return spaces.first { $0.id == target.space }
-    }
-
-    /// The space being renamed, on the same terms.
-    private func renaming(in spaces: [Space], _ store: SettingsStore) -> Space? {
-        guard let target = store.spaceDialogs.rename?.target, target.host == store.settingsHost?.id else { return nil }
-        return spaces.first { $0.id == target.space }
     }
 
     /// The space's actions, as the Mac's project menu: Rename, Hide from Sidebar, its place in the order, Remove Space….

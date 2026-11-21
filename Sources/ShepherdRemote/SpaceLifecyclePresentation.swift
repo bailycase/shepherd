@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
 
@@ -120,36 +121,54 @@ public final class SpaceLifecycleDialogs {
         if removal == presented { removal = nil }
     }
 
-    /// What Organize installs on the Rename or Remove dialog it presents for `presented`. Every callback acts on that target only and
-    /// re-checks it against the pending confirmation and the host shown when it fires, so a stale dialog never touches another's
-    /// draft or confirmation and never sends. `name` is the space's current name, for Rename.
-    public struct Callbacks {
-        public let type: (String) -> Void
-        public let dismissRename: () -> Void
-        public let dismissRemoval: () -> Void
-        public let rename: () -> Void
-        public let remove: () -> Void
-    }
-
-    public func callbacks(for presented: SpaceLifecycleTarget, name: String?, shown: @escaping () -> UUID?,
-                          send: @escaping (RemoteSpaceLifecycle, SpaceLifecycleTarget) -> Void) -> Callbacks {
-        Callbacks(
-            type: { [self] in type($0, into: presented) },
-            dismissRename: { [self] in dismissRename(presented) },
-            dismissRemoval: { [self] in dismissRemoval(presented) },
-            rename: { [self] in
-                if let rename = confirmRename(presented, shown: shown()), let name,
-                   let new = SpaceLifecyclePresentation.renamed(rename.name, from: name) {
-                    send(.rename(name: new), rename.target)
-                }
-            },
-            remove: { [self] in
-                if let target = confirmRemoval(presented, shown: shown()) { send(.remove, target) }
-            })
-    }
-
     /// The host `target` is on, whatever Organize shows now; nil once the device no longer holds it. Its `client` is nil while it is offline.
     public static func host(of target: SpaceLifecycleTarget, in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { $0.id == target.host }
+    }
+}
+
+/// The Rename and Remove Space… dialogs of Organize as the view installs them: the spaces presented now, and the bindings and actions
+/// the dialogs call. `SpacesOrganizeScreen` uses this verbatim. Every one acts on the target presented when it was made and re-checks it
+/// against the pending confirmation and the host shown when it fires, so a stale dialog never touches another's draft or confirmation
+/// and never sends.
+@MainActor
+public struct SpaceDialogBindings {
+    /// The space being renamed, if the host it was opened on is the one shown and still has it.
+    public let renamed: Space?
+    /// The space waiting on Remove Space…'s answer, on the same terms.
+    public let removed: Space?
+    public let isRenaming: Binding<Bool>
+    public let isRemoving: Binding<Bool>
+    /// The name typed so far.
+    public let name: Binding<String>
+    public let rename: () -> Void
+    public let remove: () -> Void
+
+    /// `shown` is the host Organize shows when it fires; `send` carries an answer to the host its target is on.
+    public static func make(dialogs: SpaceLifecycleDialogs, spaces: [Space], shown: @escaping () -> UUID?,
+                            send: @escaping (RemoteSpaceLifecycle, SpaceLifecycleTarget) -> Void) -> SpaceDialogBindings {
+        let host = shown()
+        func presented(_ target: SpaceLifecycleTarget?) -> (target: SpaceLifecycleTarget, space: Space)? {
+            guard let target, target.host == host, let space = spaces.first(where: { $0.id == target.space }) else { return nil }
+            return (target, space)
+        }
+        let renaming = presented(dialogs.rename?.target), removing = presented(dialogs.removal)
+        return SpaceDialogBindings(
+            renamed: renaming?.space, removed: removing?.space,
+            isRenaming: Binding(get: { renaming != nil },
+                                set: { if !$0, let renaming { dialogs.dismissRename(renaming.target) } }),
+            isRemoving: Binding(get: { removing != nil },
+                                set: { if !$0, let removing { dialogs.dismissRemoval(removing.target) } }),
+            name: Binding(get: { dialogs.rename?.name ?? "" },
+                          set: { if let renaming { dialogs.type($0, into: renaming.target) } }),
+            rename: {
+                if let renaming, let rename = dialogs.confirmRename(renaming.target, shown: shown()),
+                   let name = SpaceLifecyclePresentation.renamed(rename.name, from: renaming.space.name) {
+                    send(.rename(name: name), rename.target)
+                }
+            },
+            remove: {
+                if let removing, let target = dialogs.confirmRemoval(removing.target, shown: shown()) { send(.remove, target) }
+            })
     }
 }
