@@ -162,6 +162,10 @@ extension SessionServer {
     func publicationIO<T: Sendable>(revalidate: (@Sendable () throws -> Void)? = nil,
                                     _ body: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
+            #if DEBUG
+            let backlog = revalidate == nil ? nil : publicationFileBacklog.withLock { $0 }
+            let logicalProjectFiles = backlog?.queue ?? self.logicalProjectFiles
+            #endif
             logicalProjectFiles.async {
                 guard let revalidate else { continuation.resume(with: Result { try body() }); return }
                 // Recheck after the file-queue backlog, not merely when the request was admitted.
@@ -172,6 +176,9 @@ extension SessionServer {
                     } catch { continuation.resume(throwing: error) }
                 }
             }
+            #if DEBUG
+            backlog?.didEnqueue()
+            #endif
         }
     }
 

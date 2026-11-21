@@ -96,8 +96,7 @@ struct FleetSnapshotTransferTests {
         let parent = try await a.parent()
         try parent.hello()
         _ = try parent.info(try await parent.dispatch("Fix the flaky payment test.", key: key, title: "Fix flaky payment test", host: "Mac mini"))
-        try await FleetDispatchTests.wait("the Mac mini to run the dispatched thread", timeout: timeout) { !b.dispatched.isEmpty }
-        return (parent, try #require(b.dispatched.first))
+        return (parent, try await b.runningThread(timeout: timeout))
     }
 
     static func porcelain(_ folder: URL) throws -> [String] {

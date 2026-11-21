@@ -167,6 +167,27 @@ struct FleetDispatchTests {
         /// The threads this Mac runs for other Macs.
         var dispatched: [Agent] { server.state.agents.filter { $0.dispatchedFrom != nil } }
 
+        /// The thread this Mac runs for the dispatch `id` (the only one it runs, when none is named), once its record says it runs. `dispatched`
+        /// lists the thread from the moment the dispatch is accepted, with the path its worktree will have; the folder exists only after the
+        /// worktree is built and its files are in place. Never settles on a thread of another dispatch: with several and none named, it waits
+        /// until the timeout names the problem.
+        @MainActor func runningThread(dispatch id: UUID? = nil, timeout: Duration = .seconds(60)) async throws -> Agent {
+            var running: Agent?
+            try await FleetDispatchTests.wait("\(name) to run \(id.map { "dispatch \($0)" } ?? "the one dispatched thread")", timeout: timeout) {
+                running = await server.queue.testHop {
+                    let threads = self.server.store.state.agents.filter {
+                        guard let from = $0.dispatchedFrom else { return false }
+                        return id == nil || from.dispatchID == id
+                    }
+                    guard threads.count == 1, let thread = threads.first, let own = thread.dispatchedFrom?.dispatchID,
+                          self.server.fleet?.dispatch.inbound[own]?.record.state == .running else { return nil }
+                    return thread
+                }
+                return running != nil
+            }
+            return try #require(running)
+        }
+
         func connectAsPeer(_ other: Mac) async throws -> RemoteHostClient {
             let file = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: other.peersFile)) as? [String: Any])
             let peers = try #require(file["peers"] as? [[String: Any]])

@@ -4,6 +4,9 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+#if DEBUG
+import os
+#endif
 
 public enum SessionServerError: Error, CustomStringConvertible {
     case socketPathTooLong(path: String)
@@ -929,6 +932,10 @@ public final class SessionServer: @unchecked Sendable {
     var publicationTransfers: Set<UUID> = []
     var publicationTransferQueue: [ProjectArtifactReceipt] = []
     var publicationTransferDuration = ProjectArtifactReceipt.transferSeconds
+    #if DEBUG
+    /// An isolated file backlog for publication preflight; other file work must still be able to drain.
+    let publicationFileBacklog = OSAllocatedUnfairLock<(queue: DispatchQueue, didEnqueue: @Sendable () -> Void)?>(initialState: nil)
+    #endif
     /// Test barrier after preparation, outside both state and file queues.
     var publicationBeforeCommit: (@Sendable () async -> Void)?
     /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.

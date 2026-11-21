@@ -182,6 +182,8 @@ struct ProjectChildrenTests {
         #expect(rig.host.server.state.projects.first?.interruptPending == true)
         try controller.send(.childCommandResult(id: stopID, error: nil))
         try await eventually("native stop after helpers exited") { !pi.stdin("abort").isEmpty }
+        // Every Stop of a thread also tells its children extension to stop the Bash it manages; a Pause is not the person's Stop, so it sweeps no helpers.
+        #expect(try controller.readReply() == .stopManagedBash(sweepChildren: nil))
         try await eventually("Project settled after helper ACK") {
             rig.host.server.state.projects.first?.tasks.first?.phase == .settled && rig.host.server.state.projects.first?.interruptPending == false
         }

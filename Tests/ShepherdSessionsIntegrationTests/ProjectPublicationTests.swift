@@ -91,6 +91,7 @@ struct ProjectPublicationTests {
         }
     }
 
+    #if DEBUG
     @Test(arguments: ["pause", "manual", "delete", "restart", "replacement"], [false, true])
     func delayedPublicationCannotOutliveItsNativeAuthority(_ action: String, staged: Bool) async throws {
         let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
@@ -106,15 +107,16 @@ struct ProjectPublicationTests {
                 sha256: ProjectPublicationFiles.hash(bytes), sourceIdentity: ProjectPublicationFiles.hash(Data("source.txt".utf8)))
             try await rig.host.server.publicationIO { try ProjectPublicationFiles.stage(bytes, receipt: receipt, beside: rig.host.server.store.url) }
         }
-        let entered = Locked(false), gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() }
-        rig.host.server.logicalProjectFiles.async { entered.withValue { $0 = true }; gate.wait() }
-        try await eventually("publication file queue held") { entered.current }
+        // Queue publication preflight behind a backlog without blocking the file queue that stages state changes.
+        let backlog = DispatchQueue(label: "test.publication.backlog"), queued = Locked(false)
+        backlog.suspend()
+        var held = true
+        defer { if held { backlog.resume() } }
+        rig.host.server.publicationFileBacklog.withLock { $0 = (backlog, { queued.withValue { $0 = true } }) }
         let publishing = Task { try await rig.host.server.projectPublish(task.workerAgentID,
             request: .publish(publicationID: id, sourcePath: "source.txt", artifactName: "report.txt")) }
-        try await eventually("publication admitted before source access") {
-            try await rig.host.server.enqueue { rig.host.server.publicationPending.contains(id) }
-        }
+        try await eventually("publication preflight queued behind file backlog") { queued.current }
+        #expect(try await rig.host.server.enqueue { rig.host.server.publicationPending.contains(id) })
         var mutation: Task<Void, Never>?
         switch action {
         case "pause": mutation = Task { _ = try? await rig.perform(project.id, .pause) }
@@ -133,12 +135,16 @@ struct ProjectPublicationTests {
         try await eventually("native scope revoked during held publication") {
             try await rig.host.server.enqueue { (try? rig.host.server.publicationAuthority(task.workerAgentID)) == nil }
         }
-        gate.signal()
+        rig.host.server.publicationFileBacklog.withLock { $0 = nil }
+        backlog.resume()
+        held = false
         await #expect(throws: (any Error).self) { try await publishing.value }
         await mutation?.value
         #expect(!FileManager.default.fileExists(atPath: rig.host.dir.appendingPathComponent("logical-projects/\(project.id)/report.txt").path))
         #expect(FileManager.default.fileExists(atPath: rig.host.dir.appendingPathComponent("project-publications/\(id.uuidString.lowercased())/bytes").path) == staged)
     }
+
+    #endif
 
     @Test func failedProjectPersistenceNeverAcknowledgesPublicationAndSameIDRecoversSnapshot() async throws {
         let rig = try ProjectRuntimeTests.Rig(); defer { rig.stop() }
