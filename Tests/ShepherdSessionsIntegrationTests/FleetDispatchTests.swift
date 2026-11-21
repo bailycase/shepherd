@@ -764,7 +764,7 @@ struct FleetDispatchTests {
         let parent = try await a.parent()
         try parent.hello()
         let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
-        try await eventuallyOnMain("the receiver's pi to run the dispatch") {
+        try await eventually("the receiver's pi to run the dispatch") {
             guard let thread = b.dispatched.first else { return false }
             return await b.server.enqueueValue {
                 b.server.rpcThread(forAgent: thread.id).map { $0.isServable && $0.running } == true
@@ -775,7 +775,7 @@ struct FleetDispatchTests {
         _ = try parent.info(try await parent.call {
             .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: followUp, delivery: .followUp)
         })
-        try await eventuallyOnMain("the follow-up to queue on the receiver") {
+        try await eventually("the follow-up to queue on the receiver") {
             await b.server.enqueueValue {
                 b.server.rpcThread(forAgent: thread.id)?.items.contains { $0.entry.text.contains(followUp) } == true
             }
