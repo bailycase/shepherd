@@ -407,12 +407,15 @@ private final class Corpus {
         return (sent, try await awaitReply(wire))
     }
 
-    private func awaitReply(_ wire: Wire) async throws -> Reply {
+    private func awaitReply(_ wire: Wire, recordingBytes: ((Data) -> Void)? = nil) async throws -> Reply {
         while true {
             switch await wire.next() {
             case .line(let data):
                 let object = try json(data)
-                if object["id"] != nil { return .object(object) }
+                if object["id"] != nil {
+                    recordingBytes?(data)
+                    return .object(object)
+                }
             case .closed: return .closed
             case .timeout: return .timeout
             }
@@ -534,6 +537,30 @@ private final class Corpus {
         try await spaceMCP()
         // Last, so the ids it names are numbered after every earlier step's.
         try await spaceLifecycle()
+        try await modelCatalog()
+    }
+
+    private func modelCatalog() async throws {
+        let authenticated = try await connect(capabilities: Self.bare)
+        let cases = [("listModels/authenticated", authenticated),
+                     ("listModels/before-hello", try unauthenticated()),
+                     ("listModels/before-hello-local", try Wire(unixPath: app.hostSocket))]
+        for (step, wire) in cases {
+            let before = try await snapshot()
+            let stored = try Data(contentsOf: app.scratch.stateURL)
+            let request = try NDJSON.encode(RemoteRequest.listModels(id: wire.nextID()))
+            try wire.send(request)
+            var line: Data?
+            _ = try await awaitReply(wire, recordingBytes: { line = $0 })
+            let reply = try #require(line, "\(step) must receive a reply")
+            // Wire reads through the LF delimiter and returns its payload unchanged.
+            var result = ["request.line": String(decoding: request, as: UTF8.self),
+                          "reply.line": String(decoding: reply + Data([0x0a]), as: UTF8.self),
+                          "connection.after": try await probe(wire)] as [String: Any]
+            result.merge(try await aftermath(before)) { $1 }
+            result["state.json.bytesUnchanged"] = try Data(contentsOf: app.scratch.stateURL) == stored
+            record(step, result)
+        }
     }
 
     private func recordSeed() async throws {
