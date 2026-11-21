@@ -155,7 +155,7 @@ final class RPCThreadState {
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
     /// Stop was pressed (or sent): the host cancels what the thread dispatched to other Macs.
-    var onStopRequested: (() -> Void)?
+    var onStopRequested: ((Bool) -> Void)?
     var onDiagnosticDuration: ((String, Double) -> Void)?
     var onDiagnosticActivity: ((String) -> Void)?
     var onDiagnosticActivityDetails: ((String, DiagnosticFailureDetails) -> Void)?
@@ -303,7 +303,7 @@ final class RPCThreadState {
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
-    var stopProjectChildren: ((@escaping (String?) -> Void) -> Void)?
+    var stopProjectChildren: ((Bool, @escaping (String?) -> Void) -> Void)?
     private(set) var history: [NativeThreadMessage] = []
     /// Each history row's encoded size, taken by the first snapshot that shows it (-1 until then).
     private var historyBytes: [Int] = []
@@ -1387,7 +1387,7 @@ final class RPCThreadState {
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.
-            stop { settle($0) }
+            stop(explicit: true) { settle($0) }
         case .queue(_, _, _, let action):
             perform(action, operationID: operationID, authorization: inputAuthorization, completion: completion)
         case .setModel(_, _, _, let model):

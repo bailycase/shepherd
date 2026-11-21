@@ -562,7 +562,7 @@ struct FleetDispatchTests {
         // Ordering on one socket: a Fleet request answered after hello proves the control registration landed.
         _ = try await parent.call { .fleetListHosts(id: $0, agentID: parent.agent.id) }
         a.pressStop(parent.agent.id)
-        #expect(try await parent.read() == .stopManagedBash)
+        #expect(try await parent.read() == .stopManagedBash(sweepChildren: true))
     }
 
     @Test(arguments: ["stop then close", "scoped then close", "delete", "cancel", "close"])

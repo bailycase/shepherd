@@ -250,7 +250,7 @@ struct ProjectPlacementFlowTests {
             return scope
         }
         try await r.perform(.pause)
-        guard case .projectChildren(_, scope, .stop) = try await controller.read() else { Issue.record("Owner Pause did not reach helper controller"); return }
+        guard case .projectChildren(_, scope, .stop, _) = try await controller.read() else { Issue.record("Owner Pause did not reach helper controller"); return }
         controller.client.closeConnection()
         try await eventuallyOnMain("owner retains failed remote helper Stop") {
             r.project.interruptPending && r.project.tasks.first?.executionReceipt?.ownerPaused == true
@@ -269,7 +269,7 @@ struct ProjectPlacementFlowTests {
             userTimestamp: (snapshot.messages + snapshot.provisional).last { $0.role == "user" }?.timestamp))
         guard case .error(911, "project_scope", _) = try await reconnected.read() else { Issue.record("Failed Stop reopened helper authority"); return }
         try await r.perform(.pause)
-        guard case .projectChildren(let id, scope, .stop) = try await reconnected.read() else { Issue.record("Owner skipped the unacknowledged helper Stop retry"); return }
+        guard case .projectChildren(let id, scope, .stop, _) = try await reconnected.read() else { Issue.record("Owner skipped the unacknowledged helper Stop retry"); return }
         try reconnected.client.send(.childCommandResult(id: id, error: nil))
         try await eventuallyOnMain("owner acknowledges the retried remote helper Stop") {
             !r.project.interruptPending && r.project.tasks.first?.executionReceipt?.helpersStopped == true

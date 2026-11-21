@@ -112,6 +112,43 @@ struct ChildProcessLifecycleTests {
         try await survivesSweepWindow(escaped, "finishing the resumed attempt")
     }
 
+    @Test func workflowDeadlineStopsTheChildButLeavesItsEscapedJobUntilThreadClose() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let escaped = try await job("wren", in: pi, prompt: "workflow orphan job wren deadline")
+        let ended = try await pi.settled("the workflow deadline to stop its child") {
+            $0.subagents?.contains { $0.name == "wren" && $0.state == "stopped" } == true
+        }
+        #expect(ended.messages.contains { $0.toolName == "shepherd_workflow" && $0.blocks.contains { $0.text.contains("Workflow deadline exceeded") } })
+        try await survivesSweepWindow(escaped, "the workflow deadline")
+        try await pi.host.server.deleteAgent(pi.agent.agent.id)
+        #expect(!escaped.isAlive)
+    }
+
+    @Test func workflowChildFailureStopsTheSiblingButLeavesItsEscapedJobAlive() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let sibling = try await job("wren", in: pi, prompt: "workflow orphan job wren sibling")
+        try Data().write(to: pi.project.appendingPathComponent("robin.finish"))
+        let ended = try await pi.settled("the failed child to stop its sibling") { snapshot in
+            snapshot.subagents?.contains { $0.name == "robin" && $0.state == "failed" } == true &&
+            snapshot.subagents?.contains { $0.name == "wren" && $0.state == "stopped" } == true
+        }
+        #expect(ended.messages.contains { $0.toolName == "shepherd_workflow" && $0.blocks.contains { $0.text.contains("Child robin failed") } })
+        try await survivesSweepWindow(sibling, "a sibling's failure")
+    }
+
+    @Test func explicitWorkflowCancelSweepsTheChildsEscapedJob() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let escaped = try await job("wren", in: pi, prompt: "workflow orphan job wren cancel")
+        try Data().write(to: pi.project.appendingPathComponent("wren.finish"))
+        _ = try await pi.settled("the workflow cancel tool to return") {
+            $0.subagents?.contains { $0.name == "wren" && $0.state == "stopped" } == true
+        }
+        try await eventually("the cancelled workflow child's job to exit", timeout: .seconds(8)) { !escaped.isAlive }
+    }
+
     @Test func parentStopSweepsOnlyTheWorkflowChildItAborts() async throws {
         let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
         defer { pi.stop() }
@@ -121,7 +158,21 @@ struct ChildProcessLifecycleTests {
         let busy = try await pi.snapshot("the parent to wait on its workflow") { $0.running && $0.subagents?.contains { $0.name == "wren" } == true }
         #expect(try await pi.request(.abort(expectedSessionID: busy.piSessionID, generation: busy.generation, operationID: UUID())).failureCode == nil)
         try await eventually("the aborted workflow child's job to exit", timeout: .seconds(8)) { !workflow.isAlive }
-        #expect(background.isAlive)
+        try await survivesSweepWindow(background, "Stop aborted the waiting workflow")
+    }
+
+    @Test func parentStopAbortsTheCLIChildAndSweepsItsRelayedBashJob() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), nativeChildren: true)
+        defer { pi.stop() }
+        let escaped = try await job("wren", in: pi, prompt: "cli orphan job wren")
+        let busy = try await pi.snapshot("the parent to wait on its CLI child") {
+            $0.running && $0.subagents?.contains { $0.role == "Pi subprocess" } == true
+        }
+        #expect(try await pi.request(.abort(expectedSessionID: busy.piSessionID, generation: busy.generation, operationID: UUID())).failureCode == nil)
+        _ = try await pi.settled("the aborted CLI child to stop") {
+            $0.subagents?.contains { $0.role == "Pi subprocess" && $0.state == "stopped" } == true
+        }
+        try await eventually("the aborted CLI child's relayed Bash job to exit", timeout: .seconds(8)) { !escaped.isAlive }
     }
 
     @Test func sweepSignalRejectsAStalePIDVersion() async throws {

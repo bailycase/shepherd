@@ -24,9 +24,10 @@
     `SHEPHERD_INSTRUCTIONS_DIR` (where the instructions extension reads Settings ▸ Instructions'
     `AGENTS.md` and `APPEND_SYSTEM.md`), and `SHEPHERD_OWNED_THREAD`, a random marker per thread pi
     launch used to find processes that left tracked groups. Managed Bash adds `SHEPHERD_OWNED_BASH`
-    per call. A subagent inherits the thread marker and gets one Bash scope per launch attempt,
-    which its parent asks the host to sweep when the subagent is cancelled. User hooks and terminal tabs
-    get neither marker.
+    per call. A subagent inherits the thread marker and gets one Bash scope per launch attempt.
+    Only an explicit child or workflow cancel, or a Stop that aborts the child, requests a sweep of
+    that attempt. A child exit, pause, deadline or other system stop leaves escaped jobs for thread
+    teardown. User hooks and terminal tabs get neither marker.
   - By the launcher (`<support>/pi/bin/pi`), after setting aside every `PI_*`, `JITI_*`, `NODE_*`
     and `OPENSSL_CONF` it was started with under `_SHEPHERD_STASH_<name>` (listed in
     `_SHEPHERD_STASH_NAMES`, and put back for pi's shell commands by `restore-env.sh`):
