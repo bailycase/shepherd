@@ -135,8 +135,7 @@ extension SessionServer {
                             }
                             if case .success(let value) = fitted, let snapshot = value.thread {
                                 guard let thread = self.rpcThread(forAgent: assignment.reservedWorkerID), thread.isServable,
-                                      thread.piSessionID == snapshot.piSessionID, thread.generation == snapshot.generation,
-                                      !self.projectScopeWasTakenOver(self.projectChildScope(existing)) else {
+                                      thread.piSessionID == snapshot.piSessionID, thread.generation == snapshot.generation else {
                                     completion(.failure(LogicalProjectsError("stale_execution", "The original executor cannot provide the exact native worker source."))); return
                                 }
                             }

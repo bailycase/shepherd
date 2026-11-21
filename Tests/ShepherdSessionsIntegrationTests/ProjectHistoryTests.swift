@@ -379,25 +379,20 @@ struct ProjectHistoryTests {
         try await worker.historySettled()
         let snapshot = try await worker.snapshot()
         let receipt = try #require(rig.receipt(assignment))
-        let expected = ProjectExecutionResult(receipt: receipt, thread: snapshot, workerTakenOver: false)
-        let expectedFrame = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: expected))
-        try #require(expectedFrame.count < NDJSON.maxPayloadBytes)
-        let reply = try await client.projectExecution(.worker(key: assignment.key))
-        #expect(try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: reply)) == expectedFrame)
-
-        let scope = try await rig.host.server.enqueue {
-            let scope = try #require(rig.host.server.projectChildScope(receipt))
-            rig.host.server.projectChildTakenOver.insert(scope)
-            return scope
-        }
-        do {
-            _ = try await client.projectExecution(.worker(key: assignment.key))
-            Issue.record("A taken-over worker must not provide an exact proof")
-        } catch RemoteHostClientError.rejected(let code, _) {
-            #expect(code == "stale_execution")
+        let scope = try await rig.host.server.enqueue { try #require(rig.host.server.projectChildScope(receipt)) }
+        for takenOver in [false, true] {
+            if takenOver {
+                try await rig.host.server.enqueue { _ = rig.host.server.projectChildTakenOver.insert(scope) }
+            }
+            // Nightly's .worker and the unchanged .snapshot use the same snapshot reply.
+            let nightly = try await client.projectExecution(.snapshot(key: assignment.key, watch: false))
+            try #require(nightly.thread != nil && nightly.workerTakenOver == takenOver)
+            let expectedFrame = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: nightly))
+            try #require(expectedFrame.count < NDJSON.maxPayloadBytes)
+            let reply = try await client.projectExecution(.worker(key: assignment.key))
+            #expect(try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: reply)) == expectedFrame)
         }
         try await worker.thread { thread in
-            _ = rig.host.server.projectChildTakenOver.remove(scope)
             #expect(thread.session.send(.newSession))
         }
         _ = try await worker.snapshot("worker replaced its native session") {
@@ -454,14 +449,19 @@ struct ProjectHistoryTests {
         let full = try await worker.snapshot()
         var unclipped = nativeSource
         unclipped.thread = full
-        let clock = ContinuousClock()
-        let start = clock.now
         let fullBytes = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: unclipped)).count - 1
-        let fullTime = start.duration(to: clock.now)
-        let proofStart = clock.now
         let proofBytes = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: nativeSource)).count - 1
-        print("Exact worker reply sizing: full \(fullBytes) B in \(fullTime), proof \(proofBytes) B in \(proofStart.duration(to: clock.now))")
         #expect(fullBytes > NDJSON.maxPayloadBytes && proofBytes <= NDJSON.maxPayloadBytes)
+
+        try await rig.host.server.enqueue {
+            let scope = try #require(rig.host.server.projectChildScope(nativeSource.receipt))
+            _ = rig.host.server.projectChildTakenOver.insert(scope)
+        }
+        let takenOver = try await client.projectExecution(.worker(key: exact.key))
+        #expect(takenOver.workerTakenOver == true && takenOver.receipt == nativeSource.receipt)
+        let takenOverProof = try #require(takenOver.thread)
+        #expect(takenOverProof.piSessionID == proof.piSessionID && takenOverProof.generation == proof.generation)
+        #expect(takenOverProof.clipped && takenOverProof.clips?.history == true && takenOverProof.messages.isEmpty && takenOverProof.provisional.isEmpty)
         let ownerRead = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: read)
         let page = try #require(ownerRead.resultPage), identity = try #require(page.identity)
         #expect(page.availability == .complete)
