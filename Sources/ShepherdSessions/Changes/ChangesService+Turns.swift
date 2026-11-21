@@ -47,6 +47,8 @@ final class TurnStore: @unchecked Sendable {
     private var generation = 0
     private let io = DispatchQueue(label: "shepherd.changes.turns", qos: .utility)
     private var writeScheduled = false
+    /// Installed before serving threads. Reads committed IDs without waiting for the server queue.
+    var liveAgentIDs: @Sendable () -> [AgentID] = { [] }
     /// Installed before serving threads. Called on `io`, outside the record lock.
     var onAvailabilityChanged: (@Sendable (Set<AgentID>) -> Void)?
     /// Per-instance test seam, installed before use. Runs on `io`, outside the record lock.
@@ -130,7 +132,10 @@ final class TurnStore: @unchecked Sendable {
                     }
                 }
                 records = restored
-                if let deferredPrune { pruneLocked(keeping: deferredPrune) }
+                if let deferredPrune {
+                    // The startup set can miss agents created while the file was damaged.
+                    pruneLocked(keeping: deferredPrune.union(liveAgentIDs().map(\.rawValue)))
+                }
                 if !dirty.isEmpty { scheduleWrite() }
             } else {
                 // Deleting damaged history is an explicit repair, not a request to restore it.

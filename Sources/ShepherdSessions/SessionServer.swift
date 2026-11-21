@@ -11287,6 +11287,7 @@ extension SessionServer {
         changes.agentName = { [weak self] agentID in
             self?.state.agents.first { $0.id == agentID }?.name
         }
+        changes.turnStore.liveAgentIDs = { [weak self] in self?.state.agents.map(\.id) ?? [] }
         changes.onTurnsChanged = { [weak self] agentID, _ in
             self?.queue.async { [weak self] in
                 guard let self else { return }
