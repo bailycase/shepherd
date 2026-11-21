@@ -21,12 +21,17 @@ struct ComposerSubmissionTests {
         var whenRefreshHeld: (() -> Void)?
         var whenSendHeld: (() -> Void)?
         var sends = 0
-        let snapshot = NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false,
-                                            supportedActions: ["send", "sendImages"], dialogsSupported: true, dialogs: [],
+        var lastSend: (text: String, images: [NativeImage]?)?
+        let snapshot: NativeThreadSnapshot
+
+        init(supportedActions: [String] = ["send", "sendImages"]) {
+            snapshot = NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false,
+                                            supportedActions: supportedActions, dialogsSupported: true, dialogs: [],
                                             messages: [], provisional: [], clipped: false)
+        }
 
         func request(_ request: NativeThreadRequest) async throws -> NativeThreadResult {
-            guard case .send = request else {
+            guard case .send(_, _, let id, let text, _, let images, _, _, _) = request else {
                 if holdRefresh, sends > 0 {
                     holdRefresh = false
                     await withCheckedContinuation { refreshHold = $0; whenRefreshHeld?() }
@@ -34,13 +39,12 @@ struct ComposerSubmissionTests {
                 return .snapshot(value: snapshot)
             }
             sends += 1
+            lastSend = (text, images)
             if holding { await withCheckedContinuation { hold = $0; whenSendHeld?() } }
             switch answer {
             case .refuse: return .failure(code: "refused", message: "The agent refused it.")
             case .unknown: throw CancellationError()
-            case .accept:
-                guard case .send(_, _, let id, _, _, _, _, _, _) = request else { return .snapshot(value: snapshot) }
-                return .accepted(operationID: id)
+            case .accept: return .accepted(operationID: id)
             }
         }
     }
@@ -117,6 +121,24 @@ struct ComposerSubmissionTests {
         #expect(store.draft == "look at this")
         #expect(input.attachments.items.map(\.name) == ["a.png"])
         #expect(store.submissions.isEmpty)
+    }
+
+    @Test func sendingTextKeepsImagesWhenTheHostDoesNotSupportThem() async throws {
+        let host = Host(supportedActions: ["send"])
+        host.answer = .accept
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("shot.png", image("shot.png"))])
+        let attachments = input.attachments
+        store.draft = "send these words"
+
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
+        let sent = try #require(host.lastSend)
+        #expect(sent.text == "send these words")
+        #expect(sent.images == nil)
+        #expect(store.draft.isEmpty)
+        #expect(input.attachments == attachments)
     }
 
     @Test func anUnknownOutcomeIsNeverRestoredOnlyDiscardedHere() async {
