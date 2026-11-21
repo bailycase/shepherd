@@ -505,11 +505,19 @@ private final class ScrollFixture {
             isARepeat: false, keyCode: 121) else { throw ValidationError("could not make Page Down event") }
         trace.mark("fixture.pageDown")
         trace.observe(event, responder: scroll)
+        // AppKit routes the action through the key window. Keep this test offscreen: feed the
+        // event to the monitor's handler and use the clip's measured page instead.
         let previous = scroll.contentView.bounds.minY
-        scroll.scrollPageDown(nil)
+        try self.scroll(to: previous + scroll.contentView.bounds.height, wheel: false)
         await trace.advance()
         try requireIntent(.touching)
-        try await trace.waitFor("AppKit's page down to move the viewport") { scroll.contentView.bounds.minY > previous }
+        guard trace.latest.map({ ($0.offset ?? previous) > previous }) == true else {
+            throw ValidationError("paging fixture did not move the viewport")
+        }
+        try phase(from: .idle, to: .animating)
+        await trace.advance()
+        try requireIntent(.coasting)
+        try phase(from: .animating, to: .idle)
         await trace.settle()
         try requireIntent(.idle)
 
