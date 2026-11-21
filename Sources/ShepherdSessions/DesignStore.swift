@@ -873,7 +873,8 @@ public final class DesignStore: @unchecked Sendable {
             return (file, bytes)
         } catch {
             let reason = (error as? NotesProblem)?.rawValue ?? "the file could not be read"
-            let warning = "Thread notes at \(url.path) are unavailable because \(reason). Check file access, restore from a backup or repair its JSON."
+            let warning = "Thread notes at \(url.path) on the host are unavailable because \(reason). "
+                + "Fix access, restore a backup, or move or delete the file to start with no notes. Then refresh the design."
             if damagedNotes.insert(url).inserted { Self.notesLog.error("\(warning, privacy: .public)") }
             throw DesignStoreError.threadNotesUnavailable(warning)
         }
@@ -918,6 +919,9 @@ public final class DesignStore: @unchecked Sendable {
                 let renamed = original == nil ? renamex_np(staged.path, url.path, UInt32(RENAME_EXCL)) : rename(staged.path, url.path)
                 guard renamed == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
                 return true
+            } catch DesignStoreError.threadNotesUnavailable(let warning) {
+                // The read already logged this damage once.
+                throw DesignStoreError.threadNotesUnavailable(warning)
             } catch {
                 Self.notesLog.error("Thread note write failed for design \(id.rawValue, privacy: .public): \(String(describing: error), privacy: .public)")
                 if let error = error as? DesignStoreError { throw error }

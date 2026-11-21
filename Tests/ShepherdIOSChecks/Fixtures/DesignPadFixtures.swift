@@ -22,6 +22,14 @@ extension FixtureCatalog {
             FixtureScreen(name: "design-pad", hosts: DesignPadFixtures.hosts(),
                           routes: [.padDesign(.list), .padDesign(.design(design))],
                           prepare: { app in await DesignPadFixtures.settle(app) }),
+            FixtureScreen(name: "design-pad-damaged-notes", hosts: DesignPadFixtures.hosts(damagedNotes: true),
+                          routes: [.padDesign(.list), .padDesign(.design(design))], prepare: { app in
+                let canvas = await DesignPadFixtures.settle(app)
+                guard canvas.snapshot?.threadNotesWarning != nil else {
+                    FixtureCheck.fail("No thread notes warning on the canvas")
+                }
+                await DesignsFixtures.checkNotesRefresh()
+            }),
             FixtureScreen(name: "design-pad-origins-damaged", hosts: DesignPadFixtures.hosts(damagedOrigins: true),
                           routes: [.padDesign(.list), .padDesign(.design(design))],
                           prepare: { app in await DesignPadFixtures.settle(app) }),
@@ -100,7 +108,7 @@ enum DesignPadFixtures {
     /// The fixture hosts with Studio serving the design: its Design tool on, the design and its
     /// agent in its state, the agent's chat among its threads. `split` gives the agent the reply
     /// iPadSplitView draws.
-    static func hosts(split: Bool = false, large: Bool = false, damagedOrigins: Bool = false) -> [FixtureHostData] {
+    static func hosts(split: Bool = false, large: Bool = false, damagedOrigins: Bool = false, damagedNotes: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
         let design = Design(id: designID, name: "Checkout funnel dashboard", agentID: agentID,
@@ -114,7 +122,9 @@ enum DesignPadFixtures {
         hosts[index].state.designs = [design, settings]
         let thread = split ? splitThread() : chat()
         hosts[index].threads[agentID] = damagedOrigins ? thread.withDamagedOrigins() : thread
-        hosts[index].designs = FixtureDesigns(designs: [checkout(design), empty(settings)], systems: [acmeWeb])
+        var item = checkout(design)
+        if damagedNotes { item.threadNotesWarning = FixtureDesigns.notesWarning }
+        hosts[index].designs = FixtureDesigns(designs: [item, empty(settings)], systems: [acmeWeb])
         if large {
             let wall = Design(id: largeID, name: "Every checkout screen", systemNamespace: "acme-web", createdAt: FixtureData.start,
                               lastActiveAt: FixtureData.start, boardCount: largeColumns * largeRows)
@@ -335,7 +345,11 @@ struct FixtureDesigns: Sendable {
         /// Files under `project/` by path (boards and anything they load), never canvas.json.
         var files: [String: Data]
         var comments: DesignComments
+        var threadNotesWarning: String? = nil
     }
+
+    static let notesWarning = "Thread notes at /Users/dev/Library/Application Support/Shepherd/designs/design-checkout/thread-notes.json on the host are unavailable because the file could not be read. "
+        + "Fix access, restore a backup, or move or delete the file to start with no notes. Then refresh the design."
 
     struct Refusal: Error {
         var code: String
@@ -433,7 +447,8 @@ struct FixtureDesigns: Sendable {
     private func snapshot(_ item: Item) -> DesignSnapshot {
         var boards: [DesignPath: String] = [:]
         for path in item.index.boards.keys { if let data = item.files[path.rawValue] { boards[path] = Self.sha256(data) } }
-        return DesignSnapshot(designID: item.design.id, revision: item.revision, index: item.index, boards: boards)
+        return DesignSnapshot(designID: item.design.id, revision: item.revision, index: item.index, boards: boards,
+                              threadNotesWarning: item.threadNotesWarning)
     }
 
     private func infos(_ item: Item) -> [RemoteDesignFileInfo] {

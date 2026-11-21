@@ -57,8 +57,8 @@ struct DesignThreadNotesStoreTests {
             }
             try input.write(to: file)
             let warning = try await store.snapshot(Self.id).threadNotesWarning
-            #expect(warning?.contains(file.path) == true)
-            #expect(warning?.contains("restore from a backup or repair its JSON") == true)
+            #expect(warning?.contains("\(file.path) on the host") == true)
+            #expect(warning?.contains("restore a backup, or move or delete the file to start with no notes") == true)
             if shape == "invalid UTF-8" { #expect(warning?.contains("not UTF-8") == true) }
             #expect(try await Self.unavailable { try await store.threadNotes(Self.id) } != nil)
             #expect(try await Self.unavailable { try await store.removeThreadNote(Self.id, noteID: Self.kept.id) } != nil)
@@ -75,6 +75,9 @@ struct DesignThreadNotesStoreTests {
             } else {
                 try FileManager.default.createSymbolicLink(at: file, withDestinationURL: file.appendingPathExtension("absent"))
             }
+            let warning = try await store.snapshot(Self.id).threadNotesWarning
+            #expect(warning == "Thread notes at \(file.path) on the host are unavailable because the file could not be read. "
+                + "Fix access, restore a backup, or move or delete the file to start with no notes. Then refresh the design.")
             #expect(try await Self.unavailable { try await store.threadNotes(Self.id) } != nil)
             #expect(try await Self.unavailable { try await store.addThreadNote(Self.id, Self.added) } != nil)
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
@@ -82,7 +85,7 @@ struct DesignThreadNotesStoreTests {
         }
     }
 
-    @Test(arguments: ["repair", "restore", "delete"])
+    @Test(arguments: ["repair", "restore", "move", "delete"])
     func recoversWithoutRestart(how: String) async throws {
         try await Self.withStore { store, file in
             try Data("broken".utf8).write(to: file)
@@ -90,9 +93,10 @@ struct DesignThreadNotesStoreTests {
             let backup = try Self.bytes([Self.kept])
             if how == "repair" { try backup.write(to: file) }
             if how == "restore" { try backup.write(to: file, options: .atomic) }
+            if how == "move" { try FileManager.default.moveItem(at: file, to: file.appendingPathExtension("backup")) }
             if how == "delete" { try FileManager.default.removeItem(at: file) }
             #expect(try await store.snapshot(Self.id).threadNotesWarning == nil)
-            let recovered = how == "delete" ? [] : [Self.kept]
+            let recovered = how == "move" || how == "delete" ? [] : [Self.kept]
             #expect(try await store.threadNotes(Self.id) == recovered)
             _ = try await store.addThreadNote(Self.id, Self.added)
             #expect(try await store.threadNotes(Self.id) == recovered + [Self.added])

@@ -6181,18 +6181,21 @@ public final class SessionServer: @unchecked Sendable {
                                     revision: grant.revision, text: words, createdAt: now)
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
-            defer { server.designNotesChanged(designID) }
             do {
                 let kept = try await server.designs.addThreadNote(designID, note)
+                server.designNotesChanged(designID)
                 return .designNote(id: id, note: kept)
-            } catch {
-                // A refused write did not leave a note and must not spend the retry's rate budget.
-                await server.enqueueValue {
-                    if let index = server.noteTimes[agentID]?.firstIndex(of: now) {
-                        server.noteTimes[agentID]?.remove(at: index)
+            } catch let error as DesignStoreError {
+                if case .threadNotesUnavailable = error {
+                    // The user can repair the file and retry on this thread without waiting.
+                    await server.enqueueValue {
+                        if let index = server.noteTimes[agentID]?.firstIndex(of: now) {
+                            server.noteTimes[agentID]?.remove(at: index)
+                        }
                     }
                 }
-                throw error
+                // Recovery details belong on the canvas, not in the implementing agent's tool output.
+                return .error(id: id, code: error.code, message: "Thread notes can't be saved right now. Tell the user to open the design.")
             }
         }
     }

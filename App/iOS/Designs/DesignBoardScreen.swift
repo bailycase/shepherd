@@ -25,6 +25,7 @@ struct DesignBoardScreen: View {
     @Environment(ThreadStores.self) private var threads
     @State private var model: DesignBoardModel?
     @State private var watchToken = UUID()
+    @State private var showingNotesRecovery = false
 
     var body: some View {
         Group {
@@ -37,8 +38,15 @@ struct DesignBoardScreen: View {
         .safeAreaInset(edge: .top) {
             let designs = MobileDesigns.of(hosts)
             if let warning = designs.indexes[ref]?.snapshot.threadNotesWarning {
-                SHBanner(.failed, title: "Thread notes unavailable", message: warning, stacked: true) {
-                    Button("Refresh") { Task { await designs.sync(ref) } }.buttonStyle(.sh(.secondary))
+                SHBanner(.failed, title: "Thread notes unavailable",
+                         message: showingNotesRecovery ? warning : nil, stacked: showingNotesRecovery) {
+                    if showingNotesRecovery {
+                        Button("Refresh") { Task { await designs.sync(ref) } }.buttonStyle(.sh(.secondary))
+                    }
+                    Button(showingNotesRecovery ? "Hide details" : "Details") {
+                        showingNotesRecovery.toggle()
+                    }
+                    .buttonStyle(.sh(.secondary))
                 }
                 .padding(.horizontal, MobileDesignLayout.gutter)
             }
