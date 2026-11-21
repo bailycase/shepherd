@@ -270,9 +270,9 @@ extension ShepherdViewModel {
     func refreshProjectHosts() {
         let options = remoteHosts.projectHostOptions
         guard let host = localHost, host.phase == .connected, let client = host.browserClient else { return }
-        let sent = (ObjectIdentifier(client), options)
-        guard sentProjectHosts.map({ $0.0 != sent.0 || $0.1 != sent.1 }) ?? true else { return }
-        sentProjectHosts = sent
+        guard sentProjectHostsClient !== client || sentProjectHosts != options else { return }
+        sentProjectHostsClient = client
+        sentProjectHosts = options
         Task { [weak self] in
             do { try await client.projectExecutors(.hosts(options)) } catch { self?.sentProjectHosts = nil }
         }

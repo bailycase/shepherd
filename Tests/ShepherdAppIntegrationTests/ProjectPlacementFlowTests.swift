@@ -419,21 +419,31 @@ struct ProjectPlacementFlowTests {
     }
 
     /// The cause of `ownerRestartReconcilesOfflineResultsWithoutDispatchingTheFourthTask` timing out about half the time:
-    /// `refreshProjectHosts` remembers what it sent as `ObjectIdentifier(client)`. A restarted host's new client is often
-    /// allocated at the freed old client's address, so the memo matches, nothing is sent, and the new host never learns
-    /// which Macs the app reaches. Here the host forgets what it was told while the app's memo still names its client,
-    /// the state an address-reusing client produces.
-    @Test func appResendsReachableHostsToAHostThatForgotThem() async throws {
+    /// `refreshProjectHosts` remembered what it sent as `ObjectIdentifier(client)`, and a reconnect's new client is often
+    /// allocated at the freed old client's address, so nothing was sent and the new host never learned which Macs the app
+    /// reaches. The host forgets them when the app's link drops; every reconnect must tell it again.
+    @Test func appResendsReachableHostsToAHostThatForgotThemAfterEveryReconnect() async throws {
+        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let server = r.owner.server
+        let local = try #require(r.owner.vm.localHost)
+        for _ in 0..<10 {
+            try await server.enqueue { @Sendable in server.applyProjectExecutors(.hosts([])) }
+            r.owner.remoteHosts.reconnect(id: local.id)
+            try await r.owner.hostReaches(r.host)
+        }
+    }
+
+    /// The dedupe's purpose: the same client with the same hosts is not told again.
+    @Test func appDoesNotResendReachableHostsOnAnUnchangedConnection() async throws {
         let r = try Rig(); defer { r.stop() }; try await r.start()
         let server = r.owner.server
         try await server.enqueue { @Sendable in server.applyProjectExecutors(.hosts([])) }
-        #expect(await server.appProjectExecutors().isEmpty)
         r.owner.vm.refreshProjectHosts()
-        try await withKnownIssue("bug: refreshProjectHosts skips the send when a new client has the old client's ObjectIdentifier") {
-            try await eventuallyAsync("the host reaches the executor again", timeout: .seconds(2)) {
-                await server.appProjectExecutors().contains { $0.reference == r.host }
-            }
-        }
+        // A request after the refresh's, on the same link: the host has handled a resend by the time this returns.
+        await Task.yield()
+        let client = try #require(r.owner.vm.localHost?.browserClient)
+        try await client.projectExecutors(.changed(host: .local, key: nil))
+        #expect(await server.appProjectExecutors().isEmpty)
     }
 
     @Test func remoteViewerUsesOwnersIdentityAndLostExecuteReplyReconcilesTheSameReservation() async throws {
