@@ -43,9 +43,11 @@ struct MessageSpecTests {
         for kind in [RemoteRequest.Kind.drain, .hostUpdateGate, .focusThread, .projectExecutors, .startThread, .spaceAction, .projectRequest] {
             guard case .localOnly = access(kind) else { Issue.record("\(kind) is local only"); continue }
         }
+        // A paired device or this Mac's own app may change its host's spaces, a Mac in the fleet may not.
+        if case .notFleetPeer = access(.spaceLifecycle) {} else { Issue.record("spaceLifecycle is for a device, never a fleet peer") }
         // Everything else is served to any authenticated connection.
         let special: Set<RemoteRequest.Kind> = [.fleetIdentify, .fleetPair, .fleetPairDevice, .hello, .fleetPeerAnswer,
-                                                .drain, .hostUpdateGate, .focusThread, .projectExecutors, .startThread, .spaceAction, .projectRequest]
+                                                .drain, .hostUpdateGate, .focusThread, .projectExecutors, .startThread, .spaceAction, .spaceLifecycle, .projectRequest]
         for kind in Set(RemoteRequest.Kind.allCases).subtracting(special) { #expect(access(kind) == .authenticated) }
     }
 
@@ -60,6 +62,8 @@ struct MessageSpecTests {
         }
         #expect(requirement(.logicalProjects)?.capability.rawValue == "logicalProjects.v1")
         #expect(requirement(.logicalProjects)?.negotiated == false)
+        #expect(requirement(.spaceLifecycle)?.capability.rawValue == "spaces.lifecycle.v1")
+        #expect(requirement(.spaceLifecycle)?.negotiated == false)
         #expect(requirement(.hostSettings)?.capability == .hostSettings)
         #expect(requirement(.hostSettings)?.negotiated == false)
     }

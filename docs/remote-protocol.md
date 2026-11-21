@@ -28,7 +28,12 @@
   base, hide, reorder or remove a space), `projectRequest` (register, edit or add a child space,
   answered `spaceAdded`) and `startThread` (a thread with a fork's session, an
   existing checkout, a new worktree on an existing branch, its own folder, a name or an id; the
-  host adds a new worktree's thread before it makes the checkout); TCP clients are refused. An app that lists
+  host adds a new worktree's thread before it makes the checkout); TCP clients are refused.
+  A paired device (never a Mac in the fleet, which is refused `forbidden`) may send `spaceLifecycle`
+  (`spaces.lifecycle.v1`): rename, hide, reorder or remove, and only those, one of its own host's
+  shown spaces. A reserved, unknown or another host's space is refused `no_such_space`, as is a
+  `move` before one. Remove forgets the space in Shepherd's record and stops its agents; no folder or
+  file is touched. An app that lists
   `local.threads.v1` in hello shows the host's threads as its own and posts their turn and question
   banners, so the host doesn't while it is connected. Agent queries over the local socket judge a
   worktree's loss by the same rule (`GitWorktree.checkedUnreconciledWork(otherBranchesKeep:)`).
