@@ -465,6 +465,9 @@ final class ShepherdViewModel {
     /// This Mac's automations' runs as the run log kept them, oldest first (read for the
     /// Automations page).
     var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// Why a host could not give an automation's runs (its run history file is damaged), by
+    /// automation, This Mac's under `PageHost.localID`. The Automations page shows it.
+    var automationRunProblems: [AutomationKey: String] = [:]
     /// Each triggered automation's trigger state (paused, pending events, next run), and the
     /// host-wide Pause all triggers switch.
     var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]
@@ -1212,8 +1215,9 @@ final class ShepherdViewModel {
             openDestination(.designs)
         }
         // The host's push removed the selected agent (deleted here first, then restated by an
-        // earlier push, or deleted elsewhere): nothing points at it.
-        if selectedAgentID != nil, selectedAgent == nil { selectedAgentID = nil }
+        // earlier push, or deleted elsewhere): nothing points at it. Not while Run Now is replacing
+        // it: the new run takes its place, and the fallback below waits for that.
+        if selectedAgentID != nil, selectedAgent == nil, selectedAgentID != replacingRun { selectedAgentID = nil }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }
         // With nothing on screen (the shown agent went away, or the app just launched), the

@@ -13,11 +13,25 @@ import SwiftUI
 /// graph, its state and its surfaces, and takes no part in drawing, hit-testing, key equivalents
 /// or accessibility. Switching agents flips two hosts' `isHidden`, never a remount.
 struct AgentLayoutDeck: View, Equatable {
-    var vm: ShepherdViewModel
+    private let vm: ShepherdViewModel?
     /// Every mounted layout's values, in the stable (space, tab) order.
     let models: [AgentLayoutModel]
     /// Hidden terminal layouts keep this size until a live resize or wide side pane ends.
     let frozenSize: CGSize?
+
+    init(vm: ShepherdViewModel, models: [AgentLayoutModel], frozenSize: CGSize?) {
+        self.vm = vm
+        self.models = models
+        self.frozenSize = frozenSize
+    }
+
+    #if DEBUG
+    init(scrollFixtureModels: [AgentLayoutModel]) {
+        vm = nil
+        models = scrollFixtureModels
+        frozenSize = nil
+    }
+    #endif
 
     static func == (a: AgentLayoutDeck, b: AgentLayoutDeck) -> Bool {
         a.vm === b.vm && a.models == b.models && a.frozenSize == b.frozenSize
@@ -32,9 +46,9 @@ struct AgentLayoutDeck: View, Equatable {
     /// hosting view inside a SwiftUI hierarchy inherits it, and follows its changes.
     @MainActor @Observable final class Page {
         var model: AgentLayoutModel
-        @ObservationIgnored let vm: ShepherdViewModel
+        @ObservationIgnored let vm: ShepherdViewModel?
 
-        init(vm: ShepherdViewModel, model: AgentLayoutModel) {
+        init(vm: ShepherdViewModel?, model: AgentLayoutModel) {
             self.vm = vm
             self.model = model
         }
@@ -45,8 +59,7 @@ struct AgentLayoutDeck: View, Equatable {
 
         var body: some View {
             let model = page.model
-            AgentLayoutView(vm: page.vm, model: model)
-                .equatable()
+            content(model)
                 // Nor draw its spinners and glows where no one sees them.
                 .environment(\.shMotionPaused, !model.isVisible)
                 // Nor take the window's drag: a hidden thread lays out nothing for it, so its two changes (the start and the end) would
@@ -55,6 +68,16 @@ struct AgentLayoutDeck: View, Equatable {
                 // Nor run a spring there: a hidden layout is laid out again on every frame of one (the
                 // composer's ring letting go of focus as the layout is hidden), for no one.
                 .transaction { if !model.isVisible { $0.disablesAnimations = true } }
+        }
+
+        @ViewBuilder private func content(_ model: AgentLayoutModel) -> some View {
+            if let vm = page.vm {
+                AgentLayoutView(vm: vm, model: model).equatable()
+            } else {
+                #if DEBUG
+                if let fixturePage = ScrollTrace.current?.deckPage { fixturePage(model) }
+                #endif
+            }
         }
     }
 
@@ -103,7 +126,7 @@ struct AgentLayoutDeck: View, Equatable {
     }
 
     struct Deck: NSViewRepresentable {
-        var vm: ShepherdViewModel
+        let vm: ShepherdViewModel?
         let models: [AgentLayoutModel]
         let frozenSize: CGSize?
 
@@ -128,7 +151,7 @@ struct AgentLayoutDeck: View, Equatable {
                         // A thread whose rows were let go (`NativeThreadStores`) builds them in this pass, not a later one: left
                         // to a later pass, the running app committed a frame with the layout and an empty transcript for as
                         // long as the rows took to build. A layout that kept its rows has none to build and takes its usual pass.
-                        if let thread = model.thread, vm.threadStores.existing(for: thread.agentID)?.transcriptReleased == true {
+                        if let thread = model.thread, vm?.threadStores.existing(for: thread.agentID)?.transcriptReleased == true {
                             entry.host.layoutSubtreeIfNeeded()
                             SHRenderProbe.tick("deck.flipLayout")
                         }

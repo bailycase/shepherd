@@ -144,7 +144,9 @@ struct AutomationDetailContent: View {
 
     @ViewBuilder
     private func runs(_ detail: AutomationDetail) -> some View {
-        if !detail.runsKnown {
+        if let problem = detail.runsProblem {
+            SHBanner(.failed, title: "Run history is damaged", message: problem) { EmptyView() }
+        } else if !detail.runsKnown {
             if detail.row.abilities.readOnlyReason == nil {
                 HStack(spacing: SH.Space.s) {
                     ProgressView().progressViewStyle(.shSpinner)

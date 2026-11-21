@@ -60,6 +60,8 @@ owns the workspace first, and the scheme follows it instead. To debug that proce
 Process and pick the second `Shepherd` (or attach by its pid, which `log show --predicate
 'subsystem == "com.shepherd.app"'` prints in "host child started"). Its stderr shows in the
 app's console. Stopping the app in Xcode closes the child's stdin, so the child stops too.
+The background host also keeps its timestamped diagnostics in `host.log` in its support directory,
+with one rotated copy (`host.log.1`) and a 256 KiB cap per file.
 
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
 Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it

@@ -23,6 +23,8 @@ struct AutomationTriggersTests {
         var failures: [String] = []
         var notes: [String] = []
         var origin: String? = "acme/app"
+        /// Why the host holds runs; a start then fails as the real host's does.
+        var hold: String?
 
         func with<T>(_ body: (World) throws -> T) rethrows -> T { try lock.withLock { try body(self) } }
         func advance(_ seconds: TimeInterval) { with { $0.now = $0.now.addingTimeInterval(seconds) } }
@@ -48,6 +50,7 @@ struct AutomationTriggersTests {
             threadState: { _ in world.with { $0.thread } },
             start: { _, events in
                 try world.with { w in
+                    if let hold = w.hold { throw AutomationTriggers.SourceError(hold, permanent: false) }
                     if w.failStarts > 0 {
                         w.failStarts -= 1
                         throw AutomationTriggers.SourceError("worktree failed", permanent: false)
@@ -57,7 +60,8 @@ struct AutomationTriggersTests {
                 }
             },
             recordFailure: { _, event, message in world.with { $0.failures.append("\(event?.id ?? "-"): \(message)") } },
-            notify: { title, _ in world.with { $0.notes.append(title) } }))
+            notify: { title, _ in world.with { $0.notes.append(title) } },
+            holdReason: { _ in world.with { $0.hold } }))
         return engine
     }
 
@@ -406,6 +410,30 @@ struct AutomationTriggersTests {
         world.readError = AutomationTriggers.SourceError("offline", permanent: false)
         await engine.tick()
         #expect(await engine.status(of: world.automations[0]).pending.isEmpty)
+    }
+
+    /// Run now on a queued event while the host can't start (unreadable run history): the event stays
+    /// queued and no start is charged, so it runs once the hold lifts.
+    @Test func runningAnEventTheHostWillRefuseKeepsItRunnable() async throws {
+        let world = World()
+        world.automations = [Self.loop()]
+        let engine = await Self.engine(world)
+        await engine.tick()
+        world.advance(61)
+        world.items = [Self.labeled(1, at: world.now.addingTimeInterval(-5))]
+        world.hold = "Invalid run history JSON"
+        await engine.tick()
+        let before = await engine.status(of: world.automations[0])
+        #expect(before.pending.count == 1)
+        await #expect(throws: AutomationTriggers.SourceError.self) {
+            try await engine.runPending(world.automations[0], eventID: before.pending[0].id)
+        }
+        let after = await engine.status(of: world.automations[0])
+        #expect(after.pending == before.pending && after.runsToday == before.runsToday)
+        #expect(world.failures.isEmpty)
+        world.hold = nil
+        try await engine.runPending(world.automations[0], eventID: before.pending[0].id)
+        #expect(world.started.count == 1)
     }
 
     @Test(arguments: [0, 13]) func unlimitedConcurrencyStillHonorsTheDailyLimit(maxPerDay: Int) async {

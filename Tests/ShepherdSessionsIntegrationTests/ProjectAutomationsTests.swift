@@ -180,6 +180,29 @@ struct ProjectAutomationsTests {
         if action != "delete" { #expect(host.server.state.projects.first?.tasks.first?.phase.occupiesSlot == true) }
     }
 
+    /// Run history feeds the live-run count that gates a start, so a Project automation's run is refused too.
+    @Test func aDamagedRunHistoryRefusesAProjectAutomationRunBeforeAdmission() async throws {
+        let host = try ScratchServer()
+        host.server.setProjectsEnabled(true)
+        defer { host.stop() }
+        let id = ProjectID(), automation = AutomationID()
+        _ = try await host.server.logicalProjects(.create(projectID: id, name: "Project", goal: ""))
+        let p = try project(await host.server.logicalProjects(.automation(projectID: id, expectedRevision: 1, automationID: automation,
+            action: .create(draft: .init(name: "Watch", prompt: "Watch", cwd: host.dir.path, enabled: true)))))
+        let admitted = Locked(false)
+        host.server.onProjectAutomationRun = { _, _, _, _, _, completion in
+            admitted.withValue { $0 = true }
+            completion(.failure(LogicalProjectsError("admitted", "admission must not be reached")))
+        }
+        let url = host.dir.appendingPathComponent("automation-runs.json")
+        try Data("{".utf8).write(to: url)
+        await refusal("run_history_damaged") {
+            try await host.server.runProjectAutomation(projectID: id, expectedRevision: p.revision, automationID: automation)
+        }
+        #expect(admitted.current == false)
+        #expect(try Data(contentsOf: url) == Data("{".utf8))
+    }
+
     @Test func oversizedSettingsAreRefusedWithoutOverwritingTheProject() async throws {
         let host = try ScratchServer()
         host.server.setProjectsEnabled(true)
