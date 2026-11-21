@@ -134,6 +134,7 @@ enum ComposerImageCapture {
         private var record: UUID?
         var done = false
         private var finished = false
+        private var released = false
 
         init(store: NativeThreadStore, input: ThreadInput) {
             self.store = store
@@ -158,7 +159,10 @@ enum ComposerImageCapture {
         }
 
         /// The store has these images; a text-only send has none to release, but still ends an earlier import's error.
+        /// Once per send, at capture: an import rejected after that is newer than the send and keeps its error.
         private func release() {
+            guard !released else { return }
+            released = true
             for id in submitted { input.attachments.remove(id) }
             if input.attachments.isEmpty { input.attachments.clearError() }
         }

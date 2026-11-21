@@ -158,6 +158,33 @@ struct ComposerSubmissionTests {
         #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
         #expect(input.attachments.error == nil, "the stale error is gone once the send went through")
     }
+
+    /// The stale error goes once, when the store captures the send. An import rejected after that is newer than the send,
+    /// so the host's answer must not clear it.
+    @Test func aNewerImportErrorSurvivesTheHostAcceptingAnEarlierSend() async {
+        let host = Host()
+        host.answer = .accept
+        host.holding = true
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("old.pdf", nil)])
+        #expect(input.attachments.error != nil)
+        store.draft = "words only"
+        let send = Task { await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) }
+        // Captured: the stale error is cleared.
+        while input.attachments.error != nil {
+            await withCheckedContinuation { changed in
+                withObservationTracking { _ = input.attachments } onChange: { changed.resume() }
+            }
+        }
+        input.attachments.add([("new.pdf", nil)])
+        let rejection = input.attachments.error
+        #expect(rejection != nil && input.attachments.isEmpty)
+        host.hold?.resume()
+        #expect(await send.value)
+        #expect(input.attachments.error == rejection, "the newer rejection is still showing")
+    }
 }
 
 extension ComposerSubmissionTests {
