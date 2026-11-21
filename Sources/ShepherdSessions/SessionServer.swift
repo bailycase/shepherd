@@ -10589,12 +10589,8 @@ public final class SessionServer: @unchecked Sendable {
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
         // removes it from state before its pi is killed, so a deletion still retires. A pi no
-        // pane is bound to keeps its agent for the exits `keepsUnboundAgent` names. Fleet also
-        // needs the exit if pi served and stopped before the new thread's pane was bound.
-        let unboundDispatch = agent == nil && sessions[sessionID]?.thread?.session.launchAgentID.map { id in
-            store.state.agents.contains { $0.id == id && $0.dispatchedFrom != nil }
-        } == true
-        if let record = startRecords.removeValue(forKey: sessionID), agent != nil || record.keepsUnboundAgent || unboundDispatch {
+        // pane is bound to keeps its agent for the exits `keepsUnboundAgent` names.
+        if let record = startRecords.removeValue(forKey: sessionID), agent != nil || record.keepsUnboundAgent {
             let thread = sessions[sessionID]?.thread
             let problem = record.problem(exitCode: code, signal: thread?.session.exitSignal)
             keptStarts[sessionID] = KeptStart(problem: problem, openingPrompt: thread?.unreadOpeningPrompt)
