@@ -381,6 +381,33 @@ The first attempt read the marker directly in `onScrollGeometryChange`. Both arm
 
 Both Dev fixture runs exited 0 and wrote the frame ledger. The full validator and Phase 2 scenarios were not run as acceptance checks. No iPhone or iPad code changed or was tested. The reverted spike is [`.orchestrator/spike5.patch`](../../.orchestrator/spike5.patch). Local evidence is in `.orchestrator/spike5-measurements.log` and `.orchestrator/spike5-{off,on}.frames.json.gz`.
 
+### Slice 5 release diagnosis
+
+**M7 is case 2: SwiftUI's visible IDs are stale.** The guard has native placement evidence before the first write. It rejects that evidence because `onScrollTargetVisibilityChange` still reports the tail. The lists diverge on the move into history in frame 1, *before* the hold comes off, and do not recover when the release settles. The next turn has not arrived.
+
+The table is from the correcting spike with the `.bottom` size anchor. Frame numbers are zero-based. `T` is `stream-user`, `stream-user/reply`, `thread-bottom`, and both `user-N` and `user-N/reply` for N = 346 through 359. `H` is `user-214/reply`, `user-215`, `user-215/reply`, `user-216`, `user-216/reply`. The clip was 910 × 640 pt.
+
+| Frame | SwiftUI IDs | Native IDs intersecting clip | `rowsInView` | Offset / document, pt | Natural / held / applied history, pt | `settling` |
+| --- | --- | --- | --- | --- | --- | --- |
+| 38 | T | H | false | 38,982 / 84,933 | 78,698 / nil / 78,698 | false |
+| 39 | T | H | false | 38,982 / 84,933 | 78,698 / nil / 78,698 | false |
+| 40 | T | H | false | 38,982 / 84,933 | 78,698 / nil / 78,698 | false |
+| 41 | T | H | false | 38,982 / 84,933 | 78,698 / nil / 78,698 | false |
+| 42 | T | H | false | 38,982 / 84,933 | 78,698 / nil / 78,698 | false |
+| 43, at check before write | T | H | false | 38,982 / 84,933 | 78,698 / nil / 78,698 | false |
+
+The guard checked 520 ms after `readerMoved`. No anchor (nil size anchor) gave the same false intersection at 512 ms in frame 40. The release applied in frame 2 in both runs. History had measured 72,916 pt under a 74,103 pt hold before release, then re-estimated to 78,698 pt. The clip correction was −1,187 pt while the document grew 4,595 pt. With the bottom anchor the fixture posted `newTurn` in frame 68. The new turn did not cause the first M7 write.
+
+On the unchanged Nightly scroll code, both the normal wheel move and the spike's scripted interacting → idle move reported `user-216/reply` in both sets. Neither walked. Turning the hold off but leaving the spike's geometry/frame wrappers installed still left tail IDs in SwiftUI's set and walked before the new turn. The regression is in the wrapped history's target-visibility reporting, not the simulated phase or the height release alone. The phase-matched Nightly control also grew 5,124 pt before the turn without stranding the reader. These controls are in `.orchestrator/scroll6-baseline-*.frames.json.gz`.
+
+The two whole-viewport blanks followed the walk, not the release. In frame 43 M7 moved the clip up 640 pt. The previous top row was now at y=581 pt under the composer, and the new rows did not appear until frame 44. In frame 50 M7 moved up another 10,240 pt and the closest placed row, `user-148/reply`, was at y=10,240 pt. Nothing was placed under the clip until frame 51. Offscreen layer captures show only the composer and Jump to latest in both blanks. In the original nil-anchor recording the corresponding walk blanks were frames 44 and 49. Frame counts vary with sampling; the writer precedes the blanks in each trace.
+
+**The release can drop painted content for one frame.** In the bottom-anchor capture only `user-216/reply`, at y=317 pt, remained on release frame 2. The layer capture shows the blank band above it. Frame 3 restored the missing rows, including `user-214/reply` at its original −59 pt. The full-frame blank count was zero on frame 2 because part of `user-216/reply` remained. The nil-anchor repeat sampled the rows after they returned in frame 2; it did not disprove the band.
+
+**The two fixes are independent.** Refresh the guard from current, registered native row markers in the unobscured reading area when SwiftUI's IDs prove nothing. A real empty reading area still returns false and the walk is unchanged. This removed both downstream blanks and all detached walks in the seven fixture scenarios, but the bottom-aligned hold still lost the top rows on the release frame. Holding the history frame at `.topLeading` puts the height difference below the lazy stack instead of shifting its existing rows up when the frame comes off. With the same native refresh, top-aligned history kept `user-220/reply` and its painted content across release while the document grew 4,437 pt and the clip stayed at 39,963 pt. The first-move check passed, streaming and flick each measured 0 pt, and the seven scenarios had zero whole-viewport blanks and zero detached walks in that probe. This permits a slice candidate. It does not establish that every release preserves placement or that the hold can safely leave a gap between the lazy history and the eager tail while crossing it.
+
+Local evidence is in `.orchestrator/scroll6-diagnosis.log`, `.orchestrator/scroll6-{observed,controls}-*.frames.json.gz`, and `.orchestrator/scroll6-pixels/`. The probe and its controls are in `.orchestrator/scroll6-diagnosis.patch`. No production scroll code is in this diagnosis commit. iPhone and iPad: not changed and not checked.
+
 ## 6. What this plan does not prove
 
 - In slice 1's iOS simulator runs (#820), I1, I5, I6, I8, L6, L7, L8, L9, L10 and L13 never fired. L7 counts thread version observer firings, not stream chunks. I2 is a native anchor and has no counted probe.
