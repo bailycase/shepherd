@@ -349,6 +349,7 @@ extension FleetDispatch {
             reply(.success(entry.record))
             pushPending()
         case .message(let text, let delivery):
+            if entry.record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
             guard !closingThreads.contains(id), entry.record.closeReport == nil,
                   let agent = entry.record.remoteAgentID, [.running, .delivering, .done].contains(entry.record.state),
                   let before = host.threadFacts(agent) else {

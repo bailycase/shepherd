@@ -653,6 +653,60 @@ struct FleetDispatchTests {
         #expect(await Self.receivedTextCount("Follow up.", on: b, thread: thread) == 1)
     }
 
+    @Test func aPreparingDispatchAnswersStartingOnBothMacsAndCanBeMessagedOnceReady() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let preparation = FleetTestGate()
+        await preparation.close()
+        await b.server.enqueueValue { @Sendable in
+            guard let dispatch = b.server.fleet?.dispatch else { return }
+            let original = dispatch.host.createThread
+            dispatch.host.createThread = { request in
+                await preparation.pass()
+                return await original(request)
+            }
+        }
+        let parent = try await a.parent()
+        try parent.hello()
+        let peer = try await b.connectAsPeer(a)
+        defer { peer.disconnect() }
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        let id = try #require(UUID(uuidString: info.dispatchID))
+        func send(_ text: String) async throws -> ExtensionReply {
+            try await parent.call {
+                .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: text, delivery: .followUp)
+            }
+        }
+        let preparing = "The dispatch is still being prepared."
+        do {
+            try await eventually("the receiver to reach thread creation") { await preparation.waiting == 1 }
+            let held = try await send("Refused by sender.")
+            guard case .error(_, "starting", preparing) = held else { throw WireError("expected sender startup refusal, got \(held)") }
+            do {
+                _ = try await peer.fleetDispatchControl(id, .message(text: "Refused by receiver.", delivery: .followUp))
+                Issue.record("receiver accepted a message before it created the thread")
+            } catch RemoteHostClientError.rejected(let code, let message) {
+                #expect(code == "starting" && message == preparing)
+            }
+        } catch {
+            await preparation.open()
+            throw error
+        }
+        await preparation.open()
+        try await eventually("the dispatch to serve on both Macs") { @Sendable in
+            let running = await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.outbound[id]?.state == .running }
+            guard running, let thread = b.dispatched.first else { return false }
+            return await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        let thread = try #require(b.dispatched.first)
+        _ = try parent.info(try await send("Sent once ready."))
+        try await eventually("the fresh request to reach the thread") { @Sendable in
+            await Self.receivedTextCount("Sent once ready.", on: b, thread: thread) == 1
+        }
+        #expect(await Self.receivedTextCount("Refused by sender.", on: b, thread: thread) == 0)
+        #expect(await Self.receivedTextCount("Refused by receiver.", on: b, thread: thread) == 0)
+    }
+
     @Test func theReceiverRefusesStartingDeadAndMissingThreadsWithoutHoldingTheMessage() async throws {
         let (a, b, _, info, thread) = try await Self.startingDispatch()
         defer { a.stop(); b.stop() }
@@ -668,6 +722,14 @@ struct FleetDispatchTests {
         let (starting, message) = try await refusal() // The startup gate is still closed.
         #expect(starting == "starting")
         #expect(message == "The thread is still starting. Send it again in a moment.")
+        await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.bootstrap(timeout: 0.1) }
+        try await eventually("the live pi to miss its readiness deadline") { @Sendable in
+            await b.server.enqueueValue { @Sendable in
+                guard let rpc = b.server.rpcThread(forAgent: thread.id) else { return false }
+                return rpc.session.isAlive && !rpc.isServable && rpc.bootstrapFailure != nil
+            }
+        }
+        #expect(try await refusal().0 == "not_running")
         let session = await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.session.id }
         b.server.killSession(try #require(session))
         try await eventually("the pi to exit while its thread still exists") { @Sendable in
@@ -679,7 +741,8 @@ struct FleetDispatchTests {
         #expect(try await refusal().0 == "not_running")
     }
 
-    @Test func aReadySteerDoesNotWaitForAnotherSendAndATimedOutSendMayHaveArrived() async throws {
+    @Test(arguments: [false, true])
+    func aReadySteerDoesNotWaitAndAMissingAcknowledgementMayMeanDelivered(dropLink: Bool) async throws {
         let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
         let parent = try await a.parent()
@@ -719,8 +782,13 @@ struct FleetDispatchTests {
             _ = try await peer.fleetDispatchControl(dispatch, .message(text: "Ready steer.", delivery: .steer))
             #expect(ContinuousClock.now - began < .seconds(2), "a ready steer does not wait for the earlier acknowledgement")
             try await eventually("the ready steer to reach the thread") { @Sendable in await Self.receivedTextCount("Ready steer.", on: b, thread: thread) == 1 }
+            if dropLink {
+                let target = try await b.hostID()
+                let link = await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.client(target) }
+                try #require(link).disconnect()
+            }
             let reply = try await sending.value
-            guard case .error(_, let code, let message) = reply else { throw WireError("expected a timeout, got \(reply)") }
+            guard case .error(_, let code, let message) = reply else { throw WireError("expected a missing acknowledgement, got \(reply)") }
             #expect(code == "unreachable")
             #expect(message == "That Mac didn't answer in time. The message may still arrive.")
         } catch {

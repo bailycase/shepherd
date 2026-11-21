@@ -1148,6 +1148,7 @@ final class FleetDispatch: @unchecked Sendable {
         case .commit:
             reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A thread's tools don't hand a move over.")))
         case .message(let text, let delivery):
+            if record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
             guard record.closeReport == nil, let target = record.targetHostID,
                   [.running, .delivering, .done].contains(record.state) else {
                 return reply(.failure(.init(code: "not_running", message: "That dispatch isn't running, so there is no thread to message (it is \(record.state.rawValue)).")))
@@ -1180,10 +1181,8 @@ final class FleetDispatch: @unchecked Sendable {
                     case .failure(let error):
                         if case RemoteHostClientError.rejected(let code, let message) = error {
                             reply(.failure(.init(code: code, message: message)))
-                        } else if case RemoteHostClientError.timeout = error {
-                            reply(.failure(.init(code: "unreachable", message: "That Mac didn't answer in time. The message may still arrive.")))
                         } else {
-                            reply(.failure(.init(code: "unreachable", message: "That Mac didn't answer. Try again.")))
+                            reply(.failure(.init(code: "unreachable", message: "That Mac didn't answer in time. The message may still arrive.")))
                         }
                     }
                 }

@@ -317,16 +317,20 @@ test("fleet_send retries starting with a fresh request, but returns not_running 
   } finally { await h.close(); }
 });
 
-test("fleet_send gives up after about eight seconds of starting replies", { timeout: 15_000 }, async () => {
+test("fleet_send gives up within the retry window without a final unused backoff", { timeout: 15_000 }, async () => {
+  let lastReply;
   const h = await harness({ onFrame(frame, write) {
-    if (frame.type === "fleetDispatchMessage") starting(frame, write);
+    if (frame.type !== "fleetDispatchMessage") return;
+    lastReply = performance.now();
+    starting(frame, write);
   } });
   try {
     const start = performance.now();
     const result = await h.tools.get("fleet_send").execute("c", { dispatch: "d1", text: "Follow up" });
     const elapsed = performance.now() - start;
     assert.equal(output(result), "not done: The thread is still starting. Send it again shortly. (starting)");
-    assert.ok(elapsed >= 7_500 && elapsed < 10_000, `retry window was ${elapsed} ms`);
+    assert.ok(elapsed >= 7_000 && elapsed < 10_000, `retry window was ${elapsed} ms`);
+    assert.ok(performance.now() - lastReply < 350, "do not sleep after the last starting reply");
     const attempts = h.of("fleetDispatchMessage").length;
     assert.ok(attempts > 1 && attempts <= 12, `sent ${attempts} times`);
   } finally { await h.close(); }
@@ -348,6 +352,30 @@ test("stopping fleet_send cancels an in-flight retry and sends no more", { timeo
     assert.equal(output(await h.tools.get("fleet_send").execute("next", { dispatch: "d1", text: "Never sent" }, controller.signal)), "send cancelled");
     assert.equal(h.of("fleetDispatchMessage").length, 2);
   } finally { await h.close(); }
+});
+
+test("stopping fleet_send during backoff cancels the wait without a fifth request", { timeout: 5_000 }, async () => {
+  const controller = new AbortController();
+  let attempts = 0;
+  let timer, abortedAt;
+  const h = await harness({ onFrame(frame, write) {
+    if (frame.type !== "fleetDispatchMessage") return;
+    starting(frame, write);
+    if (++attempts === 4) timer = setTimeout(() => {
+      abortedAt = performance.now();
+      controller.abort();
+    }, 50);
+  } });
+  try {
+    const sending = h.tools.get("fleet_send").execute("c", { dispatch: "d1", text: "Follow up" }, controller.signal);
+    assert.equal(output(await sending), "send cancelled");
+    assert.ok(performance.now() - abortedAt < 500, "stop interrupts the one-second backoff");
+    assert.equal(h.of("fleetDispatchMessage").length, 4);
+    assert.equal(h.of("cancelAgentRequest").length, 0, "no request was in flight");
+  } finally {
+    clearTimeout(timer);
+    await h.close();
+  }
 });
 
 test("fleet_close repeats the receiver's receipt and cancel on a settled dispatch does not claim a stop", async () => {

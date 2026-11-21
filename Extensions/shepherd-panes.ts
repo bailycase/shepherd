@@ -1044,13 +1044,12 @@ export default function shepherdPanes(pi: ExtensionAPI) {
           if (signal?.aborted) break;
           if (!failure) return text(`${delivery} sent to dispatch ${params.dispatch}${reply?.info ? `: ${reply.info.state}` : ""}`);
           if (code !== "starting") return text(failure);
-          const left = deadline - performance.now();
-          if (left > 0) await pause(Math.min(backoff, left), undefined, { signal, ref: false }).catch(() => {});
-          if (signal?.aborted) break;
-          if (backoff >= left || performance.now() >= deadline) return text("not done: The thread is still starting. Send it again shortly. (starting)");
+          if (performance.now() + backoff >= deadline) break;
+          await pause(backoff, undefined, { signal, ref: false }).catch(() => {});
+          if (performance.now() >= deadline) break;
           backoff = Math.min(backoff * 2, 1_000);
         }
-        return text("send cancelled");
+        return text(signal?.aborted ? "send cancelled" : "not done: The thread is still starting. Send it again shortly. (starting)");
       },
     });
 
