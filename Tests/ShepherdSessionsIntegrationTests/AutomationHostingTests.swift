@@ -132,6 +132,38 @@ struct AutomationHostingTests {
         #expect(runs.count == 2 && runs.last?.agentID == next && runs.last?.result == .running)
     }
 
+    /// With the run history unreadable no run can be recorded, and the live count that gates the next
+    /// one comes from it: launch, Run now and a triggered run all refuse, and the file stays as it was.
+    @Test func aDamagedRunHistoryStartsNothingUntilItIsRepaired() async throws {
+        try StubPi.installAsEngine()
+        let dir = try makeScratchDirectory("srv")
+        let url = dir.appendingPathComponent("automation-runs.json")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url)
+        let h = try ScratchServer(dir: dir)
+        defer { h.stop() }
+        let manual = Automation(name: "watch CI", prompt: "Watch CI", cwd: h.dir.path, enabled: true)
+        let triggered = Automation(name: "issue loop", prompt: "Implement it.", cwd: h.dir.path,
+                                   trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY")))
+        try await h.server.addAutomation(manual)
+        try await h.server.addAutomation(triggered)
+        serve(h)
+
+        await h.server.autoStartAutomations()
+        #expect(h.server.state.automations.compactMap(\.agentID).isEmpty)
+        for id in [manual.id, triggered.id] {
+            let error = await #expect(throws: AgentStartFailure.self) { try await h.server.startAutomation(id) }
+            #expect(error?.message.contains(url.path) == true)
+        }
+        await #expect(throws: AgentStartFailure.self) { try await h.server.startTriggeredRun(triggered, events: []) }
+        #expect(h.server.state.agents.isEmpty)
+        #expect(try Data(contentsOf: url) == damaged)
+
+        try Data(#"{"version":1,"runs":{}}"#.utf8).write(to: url)
+        try await h.server.startAutomation(manual.id)
+        #expect(h.server.state.automations.first { $0.id == manual.id }?.agentID != nil)
+    }
+
     @Test func automationRequestsAreAnsweredWithoutTheApp() async throws {
         try StubPi.installAsEngine()
         let h = try ScratchServer.fresh()

@@ -26,7 +26,8 @@ REFERENCE_DOCS = ["build-and-run", "environment", "testing", "remote-protocol", 
 VALIDATION_PLAN = "docs/plans/validation-tools.md"
 FOUNDATION_AUDIT_PLAN = "docs/plans/foundation-audit.md"
 PARITY_PLAN = "docs/plans/platform-parity.md"
-KEPT_PLANS = [VALIDATION_PLAN, FOUNDATION_AUDIT_PLAN, PARITY_PLAN]
+SCROLL_PLAN = "docs/plans/thread-scroll.md"
+KEPT_PLANS = [VALIDATION_PLAN, FOUNDATION_AUDIT_PLAN, PARITY_PLAN, SCROLL_PLAN]
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")

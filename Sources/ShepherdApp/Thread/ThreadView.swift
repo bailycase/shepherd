@@ -259,8 +259,7 @@ struct ThreadView: View {
                         // column's top, and the sentinel reaches it, or turning to that row leaves it above the scroll view's margin.
                         Color.clear.frame(height: AppLayout.turnSpacing + (history.isEmpty ? spacing : 0))
                             .onScrollVisibilityChange { visible in
-                                historyPaging.visible = visible
-                                loadVisibleHistory()
+                                historyVisibilityChanged(visible)
                             }
                             .accessibilityHidden(true)
                     }
@@ -299,6 +298,7 @@ struct ThreadView: View {
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
                 .onChange(of: rows.first?.id) { _, first in
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { [weak historyAnchor] id in
+                        ThreadScrollTrace.write("ThreadView.historyMaterialize", in: tailGuard.scrollView())
                         historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
                 }
@@ -327,6 +327,7 @@ struct ThreadView: View {
                     // tray all land back on the tail as they arrive.
                     // The guard walks the scroll view itself while it repairs one, and is not fought.
                     if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: nativeTail), !tailGuard.repairing {
+                        ThreadScrollTrace.write("ThreadView.scrollGeometryFollower", in: tailGuard.scrollView())
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                     tailGuard.distance = new.distance
@@ -335,20 +336,7 @@ struct ThreadView: View {
                     if historyAnchor.isEngaged { historyAnchor.moved() }
                 }
                 .onScrollPhaseChange { old, phase, context in
-                    // Only a live finger/wheel counts. Momentum and programmatic phases are not
-                    // intent; a gesture that ends near the bottom re-sticks from where it lands.
-                    historyAnchor.animating = phase == .animating
-                    follower.userScrolling = phase == .interacting
-                    input.decelerating = phase == .decelerating
-                    if phase == .interacting {
-                        historyAnchor.cancel()
-                        historyPaging.beginScroll()
-                        tailGuard.readerMoved()
-                    }
-                    if phase == .idle, old == .interacting || old == .decelerating {
-                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry), userIntent: true)
-                    }
-                    if phase == .idle { loadVisibleHistory() }
+                    scrollPhaseChanged(from: old, to: phase, distance: Self.distanceFromBottom(context.geometry))
                 }
                 .onChange(of: store.sentCount) { _, _ in
                     // A send that goes in now re-attaches to the tail: the echoed turn is the last
@@ -364,6 +352,7 @@ struct ThreadView: View {
                         // follower lands the echo and the collapsing tray together as their layout
                         // arrives, instead of two competing jumps.
                         if !wasFollowing {
+                            ThreadScrollTrace.write("ThreadView.sentCount", in: tailGuard.scrollView())
                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
                         }
                         tailGuard.asked()
@@ -393,6 +382,7 @@ struct ThreadView: View {
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()
                                  follower.jumpToLatest()
+                                 ThreadScrollTrace.write("ThreadView.jumpToLatest", in: tailGuard.scrollView())
                                  proxy.scrollTo(Self.bottomID, anchor: .bottom)
                                  tailGuard.asked()
                              } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
@@ -902,7 +892,17 @@ struct ThreadView: View {
         tailGuard.active = active
         tailGuard.following = follower.sticky
         tailGuard.userScrolling = follower.userScrolling
-        tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+        #if DEBUG
+        if let trace = ScrollTrace.current, trace.guardian === tailGuard {
+            trace.wheel = wheelIntent()
+            trace.phase = scrollPhaseChanged
+            trace.historyVisibility = historyVisibilityChanged
+        }
+        #endif
+        tailGuard.land = { [weak guardRef = tailGuard] in
+            ThreadScrollTrace.write("ThreadView.tailGuard.land", in: guardRef?.scrollView())
+            proxy.scrollTo(Self.bottomID, anchor: .bottom)
+        }
         tailGuard.rebuild = { [historyAnchor, weak guardian = tailGuard, revision = $transcriptRevision] in
             historyAnchor.cancel()
             guardian?.targets([])
@@ -919,6 +919,11 @@ struct ThreadView: View {
     // Starting history during an animated jump can discard its restoration scroll request.
     // The rows of a thread still to bring its lazy stack back (`ThreadRestore`) are in memory, drawn or not: nothing to load for them.
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating && !restore.awaitsHistory }
+
+    private func historyVisibilityChanged(_ visible: Bool) {
+        historyPaging.visible = visible
+        loadVisibleHistory()
+    }
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
@@ -962,12 +967,14 @@ struct ThreadView: View {
             guard userTurns.indices.contains(target) else {
                 jumpedTurn = nil
                 follower.jumpToLatest()
+                ThreadScrollTrace.write("ThreadView.turnCommand.latest", in: tailGuard.scrollView())
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 tailGuard.asked()
                 return
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
+            ThreadScrollTrace.write("ThreadView.turnCommand.target", in: tailGuard.scrollView())
             withSHAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
         }
     }
@@ -986,6 +993,7 @@ struct ThreadView: View {
         guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
         jumpedTurn = nil
         follower.beginJump()
+        ThreadScrollTrace.write("ThreadView.find", in: tailGuard.scrollView())
         withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
@@ -1001,6 +1009,31 @@ struct ThreadView: View {
                           insetBottom: geometry.contentInsets.bottom)
     }
 
+    private func scrollPhaseChanged(from old: ScrollPhase, to phase: ScrollPhase, distance: CGFloat) {
+        // Only live interaction counts as intent, not momentum or a programmatic scroll.
+        historyAnchor.animating = phase == .animating
+        follower.userScrolling = phase == .interacting
+        input.decelerating = phase == .decelerating
+        if phase == .interacting {
+            historyAnchor.cancel()
+            historyPaging.beginScroll()
+            tailGuard.readerMoved()
+        }
+        if phase == .idle, old == .interacting || old == .decelerating {
+            follower.observe(distanceFromBottom: distance, userIntent: true)
+        }
+        if phase == .idle { loadVisibleHistory() }
+    }
+
+    private func wheelIntent() -> (CGFloat) -> Void {
+        { [weak input = input, weak anchor = historyAnchor, weak paging = historyPaging, weak guardian = tailGuard] delta in
+            anchor?.cancel()
+            if delta != 0 { input?.readerScrolled(upward: delta > 0) }
+            paging?.beginScroll()
+            guardian?.readerMoved()
+        }
+    }
+
     /// Wheel/trackpad events are the one user scroll intent SwiftUI does not phase for us.
     private func installWheelMonitor() {
         guard wheelMonitor == nil else { return }
@@ -1008,14 +1041,9 @@ struct ThreadView: View {
         // `wheelMonitor` back to nil (a window released with the thread in it) would leave the pair and the store alive for good. The
         // handler holds only what it moves.
         let hovering = $hovering
-        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
-            [weak input = input, weak anchor = historyAnchor, weak paging = historyPaging, weak guardian = tailGuard] event in
-            if hovering.wrappedValue {
-                anchor?.cancel()
-                if event.scrollingDeltaY != 0 { input?.readerScrolled(upward: event.scrollingDeltaY > 0) }
-                paging?.beginScroll()
-                guardian?.readerMoved()
-            }
+        let wheel = wheelIntent()
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
             return event
         }
     }

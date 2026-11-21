@@ -11,6 +11,7 @@ extension StateStoreTests {
     private static let damagedRows: Set<String> = [
         "instruction-history-bad-element", "instruction-history-damaged",
         "turns-bad-element", "turns-damaged",
+        "automation-runs-bad-element", "automation-runs-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",

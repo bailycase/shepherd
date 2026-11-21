@@ -269,6 +269,9 @@ public actor AutomationTriggers {
     /// Start one pending event's run now, past the daily and concurrent caps (the user asked).
     public func runPending(_ automation: Automation, eventID: String) async throws {
         try checkStorage()
+        // A start the host will refuse (run history unreadable) must not spend the event or a start.
+        // Checked before reading the record: the actor may interleave a tick at this await.
+        if let host, let held = await host.holdReason(automation) { throw SourceError(held, permanent: false) }
         guard let host, var record = file.records[automation.id.rawValue],
               let index = record.pending.firstIndex(where: { $0.event.id == eventID }) else {
             throw SourceError("That event is no longer pending.", permanent: true)

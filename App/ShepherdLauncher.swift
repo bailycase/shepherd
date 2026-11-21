@@ -9,6 +9,9 @@ import ShepherdApp
 struct ShepherdLauncher {
     @MainActor
     static func main() {
+        #if DEBUG
+        if CommandLine.arguments.dropFirst() == ["--validate-scroll-stability"] { ThreadScrollValidation.main() }
+        #endif
         if CommandLine.arguments.dropFirst().contains(ShepherdHost.argument) { ShepherdHost.main() }
         if ShepherdFleetWhere.requested { ShepherdFleetWhere.main() }
         ShepherdMacApp.main()
