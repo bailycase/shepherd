@@ -52,10 +52,12 @@ struct FleetCloseProcesses: Sendable {
     let sessionsStopped: Bool
     let sweep: ThreadProcessSweep.Report?
 
-    var confirmed: Bool { sessionsStopped && sweep?.complete == true }
+    // After a host restart there may be no launch marker. Keep the pre-sweep cleanup
+    // criteria in that case; an attempted but incomplete sweep still blocks file cleanup.
+    var allowsBuildCleanup: Bool { sessionsStopped && sweep?.complete != false }
     var summary: String {
         let sessions = sessionsStopped ? "Tracked sessions stopped." : "Could not confirm tracked session exit."
-        return sessions + " " + (sweep?.summary ?? "No process ownership marker available.")
+        return sessions + " " + (sweep?.summary ?? "No process ownership marker available; escaped processes were not checked.")
     }
 }
 

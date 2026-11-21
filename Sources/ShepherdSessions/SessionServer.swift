@@ -761,10 +761,41 @@ public final class SessionServer: @unchecked Sendable {
     // Retain the marker after pi exits or retries: its former tools can still be alive.
     private var threadProcessMarkers: [AgentID: Set<String>] = [:]
 
-    private func sweepThreadProcesses(_ agent: AgentID, preservingGroup: pid_t? = nil,
-                                      bash: UUID? = nil, forget: Bool = false) -> Task<ThreadProcessSweep.Report, Never>? {
+    private var pendingBashSweeps: [AgentID: Set<UUID>] = [:]
+
+    private func enqueueBashSweep(_ agent: AgentID, scope: UUID) {
+        guard threadProcessMarkers[agent] != nil else { return }
+        if let pending = pendingBashSweeps[agent] {
+            // ponytail: cap a burst per thread; excessive requests still have supervisor cleanup.
+            if pending.count < 64 { pendingBashSweeps[agent]?.insert(scope) }
+            return
+        }
+        pendingBashSweeps[agent] = [scope]
+        scheduleBashSweep(agent)
+    }
+
+    private func scheduleBashSweep(_ agent: AgentID) {
+        queue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
+            guard let self else { return }
+            guard let scopes = self.pendingBashSweeps[agent], !scopes.isEmpty,
+                  let markers = self.threadProcessMarkers[agent] else {
+                self.pendingBashSweeps.removeValue(forKey: agent)
+                return
+            }
+            // At most one scoped sweep per thread at a time. Batch requests received in the meantime.
+            self.pendingBashSweeps[agent] = []
+            let sweep = ThreadProcessSweep(markers: markers, bashScopes: scopes)
+            Task.detached { [weak self] in
+                _ = await sweep.run()
+                self?.queue.async { [weak self] in self?.scheduleBashSweep(agent) }
+            }
+        }
+    }
+
+    private func sweepThreadProcesses(_ agent: AgentID, tracked: Set<OwnedProcessTree.Birth> = [],
+                                      forget: Bool = false) -> Task<ThreadProcessSweep.Report, Never>? {
         guard let markers = forget ? threadProcessMarkers.removeValue(forKey: agent) : threadProcessMarkers[agent] else { return nil }
-        let sweep = ThreadProcessSweep(markers: markers, bash: bash, preservingGroup: preservingGroup)
+        let sweep = ThreadProcessSweep(markers: markers, tracked: tracked)
         return Task.detached { await sweep.run() }
     }
     /// Every design system this host keeps (the support directory's `design-systems/`, plus the
@@ -5848,7 +5879,7 @@ public final class SessionServer: @unchecked Sendable {
             reply(.childScope(id: id, scope: nil, deadline: nil), to: client)
         case .stopBashProcesses(let agentID, let scope):
             guard client.childrenAgentID == agentID else { return }
-            _ = sweepThreadProcesses(agentID, bash: scope)
+            enqueueBashSweep(agentID, scope: scope)
         case .helloChildren(let agentID, let projectScopes):
             guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
@@ -8400,16 +8431,18 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
 
+            var tracked = Set<OwnedProcessTree.Birth>()
             for sessionID in layoutSessions {
                 // A stopped pi's session is already retired; its kept start (and the opening
                 // prompt it holds) goes with the agent.
                 self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
-                if closingDispatch != nil, let session = self.sessions[sessionID], session.isAlive {
-                    session.signalProcessGroup(SIGKILL)
+                if closingDispatch != nil, let session = self.sessions[sessionID] {
+                    if session.isAlive { session.signalProcessGroup(SIGKILL) }
+                    if let rpc = session.thread?.session { tracked.formUnion(rpc.trackedProcessBirths) }
                 }
             }
-            return (layoutSessions, self.sweepThreadProcesses(agentID, forget: true))
+            return (layoutSessions, self.sweepThreadProcesses(agentID, tracked: tracked, forget: true))
         }
     }
 
@@ -9858,9 +9891,6 @@ public final class SessionServer: @unchecked Sendable {
             ShepherdLog.info("rpc session \(sessionID) stop requested; its agent stays")
             self.sessions[sessionID]?.thread?.pushRunArmed = false
             session.kill()
-            if let agent = self.agentID(forSession: sessionID) ?? session.launchAgentID {
-                _ = self.sweepThreadProcesses(agent)
-            }
         }
     }
 
@@ -9952,13 +9982,10 @@ public final class SessionServer: @unchecked Sendable {
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
-            let piGroup = session.processIdentifier
             thread.onStopRequested = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
-                if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
-                    server.reply(.stopManagedBash, to: children)
-                }
-                _ = server.sweepThreadProcesses(agentID, preservingGroup: piGroup)
+                // Pi's abort reaches the live Bash calls on its RPC stream. A separate control
+                // frame could arrive in the next turn or stop a group from an earlier one.
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
             thread.onIdleAfterQueue = { [weak serverWeak] in
@@ -10361,9 +10388,8 @@ public final class SessionServer: @unchecked Sendable {
     /// first and call `killSessionOnQueue`, so they are unaffected.
     public func killSession(_ sessionID: SessionID) {
         queue.async {
-            if let agent = self.agentID(forSession: sessionID) {
+            if self.agentID(forSession: sessionID) != nil {
                 self.startRecords[sessionID]?.requestStop()
-                _ = self.sweepThreadProcesses(agent)
             }
             self.killSessionOnQueue(sessionID)
         }

@@ -124,3 +124,66 @@ test("a managed Bash timeout kills orphaned descendants", async () => {
     await eventually(() => !alive(pid));
   } finally { bash.stopAll(); }
 });
+
+// The host's sweep of an escaped job is asked for only when a call is aborted or times out, and only
+// for that call's own scope. A normal return never asks, and neither does a host without a thread marker.
+async function withThreadMarker(marker, body) {
+  const saved = process.env.SHEPHERD_OWNED_THREAD;
+  if (marker === undefined) delete process.env.SHEPHERD_OWNED_THREAD; else process.env.SHEPHERD_OWNED_THREAD = marker;
+  try { await body(); }
+  finally { if (saved === undefined) delete process.env.SHEPHERD_OWNED_THREAD; else process.env.SHEPHERD_OWNED_THREAD = saved; }
+}
+const markers = `printf '%s|%s' "$SHEPHERD_OWNED_THREAD" "$SHEPHERD_OWNED_BASH"`;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+test("each Bash call gets its own scope next to the thread marker, and a normal return never asks for a sweep", async () => {
+  await withThreadMarker("thread-marker", async () => {
+    const swept = [], bash = managedBash((scope) => swept.push(scope));
+    const seen = [];
+    try {
+      for (const env of [undefined, { CALLER: "kept" }]) {
+        let output = "";
+        assert.equal((await bash.exec(markers, process.cwd(), { onData: (chunk) => { output += chunk; }, env })).exitCode, 0);
+        const [thread, scope] = output.split("|");
+        assert.equal(thread, "thread-marker");
+        assert.match(scope, uuid);
+        seen.push(scope);
+      }
+      assert.notEqual(seen[0], seen[1], "scopes are per call");
+      assert.deepEqual(swept, []);
+    } finally { bash.stopAll(); }
+  });
+});
+
+test("an aborted or timed-out call asks for a sweep of its own scope only", async () => {
+  await withThreadMarker("thread-marker", async () => {
+    const swept = [], bash = managedBash((scope) => swept.push(scope));
+    const scopes = [];
+    const run = async (options) => {
+      let output = "";
+      const done = bash.exec(`${markers}; /bin/sleep 30`, process.cwd(), { onData: (chunk) => { output += chunk; options.started?.(); }, ...options });
+      await assert.rejects(done);
+      scopes.push(output.split("|")[1]);
+    };
+    try {
+      const controller = new AbortController();
+      await run({ signal: controller.signal, started: () => controller.abort() });
+      await run({ timeout: 1 });
+      assert.equal(scopes.length, 2);
+      assert.ok(scopes.every((scope) => uuid.test(scope)));
+      assert.deepEqual(swept, scopes, "one request per call, each naming only that call's scope");
+    } finally { bash.stopAll(); }
+  });
+});
+
+test("without the thread marker the call carries no scope and never asks for a sweep", async () => {
+  await withThreadMarker(undefined, async () => {
+    const swept = [], bash = managedBash((scope) => swept.push(scope));
+    let output = "";
+    try {
+      await assert.rejects(bash.exec(`printf '%s|%s' "\${SHEPHERD_OWNED_THREAD-unset}" "\${SHEPHERD_OWNED_BASH-unset}"; /bin/sleep 30`, process.cwd(), { onData: (chunk) => { output += chunk; }, timeout: 1 }), /timeout:1/);
+      assert.equal(output, "unset|unset");
+      assert.deepEqual(swept, []);
+    } finally { bash.stopAll(); }
+  });
+});

@@ -8,20 +8,24 @@ struct ThreadProcessSweep: Sendable {
     static let bashKey = "SHEPHERD_OWNED_BASH"
 
     let markers: Set<String>
-    var bash: UUID? = nil
-    var preservingGroup: pid_t? = nil
+    var bashScopes: Set<UUID>? = nil
+    var tracked: Set<OwnedProcessTree.Birth> = []
 
     struct Report: Sendable {
         var found = 0
         var exited = 0
         var forced = 0
         var unconfirmed = 0
+        var trackedMatches = 0
         var enumerated = true
+        var incompleteInspection = false
 
         var complete: Bool { enumerated && unconfirmed == 0 }
         var summary: String {
-            let counts = "Marked process sweep: \(found) found; \(exited) confirmed exited after signaling; SIGKILL sent to \(forced) after SIGTERM; \(unconfirmed) not confirmed stopped."
-            return enumerated ? counts : counts + " Could not enumerate all process IDs."
+            var text = "Marked process sweep: \(found) escapees found; \(exited) escapees confirmed exited after signaling; SIGKILL sent to \(forced) escapees after SIGTERM; \(trackedMatches) already tracked; \(unconfirmed) marked processes not confirmed stopped."
+            if !enumerated { text += " Could not enumerate all process IDs." }
+            if incompleteInspection { text += " Some processes could not be inspected for ownership markers." }
+            return text
         }
     }
 
@@ -62,7 +66,7 @@ struct ThreadProcessSweep: Sendable {
         return kill(pid, 0) == 0 || errno != ESRCH
     }
 
-    private func matchingProcesses() -> [audit_token_t]? {
+    private func matchingProcesses(incomplete: inout Bool, trackedMatches: inout Set<UInt64>) -> [audit_token_t]? {
         let flavor = UInt32(PROC_UID_ONLY)
         let uid = geteuid()
         var capacity = Int(proc_listpids(flavor, uid, nil, 0)) / MemoryLayout<pid_t>.stride + 32
@@ -81,52 +85,65 @@ struct ThreadProcessSweep: Sendable {
         guard sysctl(&mib, 2, &argMax, &length, nil, 0) == 0, argMax > MemoryLayout<Int32>.size else { return nil }
         var buffer = [UInt8](repeating: 0, count: Int(argMax))
         let threadEntries = markers.map { Array("\(Self.threadKey)=\($0)".utf8) }
-        let bashEntry = bash.map { Array("\(Self.bashKey)=\($0.uuidString.lowercased())".utf8) }
+        let bashEntries = bashScopes.map { Set($0.map { Array("\(Self.bashKey)=\($0.uuidString.lowercased())".utf8) }) }
         return pids.prefix(used / MemoryLayout<pid_t>.stride).compactMap { pid in
-            guard pid > 1, pid != getpid(), let info = Self.info(pid), info.pbi_status != UInt32(SZOMB),
-                  info.pbi_pgid != preservingGroup.map(UInt32.init), let identity = Self.token(pid) else { return nil }
+            guard pid > 1, pid != getpid() else { return nil }
+            guard let info = Self.info(pid) else { incomplete = true; return nil }
+            guard info.pbi_status != UInt32(SZOMB) else { return nil }
+            guard let identity = Self.token(pid) else { incomplete = true; return nil }
             var mib = [CTL_KERN, KERN_PROCARGS2, pid]
             var size = buffer.count
             guard buffer.withUnsafeMutableBytes({ sysctl(&mib, 3, $0.baseAddress, &size, nil, 0) }) == 0,
-                  Self.matches(buffer, size: size, threadEntries: threadEntries, bashEntry: bashEntry),
-                  Self.token(pid)?.val.7 == identity.val.7 else { return nil }
+                  let matches = Self.matches(buffer, size: size, threadEntries: threadEntries, bashEntries: bashEntries) else {
+                incomplete = true
+                return nil
+            }
+            guard matches else { return nil }
+            guard Self.token(pid)?.val.7 == identity.val.7 else { incomplete = true; return nil }
+            if tracked.contains(OwnedProcessTree.Birth(info)) { trackedMatches.insert(Self.identityKey(identity)) }
             return identity
         }
     }
 
-    private static func matches(_ args: [UInt8], size: Int, threadEntries: [[UInt8]], bashEntry: [UInt8]?) -> Bool {
+    private static func matches(_ args: [UInt8], size: Int, threadEntries: [[UInt8]], bashEntries: Set<[UInt8]>?) -> Bool? {
         // KERN_PROCARGS2: native argc, executable path, NUL padding, argc argv strings, envp.
         let head = MemoryLayout<Int32>.size
-        guard size > head, size <= args.count else { return false }
+        guard size > head, size <= args.count else { return nil }
         let argc = args.withUnsafeBytes { Int($0.loadUnaligned(as: Int32.self)) }
-        guard argc > 0, argc < size - head else { return false }
+        guard argc > 0, argc < size - head else { return nil }
         let bytes = args[..<size]
         guard let pathEnd = bytes[head...].firstIndex(of: 0),
-              var cursor = bytes[pathEnd...].firstIndex(where: { $0 != 0 }) else { return false }
+              var cursor = bytes[pathEnd...].firstIndex(where: { $0 != 0 }) else { return nil }
         for _ in 0..<argc {
-            guard let end = bytes[cursor...].firstIndex(of: 0) else { return false }
+            guard let end = bytes[cursor...].firstIndex(of: 0) else { return nil }
             cursor = end + 1
         }
-        var foundThread = false, foundBash = bashEntry == nil
+        var foundThread = false, foundBash = bashEntries == nil
         while cursor < size, bytes[cursor] != 0 {
-            guard let end = bytes[cursor...].firstIndex(of: 0) else { return false }
+            guard let end = bytes[cursor...].firstIndex(of: 0) else { return nil }
             let entry = bytes[cursor..<end]
             if !foundThread { foundThread = threadEntries.contains { entry.elementsEqual($0) } }
-            if let bashEntry, entry.elementsEqual(bashEntry) { foundBash = true }
+            if !foundBash, entry.starts(with: Self.bashPrefix), bashEntries?.contains(Array(entry)) == true { foundBash = true }
             if foundThread && foundBash { return true }
             cursor = end + 1
         }
         return false
     }
 
+    private static let bashPrefix = Array("\(bashKey)=".utf8)
+
     /// Called off the server queue. No wait and no scan on successful Bash return.
     func run() async -> Report {
         var found = Set<UInt64>(), attempted = Set<UInt64>(), forced = Set<UInt64>()
         var survivors = [audit_token_t]()
-        var enumerated = true
+        var report = Report()
+        var trackedMatches = Set<UInt64>()
         // A TERM handler can fork. Sweep once more, then require an empty final scan for close.
         for _ in 0..<2 {
-            guard let matches = matchingProcesses() else { enumerated = false; break }
+            guard let matches = matchingProcesses(incomplete: &report.incompleteInspection, trackedMatches: &trackedMatches) else {
+                report.enumerated = false
+                break
+            }
             let targets = survivors + matches.filter { !found.contains(Self.identityKey($0)) }
             if targets.isEmpty { break }
             found.formUnion(targets.map(Self.identityKey))
@@ -141,14 +158,18 @@ struct ThreadProcessSweep: Sendable {
             survivors = await Self.waitForExit(remaining, until: .now + .seconds(1))
         }
         var alive = Set(survivors.filter(Self.live).map(Self.identityKey))
-        if let matches = matchingProcesses() {
+        if let matches = matchingProcesses(incomplete: &report.incompleteInspection, trackedMatches: &trackedMatches) {
             alive.formUnion(matches.map(Self.identityKey))
         } else {
-            enumerated = false
+            report.enumerated = false
         }
         found.formUnion(alive)
-        return Report(found: found.count, exited: attempted.subtracting(alive).count,
-                      forced: forced.count, unconfirmed: alive.count, enumerated: enumerated)
+        report.found = found.subtracting(trackedMatches).count
+        report.exited = attempted.subtracting(alive).subtracting(trackedMatches).count
+        report.forced = forced.subtracting(trackedMatches).count
+        report.trackedMatches = trackedMatches.count
+        report.unconfirmed = alive.count
+        return report
     }
 
     private static func identityKey(_ token: audit_token_t) -> UInt64 {

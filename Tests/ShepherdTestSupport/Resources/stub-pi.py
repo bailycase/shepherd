@@ -820,22 +820,45 @@ def flaky_turn(message):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
     text = text_of(message)
+    jobs = []
     if "escaped-job-fixtures" in text:
+        jobs.extend(["orphan", "session", "decoy-no-marker", "decoy-other-thread", "decoy-argv"])
+    jobs.extend(word.removeprefix("escaped-job:") for word in text.split() if word.startswith("escaped-job:"))
+    if jobs:
         import subprocess
-        # Wait for the intermediate parent to exit. Neither grandchild is in pi's group.
+        # The intermediate parent exits. The test waits for launchd adoption and for the
+        # exec'ed Python to publish its PID, so its environment can be read before signaling.
         subprocess.run([sys.executable, "-c", '''
-import os, signal, sys
-for name in ('orphan', 'session'):
+import os, sys, uuid
+for job in sys.argv[1:]:
     if os.fork() == 0:
-        if name == 'session':
-            os.setsid()
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        else:
+        name, _, scope = job.partition(':')
+        if name == 'orphan':
             os.setpgid(0, 0)
-        with open(name + '.pid', 'w') as f:
-            f.write(str(os.getpid()))
-        os.execv(sys.executable, [sys.executable, '-c', 'import time; time.sleep(25)'])
-'''], check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            os.setsid()
+        env = dict(os.environ, STUB_ESCAPED_JOB=name)
+        thread = env['SHEPHERD_OWNED_THREAD']
+        env.pop('SHEPHERD_OWNED_BASH', None)
+        if scope:
+            env['SHEPHERD_OWNED_BASH'] = scope
+        argv = [sys.executable, '-c', """
+import os, signal, sys, time
+from pathlib import Path
+name = sys.argv[1]
+if name in ('session', 'scoped-first'):
+    signal.signal(signal.SIGTERM, lambda *_: Path(name + '.term').touch())
+Path(name + '.pid').write_text(str(os.getpid()))
+time.sleep(25)
+""", name]
+        if name in ('decoy-no-marker', 'decoy-argv'):
+            env.pop('SHEPHERD_OWNED_THREAD')
+        if name in ('decoy-other-thread', 'decoy-other-thread-scope'):
+            env['SHEPHERD_OWNED_THREAD'] = str(uuid.uuid4())
+        if name == 'decoy-argv':
+            argv.append('SHEPHERD_OWNED_THREAD=' + thread)
+        os.execve(sys.executable, argv, env)
+''', *jobs], check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if "fleet-close-background" in text:
         import subprocess
         child = subprocess.Popen(["/usr/bin/nohup", "/bin/sleep", "120"], stdin=subprocess.DEVNULL,
@@ -845,6 +868,9 @@ for name in ('orphan', 'session'):
             pid_file.write(str(child.pid))
     if "flaky-hold" in text:
         wait_for_file("flaky-go")
+    if "escaped-abort-hold" in text:
+        RUN["abort"].wait(15)
+        RUN["active"] = False
     if "fleet-disk-failure" in text:
         emit({"type": "extension_error", "event": "turn_end", "error": "ENOSPC: no space left on device, write"})
         FLAKY["failed"] = True
@@ -2062,6 +2088,8 @@ for raw in sys.stdin.buffer:
             turn_aborted = False
             turn_thread = threading.Thread(target=flaky_turn, args=(user_message(message, cmd.get("images") or [], now_ms()),),
                                            daemon=True)
+            if "escaped-abort-hold" in message:
+                RUN.update(active=True, thread=turn_thread)
             turn_thread.start()
         elif message == "provider-error":
             turn_aborted = False

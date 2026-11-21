@@ -22,7 +22,9 @@
 - **Set by the app for pi, never read from the user's environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`,
     `SHEPHERD_INSTRUCTIONS_DIR` (where the instructions extension reads Settings ▸ Instructions'
-    `AGENTS.md` and `APPEND_SYSTEM.md`).
+    `AGENTS.md` and `APPEND_SYSTEM.md`), and `SHEPHERD_OWNED_THREAD`, a random marker per thread pi
+    launch used to find processes that left tracked groups. Managed Bash adds `SHEPHERD_OWNED_BASH`
+    per call. User hooks, terminal tabs and subagents get neither marker.
   - By the launcher (`<support>/pi/bin/pi`), after setting aside every `PI_*`, `JITI_*`, `NODE_*`
     and `OPENSSL_CONF` it was started with under `_SHEPHERD_STASH_<name>` (listed in
     `_SHEPHERD_STASH_NAMES`, and put back for pi's shell commands by `restore-env.sh`):

@@ -43,6 +43,7 @@ final class RPCSession: @unchecked Sendable {
     /// it is the one that runs the agent's extensions (an extension connection speaks for its
     /// agent only from this pid: `SessionServer.isPiProcess`).
     var processIdentifier: pid_t { childPID }
+    var trackedProcessBirths: Set<OwnedProcessTree.Birth> { ownedProcesses.trackedBirths }
     /// The agent this pi was launched for: the app names it in the child's environment
     /// (`SHEPHERD_AGENT_ID`), and the server knows the pi speaks for it before any pane holds it
     /// (`SessionServer.isPiProcess`).

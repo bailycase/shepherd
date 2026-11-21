@@ -324,6 +324,11 @@ it. It never writes into an existing checkout, and a clone that is stopped, fail
 folder it made and registers nothing. Binding a checkout this Mac already has (`FleetRepoFinder`, from places Shepherd
 already knows, never a walk of the disk) only reads it. Nothing else.
 An explicit sender-requested Fleet close (`fleet_close`) removes the settled receiver thread. Like ordinary delete, it stops every session in the tab, including any terminal the person opened. Fleet close sends `SIGKILL` to any of those session process groups still alive after the stop request. It may remove root `.build` or `DerivedData` only in that thread’s registered Shepherd worktree, if the folder was absent before the thread started, is ignored and untracked, and has the expected build marker; a symlink or unverified folder stays. It never removes the checkout, source, branches, or saved conversation. Fleet cancel stops the dispatched thread’s owned session processes, but neither cancel nor result delivery removes the thread or its files. Fleet never removes an external checkout it merely found or a temporary clone it did not create and register.
+Cancel, close and delete also look for escaped processes carrying a thread's exact launch marker.
+Ordinary Stop aborts only the running turn: managed Bash sweeps require both the thread marker and
+an aborted call's marker. Normal Bash return does not sweep. A close receipt flags processes the
+host could not inspect. When no marker is available after restart, close uses the tracked-session
+check and the same build-output safeguards above.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split
