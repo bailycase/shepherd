@@ -327,7 +327,8 @@ struct ChangesEngineTests {
         #expect(try await h.service.branches(agentID: h.agent).recents == ["feat/ledger-v2"])
     }
 
-    @Test func damagedRecentsRefuseThePickerAndExplicitBaseUntilRemoved() async throws {
+    @Test(arguments: ["{", #"{"truncated":"#, #"{"/tmp/acme":["topic","main",null],"/tmp/docs":["main"]}"#])
+    func damagedRecentsLeaveBranchesAndComparisonsUsableUntilRepaired(_ text: String) async throws {
         let repo = try ChangesRepo()
         try repo.git("checkout", "-q", "-b", "feat/ledger-v2")
         let remote = try RemoteHost()
@@ -340,42 +341,49 @@ struct ChangesEngineTests {
         let agent = worker.agent.id
         let base = RemoteAgentQuery.changesList(scope: .branch(base: "feat/ledger-v2"), options: .init())
         _ = try await client.agentQuery(agentID: agent, query: base)
+        try repo.write("README.md", "# changes\n")
 
         let url = remote.server.changes.directory.appendingPathComponent("bases.json")
-        let damaged = Data("{".utf8)
+        let damaged = Data(text.utf8)
         try damaged.write(to: url, options: .atomic)
-        let picker = await #expect(throws: RemoteHostClientError.self) {
-            _ = try await client.agentQuery(agentID: agent, query: .changesBranches())
+
+        func expectDamage(_ listed: ChangesBranches) throws {
+            #expect(Set(listed.branches.map(\.name)) == ["main", "feat/ledger-v2"])
+            #expect(listed.recents.isEmpty)
+            let problem = try #require(listed.recentsProblem)
+            #expect(problem.contains("host Mac") && problem.contains(url.path))
+            #expect(problem.contains("move or delete"))
         }
-        let creation = await #expect(throws: RemoteHostClientError.self) {
-            _ = try await client.creationBranches(spaceID: space.id)
-        }
-        let selection = await #expect(throws: RemoteHostClientError.self) {
-            _ = try await client.agentQuery(agentID: agent, query: base)
-        }
-        for error in [picker, creation, selection].compactMap({ $0 }) {
-            guard case .rejected(let code, let message) = error else {
-                Issue.record("Expected a host refusal, got \(error)"); continue
+        await #expect(throws: Never.self) {
+            guard case .changesBranches(let listed) = try await client.agentQuery(agentID: agent, query: .changesBranches()) else {
+                Issue.record("Expected the thread's branch list"); return
             }
-            #expect(code == ChangesError.unavailable)
-            #expect(message.contains("host Mac") && message.contains(url.path))
-            #expect(message.contains("restore a known-good copy") && message.contains("reopen the base picker"))
+            try expectDamage(listed)
+        }
+        await #expect(throws: Never.self) {
+            guard case .changesList(let listed) = try await client.agentQuery(agentID: agent, query: base) else {
+                Issue.record("The explicit comparison should still work"); return
+            }
+            #expect(listed.comparison.base == "feat/ledger-v2")
+            #expect(listed.files.map(\.id) == ["README.md"])
         }
         #expect(try Data(contentsOf: url) == damaged)
+        await #expect(throws: Never.self) {
+            try await expectDamage(client.creationBranches(spaceID: space.id))
+        }
         guard case .changesList = try await client.agentQuery(agentID: agent,
                                                               query: .changesList(scope: .branch(base: nil), options: .init())) else {
             Issue.record("The default comparison should still work"); return
         }
         #expect(try Data(contentsOf: url) == damaged)
 
-        let moved = url.appendingPathExtension("damaged")
-        try FileManager.default.moveItem(at: url, to: moved)
-        try await eventually("empty recents on the same host connection") {
-            try await client.creationBranches(spaceID: space.id).recents.isEmpty
-        }
+        try FileManager.default.removeItem(at: url)
+        let repaired = try await client.creationBranches(spaceID: space.id)
+        #expect(repaired.recents.isEmpty && repaired.recentsProblem == nil)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
         _ = try await client.agentQuery(agentID: agent, query: base)
-        #expect(try await client.creationBranches(spaceID: space.id).recents == ["feat/ledger-v2"])
-        #expect(try Data(contentsOf: moved) == damaged)
+        let saved = try await client.creationBranches(spaceID: space.id)
+        #expect(saved.recents == ["feat/ledger-v2"] && saved.recentsProblem == nil)
     }
 
     /// Copy as patch: what the engine hands out applies cleanly to the commit it was made against.

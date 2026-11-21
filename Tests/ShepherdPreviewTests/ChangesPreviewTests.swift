@@ -56,6 +56,25 @@ struct ChangesPreviewTests {
         try await Preview.render("changes-base", size: boardSize) { pane(session) { $0.menu = .base } }
     }
 
+    @Test func changesWithDamagedBaseRecents() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo()
+        try git(["branch", "feat/ledger-v2"], in: repo)
+        try git(["checkout", "-qb", "agent/refund-events"], in: repo)
+        let space = Space(name: "acme", path: repo.path)
+        let (agent, tab) = try await workspace.agent("Edit the ledger", in: space, order: 0)
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let directory = workspace.dir.appendingPathComponent("changes")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"{"truncated":"#.utf8).write(to: directory.appendingPathComponent("bases.json"))
+        let session = ChangesBoard.session(comment: false)
+        let branches = try await workspace.server.changes.branches(agentID: agent.id)
+        try #require(branches.recentsProblem != nil)
+        session.branches = branches
+        try await Preview.render("mac", size: boardSize) { pane(session) { $0.menu = .base } }
+    }
+
     /// ChangesUnified: unified with word diffs, Diff options open.
     @Test func changesUnified() async throws {
         let session = ChangesBoard.session(comment: false)

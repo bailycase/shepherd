@@ -318,7 +318,8 @@ public final class ChangesService: @unchecked Sendable {
             guard let mergeBase = try? ChangesGit.checked(["merge-base", baseID, head], in: repository.root).trimmed, !mergeBase.isEmpty else {
                 throw ChangesError(ChangesError.unavailable, "\(headName()) and \(base) share no history.")
             }
-            if let requested { try recents.note(requested, repository: repository.commonDir) }
+            // Recents are best-effort. A damaged file stays untouched and the picker reports it.
+            if let requested { try? recents.note(requested, repository: repository.commonDir) }
             let snapshot = try snapshot(repository)
             return Resolution(revision: .init(old: mergeBase, new: snapshot.tree),
                               comparison: .init(head: headName(), base: base, baseName: ChangesParse.baseName(base, remotes: remotes(repository)),
@@ -518,7 +519,13 @@ public final class ChangesService: @unchecked Sendable {
     // MARK: Branches and commits
 
     func branches(_ repository: Repository, context: AgentContext) throws -> ChangesBranches {
-        let recentBases = try recents.list(repository.commonDir)
+        let recentBases: [String]
+        var recentsProblem: String?
+        do { recentBases = try recents.list(repository.commonDir) }
+        catch {
+            recentBases = []
+            recentsProblem = (error as? ChangesError)?.message ?? String(describing: error)
+        }
         let current = currentBranch(repository)
         let result = try ChangesGit.checked(["for-each-ref", "--sort=-committerdate", "--count=500",
                                              "--format=%(refname)%00%(refname:short)%00%(committerdate:unix)%00%(worktreepath)",
@@ -527,7 +534,8 @@ public final class ChangesService: @unchecked Sendable {
         return ChangesBranches(defaultBase: defaultBase(repository, agentBase: context.worktreeBase),
                                pullRequestBase: pull.flatMap { pullRequestBase($0, repository: repository) },
                                recents: recentBases.filter { commit($0, in: repository) != nil },
-                               branches: ChangesParse.branches(result.text, current: current))
+                               branches: ChangesParse.branches(result.text, current: current),
+                               recentsProblem: recentsProblem)
     }
 
     /// The branch's commits against `base`, newest first; HEAD's recent history without one.
@@ -600,7 +608,7 @@ final class ChangesRecents: @unchecked Sendable {
         case .loaded(let bases): return bases
         case .missing: return [:]
         case .damaged:
-            throw ChangesError(ChangesError.unavailable, "Recent comparison bases can't be read. The file is on the host Mac at:\n\(url.path)\nFix access permissions or restore a known-good copy on the host. To clear the saved recents, move or delete the file. Then reopen the base picker; no host restart is needed.")
+            throw ChangesError(ChangesError.unavailable, "Can't read the recents file on the host Mac:\n\(url.path)\nFix its permissions, restore a backup, or move or delete it to reset recents.")
         }
     }
 

@@ -272,6 +272,8 @@ enum RemoteSamples {
                                                     ChangesBranch(name: "agent/retry-plan", isRemote: false, worktree: "/w/retry", committedAt: 1),
                                                     ChangesBranch(name: "agent/refund-events", isRemote: false, isCurrent: true, committedAt: 2)])),
         .changesBranches(ChangesBranches(defaultBase: nil, branches: [])),
+        .changesBranches(ChangesBranches(defaultBase: "main", branches: [.init(name: "main", isRemote: false, isCurrent: true, committedAt: 1)],
+                                         recentsProblem: "Can't read the recents file on the host Mac.")),
         .changesPatch(text: "diff --git a/a b/a\n", truncated: false),
         .changesTurn(turn),
         .changesTurn(ChangesTurn(id: op, startedAt: 1, state: .unavailable, reason: "Shepherd quit before this turn ended.")),
@@ -1086,6 +1088,22 @@ struct RemoteReplyTests {
 
     @Test func samplesCoverEveryCase() {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
+    }
+
+    @Test func changesBranchesWorksBeforeAndAfterRecentsProblem() throws {
+        struct LegacyBranches: Decodable, Equatable {
+            var defaultBase: String?
+            var pullRequestBase: String?
+            var recents: [String]
+            var branches: [ChangesBranch]
+        }
+        let old = Data(#"{"defaultBase":"main","recents":[],"branches":[{"name":"main","isRemote":false,"isCurrent":true,"committedAt":1}]}"#.utf8)
+        let branches = try JSONDecoder().decode(ChangesBranches.self, from: old)
+        #expect(branches.recentsProblem == nil)
+        var damaged = branches
+        damaged.recentsProblem = "Can't read the recents file on the host Mac."
+        let legacy = try JSONDecoder().decode(LegacyBranches.self, from: old)
+        #expect(try JSONDecoder().decode(LegacyBranches.self, from: JSONEncoder().encode(damaged)) == legacy)
     }
 
     private static let hooksSnapshot = RemoteReply.hooks(id: 30, result: .hooks(S.hooks))

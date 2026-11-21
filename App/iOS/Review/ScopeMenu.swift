@@ -159,6 +159,10 @@ struct ChangesBasePicker: View {
         NavigationStack {
             List {
                 if let branches = store.branches {
+                    if let problem = branches.recentsProblem {
+                        SHBanner(.failed, title: "Recent bases", message: problem)
+                            .listRowBackground(Color.clear)
+                    }
                     Section {
                         ForEach(changesBaseOptions(branches, selected: store.base, query: query)) { option in
                             Button { choose(option.name) } label: { row(option) }
