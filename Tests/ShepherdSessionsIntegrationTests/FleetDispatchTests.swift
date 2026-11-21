@@ -658,11 +658,13 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("the first result to settle") { a.sent().first?.state == .done && b.taken().first?.state == .done }
 
         let followUp = "flaky-hold"
+        let accepted = Locked(false)
         await b.server.enqueueValue { @Sendable in
             guard let dispatch = b.server.fleet?.dispatch else { return }
             let send = dispatch.host.messageThread
             dispatch.host.messageThread = { agent, text, delivery in
                 let result = await send(agent, text, delivery)
+                if case .accepted = result { accepted.withValue { $0 = true } }
                 await acknowledgement.wait()
                 return result
             }
@@ -672,9 +674,7 @@ struct FleetDispatchTests {
                 .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: followUp, delivery: .followUp)
             }
         }
-        try await eventually("pi to receive the held follow-up") { @Sendable in
-            await Self.receivedTextCount(followUp, on: b, thread: thread) == 1
-        }
+        try await eventuallyOnMain("pi to accept the held follow-up") { accepted.current }
         let signalled = await b.server.enqueueValue { @Sendable in
             guard let pid = b.server.rpcThread(forAgent: thread.id)?.session.processIdentifier, pid > 0 else { return false }
             return kill(pid, SIGKILL) == 0
