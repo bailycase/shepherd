@@ -1076,8 +1076,19 @@ final class FleetDispatch: @unchecked Sendable {
             let push = facts.originCheckFailed == true ? "could not verify origin" : facts.pushed ? "pushed to origin" : "not on origin"
             body += "\n\nBranch \(facts.branch): \(commits) ahead of \(facts.comparedTo ?? "the start"), \(push), "
                 + "\(files) changed (+\(facts.insertions) -\(facts.deletions))."
-        } else if let branch = record.branch {
+        } else if let branch = record.branch ?? record.resultBranchFacts?.branch {
             body += "\n\nBranch \(branch): branch work unavailable."
+        }
+        if record.resultBranchFacts?.uncommittedCheckFailed == true {
+            body += " Could not check the checkout for uncommitted work."
+        } else {
+            let modified = record.resultBranchFacts?.uncommittedModified ?? 0
+            let untracked = record.resultBranchFacts?.uncommittedUntracked ?? 0
+            let (total, overflow) = modified.addingReportingOverflow(untracked)
+            if !overflow, modified >= 0, untracked >= 0, total > 0 {
+                let parts = [modified > 0 ? "\(modified) modified" : nil, untracked > 0 ? "\(untracked) untracked" : nil].compactMap { $0 }
+                body += " Uncommitted in the checkout on \(place): \(total) \(total == 1 ? "file" : "files") (\(parts.joined(separator: ", "))). Counts include any edits sent with the dispatch."
+            }
         }
         return AgentMessageFraming.framed(from: "\(record.title) on \(place)", body)
     }

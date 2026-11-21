@@ -17,7 +17,7 @@ import validate
 
 def frame(t, first, rows, *callers, hidden=False, height=500, following=False, clip=(200, 100)):
     return {"timestamp": t, "refreshInterval": 0.01, "first": first, "rows": rows, "hidden": hidden,
-            "offset": 10, "documentHeight": height, "streamingRowHeight": height - 450,
+            "visibleRows": list(rows), "offset": 10, "documentHeight": height, "streamingRowHeight": height - 450,
             "following": following, "distance": 0, "clipSize": clip,
             "events": [{"caller": caller} for caller in callers]}
 
@@ -76,9 +76,61 @@ class ValidateTests(unittest.TestCase):
         summary = validate.measure_scroll(frames)
         self.assertEqual([jump["delta_pt"] for jump in summary["jumps"]], [5])
         self.assertEqual([drift["delta_pt"] for drift in summary["drift"]], [3])
-        frames[1]["first"], frames[1]["rows"], frames[1]["offset"] = "b", {"b": 0}, -5
+        frames[1]["first"], frames[1]["rows"], frames[1]["visibleRows"], frames[1]["offset"] = "b", {"b": 0}, ["b"], -5
         [jump] = validate.measure_scroll(frames[:2])["jumps"]
         self.assertEqual((jump["measured"], jump["delta_pt"]), ("clip offset", 5))
+        frames[1]["offset"] = 0
+        [jump] = validate.measure_scroll(frames[:2])["jumps"]
+        self.assertEqual((jump["measured"], jump["delta_pt"]), ("unexplained input eviction", None))
+
+    def test_offscreen_input_shift_is_separate_but_clip_motion_still_fails(self):
+        before = frame(0, "tail", {"tail": 0}, height=40200)
+        before["offset"] = 40100
+        after = frame(0.01, "history", {"history": 0, "tail": 39000}, height=40200)
+        after["visibleRows"], after["offset"] = ["history"], 20100
+        after["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -20000}]
+        summary = validate.measure_scroll([before, after])
+        self.assertEqual([shift["delta_pt"] for shift in summary["offscreen_input_shifts"]], [19000])
+        self.assertFalse(summary["jumps"])
+        after["offset"] -= 3
+        self.assertEqual([jump["delta_pt"] for jump in validate.measure_scroll([before, after])["jumps"]], [3])
+
+    def test_small_input_cannot_hide_a_relayout_when_the_clip_moves_as_commanded(self):
+        before = frame(0, "tail", {"tail": 0})
+        after = frame(0.01, "history", {"history": 0, "tail": 39000})
+        after["visibleRows"], after["offset"] = ["history"], 5
+        after["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -5}]
+        summary = validate.measure_scroll([before, after])
+        [jump] = summary["jumps"]
+        self.assertEqual((jump["row"], jump["measured"], jump["delta_pt"]), ("tail", "row", 38995))
+        self.assertFalse(summary["offscreen_input_shifts"])
+
+        before["rows"]["history"] = -5
+        before["visibleRows"].append("history")
+        self.assertFalse(validate.measure_scroll([before, after])["jumps"])  # The shared visible row wins.
+
+    def test_first_move_measures_delayed_height_loss_but_excludes_the_second_input(self):
+        before = frame(0, "a", {"a": 0}, following=True, height=1500)
+        after = frame(0.01, "a", {"a": 0}, height=1500)
+        delayed = frame(0.02, "a", {"a": 0}, height=621)
+        second = frame(0.03, "a", {"a": 0}, height=500)
+        after["events"] = second["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -210}]
+        frames = [before, after, delayed, second]
+        result = validate.first_move_off_tail(frames)
+        self.assertEqual((result["status"], result["height_loss_pt"]), ("known-red", 879))
+        delayed["documentHeight"] = 1498
+        self.assertEqual(validate.first_move_off_tail(frames)["status"], "passed")
+        before["following"] = False
+        self.assertEqual(validate.first_move_off_tail(frames)["status"], "invalid-start")
+
+    def test_first_move_requires_a_baseline_and_height_samples(self):
+        before = frame(0, "a", {"a": 0}, following=True, height=1500)
+        after = frame(0.01, "a", {"a": 0}, height=1500)
+        after["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -210}]
+        delayed = frame(0.02, "a", {"a": 0}, height=1500)
+        delayed["documentHeight"] = None
+        for frames in ([before], [after], [before, after, delayed]):
+            self.assertEqual(validate.first_move_off_tail(frames)["status"], "missing-samples")
 
     def test_paging_anchor_swap_counts_once_and_has_no_invented_delta(self):
         frames = [frame(0, "user-60", {"user-60": -1}), frame(0.01, "user-0", {"user-0": -1}),
@@ -130,7 +182,7 @@ class ValidateTests(unittest.TestCase):
         frames[2]["clipSize"] = frames[1]["clipSize"]
         with self.assertRaisesRegex(ValueError, "did not change clipSize"):
             validate.check_scroll_actions(name, frames, required)
-        with self.assertRaisesRegex(ValueError, "expected all six"):
+        with self.assertRaisesRegex(ValueError, "expected all seven"):
             validate.scroll_evidence({})
 
     def test_missing_writer_site_keeps_motion_and_step_evidence_with_its_own_exit(self):
@@ -144,6 +196,18 @@ class ValidateTests(unittest.TestCase):
         cancel = next(event for event in switch[1]["events"] if event["detail"] == "history.cancel")
         cancel["detail"] = "history.materialize"
         switch[1]["rows"]["a"] = 8  # A motion failure must not hide the missing probe.
+        scenarios["mid-history-new-turn"][1]["events"] = [
+            {"caller": "fixture.pageRequested"},
+            {"caller": "thread.write.M7", "detail": "guard.walk", "following": False},
+        ]
+        scenarios["mid-history-new-turn"][1]["first"] = None
+
+        def check_actions(name, frames, required):
+            if name == "page-older-history":
+                # The request fired in mid-history instead of in paging.
+                validate_actions(name, frames, ("fixture.pageRequested",))
+
+        validate_actions = validate.check_scroll_actions
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -157,7 +221,8 @@ class ValidateTests(unittest.TestCase):
                   patch.object(validate, "source_identity", return_value={}),
                   patch.object(validate.subprocess, "check_output", return_value=b"Xcode fixture"),
                   patch.object(validate.subprocess, "run", side_effect=dev_fixture),
-                  patch.object(validate, "check_scroll_actions"), contextlib.redirect_stdout(io.StringIO())):
+                  patch.object(validate, "check_scroll_actions", side_effect=check_actions),
+                  contextlib.redirect_stdout(io.StringIO())):
                 code = validate.main(["--case", "scroll-stability"])
             [report] = (root / ".build/validation").glob("*/result.json")
             result = json.loads(report.read_text(encoding="utf-8"))
@@ -168,6 +233,50 @@ class ValidateTests(unittest.TestCase):
             self.assertEqual(steps["complete"]["status"], "passed")
             summary = json.loads((report.parent / "mac/scroll-jumps.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["switch-away-back"]["jumps"][0]["delta_pt"], 8)
+            self.assertEqual(steps["page-older-history"]["status"], "failed")
+            self.assertIn("missing actions ['fixture.pageRequested']", steps["page-older-history"]["actual"])
+            self.assertEqual(set(summary), set(scenarios))
+            mid_history = summary["mid-history-new-turn"]
+            self.assertEqual((mid_history["blank_frames"], mid_history["detached_guard_walks"]), (1, 1))
+
+    def test_first_move_height_loss_and_top_gap_each_fail_the_case(self):
+        scenarios = {name: [frame(i / 100, "user-0", {"user-0": 0}) for i in range(10)]
+                     for name in (*validate.SCROLL_SCENARIOS, *validate.SCROLL_EXTRA_SCENARIOS)}
+        for name, sites in validate.SCROLL_EXPECTED_WRITERS.items():
+            scenarios[name][1]["events"] = [{"caller": f"thread.write.{writer}", "detail": detail}
+                                           for writer, detail in sites]
+        flick = scenarios["flick-and-stop"]
+        flick[0].update(following=True, documentHeight=1500)
+        flick[1]["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -5}]
+        for sample in flick[1:]:
+            sample.update(rows={"user-0": 5}, offset=5, documentHeight=1500)
+        wheel = scenarios["wheel-walk-to-top"]
+
+        def dev_fixture(command, **kwargs):
+            if "--validate-scroll-stability" in command:
+                Path(kwargs["env"]["SHEPHERD_SCROLL_TRACE"]).write_text(json.dumps(scenarios), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        for loss, gap, failed in ((879, 0, "first-move-off-tail"), (0, 12, "wheel-walk-to-top")):
+            with self.subTest(step=failed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                flick[2]["documentHeight"] = 1500 - loss
+                for sample in wheel:
+                    sample["rows"]["user-0"] = gap
+                with (patch.object(validate, "ROOT", root), patch.object(validate.sys, "platform", "darwin"),
+                      patch.object(validate, "source_identity", return_value={}),
+                      patch.object(validate.subprocess, "check_output", return_value=b"Xcode fixture"),
+                      patch.object(validate.subprocess, "run", side_effect=dev_fixture),
+                      patch.object(validate, "check_scroll_actions"), contextlib.redirect_stdout(io.StringIO())):
+                    code = validate.main(["--case", "scroll-stability"])
+                [report] = (root / ".build/validation").glob("*/result.json")
+                result = json.loads(report.read_text(encoding="utf-8"))
+                self.assertEqual((code, result["status"]), (1, "assertion_failed"))
+                [step] = [step for step in result["steps"] if step["status"] == "failed"]
+                self.assertEqual(step["step"], failed)
+                self.assertIn("known-red: lost 879 pt" if loss else "Gap above the first row: 12 pt", step["actual"])
+                summary = json.loads((report.parent / "mac/scroll-jumps.json").read_text(encoding="utf-8"))
+                self.assertEqual(summary["wheel-walk-to-top"]["top_gap_pt"], gap)
 
     def test_intent_mismatch_is_distinct_from_setup_and_motion_failures(self):
         diagnostic = "error: flick-and-stop: expected idle, saw coasting"

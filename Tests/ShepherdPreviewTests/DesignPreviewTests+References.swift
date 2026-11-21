@@ -207,6 +207,23 @@ extension DesignPreviewTests {
         }
     }
 
+    @Test func designThreadNotesDamageBanner() async throws {
+        let (workspace, checkout, _, _) = try await referenceWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let folder = try #require(workspace.server.designs.folder(for: checkout.id))
+        let file = folder.appendingPathComponent("thread-notes.json")
+        try Data(#"{"version":1,"notes":["#.utf8).write(to: file)
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        await screen.refresh()
+        try await Preview.render("app-window-design-thread-notes-damage", size: Self.referenceWindow, ready: {
+            screen.isDrawn && screen.snapshot?.threadNotesWarning?.contains(file.path) == true
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// RefNoteBack: a thread's note on the step card, its blue pin and its card with Open thread
     /// and Resolve.
     @Test func designReferenceNoteBack() async throws {

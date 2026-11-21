@@ -1122,10 +1122,10 @@ extension RPCThreadState {
         if !pending.isEmpty { commit() }
     }
 
-    func stop(afterProjectChildren helpersUnknown: Bool? = nil, ifCurrent: @escaping () -> Bool = { true },
+    func stop(afterProjectChildren helpersUnknown: Bool? = nil, explicit: Bool = false, ifCurrent: @escaping () -> Bool = { true },
               _ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         guard ifCurrent() else { done(.failure(.inputRejected)); return }
-        onStopRequested?()
+        onStopRequested?(explicit)
         refuseDialogs()
         goalYieldGeneration = nil
         // pi's abort signal does not reach a nested pre-settlement model call. Cancel the
@@ -1162,7 +1162,7 @@ extension RPCThreadState {
         if let helpersUnknown { abort(helpersUnknown) }
         else if let stopProjectChildren {
             // Still stop the root on a helper failure, without claiming the combined stop succeeded.
-            stopProjectChildren { abort($0 != nil) }
+            stopProjectChildren(explicit) { abort($0 != nil) }
         } else { abort(false) }
     }
 

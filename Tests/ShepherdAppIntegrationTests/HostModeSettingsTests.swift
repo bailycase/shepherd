@@ -232,8 +232,8 @@ struct HostModeSettingsTests {
 
         // Suggested instructions: the switch is the host's.
         await vm.suggestions.setEnabled(true)
-        #expect(host.server.suggestions.snapshot().settings.enabled)
-        #expect(!idle.suggestions.snapshot().settings.enabled)
+        #expect(try host.server.suggestions.snapshot().settings.enabled)
+        #expect(try !idle.suggestions.snapshot().settings.enabled)
         // The host's agent suggests a line: the page shows it without reopening.
         let agent = try ExtensionClient(path: host.socketPath)
         try agent.send(.suggestInstruction(id: 1, agentID: thread.agent.id, line: "Use the staging database.", reason: "It failed twice.", file: nil))

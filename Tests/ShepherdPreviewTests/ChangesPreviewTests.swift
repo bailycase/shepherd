@@ -75,6 +75,16 @@ struct ChangesPreviewTests {
         try await Preview.render("mac", size: boardSize) { pane(session) { $0.menu = .base } }
     }
 
+    /// The base picker when the host could not list the branches: its message, not "Reading branches…".
+    @Test func changesBaseFailed() async throws {
+        let session = ChangesBoard.session(comment: false)
+        session.branches = nil
+        session.branchesError = "acme-web is not a git repository."
+        try await Preview.render("changes-base-failed", size: boardSize, showing: "acme-web is not a git repository.") {
+            pane(session) { $0.menu = .base }
+        }
+    }
+
     /// ChangesUnified: unified with word diffs, Diff options open.
     @Test func changesUnified() async throws {
         let session = ChangesBoard.session(comment: false)

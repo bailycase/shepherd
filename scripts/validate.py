@@ -24,6 +24,7 @@ SCROLL_SCENARIOS = {
     "page-older-history": ("fixture.scrollInput", "fixture.pageRequested", "fixture.pageReply"),
     "window-resize": ("fixture.windowResize",),
     "switch-away-back": ("fixture.switchAway", "fixture.switchBack"),
+    "wheel-walk-to-top": ("fixture.scrollInput", "fixture.wheelTopReached"),
 }
 SCROLL_EXPECTED_WRITERS = {
     "slow-scroll-streaming": {("L7", "thread.version")},
@@ -34,7 +35,7 @@ SCROLL_EXPECTED_WRITERS = {
     "released-thread": {("L14", "thread.dormant")},
 }
 SCROLL_EXTRA_SCENARIOS = ("key-paging", "scroller-drag", "released-thread")
-SCROLL_COMPLETION = "six Dev scroll motion scenarios and three capture scenarios finished"
+SCROLL_COMPLETION = "seven Dev scroll motion scenarios and three capture scenarios finished"
 MISSING_WRITER_EXIT = 3
 INTENT_MISMATCH_EXIT = 4
 
@@ -56,7 +57,8 @@ class Case:
 
 CASES = {
     SCROLL_CASE: Case("Shepherd (Dev) / ThreadScrollValidation",
-                      {(scenario, None) for scenario in (*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS, "writer-probes")},
+                      {(scenario, None) for scenario in (*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS,
+                                                         "first-move-off-tail", "writer-probes")},
                       SCROLL_COMPLETION, "offscreen Dev app", scenario="Sources/ShepherdApp/Thread/ThreadView.swift"),
     SCROLL_OWNER_CASE: Case(
         "ThreadScrollOwner", {(f"{platform}-{walk}", None) for platform in ("mac", "ios") for walk in ("broad", "requests")},
@@ -239,10 +241,10 @@ def check_scroll_actions(name, frames, required):
 
 
 def measure_scroll(frames):
-    jumps, drift, anchor_losses, sticky_follows, in_band_inputs = [], [], [], [], []
-    previous = frames[0]
-    anchor = previous["first"]
-    baseline = previous["rows"][anchor]
+    jumps, drift, anchor_losses, sticky_follows, in_band_inputs, offscreen_shifts = [], [], [], [], [], []
+    previous = frames[0] if frames else {}
+    anchor = previous.get("first")
+    baseline = previous.get("rows", {}).get(anchor)
     pending, lost, excursion = [], None, None
     compared, settled_frames = 0, 0
     streaming = False
@@ -254,17 +256,29 @@ def measure_scroll(frames):
         scripted_delta = sum(inputs)
         streaming |= any(e["caller"] in ("fixture.stickyChunk", "fixture.streamChunk") for _, e in pending)
 
-        row = previous["first"] if inputs else anchor
+        row = previous.get("first") if inputs else anchor
         observation = {"frame": i, "row": row, "scripted_clip_delta_pt": scripted_delta,
                        "first_after": frame.get("first"), "paths": scroll_paths(previous, frame, pending),
                        "following_before": previous["following"], "following": frame["following"],
                        "distance_before": previous["distance"], "distance": frame["distance"],
                        "events": pending.copy()}
-        if frame.get("first") and row in frame["rows"]:
+        unexplained_eviction = False
+        if inputs and row not in frame["visibleRows"]:
+            clip_size = previous.get("clipSize")
+            viewport_move = bool(clip_size and 0 < clip_size[1] <= abs(scripted_delta))
+            if viewport_move and row in frame["rows"]:
+                shift = frame["rows"][row] - previous["rows"][row] + scripted_delta
+                if abs(shift) > 2:
+                    offscreen_shifts.append({**observation, "delta_pt": round(shift, 3)})
+            common = set(previous["visibleRows"]) & set(frame["visibleRows"])
+            unexplained_eviction = not common and not viewport_move
+            if not unexplained_eviction:
+                row = min(common, key=lambda r: (previous["rows"][r], r), default=None)
+            observation["row"] = row
+        if frame.get("first") and row in frame["rows"] and row in previous["rows"]:
             delta = frame["rows"][row] - previous["rows"][row] + scripted_delta
             measured = "row"
-        elif frame.get("first") and inputs:
-            # Large scripted moves can evict the old row. Still check the clip for extra motion.
+        elif frame.get("first") and inputs and previous.get("offset") is not None:
             delta = previous["offset"] - frame["offset"] + scripted_delta
             measured = "clip offset"
         else:
@@ -285,7 +299,12 @@ def measure_scroll(frames):
         observation.update(delta_pt=round(delta, 3), measured=measured)
         # NativeScrollFollower.threshold is 80 pt. A detached reader reattaching is not expected follow.
         sticky_in_band = streaming and previous["following"] and frame["following"] and previous["distance"] <= 80
-        if (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
+        if unexplained_eviction:
+            # Matching the scripted clip offset cannot rule out a relayout without a shared row.
+            if abs(delta) <= 2:
+                observation.update(delta_pt=None, measured="unexplained input eviction")
+            jumps.append(observation)
+        elif (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
                 and growth > 2 and abs(delta + growth) <= 2):
             sticky_follows.append(observation)
             baseline -= growth
@@ -316,7 +335,30 @@ def measure_scroll(frames):
         jumps.append({**lost, "delta_pt": None, "measured": "unrestored anchor loss"})
     return {"frames": len(frames), "compared_frames": compared, "final_comparable_frames": settled_frames,
             "jumps": jumps, "drift": drift, "anchor_losses": anchor_losses, "sticky_follows": sticky_follows,
-            "in_band_inputs": in_band_inputs}
+            "in_band_inputs": in_band_inputs, "offscreen_input_shifts": offscreen_shifts,
+            "blank_frames": sum(not f["hidden"] and not f.get("first") for f in frames),
+            "detached_guard_walks": sum(e["caller"] == "thread.write.M7" and e.get("detail") == "guard.walk"
+                                        and not e.get("following", f["following"])
+                                        for f in frames for e in f["events"])}
+
+
+def first_move_off_tail(frames):
+    inputs = [(i, e["scrollDelta"]) for i, frame in enumerate(frames) for e in frame["events"]
+              if e["caller"] == "fixture.scrollInput"]
+    if not inputs:
+        return {"status": "missing-samples"}
+    i, delta = inputs[0]
+    stop = inputs[1][0] if len(inputs) > 1 else len(frames)
+    if i == 0 or delta >= 0 or stop == i:
+        return {"status": "missing-samples"}
+    before = frames[i - 1]
+    heights = [frame.get("documentHeight") for frame in frames[i - 1:stop]]
+    if None in heights:
+        return {"status": "missing-samples"}
+    loss = round(heights[0] - min(heights[1:]), 3)
+    at_tail = before["following"] and abs(before["distance"]) <= 4
+    return {"frame": i, "tail_gap_pt": before["distance"], "following_before": before["following"],
+            "height_loss_pt": loss, "status": "invalid-start" if not at_tail else "known-red" if loss > 2 else "passed"}
 
 
 def scroll_ledger(frames, summary=None):
@@ -371,15 +413,24 @@ def scroll_ledger(frames, summary=None):
 
 def scroll_evidence(scenarios):
     if set(scenarios) != set((*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS)):
-        raise ValueError("expected all six scroll motion scenarios and all three capture scenarios")
+        raise ValueError("expected all seven scroll motion scenarios and all three capture scenarios")
     summaries = {}
     for name, required in SCROLL_SCENARIOS.items():
         frames = scenarios[name]
-        check_scroll_actions(name, frames, required)
         summary = measure_scroll(frames)
-        if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
-            raise ValueError(f"{name}: too few comparable settle frames")
-        ledger = scroll_ledger(frames, summary)
+        try:
+            check_scroll_actions(name, frames, required)
+            if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
+                raise ValueError(f"{name}: too few comparable settle frames")
+        except ValueError as error:
+            summary["action_error"] = str(error)
+        if name == "flick-and-stop":
+            summary["first_move_off_tail"] = first_move_off_tail(frames)
+        if name == "wheel-walk-to-top":
+            last = frames[-1] if frames else {}
+            row_top = last.get("rows", {}).get("user-0")
+            summary["top_gap_pt"] = round(max(0, row_top), 3) if row_top is not None else None
+        ledger = scroll_ledger(frames, summary) if frames else {"hz": None, "writer_counts": {}, "frames": []}
         summary["ledger"] = ledger
         summary["hz"] = ledger.pop("hz")
         summaries[name] = summary
@@ -439,11 +490,31 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
     for name in SCROLL_SCENARIOS:
         summary = summaries[name]
         jumps, drift, losses = summary["jumps"], summary["drift"], summary["anchor_losses"]
-        actual = (f"{len(jumps)} jumps, {len(drift)} drift excursions, {len(losses)} anchor swaps/losses, "
+        total = sum(abs(jump["delta_pt"]) for jump in jumps if jump["delta_pt"] is not None)
+        actual = (f"{len(jumps)} jumps ({total:.3f} pt measured), {len(drift)} drift excursions, {len(losses)} anchor swaps/losses, "
                   f"{len(summary['sticky_follows'])} expected sticky follows, "
-                  f"{len(summary['in_band_inputs'])} in-band input residuals across {summary['frames']} frames")
-        if any(jump["delta_pt"] is None for jump in jumps):
-            actual += "\nUnrestored anchor loss counted as a jump of unknown magnitude."
+                  f"{len(summary['in_band_inputs'])} in-band input residuals, "
+                  f"{len(summary['offscreen_input_shifts'])} off-screen input shifts, "
+                  f"{summary['blank_frames']} blank frames, {summary['detached_guard_walks']} detached guard walks "
+                  f"across {summary['frames']} frames")
+        if error := summary.get("action_error"):
+            actual += f"\n{error}"
+        top_gap_failed = False
+        expected = "0 jumps or drift >2 pt and no anchor swaps/losses"
+        if name == "wheel-walk-to-top":
+            gap = summary["top_gap_pt"]
+            top_gap_failed = gap != 0
+            expected += "; no gap above the first row at the top"
+            actual += f"\nGap above the first row: {gap} pt" if gap is not None else "\nFirst row marker missing at the top."
+        if name == "flick-and-stop":
+            first = summary["first_move_off_tail"]
+            diagnostic = first["status"]
+            if "height_loss_pt" in first:
+                diagnostic += f": lost {first['height_loss_pt']} pt from a {first['tail_gap_pt']} pt tail gap"
+            record("first-move-off-tail", "passed" if first["status"] == "passed" else "failed",
+                   "first move starts following at the tail and loses at most 2 pt of document height", diagnostic)
+        if unknown := sorted({jump["measured"] for jump in jumps if jump["delta_pt"] is None}):
+            actual += f"\nJumps of unknown magnitude: {', '.join(unknown)}."
         if name == "page-older-history" and any(e["caller"] == "fixture.historyVisibilityFallback"
                                                  for f in scenarios[name] for e in f["events"]):
             actual += "\nfixture.historyVisibilityFallback used; sentinel delivery not verified."
@@ -452,7 +523,7 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
             if observations:
                 paths = sorted({path for observation in observations for path in observation["paths"]})
                 actual += f"\n{label}: {', '.join(paths)}"
-        record(name, "failed" if jumps or drift or losses else "passed", "0 jumps or drift >2 pt and no anchor swaps/losses", actual)
+        record(name, "failed" if error or jumps or drift or losses or top_gap_failed else "passed", expected, actual)
     for name in ("key-paging", "scroller-drag"):
         record(name, "passed", "Dev fixture observed movement and matching intent", "Dev fixture verified both")
     record("released-thread", "passed", "hidden transcript released", "Dev fixture observed release")

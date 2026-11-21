@@ -248,6 +248,7 @@ final class SettingsStore {
         hosts = mobileHosts.hosts.map { host in
             SettingsHost(id: host.id, name: host.name, client: host.connectedClient, capabilities: host.capabilities)
         }
+        suggestions.use(hosts)
         hooks.use(hosts)
         spaceDialogs.keep(shownIn: hosts)
         if watchers > 0, connected { Task { await refresh() } }

@@ -5,6 +5,20 @@ import ShepherdRemote
 
 // Home track's settings and hosts screens.
 extension FixtureCatalog {
+    private static let suggestionsDamageMessage = "Couldn't read suggested instructions at /tmp/acme/instructions/suggestions.json on the host. Fix access, restore a backup, or move or delete the file to start fresh. Then refresh Experiments."
+
+    private static func damagedSuggestionsHosts() -> [FixtureHostData] {
+        let message = suggestionsDamageMessage
+        return FixtureData.hosts().prefix(1).map { data in
+            var host = data
+            host.reply = { request in
+                guard case .suggestions(let id, _) = request else { return nil }
+                return .error(id: id, code: "suggestions_unavailable", message: message)
+            }
+            return host
+        }
+    }
+
     static var settings: [FixtureScreen] {
         [
             FixtureScreen(name: "settings", routes: [.settings(.root)], tab: .settings),
@@ -42,9 +56,23 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-skill", routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
             FixtureScreen(name: "settings-skills-repo", hosts: FixtureData.skillsRepoHosts(),
                           routes: [.settings(.skills), .settings(.skillsRepo("anthropics/skills"))], tab: .settings),
+            // A host whose skills.json won't read: the banner, with every skill shown without a source.
+            FixtureScreen(name: "settings-skills-damaged", hosts: FixtureData.skillsDamagedHosts(), routes: [.settings(.skills)], tab: .settings),
+            FixtureScreen(name: "settings-skill-damaged", hosts: FixtureData.skillsDamagedHosts(),
+                          routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
             // Suggested instructions on every host (suggestions.v1).
             FixtureScreen(name: "settings-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
+            FixtureScreen(name: "settings-suggestions-damaged", hosts: damagedSuggestionsHosts(),
+                          routes: [.settings(.experiments)], tab: .settings,
+                          prepare: { app in
+                              let store = SettingsStore.of(app.hosts)
+                              Task { await store.suggestions.refresh(store.hosts) }
+                              await FixtureCheck.wait("the host's suggestions warning", seconds: 12) {
+                                  store.suggestions.unavailable.values.contains(suggestionsDamageMessage)
+                              }
+                              FixtureCheck.report("FIXTURE CHECK ok: Experiments received the host's suggestions warning")
+                          }),
             FixtureScreen(name: "settings-suggestion", hosts: FixtureData.suggestingHosts(),
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
             // Settings search (S5): "model" matches the Models page and its model rows.
@@ -72,6 +100,8 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-pad-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .experiments }),
             FixtureScreen(name: "settings-pad-skills", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in app.navigator.settingsSelection.page = .skills }),
+            FixtureScreen(name: "settings-pad-skills-damaged", hosts: FixtureData.skillsDamagedHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .skills }),
         ]
     }

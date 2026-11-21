@@ -2995,7 +2995,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// One authenticated controller connection per parent; no helper opens a new host channel.
-    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, completion: @escaping (String?) -> Void) {
+    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, sweepChildren: Bool? = nil, completion: @escaping (String?) -> Void) {
         if action == .stop { projectChildClosed.insert(scope) }
         let finish: (String?) -> Void = { error in
             if action == .stop, error == nil { self.projectChildStopped.insert(scope) }
@@ -3010,7 +3010,7 @@ public final class SessionServer: @unchecked Sendable {
         nextChildCommandID += 1
         let id = nextChildCommandID
         childCommandPending[id] = (client, finish)
-        reply(.projectChildren(id: id, scope: scope, action: action), to: client)
+        reply(.projectChildren(id: id, scope: scope, action: action, sweepChildren: sweepChildren), to: client)
         queue.asyncAfter(deadline: .now() + (action == .stop ? 15 : 615)) { [weak self] in
             self?.childCommandPending.removeValue(forKey: id)?.completion("Project helper acknowledgement timed out; outcome is unknown.")
         }
@@ -3443,14 +3443,16 @@ public final class SessionServer: @unchecked Sendable {
                 try pushNotifications.register(registration)
                 send(.ok(id: id), to: client)
             } catch {
-                send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
+                send(.error(id: id, code: "push_registration",
+                            message: (error as? PushNotifications.Failure)?.errorDescription ?? "Could not save push registration."), to: client)
             }
         case .pushUnregister(let id, let registrationID):
             do {
                 try pushNotifications.unregister(registrationID)
                 send(.ok(id: id), to: client)
             } catch {
-                send(.error(id: id, code: "push_registration", message: "Could not remove push registration."), to: client)
+                send(.error(id: id, code: "push_registration",
+                            message: (error as? PushNotifications.Failure)?.errorDescription ?? "Could not remove push registration."), to: client)
             }
         case .nativeThreadSubscribe(let id, let agentIDs):
             let visible = Set(remoteState(store.state, for: client).agents.map(\.id))
@@ -4360,7 +4362,7 @@ public final class SessionServer: @unchecked Sendable {
         let timeout = Self.directoryReadTimeout
         let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
         let enumerate = enumerateRemoteDirectory
-        let task = Task.detached(priority: .userInitiated) { [weak self] in
+        let task = Task.detached(executorPreference: BlockingTaskExecutor.shared, priority: .userInitiated) { [weak self] in
             let reply: RemoteReply
             do {
                 reply = try Self.directoryListing(id: id, path: path, deadline: deadline, enumerate: enumerate)
@@ -4563,7 +4565,7 @@ public final class SessionServer: @unchecked Sendable {
             let snapshot: SuggestionsSnapshot
             switch request {
             case .fetch:
-                snapshot = suggestions.snapshot()
+                snapshot = try suggestions.snapshot()
             case .configure(let settings):
                 snapshot = try suggestions.configure(settings)
             case .add(let suggestionID, let line, let file):
@@ -4584,6 +4586,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if request != .fetch { announceSuggestions(snapshot) }
             send(.suggestions(id: id, snapshot: snapshot), to: client)
+        } catch SuggestionsStore.StoreError.damaged(let url) {
+            send(.error(id: id, code: "suggestions_unavailable", message: SuggestionsStore.StoreError.damaged(url).description), to: client)
         } catch SuggestionsStore.StoreError.noSuchSuggestion {
             send(.error(id: id, code: "no_such_suggestion", message: SuggestionsStore.StoreError.noSuchSuggestion.description), to: client)
         } catch {
@@ -4601,22 +4605,22 @@ public final class SessionServer: @unchecked Sendable {
         }
         let kind: SuggestionSource.Kind = Self.unattendedAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
         let file = file ?? .agents
-        guard suggestions.snapshot().settings.files(for: kind).contains(file) else {
-            reply(.error(id: id, code: "suggestions_off",
-                         message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
-            return
-        }
-        if let problem = InstructionsText.suggestionProblem(line) {
-            reply(.error(id: id, code: "invalid", message: problem), to: client)
-            return
-        }
         do {
+            guard try suggestions.snapshot().settings.files(for: kind).contains(file) else {
+                reply(.error(id: id, code: "suggestions_off",
+                             message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
+                return
+            }
+            if let problem = InstructionsText.suggestionProblem(line) {
+                reply(.error(id: id, code: "invalid", message: problem), to: client)
+                return
+            }
             let result = try suggestions.suggest(line: line, reason: String(reason.prefix(600)), file: file,
                                                  source: SuggestionSource(kind: kind, name: agent.name))
             if result.outcome == .waiting { announceSuggestions(result.snapshot) }
             reply(.suggestion(id: id, outcome: result.outcome), to: client)
         } catch {
-            reply(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+            reply(.error(id: id, code: "write_failed", message: "Suggested instructions are unavailable. Tell the user to open Settings › Experiments."), to: client)
         }
     }
 
@@ -6073,7 +6077,10 @@ public final class SessionServer: @unchecked Sendable {
         case .designRead(let id, let agentID, let designID, let path):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
-                return .design(id: id, snapshot: try await server.designSnapshot(designID))
+                var snapshot = try await server.designSnapshot(designID)
+                // Thread notes belong to the canvas viewer, not the design agent.
+                snapshot.threadNotesWarning = nil
+                return .design(id: id, snapshot: snapshot)
             }
         case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
@@ -6223,9 +6230,22 @@ public final class SessionServer: @unchecked Sendable {
                                     revision: grant.revision, text: words, createdAt: now)
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
-            let kept = try await server.designs.addThreadNote(designID, note)
-            server.designNotesChanged(designID)
-            return .designNote(id: id, note: kept)
+            do {
+                let kept = try await server.designs.addThreadNote(designID, note)
+                server.designNotesChanged(designID)
+                return .designNote(id: id, note: kept)
+            } catch let error as DesignStoreError {
+                if case .threadNotesUnavailable = error {
+                    // The user can repair the file and retry on this thread without waiting.
+                    await server.enqueueValue {
+                        if let index = server.noteTimes[agentID]?.firstIndex(of: now) {
+                            server.noteTimes[agentID]?.remove(at: index)
+                        }
+                    }
+                }
+                // Recovery details belong on the canvas, not in the implementing agent's tool output.
+                return .error(id: id, code: error.code, message: "Thread notes can't be saved right now. Tell the user to open the design.")
+            }
         }
     }
 
@@ -7106,7 +7126,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput, .stopManagedBash: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -9982,10 +10002,10 @@ public final class SessionServer: @unchecked Sendable {
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
-            thread.onStopRequested = { [weak serverWeak] in
+            thread.onStopRequested = { [weak serverWeak] explicit in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
-                    server.reply(.stopManagedBash, to: children)
+                    server.reply(.stopManagedBash(sweepChildren: explicit ? true : nil), to: children)
                 }
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
@@ -9995,10 +10015,10 @@ public final class SessionServer: @unchecked Sendable {
                 server.applyAgentStatus(agentID: agentID, status: .done)
             }
             // Card actions go to the children extension's control channel, never the parent model.
-            thread.stopProjectChildren = { [weak serverWeak] done in
+            thread.stopProjectChildren = { [weak serverWeak] explicit, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid), let scope = server.currentProjectChildScope[agentID],
                       !server.projectChildStopped.contains(scope) else { done(nil); return }
-                server.commandProjectChildren(scope, action: .stop) { error in
+                server.commandProjectChildren(scope, action: .stop, sweepChildren: explicit ? true : nil) { error in
                     if error == nil { server.projectChildDrained.insert(scope) }
                     done(error)
                 }
@@ -11287,6 +11307,7 @@ extension SessionServer {
         changes.agentName = { [weak self] agentID in
             self?.state.agents.first { $0.id == agentID }?.name
         }
+        changes.turnStore.liveAgentIDs = { [weak self] in self?.state.agents.map(\.id) ?? [] }
         changes.onTurnsChanged = { [weak self] agentID, _ in
             self?.queue.async { [weak self] in
                 guard let self else { return }

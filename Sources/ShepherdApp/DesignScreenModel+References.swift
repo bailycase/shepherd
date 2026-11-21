@@ -237,7 +237,7 @@ extension DesignScreenModel {
             } catch {
                 actions.report("Couldn't remove the note: \(error)")
             }
-            await refreshNotes()
+            await refresh()
         }
     }
 }

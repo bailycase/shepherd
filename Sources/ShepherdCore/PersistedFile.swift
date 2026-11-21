@@ -8,7 +8,8 @@ public enum PersistedFile<Value: Decodable> {
     case damaged(original: Data?, error: any Error)
 
     public static func load(from url: URL, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
-                            exactEnvelope: Bool = false, validate: (Value) throws -> Void = { _ in }) -> Self {
+                            exactEnvelope: Bool = false, validateBytes: (Data) throws -> Void = { _ in },
+                            validate: (Value) throws -> Void = { _ in }) -> Self {
         let data: Data
         do {
             data = try Data(contentsOf: url)
@@ -20,6 +21,17 @@ public enum PersistedFile<Value: Decodable> {
                lstat(url.path, &entry) == -1, errno == ENOENT { return .missing }
             return .damaged(original: nil, error: error)
         }
+        do {
+            try validateBytes(data)
+        } catch {
+            return .damaged(original: data, error: error)
+        }
+        return decode(data, dateDecodingStrategy: dateDecodingStrategy, exactEnvelope: exactEnvelope, validate: validate)
+    }
+
+    /// For stores that read their own bytes to fence an atomic replacement.
+    package static func decode(_ data: Data, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
+                               exactEnvelope: Bool = false, validate: (Value) throws -> Void = { _ in }) -> Self {
         do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = dateDecodingStrategy
