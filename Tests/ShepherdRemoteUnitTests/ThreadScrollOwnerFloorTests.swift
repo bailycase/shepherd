@@ -35,15 +35,31 @@ struct ThreadScrollOwnerFloorTests {
                 var owner = ThreadScrollOwner(nativeAnchor: native)
                 _ = owner.read(.init(probe: Self.probes[0]), intent: .idle)
                 var previous = Self.probes[0]
+                var commanded = false
                 for (n, index) in [a, b, c].enumerated() {
                     let touching = mask & (1 << n) != 0
                     let probe = Self.probes[index]
+                    // An offset change with the layout as it was and no finger is the reader paging (VoiceOver), which the follower
+                    // cannot see: the owner takes the view's place as the reader's (the plan's `repinSlack` rule), and the follower
+                    // is told the same, so the scripts go on comparing everything else.
+                    // (A reading right after a landing is the landing's doing.)
+                    let displaced = !commanded && !touching && !probe.layoutDiffers(from: previous) && probe.offset != previous.offset
+                    if displaced {
+                        follower.sticky = probe.distance <= NativeScrollFollower.repinSlack
+                        if follower.sticky { follower.unseen = false }
+                    }
                     let lands = follower.observe(from: previous, to: probe, gesture: touching, nativeAnchor: native)
                     let decision = owner.read(.init(probe: probe), intent: touching ? .touching : .idle)
-                    if (decision == .land) != lands || owner.follows != follower.sticky || owner.unseen != follower.unseen {
-                        mismatches.append("native \(native) probes \([a, b, c]) touching \(mask) step \(n): owner \(decision) follows \(owner.follows), "
-                            + "follower lands \(lands) sticky \(follower.sticky)")
+                    // Rowless scripts have one answer: a landing or nothing, never a hold, reveal or scroll.
+                    let expected: ThreadScrollOwner.Decision = lands ? .land : .none
+                    if decision != expected || owner.follows != follower.sticky || owner.unseen != follower.unseen {
+                        mismatches.append("native \(native) probes \([a, b, c]) touching \(mask) step \(n): owner \(decision) follows \(owner.follows) unseen \(owner.unseen), "
+                            + "follower lands \(lands) sticky \(follower.sticky) unseen \(follower.unseen)")
                     }
+                    commanded = decision != .none
+                    // Output while detached is what shows the pill: deliver it every step, to both.
+                    follower.contentArrived()
+                    owner.contentArrived()
                     landings += lands ? 1 : 0
                     detached += follower.sticky ? 0 : 1
                     previous = probe
@@ -58,25 +74,40 @@ struct ThreadScrollOwnerFloorTests {
 
     // MARK: The follower's sends and jumps
 
+    /// The same events through a live follower and the owner: where they end, what the user turn asks and the pill agree with each
+    /// other and with the case's expectations.
     @Test(arguments: ScrollFollowerSendTests.cases)
     func sendsAndArrivalsMatchTheFollowersExpectations(_ c: ScrollFollowerSendTests.Case) {
         var owner = ThreadScrollOwner()
-        var lands = false
+        var follower = NativeScrollFollower()
+        var lands = false, followerLands = false
         _ = owner.read(.init(probe: Fixture.tail), intent: .idle)
         for event in c.events {
             switch event {
-            case .dragUp: _ = owner.read(.init(probe: Fixture.probe(offset: 820)), intent: .touching)
+            case .dragUp:
+                _ = owner.read(.init(probe: Fixture.probe(offset: 820)), intent: .touching)
+                follower.observe(distanceFromBottom: 600, userIntent: true)
             case .jumpUp:
                 _ = owner.jumpToRow("earlier")
                 _ = owner.read(.init(probe: Fixture.probe(offset: 820)), intent: .programmatic)
-            case .send(let queued): _ = owner.sent(queued: queued)
-            case .userTurn: lands = owner.userTurnArrived() == .land
-            case .output: owner.contentArrived()
+                follower.beginJump()
+                follower.observe(distanceFromBottom: 600)
+            case .send(let queued):
+                _ = owner.sent(queued: queued)
+                follower.sent(queued: queued)
+            case .userTurn:
+                lands = owner.userTurnArrived() == .land
+                followerLands = follower.userTurnArrived()
+            case .output:
+                owner.contentArrived()
+                follower.contentArrived()
             }
+            #expect(owner.follows == follower.sticky && owner.unseen == follower.unseen)
         }
         #expect(owner.follows == c.sticky)
-        #expect(lands == c.lands)
+        #expect(lands == c.lands && lands == followerLands)
         #expect(owner.showsJump(running: false) == c.pill)
+        #expect(owner.showsJump(running: false) == NativeScrollFollower.showsJump(sticky: follower.sticky, unseen: follower.unseen, running: false))
     }
 
     // MARK: The place's reader

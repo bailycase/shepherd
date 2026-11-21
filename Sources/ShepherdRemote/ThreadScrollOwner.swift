@@ -15,7 +15,10 @@ import Foundation
 ///   (`programmatic`, for `hold` and `reveal`). The anchor is re-measured from the view every reading, so the moment the reader stops it is
 ///   where they are. Their own asks are not automatic: an ask lands at once on the Mac, and on iOS waits only for a finger
 ///   (`asksInterruptTouch`).
-/// - While `idle`, a pinned row that is not where it was kept is held there, whatever moved it.
+/// - While `idle`, a pinned row that is not where it was kept is held there when layout moved it. An offset change nobody reported as
+///   the reader's (VoiceOver paging: idle, layout unchanged, no command in flight) is the reader moving: where the view is, is the
+///   anchor, `following` if within `repinSlack` of the tail, else `pinned`.
+/// - Requests have an order: the newest replaces the rest. A `jumping` target survives layout, not the reader.
 /// - The tail landing keeps the budget `NativeTailRepin` has always given it: a layout that never settles stops being chased.
 ///
 /// The three cases of a pinned row that cannot be held, as `docs/plans/thread-scroll.md` D3 specifies them:
@@ -27,7 +30,8 @@ import Foundation
 ///    with nothing to hold, which the next reading re-anchors where the reader is.
 public struct ThreadScrollOwner: Equatable, Sendable {
     /// The reader's motion. Mirrors `ScrollIntent.State` (slice 2a) case for case; replace this with that type when both are on
-    /// nightly, and the owner needs no other change.
+    /// nightly and `ScrollIntent` is outside its `#if DEBUG` guard (slice 2a must move it before the swap), and the owner needs no
+    /// other change.
     public enum Intent: Equatable, Sendable {
         case idle, touching, coasting, programmatic
     }
@@ -108,6 +112,8 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     private var commanded = false
     /// A mount gave the reader back a kept row: the first reading puts it where it was kept, whatever else it differs in.
     private var placing = false
+    /// iOS: a jump to this row was asked while a finger was down. It goes at the lift, unless a newer request replaced it.
+    private var pendingRow: String?
 
     /// `mode` is what a transcript kept (`kept`) when it was last shown, or where a replay of a recording starts.
     public init(mode: Mode = .following, nativeAnchor: Bool = true, markerGap: Double = 0, asksInterruptTouch: Bool = true) {
@@ -143,19 +149,24 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         guard let old = last else {
             if placing {
                 placing = false
-                return place(reading)
+                return settle(reading, reader: intent != .idle) ?? place(reading)
             }
             if case .pinned(nil) = mode { mode = .pinned(measured(reading)) }
             return .none
         }
         let layoutChanged = reading.probe.layoutDiffers(from: old.probe)
         let gesture = readerMoves
+        let moved = reading.probe.offset != old.probe.offset
         let up = gesture && reading.probe.distance > old.probe.distance && !layoutChanged
         // Layout and recovery can clamp a detached viewport into the bottom band; a reader moving down may remeasure lazy rows, but
         // clamping a shrunken document moves up.
         let returning = gesture && reading.probe.offset > old.probe.offset && reading.probe.distance < old.probe.distance
-        if follows || isJumping || (gesture && (!layoutChanged || returning)) {
-            observe(reading, userIntent: up)
+        // The view moved, nobody said why, and nothing here explains it: the reader (VoiceOver paging). It is not a jump's doing either.
+        let displaced = intent == .idle && !layoutChanged && !driverMoved && moved && !isJumping
+        if displaced {
+            reanchor(reading)
+        } else if follows || isJumping || (gesture && (!layoutChanged || returning)) {
+            observe(reading, userIntent: up, takeover: gesture && moved && (!layoutChanged || returning))
         }
 
         if follows {
@@ -171,14 +182,31 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         repin.reading(distance: NativeTailRepin.distance(of: reading.probe, belowMarker: markerGap), wants: false, resized: false)
 
         guard case .pinned = mode else { return .none }
-        // The reader moves, the driver animates, or the offset changed with the layout as it was (a scroll nobody reported as one,
-        // such as VoiceOver paging): where the view is, is where it is kept.
-        if intent != .idle || (!layoutChanged && !driverMoved && reading.probe.offset != old.probe.offset) {
-            if let place = measured(reading) { mode = .pinned(place) }
-            revealing = false
-            return .none
-        }
+        // The reader moves or the driver animates: where the view is, is where it is kept.
+        if let done = settle(reading, reader: intent != .idle || displaced) { return done }
         return place(reading)
+    }
+
+    /// While the reader moves, the driver animates or a displacement was nobody's doing: keep what the view shows, decide nothing.
+    private mutating func settle(_ reading: Reading, reader: Bool) -> Decision? {
+        guard reader, case .pinned = mode else { return nil }
+        if let place = measured(reading) { mode = .pinned(place) }
+        revealing = false
+        return Decision.none
+    }
+
+    /// An offset change nobody reported: the reader is where the view is. Within `repinSlack` of the tail they follow, else the row at
+    /// the top is kept. Whatever was pending for the old place goes.
+    private mutating func reanchor(_ reading: Reading) {
+        revealing = false
+        if reading.probe.distance <= Self.repinSlack {
+            mode = .following
+            unseen = false
+        } else {
+            mode = .pinned(measured(reading))
+            awaitingSentTurn = false
+            followingSentTurn = false
+        }
     }
 
     /// Put the pinned row where it is kept: nothing to hold yet, ask for the row when it is not realized (case 1, once), or hold it.
@@ -210,12 +238,14 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     }
 
     /// `NativeScrollFollower.observe(distanceFromBottom:userIntent:)` over the modes. Only `userIntent` detaches.
-    private mutating func observe(_ reading: Reading, userIntent: Bool) {
+    private mutating func observe(_ reading: Reading, userIntent: Bool, takeover: Bool) {
         let distance = reading.probe.distance
         if isJumping {
-            // The jump ends once it leaves the band (it landed on an earlier turn) or the reader scrolls; until then, positions
-            // inside the band do not re-attach.
-            guard userIntent || distance > Self.threshold else { return }
+            // The jump ends when the reader moves the view, either way, or when the view itself moved out of the band (it landed on an
+            // earlier turn). Layout alone, a document that grew under it, ends nothing; until it ends, positions inside the band do
+            // not re-attach.
+            let left = distance > Self.threshold && last.map { reading.probe.offset < $0.probe.offset } == true
+            guard takeover || left else { return }
             mode = .pinned(measured(reading))
         }
         if distance <= Self.threshold {
@@ -240,10 +270,23 @@ public struct ThreadScrollOwner: Equatable, Sendable {
 
     // MARK: Landings that did not fit in a pass
 
-    public var wantsTurn: Bool { repin.wantsTurn }
+    public var wantsTurn: Bool { pendingRow != nil ? !fingerHolds : repin.wantsTurn }
 
-    /// Once per run-loop turn, after its events: land if the budget still allows.
-    public mutating func turn() -> Decision { issue(repin.take() ? .land : .none) }
+    /// Once per run-loop turn, after its events: a jump that waited for the finger goes, else land if the budget still allows.
+    public mutating func turn() -> Decision {
+        if let row = pendingRow { return fingerHolds ? .none : startJump(row) }
+        return issue(repin.take() ? .land : .none)
+    }
+
+    /// iOS: an ask waits for a finger on the thread.
+    private var fingerHolds: Bool { intent == .touching && !asksInterruptTouch }
+
+    /// A newer request replaces what an older one still wanted of the tail.
+    private mutating func dropOlderRequests() {
+        pendingRow = nil
+        repin.hold()
+        repin.release()
+    }
 
     private mutating func issue(_ decision: Decision) -> Decision {
         if decision != .none { commanded = true }
@@ -266,6 +309,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     // MARK: The reader's asks
 
     private mutating func ask() -> Decision {
+        dropOlderRequests()
         repin.asked()
         return turn()
     }
@@ -283,6 +327,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     /// layout that brings the echo.
     public mutating func sent(queued: Bool, turnPresent: Bool = false) -> Decision {
         guard !queued else { return .none }
+        dropOlderRequests()
         let detached = !follows
         mode = .following
         unseen = false
@@ -300,11 +345,22 @@ public struct ThreadScrollOwner: Equatable, Sendable {
     }
 
     /// Previous or next turn, Find: detach and go to the row. The scroll's first frames, still at the tail, do not re-attach.
+    /// On iOS a finger on the thread holds it until the lift (`turn()`), as it holds a landing.
     public mutating func jumpToRow(_ row: String) -> Decision {
-        mode = .jumping(row: row)
+        dropOlderRequests()
         awaitingSentTurn = false
         followingSentTurn = false
         revealing = false
+        if fingerHolds {
+            pendingRow = row
+            return .none
+        }
+        return startJump(row)
+    }
+
+    private mutating func startJump(_ row: String) -> Decision {
+        pendingRow = nil
+        mode = .jumping(row: row)
         return issue(.scroll(toRow: row, animated: true))
     }
 
@@ -315,6 +371,9 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         let previous = order
         order = next
         let survivors = Set(next)
+        if let row = pendingRow, !survivors.contains(row) { pendingRow = nil }
+        // A structure change is not the reader's ask: nothing is written while they move or the driver animates.
+        let automatic = intent == .idle
         switch mode {
         case .jumping(let row) where !survivors.contains(row):
             mode = .pinned(nil)
@@ -324,6 +383,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
             if let row = Self.nearest(to: anchor.row, in: previous, surviving: survivors) {
                 // Case 2: replaced.
                 mode = .pinned(Anchor(row: row, offset: anchor.offset))
+                guard automatic else { return .none }
                 revealing = true
                 return issue(.reveal(row))
             }
@@ -331,7 +391,8 @@ public struct ThreadScrollOwner: Equatable, Sendable {
             if let distance = last?.probe.distance, distance <= Self.repinSlack {
                 mode = .following
                 unseen = false
-                return ask()
+                // Moving, the reader is not landed; the next reading of a follower off its tail is.
+                return automatic ? issue(.land) : .none
             }
             mode = .pinned(nil)
             return .none
@@ -378,6 +439,7 @@ public struct ThreadScrollOwner: Equatable, Sendable {
         order = []
         revealing = false
         placing = false
+        pendingRow = nil
         last = nil
         repin.newThread(refillingPass: true)
     }

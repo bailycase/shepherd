@@ -117,6 +117,38 @@ struct ThreadScrollOwnerTests {
         #expect(owner.read(Self.reading(offset: 1100), intent: .idle) == .none)
     }
 
+    @Test func aVoiceOverPageAwayFromTheTailDetachesAFollower() {
+        var owner = Owner()
+        _ = owner.read(Self.reading(), intent: .idle)
+        // Idle, layout unchanged, no command in flight: the reader paged up.
+        #expect(owner.read(Self.reading(offset: 1100), intent: .idle) == .none)
+        #expect(owner.mode == .pinned(Anchor(row: "row-5", offset: -100)))
+        owner.contentArrived()
+        #expect(owner.unseen)
+    }
+
+    @Test func aVoiceOverPageBackToTheTailReAttachesAPinnedReader() {
+        var owner = Self.pinned(at: 700)
+        owner.contentArrived()
+        #expect(owner.read(Self.reading(offset: 1420), intent: .idle) == .none)
+        #expect(owner.follows && !owner.unseen)
+        // Within the slack counts, a little short of it does not.
+        var near = Self.pinned(at: 700)
+        _ = near.read(Self.reading(offset: 1420 - Owner.repinSlack), intent: .idle)
+        #expect(near.follows)
+        var short = Self.pinned(at: 700)
+        _ = short.read(Self.reading(offset: 1420 - Owner.repinSlack - 1), intent: .idle)
+        #expect(!short.follows)
+    }
+
+    @Test func anOffsetChangeTheDriverCausedIsNotTheReader() {
+        var owner = Self.pinned(at: 700)
+        // The owner held the row, and the next reading shows the view where the command put it: not a reader's page.
+        #expect(owner.read(Self.reading(content: 2340, offset: 700, shift: 340), intent: .idle) == .hold(Anchor(row: "row-3", offset: -100)))
+        #expect(owner.read(Self.reading(content: 2340, offset: 1040, shift: 340), intent: .idle) == .none)
+        #expect(owner.mode == .pinned(Anchor(row: "row-3", offset: -100)))
+    }
+
     // MARK: Jumps
 
     @Test func aTurnJumpDetachesAndItsFirstFramesAtTheTailDoNotReAttach() {
@@ -139,6 +171,45 @@ struct ThreadScrollOwnerTests {
         #expect(owner.isJumping)
         _ = owner.read(Self.reading(offset: 1380), intent: .touching)
         #expect(owner.follows && !owner.isJumping)
+    }
+
+    @Test func layoutAloneNeverEndsAJump() {
+        for intent in [Owner.Intent.programmatic, .idle] {
+            var owner = Owner()
+            _ = owner.read(Self.reading(), intent: .idle)
+            _ = owner.jumpToRow("row-2")
+            // The document grew 100 pt before the animation moved: 100 pt from the tail, the view where it was.
+            _ = owner.read(Self.reading(content: 2100, offset: 1420), intent: intent)
+            #expect(owner.mode == .jumping(row: "row-2"))
+            // The animation then moves it, and that is where it landed.
+            _ = owner.read(Self.reading(content: 2100, offset: 400), intent: .programmatic)
+            #expect(owner.mode == .pinned(Anchor(row: "row-2", offset: 0)))
+        }
+    }
+
+    @Test func aReaderMovingTheViewInEitherDirectionEndsAJump() {
+        for intent in [Owner.Intent.touching, .coasting] {
+            // Toward the tail, inside the band.
+            var toward = Owner()
+            _ = toward.read(Self.reading(), intent: .idle)
+            _ = toward.jumpToRow("row-2")
+            _ = toward.read(Self.reading(offset: 1380), intent: .programmatic)
+            _ = toward.read(Self.reading(offset: 1400), intent: intent)
+            #expect(toward.follows && !toward.isJumping)
+            // Away from it, inside the band.
+            var away = Owner()
+            _ = away.read(Self.reading(), intent: .idle)
+            _ = away.jumpToRow("row-2")
+            _ = away.read(Self.reading(offset: 1400), intent: .programmatic)
+            _ = away.read(Self.reading(offset: 1380), intent: intent)
+            #expect(away.follows && !away.isJumping)
+            // Away from it, beyond the band.
+            var beyond = Owner()
+            _ = beyond.read(Self.reading(), intent: .idle)
+            _ = beyond.jumpToRow("row-2")
+            _ = beyond.read(Self.reading(offset: 1000), intent: intent)
+            #expect(beyond.mode == .pinned(Anchor(row: "row-5", offset: 0)) && !beyond.isJumping)
+        }
     }
 
     @Test func rowsMeasuredAfterAJumpAreNothingNew() {
@@ -175,6 +246,45 @@ struct ThreadScrollOwnerTests {
         #expect(owner.wantsTurn)
         #expect(owner.turn() == .land)
         #expect(owner.turn() == .none)
+    }
+
+    @Test func onlyTheNewestRequestSurvivesAFingerOnIOS() {
+        var owner = Self.pinned(ask: false)
+        owner.setIntent(.touching)
+        // Latest, then a row, while the finger is down: nothing is written.
+        #expect(owner.jumpToLatest() == .none)
+        #expect(owner.jumpToRow("row-2") == .none)
+        #expect(!owner.wantsTurn)
+        #expect(owner.turn() == .none)
+        // The lift into a coast: one scroll to the row, not the landing the older ask wanted.
+        owner.setIntent(.coasting)
+        #expect(owner.wantsTurn)
+        #expect(owner.turn() == .scroll(toRow: "row-2", animated: true))
+        #expect(owner.isJumping)
+        #expect(!owner.wantsTurn)
+        #expect(owner.turn() == .none)
+    }
+
+    @Test func aTailAskAfterARowAskReplacesItOnIOS() {
+        var owner = Self.pinned(ask: false)
+        owner.setIntent(.touching)
+        #expect(owner.jumpToRow("row-2") == .none)
+        #expect(owner.jumpToLatest() == .none)
+        owner.setIntent(.coasting)
+        #expect(owner.turn() == .land)
+        #expect(owner.turn() == .none)
+        #expect(owner.follows && !owner.isJumping)
+    }
+
+    @Test func aRowAskWithNoFingerGoesAtOnceAndTakesTheTailAskWithIt() {
+        var owner = Self.pinned(ask: false)
+        owner.setIntent(.coasting)
+        #expect(owner.jumpToRow("row-2") == .scroll(toRow: "row-2", animated: true))
+        #expect(owner.turn() == .none)
+        // The Mac does not wait for the finger either.
+        var mac = Self.pinned(ask: true)
+        mac.setIntent(.touching)
+        #expect(mac.jumpToRow("row-2") == .scroll(toRow: "row-2", animated: true))
     }
 
     @Test func aSendThatGoesInNowReAttachesAndLandsOnItsTurnOnce() {

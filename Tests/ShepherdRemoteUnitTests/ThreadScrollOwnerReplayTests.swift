@@ -7,7 +7,7 @@ import ShepherdRemote
 /// and every write the app logged) through the owner, and writes down what the owner would have decided beside what the code did.
 ///
 /// It runs only when `SHEPHERD_SCROLL_REPLAY` names a `frames.json`; set `SHEPHERD_SCROLL_REPLAY_OUT` to keep the per-frame report
-/// (JSON lines). The checks that always hold are asserted: nothing automatic while the reader moves, and one decision per frame.
+/// (JSON lines). Asserted: nothing automatic while the reader moves, no mount and reading deciding in one frame, and the scenarios' first decisions.
 @Suite("Thread scroll owner: replay of the scroll-stability recording")
 struct ThreadScrollOwnerReplayTests {
     struct Event: Decodable {
@@ -40,6 +40,8 @@ struct ThreadScrollOwnerReplayTests {
         var codeWrites: [String]
         var clipMovedByCode: Int
         var requests: [String]
+        /// What the mount at the top of the frame decided, apart from the reading's own decision.
+        var mountDecision: String
     }
 
     static var path: String? { ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_REPLAY"] }
@@ -96,6 +98,7 @@ struct ThreadScrollOwnerReplayTests {
         let scenarios = try JSONDecoder().decode([String: [Frame]].self, from: data)
         var lines: [Line] = []
         var automaticWhileMoving = 0
+        var collisions = 0
         for name in scenarios.keys.sorted() {
             let frames = scenarios[name] ?? []
             // A recording starts wherever its first scenario step left the reader: seed the owner the way a kept place would.
@@ -113,10 +116,10 @@ struct ThreadScrollOwnerReplayTests {
                     continue
                 }
                 var requests: [String] = []
-                var decision = ThreadScrollOwner.Decision.none
+                var mount = ThreadScrollOwner.Decision.none
                 if wasHidden {
                     wasHidden = false
-                    decision = owner.mount()
+                    mount = owner.mount()
                     requests.append("mount")
                 }
                 for event in frame.events {
@@ -132,23 +135,60 @@ struct ThreadScrollOwnerReplayTests {
                 // input in it still counts (the intent signal's `readerInput`).
                 let input = frame.events.contains { $0.caller == "fixture.scrollInput" || $0.caller == "fixture.phase.interacting" }
                 let intent = input ? .touching : Self.intent(frame.motion)
-                let read = owner.read(Self.reading(frame), intent: intent)
-                if decision == .none { decision = read }
-                if intent != .idle, decision != .none, intent != .programmatic { automaticWhileMoving += 1 }
+                let decision = owner.read(Self.reading(frame), intent: intent)
+                // One decision per frame: a mount's and the reading's must not both ask for a write.
+                if mount != .none, decision != .none { collisions += 1 }
+                if intent != .idle, decision != .none || mount != .none, intent != .programmatic { automaticWhileMoving += 1 }
                 lines.append(Line(
                     scenario: name, frame: index, intent: "\(intent)", mode: Self.describe(owner.mode),
                     decision: Self.describe(decision), ownerFollows: owner.follows, codeFollows: frame.following,
                     codeWrites: frame.events.filter { $0.caller.hasPrefix("thread.write.") && $0.kind != "fixture" && $0.kind != "layout" }.map(\.caller),
                     clipMovedByCode: frame.events.filter { $0.caller == "NSClipView.bounds" && $0.detail != "fixture.clip.scroll" }.count,
-                    requests: requests))
+                    requests: requests, mountDecision: Self.describe(mount)))
             }
         }
         #expect(automaticWhileMoving == 0, "the owner decided to write while the reader moved")
+        #expect(collisions == 0, "a mount and a reading decided in the same frame")
+        // The scenarios' decisions, not only their absence while moving.
+        let flick = lines.filter { $0.scenario == "flick-and-stop" }
+        let detach = flick.firstIndex { !$0.ownerFollows }
+        let firstWrite = flick.firstIndex { $0.decision != "none" }
+        #expect(detach != nil && flick[detach!].intent != "idle", "the flick detaches while it moves")
+        #expect(firstWrite != nil && firstWrite! > detach!, "the clamp is answered after the detach")
+        #expect(firstWrite.map { flick[$0].decision } == "hold(stream-user@-24.0)", "the clamp is put back to where the reader left the row")
+        #expect(firstWrite.map { flick[$0].intent } == "idle", "and only once the reader has let go")
+        let history = lines.filter { $0.scenario == "page-older-history" && $0.decision != "none" }
+        #expect(history.map(\.decision) == ["reveal(user-60)"], "the page's lost anchor is asked for once")
         #expect(lines.count > 600)
         if let out = ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_REPLAY_OUT"] {
             let encoder = JSONEncoder()
             let text = try lines.map { String(decoding: try encoder.encode($0), as: UTF8.self) }.joined(separator: "\n")
             try text.write(toFile: out, atomically: true, encoding: .utf8)
         }
+    }
+
+    /// The flick-and-stop recording's numbers (its frames 3 to 8, the rows around the reader), as readings: a flick up inside the
+    /// band, the view past it by frame 5, and at the end the document shrinks 504 pt and the clip clamps 369 pt, so the row the reader
+    /// left at -24 sits at -159. Nothing is written while the reader moves; the one decision after it undoes the jump.
+    @Test func theFlickClampIsUndoneByOneHoldAfterTheReaderLetsGo() {
+        func reading(content: Double, offset: Double, rows: [String: Double], top: String) -> ThreadScrollOwner.Reading {
+            let probe = NativeScrollProbe(content: content, offset: offset, container: 506, insetTop: 0, insetBottom: 134)
+            return .init(probe: probe, width: 910, topRow: top, rows: rows)
+        }
+        var owner = ThreadScrollOwner()
+        _ = owner.rowsChanged(["user-359", "stream-user", "stream-user/reply"])
+        var decisions: [ThreadScrollOwner.Decision] = []
+        decisions.append(owner.read(reading(content: 71392, offset: 70886, rows: ["stream-user": -159, "stream-user/reply": -94], top: "stream-user/reply"), intent: .idle))
+        decisions.append(owner.read(reading(content: 71392, offset: 70886, rows: ["stream-user": -159, "stream-user/reply": -94], top: "stream-user/reply"), intent: .touching))
+        decisions.append(owner.read(reading(content: 71392, offset: 70816, rows: ["stream-user": -89, "stream-user/reply": -24], top: "stream-user/reply"), intent: .coasting))
+        #expect(owner.follows, "70 pt from the tail is still inside the band")
+        decisions.append(owner.read(reading(content: 71392, offset: 70771, rows: ["stream-user": -44, "stream-user/reply": 21], top: "stream-user/reply"), intent: .coasting))
+        #expect(!owner.follows, "115 pt, moving up with the layout as it was: detached while it moves")
+        decisions.append(owner.read(reading(content: 71392, offset: 70751, rows: ["stream-user": -24, "stream-user/reply": 41], top: "stream-user"), intent: .coasting))
+        #expect(owner.mode == .pinned(.init(row: "stream-user", offset: -24)))
+        #expect(decisions.allSatisfy { $0 == .none }, "nothing is written while the reader moves: \(decisions)")
+        // They let go, and layout (the shrink above the reader) clamped the clip: one decision, the row back where they left it.
+        let clamped = reading(content: 70888, offset: 70382, rows: ["stream-user": -159, "stream-user/reply": -94], top: "stream-user/reply")
+        #expect(owner.read(clamped, intent: .idle) == .hold(.init(row: "stream-user", offset: -24)))
     }
 }

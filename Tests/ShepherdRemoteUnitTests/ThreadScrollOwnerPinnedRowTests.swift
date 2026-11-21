@@ -68,23 +68,61 @@ struct ThreadScrollOwnerPinnedRowTests {
         #expect(owner.read(reading, intent: .idle) == .hold(Anchor(row: "row-2", offset: -100)))
     }
 
-    @Test func aReplacedRowIsNotFoughtOverWhileTheReaderMoves() {
+    @Test func aReplacedRowDecidesNothingWhileTheReaderMovesOrTheDriverAnimates() {
+        for intent in [Owner.Intent.touching, .coasting, .programmatic] {
+            var owner = Fixture.pinned(at: 700)
+            // The motion is already under way when the structure changes: the event itself must not write.
+            owner.setIntent(intent)
+            #expect(owner.rowsChanged(Fixture.order.filter { $0 != "row-3" }) == .none)
+            // The reader's place is what the view shows, not the row the store lost.
+            let reading = Fixture.reading(content: 2000, offset: 710, drop: ["row-3"])
+            #expect(owner.read(reading, intent: intent) == .none)
+            #expect(owner.mode == .pinned(Anchor(row: "row-4", offset: 90)))
+        }
+    }
+
+    @Test func aReplacedRowIsRevealedOnceTheReaderLetsGo() {
         var owner = Fixture.pinned(at: 700)
+        owner.setIntent(.touching)
         _ = owner.rowsChanged(Fixture.order.filter { $0 != "row-3" })
-        let reading = Fixture.reading(content: 2000, offset: 710, drop: ["row-3"])
-        #expect(owner.read(reading, intent: .touching) == .none)
-        #expect(owner.mode == .pinned(Anchor(row: "row-4", offset: 90)))
+        owner.setIntent(.idle)
+        // No reading re-anchored them while moving, so the substitute is still what is kept.
+        #expect(owner.read(Fixture.reading(offset: 700, drop: ["row-2"]), intent: .idle) == .reveal("row-2"))
+    }
+
+    @Test func aMountedPinnedRowDecidesNothingOnItsFirstReadingWhileTheReaderMoves() {
+        for intent in [Owner.Intent.touching, .coasting, .programmatic] {
+            for gone: Set<String> in [[], ["row-3"]] {
+                var owner = Fixture.pinned(at: 700)
+                #expect(owner.mount() == .none)
+                // Off its place, or not built: at rest that is a hold or a reveal; under the reader's hand it is neither.
+                let reading = Fixture.reading(offset: 400, drop: gone)
+                #expect(owner.read(reading, intent: intent) == .none)
+                #expect(owner.mode == .pinned(Anchor(row: "row-2", offset: 0)))
+            }
+        }
     }
 
     // MARK: 3. Nothing survives
 
     @Test func ifNothingSurvivesAReaderNearTheTailFollowsAndLands() {
         var owner = Fixture.pinned(at: 700)
-        // The reader had come within the slack of the tail (a clamp left them detached): the whole transcript is replaced.
-        _ = owner.read(Fixture.reading(content: 2000, offset: 1418), intent: .idle)
+        // The reader had come within the slack of the tail (a layout clamp left them detached: paging there would re-attach): the whole transcript is replaced.
+        _ = owner.read(Fixture.reading(content: 1999, offset: 1418), intent: .idle)
         #expect(!owner.follows)
         #expect(owner.rowsChanged(["new-0", "new-1"]) == .land)
         #expect(owner.follows)
+    }
+
+    @Test func nothingSurvivingLandsNobodyWhoseHandIsOnTheThread() {
+        for intent in [Owner.Intent.touching, .coasting, .programmatic] {
+            var owner = Fixture.pinned(at: 700)
+            _ = owner.read(Fixture.reading(content: 1999, offset: 1418), intent: .idle)
+            owner.setIntent(intent)
+            #expect(owner.rowsChanged(["new-0", "new-1"]) == .none)
+            #expect(owner.follows)
+            #expect(owner.turn() == .none)
+        }
     }
 
     @Test func ifNothingSurvivesAReaderFarFromTheTailKeepsNothingAndIsAnchoredWhereTheyAre() {
