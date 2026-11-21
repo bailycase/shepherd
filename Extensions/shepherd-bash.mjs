@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { closeSync, realpathSync, writeSync } from "node:fs";
 import { constants } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -7,16 +8,23 @@ const executable = fileURLToPath(import.meta.url);
 
 // One supervisor per Bash call. It leads the group until the jobs leave it, so neither an
 // intermediary's exit nor a normal tool return loses ownership of a background process.
-export function managedBash() {
+export function managedBash(sweep) {
   const groups = new Set();
+  const pendingSweeps = new Set();
   const stop = (group) => group.stdin.destroy(); // EOF is an owned handle, not a reusable PID.
   return {
-    stopAll() { for (const group of groups) stop(group); },
+    stopAll() {
+      for (const group of groups) stop(group);
+      // Request sweeps now: closing stdin can settle these calls before pi's abort arrives.
+      for (const requestSweep of pendingSweeps) requestSweep();
+    },
     async exec(command, cwd, { onData, signal, timeout, env }) {
       signal?.throwIfAborted();
       if (timeout !== undefined && (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483.647)) throw new Error("Invalid bash timeout");
+      const scope = sweep && process.env.SHEPHERD_OWNED_THREAD ? randomUUID() : undefined;
       const group = spawn(process.execPath, [executable, "--supervise", command], {
-        cwd, env, detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
+        cwd, env: scope ? { ...(env ?? process.env), SHEPHERD_OWNED_THREAD: process.env.SHEPHERD_OWNED_THREAD, SHEPHERD_OWNED_BASH: scope } : env,
+        detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
       });
       const [, , , stdout, stderr, status] = group.stdio;
       groups.add(group);
@@ -24,8 +32,14 @@ export function managedBash() {
       group.on("error", () => groups.delete(group));
       group.stdin.on("error", () => {});
       stdout.on("data", onData); stderr.on("data", onData);
-      let timedOut = false;
-      const abort = () => stop(group);
+      let timedOut = false, sweepRequested = false;
+      const requestSweep = () => {
+        if (!scope || sweepRequested) return;
+        sweepRequested = true;
+        sweep(scope);
+      };
+      if (scope) pendingSweeps.add(requestSweep);
+      const abort = () => { stop(group); requestSweep(); };
       const timer = timeout === undefined ? undefined : setTimeout(() => { timedOut = true; abort(); }, timeout * 1000);
       signal?.addEventListener("abort", abort, { once: true });
       // Supervisors that survive a successful call do not keep the engine alive. Its pipe closes
@@ -42,6 +56,7 @@ export function managedBash() {
         if (exitCode === null) throw new Error("Bash supervisor exited without reporting a status");
         return { exitCode };
       } finally {
+        pendingSweeps.delete(requestSweep);
         clearTimeout(timer); signal?.removeEventListener("abort", abort);
         stdout.destroy(); stderr.destroy(); status.destroy();
       }

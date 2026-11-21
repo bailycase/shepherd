@@ -15,7 +15,7 @@ extension ExtensionMessage {
         switch self {
         case .peerMessageReceived(let agentID, _), .setAgentStatus(let agentID, _), .setAgentName(let agentID, _, _), .setAgentSession(let agentID, _),
              .setAgentChildren(let agentID, _), .notify(let agentID, _, _), .helloAgent(let agentID), .responseTiming(let agentID, _, _, _),
-             .helloChildren(let agentID, _), .childScope(_, let agentID, _, _), .nativeQueueBoundary(_, let agentID, _, _),
+             .helloChildren(let agentID, _), .stopBashProcesses(let agentID, _), .childScope(_, let agentID, _, _), .nativeQueueBoundary(_, let agentID, _, _),
              .prepareProjectConfiguration(_, let agentID, _),
              .listPanes(_, let agentID), .openPane(_, let agentID, _, _, _, _), .closePane(_, let agentID, _),
              .focusPane(_, let agentID, _), .sendPaneInput(_, let agentID, _, _, _), .readPane(_, let agentID, _),
@@ -71,7 +71,7 @@ extension ExtensionMessage {
              .projectPublish(let id, _, _), .projectRuntime(let id, _, _, _, _), .browser(let id, _, _):
             return id
         case .peerMessageReceived, .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .helloChildren, .responseTiming,
-             .childCommandResult, .agentResponse, .cancelAgentRequest, .helloBrowser:
+             .childCommandResult, .stopBashProcesses, .agentResponse, .cancelAgentRequest, .helloBrowser:
             return nil
         }
     }

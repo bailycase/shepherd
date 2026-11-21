@@ -207,6 +207,23 @@ Per slice:
 - Reuse existing tests. `ThreadTailFlowTests`, `ThreadSendScrollTests`, `ThreadScrollingTests`, `ThreadBlankScreenTests` and `ScrollTrace` stay green; the ones that pin an old mechanism by name (for example the guard's known-issue run) change in the slice that removes the mechanism and say so in the PR.
 - Stop rule: a slice that regresses any scenario is reverted or fixed in its own PR before the next starts. No slice adds a gate to hide a regression.
 
+### Slice 4 driver contract and open checks
+
+Feed every geometry callback, including the first after a mount. Reconcile intent on release, cancel and remount, and call `turn()` on the first eligible lift when `wantsTurn` is true. Discard driver-side asks invalidated by a mount, session change or newer request.
+
+The pure walk is open loop. Slice 4 needs closed-loop evidence:
+
+- A landing that leaves the view more than 4 pt off with layout unchanged converges within `NativeTailRepin`'s budget.
+- The post-send composer collapses, and its offset adjustment arrives after the size change.
+- Each command's effect shows in the next reading. The owner only attributes one reading to the command.
+- `reveal` then `hold` terminates, with at most one position write per turn.
+- A clamped jump delivers its final geometry reading before the animation's matching `jumpCompleted()`. Idle alone is not completion.
+- The driver's own animation reports `programmatic`, not `coasting`.
+- Native size anchoring works with the anchor on and off (D1).
+- On a device, drag into history, keep a finger down, ask for the tail and send. Lifting the finger must land once. Also test two sends under one finger from history.
+
+Run the full pure walk with `python3 scripts/validate.py --case scroll-owner`. Its remaining event gaps are `nativeAnchor: false`, a positive `markerGap`, a second jump to a different row, a prepend or replacement of all rows (D3 case 3), `quietPassed` and budget stalls, and rebuilding the owner from `kept`. Mount mid-jump is covered and may land by design. `measured()` can still anchor on a sliver of the previous row after a drag, costing a `reveal` then `hold`; leave that for the pinned work.
+
 ## 6. What this plan does not prove
 
 - In slice 1's iOS simulator runs (#820), I1, I5, I6, I8, L6, L7, L8, L9, L10 and L13 never fired. L7 counts thread version observer firings, not stream chunks. I2 is a native anchor and has no counted probe.
