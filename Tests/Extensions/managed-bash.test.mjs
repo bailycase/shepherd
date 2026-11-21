@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { setImmediate, setTimeout as sleep } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, symlink, unlink, rmdir } from "node:fs/promises";
+import { mkdtemp, symlink, unlink, rmdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,34 +126,48 @@ test("a managed Bash timeout kills orphaned descendants", async () => {
 });
 
 // Starts a supervisor and keeps its stdin open, as pi does, so only its own reaping can end it.
+// Exit is observed through a listener registered at spawn, so nothing here ever signals a pid
+// that might have been recycled.
 async function startSupervisor(command) {
   const child = spawn(process.execPath, [supervisorPath, "--supervise", command], {
     detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
   });
+  const exit = once(child, "exit");
   child.stdio[3].resume(); child.stdio[4].resume(); child.stdio[5].resume();
   child.stdin.on("error", () => {});
   await once(child.stdio[5], "end");
-  return child;
+  return { child, exit };
 }
-async function untilGone(pid, ms) {
-  const deadline = Date.now() + ms;
-  while (alive(pid)) {
-    assert.ok(Date.now() < deadline, `supervisor ${pid} still alive after ${ms} ms`);
-    await sleep(50);
-  }
+// Resolves with [code, signal], or fails if the supervisor is still running after ms.
+async function exitsWithin(exit, ms) {
+  const timer = new AbortController();
+  const result = await Promise.race([exit, sleep(ms, "timeout", { signal: timer.signal })]);
+  timer.abort();
+  assert.notEqual(result, "timeout", `supervisor still alive after ${ms} ms`);
+  return result;
 }
 
-test("the supervisor exits by itself once its command is done and nothing else is in the group", { timeout: 10000 }, async () => {
-  const child = await startSupervisor("exit 0");
-  try { await untilGone(child.pid, 3000); }
-  finally { if (alive(child.pid)) process.kill(-child.pid, "SIGKILL"); }
+test("the supervisor exits by itself once its command is done and nothing else is in the group", { timeout: 40000 }, async () => {
+  const { child, exit } = await startSupervisor("exit 0");
+  try { assert.deepEqual(await exitsWithin(exit, 30000), [0, null]); }
+  finally { child.stdin.destroy(); }
 });
 
-test("the supervisor outlives a background job, then exits after the job ends", { timeout: 15000 }, async () => {
-  const child = await startSupervisor("/bin/sleep 2 </dev/null >/dev/null 2>&1 &");
+test("the supervisor outlives a background job until the test releases it, then exits", { timeout: 70000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shepherd-bash-"));
+  const hold = join(dir, "hold");
+  await writeFile(hold, "");
+  // The job runs until the test deletes the file, so it cannot finish before the check below.
+  const { child, exit } = await startSupervisor(`(while [ -e '${hold}' ]; do /bin/sleep 0.1; done) </dev/null >/dev/null 2>&1 &`);
+  let exited = false;
+  exit.then(() => { exited = true; });
   try {
-    await sleep(1000);
-    assert.ok(alive(child.pid), "supervisor must stay while the job is in its group");
-    await untilGone(child.pid, 8000);
-  } finally { if (alive(child.pid)) process.kill(-child.pid, "SIGKILL"); }
+    await sleep(1500); // several probes at the 100 ms backoff start; a late wakeup cannot weaken the check
+    assert.ok(!exited, "supervisor must stay while the job is in its group");
+    await unlink(hold);
+    assert.deepEqual(await exitsWithin(exit, 30000), [0, null]);
+  } finally {
+    child.stdin.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

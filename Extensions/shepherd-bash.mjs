@@ -82,18 +82,30 @@ if (isSupervisor()) {
     for (const fd of [3, 4, 5]) closeSync(fd);
     reapWhenEmpty(100);
   }
-  // Probe at once, then back off while a background job keeps the group alive.
+  // Probe at once, then back off while a background job keeps the group alive. Any probe
+  // failure retries: only a clean listing of our own pid may end the supervisor.
   function reapWhenEmpty(delay) {
-    // macOS pgrep leaves out itself and its ancestors unless given -a. The probe is our child,
-    // so without -a we would never see our own pid and never exit. The live supervisor pins
-    // the group identity during every check.
-    const probe = spawn("/usr/bin/pgrep", ["-a", "-g", ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
-    let count = "";
-    probe.stdout.on("data", (chunk) => { count += chunk; });
-    probe.on("error", () => {});
-    probe.on("close", (code) => {
-      if (code === 0 && count.trim() === ownGroup) process.exit(0);
-      else setTimeout(reapWhenEmpty, delay, Math.min(delay * 2, 30_000));
-    });
+    let retried = false;
+    const retry = () => {
+      if (retried) return;
+      retried = true;
+      setTimeout(reapWhenEmpty, delay, Math.min(delay * 2, 30_000));
+    };
+    try {
+      // macOS pgrep leaves out itself and its ancestors unless given -a, and the probe is our
+      // child, so without it we would never see our own pid. On Linux (procps) -a prints the
+      // full command line and pgrep never lists itself, so -g alone is right. Either way the
+      // first field of each line is the pid. The live supervisor pins the group during the check.
+      const flags = process.platform === "darwin" ? ["-a", "-g"] : ["-g"];
+      const probe = spawn("/usr/bin/pgrep", [...flags, ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
+      let listing = "";
+      probe.stdout.on("data", (chunk) => { listing += chunk; }).on("error", retry);
+      probe.on("error", retry);
+      probe.on("close", (code) => {
+        const pids = listing.split("\n").filter((line) => line.trim()).map((line) => line.trim().split(/\s+/)[0]);
+        if (!retried && code === 0 && pids.length > 0 && pids.every((pid) => pid === ownGroup)) process.exit(0);
+        retry();
+      });
+    } catch { retry(); }
   }
 }
