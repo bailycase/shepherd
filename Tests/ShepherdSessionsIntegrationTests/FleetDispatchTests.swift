@@ -511,6 +511,10 @@ struct FleetDispatchTests {
         _ = try #require(await parent.nextMessage())
         try await eventuallyOnMain("the first result to settle") { a.sent().first?.state == .done && b.taken().first?.state == .done }
         let prior = b.dispatched.first?.completedAt
+        // The status above is reported by hand, so nothing yet says the stub pi has started: the host refuses a message to a thread that isn't servable.
+        try await eventuallyOnMain("the receiver's pi to serve the thread") {
+            b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
 
         let gate = FleetTestGate()
         await gate.close()
