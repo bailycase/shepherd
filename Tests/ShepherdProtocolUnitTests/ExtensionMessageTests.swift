@@ -499,6 +499,8 @@ struct ExtensionReplyTests {
         .agents(id: 1, agents: [
             AgentPeerInfo(id: AgentID(rawValue: "worker"), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
             AgentPeerInfo(id: AgentID(rawValue: "me"), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
+        ]),
+        .agents(id: 2, agents: [
             AgentPeerInfo(id: AgentID(rawValue: "far"), name: "far", status: "blocked", cwd: "/docs", isSelf: false, space: "acme-docs", lastActiveAt: 1_700_000_000_000, asking: true),
         ]),
         .fleetDispatches(id: 145, dispatches: [
