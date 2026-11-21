@@ -1,4 +1,5 @@
 """Signing gates use scratch apps and mocked native tools, never a keychain."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import contextlib
 import io
 from pathlib import Path

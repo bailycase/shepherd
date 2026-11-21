@@ -1,4 +1,5 @@
 """Duo-only regressions must not break the generic simulator run."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import os
 from pathlib import Path
 import subprocess
