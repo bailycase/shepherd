@@ -422,6 +422,41 @@ struct FleetDispatchTests {
         #expect(try Self.head(a.folder) == origin.sha)
     }
 
+    @Test func theResultReportsWorkPushedToAnExistingCheckedOutBranch() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let target = "fix/payment"
+        try git(["push", "-q", "origin", "HEAD:refs/heads/\(target)"], in: a.folder)
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("Push changes to \(target).", title: "Payment review", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let assigned = try #require(thread.worktreeBranch)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+
+        try git(["fetch", "-q", "origin", target], in: worktree)
+        try git(["switch", "-q", "--track", "origin/\(target)"], in: worktree)
+        try "payments\n".write(to: worktree.appendingPathComponent("PAYMENTS.md"), atomically: true, encoding: .utf8)
+        try git(["add", "PAYMENTS.md"], in: worktree)
+        try git(["commit", "-qm", "Add payment notes"], in: worktree)
+        try git(["push", "-q", "origin", target], in: worktree)
+        let pushed = try Self.head(worktree)
+        try git(["update-ref", "-d", "refs/remotes/origin/\(target)"], in: worktree)
+        try b.report(thread.id, .done)
+
+        let result = try #require(await parent.nextMessage())
+        #expect(result.text.contains("Branch \(target): 1 commit ahead of origin/main, pushed to origin, 1 file changed (+1 -0)."))
+        #expect(!result.text.contains("Branch \(assigned):"))
+        try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
+        let read = try await parent.status(info)
+        #expect(read.branchFacts?.branch == target && read.branchFacts?.head == pushed && read.branchFacts?.pushed == true)
+        #expect(try git(["rev-parse", assigned], in: worktree).trimmingCharacters(in: .whitespacesAndNewlines) == origin.sha)
+        #expect(try git(["for-each-ref", "refs/remotes/origin/\(target)"], in: worktree).isEmpty, "reporting does not fetch")
+    }
+
     @Test func theDispatchResultExcludesUpstreamCommitsAfterAFastForward() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
@@ -465,6 +500,20 @@ struct FleetDispatchTests {
         #expect(a.sent().first?.commitSHA == origin.sha, "the start pin did not change")
     }
 
+    @Test func aCheckedOutLocalOnlyBranchDoesNotReplaceTheAssignedBranchInTheResult() throws {
+        let origin = try Self.makeOrigin()
+        let checkout = try makeScratchDirectory("report").appendingPathComponent("checkout")
+        try git(["clone", "-q", origin.url.path, checkout.path], in: origin.url)
+        let branch = "fleet/check-payments"
+        try git(["branch", branch], in: checkout)
+        try git(["switch", "-qc", "fix/local-only"], in: checkout)
+        try git(["-c", "user.name=Shepherd Tests", "-c", "user.email=tests@example.com",
+                 "commit", "--allow-empty", "-qm", "Local-only work"], in: checkout)
+
+        let facts = FleetDispatchGit.branchFacts(worktree: checkout.path, branch: branch, start: origin.sha)
+        #expect(facts.branch == branch && facts.head == origin.sha && facts.ahead == 0 && !facts.pushed)
+    }
+
     @Test func anUnreachableOriginDoesNotReportAStaleTrackingRefAsPushed() throws {
         let origin = try Self.makeOrigin()
         let checkout = try makeScratchDirectory("report").appendingPathComponent("checkout")
@@ -478,6 +527,9 @@ struct FleetDispatchTests {
         #expect(facts.head == origin.sha && facts.ahead == 0)
         #expect(facts.originCheckFailed == true && !facts.pushed)
         #expect(facts.uncommittedModified == 0 && facts.uncommittedUntracked == 0 && facts.uncommittedCheckFailed == nil)
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", title: "Check payments",
+                                         task: "Check payments", repoKey: Self.repoKey, branch: branch, resultBranchFacts: facts, createdAt: 1)
+        #expect(FleetDispatch.resultMessage(record).contains("Branch \(branch): 0 commits ahead of the start, could not verify origin,"))
 
         try Data().write(to: checkout.appendingPathComponent("new notes.txt"))
         let noBranch = FleetDispatchGit.branchFacts(worktree: checkout.path, branch: "fleet/missing", start: origin.sha)
@@ -978,6 +1030,52 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("the next scoped batch to exit its target") { kill(secondPID, 0) != 0 }
         #expect(kill(next, 0) == 0 && kill(decoy, 0) == 0)
         return (decoy, next)
+    }
+
+    @Test(arguments: [false, true])
+    func closeWithQueuedFleetWorkRequiresCancellation(cancel: Bool) async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver's pi to run the dispatch") {
+            guard let thread = b.dispatched.first else { return false }
+            return b.server.queue.sync {
+                b.server.rpcThread(forAgent: thread.id).map { $0.isServable && $0.running } == true
+            }
+        }
+        let thread = try #require(b.dispatched.first)
+        let followUp = "Check the payment logs next."
+        _ = try parent.info(try await parent.call {
+            .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: followUp, delivery: .followUp)
+        })
+        func hasQueuedFollowUp() -> Bool {
+            b.server.queue.sync {
+                b.server.rpcThread(forAgent: thread.id)?.items.contains { $0.entry.text.contains(followUp) } == true
+            }
+        }
+        try await eventuallyOnMain("the follow-up to queue on the receiver") { hasQueuedFollowUp() }
+        if cancel {
+            try #require(try await parent.cancel(info).state == "cancelled")
+            try await eventuallyOnMain("the receiver to cancel") { b.taken().first?.state == .cancelled }
+        }
+        let closed = try await parent.call { .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID) }
+        if cancel {
+            guard case .fleetDispatch(_, let receipt) = closed else {
+                Issue.record("Expected a cancelled dispatch with queued work to close, got \(closed)")
+                return
+            }
+            #expect(receipt.closeReport?.contains("Thread removed") == true)
+            #expect(b.dispatched.isEmpty)
+        } else {
+            guard case .error(_, "not_settled", _) = closed else {
+                Issue.record("Expected a live dispatch with queued work to refuse close, got \(closed)")
+                return
+            }
+            #expect(b.dispatched.first?.id == thread.id)
+            #expect(hasQueuedFollowUp())
+        }
     }
 
     @Test func cancellingADispatchStopsItsBackgroundProcessAndKeepsItsThread() async throws {

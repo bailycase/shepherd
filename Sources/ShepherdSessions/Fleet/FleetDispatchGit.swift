@@ -166,12 +166,26 @@ enum FleetDispatchGit {
         let changes = worktree.flatMap { uncommittedFiles(worktree: $0) }
         var facts = FleetBranchFacts(branch: branch, uncommittedModified: changes?.modified, uncommittedUntracked: changes?.untracked,
                                      uncommittedCheckFailed: changes == nil ? true : nil)
+        guard let worktree, let start, isCommit(start) else { return facts }
+        let assigned = committedBranchFacts(facts, worktree: worktree, start: start, comparison: comparison)
+        let prefix = "refs/heads/"
+        // Prefer the assigned branch unless it has no commits ahead and no ref on origin.
+        guard assigned.facts.ahead == 0, assigned.onOrigin == false,
+              let current = run(["symbolic-ref", "--quiet", "HEAD"], in: worktree), current.status == 0,
+              current.output.hasPrefix(prefix), current.output != prefix + branch else { return assigned.facts }
+        facts.branch = String(current.output.dropFirst(prefix.count))
+        let checkedOut = committedBranchFacts(facts, worktree: worktree, start: start, comparison: comparison)
+        return checkedOut.onOrigin == true ? checkedOut.facts : assigned.facts
+    }
+
+    private static func committedBranchFacts(_ initial: FleetBranchFacts, worktree: String, start: String,
+                                             comparison: String?) -> (facts: FleetBranchFacts, onOrigin: Bool?) {
+        var facts = initial
+        let branch = facts.branch
         let ref = "refs/heads/\(branch)"
-        // The thread may have switched branches or detached HEAD. Pin the dispatch ref once so all
-        // facts describe the same commit even if the branch moves while git is running.
-        guard let worktree, let start, isCommit(start),
-              let tip = run(["rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"], in: worktree),
-              tip.status == 0, isCommit(tip.output) else { return facts }
+        // Pin the ref so the count and diff describe the same commit.
+        guard let tip = run(["rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"], in: worktree),
+              tip.status == 0, isCommit(tip.output) else { return (facts, nil) }
         let head = tip.output
         var diffBase = start
         var comparedTo: String?
@@ -187,7 +201,7 @@ enum FleetDispatchGit {
         guard let count = run(["rev-list", "--count", range], in: worktree), count.status == 0,
               let ahead = Int(count.output),
               let stat = run(["diff", "--shortstat", range, "--"], in: worktree, environment: ["LC_ALL": "C"]), stat.status == 0
-        else { return facts }
+        else { return (facts, nil) }
         facts.head = head
         facts.ahead = ahead
         (facts.filesChanged, facts.insertions, facts.deletions) = parseShortstat(stat.output)
@@ -195,11 +209,15 @@ enum FleetDispatchGit {
         // Ask origin without writing refs or falling back to a possibly stale remote-tracking ref.
         let remote = run(["ls-remote", "--exit-code", "--refs", "origin", ref], in: worktree, timeout: 30)
         switch remote?.status {
-        case 0: facts.pushed = remote?.output == "\(head)\t\(ref)"
-        case 2: break // No matching ref.
-        default: facts.originCheckFailed = true
+        case 0:
+            let match = remote?.output.split(separator: "\n").first { $0.hasSuffix("\t\(ref)") }
+            facts.pushed = match == "\(head)\t\(ref)"[...]
+            return (facts, match != nil)
+        case 2: return (facts, false) // No matching ref.
+        default:
+            facts.originCheckFailed = true
+            return (facts, nil)
         }
-        return facts
     }
 
     static let buildOutputNames = [".build", "DerivedData"]

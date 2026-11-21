@@ -8416,9 +8416,13 @@ public final class SessionServer: @unchecked Sendable {
             }
             if let closingDispatch {
                 let thread = self.rpcThread(forAgent: agentID)
+                // A cancelled pi can retain its last busy flag and queue after being killed.
+                // Keep the normal checks if the person has since restarted the thread.
+                let discardsQueue = self.fleet?.dispatch.inbound[closingDispatch]?.record.state == .cancelled
+                    && thread.map { !$0.session.isAlive || self.startRecords[$0.session.id]?.stop == .requested } == true
                 guard agent.dispatchedFrom?.dispatchID == closingDispatch, agent.movedTo == nil,
-                      agent.status != .working, agent.status != .blocked,
-                      thread?.piBusy != true, thread?.items.isEmpty != false else {
+                      discardsQueue || (agent.status != .working && agent.status != .blocked
+                          && thread?.piBusy != true && thread?.items.isEmpty != false) else {
                     throw FleetDispatchRefusal(code: "not_settled", message: "The thread is active, has queued work, or has moved. It was not closed.")
                 }
             }
