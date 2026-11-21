@@ -1802,11 +1802,12 @@ public final class SessionServer: @unchecked Sendable {
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
-                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
+                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.session.isAlive else {
                             return continuation.resume(returning: false)
                         }
-                        thread.lastInputFromPerson = false
-                        thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
+                        // A thread whose pi is still starting keeps the follow-up until it serves and has taken its opening prompt.
+                        guard thread.isServable, !thread.isSendingOpening else { return self.holdFleetMessage(agentID, text, delivery, continuation) }
+                        self.sendFleetMessage(thread, text, delivery) { result in
                             if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
                         }
                     } ?? continuation.resume(returning: false)
@@ -1831,6 +1832,65 @@ public final class SessionServer: @unchecked Sendable {
             stopPiForMove: { [weak self] agentID in await self?.stopPiForMove(agentID) },
             tombstone: { [weak self] agentID, moved in self?.fleetTombstone(agentID, moved) ?? false },
             untombstone: { [weak self] agentID, moveID in self?.fleetUntombstone(agentID, moveID: moveID) ?? false })
+    }
+
+    /// A Fleet follow-up that reached a dispatched thread before its pi could take input. Server queue.
+    private final class HeldFleetMessage {
+        let text: String
+        let delivery: NativeThreadDelivery
+        var answer: ((Bool) -> Void)?
+        init(text: String, delivery: NativeThreadDelivery, answer: @escaping (Bool) -> Void) {
+            (self.text, self.delivery, self.answer) = (text, delivery, answer)
+        }
+        /// Answers once: a late delivery and the wait running out never both count.
+        func finish(_ sent: Bool) { answer?(sent); answer = nil }
+    }
+    private var heldFleetMessages: [AgentID: [HeldFleetMessage]] = [:]
+    /// How long a held follow-up waits for its thread to serve: less than the sender's request timeout, so the sender is told rather than left to retry a message still held.
+    var fleetFollowUpHold: TimeInterval = 8
+
+    func heldFleetMessageCount(_ agentID: AgentID) -> Int { heldFleetMessages[agentID]?.count ?? 0 }
+
+    private func sendFleetMessage(_ thread: RPCThreadState, _ text: String, _ delivery: NativeThreadDelivery,
+                                  completion: @escaping (NativeThreadResult) -> Void) {
+        thread.lastInputFromPerson = false
+        thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true, completion: completion)
+    }
+
+    private func holdFleetMessage(_ agentID: AgentID, _ text: String, _ delivery: NativeThreadDelivery, _ continuation: CheckedContinuation<Bool, Never>) {
+        let held = HeldFleetMessage(text: text, delivery: delivery) { continuation.resume(returning: $0) }
+        heldFleetMessages[agentID, default: []].append(held)
+        queue.asyncAfter(deadline: .now() + fleetFollowUpHold) { [weak self] in
+            guard let self, held.answer != nil else { return }
+            self.heldFleetMessages[agentID]?.removeAll { $0 === held }
+            if self.heldFleetMessages[agentID]?.isEmpty == true { self.heldFleetMessages[agentID] = nil }
+            held.finish(false)
+        }
+    }
+
+    /// The thread's pi serves: its held follow-ups go in, in the order they arrived.
+    private func releaseHeldFleetMessages(sessionID: SessionID) {
+        guard let agent = agentID(forSession: sessionID), let held = heldFleetMessages.removeValue(forKey: agent) else { return }
+        guard let thread = sessions[sessionID]?.thread else { return held.forEach { $0.finish(false) } }
+        // The opening prompt is still being admitted: a send now would change the queue under it. It calls this again once answered.
+        guard !thread.isSendingOpening else { return heldFleetMessages[agent] = held }
+        sendHeldFleetMessages(thread, held[...])
+    }
+
+    /// One at a time: a send is admitted against the queue as it stands, so the next waits for this one's answer. A thread that has
+    /// only just started its first turn refuses a send with `persist_failed`, which says nothing was accepted, so it is tried again shortly.
+    private func sendHeldFleetMessages(_ thread: RPCThreadState, _ held: ArraySlice<HeldFleetMessage>, retries: Int = 5) {
+        guard let message = held.first else { return }
+        // The wait ran out and the sender was told: it is not delivered now.
+        guard message.answer != nil else { return sendHeldFleetMessages(thread, held.dropFirst()) }
+        sendFleetMessage(thread, message.text, message.delivery) { [weak self] result in
+            if case .failure("persist_failed", _) = result, retries > 0 {
+                self?.queue.asyncAfter(deadline: .now() + .milliseconds(50)) { self?.sendHeldFleetMessages(thread, held, retries: retries - 1) }
+                return
+            }
+            if case .accepted = result { message.finish(true) } else { message.finish(false) }
+            self?.sendHeldFleetMessages(thread, held.dropFirst())
+        }
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
@@ -10129,6 +10189,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.restoreAgentRecovery(sessionID: sid)
                 server.unannouncedServable.insert(sid)
                 server.announceServableThreads()
+                server.releaseHeldFleetMessages(sessionID: sid)
                 for id in server.peerDeliveries.keys.sorted() where server.peerDeliveries[id]?.sessionID == sid {
                     server.dispatchPeerTask(id)
                 }
@@ -10141,6 +10202,7 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sid) would start a new conversation in place of \(resuming ?? "-"); stopping it")
                 session?.kill()
             }
+            thread.onOpeningSent = { [weak serverWeak] in serverWeak?.releaseHeldFleetMessages(sessionID: sid) }
             session.onExit = { [weak serverWeak, weak thread] code in
                 thread?.cancelPreparingPrompts()
                 serverWeak?.sessionDidExit(sid, code: code)
@@ -10554,6 +10616,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         let agent = agentID(forSession: sessionID)
+        if let agent, let held = heldFleetMessages.removeValue(forKey: agent) { held.forEach { $0.finish(false) } }
         if let agent { fleetCommandAgents.set(agent, false) }
         if let agent {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {

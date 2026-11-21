@@ -154,6 +154,9 @@ final class RPCThreadState {
     /// Installed by SessionServer: called once, on the session queue, when the thread first
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
+    /// The opening prompt's send was answered: input that waited for the thread can go in without racing it.
+    var onOpeningSent: (() -> Void)?
+    var isSendingOpening: Bool { stagingOpening != nil }
     /// Stop was pressed (or sent): the host cancels what the thread dispatched to other Macs.
     var onStopRequested: (() -> Void)?
     var onDiagnosticDuration: ((String, Double) -> Void)?
@@ -1859,7 +1862,7 @@ final class RPCThreadState {
         pushRunArmed = true
         pushAwaitingStart = !running
         send(id: id, text: text, delivery: .followUp, images: images) { [weak self] result in
-            if let self, self.stagingOpening?.id == id { self.stagingOpening = nil }
+            if let self, self.stagingOpening?.id == id { self.stagingOpening = nil; self.onOpeningSent?() }
             guard case .failure(let code, let message) = result else { return }
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")
         }

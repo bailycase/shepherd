@@ -549,6 +549,69 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("both dispatch records to finish the second turn") { a.sent().first?.state == .done && b.taken().first?.state == .done }
     }
 
+    /// What the receiver's thread holds from the person or the sender, as text, in order.
+    private static func userTexts(_ mac: Mac, _ agent: AgentID) -> [String] {
+        mac.server.queue.sync {
+            guard let thread = mac.server.rpcThread(forAgent: agent) else { return [] }
+            return (thread.history + thread.live.map(\.value)).filter { $0.role == "user" }.map { $0.blocks.map(\.text).joined() }
+        }
+    }
+
+    @Test func aFollowUpSentWhileTheReceiversThreadIsStartingIsDeliveredOnceItServesInOrder() async throws {
+        // The checkout's pi holds at startup until `release-pi` appears in its worktree (`stub-pi-startup.json`).
+        let (a, b, _) = try await Self.pair(originExtra: ["stub-pi-startup.json": #"{"gate": "release-pi"}"#])
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        try await eventuallyOnMain("both Macs to hold the dispatch as running") { b.taken().first?.state == .running && a.sent().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        #expect(b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable } == false, "the thread is still starting")
+
+        // Two follow-ups on the sender's one connection, the second sent once the receiver holds the first.
+        try parent.extension.send(.fleetDispatchMessage(id: 901, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "First follow up.", delivery: .followUp))
+        try await eventuallyOnMain("the receiver to hold the first follow-up") { b.server.queue.sync { b.server.heldFleetMessageCount(thread.id) } == 1 }
+        try parent.extension.send(.fleetDispatchMessage(id: 902, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "Second follow up.", delivery: .followUp))
+        try await eventuallyOnMain("the receiver to hold both follow-ups") { b.server.queue.sync { b.server.heldFleetMessageCount(thread.id) } == 2 }
+        try Data().write(to: worktree.appendingPathComponent("release-pi"))
+
+        var answered: Set<Int> = []
+        while answered.count < 2 {
+            switch try await parent.read() {
+            case .fleetDispatch(let id, _): answered.insert(id)
+            case .error(let id, let code, let message): throw WireError("follow-up \(id) was refused: \(code) \(message)")
+            default: continue
+            }
+        }
+        try await eventuallyOnMain("both follow-ups to reach the thread, once each, in order") {
+            Self.userTexts(b, thread.id).filter { $0.contains("follow up.") } == ["First follow up.", "Second follow up."]
+        }
+    }
+
+    @Test func aFollowUpToAThreadThatNeverStartsFailsAfterTheHoldAndIsNotDeliveredLater() async throws {
+        let (a, b, _) = try await Self.pair(originExtra: ["stub-pi-startup.json": #"{"gate": "release-pi"}"#])
+        defer { a.stop(); b.stop() }
+        b.server.queue.sync { b.server.fleetFollowUpHold = 0.3 }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        try await eventuallyOnMain("both Macs to hold the dispatch as running") { b.taken().first?.state == .running && a.sent().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+
+        let reply = try await parent.call { .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "Too early.", delivery: .followUp) }
+        guard case .error(_, "not_running", _) = reply else { throw WireError("expected a refusal, got \(reply)") }
+        #expect(b.server.queue.sync { b.server.heldFleetMessageCount(thread.id) } == 0)
+
+        try Data().write(to: worktree.appendingPathComponent("release-pi"))
+        try await eventuallyOnMain("the receiver's pi to serve the thread") {
+            b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        try await eventuallyOnMain("the opening prompt to reach the thread") { Self.userTexts(b, thread.id).contains { $0.contains("Fix the flaky payment test.") } }
+        #expect(!Self.userTexts(b, thread.id).contains { $0.contains("Too early.") }, "a follow-up the sender was told failed is not delivered")
+    }
+
     @Test func ordinaryStopTellsTheThreadToStopItsRetainedBashGroups() async throws {
         let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
