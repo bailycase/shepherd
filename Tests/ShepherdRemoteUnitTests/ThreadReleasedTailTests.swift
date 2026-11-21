@@ -81,6 +81,25 @@ struct ThreadReleasedTailTests {
         #expect(!store.running && store.liveRowID == nil && store.rows.allSatisfy { !$0.live }, "what it was doing when it left is not what it is doing now")
     }
 
+    /// The tail's release shows the thread as not running until its pull lands. On a warm reconnect (the same connection, as the phone
+    /// and iPad have it) a host that is still mid-turn with nothing new to say answers "unchanged": the view has to take its run state
+    /// from the host's last word then, not keep the release's.
+    @Test func aThreadReleasedMidTurnRunsAgainWhenTheHostSaysUnchanged() async {
+        let host = FakeHost(F.snapshot(running: true, messages: session(turns: 3)))
+        host.answersUnchanged = true
+        let store = manualStore()
+        let first = await start(store, host, connection: "link")
+        first.cancel()
+        store.suspend()
+        store.releaseToTail(rows: 30, maxBytes: .max)
+        #expect(!store.running)
+
+        let again = await start(store, host, connection: "link")
+        defer { again.cancel() }
+        #expect(host.requests.last.map { if case .snapshot(_, _, let after) = $0 { after != nil } else { false } } == true, "a warm pull names its revision")
+        #expect(store.running && store.hostRunning, "the host never stopped: the thread says so")
+    }
+
     /// The rows the host adds while a turn runs (its question and the reply so far) are not history: the tail starts in history, and they stay.
     @Test func theLiveRowsOfAThreadThatLeftRunningStayAfterTheTail() async {
         let all = session(turns: 100)
