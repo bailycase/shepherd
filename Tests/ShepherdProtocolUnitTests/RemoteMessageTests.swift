@@ -526,7 +526,7 @@ enum RemoteSamples {
 
 @Suite("Remote requests")
 struct RemoteRequestTests {
-    @Test func legacyFleetBranchFactsDecodeWithoutCheckoutCounts() throws {
+    @Test func legacyFleetBranchFactsDecodeWithoutCheckoutStatus() throws {
         let json = #"{"branch":"fleet/checkout-notes","head":"abc","ahead":1,"pushed":true,"filesChanged":2,"insertions":3,"deletions":4}"#
         let facts = try JSONDecoder().decode(FleetBranchFacts.self, from: Data(json.utf8))
         #expect(facts == FleetBranchFacts(branch: "fleet/checkout-notes", head: "abc", ahead: 1, pushed: true,
@@ -628,6 +628,8 @@ struct RemoteRequestTests {
         .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
         .fleetDispatchResult(id: 117, dispatchID: RemoteSamples.dispatchID, text: "Nothing to change.", branchFacts: nil),
+        .fleetDispatchResult(id: 118, dispatchID: RemoteSamples.dispatchID, text: "Updated the notes.",
+                             branchFacts: FleetBranchFacts(branch: "fleet/checkout-notes", uncommittedCheckFailed: true)),
         .fleetRoutes(id: 140, report: RemoteSamples.routeReport),
         .fleetRoutes(id: 141, report: FleetRouteReport(port: 7434, routes: [])),
         .fleetPeerAnswer(id: 142, reply: .ok(id: 142)),

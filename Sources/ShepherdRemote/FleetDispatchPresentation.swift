@@ -545,6 +545,8 @@ public struct FleetResultMessage: Equatable, Sendable {
     /// The branch line the host adds: the branch, and whether origin has it.
     public var branch: String?
     public var pushed: Bool?
+    /// The host's plain checkout notice, separate from the agent's words.
+    public var checkoutNotice: String? = nil
 
     /// Nil unless `text` is a result the host delivered: the header it frames agent messages with, then "Result from
     /// <title> on <Mac>:".
@@ -558,20 +560,22 @@ public struct FleetResultMessage: Equatable, Sendable {
         let host = String(first[on.upperBound...].dropLast())
         rest = rest[rest.index(after: lineEnd)...]
         var body = String(rest)
-        var branch: String?, pushed: Bool?
+        var branch: String?, pushed: Bool?, checkoutNotice: String?
         if let facts = body.range(of: "\n\nBranch ", options: .backwards) {
             let line = body[facts.upperBound...]
             if let colon = line.firstIndex(of: ":") {
                 branch = String(line[..<colon])
                 let notice = line.range(of: ". Uncommitted in the checkout on ")
+                    ?? line.range(of: ". Could not check the checkout for uncommitted work.")
                 let committed = line[..<(notice?.lowerBound ?? line.endIndex)]
                 if committed.contains(", pushed to origin,") { pushed = true }
                 else if committed.contains(", not on origin,") { pushed = false }
                 body = String(body[..<facts.lowerBound])
-                if let notice { body += "\n\n" + line[line.index(notice.lowerBound, offsetBy: 2)...] }
+                if let notice { checkoutNotice = String(line[line.index(notice.lowerBound, offsetBy: 2)...]) }
             }
         }
-        return FleetResultMessage(title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines), branch: branch, pushed: pushed)
+        return FleetResultMessage(title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  branch: branch, pushed: pushed, checkoutNotice: checkoutNotice)
     }
 
     /// The dispatch this result belongs to, among the sending thread's records: its title, the Mac and a finished state.

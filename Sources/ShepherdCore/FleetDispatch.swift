@@ -227,10 +227,12 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
     /// Tracked or staged changes in the checkout, separate from the branch diff. Nil when not reported.
     public var uncommittedModified: Int?
     public var uncommittedUntracked: Int?
+    /// When true, Git status failed. Absent on older records.
+    public var uncommittedCheckFailed: Bool?
 
     public init(branch: String, head: String? = nil, ahead: Int = 0, pushed: Bool = false,
                 filesChanged: Int = 0, insertions: Int = 0, deletions: Int = 0,
-                uncommittedModified: Int? = nil, uncommittedUntracked: Int? = nil) {
+                uncommittedModified: Int? = nil, uncommittedUntracked: Int? = nil, uncommittedCheckFailed: Bool? = nil) {
         self.branch = branch
         self.head = head
         self.ahead = ahead
@@ -240,6 +242,7 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
         self.deletions = deletions
         self.uncommittedModified = uncommittedModified
         self.uncommittedUntracked = uncommittedUntracked
+        self.uncommittedCheckFailed = uncommittedCheckFailed
     }
 }
 

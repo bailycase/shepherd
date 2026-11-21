@@ -154,7 +154,7 @@ enum FleetDispatchGit {
     /// excludes ignored files and leaves the index alone (`GIT_OPTIONAL_LOCKS=0` in `run`).
     static func uncommittedFiles(worktree: String) -> (modified: Int, untracked: Int)? {
         guard let status = run(["status", "--porcelain=v1", "--untracked-files=all", "--", "."], in: worktree),
-              status.status == 0, !status.output.isEmpty else { return nil }
+              status.status == 0 else { return nil }
         let rows = status.output.split(separator: "\n")
         let untracked = rows.count(where: { $0.hasPrefix("?? ") })
         return (rows.count - untracked, untracked)
@@ -162,15 +162,16 @@ enum FleetDispatchGit {
 
     /// What the finished thread left on its branch, as the receiving host reads it. Compare with
     /// its merge base against the target, falling back to the pinned start when unavailable.
-    static func branchFacts(worktree: String, branch: String, start: String?, comparison: String? = nil) -> FleetBranchFacts? {
-        let changes = uncommittedFiles(worktree: worktree)
-        var facts = FleetBranchFacts(branch: branch, uncommittedModified: changes?.modified, uncommittedUntracked: changes?.untracked)
+    static func branchFacts(worktree: String?, branch: String, start: String?, comparison: String? = nil) -> FleetBranchFacts {
+        let changes = worktree.flatMap { uncommittedFiles(worktree: $0) }
+        var facts = FleetBranchFacts(branch: branch, uncommittedModified: changes?.modified, uncommittedUntracked: changes?.untracked,
+                                     uncommittedCheckFailed: changes == nil ? true : nil)
         let ref = "refs/heads/\(branch)"
         // The thread may have switched branches or detached HEAD. Pin the dispatch ref once so all
         // facts describe the same commit even if the branch moves while git is running.
-        guard let start, isCommit(start),
+        guard let worktree, let start, isCommit(start),
               let tip = run(["rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"], in: worktree),
-              tip.status == 0, isCommit(tip.output) else { return changes == nil ? nil : facts }
+              tip.status == 0, isCommit(tip.output) else { return facts }
         let head = tip.output
         var diffBase = start
         var comparedTo: String?
@@ -186,7 +187,7 @@ enum FleetDispatchGit {
         guard let count = run(["rev-list", "--count", range], in: worktree), count.status == 0,
               let ahead = Int(count.output),
               let stat = run(["diff", "--shortstat", range, "--"], in: worktree, environment: ["LC_ALL": "C"]), stat.status == 0
-        else { return changes == nil ? nil : facts }
+        else { return facts }
         facts.head = head
         facts.ahead = ahead
         (facts.filesChanged, facts.insertions, facts.deletions) = parseShortstat(stat.output)

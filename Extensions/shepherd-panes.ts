@@ -64,7 +64,8 @@ interface FleetDispatchInfo {
   resultText?: string | null;
   branchFacts?: {
     branch: string; head?: string | null; ahead: number; comparedTo?: string; pushed: boolean; originCheckFailed?: boolean;
-    filesChanged: number; insertions: number; deletions: number; uncommittedModified?: number; uncommittedUntracked?: number;
+    filesChanged: number; insertions: number; deletions: number;
+    uncommittedModified?: number; uncommittedUntracked?: number; uncommittedCheckFailed?: boolean;
   } | null;
   failure?: string | null;
   detail?: string | null;
@@ -892,8 +893,11 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     const modified = facts?.uncommittedModified ?? 0;
     const untracked = facts?.uncommittedUntracked ?? 0;
     const total = modified + untracked;
-    if (total > 0) {
-      lines.push(`Uncommitted in the checkout on ${info.host ?? "another Mac"}: ${total} ${total === 1 ? "file" : "files"} (${modified} modified, ${untracked} untracked).`);
+    if (facts?.uncommittedCheckFailed) {
+      lines.push("Could not check the checkout for uncommitted work.");
+    } else if (Number.isSafeInteger(modified) && Number.isSafeInteger(untracked) && Number.isSafeInteger(total) && modified >= 0 && untracked >= 0 && total > 0) {
+      const parts = [modified > 0 ? `${modified} modified` : "", untracked > 0 ? `${untracked} untracked` : ""].filter(Boolean);
+      lines.push(`Uncommitted in the checkout on ${info.host ?? "another Mac"}: ${total} ${total === 1 ? "file" : "files"} (${parts.join(", ")}). Counts include any edits sent with the dispatch.`);
     }
     if (info.state === "running") {
       lines.push(`last reported thread activity: ${info.activity ? String(info.activity).split("\n")[0] : "unknown"}`);

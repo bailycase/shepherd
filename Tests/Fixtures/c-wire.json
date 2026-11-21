@@ -1126,7 +1126,8 @@
       ],
       "fleetDispatchResult": [
         "{\"branchFacts\":{\"ahead\":2,\"branch\":\"fleet/fix-flaky-payment-test\",\"deletions\":2,\"filesChanged\":3,\"head\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"insertions\":10,\"pushed\":true,\"uncommittedModified\":2,\"uncommittedUntracked\":1},\"dispatchID\":\"5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11\",\"id\":116,\"text\":\"Fixed: the test raced the clock.\",\"type\":\"fleetDispatchResult\"}\n",
-        "{\"dispatchID\":\"5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11\",\"id\":117,\"text\":\"Nothing to change.\",\"type\":\"fleetDispatchResult\"}\n"
+        "{\"dispatchID\":\"5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11\",\"id\":117,\"text\":\"Nothing to change.\",\"type\":\"fleetDispatchResult\"}\n",
+        "{\"branchFacts\":{\"ahead\":0,\"branch\":\"fleet/checkout-notes\",\"deletions\":0,\"filesChanged\":0,\"insertions\":0,\"pushed\":false,\"uncommittedCheckFailed\":true},\"dispatchID\":\"5D4F1F6E-2B0C-4C86-9E43-7F5B7E0A9C11\",\"id\":118,\"text\":\"Updated the notes.\",\"type\":\"fleetDispatchResult\"}\n"
       ],
       "fleetIdentify": [
         "{\"id\":70,\"type\":\"fleetIdentify\"}\n"
