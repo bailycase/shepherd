@@ -55,39 +55,21 @@ struct SessionHostTests {
         #expect(FileManager.default.fileExists(atPath: local), "the local socket is bound")
     }
 
-    /// A newer app's `drain` reaches a host that serves a remote listener: it exits once quiet, as an idle host must, and
-    /// does not wait on the listener. Build 724 hung here after the app asked it to drain, so it never moved to a new build.
-    @Test func aDrainWhileTheRemoteListenerIsOpenEndsTheHost() async throws {
-        let dir = try makeScratchDirectory("host")
-        let socket = dir.appendingPathComponent("s.sock").path
-        let state = dir.appendingPathComponent("state.json").path
-        await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
-            let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
-            DispatchQueue.global().asyncAfter(deadline: .now() + 20) { _exit(EXIT_FAILURE) }
-            SessionHost.run(server, respawn: Self.defaults, configure: { server in
-                server.setRemoteListener(port: 0) { result in
-                    guard case .success(.some) = result, let drain = server.onDrainRequest else { _exit(EXIT_FAILURE) }
-                    drain()
-                }
-            })
-        }
-        #expect(!FileManager.default.fileExists(atPath: socket), "the drained host stopped its server")
-    }
-
-    /// Once an idle host drains, shutdown must keep main free even if the server queue is busy.
-    /// Only main can release the parked queue, and only after shutdown has begun.
-    @Test func drainedHostKeepsTheMainQueueAnsweringWhileShutdownWaitsOnTheServerQueue() async throws {
+    /// A newer app's `drain` reaches a host that serves a remote listener and whose server queue is busy: the host still exits once
+    /// quiet. Only main can release the parked queue, and only after shutdown has begun, so a shutdown that ran on main would
+    /// hang, as build 724 did when the app asked it to drain: it never moved to a new build.
+    @Test func aDrainWhileTheRemoteListenerIsOpenEndsTheHostEvenIfTheServerQueueIsBusy() async throws {
         let dir = try makeScratchDirectory("host")
         let socket = dir.appendingPathComponent("s.sock").path
         let state = dir.appendingPathComponent("state.json").path
         await #expect(processExitsWith: .success) { [socket = socket as String, state = state as String] in
             let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
             let release = DispatchSemaphore(value: 0)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
             SessionHost.run(server, respawn: Self.defaults, configure: { server in
-                // Let startup dispatch the listener bind before parking the queue.
-                DispatchQueue.main.async {
+                server.setRemoteListener(port: 0) { result in
+                    guard case .success(.some) = result, let drain = server.onDrainRequest else { _exit(EXIT_FAILURE) }
                     server.queue.async { release.wait() }
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { _exit(EXIT_FAILURE) }
                     Task.detached {
                         do {
                             try await eventually("shutdown to enter stop", timeout: .seconds(5)) {
@@ -99,11 +81,11 @@ struct SessionHostTests {
                         }
                         DispatchQueue.main.async { release.signal() }
                     }
-                    guard let drain = server.onDrainRequest else { _exit(EXIT_FAILURE) }
                     drain()
                 }
             })
         }
+        #expect(!FileManager.default.fileExists(atPath: socket), "the drained host stopped its server")
     }
 
     @Test func aHostRefusesAWorkspaceTheAppOwns() async throws {
