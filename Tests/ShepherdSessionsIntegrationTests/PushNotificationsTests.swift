@@ -300,7 +300,10 @@ struct PushNotificationsTests {
         #expect(requests.current == 2)
         let damage = Data("[null]".utf8)
         try damage.write(to: file)
-        if let status { try #require(callback.current)(status) }
+        if let status {
+            let finish = try #require(callback.current)
+            finish(status)
+        }
         try queue.sync {
             #expect(try Data(contentsOf: file) == damage)
             pushes.send(agentID: AgentID(), kind: .done)
