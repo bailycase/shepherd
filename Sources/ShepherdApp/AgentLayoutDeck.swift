@@ -75,7 +75,7 @@ struct AgentLayoutDeck: View, Equatable {
                 AgentLayoutView(vm: vm, model: model).equatable()
             } else {
                 #if DEBUG
-                if let fixturePage = ScrollTrace.current?.deckPage { fixturePage(model) }
+                if let fixturePage = MacScrollValidationTrace.current?.deckPage { fixturePage(model) }
                 #endif
             }
         }

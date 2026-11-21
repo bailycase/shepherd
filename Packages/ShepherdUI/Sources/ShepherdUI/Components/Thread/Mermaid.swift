@@ -388,7 +388,10 @@ private struct MermaidWebView {
     func update(_ renderer: MermaidRenderer) {
         renderer.onStatus = { state, measured in
             status = state
-            if let measured { height = measured }
+            if let measured {
+                if height != measured { SHRenderProbe.scrollEvent("thread.write.L10", "mermaid.height", kind: "layout") }
+                height = measured
+            }
         }
         renderer.render(source: source, colors: colors, fontSize: fontSize, viewer: viewer)
     }

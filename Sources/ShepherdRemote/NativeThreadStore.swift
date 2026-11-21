@@ -123,6 +123,9 @@ public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
 @MainActor
 @Observable
 public final class NativeThreadStore {
+    #if DEBUG
+    public static var scrollTraceParsed: ((NativeThreadStore, String) -> Void)?
+    #endif
     nonisolated private static let signposter = OSSignposter(subsystem: "com.shepherd.performance", category: "NativeThread")
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
     /// History from disk to show until pi answers (`preview(_:)`); nil when there is none.
@@ -1377,6 +1380,9 @@ public final class NativeThreadStore {
                 // cancelled, is dropped.
                 if self.proseParsing[key] == token || (self.proseRequests[key] != nil && self.proseEpoch == epoch && holdsBase()) {
                     if self.proseParsing[key] == token { self.invalidateParse(key) }
+                    #if DEBUG
+                    Self.scrollTraceParsed?(self, key.turn)
+                    #endif
                     land(value)
                     self.presentationCache[key.turn] = nil
                     self.presentationDirty = self.projection.start(for: key.turn)
@@ -2117,8 +2123,18 @@ public final class NativeThreadStore {
                     let before = overlays.count
                     overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
                     if overlays.count != before { deriveQueue() }
+                    // The snapshot held is the host's current word, so the run state follows it: a release to the tail, or a
+                    // load error, left it as the thread was not (a host that is still mid-turn says nothing new for a while).
+                    // An idle snapshot with the end-of-run hold in flight keeps that hold: restarting it would stretch the
+                    // 400 ms with nothing new from the host.
+                    let was = settledRunning
+                    if snapshot?.running == true || !was || settleTask == nil {
+                        settleRunning(snapshot?.running == true, catchingUp: catchUp == nil)
+                    }
                     if loadError != nil {
                         loadError = nil
+                        derive()
+                    } else if settledRunning != was {
                         derive()
                     }
                     caughtUp()

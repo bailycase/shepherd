@@ -117,7 +117,10 @@ private struct HTMLWebView {
     func update(_ renderer: MermaidRenderer) {
         renderer.onStatus = { state, measured in
             status = state
-            if let measured { height = measured }
+            if let measured {
+                if height != measured { SHRenderProbe.scrollEvent("thread.write.L10", "html.height", kind: "layout") }
+                height = measured
+            }
         }
         renderer.load(key: source + String(describing: colors) + String(dark)) { revision in
             SHHTMLBlock<EmptyView>.document(source: source, colors: colors, dark: dark, revision: revision)

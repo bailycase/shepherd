@@ -491,6 +491,7 @@ public struct SHThinking: View {
 
     private var toggle: some View {
         Button {
+            SHRenderProbe.scrollEvent("thread.write.L9", "thinking.disclosure", kind: "layout")
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
         } label: {
             HStack(spacing: SH.Space.s) {

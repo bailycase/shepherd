@@ -1,15 +1,13 @@
 import AppKit
+import ShepherdUI
 
 /// Explicit app writes are logged even if SwiftUI applies them later or drops them.
 @MainActor
 enum ThreadScrollTrace {
-    static func write(_ caller: String, in scroll: @autoclosure () -> NSScrollView?) {
-        #if DEBUG
-        guard let trace = ScrollTrace.current, let target = scroll(), target === trace.guardian.scrollView() else { return }
-        trace.mark(caller)
-        #endif
+    static func write(_ actor: StaticString, _ caller: String, in scroll: @autoclosure () -> NSScrollView?,
+                      target: String? = nil) {
+        SHRenderProbe.scrollEvent(actor, caller, from: scroll(), target: target)
     }
-
 }
 
 #if DEBUG
@@ -20,7 +18,7 @@ import ShepherdRemote
 import SwiftUI
 
 @MainActor
-final class ScrollTrace: NSObject {
+final class MacScrollValidationTrace: NSObject {
     struct Frame: Encodable {
         let timestamp: Double
         let refreshInterval: Double
@@ -34,6 +32,7 @@ final class ScrollTrace: NSObject {
         let following: Bool
         let distance: Double
         let events: [Event]
+        let motion: String
     }
 
     struct Event: Encodable {
@@ -42,9 +41,14 @@ final class ScrollTrace: NSObject {
         var to: Double? = nil
         var stack: [String]? = nil
         var scrollDelta: Double? = nil
+        var detail: String? = nil
+        var kind: String? = nil
+        var motion: String? = nil
+        var anchor: String? = nil
+        var target: String? = nil
     }
 
-    static weak var current: ScrollTrace?
+    static weak var current: MacScrollValidationTrace?
     let guardian = ThreadTailGuard()
     var scenario = ""
     var wheel: ((CGFloat) -> Void)?
@@ -58,11 +62,33 @@ final class ScrollTrace: NSObject {
     private var nextFrame: CheckedContinuation<Void, Never>?
     private weak var clip: NSClipView?
     private var offset: CGFloat?
+    var phaseState = ScrollPhase.idle
+    var wheelUntil = ContinuousClock.now
+    private var scriptedWrite = false
+
+    private var motion: String {
+        switch phaseState {
+        case .tracking, .interacting: "touching"
+        case .decelerating: "coasting"
+        case .animating: "programmatic"
+        default: .now < wheelUntil ? "wheel" : "idle"
+        }
+    }
+
+    func record(_ event: SHRenderProbe.ScrollEvent, source: AnyObject?) {
+        if let source, source !== guardian, source !== guardian.scrollView() { return }
+        events.append(Event(caller: event.caller, detail: event.detail, kind: event.kind, motion: motion,
+                            anchor: latest?.first, target: event.target))
+    }
 
     func mark(_ caller: String) { events.append(Event(caller: caller)) }
 
-    func scrollInput(_ delta: CGFloat) {
+    func scrollInput(_ delta: CGFloat, write: () -> Void) {
         events.append(Event(caller: "fixture.scrollInput", scrollDelta: delta))
+        SHRenderProbe.scrollEvent("thread.write.fixture", "fixture.clip.scroll", from: guardian, kind: "fixture")
+        scriptedWrite = true
+        defer { scriptedWrite = false }
+        write()
     }
 
     /// Start the settle window once a frame has sampled the last action, even if that sample stalls.
@@ -108,7 +134,7 @@ final class ScrollTrace: NSObject {
                           offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
                           streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
                           clipSize: clip.map { [Double($0.bounds.width), Double($0.bounds.height)] },
-                          following: guardian.following, distance: guardian.distance, events: events)
+                          following: guardian.following, distance: guardian.distance, events: events, motion: motion)
         latest = frame
         if !scenario.isEmpty { frames[scenario, default: []].append(frame) }
         events.removeAll(keepingCapacity: true)
@@ -120,7 +146,8 @@ final class ScrollTrace: NSObject {
     @objc private func boundsChanged(_ notification: Notification) {
         guard let from = offset, let to = clip?.bounds.minY, from != to else { return }
         offset = to
-        events.append(Event(caller: "NSClipView.bounds", from: from, to: to, stack: Thread.callStackSymbols))
+        events.append(Event(caller: "NSClipView.bounds", from: from, to: to, stack: Thread.callStackSymbols,
+                            detail: scriptedWrite ? "fixture.clip.scroll" : nil, motion: motion, anchor: latest?.first))
     }
 }
 
@@ -189,7 +216,7 @@ private final class ScrollFixture {
         override var canBecomeMain: Bool { false }
     }
 
-    let trace = ScrollTrace()
+    let trace = MacScrollValidationTrace()
     let store = NativeThreadStore()
     let input = ThreadInput()
     let defaults = UserDefaults(suiteName: "shepherd.scroll-validation.\(UUID())")!
@@ -227,10 +254,21 @@ private final class ScrollFixture {
 
     func run() async throws {
         guard let screen = NSScreen.main else { throw ValidationError("display link requires a WindowServer screen") }
-        ScrollTrace.current = trace
-        let link = screen.displayLink(target: trace, selector: #selector(ScrollTrace.sample(_:)))
+        MacScrollValidationTrace.current = trace
+        SHRenderProbe.scrollEvents = { [weak trace] event, source in trace?.record(event, source: source) }
+        NativeThreadStore.scrollTraceParsed = { [weak self] store, id in
+            guard let self, store === self.store else { return }
+            SHRenderProbe.scrollEvent("thread.write.L8", "markdown.parseLanded", from: trace.guardian, target: id, kind: "layout")
+        }
+        SHRenderProbe.disabledScrollAnchor = ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_ANCHOR_OFF"]
+        let link = screen.displayLink(target: trace, selector: #selector(MacScrollValidationTrace.sample(_:)))
         link.add(to: .main, forMode: .common)
-        defer { link.invalidate(); window.orderOut(nil); window.contentView = nil }
+        defer {
+            link.invalidate(); window.orderOut(nil); window.contentView = nil
+            SHRenderProbe.scrollEvents = nil
+            NativeThreadStore.scrollTraceParsed = nil
+            SHRenderProbe.disabledScrollAnchor = nil
+        }
 
         thread = Self.snapshot(messages: Array(history.drop(while: { $0.entryID != "user-60" })), older: "user-60")
         thread.running = true
@@ -403,8 +441,7 @@ private final class ScrollFixture {
         var bounds = clip.bounds
         bounds.origin.y = y
         let target = clip.constrainBoundsRect(bounds).origin
-        trace.scrollInput(target.y - clip.bounds.minY)
-        clip.scroll(to: target)
+        trace.scrollInput(target.y - clip.bounds.minY) { clip.scroll(to: target) }
         if endDrag {
             let distance = clip.documentRect.maxY - clip.bounds.maxY + scroll.contentInsets.bottom
             try phase(from: .interacting, to: .idle, distance: distance)

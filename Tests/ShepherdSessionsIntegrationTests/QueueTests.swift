@@ -978,6 +978,36 @@ struct QueueTests {
         try await eventually("done once the queue is empty") { agentStatus() == .done }
     }
 
+    /// A snapshot that catches a run before its Working report starts the host's run-versus-status count; the report, or the run
+    /// settling, ends it. Two samples with a status change between them are not one long disagreement.
+    @Test func aStatusOrRunChangeRestartsTheRunDisagreementCount() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        defer { status.closeConnection() }
+        func agentStatus() -> AgentStatus? { h.server.state.agents.first { $0.id == pi.agent.id }?.status }
+        func counting() async throws -> Bool { try await h.server.enqueue { h.server.rpcThread(forAgent: pi.agent.id)?.runDisagreement.since != nil } }
+
+        _ = try await startRun(pi)
+        #expect(try await counting(), "the run is caught before its Working report")
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try await eventually("working") { agentStatus() == .working }
+        #expect(try await !counting(), "the report restarts the count")
+
+        // A run that settles with the status still behind it: the count started by a snapshot ends with the run.
+        pi.finishTool(1)
+        _ = try await pi.snapshot("the run to settle") { !$0.running }
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
+        try await eventually("done") { agentStatus() == .done }
+        _ = try await pi.send("tools:1 again", from: try await pi.ready())
+        _ = try await pi.snapshot("the second run's tool") { $0.running && $0.provisional.contains { $0.status == "running" } }
+        #expect(try await counting())
+        pi.finishTool(2)
+        _ = try await pi.snapshot("the second run to settle") { !$0.running }
+        #expect(try await !counting(), "the run settling restarts the count")
+    }
+
     /// The status extension's socket can run a whole run ahead of pi's stdout while a long record
     /// decodes: B's done arrives while B's prompt is still unanswered and is held, and B's
     /// `agent_start` is read after it. The held done outlives that start, stays held while B runs,

@@ -38,6 +38,38 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual((jump["frame"], jump["row"], jump["delta_pt"]), (2, "a", -8))
         self.assertEqual(jump["paths"], ["ThreadView.historyMaterialize", "SwiftUI.HostingScrollView.updateContext"])
 
+    def test_scroll_ledger_keeps_row_identity_and_reports_adjacent_writes(self):
+        frames = [frame(0, "a", {"a": 0, "b": 60}),
+                  frame(0.01, "b", {"a": -65, "b": -5, "c": 55}),
+                  frame(0.02, "c", {"b": -20, "c": 40}),
+                  frame(0.03, "d", {"d": 2}), frame(0.04, "d", {"d": 1})]
+        frames[1]["events"] = [{"caller": "thread.write.M5", "kind": "write", "motion": "idle", "anchor": "a"},
+                               {"caller": "fixture.scrollInput", "scrollDelta": 65}]
+        frames[2]["events"] = [{"caller": "thread.write.M6", "kind": "write", "motion": "coasting", "anchor": "b"},
+                               {"caller": "thread.write.fixture", "kind": "fixture"}]
+        summary = validate.measure_scroll(frames)
+        ledger = validate.scroll_ledger(frames, summary)
+        jump = summary["jumps"][0]
+        self.assertEqual((jump["frame"], jump["writer_candidates"]), (2, ["thread.write.M5", "thread.write.M6"]))
+        self.assertEqual(ledger["hz"], 100)
+        self.assertEqual(ledger["writer_counts"], {"thread.write.M5": 1, "thread.write.M6": 1})
+        _, crossing, correction, handoff, settled = ledger["frames"]
+        self.assertEqual((crossing["row"], crossing["delta_pt"]), ("a", 0))
+        self.assertEqual((correction["row"], correction["delta_pt"], correction["writer_pairs"]),
+                         ("b", -15, [("thread.write.M5", "thread.write.M6")]))
+        self.assertEqual(handoff["handoff"], {"from": "c", "to": "d"})
+        self.assertNotIn("delta_pt", handoff)
+        self.assertEqual(settled["delta_pt"], -1)
+
+    def test_native_offset_write_can_be_nested_under_fixture_scroll(self):
+        event = {"caller": "NSClipView.bounds", "detail": "fixture.clip.scroll", "stack": [
+            "7 AppKit 0x1 -[NSView _postBoundsChangeNotification] + 96",
+            "8 AppKit 0x2 -[NSView translateOriginToPoint:] + 240",
+        ]}
+        self.assertEqual(validate.native_scroll_path(event), "fixture.clip.scroll")
+        event["stack"].insert(2, "9 AppKit 0x3 -[NSClipView _reflectDocumentViewFrameChange] + 100")
+        self.assertEqual(validate.native_scroll_path(event), "AppKit.NSClipView._reflectDocumentViewFrameChange")
+
     def test_input_does_not_hide_a_jump_and_small_steps_can_add_up_to_drift(self):
         frames = [frame(i / 100, "a", {"a": y}) for i, y in enumerate((0, 15, 16, 17, 18))]
         frames[1]["events"].append({"caller": "fixture.scrollInput", "scrollDelta": -10})
