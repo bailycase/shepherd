@@ -96,6 +96,12 @@ public final class SkillsStore: @unchecked Sendable {
         }
     }
 
+    /// Something outside the store replaced or added a skill folder (copying again from the user's pi), so a
+    /// Fleet pass that pinned the folders before it is dropped.
+    public func skillFoldersChanged() {
+        mutating {}
+    }
+
     /// `copiedFrom` names the skills Shepherd copied from the user's own pi, with where each came
     /// from (`YourPiImport.copiedSkills`).
     public init(directory: URL, stateDirectory: URL, now: @escaping () -> Date = Date.init, piSkills: PiSkillsReader? = nil,
@@ -194,18 +200,21 @@ public final class SkillsStore: @unchecked Sendable {
             var records = try loadRecords()
             let date = now().timeIntervalSince1970
             let kept = removedDirectory.appendingPathComponent(name, isDirectory: true)
+            records.removed[name] = Removed(wasOn: found.isOn, record: records.skills[name], removedAt: date)
+            records.skills[name] = nil
+            let expired = prune(&records, at: date)
+            // Refused here, before any folder moves, when the records would outgrow what can be read.
+            let data = try encode(records)
             try writing {
                 try FileManager.default.createDirectory(at: removedDirectory, withIntermediateDirectories: true)
                 if exists(kept) { try FileManager.default.removeItem(at: kept) }
                 try FileManager.default.moveItem(at: found.folder, to: kept)
-                records.removed[name] = Removed(wasOn: found.isOn, record: records.skills[name], removedAt: date)
-                records.skills[name] = nil
-                prune(&records, at: date)
                 // A skill that couldn't be recorded as removed goes back, so it keeps its source.
-                do { try save(records) } catch {
+                do { try persist(data) } catch {
                     try? FileManager.default.moveItem(at: kept, to: found.folder)
                     throw error
                 }
+                for old in expired { try? FileManager.default.removeItem(at: removedDirectory.appendingPathComponent(old, isDirectory: true)) }
             }
             return unlockedSnapshot()
         }
@@ -288,6 +297,12 @@ public final class SkillsStore: @unchecked Sendable {
         return try mutating {
             var records = try loadRecords()
             let date = now().timeIntervalSince1970
+            for skill in staged {
+                records.skills[skill.name] = Record(source: skill.source, installedAt: date)
+                records.removed[skill.name] = nil
+            }
+            // Refused here, before any folder is replaced, when the records would outgrow what can be read.
+            let data = try encode(records)
             try writing {
                 for skill in staged {
                     let existing = locate(skill.name)
@@ -295,10 +310,8 @@ public final class SkillsStore: @unchecked Sendable {
                     try Self.apply(invocation ?? current ?? SkillsText.invocation(Self.skillText(in: skill.folder)), to: skill.folder)
                     let destination = existing?.folder ?? directory.appendingPathComponent(skill.name, isDirectory: true)
                     try swap(skill.folder, into: destination)
-                    records.skills[skill.name] = Record(source: skill.source, installedAt: date)
-                    records.removed[skill.name] = nil
                 }
-                try save(records)
+                try persist(data)
             }
             return unlockedSnapshot()
         }
@@ -385,12 +398,13 @@ public final class SkillsStore: @unchecked Sendable {
         }
         return try mutating {
             var records = try loadRecords()
+            records.skills[name] = nil
+            records.removed[name] = nil
+            let data = try encode(records)
             try writing {
                 let destination = locate(name)?.folder ?? directory.appendingPathComponent(name, isDirectory: true)
                 try swap(target, into: destination)
-                records.skills[name] = nil
-                records.removed[name] = nil
-                try save(records)
+                try persist(data)
             }
             return unlockedSnapshot()
         }
@@ -547,14 +561,7 @@ public final class SkillsStore: @unchecked Sendable {
         return try mutating {
             guard let found = locate(name) else { return false }
             var records = try loadRecords()
-            if found.isOn != on {
-                let to = (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
-                guard !exists(to) else { throw StoreError.alreadyThere(name) }
-                try writing {
-                    try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try FileManager.default.moveItem(at: found.folder, to: to)
-                }
-            }
+            var data: Data?
             if records.skills[name]?.source != source {
                 if let source {
                     var record = records.skills[name] ?? Record(source: source, installedAt: now().timeIntervalSince1970)
@@ -565,8 +572,18 @@ public final class SkillsStore: @unchecked Sendable {
                 } else {
                     records.skills[name] = nil
                 }
-                try writing { try save(records) }
+                // Refused here, before the folder moves, when the records would outgrow what can be read.
+                data = try encode(records)
             }
+            if found.isOn != on {
+                let to = (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
+                guard !exists(to) else { throw StoreError.alreadyThere(name) }
+                try writing {
+                    try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.moveItem(at: found.folder, to: to)
+                }
+            }
+            if let data { try writing { try persist(data) } }
             return true
         }
     }
@@ -782,24 +799,31 @@ public final class SkillsStore: @unchecked Sendable {
         do { return (try loadRecords(), nil) } catch { return (Records(), "\(error)") }
     }
 
-    private func save(_ records: Records) throws {
-        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+    private func save(_ records: Records) throws { try persist(try encode(records)) }
+
+    /// The bytes `persist` writes. A change that moves a folder encodes first, so a refusal (a file the next
+    /// read would refuse, `readRecords`) leaves the folders as they were.
+    private func encode(_ records: Records) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
         let data = try encoder.encode(records)
-        // Not a file the next read would refuse (`readRecords`).
         guard data.count < Self.maxRecordsBytes else {
             throw StoreError.writeFailed("The records would be \(data.count / 1024) KiB; this version reads records under \(Self.maxRecordsBytes / 1024) KiB.")
         }
+        return data
+    }
+
+    private func persist(_ data: Data) throws {
+        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
         try data.write(to: recordsURL, options: .atomic)
     }
 
-    /// Forgets removed skills older than a day, and their folders.
-    private func prune(_ records: inout Records, at date: Double) {
-        for (name, removed) in records.removed where date - removed.removedAt > Self.keepsRemoved {
-            records.removed[name] = nil
-            try? FileManager.default.removeItem(at: removedDirectory.appendingPathComponent(name, isDirectory: true))
-        }
+    /// Forgets removed skills older than a day; returns their names, for the caller to delete the folders
+    /// once the records are saved.
+    private func prune(_ records: inout Records, at date: Double) -> [String] {
+        let expired = records.removed.filter { date - $0.value.removedAt > Self.keepsRemoved }.keys
+        for name in expired { records.removed[name] = nil }
+        return Array(expired)
     }
 
     // MARK: Reading the folders

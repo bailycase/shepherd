@@ -164,6 +164,37 @@ struct SkillsRecordsTests {
         #expect(fixture.store.snapshot().problem == nil, "and the records still read")
     }
 
+    /// A change that moves a folder and then can't save its records would leave a repository skill with no
+    /// source. The size is checked first, so a refusal leaves the folders and the file as they were.
+    @Test func aChangeThatWouldOutgrowTheRecordsIsRefusedBeforeAnyFolderMoves() throws {
+        let limit = SkillsStore.maxRecordsBytes
+        let skeleton = #"{"version":1,"removed":{"":{"wasOn":true,"removedAt":99999999999}}}"#
+        let full = skeleton.replacingOccurrences(of: #"{"":"#, with: #"{"\#(String(repeating: "n", count: limit - 1 - skeleton.utf8.count))":"#)
+        #expect(full.utf8.count == limit - 1)
+        let fixture = try Fixture()
+        try fixture.write(full)
+        try Data("notes\n".utf8).write(to: fixture.directory.appendingPathComponent("pdf/notes.md"))
+        let repo = try makeScratchRepo(files: ["skills/pdf/SKILL.md": "---\nname: pdf\ndescription: From the repository.\n---\n"])
+        let folder = fixture.directory.appendingPathComponent("pdf")
+        func files() throws -> [String: Data] {
+            Dictionary(uniqueKeysWithValues: try ["SKILL.md", "notes.md"].map { ($0, try Data(contentsOf: folder.appendingPathComponent($0))) })
+        }
+        let before = try files()
+
+        func refused(_ change: () throws -> Void) {
+            do { try change(); Issue.record("the change should have been refused") } catch {
+                #expect("\(error)".contains("256 KiB"), "\(error)")
+            }
+            #expect((try? files()) == before, "the skill's folder is as it was")
+            #expect((try? fixture.bytes()) == Data(full.utf8), "the records are as they were")
+        }
+        refused { _ = try fixture.store.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil) }
+        refused { _ = try fixture.store.remove("pdf") }
+        refused { _ = try fixture.store.applySynced("pdf", on: false, source: SkillSource(repo: "acme/skills", path: "skills/pdf", commit: "abc123")) }
+        #expect(fixture.store.snapshot().skill("pdf")?.isOn == true, "applySynced didn't move it off")
+        #expect(!FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent("removed").path))
+    }
+
     @Test func aChangeThatDoesNotWriteTheRecordsStillWorks() throws {
         let fixture = try Fixture()
         try fixture.write("{")

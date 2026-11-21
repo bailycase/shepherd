@@ -167,6 +167,35 @@ struct SkillsFleetRecordsTests {
         #expect(state.digest == FleetTreeDigest.of(["SKILL.md": hash]))
     }
 
+    /// Copying skills again from the user's pi replaces a folder the store has records of, with no store call.
+    /// A pass that pinned the folders before it must be dropped, as it is for an install.
+    @Test func aSkillReplacedByACopyFromYourPiInTheMiddleOfAScanIsNotPublished() throws {
+        let mac = try Mac(); defer { mac.remove() }
+        let home = PiHome(directory: mac.dir, engine: PiEngine(command: ["/nonexistent/pi"], packageDirectory: nil, version: nil, node: .onPath("node")))
+        let yours = mac.dir.appendingPathComponent("yours", isDirectory: true)
+        let theirs = yours.appendingPathComponent("skills/pdf/SKILL.md")
+        try FileManager.default.createDirectory(at: theirs.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data((Self.skillText + "from your pi\n").utf8).write(to: theirs)
+        let skills = mac.skills
+        let importer = YourPiImport(home: home, yourPi: YourPi(agentDirectory: yours), userHome: mac.dir.path,
+                                    offSkills: skills.stateDirectory.appendingPathComponent("off", isDirectory: true), log: { _ in },
+                                    skillsChanged: { skills.skillFoldersChanged() })
+        _ = try importer.reimport(.files(.skills))
+        let repo = try makeScratchRepo(files: ["skills/pdf/SKILL.md": Self.skillText + "from the repository\n"])
+        _ = try skills.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
+
+        var copied = false
+        mac.betweenReads = {
+            guard !copied else { return }
+            copied = true
+            _ = try? importer.reimport(.files(.skills))
+        }
+        let during = mac.scan()
+        #expect(copied)
+        #expect(try String(contentsOf: skills.directory.appendingPathComponent("pdf/SKILL.md"), encoding: .utf8).hasSuffix("from your pi\n"), "the copy replaced the folder")
+        #expect(during.filter { $0.unit.contains("pdf") }.isEmpty, "the pass pinned the folder before the copy: nothing of it goes out")
+    }
+
     /// Only a change to the skills drops a pass: reading them, or a request that changes nothing, does not.
     @Test func aPassWithNoChangeToTheSkillsStillPublishes() throws {
         let mac = try Mac(); defer { mac.remove() }
