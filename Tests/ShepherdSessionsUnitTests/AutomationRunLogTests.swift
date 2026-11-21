@@ -400,6 +400,145 @@ struct AutomationRunLogDamageTests {
         #expect(log.runs[id]?.map { $0.id.uuidString.lowercased() } == ["00000000-0000-4000-8000-000000000010"])
     }
 
+    /// The writer finds damage after a change was accepted but before its write is queued, and the
+    /// backup is restored: the write was built before that, so it must not replace the backup.
+    @Test func aChangeWhoseWriteIsQueuedAfterTheWriterFoundDamageDoesNotOverwriteTheRestoredBackup() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        let open = DispatchSemaphore(value: 0)
+        log.writes.async { open.wait() }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        // The first write is still queued; the second change finds the file healthy, then, as it saves, the
+        // first write runs against a damaged file and a backup is restored.
+        log.changed = {
+            log.changed = {}
+            try? Data("{".utf8).write(to: url)
+            open.signal()
+            log.flush()
+            try? Data(Self.legacy.utf8).write(to: url)
+        }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Second", now: Self.newRun)
+        log.flush()
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010"])
+        #expect(log.recheck() == nil)
+        #expect(log.runs[id]?.map { $0.id.uuidString.lowercased() } == ["00000000-0000-4000-8000-000000000010"])
+    }
+
+    /// The server itself finds damage while a write is queued, and the backup is restored: the queued
+    /// write predates the damage, so it must not replace the backup.
+    @Test func damageFoundByTheServerDropsWritesAlreadyQueued() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        let open = DispatchSemaphore(value: 0)
+        log.writes.async { open.wait() }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        try Data("{".utf8).write(to: url)
+        #expect(log.recheck() != nil)
+        try Data(Self.legacy.utf8).write(to: url)
+        open.signal()
+        log.flush()
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010"])
+        #expect(log.recheck() == nil)
+        #expect(log.runs[id]?.map { $0.id.uuidString.lowercased() } == ["00000000-0000-4000-8000-000000000010"])
+    }
+
+    /// A writer paused after its generation check: the server then finds damage and a backup is restored.
+    /// The writer's snapshot was built before that, so it must not replace the backup it reads.
+    @Test func aWriterPausedAfterItsCheckDoesNotOverwriteABackupRestoredAfterTheServerFoundDamage() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        log.flush()
+        let reached = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0)
+        log.writerPaused = { point in
+            guard point == .checked else { return }
+            reached.signal()
+            resume.wait()
+        }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Second", now: Self.newRun)
+        reached.wait()
+        try Data("{".utf8).write(to: url)
+        #expect(log.recheck() != nil)
+        try Data(Self.legacy.utf8).write(to: url)
+        resume.signal()
+        log.flush()
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010"])
+        #expect(log.recheck() == nil)
+        #expect(log.runs[id]?.map { $0.id.uuidString.lowercased() } == ["00000000-0000-4000-8000-000000000010"])
+    }
+
+    /// A writer reads damage and pauses before reporting it; the server finds the same damage, recovers the
+    /// backup and accepts a change. The late report is about an older generation and must not drop that change.
+    @Test func aWriterReportingDamageLateDoesNotDropAChangeAcceptedAfterTheServerRecovered() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        log.flush()
+        let reached = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0)
+        log.writerPaused = { point in
+            guard point == .readDamage else { return }
+            reached.signal()
+            resume.wait()
+        }
+        // The file goes bad as the change is saved, so the queued write reads damage.
+        log.changed = { log.changed = {}; try? Data("{".utf8).write(to: url) }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Second", now: Self.newRun)
+        reached.wait()
+        #expect(log.recheck() != nil)
+        try Data(Self.legacy.utf8).write(to: url)
+        #expect(log.recheck() == nil)
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Third", now: Self.newRun)
+        resume.signal()
+        log.flush()
+        let third = try #require(log.runs[id]?.first { $0.failure == "Third" })
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010", third.id.uuidString.lowercased()])
+    }
+
+    /// A change with nothing to do (here, no unread run) must not read the history file: the damage written
+    /// behind the log's back stays unseen.
+    @Test func anUpdateThatChangesNothingDoesNotReadTheHistoryFile() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        log.markRead()
+        log.flush()
+        try Data("{".utf8).write(to: url)
+        #expect(!log.markRead())
+        #expect(log.problem == nil)
+    }
+
+    /// The server's recheck waits only for the writer's short commit, not for it to stage its replacement.
+    @Test func aRecheckDoesNotWaitForAWriterThatHasStagedItsReplacement() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        let reached = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        log.writerPaused = { point in
+            guard point == .staged else { return }
+            reached.signal()
+            resume.wait()
+        }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        reached.wait()
+        DispatchQueue.global().async { _ = log.recheck(); done.signal() }
+        let finished = done.wait(timeout: .now() + 5) == .success
+        resume.signal()
+        log.flush()
+        #expect(finished)
+        #expect(try Self.ids(at: url).count == 1)
+    }
+
     /// A backup restored while the log still shows the damage: the first change builds on it, not on what was in memory.
     @Test func theFirstChangeAfterARepairKeepsTheRestoredHistory() throws {
         let (dir, url) = try Self.scratch()
