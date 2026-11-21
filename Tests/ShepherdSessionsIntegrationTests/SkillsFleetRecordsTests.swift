@@ -218,6 +218,23 @@ struct SkillsFleetRecordsTests {
         #expect(mac.scan().isEmpty)
     }
 
+    @Test func removingAFileThatLandedBeforeDamagePublishesADeletionAfterRepair() throws {
+        let mac = try Mac(); defer { mac.remove() }
+        let files = ["SKILL.md": Self.skillText, "notes.md": "# Notes\n"]
+        try Sender(mac.dir).skill("pdf", files, to: mac)
+        mac.afterWrite = { [unowned mac] in try? mac.damage() }
+
+        #expect(mac.passFailed())
+        try FileManager.default.removeItem(at: mac.records)
+        let landed = try #require(mac.skills.syncedFile("pdf", "SKILL.md"))
+        try FileManager.default.removeItem(at: landed)
+
+        let edits = mac.scan()
+        #expect(edits.map(\.unit) == [FleetUnit.skillFile("pdf", "SKILL.md")],
+                "only the file that landed can be deleted; the refused write was never observed")
+        #expect(edits.first?.change == .deletion)
+    }
+
     @Test func aSyncedWriteOrDeletionOverDamagedRecordsTouchesNothing() throws {
         let mac = try Mac(); defer { mac.remove() }
         try mac.installPDF()

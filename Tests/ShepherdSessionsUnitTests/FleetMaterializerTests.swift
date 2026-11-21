@@ -223,9 +223,13 @@ struct FleetMaterializerTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let mac = try Mac(Self.macA, dir: dir, values: [Self.setting: "\"a\""])
         mac.source.ready = false
-        #expect(mac.scan().isEmpty && mac.apply().notices.isEmpty)
+        #expect(mac.scan().isEmpty)
+        let result = mac.apply()
+        #expect(result.notices.isEmpty)
+        #expect(result.failed, "an unreadable source is a failed pass, not a successful no-op")
         mac.source.ready = true
         #expect(mac.scan().map(\.unit) == [Self.setting])
+        #expect(!mac.apply().failed)
     }
 
     /// The fence before pi starts reads sign-ins only: a source that isn't one is not even asked whether it can read
