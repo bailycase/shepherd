@@ -4,7 +4,6 @@ import ShepherdCore
 import ShepherdSessions
 import ShepherdProtocol
 import ShepherdTestSupport
-import Testing
 
 extension ShepherdState {
     /// The session a host bound to `pane`, as its state says.
@@ -46,7 +45,7 @@ func stagedPiSetup(home: URL) throws -> PiSetup {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()
     guard let engine = BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")) else {
-        try Test.cancel("needs the staged engine: python3 scripts/pi_engine.py stage")
+        throw TimedOut(what: "the staged pi engine (python3 scripts/pi_engine.py stage)")
     }
     return PiSetup(engine: .bundled(engine), home: home)
 }

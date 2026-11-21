@@ -1,23 +1,17 @@
 import Foundation
 import ShepherdSessions
-import Testing
 
 /// Real Markdown and the shipped parser, always under a test-owned pi home. No launch or model.
 public enum SubagentFixtures {
-    /// The staged engine (`python3 scripts/pi_engine.py stage`) that checks the profiles. A test that needs it is skipped,
-    /// saying so, where none is staged.
-    private static func stagedEngine(under root: URL) throws -> BundledPiEngine {
-        guard let engine = BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")) else {
-            try Test.cancel("needs the staged engine: python3 scripts/pi_engine.py stage")
-        }
-        return engine
+    struct EngineNotStaged: Error, CustomStringConvertible {
+        var description: String { "the staged pi engine is missing or malformed: run `python3 scripts/pi_engine.py stage`" }
     }
 
-    /// Skips the running test where no engine is staged. A test that runs its body in a child process
-    /// (`processExitsWith`) calls this first: a skip raised inside the child fails the child, not the test.
-    public static func requireStagedEngine() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        _ = try stagedEngine(under: root)
+    /// The staged engine (`python3 scripts/pi_engine.py stage`) that checks the profiles. A test that needs it fails,
+    /// naming the command, where none is staged.
+    private static func stagedEngine(under root: URL) throws -> BundledPiEngine {
+        guard let engine = BundledPiEngine(contents: root.appendingPathComponent(".build/pi-engine")) else { throw EngineNotStaged() }
+        return engine
     }
 
     public static func store(in directory: URL, populated: Bool = false, seed: Bool = true) throws -> SubagentDefinitionsStore {
