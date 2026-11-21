@@ -404,8 +404,8 @@ extension FleetDispatch {
             let result: Result<String, FleetDispatchRefusal>
             do {
                 let stopped = try await close(agent, id)
-                let cleaned = stopped ? path.flatMap { path in branch.map { FleetDispatchGit.cleanBuildOutput(worktree: path, branch: $0, names: candidates) } } : nil
-                let processes = stopped ? "Owned process groups stopped." : "Could not confirm process exit; build output kept."
+                let cleaned = stopped.allowsBuildCleanup ? path.flatMap { path in branch.map { FleetDispatchGit.cleanBuildOutput(worktree: path, branch: $0, names: candidates) } } : nil
+                let processes = stopped.summary + (stopped.allowsBuildCleanup ? "" : " Build output kept.")
                 let bytes = cleaned?.bytes ?? 0
                 let detail = cleaned.flatMap { $0.removed.isEmpty ? nil : " Removed \($0.removed.joined(separator: ", "))." } ?? ""
                 result = .success("Thread removed. \(processes) \(bytes) allocated bytes freed from build output.\(detail) Kept the checkout, branches, and saved conversation; unverified output was left alone.")

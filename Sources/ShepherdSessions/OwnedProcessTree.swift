@@ -5,12 +5,23 @@ import Foundation
 /// Capture before stopping the owner; saved start identities fence signals after reparenting.
 /// Never discovers unrelated processes by name or signals Shepherd's own process group.
 public final class OwnedProcessTree: @unchecked Sendable {
+    struct Birth: Hashable, Sendable {
+        let pid: pid_t
+        let seconds: UInt64
+        let microseconds: UInt64
+
+        init(_ info: proc_bsdinfo) {
+            pid = pid_t(info.pbi_pid)
+            seconds = info.pbi_start_tvsec
+            microseconds = info.pbi_start_tvusec
+        }
+    }
+
     private struct Identity {
         let pid: pid_t
         let group: pid_t
         let parent: pid_t
-        let seconds: UInt64
-        let microseconds: UInt64
+        let birth: Birth
 
         init?(_ pid: pid_t) {
             var info = proc_bsdinfo()
@@ -19,13 +30,12 @@ public final class OwnedProcessTree: @unchecked Sendable {
             self.pid = pid
             group = pid_t(info.pbi_pgid)
             parent = pid_t(info.pbi_ppid)
-            seconds = info.pbi_start_tvsec
-            microseconds = info.pbi_start_tvusec
+            birth = Birth(info)
         }
 
         var isCurrent: Bool {
             guard let now = Identity(pid) else { return false }
-            return now.seconds == seconds && now.microseconds == microseconds && now.group == group
+            return now.birth == birth && now.group == group
         }
     }
 
@@ -34,6 +44,15 @@ public final class OwnedProcessTree: @unchecked Sendable {
     private var descendants: [pid_t: Identity] = [:]
 
     public init(root: pid_t) { self.root = Identity(root) }
+
+    /// Snapshot of what the existing teardown already owns, including exited descendants.
+    var trackedBirths: Set<Birth> {
+        lock.withLock {
+            var births = Set(descendants.values.map(\.birth))
+            if let root { births.insert(root.birth) }
+            return births
+        }
+    }
 
     /// Walk only children of identity-checked owned processes, not the system's process list.
     public func capture() {

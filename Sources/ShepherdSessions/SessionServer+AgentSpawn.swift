@@ -151,7 +151,7 @@ extension SessionServer {
                                       isAutomation: spawn.isAutomation,
                                       project: state.projectContext(for: agent.id),
                                       worktreeOwningSpace: owningSpace,
-                                      suggestFiles: suggestions.snapshot().settings.files(for: spawn.isAutomation ? .automation : .thread),
+                                      suggestFiles: (try? suggestions.snapshot())?.settings.files(for: spawn.isAutomation ? .automation : .thread) ?? [],
                                       modelOverride: spawn.takeModelOverride(),
                                       inherited: inherited,
                                       mcp: {

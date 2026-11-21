@@ -1193,6 +1193,75 @@ struct DesignReferenceIntegrationTests {
         await #expect(throws: DesignReferenceError.self) { try await h.server.removeDesignThreadNote(g.design, noteID: second.id) }
     }
 
+    @Test func damagedThreadNotesRefuseTheToolWithoutSpendingItsRetryBudget() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let changed = Locked<[DesignID]>([])
+        h.server.onDesignThreadNotesChanged = { id in changed.withValue { $0.append(id) } }
+        let g = try await granted(h)
+        let folder = try #require(h.server.designs.folder(for: g.design))
+        let file = folder.appendingPathComponent("thread-notes.json")
+        let damaged = Data(#"{"version":1,"notes":["#.utf8)
+        try damaged.write(to: file)
+        for attempt in 0...DesignThreadNote.rateLimit {
+            let id = 200 + attempt
+            try g.client.send(.designNote(id: id, agentID: g.pi.agent.id, reference: g.ref, text: "Done."))
+            guard case .error(id, let code, let message) = try await g.client.reply() else {
+                Issue.record("Expected a refusal for the damaged notes file")
+                return
+            }
+            #expect(code == "thread_notes_unavailable")
+            #expect(message == "Thread notes can't be saved right now. Tell the user to open the design.")
+        }
+        // Drain the callbacks submitted before the tool replied.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        #expect(changed.current.isEmpty)
+        #expect(try Data(contentsOf: file) == damaged)
+        let remote = RemoteDesignService(server: h.server)
+        guard case .index(let index) = try await remote.answer(.index(designID: g.design)) else {
+            Issue.record("Expected the index even when thread notes are unavailable")
+            return
+        }
+        #expect(index.snapshot.threadNotesWarning?.contains(file.path) == true)
+        try FileManager.default.removeItem(at: file)
+        try g.client.send(.designNote(id: 299, agentID: g.pi.agent.id, reference: g.ref, text: "Done."))
+        guard case .designNote(299, let note) = try await g.client.reply() else {
+            Issue.record("The tool did not retry on the same thread after repair")
+            return
+        }
+        #expect(try await h.server.designThreadNotes(g.design) == [note])
+        try await eventually("the successful retry to notify the canvas") { changed.current == [g.design] }
+    }
+
+    @Test func otherNoteWriteFailuresSpendTheRetryBudget() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let g = try await granted(h)
+        let folder = try #require(h.server.designs.folder(for: g.design))
+        let fm = FileManager.default
+        let permissions = try #require(fm.attributesOfItem(atPath: folder.path)[.posixPermissions])
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        defer { try? fm.setAttributes([.posixPermissions: permissions], ofItemAtPath: folder.path) }
+        for attempt in 0..<DesignThreadNote.rateLimit {
+            let id = 300 + attempt
+            try g.client.send(.designNote(id: id, agentID: g.pi.agent.id, reference: g.ref, text: "Done."))
+            guard case .error(id, "io_failed", let message) = try await g.client.reply() else {
+                Issue.record("Expected the note write to fail in a read-only folder")
+                return
+            }
+            #expect(!message.contains(folder.path))
+        }
+        try fm.setAttributes([.posixPermissions: permissions], ofItemAtPath: folder.path)
+        try g.client.send(.designNote(id: 399, agentID: g.pi.agent.id, reference: g.ref, text: "Done."))
+        guard case .error(399, "rate_limited", _) = try await g.client.reply() else {
+            Issue.record("Other write failures must count toward the rate limit")
+            return
+        }
+        #expect(try await h.server.designThreadNotes(g.design).isEmpty)
+    }
+
     @Test(arguments: [
         ("notSent", "not_granted"), ("wholeDesign", "no_piece"), ("empty", "invalid_note"), ("long", "invalid_note"),
         ("badRef", "invalid_reference"), ("otherMac", "remote_design"),

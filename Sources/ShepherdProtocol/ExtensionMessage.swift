@@ -59,6 +59,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// channel for its agent's native child runs: the app may send
     /// `ExtensionReply.childCommand` frames on it (card buttons, inspector steer).
     case helloChildren(agentID: AgentID, projectScopes: Bool? = nil)
+    case stopBashProcesses(agentID: AgentID, bashScope: UUID)
     case childScope(id: Int, agentID: AgentID, sessionID: String, userTimestamp: Double?)
     /// Outcome of a `childCommand`; `error` is nil on success.
     case childCommandResult(id: Int, error: String?)
@@ -269,7 +270,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case call, proposals
         case what
         case server, challenge, report
-        case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp
+        case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp, bashScope
         case seq, mark, at, expiresAt
         case action, lines
     }
@@ -277,7 +278,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     private enum Kind: String, Codable {
         case app
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent, responseTiming, nativeQueueBoundary
-        case helloChildren, childCommandResult, childScope, prepareProjectConfiguration
+        case helloChildren, stopBashProcesses, childCommandResult, childScope, prepareProjectConfiguration
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
@@ -367,6 +368,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             self = .helloAgent(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .helloChildren:
             self = .helloChildren(agentID: try c.decode(AgentID.self, forKey: .agentID), projectScopes: try c.decodeIfPresent(Bool.self, forKey: .projectScopes))
+        case .stopBashProcesses:
+            self = .stopBashProcesses(agentID: try c.decode(AgentID.self, forKey: .agentID), bashScope: try c.decode(UUID.self, forKey: .bashScope))
         case .childScope:
             self = .childScope(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                 sessionID: try c.decode(String.self, forKey: .sessionID), userTimestamp: try c.decodeIfPresent(Double.self, forKey: .userTimestamp))
@@ -769,6 +772,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.helloChildren, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encodeIfPresent(projectScopes, forKey: .projectScopes)
+        case .stopBashProcesses(let agentID, let scope):
+            try c.encode(Kind.stopBashProcesses, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(scope, forKey: .bashScope)
         case .childScope(let id, let agentID, let sessionID, let userTimestamp):
             try c.encode(Kind.childScope, forKey: .type)
             try c.encode(id, forKey: .id); try c.encode(agentID, forKey: .agentID)

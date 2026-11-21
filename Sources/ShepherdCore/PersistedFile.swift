@@ -23,6 +23,16 @@ public enum PersistedFile<Value: Decodable> {
         }
         do {
             try validateBytes(data)
+        } catch {
+            return .damaged(original: data, error: error)
+        }
+        return decode(data, dateDecodingStrategy: dateDecodingStrategy, exactEnvelope: exactEnvelope, validate: validate)
+    }
+
+    /// For stores that read their own bytes to fence an atomic replacement.
+    package static func decode(_ data: Data, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
+                               exactEnvelope: Bool = false, validate: (Value) throws -> Void = { _ in }) -> Self {
+        do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = dateDecodingStrategy
             decoder.userInfo[exactEnvelopeKey] = exactEnvelope

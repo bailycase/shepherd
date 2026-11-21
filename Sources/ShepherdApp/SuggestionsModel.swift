@@ -19,6 +19,7 @@ final class SuggestionsModel {
     private(set) var busy = false
     /// What went wrong with the last change, in words.
     private(set) var problem: String?
+    private(set) var unavailable: String?
 
     @ObservationIgnored private let request: (RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot
     @ObservationIgnored private let instructions: InstructionsModel
@@ -37,7 +38,7 @@ final class SuggestionsModel {
     /// `request` on this Mac's own store, as a host serves it.
     nonisolated private static func perform(_ request: RemoteSuggestionsRequest, on store: SuggestionsStore) throws -> SuggestionsSnapshot {
         switch request {
-        case .fetch: store.snapshot()
+        case .fetch: try store.snapshot()
         case .configure(let settings): try store.configure(settings)
         case .add(let id, let line, let file): try store.add(id, line: line, file: file)
         case .addAll: try store.addAll()
@@ -50,7 +51,11 @@ final class SuggestionsModel {
 
     /// Reads the suggestions afresh (the page opening).
     func refresh() async {
-        if let snapshot = try? await request(.fetch) { adopt(snapshot) }
+        do {
+            adopt(try await request(.fetch))
+        } catch {
+            noteUnavailable(error)
+        }
     }
 
     /// An agent suggested a line, or a remote client acted on the suggestions.
@@ -156,6 +161,7 @@ final class SuggestionsModel {
 
     /// Takes the store's snapshot, and forgets edits and targets of lines no longer waiting.
     private func adopt(_ snapshot: SuggestionsSnapshot) {
+        unavailable = nil
         self.snapshot = snapshot
         let waiting = Set(snapshot.waiting.map(\.id))
         edits = edits.filter { waiting.contains($0.key) }
@@ -167,18 +173,28 @@ final class SuggestionsModel {
         await instructions.localFilesChanged()
     }
 
+    private func noteUnavailable(_ error: Error) {
+        if case SuggestionsStore.StoreError.damaged(let url) = error {
+            unavailable = SuggestionsStore.StoreError.damaged(url).description
+        } else if case RemoteHostClientError.rejected("suggestions_unavailable", let message) = error {
+            unavailable = message
+        }
+    }
+
     private func run(_ body: @escaping () async throws -> Void) async {
         busy = true
         problem = nil
         defer { busy = false }
         do {
             try await body()
-        } catch let failure as SuggestionsStore.StoreError {
-            problem = failure.description
-        } catch let failure as InstructionsStore.StoreError {
-            problem = failure.description
         } catch {
-            problem = error.localizedDescription
+            noteUnavailable(error)
+            guard unavailable == nil else { return }
+            switch error {
+            case let failure as SuggestionsStore.StoreError: problem = failure.description
+            case let failure as InstructionsStore.StoreError: problem = failure.description
+            default: problem = error.localizedDescription
+            }
         }
     }
 }

@@ -511,6 +511,10 @@ struct FleetDispatchTests {
         _ = try #require(await parent.nextMessage())
         try await eventuallyOnMain("the first result to settle") { a.sent().first?.state == .done && b.taken().first?.state == .done }
         let prior = b.dispatched.first?.completedAt
+        // The status above is reported by hand, so nothing yet says the stub pi has started: the host refuses a message to a thread that isn't servable.
+        try await eventuallyOnMain("the receiver's pi to serve the thread") {
+            b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
 
         let gate = FleetTestGate()
         await gate.close()
@@ -561,6 +565,120 @@ struct FleetDispatchTests {
         #expect(try await parent.read() == .stopManagedBash)
     }
 
+    @Test(arguments: ["stop then close", "scoped then close", "delete", "cancel", "close"])
+    func explicitTeardownStopsEscapedJobsButNotReadableDecoys(action: String) async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        b.server.queue.sync { b.server.fleet?.dispatch.freeWorktreeBytes = { _ in .max } }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold escaped-job-fixtures fleet-disk-failure", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to start") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let jobs = EscapedJobs(cwd: URL(fileURLWithPath: try #require(thread.worktreePath)))
+        let orphan = try await jobs.adopted("orphan"), detached = try await jobs.adopted("session")
+        #expect(getpgid(orphan) == orphan && getsid(orphan) != orphan)
+        #expect(getsid(detached) == detached)
+        var decoys = [pid_t]()
+        for name in ["decoy-no-marker", "decoy-other-thread", "decoy-argv"] {
+            decoys.append(try await jobs.adopted(name))
+        }
+        var owned = [orphan, detached]
+
+        switch action {
+        case "delete": try await b.server.deleteAgent(thread.id)
+        case "cancel": #expect(try await parent.cancel(info).state == "cancelled")
+        default:
+            try b.report(thread.id, .working)
+            try await eventuallyOnMain("the dispatch to work") { b.taken().first?.activity == "working" }
+            try Data().write(to: jobs.cwd.appendingPathComponent("flaky-go"))
+            try b.report(thread.id, .done)
+            try await eventuallyOnMain("the dispatch to settle") { a.sent().first?.state == .failed }
+            if action == "stop then close" || action == "scoped then close" {
+                let survivors = try await scopeBashSweeps(on: b, thread: thread, jobs: jobs, pressStop: action == "stop then close")
+                decoys.append(survivors.decoy)
+                owned.append(survivors.next)
+                #expect(kill(orphan, 0) == 0 && kill(detached, 0) == 0, "earlier turns' jobs survive scoped cleanup")
+            }
+            try await eventuallyOnMain("the pi to settle before close") {
+                b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.piBusy == false }
+            }
+            let closed = try parent.info(try await parent.call {
+                .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID)
+            })
+            let report = try #require(closed.closeReport)
+            let found = try #require(report.firstMatch(of: /Marked process sweep: ([0-9]+) escapees found;/))
+            #expect((Int(found.1) ?? 0) >= 2)
+            #expect(report.contains("; 0 marked processes not confirmed stopped."))
+        }
+        try await eventuallyOnMain("all owned escapees to exit", timeout: .seconds(6)) {
+            owned.allSatisfy { kill($0, 0) != 0 }
+        }
+        #expect(decoys.allSatisfy { kill($0, 0) == 0 })
+    }
+
+    private struct EscapedJobs {
+        let cwd: URL
+
+        private func adoptedPID(_ name: String) -> pid_t? {
+            guard let text = try? String(contentsOf: cwd.appendingPathComponent(name + ".pid"), encoding: .utf8),
+                  let pid = pid_t(text), pid > 1 else { return nil }
+            var info = proc_bsdinfo()
+            guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout.size(ofValue: info))) > 0,
+                  info.pbi_ppid == 1 else { return nil }
+            return pid
+        }
+
+        func adopted(_ name: String) async throws -> pid_t {
+            try await eventuallyOnMain("\(name) to be reparented to launchd") { adoptedPID(name) != nil }
+            let pid = try #require(adoptedPID(name))
+            var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+            var size = 1024 * 1024
+            var bytes = [UInt8](repeating: 0, count: size)
+            try #require(bytes.withUnsafeMutableBytes { sysctl(&mib, 3, $0.baseAddress, &size, nil, 0) } == 0,
+                         "the fixture's exec environment must be readable")
+            #expect(bytes.prefix(size).split(separator: 0).contains { $0.elementsEqual("STUB_ESCAPED_JOB=\(name)".utf8) })
+            return pid
+        }
+    }
+
+    private func scopeBashSweeps(on mac: Mac, thread: Agent, jobs: EscapedJobs, pressStop: Bool) async throws -> (decoy: pid_t, next: pid_t) {
+        let client = try ExtensionClient(path: mac.host.socketPath)
+        try client.send(.helloChildren(agentID: thread.id))
+        let s = try #require(mac.server.queue.sync { mac.server.rpcThread(forAgent: thread.id)?.session.id })
+        let first = UUID(), second = UUID()
+        func prompt(_ text: String) async throws {
+            await mac.server.sendOpeningPrompt(try #require(OpeningPrompt(text, agentID: thread.id)), sessionID: s)
+        }
+        let hold = pressStop ? " escaped-abort-hold" : ""
+        try await prompt("flaky escaped-job:scoped-first:\(first.uuidString.lowercased()) escaped-job:scoped-second:\(second.uuidString.lowercased()) escaped-job:decoy-other-thread-scope:\(first.uuidString.lowercased())\(hold)")
+        let firstPID = try await jobs.adopted("scoped-first")
+        let secondPID = try await jobs.adopted("scoped-second")
+        let decoy = try await jobs.adopted("decoy-other-thread-scope")
+        if pressStop {
+            let stopped = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
+                mac.server.queue.async {
+                    guard let rpc = mac.server.rpcThread(forAgent: thread.id) else { done.resume(returning: false); return }
+                    rpc.stop { done.resume(returning: (try? $0.get()) != nil) }
+                }
+            }
+            try #require(stopped)
+        }
+        try client.send(.stopBashProcesses(agentID: thread.id, bashScope: first))
+        // Drive the next turn while the Stop sweep is still pending. Its scope is not aborted.
+        try await prompt("flaky escaped-job:next-turn:\(UUID().uuidString.lowercased())")
+        let next = try await jobs.adopted("next-turn")
+        try await eventuallyOnMain("the first scoped sweep to send TERM") {
+            FileManager.default.fileExists(atPath: jobs.cwd.appendingPathComponent("scoped-first.term").path)
+        }
+        for _ in 0..<10 { try client.send(.stopBashProcesses(agentID: thread.id, bashScope: second)) }
+        try await eventuallyOnMain("the TERM-resistant first scoped job to exit") { kill(firstPID, 0) != 0 }
+        #expect(kill(secondPID, 0) == 0, "requests during a scoped sweep wait for the next batch")
+        try await eventuallyOnMain("the next scoped batch to exit its target") { kill(secondPID, 0) != 0 }
+        #expect(kill(next, 0) == 0 && kill(decoy, 0) == 0)
+        return (decoy, next)
+    }
+
     @Test func cancellingADispatchStopsItsBackgroundProcessAndKeepsItsThread() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
@@ -588,9 +706,11 @@ struct FleetDispatchTests {
         #expect(try Self.head(worktree) == origin.sha)
     }
 
-    @Test(arguments: [false, true]) func aSettledDispatchClosesItsThreadAndBuildOutputButKeepsTheCheckout(losesRecord: Bool) async throws {
+    @Test(arguments: ["live host", "record lost during close", "restarted host"])
+    func aSettledDispatchClosesItsThreadAndBuildOutputButKeepsTheCheckout(scenario: String) async throws {
         let (a, b, origin) = try await Self.pair(originExtra: [".gitignore": "*.log\n.build/\nDerivedData/\n"])
-        defer { a.stop(); b.stop() }
+        let losesRecord = scenario == "record lost during close", restarts = scenario == "restarted host"
+        defer { a.stop(); b.stop(keepFiles: restarts) }
         let parent = try await a.parent()
         try parent.hello()
         let info = try parent.info(try await parent.dispatch("flaky-hold fleet-close-background fleet-disk-failure", host: "Mac mini"))
@@ -632,17 +752,27 @@ struct FleetDispatchTests {
                 }
             }
         }
+        let receiver: Mac
+        if restarts {
+            b.stop(keepFiles: true)
+            receiver = try await Mac("Mac mini", origin: origin, dir: b.host.dir, port: b.port)
+        } else {
+            receiver = b
+        }
+        defer { if restarts { receiver.stop() } }
+        if restarts { try await Self.waitForReports(a, receiver) }
         let reply = try await close()
         if losesRecord {
             guard case .error(_, "unknown_dispatch", _) = reply else { Issue.record("Expected a missing dispatch refusal, got \(reply)"); return }
         } else {
             let report = try #require(try parent.info(reply).closeReport)
-            #expect(report.contains("Thread removed") && report.contains("process groups stopped") && report.contains("bytes freed"))
+            #expect(report.contains("Thread removed") && report.contains("Tracked sessions stopped") && report.contains("bytes freed"))
             #expect(report.contains("Kept the checkout, branches, and saved conversation"))
+            if restarts { #expect(report.contains("escaped processes were not checked") && !report.contains("Build output kept")) }
             #expect(try parent.info(try await close()).closeReport == report, "a repeated close returns the same receipt")
         }
         try await eventuallyOnMain("the background process to exit") { kill(pid, 0) != 0 }
-        #expect(b.dispatched.isEmpty)
+        #expect(receiver.dispatched.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: build.path) && FileManager.default.fileExists(atPath: derived.path))
         #expect(FileManager.default.fileExists(atPath: pidFile.path))
         #expect(try Self.head(worktree) == origin.sha)

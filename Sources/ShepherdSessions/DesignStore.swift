@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import os
 import ShepherdCore
@@ -42,6 +43,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     case invalidExtract(String)
     /// A folder that can't become a design: why (`DesignImport.Problem`, or its canvas).
     case importRefused(String)
+    case threadNotesUnavailable(String)
     case io(String)
 
     public var code: String {
@@ -72,6 +74,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .checkpointTooLarge: return "checkpoint_too_large"
         case .invalidExtract: return "invalid_extract"
         case .importRefused: return "import_refused"
+        case .threadNotesUnavailable: return "thread_notes_unavailable"
         case .io: return "io_failed"
         }
     }
@@ -116,7 +119,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .checkpointTooLarge(let bytes):
             return "this design is \(bytes / 1_000_000) MB of boards; a checkpoint may not exceed \(DesignCheckpointName.maxBytesPerDesign / 1_000_000) MB"
         case .importRefused(let why): return why
-        case .io(let message): return message
+        case .threadNotesUnavailable(let message), .io(let message): return message
         }
     }
 }
@@ -165,8 +168,20 @@ public final class DesignStore: @unchecked Sendable {
     /// Each design's usage index at the revision it was built for. Queue-confined.
     var usageIndexes: [DesignID: (revision: UInt64, index: DesignUsageIndex)] = [:]
 
-    public init(directory: URL) {
+    private static let notesLog = Logger(subsystem: "com.shepherd.sessions", category: "DesignThreadNotes")
+    private var damagedNotes: Set<URL> = [] // Design queue only; tracks log transitions, not a read cache.
+    private let readNotesBytes: (URL) throws -> Data?
+    private let stageNotesBytes: (Data, URL) throws -> Void
+
+    public convenience init(directory: URL) {
+        self.init(directory: directory, readNotesBytes: Self.readNotesBytes)
+    }
+
+    init(directory: URL, readNotesBytes: @escaping (URL) throws -> Data?,
+         stageNotesBytes: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .withoutOverwriting) }) {
         self.directory = directory
+        self.readNotesBytes = readNotesBytes
+        self.stageNotesBytes = stageNotesBytes
     }
 
     // MARK: Paths
@@ -271,13 +286,11 @@ public final class DesignStore: @unchecked Sendable {
     func delete(_ id: DesignID) async throws {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            try self.checkNotesBeforeRemoving(folder)
             self.forget(id)
+            if FileManager.default.fileExists(atPath: folder.path) { try Self.removeDesignFolder(folder) }
             // A shared design's repository lives beside the designs (`DesignGit`): it goes too.
             DesignGit.removeRepository(of: folder)
-            guard FileManager.default.fileExists(atPath: folder.path) else { return }
-            do { try FileManager.default.removeItem(at: folder) } catch {
-                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
-            }
         }
     }
 
@@ -300,9 +313,10 @@ public final class DesignStore: @unchecked Sendable {
             }
             self.forget(id)
             guard !FileManager.default.fileExists(atPath: staged.path) else { throw DesignStoreError.designExists(id) }
+            try self.checkNotesBeforeRemoving(folder)
             guard FileManager.default.fileExists(atPath: folder.path) else { return false }
             do { try FileManager.default.moveItem(at: folder, to: staged) } catch {
-                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
+                throw Self.designRemovalFailed(folder, error)
             }
             return true
         }
@@ -328,12 +342,10 @@ public final class DesignStore: @unchecked Sendable {
     func finishDeletion(_ id: DesignID) async throws {
         try await run {
             guard let staged = self.stagedFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            try self.checkNotesBeforeRemoving(staged)
             self.forget(id)
+            if FileManager.default.fileExists(atPath: staged.path) { try Self.removeDesignFolder(staged) }
             if let folder = self.folder(for: id) { DesignGit.removeRepository(of: folder) }
-            guard FileManager.default.fileExists(atPath: staged.path) else { return }
-            do { try FileManager.default.removeItem(at: staged) } catch {
-                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
-            }
         }
     }
 
@@ -782,52 +794,139 @@ public final class DesignStore: @unchecked Sendable {
 
     // MARK: Notes back
 
-    /// The notes threads left on the design's pieces, oldest first: `thread-notes.json` beside
-    /// `project/`, never inside it. Empty when there are none or the file is unreadable.
+    /// The notes threads left on the design's pieces, oldest first. Damage is a refusal, never an empty list.
     public func threadNotes(_ id: DesignID) async throws -> [DesignThreadNote] {
         try await run {
             _ = try self.load(id)
-            return self.loadThreadNotes(id).notes
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            return try self.loadThreadNotes(Self.notesURL(folder)).file.notes
         }
     }
 
     /// Adds `note` in place of the same thread's note on the same piece.
     func addThreadNote(_ id: DesignID, _ note: DesignThreadNote) async throws -> DesignThreadNote {
-        try await run {
-            _ = try self.load(id)
-            var file = self.loadThreadNotes(id)
-            file.add(note)
-            try self.saveThreadNotes(file, id)
-            return note
-        }
+        _ = try await editThreadNotes(id) { $0.add(note); return true }
+        return note
     }
 
     /// Removes a note; false when the design has none by that id.
     func removeThreadNote(_ id: DesignID, noteID: UUID) async throws -> Bool {
-        try await run {
-            _ = try self.load(id)
-            var file = self.loadThreadNotes(id)
+        try await editThreadNotes(id) { file in
             guard file.notes.contains(where: { $0.id == noteID }) else { return false }
             file.notes.removeAll { $0.id == noteID }
-            try self.saveThreadNotes(file, id)
             return true
         }
     }
 
-    private func loadThreadNotes(_ id: DesignID) -> DesignThreadNotes {
-        guard let folder = folder(for: id),
-              let data = try? Data(contentsOf: folder.appendingPathComponent("thread-notes.json")) else { return DesignThreadNotes() }
-        return (try? JSONDecoder().decode(DesignThreadNotes.self, from: data)) ?? DesignThreadNotes()
+    private static func notesURL(_ folder: URL) -> URL { folder.appendingPathComponent("thread-notes.json") }
+
+    static func readNotesBytes(_ url: URL) throws -> Data? {
+        let parent = open(url.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        if parent < 0 {
+            let failure = errno
+            if failure == ENOENT { return nil }
+            throw POSIXError(.init(rawValue: failure) ?? .EIO)
+        }
+        defer { close(parent) }
+        let fd = openat(parent, url.lastPathComponent, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        if fd < 0 {
+            let failure = errno
+            if failure == ENOENT { return nil }
+            throw POSIXError(.init(rawValue: failure) ?? .EIO)
+        }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { throw CocoaError(.fileReadUnsupportedScheme) }
+        return try handle.readToEnd() ?? Data()
     }
 
-    private func saveThreadNotes(_ file: DesignThreadNotes, _ id: DesignID) throws {
-        guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    private enum NotesProblem: String, Error {
+        case invalidUTF8 = "the file is not UTF-8"
+        case invalidJSON = "the JSON does not match the thread notes format"
+        case unsupportedVersion = "the thread notes version is not supported"
+    }
+
+    private func loadThreadNotes(_ url: URL) throws -> (file: DesignThreadNotes, bytes: Data?) {
         do {
-            try encoder.encode(file).write(to: folder.appendingPathComponent("thread-notes.json"), options: .atomic)
+            let bytes = try readNotesBytes(url)
+            let result: PersistedFile<DesignThreadNotes>
+            if let bytes {
+                // A literal NUL is not JSON. Reject it before JSONDecoder can sniff BOM-less UTF-16/32.
+                if !bytes.contains(0), String(data: bytes, encoding: .utf8) != nil {
+                    result = .decode(bytes, exactEnvelope: true) {
+                        guard $0.version == 1 else { throw NotesProblem.unsupportedVersion }
+                    }
+                } else {
+                    result = .damaged(original: bytes, error: NotesProblem.invalidUTF8)
+                }
+            } else {
+                result = .missing
+            }
+            let file: DesignThreadNotes
+            switch result {
+            case .loaded(let notes): file = notes
+            case .missing: file = DesignThreadNotes()
+            case .damaged(_, let error): throw (error as? NotesProblem) ?? .invalidJSON
+            }
+            if damagedNotes.remove(url) != nil { Self.notesLog.notice("Thread notes readable again at \(url.path, privacy: .public)") }
+            return (file, bytes)
         } catch {
-            throw DesignStoreError.io("could not keep the note: \(error.localizedDescription)")
+            let reason = (error as? NotesProblem)?.rawValue ?? "the file could not be read"
+            let warning = "Thread notes at \(url.path) on the host are unavailable because \(reason). "
+                + "Fix access, restore a backup, or move or delete the file to start with no notes. Then refresh the design."
+            if damagedNotes.insert(url).inserted { Self.notesLog.error("\(warning, privacy: .public)") }
+            throw DesignStoreError.threadNotesUnavailable(warning)
+        }
+    }
+
+    private func checkNotesBeforeRemoving(_ folder: URL) throws {
+        let url = Self.notesURL(folder)
+        do { _ = try loadThreadNotes(url) } catch {
+            Self.notesLog.error("Design folder removal refused: \(String(describing: error), privacy: .public)")
+            throw error
+        }
+    }
+
+    private static func removeDesignFolder(_ folder: URL) throws {
+        do { try FileManager.default.removeItem(at: folder) } catch { throw designRemovalFailed(folder, error) }
+    }
+
+    private static func designRemovalFailed(_ folder: URL, _ error: Error) -> DesignStoreError {
+        let message = "Couldn't remove the design folder at \(folder.path): \(error.localizedDescription)."
+        notesLog.error("\(message, privacy: .public)")
+        return .io(message)
+    }
+
+    private func editThreadNotes(_ id: DesignID, _ edit: @escaping (inout DesignThreadNotes) -> Bool) async throws -> Bool {
+        try await run {
+            do {
+                _ = try self.load(id)
+                guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+                let url = Self.notesURL(folder)
+                // There is no cached copy or queued replacement: the edit starts on the latest bytes.
+                let (current, original) = try self.loadThreadNotes(url)
+                var file = current
+                guard edit(&file) else { return false }
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let staged = folder.appendingPathComponent(".thread-notes-\(UUID().uuidString)")
+                defer { try? FileManager.default.removeItem(at: staged) }
+                try self.stageNotesBytes(encoder.encode(file), staged)
+                guard try self.loadThreadNotes(url).bytes == original else {
+                    throw DesignStoreError.io("Thread notes changed at \(url.path) while saving. Read them again and retry.")
+                }
+                let renamed = original == nil ? renamex_np(staged.path, url.path, UInt32(RENAME_EXCL)) : rename(staged.path, url.path)
+                guard renamed == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+                return true
+            } catch DesignStoreError.threadNotesUnavailable(let warning) {
+                // The read already logged this damage once.
+                throw DesignStoreError.threadNotesUnavailable(warning)
+            } catch {
+                Self.notesLog.error("Thread note write failed for design \(id.rawValue, privacy: .public): \(String(describing: error), privacy: .public)")
+                if let error = error as? DesignStoreError { throw error }
+                throw DesignStoreError.io("Couldn't save the thread notes: \(error.localizedDescription). Retry the change.")
+            }
         }
     }
 
@@ -1432,10 +1531,15 @@ public final class DesignStore: @unchecked Sendable {
             var removed: [String] = []
             for name in names.sorted() where [Self.stagedPrefix, Self.importPrefix, Self.unzipPrefix].contains(where: name.hasPrefix) {
                 // A deletion that never finished: its repository (beside the designs) goes too.
+                let folder = directory.appendingPathComponent(name, isDirectory: true)
                 if name.hasPrefix(Self.stagedPrefix) {
+                    do {
+                        try checkNotesBeforeRemoving(folder)
+                        try Self.removeDesignFolder(folder)
+                    } catch { continue }
                     DesignGit.removeRepository(of: directory.appendingPathComponent(String(name.dropFirst(Self.stagedPrefix.count))))
-                }
-                if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(name, isDirectory: true))) != nil {
+                    removed.append(name)
+                } else if (try? FileManager.default.removeItem(at: folder)) != nil {
                     removed.append(name)
                 }
             }
@@ -2356,8 +2460,12 @@ public final class DesignStore: @unchecked Sendable {
     private func snapshotOnQueue(_ id: DesignID) throws -> DesignSnapshot {
         var design = try load(id)
         let files = try files(of: id, &design)
+        var notesWarning: String?
+        if let folder = folder(for: id) {
+            do { _ = try loadThreadNotes(Self.notesURL(folder)) } catch { notesWarning = String(describing: error) }
+        }
         return DesignSnapshot(designID: id, revision: design.revision, index: design.index, boards: files,
-                              usage: projectUsage(id))
+                              usage: projectUsage(id), threadNotesWarning: notesWarning)
     }
 
     func projectUsage(_ id: DesignID) -> DesignUsage {
