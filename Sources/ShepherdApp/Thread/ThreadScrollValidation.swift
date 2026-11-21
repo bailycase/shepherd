@@ -95,41 +95,50 @@ final class MacScrollValidationTrace: NSObject {
         if moved && momentum.isEmpty && phase.isEmpty { intent.readerInput() }
     }
 
-    func observe(_ event: NSEvent, responder: NSResponder?, physical: Bool = true) {
+    func observe(_ event: NSEvent, responder: NSResponder?) {
         guard let scroll = guardian.scrollView(), let window = scroll.window,
               event.window === window, !scroll.isHiddenOrHasHiddenAncestor else { return }
         switch event.type {
         case .keyDown:
-            let modifiers = event.modifierFlags
-            guard !modifiers.contains(.option), !modifiers.contains(.control),
-                  let key = event.charactersIgnoringModifiers?.utf16.first,
-                  !modifiers.contains(.command) || [NSUpArrowFunctionKey, NSDownArrowFunctionKey].contains(Int(key)) else { return }
-            switch Int(key) {
-            case NSPageUpFunctionKey, NSPageDownFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
-                 NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSHomeFunctionKey, NSEndFunctionKey, 32:
-                break
-            default: return
-            }
-            if let view = responder as? NSView {
-                guard view.isDescendant(of: scroll), !(view is NSTextView), !(view is NSControl) else { return }
-            } else if responder !== window { return }
-            intent.readerInput()
-            keyUntil = .now + .milliseconds(350)
+            guard let key = event.charactersIgnoringModifiers?.utf16.first else { return }
+            keyInput(Int(key), modifiers: event.modifierFlags, responder: responder, in: scroll)
         case .scrollWheel:
             if wheelTouching || wheelCoasting || scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil)) {
                 wheelInput(phase: event.phase, momentum: event.momentumPhase, moved: event.scrollingDeltaY != 0)
             }
         case .leftMouseDown:
-            guard let scroller = scroll.verticalScroller, scroller.isEnabled,
-                  !scroller.isHiddenOrHasHiddenAncestor, scroller.testPart(event.locationInWindow) == .knob else { return }
-            scrollerHeld = true
-            physicalScrollerGrab = physical
-            intent.readerInput()
+            scrollerGrab(at: event.locationInWindow, in: scroll, physical: true)
         case .leftMouseUp:
-            scrollerHeld = false
+            scrollerRelease()
         default: break
         }
     }
+
+    func keyInput(_ key: Int, modifiers: NSEvent.ModifierFlags, responder: NSResponder?, in scroll: NSScrollView) {
+        guard !modifiers.contains(.option), !modifiers.contains(.control),
+              !modifiers.contains(.command) || [NSUpArrowFunctionKey, NSDownArrowFunctionKey].contains(key) else { return }
+        switch key {
+        case NSPageUpFunctionKey, NSPageDownFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
+             NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSHomeFunctionKey, NSEndFunctionKey, 32:
+            break
+        default: return
+        }
+        if let view = responder as? NSView {
+            guard (view === scroll || view.isDescendant(of: scroll)), !(view is NSTextView), !(view is NSControl) else { return }
+        } else if responder !== scroll.window { return }
+        intent.readerInput()
+        keyUntil = .now + .milliseconds(350)
+    }
+
+    func scrollerGrab(at point: NSPoint, in scroll: NSScrollView, physical: Bool) {
+        guard let scroller = scroll.verticalScroller, scroller.isEnabled,
+              !scroller.isHiddenOrHasHiddenAncestor, scroller.testPart(point) == .knob else { return }
+        scrollerHeld = true
+        physicalScrollerGrab = physical
+        intent.readerInput()
+    }
+
+    func scrollerRelease() { scrollerHeld = false }
 
     private func sampleIntent() -> ScrollIntent.State {
         // NSScroller's tracking loop can consume mouse-up before the local monitor sees it.
@@ -499,14 +508,10 @@ private final class ScrollFixture {
     private func captureOtherInputs(in scroll: NSScrollView) async throws {
         trace.scenario = "key-paging"
         await trace.advance()
-        let pageDown = String(UnicodeScalar(NSPageDownFunctionKey)!)
-        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.function], timestamp: 0,
-            windowNumber: window.windowNumber, context: nil, characters: pageDown, charactersIgnoringModifiers: pageDown,
-            isARepeat: false, keyCode: 121) else { throw ValidationError("could not make Page Down event") }
         trace.mark("fixture.pageDown")
-        trace.observe(event, responder: scroll)
-        // AppKit routes the action through the key window. Keep this test offscreen: feed the
-        // event to the monitor's handler and use the clip's measured page instead.
+        trace.keyInput(NSPageDownFunctionKey, modifiers: [.function], responder: scroll, in: scroll)
+        // AppKit routes the action through the key window. Keep this test offscreen and use
+        // the clip's measured page instead.
         let previous = scroll.contentView.bounds.minY
         try self.scroll(to: previous + scroll.contentView.bounds.height, wheel: false)
         await trace.advance()
@@ -530,24 +535,18 @@ private final class ScrollFixture {
         guard let scroller = scroll.verticalScroller else { throw ValidationError("missing vertical scroller") }
         let knob = scroller.rect(for: .knob)
         let location = scroller.convert(NSPoint(x: knob.midX, y: knob.midY), to: nil)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            guard let mouse = NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0) else {
-                throw ValidationError("could not make scroller event")
-            }
-            trace.mark(type == .leftMouseDown ? "fixture.scrollerGrab" : "fixture.scrollerRelease")
-            trace.observe(mouse, responder: scroller, physical: false)
-            if type == .leftMouseDown {
-                // Run the hit-test and state path without posting input or entering AppKit's tracking loop.
-                let before = scroll.contentView.bounds.minY
-                try self.scroll(to: before + 240, wheel: false)
-                await trace.advance(2)
-                guard trace.latest.map({ ($0.offset ?? before) > before }) == true else {
-                    throw ValidationError("scroller fixture did not move the viewport")
-                }
-                try requireIntent(.touching)
-            }
+        trace.mark("fixture.scrollerGrab")
+        trace.scrollerGrab(at: location, in: scroll, physical: false)
+        // Run the native hit-test without posting input or entering AppKit's tracking loop.
+        let before = scroll.contentView.bounds.minY
+        try self.scroll(to: before + 240, wheel: false)
+        await trace.advance(2)
+        guard trace.latest.map({ ($0.offset ?? before) > before }) == true else {
+            throw ValidationError("scroller fixture did not move the viewport")
         }
+        try requireIntent(.touching)
+        trace.mark("fixture.scrollerRelease")
+        trace.scrollerRelease()
         await trace.settle()
         try requireIntent(.idle)
     }
