@@ -515,11 +515,12 @@ extension ShepherdViewModel {
 
     func loadChangesBranches(_ session: ReviewSession) {
         guard let engine = session.engine else { return }
+        session.branchesError = nil
         Task {
             do {
                 let branches = try await engine.branches()
                 if isCurrent(session) { session.branches = branches }
-            } catch { fail("Couldn’t read the changes", error) }
+            } catch { if isCurrent(session) { session.branchesError = ActionError.describe(error) } }
         }
     }
 

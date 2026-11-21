@@ -107,6 +107,8 @@ final class ReviewSession: Identifiable {
     var overview: ChangesOverview?
     /// The base picker's branches; asked for when the picker opens.
     var branches: ChangesBranches?
+    /// Why the last branch request failed, until the next one starts.
+    var branchesError: String?
     var options = ChangesOptions(fullFiles: true)
     var wordDiffs = true
     /// Long lines wrap at the pane's edge instead of scrolling sideways.
@@ -173,6 +175,7 @@ final class ReviewSession: Identifiable {
         list = nil
         overview = nil
         branches = nil
+        branchesError = nil
         truncated = []
     }
 

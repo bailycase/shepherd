@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import Testing
 import ShepherdUI
@@ -15,6 +16,7 @@ struct DialogTests {
         struct Localized: LocalizedError { var errorDescription: String? { "The host refused the rename." } }
         enum Dump: Error { case noSuchAgent(AgentID) }
         #expect(ActionError.describe(ChangesError("busy", "A turn is still running.")) == "A turn is still running.")
+        #expect(ActionError.describe(RemoteHostClientError.rejected(code: "unavailable", message: "Couldn’t read the branches.")) == "Couldn’t read the branches.")
         #expect(ActionError.describe(Localized()) == "The host refused the rename.")
         #expect(ActionError.describe(Plain()) == "the branch is checked out elsewhere")
         #expect(!ActionError.describe(Dump.noSuchAgent(AgentID(rawValue: "a"))).contains("rawValue"))

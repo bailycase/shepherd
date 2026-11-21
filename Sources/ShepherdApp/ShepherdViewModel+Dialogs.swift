@@ -20,6 +20,7 @@ struct ActionError: Hashable {
     /// `CustomStringConvertible`'s text, else Foundation's wording. Never a Swift value dump.
     static func describe(_ error: Error) -> String {
         if let changes = error as? ChangesError { return changes.message }
+        if case RemoteHostClientError.rejected(_, let message) = error { return message }
         if let described = (error as? LocalizedError)?.errorDescription { return described }
         if let text = error as? CustomStringConvertible { return text.description }
         return error.localizedDescription
