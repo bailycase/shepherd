@@ -433,14 +433,27 @@ def band_evidence(frames):
     gaps = [{"frame": i, "height_pt": round(blank_height(frame), 3)}
             for i, frame in enumerate(frames) if not frame["hidden"] and "readingHeight" in frame]
     releases = []
+    input_closures = unconfirmed_drops = 0
     for i, (before, after) in enumerate(zip(frames, frames[1:]), 1):
-        if (before["hidden"] or after["hidden"] or before.get("clipSize") != after.get("clipSize")
-                or any(event["caller"] == "fixture.scrollInput" for event in after["events"])):
+        if before["hidden"] or after["hidden"] or before.get("clipSize") != after.get("clipSize"):
             continue
         old_gap, new_gap = before.get("seamGap"), after.get("seamGap")
-        if old_gap is None or new_gap is None or after.get("eagerTail") != before.get("eagerTail"):
+        same_seam = before.get("eagerTail") == after.get("eagerTail")
+        markers_missing = old_gap is None or new_gap is None
+        if any(event["caller"] == "fixture.scrollInput" for event in after["events"]):
+            # Input can trigger re-estimation as the seam closes, masking the height drop.
+            if same_seam and not markers_missing and old_gap > 2 and new_gap <= 2:
+                input_closures += 1
             continue
-        drop = before["documentHeight"] - after["documentHeight"]
+        old_height, new_height = before.get("documentHeight"), after.get("documentHeight")
+        if old_height is None or new_height is None:
+            continue
+        drop = old_height - new_height
+        if markers_missing:
+            unconfirmed_drops += drop > 2
+            continue
+        if not same_seam:
+            continue
         # A lazy stack can shrink without a hold. Require the extra space at the seam to close.
         if drop <= 2 or old_gap - new_gap <= 2 or abs(old_gap - new_gap - drop) > 2:
             continue
@@ -455,9 +468,16 @@ def band_evidence(frames):
                          "top_row_displacement_pt": movement(row),
                          "tail_displacement_pt": movement(before["eagerTail"])})
     over_threshold = [gap for gap in gaps if gap["height_pt"] > 8]
+    longest = run = 0
+    previous = -2
+    for gap in over_threshold:
+        run = run + 1 if gap["frame"] == previous + 1 else 1
+        longest = max(longest, run)
+        previous = gap["frame"]
     return {"max_blank_height_pt": max((gap["height_pt"] for gap in gaps), default=0),
-            "frames_blank_over_8_pt": len(over_threshold), "blank_samples_over_8_pt": over_threshold,
-            "hold_releases": releases}
+            "frames_blank_over_8_pt": len(over_threshold), "longest_blank_run_over_8_pt": longest,
+            "blank_samples_over_8_pt": over_threshold, "hold_releases": releases,
+            "input_seam_closures": input_closures, "unconfirmed_no_input_height_drops": unconfirmed_drops}
 
 
 def scroll_evidence(scenarios):
@@ -546,8 +566,11 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
                   f"{len(summary['in_band_inputs'])} in-band input residuals, "
                   f"{len(summary['offscreen_input_shifts'])} off-screen input shifts, "
                   f"{summary['blank_frames']} blank frames, {summary['max_blank_height_pt']:.3f} pt max blank height, "
-                  f"{summary['frames_blank_over_8_pt']} frames above 8 pt, "
-                  f"{len(summary['hold_releases'])} observed hold releases, "
+                  f"{summary['frames_blank_over_8_pt']} frames above 8 pt "
+                  f"(longest run: {summary['longest_blank_run_over_8_pt']}), "
+                  f"confirmed hold releases: {len(summary['hold_releases']) or 'none'}, "
+                  f"{summary['input_seam_closures']} input seam closures, "
+                  f"{summary['unconfirmed_no_input_height_drops']} unconfirmed no-input height drops, "
                   f"{summary['detached_guard_walks']} detached guard walks "
                   f"across {summary['frames']} frames")
         if error := summary.get("action_error"):
@@ -571,7 +594,13 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
         if name == "page-older-history" and any(e["caller"] == "fixture.historyVisibilityFallback"
                                                  for f in scenarios[name] for e in f["events"]):
             actual += "\nfixture.historyVisibilityFallback used; sentinel delivery not verified."
-        print(f"{name}: {actual}")
+        # Nightly 188c3ebcc plus the first measurement commit (06c87276d). Not a grading exception.
+        baseline = {
+            "cross-band-slow": "2 jumps (451 pt measured), 0 drift, 1 anchor swap/loss",
+            "cross-band-flick": "8 jumps (868.133 pt measured), 0 drift, 0 anchor swaps/losses",
+        }.get(name)
+        note = f" [known red on nightly (2026-11-21 baseline: {baseline})]" if baseline else ""
+        print(f"{name}{note}: {actual}")
         for label, observations in (("Jump paths", jumps), ("Drift paths", drift), ("Anchor swap/loss paths", losses)):
             if observations:
                 paths = sorted({path for observation in observations for path in observation["paths"]})

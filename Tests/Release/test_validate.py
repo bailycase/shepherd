@@ -249,6 +249,11 @@ class ValidateTests(unittest.TestCase):
         summary = validate.band_evidence(frames)
         self.assertEqual((summary["max_blank_height_pt"], summary["frames_blank_over_8_pt"]), (15, 1))
         self.assertEqual(summary["blank_samples_over_8_pt"], [{"frame": 0, "height_pt": 15}])
+        frames[1]["readingCoverage"] = [[0, 87]]  # A 13 pt hole at the bottom edge.
+        frames[3]["readingCoverage"] = [[0, 87]]
+        self.assertEqual(validate.blank_height(frames[1]), 13)
+        summary = validate.band_evidence(frames)
+        self.assertEqual((summary["frames_blank_over_8_pt"], summary["longest_blank_run_over_8_pt"]), (3, 2))
         frames[3]["readingCoverage"] = []
         self.assertEqual(validate.band_evidence(frames)["max_blank_height_pt"], 100)
 
@@ -261,8 +266,21 @@ class ValidateTests(unittest.TestCase):
             {"frame": 1, "released_pt": 180, "top_row": "reader",
              "top_row_displacement_pt": -3, "tail_displacement_pt": -179}])
         self.assertFalse(validate.band_evidence([dict(before, seamGap=0), after])["hold_releases"])
-        after["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -20}]
-        self.assertFalse(validate.band_evidence([before, after])["hold_releases"])
+        mismatch = validate.band_evidence([before, dict(after, documentHeight=900)])
+        self.assertEqual((mismatch["hold_releases"], mismatch["unconfirmed_no_input_height_drops"]), ([], 0))
+
+        no_marker = {key: value for key, value in after.items() if key != "seamGap"}
+        unconfirmed = validate.band_evidence([before, no_marker])
+        self.assertEqual((unconfirmed["hold_releases"], unconfirmed["unconfirmed_no_input_height_drops"]), ([], 1))
+
+        [release] = validate.band_evidence([before, dict(after, rows={"tail": 200, "next": 0})])["hold_releases"]
+        self.assertIsNone(release["top_row_displacement_pt"])
+        self.assertEqual(release["tail_displacement_pt"], 0)
+
+        # Closing during input can coincide with document growth rather than a net drop.
+        after.update(documentHeight=1100, events=[{"caller": "fixture.scrollInput", "scrollDelta": -20}])
+        during_input = validate.band_evidence([before, after])
+        self.assertEqual((during_input["hold_releases"], during_input["input_seam_closures"]), ([], 1))
 
     def test_first_move_height_loss_and_top_gap_each_fail_the_case(self):
         scenarios = {name: [frame(i / 100, "user-0", {"user-0": 0}) for i in range(10)]

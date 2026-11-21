@@ -37,6 +37,12 @@ private extension NSEvent.Phase {
 
 @MainActor
 final class MacScrollValidationTrace: NSObject {
+    static func readingCoverage(of row: CGRect, top: CGFloat, bottom: CGFloat) -> [Double]? {
+        let start = max(top, row.minY)
+        let end = min(bottom, row.maxY + AppLayout.turnSpacing)
+        return start < end ? [start - top, end - top] : nil
+    }
+
     struct Frame: Encodable {
         let timestamp: Double
         let refreshInterval: Double
@@ -218,14 +224,10 @@ final class MacScrollValidationTrace: NSObject {
         let bottom = (clip?.bounds.height ?? 0) - (scroll?.contentInsets.bottom ?? 0)
         let visible = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }
         // Insets exclude the header margin and floating composer. The transcript ends with
-        // a 1 pt bottom sentinel. Give each row its ordinary following spacing, but no more.
+        // a 1 pt bottom sentinel. Coverage measures mounted rows in an offscreen window, not drawn pixels.
         let readingBottom = min(bottom, clip.map { $0.documentRect.maxY - $0.bounds.minY - 1 } ?? bottom)
         let spacing = AppLayout.turnSpacing
-        let coverage = rows.values.compactMap { row -> [Double]? in
-            let start = max(top, row.minY)
-            let end = min(readingBottom, row.maxY + spacing)
-            return start < end ? [start - top, end - top] : nil
-        }
+        let coverage = rows.values.compactMap { Self.readingCoverage(of: $0, top: top, bottom: readingBottom) }
         let boundary = historyBoundary?()
         let seamGap = boundary.flatMap { ids in
             rows[ids.lazy].flatMap { last in rows[ids.eager].map { Double($0.minY - last.maxY - spacing) } }
