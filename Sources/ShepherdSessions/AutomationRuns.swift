@@ -28,6 +28,13 @@ final class AutomationRunLog: @unchecked Sendable {
     private(set) var runs: [AutomationID: [AutomationRun]] = [:]
     let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
     private let openLock = NSLock()
+    /// Makes the writer's last generation check, read and file replacement one step against the
+    /// server's read and generation bump, so a restore the server saw can't be written over by a
+    /// writer that checked earlier. Taken before `openLock`, never the other way round.
+    private let fileLock = NSLock()
+    /// Where a test can hold the queued writer: after its first generation check, and after it read damage and before it reports it.
+    enum WriterPoint { case checked, readDamage }
+    var writerPaused: (WriterPoint) -> Void = { _ in }
     private var published: [AutomationID: AutomationRun] = [:]
     private var publishedProblem: String?
     /// Damage the queued writer saw, taken over by the next `refresh` (guarded by `openLock`).
@@ -391,7 +398,13 @@ final class AutomationRunLog: @unchecked Sendable {
             setDamage(seen)
         }
         guard damage != nil || reading else { return true }
-        switch PersistedFile<File>.load(from: url) {
+        // The read and the bump are one step against the writer's check and replacement.
+        let loaded = fileLock.withLock { () -> PersistedFile<File> in
+            let loaded = PersistedFile<File>.load(from: url)
+            if case .damaged = loaded, damage == nil { openLock.withLock { generation += 1 } }
+            return loaded
+        }
+        switch loaded {
         case .loaded(let file):
             guard damage != nil else { return true }
             runs = file.history
@@ -401,9 +414,8 @@ final class AutomationRunLog: @unchecked Sendable {
             if lastGood != nil { writeAll(built: writerGeneration) }
         case .damaged(let original, let error):
             if damage == nil {
+                // The generation was bumped with the read: queued writes predate the damage and must not replace a restore.
                 lastGood = runs
-                // Writes already queued predate the damage and must not replace a restore.
-                openLock.withLock { generation += 1 }
             }
             setDamage(AutomationFileDamage("run history", at: url, original: original, error: error))
             return false
@@ -445,22 +457,32 @@ final class AutomationRunLog: @unchecked Sendable {
         writes.async { [self] in
             // Built before the writer found damage: the history it holds predates a possible restore.
             guard built == writerGeneration else { return }
+            writerPaused(.checked)
             // The file can go bad after the change was accepted, before this write runs. The log
-            // learns of it here, so the next change recovers from a restore instead of overwriting it.
-            if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
-                ShepherdLog.warning("automation runs not saved: the file is unreadable and was not rewritten")
-                openLock.withLock {
-                    writerDamage = AutomationFileDamage("run history", at: url, original: original, error: error)
-                    generation += 1
+            // learns of it below, so the next change recovers from a restore instead of overwriting it.
+            let damaged: AutomationFileDamage? = fileLock.withLock {
+                // Checked again: the server may have found damage, and a restore may have followed, since the first check.
+                guard built == writerGeneration else { return nil }
+                if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
+                    return AutomationFileDamage("run history", at: url, original: original, error: error)
                 }
-                return
+                do {
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.sortedKeys]
+                    try encoder.encode(file).write(to: url, options: .atomic)
+                } catch {
+                    ShepherdLog.warning("automation runs not saved: \(error)")
+                }
+                return nil
             }
-            do {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.sortedKeys]
-                try encoder.encode(file).write(to: url, options: .atomic)
-            } catch {
-                ShepherdLog.warning("automation runs not saved: \(error)")
+            guard let damaged else { return }
+            ShepherdLog.warning("automation runs not saved: the file is unreadable and was not rewritten")
+            writerPaused(.readDamage)
+            openLock.withLock {
+                // The server may have found this damage meanwhile, recovered and queued changes under a newer generation.
+                guard built == generation else { return }
+                writerDamage = damaged
+                generation += 1
             }
         }
     }
