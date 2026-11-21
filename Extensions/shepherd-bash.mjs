@@ -80,17 +80,20 @@ if (isSupervisor()) {
     writeSync(5, `${code}\n`);
     // Keep stdio open. libuv uses those descriptors when it spawns the group probe.
     for (const fd of [3, 4, 5]) closeSync(fd);
-    reapWhenEmpty();
+    reapWhenEmpty(100);
   }
-  function reapWhenEmpty() {
-    // pgrep excludes itself. The live supervisor pins the group identity during every check.
-    const probe = spawn("/usr/bin/pgrep", ["-g", ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
+  // Probe at once, then back off while a background job keeps the group alive.
+  function reapWhenEmpty(delay) {
+    // macOS pgrep leaves out itself and its ancestors unless given -a. The probe is our child,
+    // so without -a we would never see our own pid and never exit. The live supervisor pins
+    // the group identity during every check.
+    const probe = spawn("/usr/bin/pgrep", ["-a", "-g", ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
     let count = "";
     probe.stdout.on("data", (chunk) => { count += chunk; });
     probe.on("error", () => {});
     probe.on("close", (code) => {
       if (code === 0 && count.trim() === ownGroup) process.exit(0);
-      else setTimeout(reapWhenEmpty, 5_000);
+      else setTimeout(reapWhenEmpty, delay, Math.min(delay * 2, 30_000));
     });
   }
 }

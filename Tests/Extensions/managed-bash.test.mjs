@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { setImmediate } from "node:timers/promises";
+import { setImmediate, setTimeout as sleep } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, symlink, unlink, rmdir } from "node:fs/promises";
@@ -123,4 +123,37 @@ test("a managed Bash timeout kills orphaned descendants", async () => {
     assert.ok(Number.isSafeInteger(pid) && pid > 0);
     await eventually(() => !alive(pid));
   } finally { bash.stopAll(); }
+});
+
+// Starts a supervisor and keeps its stdin open, as pi does, so only its own reaping can end it.
+async function startSupervisor(command) {
+  const child = spawn(process.execPath, [supervisorPath, "--supervise", command], {
+    detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
+  });
+  child.stdio[3].resume(); child.stdio[4].resume(); child.stdio[5].resume();
+  child.stdin.on("error", () => {});
+  await once(child.stdio[5], "end");
+  return child;
+}
+async function untilGone(pid, ms) {
+  const deadline = Date.now() + ms;
+  while (alive(pid)) {
+    assert.ok(Date.now() < deadline, `supervisor ${pid} still alive after ${ms} ms`);
+    await sleep(50);
+  }
+}
+
+test("the supervisor exits by itself once its command is done and nothing else is in the group", { timeout: 10000 }, async () => {
+  const child = await startSupervisor("exit 0");
+  try { await untilGone(child.pid, 3000); }
+  finally { if (alive(child.pid)) process.kill(-child.pid, "SIGKILL"); }
+});
+
+test("the supervisor outlives a background job, then exits after the job ends", { timeout: 15000 }, async () => {
+  const child = await startSupervisor("/bin/sleep 2 </dev/null >/dev/null 2>&1 &");
+  try {
+    await sleep(1000);
+    assert.ok(alive(child.pid), "supervisor must stay while the job is in its group");
+    await untilGone(child.pid, 8000);
+  } finally { if (alive(child.pid)) process.kill(-child.pid, "SIGKILL"); }
 });
