@@ -132,6 +132,24 @@ struct ChangesPreviewTests {
         }
     }
 
+    @Test func changesWithUnreadableTurnHistory() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "acme", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Edit the ledger", in: space, order: 0)
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let directory = workspace.dir.appendingPathComponent("changes")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("{".utf8).write(to: directory.appendingPathComponent("turns.json"))
+        let session = ChangesBoard.session(comment: false)
+        session.overview = try await workspace.server.changes.overview(agentID: agent.id)
+        try #require(session.overview?.turnHistoryProblem != nil)
+        let width = AppLayout.paneDefaultWidth
+        try await Preview.render("changes-turn-history-damaged", size: CGSize(width: width, height: Self.boardHeight)) {
+            pane(session, width: width)
+        }
+    }
+
     /// The ChangesStates board's parts: the toolbar and compare row, the send bar, the thread's
     /// card in its three states, the menus, split rows with hatching and word diffs, a fold, and
     /// file headers viewed and not.

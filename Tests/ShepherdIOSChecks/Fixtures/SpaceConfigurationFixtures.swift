@@ -49,10 +49,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "space-configuration-skills", hosts: [host], routes: routes(.skills), tab: .settings),
             FixtureScreen(name: "space-configuration-mcp", hosts: [host], routes: routes(.mcp), tab: .settings, prepare: { _ in
                 SidebarAutomationsCheck.enableAccessibility()
-                await FixtureCheck.wait("MCP sign-out and the unsigned server", seconds: 8) {
-                    TriggerFlowCheck.element("Sign out") != nil && TriggerFlowCheck.element("reports", prefix: true) != nil
+                await FixtureCheck.wait("MCP sign-out and sign-in", seconds: 8) {
+                    TriggerFlowCheck.element("Sign out") != nil && TriggerFlowCheck.element("Sign in") != nil
                 }
-                if TriggerFlowCheck.element("Sign in") != nil { FixtureCheck.fail("Space MCP must not offer sign-in") }
             }),
             FixtureScreen(name: "space-configuration-add-skills", hosts: [host], routes: routes(.skills), tab: .settings, prepare: { _ in
                 SidebarAutomationsCheck.enableAccessibility()

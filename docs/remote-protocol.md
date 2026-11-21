@@ -212,7 +212,9 @@
     `commitMessage`, `commit` behind `review.commit.v1`; the commit is an operation polled with
     `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
-    answered by the server itself; thread snapshots carry `turnChanges`; `changesRevertFile`
+    answered by the server itself; thread snapshots carry `turnChanges`. `changesOverview` may carry
+    `turnHistoryProblem` while the host cannot read its Undo/Redo history. Working-tree comparisons
+    are still available. `changesRevertFile`
     behind `changes.revert.v1` reverts one file of an uncommitted list to HEAD, refused when the
     file changed since the list's revision, the working tree only, as Undo; a read's `cwd`, behind
     `changes.cwd.v1`, reviews the repository the agent's `review_diff` asked for, kept in the
