@@ -197,7 +197,7 @@ extension SessionServer {
         return (branch, exists, exists ? nil : pin.sha, pin.subdir)
     }
 
-    /// What agent_list shows `sender`: every thread, and no design's agent.
+    /// What agent_list shows `sender`: every thread in every space on this host, and no design's agent. Reads state only.
     public static func peerInfos(in state: ShepherdState, sender: AgentID) -> [AgentPeerInfo] {
         state.agents.filter { state.isOrdinaryThread($0) }.map { agent in
             AgentPeerInfo(
@@ -205,7 +205,10 @@ extension SessionServer {
                 name: agent.name,
                 status: agent.status.rawValue,
                 cwd: state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? "",
-                isSelf: agent.id == sender
+                isSelf: agent.id == sender,
+                space: state.spaces.first { $0.id == agent.spaceID }?.name,
+                lastActiveAt: agent.lastActiveAt,
+                asking: agent.waitingOn != nil
             )
         }
     }

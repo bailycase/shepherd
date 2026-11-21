@@ -34,6 +34,15 @@ extension FleetDispatch {
         }
     }
 
+    /// The dispatches this Mac sent, newest first, as `fleet_read` lists them to `agentID`: `mine` marks the ones that thread sent, the only ones its
+    /// other `fleet_*` tools reach. A moved thread is no dispatch. Reads what the engine holds; touches no Mac.
+    func listRows(for agentID: AgentID) -> [FleetDispatchListRow] {
+        outbound.values.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt }.map { record in
+            FleetDispatchListRow(dispatchID: record.id.uuidString.lowercased(), state: record.state.rawValue, host: record.targetHostName, title: record.title,
+                             branch: record.branch, mine: record.parentAgentID == agentID, closed: record.closeReport != nil)
+        }
+    }
+
     /// Why a thread may not use the fleet tools, or nil: a project worker, a coordinator, a design's agent and an automation
     /// run never send work on (`fleet_scope`). How deep a thread is limits only what it starts (`depthProblem`).
     static func scopeProblem(for agentID: AgentID, in state: ShepherdState, unattended: Set<AgentID>) -> FleetDispatchRefusal? {

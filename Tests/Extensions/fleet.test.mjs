@@ -160,6 +160,38 @@ test("fleet_hosts asks for the Macs and says which is this one, what each lacks 
   finally { await none.close(); }
 });
 
+test("fleet_read with no dispatch lists the dispatches this Mac sent: yours marked, closed marked, capped, no task or result", async () => {
+  const row = (i, extra = {}) => ({ dispatchID: `5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c${String(i).padStart(2, "0")}`, state: "running", host: "Mac mini", title: `Task ${i}`, branch: `fleet/task-${i}`, mine: false, closed: false, ...extra });
+  const rows = [row(1, { mine: true }), row(2, { state: "done", closed: true }), row(3, { state: "waitingRoom", host: null, branch: null, title: "" })];
+  const h = await harness({ onFrame: (frame, write) => { if (frame.type === "fleetListDispatches") write({ type: "fleetDispatches", id: frame.id, dispatches: h.rows }); } });
+  try {
+    h.rows = rows;
+    const listed = output(await h.tools.get("fleet_read").execute("c1", {}));
+    assert.deepEqual(shape(h.of("fleetListDispatches")[0]), { type: "fleetListDispatches", agentID: "agent-1" });
+    assert.equal(h.of("fleetDispatchStatus").length, 0, "no dispatch means a list, not a status read");
+    assert.equal(listed, [
+      "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c01  [running]  (yours)  Mac mini  fleet/task-1  Task 1",
+      "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c02  [done, closed]  Mac mini  fleet/task-2  Task 2",
+      "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c03  [waitingRoom]  no Mac yet  -  -",
+    ].join("\n"));
+    h.rows = Array.from({ length: 25 }, (_, i) => row(i));
+    const capped = output(await h.tools.get("fleet_read").execute("c1", {})).split("\n");
+    assert.equal(capped.length, 21);
+    assert.equal(capped[20], "5 more, older, not shown");
+    h.rows = [];
+    assert.equal(output(await h.tools.get("fleet_read").execute("c1", {})), "no dispatches");
+  } finally { await h.close(); }
+});
+
+test("fleet_read with a dispatch still reads that dispatch", async () => {
+  const h = await harness({ onFrame: answer(() => info({ state: "running", host: "Mac mini" })) });
+  try {
+    await h.tools.get("fleet_read").execute("c1", { dispatch: "abc" });
+    assert.equal(h.of("fleetListDispatches").length, 0);
+    assert.equal(h.of("fleetDispatchStatus")[0].dispatchID, "abc");
+  } finally { await h.close(); }
+});
+
 test("fleet_dispatch sends the exact message, omits what is unset, and reports the id, state and Mac", async () => {
   const h = await harness({ onFrame: answer(() => info({ state: "placing", host: "Mac mini" })) });
   try {

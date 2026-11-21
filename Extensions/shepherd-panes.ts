@@ -20,6 +20,15 @@ const REQUEST_TIMEOUT_MS = 15_000;
 // Thread creation and process teardown may take longer than a normal peer request.
 const PEER_TIMEOUT_MS = 130_000;
 const FLEET_SEND_RETRY_MS = 8_000;
+// Most rows a list tool prints: the rest is counted, not shown.
+const LIST_ROWS_MAX = 50;
+const DISPATCH_ROWS_MAX = 20;
+
+/** "5m ago", "3h ago", "2d ago" for a time in ms since 1970. */
+function ago(at: number): string {
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  return minutes < 60 ? `${minutes}m ago` : minutes < 2880 ? `${Math.round(minutes / 60)}h ago` : `${Math.round(minutes / 1440)}d ago`;
+}
 
 class RequestError extends Error {
   constructor(readonly hostMessage: string, readonly code?: string) { super(`${hostMessage} (${code})`); }
@@ -44,6 +53,7 @@ interface Reply {
   result?: { text: string; idle?: boolean; sessionID?: string; connectionID?: string; code?: string };
   hosts?: FleetHostInfo[];
   info?: FleetDispatchInfo;
+  dispatches?: FleetDispatchListRow[];
 }
 
 interface FleetHostInfo {
@@ -84,6 +94,19 @@ interface AgentPeerInfo {
   status: string;
   cwd: string;
   isSelf: boolean;
+  space?: string | null;
+  lastActiveAt?: number | null;
+  asking?: boolean | null;
+}
+
+interface FleetDispatchListRow {
+  dispatchID: string;
+  state: string;
+  host?: string | null;
+  title?: string;
+  branch?: string | null;
+  mine: boolean;
+  closed: boolean;
 }
 
 interface AutomationInfo {
@@ -622,22 +645,29 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     name: "agent_list",
     label: "List Agent Threads",
     description:
-      "List the other agent threads in Shepherd: id, name, status (working/blocked/idle/done), and working " +
-      "directory. Use it to find a thread the user named. It only reads: it is not a reason to message, " +
+      "List the other agent threads in Shepherd, in every space: id, name, status (working/blocked/idle/done), and working " +
+      "directory. details adds each one's space, last activity and whether it is asking a question. " +
+      "Use it to find a thread the user named. It only reads: it is not a reason to message, " +
       `steer, read${threadsStartThreads ? "" : " or start"} any thread, which you may do only when the user explicitly asks you to.`,
     promptSnippet: line(deferPeers, "List the other agent threads, only to find one the user named"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
-    parameters: Type.Object({}),
-    async execute() {
+    parameters: Type.Object({ details: Type.Optional(Type.Boolean({ description: "Add space, last activity and asking; at most 50 rows, newest first" })) }),
+    async execute(_id, params) {
       const reply = await request({ type: "listAgents" });
-      const rows = reply.agents ?? [];
+      let rows = reply.agents ?? [];
       const reminder = "\n\nReminder: do not message, steer, interrupt, read or start these threads unless the " +
         "user explicitly asked you to in this conversation.";
       if (rows.length === 0) return text("no agents" + reminder);
-      return text(rows.map((a) =>
+      if (!params?.details) return text(rows.map((a) =>
         `${a.id}  ${a.name}  [${a.status}]${a.isSelf ? "  (you)" : ""}  ${a.cwd}`
       ).join("\n") + reminder);
+      rows = [...rows].sort((a, b) => (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0));
+      const more = rows.length - LIST_ROWS_MAX;
+      return text(rows.slice(0, LIST_ROWS_MAX).map((a) => {
+        const last = typeof a.lastActiveAt === "number" ? `  active ${ago(a.lastActiveAt)}` : "";
+        return `${a.id}  ${a.name}  [${a.status}]${a.isSelf ? "  (you)" : ""}${a.space ? `  space: ${a.space}` : ""}${last}${a.asking ? "  asking" : ""}  ${a.cwd}`;
+      }).join("\n") + (more > 0 ? `\n${more} more, older, not shown` : "") + reminder);
     },
   });
 
@@ -983,10 +1013,21 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     pi.registerTool({
       name: "fleet_read",
       label: "Read a Dispatch",
-      description: "Where a dispatch you sent stands: state, Mac, branch, latest activity, and the result once there is one.",
+      description: "Where a dispatch you sent stands: state, Mac, branch, latest activity, and the result once there is one. " +
+        "Omit dispatch to list the dispatches this Mac sent (id, state, Mac, branch, title; yours marked); you can read only your own.",
       ...fleetShared,
-      parameters: Type.Object({ dispatch: dispatchParam }),
+      parameters: Type.Object({ dispatch: Type.Optional(dispatchParam) }),
       async execute(_id, params, signal) {
+        if (!params.dispatch) {
+          const { reply, failure } = await fleetCall({ type: "fleetListDispatches" }, signal);
+          if (failure) return text(failure);
+          const rows = reply?.dispatches ?? [];
+          if (rows.length === 0) return text("no dispatches");
+          const more = rows.length - DISPATCH_ROWS_MAX;
+          return text(rows.slice(0, DISPATCH_ROWS_MAX).map((d) =>
+            `${d.dispatchID}  [${d.state}${d.closed ? ", closed" : ""}]${d.mine ? "  (yours)" : ""}  ${d.host ?? "no Mac yet"}  ${d.branch ?? "-"}  ${d.title ? d.title.split("\n")[0].slice(0, 80) : "-"}`
+          ).join("\n") + (more > 0 ? `\n${more} more, older, not shown` : ""));
+        }
         const { reply, failure } = await fleetCall({ type: "fleetDispatchStatus", dispatchID: params.dispatch }, signal);
         if (failure) return text(failure);
         return text(reply?.info ? describeDispatch(reply.info) : "no status");

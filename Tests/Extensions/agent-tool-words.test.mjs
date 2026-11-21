@@ -217,6 +217,37 @@ test("agent_list ends its answer with a reminder, even with nobody to list", asy
   } finally { await h.close(); }
 });
 
+test("agent_list details adds space, last activity and asking, newest first and capped, and the default rows are unchanged", async () => {
+  const now = Date.now();
+  const rows = [
+    { id: "old", name: "docs", status: "done", cwd: "/work/docs", isSelf: false, space: "acme-docs", lastActiveAt: now - 3 * 86_400_000, asking: false },
+    { id: "ask", name: "api", status: "blocked", cwd: "/work/api", isSelf: false, space: "acme-web", lastActiveAt: now - 5 * 60_000, asking: true },
+    { id: "agent-1", name: "me", status: "working", cwd: "/work", isSelf: true, space: "acme-web", lastActiveAt: now, asking: false },
+    { id: "bare", name: "legacy", status: "idle", cwd: "/work/old", isSelf: false },
+  ];
+  const h = await harness({ onFrame: (frame, write) => {
+    if (frame.type === "listAgents") write({ type: "agents", id: frame.id, agents: h.rows });
+  } });
+  try {
+    h.rows = rows;
+    const plain = output(await h.tools.get("agent_list").execute("call", {}));
+    assert.match(plain, /^old  docs  \[done\]  \/work\/docs\nask  api  \[blocked\]  \/work\/api\n/);
+    assert.doesNotMatch(plain, /space:|active|asking/);
+    const detailed = output(await h.tools.get("agent_list").execute("call", { details: true })).split("\n\nReminder")[0].split("\n");
+    assert.deepEqual(detailed, [
+      "agent-1  me  [working]  (you)  space: acme-web  active 0m ago  /work",
+      "ask  api  [blocked]  space: acme-web  active 5m ago  asking  /work/api",
+      "old  docs  [done]  space: acme-docs  active 3d ago  /work/docs",
+      "bare  legacy  [idle]  /work/old",
+    ], "an older host sends none of the new fields: the row just lacks them");
+    h.rows = Array.from({ length: 80 }, (_, i) => ({ id: `t${i}`, name: `thread ${i}`, status: "idle", cwd: "/work/x", isSelf: false, space: "acme-web", lastActiveAt: now - i * 60_000, asking: false }));
+    const capped = output(await h.tools.get("agent_list").execute("call", { details: true }));
+    assert.equal(capped.split("\n\nReminder")[0].split("\n").length, 51, "50 rows and the count of the rest");
+    assert.match(capped, /\n30 more, older, not shown\n\nReminder: do not message/);
+    assert.match(capped, /^t0  /, "newest first");
+  } finally { await h.close(); }
+});
+
 test("a watch agent gets agent_send to report to its creator and no other thread tool", async () => {
   const h = await harness({ automation: true });
   try {

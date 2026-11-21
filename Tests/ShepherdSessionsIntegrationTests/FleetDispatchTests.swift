@@ -229,7 +229,7 @@ struct FleetDispatchTests {
             while true {
                 let reply = try await read(timeout: timeout)
                 switch reply {
-                case .fleetHosts(id, _), .fleetDispatch(id, _), .error(id, _, _): return reply
+                case .fleetHosts(id, _), .fleetDispatch(id, _), .fleetDispatches(id, _), .error(id, _, _): return reply
                 default: continue
                 }
             }
@@ -334,6 +334,45 @@ struct FleetDispatchTests {
         let read = try await parent.status(info)
         #expect(read.state == "done" && read.activity != "working")
         #expect(a.dispatched.isEmpty, "nothing ran on the sender")
+    }
+
+    /// `fleet_read` with no dispatch: every dispatch this Mac sent, the asking thread's own marked, nothing else's task or result, and a closed
+    /// dispatch stays listed (marked closed) until it ages out. Listing changes no record.
+    @Test func aThreadListsTheDispatchesThisMacSentAndSeesWhichAreItsOwn() async throws {
+        let (a, b, _) = try await Self.pair(busyA: 90, busyB: 10)
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent(), other = try await a.parent("Review docs")
+        try parent.hello(); try other.hello()
+        let info = try parent.info(try await parent.dispatch("Fix the flaky payment test.", key: "call-1", title: "Fix flaky payment test"))
+        try await Self.wait("A to follow the dispatch as running") { a.sent().first?.state == .running }
+        let before = a.sent()
+
+        func rows(_ thread: FleetDispatchTests.Parent) async throws -> [FleetDispatchListRow] {
+            guard case .fleetDispatches(_, let rows) = try await thread.call({ .fleetListDispatches(id: $0, agentID: thread.agent.id) }) else { throw WireError("not a list") }
+            return rows
+        }
+        let mine = try await rows(parent), theirs = try await rows(other)
+        #expect(mine == [FleetDispatchListRow(dispatchID: info.dispatchID, state: "running", host: "Mac mini", title: "Fix flaky payment test",
+                                          branch: "fleet/fix-flaky-payment-test", mine: true)])
+        #expect(theirs.map(\.dispatchID) == [info.dispatchID] && theirs.first?.mine == false, "another thread sees it, not as its own")
+        #expect(a.sent() == before, "listing changes nothing")
+
+        try await eventuallyOnMain("the receiver to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        try await eventuallyOnMain("the stub to start in the worktree") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == thread.id.rawValue } }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+        try b.report(thread.id, .done)
+        _ = try #require(await parent.nextMessage())
+        try await Self.wait("both records to finish") { a.sent().first?.state == .done && b.taken().first?.state == .done }
+        let report = try parent.info(try await parent.call { .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID) })
+        #expect(report.closeReport != nil)
+        let closed = try await rows(parent).first
+        #expect(closed?.state == "done" && closed?.closed == true && closed?.mine == true, "\(String(describing: closed))")
+        // The other thread still cannot read or close it.
+        guard case .error(_, FleetDispatchProtocol.Code.unknownDispatch, _) = try await other.call({ .fleetDispatchStatus(id: $0, agentID: other.agent.id, dispatchID: info.dispatchID) }) else {
+            Issue.record("a thread read a dispatch it did not send"); return
+        }
     }
 
     @Test func aDispatchWithNoCommitsReportsUncommittedWorkInItsResultAndCloseReply() async throws {
