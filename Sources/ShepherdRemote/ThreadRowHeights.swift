@@ -21,11 +21,14 @@ public struct ThreadRowHeights: Sendable {
 
     public init() {}
 
-    public mutating func replace(_ rows: [Row], spacing: CGFloat) {
+    public mutating func replace(_ rows: [Row], spacing: CGFloat, keeping built: Set<String> = []) {
+        var seen: Set<String> = []
+        let rows = rows.filter { seen.insert($0.id).inserted }
         guard self.rows != rows || self.spacing != spacing else { return }
         let oldEstimates = Dictionary(uniqueKeysWithValues: self.rows.map { ($0.id, $0.estimate) })
         heights = Dictionary(uniqueKeysWithValues: rows.compactMap { row in
-            guard oldEstimates[row.id] == row.estimate, let height = heights[row.id] else { return nil }
+            guard built.contains(row.id) || oldEstimates[row.id] == row.estimate,
+                  let height = heights[row.id] else { return nil }
             return (row.id, height)
         })
         self.rows = rows
@@ -34,9 +37,9 @@ public struct ThreadRowHeights: Sendable {
         rebuildOffsets()
     }
 
-    public mutating func resetMeasurements(width: CGFloat? = nil) {
+    public mutating func resetMeasurements(width: CGFloat? = nil, keeping built: Set<String> = []) {
         self.width = width
-        heights.removeAll(keepingCapacity: true)
+        heights = heights.filter { built.contains($0.key) }
         rebuildOffsets()
     }
 
@@ -46,20 +49,17 @@ public struct ThreadRowHeights: Sendable {
 
     public func index(for id: String) -> Int? { indices[id] }
     public func offset(at index: Int) -> CGFloat { offsets[index] }
+    public func offset(of id: String) -> CGFloat? { indices[id].map { offsets[$0] } }
     public var height: CGFloat { rows.isEmpty ? 0 : offsets[rows.count] - spacing }
 
-    /// Apply a native layout's measurements together, returning the signed change above the anchor.
-    @discardableResult
-    public mutating func measure(_ measured: [String: CGFloat], width: CGFloat, above anchor: Int) -> CGFloat {
-        if self.width == nil { self.width = width }
-        let old = offsets[anchor]
+    public mutating func measure(_ measured: [String: CGFloat], width: CGFloat) {
+        self.width = width
         var changed = false
         for (id, height) in measured where indices[id] != nil && heights[id] != height {
             heights[id] = height
             changed = true
         }
         if changed { rebuildOffsets() }
-        return offsets[anchor] - old
     }
 
     public func range(for clip: CGRect, viewports: Int) -> Range<Int> {

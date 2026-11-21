@@ -274,7 +274,6 @@ struct ThreadView: View {
                     .background {
                         #if DEBUG
                         ThreadScrollViewFinder(guardian: tailGuard,
-                                               historyAnchor: ThreadScrollValidation.measuredHistory ? historyAnchor : nil,
                                                measuredHistory: ThreadScrollValidation.measuredHistory ? measuredHistory : nil)
                         #else
                         ThreadScrollViewFinder(guardian: tailGuard)
@@ -1003,12 +1002,7 @@ struct ThreadView: View {
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
-        #if DEBUG
-        let measuredScroll = ThreadScrollValidation.measuredHistory ? tailGuard.scrollView() : nil
-        #else
-        let measuredScroll: NSScrollView? = nil
-        #endif
-        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey, measuredScroll: measuredScroll)
+        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey)
         Task {
             await store.loadOlder()
             historyAnchor.finished(token, firstID: store.rows.first?.id)
