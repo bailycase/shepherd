@@ -85,6 +85,20 @@ extension FixtureCatalog {
                 let store = ForgeStore.of(app.hosts)
                 await FixtureCheck.wait("the pins", seconds: 10) { !store.pins.isEmpty }
             }),
+            // A damaged forge-pins.json: the list and the pages work, the iPad sidebar's Pinned says why there are no pins,
+            // and pinning from a page is refused with the host's words (the iPhone shows pins nowhere else).
+            FixtureScreen(name: "forge-pins-damaged", hosts: IssuesPRsFixture.damagedPinsHosts(), prepare: { app in
+                let store = ForgeStore.of(app.hosts)
+                await FixtureCheck.wait("the pins note", seconds: 10) { store.pinsProblems.first?.message == IssuesPRsFixture.pinsDamage }
+                FixtureCheck.report("FIXTURE CHECK ok: the host's pins note arrived with no pins")
+            }),
+            FixtureScreen(name: "forge-pin-refused", hosts: IssuesPRsFixture.damagedPinsHosts(), routes: [.forge(.list)], prepare: { app in
+                await IssuesPRsFixture.open(app, pr, tab: .summary, sheet: nil)
+                let store = ForgeStore.of(app.hosts)
+                await store.setPinned(pr, title: "Add refund events", pinned: true)
+                await FixtureCheck.wait("the refusal", seconds: 10) { store.failure == IssuesPRsFixture.pinsDamage }
+                FixtureCheck.report("FIXTURE CHECK ok: pinning was refused with the host's words")
+            }),
         ]
     }
 }
@@ -127,6 +141,24 @@ enum IssuesPRsFixture {
         hosts[0].state.agents.append(FixtureData.agent(refunds, "Add refund events", .working, space: payments, worktree: "agent/refund-events", changed: 5))
         hosts[0].forgeHoldsPages = holds
         hosts[0].forge = { request in answer(request, state: state, empty: empty) }
+        return hosts
+    }
+
+    nonisolated static let pinsDamage = "Pinned items can't be read. The file is on the host at:\n/tmp/acme/forge-pins.json\nRepair access or restore a copy, or move or delete it to start with no pins. No restart needed."
+
+    /// Studio with a forge-pins.json it can't read: no pins and the note, every list and page as ever,
+    /// and a pin or unpin refused.
+    static func damagedPinsHosts() -> [FixtureHostData] {
+        var hosts = hosts()
+        let message = pinsDamage
+        hosts[0].forge = { request in
+            if case .sidebar = request { return .sidebar(ForgeSidebar(pins: [], needsYou: 3, pinsProblem: message)) }
+            return answer(request, state: .open, empty: false)
+        }
+        hosts[0].accepts = { request in
+            guard case .forge(let id, .setPinned) = request else { return nil }
+            return .error(id: id, code: ForgeError.Code.failed.rawValue, message: message)
+        }
         return hosts
     }
 

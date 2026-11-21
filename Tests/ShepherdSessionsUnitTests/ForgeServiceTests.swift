@@ -363,7 +363,7 @@ struct ForgeServiceTests {
         let issue = ForgeItemRef(kind: .issue, repo: Self.repo, number: 34)
         _ = await service.answer(.setPinned(ref: Self.pr31, title: "Add refund events", pinned: true), context: ForgeContext())
         _ = await service.answer(.setPinned(ref: issue, title: "Partial refunds", pinned: true), context: ForgeContext())
-        #expect(service.loadPins().map(\.ref) == [issue, Self.pr31])
+        #expect(try service.loadPins().map(\.ref) == [issue, Self.pr31])
         let result = try Self.value(await service.answer(.sidebar, context: Self.context))
         guard case .sidebar(let sidebar) = result else { Issue.record("no sidebar"); return }
         #expect(sidebar.pins.map(\.title) == ["Partial refunds round down by a cent", "Add refund events to the ledger outbox"])
@@ -371,13 +371,13 @@ struct ForgeServiceTests {
         // #29 to review, #31 with changes requested, #35 new (#34 has a thread here).
         #expect(sidebar.needsYou == 3)
         _ = await service.answer(.setPinned(ref: Self.pr31, title: "", pinned: false), context: ForgeContext())
-        #expect(service.loadPins().map(\.ref) == [issue])
+        #expect(try service.loadPins().map(\.ref) == [issue])
     }
 
     @Test func anOlderPinsFileStillLoads() throws {
         let url = try makeScratchDirectory("forge").appendingPathComponent("forge-pins.json")
         try Data(#"{"pins":[{"ref":{"kind":"issue","repo":"acme/payments","number":3}}]}"#.utf8).write(to: url)
-        let pins = ForgeService(pinsURL: url, runner: { _ in ForgeOutput(status: 127) }).loadPins()
+        let pins = try ForgeService(pinsURL: url, runner: { _ in ForgeOutput(status: 127) }).loadPins()
         #expect(pins.map(\.title) == [""] && pins.map(\.ref.number) == [3])
     }
 }

@@ -434,7 +434,7 @@ final class ForgeStore {
         working = false
         switch result {
         case .success(.sidebar(let next)):
-            sidebar = ForgeSidebar(pins: next.pins, needsYou: sidebar?.needsYou ?? next.needsYou)
+            sidebar = ForgeSidebar(pins: next.pins, needsYou: sidebar?.needsYou ?? next.needsYou, pinsProblem: next.pinsProblem)
             return true
         case .success:
             await loadDetail()
