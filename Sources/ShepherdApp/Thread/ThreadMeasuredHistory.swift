@@ -38,21 +38,29 @@ final class ThreadMeasuredHistory {
 
     func height(of id: String) -> CGFloat? { table.height(for: id) }
 
-    // Only the window is published on the next update. Native offset writes never take this hop.
-    func queueWindow() {
+    private func queueWindow() {
         guard !windowQueued else { return }
         windowQueued = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.windowQueued = false
-            guard let stack = self.stack, let scroll = stack.enclosingScrollView, self.guardrail?.active == true else { return }
-            let clip = scroll.contentView
-            let top = stack.convert(stack.bounds, to: clip).minY
-            let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
-            let window = self.table.range(for: rect, viewports: AppLayout.eagerTailViewports)
-            let kept = self.builtRange.intersection(self.table.rows.map(\.id))
-            let built = kept.union(self.table.rows[window].map(\.id))
-            if built != self.builtRange { self.builtRange = built }
+            self.publishWindow()
+        }
+    }
+
+    private func publishWindow(synchronous: Bool = false) {
+        guard let stack, let scroll = stack.enclosingScrollView, guardrail?.active == true else { return }
+        let clip = scroll.contentView
+        let top = stack.convert(stack.bounds, to: clip).minY
+        let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
+        let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
+        let kept = builtRange.intersection(table.rows.map(\.id))
+        let built = kept.union(table.rows[window].map(\.id))
+        guard built != builtRange else { return }
+        builtRange = built
+        if synchronous {
+            SHRenderProbe.scrollEvent("probe.heights.window", "clip bounds y=\(clip.bounds.minY) rows=\(window)",
+                                      from: scroll, kind: "layout")
         }
     }
 
@@ -100,12 +108,36 @@ final class ThreadMeasuredHistory {
             view.history = history
             history.stack = view
             history.stackSize = view.frame.size
+            view.observeClip()
         }
     }
 
     final class StackMarker: NSView {
         weak var history: ThreadMeasuredHistory?
+        private weak var observedClip: NSClipView?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observeClip()
+        }
+
+        func observeClip() {
+            let clip = window == nil ? nil : enclosingScrollView?.contentView
+            guard clip !== observedClip else { return }
+            let center = NotificationCenter.default
+            if let observedClip { center.removeObserver(self, name: NSView.boundsDidChangeNotification, object: observedClip) }
+            observedClip = clip
+            if let clip {
+                clip.postsBoundsChangedNotifications = true
+                center.addObserver(self, selector: #selector(boundsChanged), name: NSView.boundsDidChangeNotification, object: clip)
+            }
+        }
+
+        @objc private func boundsChanged() {
+            guard let history, history.stack === self else { return }
+            history.publishWindow(synchronous: true)
+        }
         override func setFrameSize(_ newSize: NSSize) {
             super.setFrameSize(newSize)
             history?.stackSize = newSize

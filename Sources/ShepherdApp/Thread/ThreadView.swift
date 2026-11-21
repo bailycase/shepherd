@@ -358,9 +358,6 @@ struct ThreadView: View {
                     tailGuard.suspect()
                     // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
                     if historyAnchor.isEngaged { historyAnchor.moved() }
-                    #if DEBUG
-                    if ThreadScrollValidation.measuredHistory { measuredHistory.queueWindow() }
-                    #endif
                 }
                 .onScrollPhaseChange { old, phase, context in
                     scrollPhaseChanged(from: old, to: phase, distance: Self.distanceFromBottom(context.geometry))
