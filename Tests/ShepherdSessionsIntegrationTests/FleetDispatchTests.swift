@@ -167,11 +167,19 @@ struct FleetDispatchTests {
         /// The threads this Mac runs for other Macs.
         var dispatched: [Agent] { server.state.agents.filter { $0.dispatchedFrom != nil } }
 
-        /// The thread this Mac runs for another Mac, once it runs. `dispatched` lists it from the moment the dispatch is accepted, with the path its
-        /// worktree will have; the folder exists only after the worktree is built and its files are in place.
-        func runningThread(timeout: Duration = .seconds(60)) async throws -> Agent {
-            try await FleetDispatchTests.wait("\(name) to run the dispatched thread", timeout: timeout) { !dispatched.isEmpty && taken().first?.state == .running }
-            return try #require(dispatched.first)
+        /// The thread this Mac runs for the dispatch `id` (the only one it runs, when none is named), once its record says it runs. `dispatched`
+        /// lists the thread from the moment the dispatch is accepted, with the path its worktree will have; the folder exists only after the
+        /// worktree is built and its files are in place. Never settles on a thread of another dispatch: with several and none named, it waits
+        /// until the timeout names the problem.
+        func runningThread(dispatch id: UUID? = nil, timeout: Duration = .seconds(60)) async throws -> Agent {
+            func running() -> Agent? {
+                let threads = dispatched.filter { id == nil || $0.dispatchedFrom?.dispatchID == id }
+                guard threads.count == 1, let thread = threads.first, let own = thread.dispatchedFrom?.dispatchID,
+                      taken().contains(where: { $0.id == own && $0.state == .running }) else { return nil }
+                return thread
+            }
+            try await FleetDispatchTests.wait("\(name) to run \(id.map { "dispatch \($0)" } ?? "the one dispatched thread")", timeout: timeout) { running() != nil }
+            return try #require(running())
         }
 
         func connectAsPeer(_ other: Mac) async throws -> RemoteHostClient {
