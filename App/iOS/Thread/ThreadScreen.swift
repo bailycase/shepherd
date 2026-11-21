@@ -331,7 +331,13 @@ struct ThreadTranscript: View {
                             }
                             .turnTransfer(row, thread: ref)
                             .id(row.id)
-                            .background { TailRowMarker(guardian: tailGuard) }
+                            .background {
+                                #if DEBUG
+                                TailRowMarker(guardian: tailGuard, rowID: row.id)
+                                #else
+                                TailRowMarker(guardian: tailGuard)
+                                #endif
+                            }
                         }
                         if thinking, liveRow == nil { LiveWaitLine(wait: store.liveWait) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
@@ -360,35 +366,67 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
-            .scrollPosition(id: Binding(get: { presentation.position(tail: tail) }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
+            .scrollPosition(id: Binding(get: {
+                let id = presentation.position(tail: tail)
+                tailGuard.noteOfferedPosition(id)
+                return id
+            }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
+            #if DEBUG
+            .onChange(of: banner) { _, _ in
+                SHRenderProbe.scrollEvent("thread.write.L13", "thread.banner", from: tailGuard, kind: "layout")
+            }
+            #endif
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()
                 // Another session has other turns, so the one kept is gone; the first key a new store learns is the same thread's.
-                if old != nil { presentation.newSession() }
+                if old != nil {
+                    SHRenderProbe.scrollEvent("thread.write.I7", "position.newSession", from: tailGuard, kind: "binding")
+                    presentation.newSession()
+                }
                 loadVisibleHistory()
             }
             // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
             .onChange(of: ref) { _, _ in
                 tailPin.reset()
+                SHRenderProbe.scrollEvent("thread.write.I7", "position.mountRef", from: tailGuard, kind: "binding")
                 presentation.mount()
             }
-            .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
-            .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
+            .defaultScrollAnchor(nativeTail && SHRenderProbe.scrollAnchorEnabled("I2.initial") ? (presentation.restoresTurn ? .top : .bottom) : nil,
+                                 for: .initialOffset)
+            .defaultScrollAnchor(nativeTail
+                                 ? (presentation.follows && SHRenderProbe.scrollAnchorEnabled("I2.following") ? .bottom : nil)
+                                 : (!presentation.follows && SHRenderProbe.scrollAnchorEnabled("I2.detached") ? .top : nil), for: .sizeChanges)
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
                 // Insets and row wrapping can settle separately from scroll offsets. While
                 // following, keep the tail above the composer through every change. This runs
                 // inside the layout pass, so it records and the pin lands after it; only a
                 // mount's first few landings run here, so its first frames are already at the tail.
+                #if DEBUG
+                if SHRenderProbe.scrollEvents != nil {
+                    if old.width != new.width || old.probe.container != new.probe.container {
+                        SHRenderProbe.scrollEvent("thread.write.L12", "viewport.resized", from: tailGuard, kind: "layout")
+                    }
+                    if old.probe.inset != new.probe.inset {
+                        SHRenderProbe.scrollEvent("thread.write.L11", "viewport.bottomInset", from: tailGuard, kind: "layout")
+                        if tailGuard.traceMotion == "touching" {
+                            SHRenderProbe.scrollEvent("thread.write.I8", "bottomInset.whileTouching", from: tailGuard, kind: "layout")
+                        }
+                    }
+                }
+                #endif
                 let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: nativeTail) }
                 tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: tailGap), wants: wants,
                                 resized: new.resized(from: old), land: lander(proxy))
                 tailGuard.suspect(standAside: { [tailPin] in tailPin.standAside($0) }, status: { [store] in
                     .init(following: presentation.scrollFollower.sticky && !presentation.scrollFollower.userScrolling, hasRows: !store.rows.isEmpty,
                           tailGap: tailGap)
-                }, land: { lander(proxy)(true) })
+                }, land: { lander(proxy, actor: "thread.write.I4")(true) })
             }
             .onScrollPhaseChange { old, phase, context in
+                #if DEBUG
+                tailGuard.phase = phase
+                #endif
                 if phase == .interacting { historyPaging.beginScroll() }
                 // Only a finger on the thread is intent; momentum and programmatic scrolls are
                 // not, and a drag that ends near the bottom re-sticks where it lands.
@@ -406,6 +444,7 @@ struct ThreadTranscript: View {
                 // lander goes with the ask: a screen popped over the thread leaves the pin without one (`stop()`), and the
                 // send supplies its own, so it needn't wait for a scroll reading to set it again.
                 guard !store.lastSendQueued else { return }
+                SHRenderProbe.scrollEvent("thread.write.I6", "send.ask", from: tailGuard, target: Self.bottomID, kind: "request")
                 presentation.sent(turnPresent: store.lastSendShownEarly)
                 tailPin.asked(lander(proxy))
             }
@@ -418,11 +457,13 @@ struct ThreadTranscript: View {
                     await Task.yield()
                     guard !Task.isCancelled, store.isLive, store.sessionKey == session,
                           follow({ $0.userTurnArrived() }) else { return }
+                    SHRenderProbe.scrollEvent("thread.write.I6", "userTurn.ask", from: tailGuard, target: id, kind: "request")
                     tailPin.asked(lander(proxy))
                 }
             }
             // New output at the tail is what "unseen" means, never the content height.
-            .onChange(of: rows.last) { _, _ in
+            .onChange(of: rows.last) { _, row in
+                SHRenderProbe.scrollEvent("thread.write.L7", "thread.tailChanged", from: tailGuard, target: row?.id, kind: "layout")
                 follow { $0.contentArrived(); return false }
                 tailPin.outputArrived()
             }
@@ -434,6 +475,7 @@ struct ThreadTranscript: View {
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: running) ? {
+                    SHRenderProbe.scrollEvent("thread.write.I6", "jumpToLatest.ask", from: tailGuard, target: Self.bottomID, kind: "request")
                     presentation.jumpToLatest()
                     tailPin.asked(lander(proxy))
                 } : nil)
@@ -443,12 +485,14 @@ struct ThreadTranscript: View {
                 tailHold.resume()
                 guard !appeared else { return }
                 appeared = true
+                SHRenderProbe.scrollEvent("thread.write.I7", "position.mount", from: tailGuard, kind: "binding")
                 presentation.mount()
             }
             .onDisappear {
                 tailHold.stop()
                 tailPin.stop()
                 tailGuard.stop()
+                SHRenderProbe.scrollEvent("thread.write.I7", "position.leave", from: tailGuard, kind: "binding")
                 presentation.leave()
             }
         }
@@ -464,7 +508,17 @@ struct ThreadTranscript: View {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
         // ScrollViewReader jumps can leave the native position binding nil at the boundary.
         presentation.pinHistoryTurn(store.rows.first?.id)
-        Task { await store.loadOlder() }
+        Task {
+            #if DEBUG
+            let before = SHRenderProbe.scrollEvents != nil ? store.rows.first?.id : nil
+            #endif
+            await store.loadOlder()
+            #if DEBUG
+            if let before, store.rows.first?.id != before {
+                SHRenderProbe.scrollEvent("thread.write.L6", "history.prepended", from: tailGuard, target: store.rows.first?.id, kind: "layout")
+            }
+            #endif
+        }
     }
 
     /// Brings the turn holding `entryID` (a tool result, a compaction) to the top of the thread,
@@ -478,6 +532,7 @@ struct ThreadTranscript: View {
         }
         guard let row = holder() else { return }
         follow { $0.beginJump(); return false }
+        SHRenderProbe.scrollEvent("thread.write.I6", "find", from: tailGuard, target: row.id)
         withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
@@ -498,26 +553,35 @@ struct ThreadTranscript: View {
 
     /// What the pin calls once the layout pass that asked is over. It holds the presentation, not
     /// the view, so a landing asked for before a remount reads the follower it was asked for.
-    private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
+    private func lander(_ proxy: ScrollViewProxy, actor: StaticString = "thread.write.I3") -> ThreadTailPin.Land {
         let presentation = presentation
         let store = store
         let hold = tailHold
-        return { resized in
-            Self.land(proxy, presentation: presentation, resized: resized)
+        return { [weak tailGuard] resized in
+            Self.land(proxy, presentation: presentation, resized: resized, actor: actor, guardRef: tailGuard)
             let tail = store.rows.last?.id
             guard presentation.withholdsMarker(tail: tail) else { return }
-            hold.landed { if store.rows.last?.id == tail { presentation.hold(tail: tail) } }
+            hold.landed {
+                if store.rows.last?.id == tail {
+                    if !presentation.scrollFollower.userScrolling, presentation.withholdsMarker(tail: tail) {
+                        SHRenderProbe.scrollEvent("thread.write.I5", "position.hold", from: tailGuard, target: Self.bottomID)
+                    }
+                    presentation.hold(tail: tail)
+                }
+            }
         }
     }
 
     /// Lands on the tail while the reader still follows it and has not taken hold of the thread.
-    private static func land(_ proxy: ScrollViewProxy, presentation: ComposerPresentation, resized: Bool) {
+    private static func land(_ proxy: ScrollViewProxy, presentation: ComposerPresentation, resized: Bool,
+                             actor: StaticString, guardRef: ThreadTailGuard?) {
         let follower = presentation.scrollFollower
         guard follower.sticky, !follower.userScrolling else { return }
         SHRenderProbe.tick(resized ? "thread.tailLandingResized" : "thread.tailLanding")
         MobileSignposts.tailLanding()
         var transaction = Transaction()
         transaction.disablesAnimations = true
+        SHRenderProbe.scrollEvent(actor, "tail.land", from: guardRef, target: bottomID)
         withTransaction(transaction) { proxy.scrollTo(bottomID, anchor: .bottom) }
     }
 

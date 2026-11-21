@@ -63,6 +63,7 @@ final class ThreadTailGuard {
     func registerRow(_ marker: RowMarker, id: String) {
         marker.rowID = id
         guard rowIDs.contains(id), rowMarkers.object(forKey: id as NSString) !== marker else { return }
+        SHRenderProbe.scrollEvent("thread.write.L1", "row.markerRegistered", from: self, target: id, kind: "layout")
         rowMarkers.setObject(marker, forKey: id as NSString)
         suspect()
     }
@@ -277,7 +278,10 @@ final class ThreadTailGuard {
             return
         }
         if attempts > 1 || !rowsInView { await walk(by: 1, until: { self.tailInView }, doubling: false) }
-        if following, !userScrolling, active, ContinuousClock.now >= readerUntil { land() }
+        if following, !userScrolling, active, ContinuousClock.now >= readerUntil {
+            SHRenderProbe.scrollEvent("thread.write.M7", "guard.land", from: self, target: bottomID)
+            land()
+        }
     }
 
     /// Scrolls the rest of the way to the end of the document, from where the marker is already in
@@ -288,7 +292,7 @@ final class ThreadTailGuard {
         let clip = scroll.contentView
         var bounds = clip.bounds
         bounds.origin.y += gap
-        ThreadScrollTrace.write("ThreadTailGuard.reachTheEnd", in: scroll)
+        ThreadScrollTrace.write("thread.write.M7", "guard.reachTheEnd", in: scroll)
         clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
         scroll.reflectScrolledClipView(clip)
     }
@@ -309,7 +313,7 @@ final class ThreadTailGuard {
             let from = clip.bounds.origin.y
             var bounds = clip.bounds
             bounds.origin.y += direction * (doubling ? page : clip.bounds.height * 0.9)
-            ThreadScrollTrace.write("ThreadTailGuard.walk", in: scroll)
+            ThreadScrollTrace.write("thread.write.M7", "guard.walk", in: scroll)
             clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
             scroll.reflectScrolledClipView(clip)
             // At an end of the scroll view there is nowhere further to go.

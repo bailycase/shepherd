@@ -123,6 +123,9 @@ public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
 @MainActor
 @Observable
 public final class NativeThreadStore {
+    #if DEBUG
+    public static var scrollTraceParsed: ((NativeThreadStore, String) -> Void)?
+    #endif
     nonisolated private static let signposter = OSSignposter(subsystem: "com.shepherd.performance", category: "NativeThread")
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
     /// History from disk to show until pi answers (`preview(_:)`); nil when there is none.
@@ -1377,6 +1380,9 @@ public final class NativeThreadStore {
                 // cancelled, is dropped.
                 if self.proseParsing[key] == token || (self.proseRequests[key] != nil && self.proseEpoch == epoch && holdsBase()) {
                     if self.proseParsing[key] == token { self.invalidateParse(key) }
+                    #if DEBUG
+                    Self.scrollTraceParsed?(self, key.turn)
+                    #endif
                     land(value)
                     self.presentationCache[key.turn] = nil
                     self.presentationDirty = self.projection.start(for: key.turn)
