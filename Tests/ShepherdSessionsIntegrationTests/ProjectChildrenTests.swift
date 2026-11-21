@@ -482,7 +482,9 @@ struct ProjectChildrenTests {
         let pi = try await rig.pi(assignment)
         let (controller, scope) = try await authorize(pi, on: rig.host)
         let stopping = Task { try await pi.request(.abort(expectedSessionID: scope.sessionID, generation: scope.generation, operationID: UUID())) }
-        guard case .projectChildren(let id, scope, .stop, .some(true)) = try controller.readReply() else { throw WireError("Native Stop did not authorize sweeping the helpers it stops") }
+        #expect(try controller.readReply() == .stopManagedBash(sweepChildren: true))
+        let reply = try controller.readReply()
+        guard case .projectChildren(let id, scope, .stop, .some(true)) = reply else { throw WireError("Native Stop did not authorize sweeping the helpers it stops: \(reply)") }
         #expect(pi.stdin("abort").isEmpty)
         try controller.send(.childCommandResult(id: id, error: nil))
         guard case .accepted = try await stopping.value else { throw WireError("Native Stop not acknowledged") }
