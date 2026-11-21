@@ -163,19 +163,61 @@ enum ClientStateChecks {
                 serving.cancel(); store.stop(); check(false, "next attachment loaded while awaiting send"); return
             }
             check(submitted == [a.image], "only captured image A went to the delayed send")
+            // The store holds A with the send's record, so the composer lets go of it at capture, while the host has not answered.
+            check(state.attachments.map(\.id) == [b.id], "image A is gone while the ack is held and newly attached B stays")
             switch outcome {
             case "accepted": gate.finish(.success(.accepted(operationID: operation)))
             case "rejected": gate.finish(.success(.failure(code: "refused", message: "Not accepted")))
             default: gate.finish(.failure(RemoteHostClientError.outcomeUnknown(message: "Connection lost")))
             }
             await sending.value
-            check(state.attachments.map(\.id) == (outcome == "accepted" ? [b.id] : [a.id, b.id]),
-                  "\(outcome) send removes only its acknowledged image IDs")
-            check(store.sentCount == (outcome == "accepted" ? 1 : 0), "attachment cleanup follows acceptance")
+            check(state.attachments.map(\.id) == [b.id], "\(outcome) send removes only the images it captured")
+            check(outcome == "accepted" || store.submissions.first?.images == [a.image],
+                  "\(outcome) send keeps image A with its recovery record")
+            check(store.sentCount == (outcome == "accepted" ? 1 : 0), "send count follows acceptance")
             serving.cancel()
             store.stop()
             await serving.value
         }
+        await rejectedBeforeCaptureKeepsImages()
+    }
+
+    /// A send the store never captures (no words, and the host takes no images) leaves the composer's images where they were.
+    private static func rejectedBeforeCaptureKeepsImages() async {
+        let store = NativeThreadStore(pause: { _ in
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in stream {}
+            continuation.finish()
+            throw CancellationError()
+        })
+        var requests = 0
+        let serving = Task {
+            await store.run { request in
+                if case .snapshot = request { return .snapshot(value: FixtureData.snapshot([])) }
+                requests += 1
+                return .failure(code: "fixture", message: "Unexpected request")
+            }
+        }
+        await FixtureWindows.wait(seconds: 5) { store.isLive }
+        let state = ComposerState()
+        guard store.isLive, let image = NewThreadFixtures.image(.systemTeal, name: "kept") else {
+            serving.cancel(); store.stop(); check(false, "uncaptured send fixture prepared"); return
+        }
+        await state.attach([(image.image.data, "kept.png")])
+        let kept = state.attachments.map(\.id)
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        check(kept.count == 1 && state.attachments.map(\.id) == kept && store.submissions.isEmpty && requests == 0,
+              "a send rejected before capture keeps image A in the composer")
+        store.draft = "Inspect this"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let refused = store.submissions.first
+        let restored = refused.flatMap { store.restoreSubmission($0.id) }
+        check(requests == 1 && refused?.state == .failed && refused?.images.isEmpty == true && restored != nil
+              && store.draft == "Inspect this" && state.attachments.map(\.id) == kept,
+              "a refused text send keeps the unsupported image in the composer and can restore the text")
+        serving.cancel()
+        store.stop()
+        await serving.value
     }
 
     static func selectedHostSummaries(_ app: MobileApp) async {
