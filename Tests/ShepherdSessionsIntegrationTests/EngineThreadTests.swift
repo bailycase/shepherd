@@ -476,11 +476,15 @@ final class RealPi: @unchecked Sendable {
     /// The session file the app seeds and pi appends to, and the id pi resumes it by.
     let sessionFile: URL
     let sessionID: String
+    let project: URL
+    private let ownsHost: Bool
     private let provider: Process
     private let providerInput: Pipe
 
-    private init(host: ScratchServer, agent: PiAgent, sessionFile: URL, sessionID: String, provider: Process, providerInput: Pipe) {
+    private init(host: ScratchServer, ownsHost: Bool, project: URL, agent: PiAgent, sessionFile: URL, sessionID: String, provider: Process, providerInput: Pipe) {
         self.host = host
+        self.ownsHost = ownsHost
+        self.project = project
         self.agent = agent
         self.sessionFile = sessionFile
         self.sessionID = sessionID
@@ -503,29 +507,30 @@ final class RealPi: @unchecked Sendable {
         """
 
     /// `history`: session entries (`{"type":"message",...}`) saved after the header, as a resumed thread's.
-    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false) async throws -> RealPi {
-        let directory = try makeScratchDirectory("real-pi")
+    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false, nativeChildren: Bool = false, on sharedHost: ScratchServer? = nil) async throws -> RealPi {
+        let directory = try sharedHost?.dir.appendingPathComponent("pi-\(UUID())") ?? makeScratchDirectory("real-pi")
         let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
                             userHome: directory.appendingPathComponent("home").path)
-        let host = try ScratchServer(dir: directory, pi: setup)
+        let host = try sharedHost ?? ScratchServer(dir: directory, pi: setup)
         do {
             let files = FileManager.default
-            let userHome = host.dir.appendingPathComponent("home", isDirectory: true)
-            let temporary = host.dir.appendingPathComponent("tmp", isDirectory: true)
-            let project = host.dir.appendingPathComponent("project", isDirectory: true)
+            let userHome = directory.appendingPathComponent("home", isDirectory: true)
+            let temporary = directory.appendingPathComponent("tmp", isDirectory: true)
+            let project = directory.appendingPathComponent("project", isDirectory: true)
             for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
 
             let script = EngineSmoke.repository.appendingPathComponent("Tests/Extensions/engine-provider.mjs")
             let provider = Process()
             provider.executableURL = engine.node
             provider.arguments = [script.path]
+            provider.currentDirectoryURL = project
             let input = Pipe(), output = Pipe()
             provider.standardInput = input
             provider.standardOutput = output
             try provider.run()
             let port = try await readPort(from: output.fileHandleForReading)
 
-            let home = PiHome(directory: host.dir.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
+            let home = PiHome(directory: directory.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
                               userHome: userHome.path)
             try home.install()
             let models = """
@@ -545,7 +550,7 @@ final class RealPi: @unchecked Sendable {
             try files.createDirectory(at: home.directory.appendingPathComponent("prompts"), withIntermediateDirectories: true)
             try "---\ndescription: Greet someone\n---\nGreet $1 warmly.\n"
                 .write(to: home.directory.appendingPathComponent("prompts/greet.md"), atomically: true, encoding: .utf8)
-            let fixture = host.dir.appendingPathComponent("commands.ts")
+            let fixture = directory.appendingPathComponent("commands.ts")
             try extensionSource.write(to: fixture, atomically: true, encoding: .utf8)
 
             // The session header the app seeds before it starts an agent (PiSessionFile.seedIfMissing),
@@ -558,23 +563,34 @@ final class RealPi: @unchecked Sendable {
             let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
             try ([header] + history).map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) + Data("\n".utf8) }
                 .reduce(Data(), +).write(to: sessionFile)
-            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
-                                          extensions: [fixture.path] + extensions + (status ? [try StatusExtension.installedPath()] : []))
             let agentID = AgentID()
-            let statusEnv = status ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
+            var env = (status || nativeChildren) ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
+            var installed = status ? [try StatusExtension.installedPath()] : []
+            if nativeChildren {
+                host.useRealPeerCheck()
+                let children = try ChildrenExtension.installedPath(in: directory, snapshot: EmbeddedExtensions.snapshot)
+                env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+                env["SHEPHERD_EXT_CHILDREN"] = children
+                let publisher = directory.appendingPathComponent("shepherd-subagents.ts")
+                try EmbeddedExtensions.install("shepherd-subagents.ts", at: publisher)
+                installed += [children, publisher.path]
+            }
+            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
+                                          extensions: [fixture.path] + extensions + installed)
             let session = try await host.server.createSession(params: CreateSessionParams(
                 cwd: project.path, command: line.argv,
-                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(statusEnv) { a, _ in a }, runtime: .rpc), resuming: sessionID)
+                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(env) { a, _ in a }, runtime: .rpc), resuming: sessionID)
             let space = Space(name: "rpc", path: project.path)
             try await host.server.addSpace(space)
             let pane = LeafPane(sessionID: session.id, cwd: project.path)
             let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
             let agent = Agent(id: agentID, name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
             try await host.server.addAgent(agent, withTab: tab)
-            return RealPi(host: host, agent: PiAgent(host: host, agent: agent, sessionID: session.id, log: host.dir.appendingPathComponent("unused.log")),
+            return RealPi(host: host, ownsHost: sharedHost == nil, project: project,
+                          agent: PiAgent(host: host, agent: agent, sessionID: session.id, log: directory.appendingPathComponent("unused.log")),
                           sessionFile: sessionFile, sessionID: sessionID, provider: provider, providerInput: input)
         } catch {
-            host.stop()
+            if sharedHost == nil { host.stop() }
             throw error
         }
     }
@@ -600,7 +616,7 @@ final class RealPi: @unchecked Sendable {
     }
 
     func stop() {
-        host.stop()
+        if ownsHost { host.stop() }
         try? providerInput.fileHandleForWriting.close()
         if provider.isRunning { provider.terminate() }
     }

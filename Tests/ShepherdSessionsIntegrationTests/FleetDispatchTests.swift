@@ -147,7 +147,7 @@ struct FleetDispatchTests {
 
         /// Stop, as the thread's own view of it (the abort request ends here).
         func pressStop(_ agent: AgentID) {
-            server.queue.sync { server.rpcThread(forAgent: agent)?.stop { _ in } }
+            server.queue.sync { server.rpcThread(forAgent: agent)?.stop(explicit: true) { _ in } }
         }
 
         /// This Mac's own space.
@@ -640,7 +640,7 @@ struct FleetDispatchTests {
         // Ordering on one socket: a Fleet request answered after hello proves the control registration landed.
         _ = try await parent.call { .fleetListHosts(id: $0, agentID: parent.agent.id) }
         a.pressStop(parent.agent.id)
-        #expect(try await parent.read() == .stopManagedBash)
+        #expect(try await parent.read() == .stopManagedBash(sweepChildren: true))
     }
 
     @Test(arguments: ["stop then close", "scoped then close", "delete", "cancel", "close"])

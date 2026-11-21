@@ -2995,7 +2995,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// One authenticated controller connection per parent; no helper opens a new host channel.
-    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, completion: @escaping (String?) -> Void) {
+    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, sweepChildren: Bool? = nil, completion: @escaping (String?) -> Void) {
         if action == .stop { projectChildClosed.insert(scope) }
         let finish: (String?) -> Void = { error in
             if action == .stop, error == nil { self.projectChildStopped.insert(scope) }
@@ -3010,7 +3010,7 @@ public final class SessionServer: @unchecked Sendable {
         nextChildCommandID += 1
         let id = nextChildCommandID
         childCommandPending[id] = (client, finish)
-        reply(.projectChildren(id: id, scope: scope, action: action), to: client)
+        reply(.projectChildren(id: id, scope: scope, action: action, sweepChildren: sweepChildren), to: client)
         queue.asyncAfter(deadline: .now() + (action == .stop ? 15 : 615)) { [weak self] in
             self?.childCommandPending.removeValue(forKey: id)?.completion("Project helper acknowledgement timed out; outcome is unknown.")
         }
@@ -7124,7 +7124,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput, .stopManagedBash: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -10000,10 +10000,10 @@ public final class SessionServer: @unchecked Sendable {
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
-            thread.onStopRequested = { [weak serverWeak] in
+            thread.onStopRequested = { [weak serverWeak] explicit in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
-                    server.reply(.stopManagedBash, to: children)
+                    server.reply(.stopManagedBash(sweepChildren: explicit ? true : nil), to: children)
                 }
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
@@ -10013,10 +10013,10 @@ public final class SessionServer: @unchecked Sendable {
                 server.applyAgentStatus(agentID: agentID, status: .done)
             }
             // Card actions go to the children extension's control channel, never the parent model.
-            thread.stopProjectChildren = { [weak serverWeak] done in
+            thread.stopProjectChildren = { [weak serverWeak] explicit, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid), let scope = server.currentProjectChildScope[agentID],
                       !server.projectChildStopped.contains(scope) else { done(nil); return }
-                server.commandProjectChildren(scope, action: .stop) { error in
+                server.commandProjectChildren(scope, action: .stop, sweepChildren: explicit ? true : nil) { error in
                     if error == nil { server.projectChildDrained.insert(scope) }
                     done(error)
                 }

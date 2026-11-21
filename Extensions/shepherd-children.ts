@@ -167,9 +167,13 @@ const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 // design tools its bridge proxies to the parent (relaySpecs).
 export function childLaunch({ run, bridge, inherited = [], parentEnv = process.env, relay = [] }) {
   const env = { ...parentEnv };
-  // A helper is cut off from the host: none of the parent's SHEPHERD_* reaches it (its agent id,
-  // socket and design are the parent's alone), nor the parent's session or model variables.
+  // The parent's agent id, socket, design, session and model are its own. Only its process
+  // ownership marker crosses into the child, with a fresh scope for this launch attempt.
   for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
+  if (parentEnv.SHEPHERD_OWNED_THREAD && run.attempt) {
+    env.SHEPHERD_OWNED_THREAD = parentEnv.SHEPHERD_OWNED_THREAD;
+    env.SHEPHERD_OWNED_BASH = run.attempt;
+  }
   env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
   env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
   if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
@@ -486,13 +490,15 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const nativeChildren = process.env.SHEPHERD_NATIVE_CHILDREN === "1";
 
   const runs = new Map(), workflows = new Map(), cliRuns = new Map(), dropped = new Map();
+  const stopWithParent = new Set();
   const admission = lifecycleWaiters(), savedStates = new WeakMap();
   let cancelCli;
-  const bash = managedBash((bashScope) => {
+  function requestBashSweep(bashScope) {
     try {
       if (control && !control.destroyed) control.write(JSON.stringify({ type: "stopBashProcesses", agentID: process.env.SHEPHERD_AGENT_ID, bashScope }) + "\n");
-    } catch { /* The supervisor still stops its process group when the host isn't available. */ }
-  });
+    } catch { /* Only tracked cleanup is available without the host. */ }
+  }
+  const bash = managedBash(requestBashSweep);
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
   const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
   const continuationScopes = new Set(), settleWaiters = new Set();
@@ -525,7 +531,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     if (!scope?.key?.operationID || scope.workerAgentID !== process.env.SHEPHERD_AGENT_ID || scope.sessionID !== owner || !scope.generation) throw Error("Wrong Project helper scope.");
     if (!["stop", "drain"].includes(frame.action)) throw Error("Unsupported Project helper command.");
     const key = scopeKey(scope), matches = (value) => scopeKey(value.projectScope) === key;
-    if (frame.action === "stop") {
+    const stopping = frame.action === "stop", sweep = frame.sweepChildren === true;
+    if (stopping) {
       if (!closedScopes.has(key)) scopeStops.set(scopeKey({ ...scope, epoch: 0 }), ++admissionVersion);
       closedScopes.add(key); // Synchronous admission fence, before any await.
       for (const value of [...runs.values(), ...workflows.values()].filter(matches)) pendingNotices.delete(value.id);
@@ -535,15 +542,18 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     // Already answered authorizations install their queued run/controller before the snapshot.
     await Promise.resolve();
     const ownedWorkflows = [...workflows.values()].filter(matches);
-    if (frame.action === "stop") for (const w of ownedWorkflows) { pendingNotices.delete(w.id); w.controller.abort(); }
+    if (stopping) for (const w of ownedWorkflows) {
+      pendingNotices.delete(w.id);
+      if (sweep) cancelWorkflow(w); else w.controller.abort();
+    }
     await Promise.all(ownedWorkflows.map((w) => w.done));
     for (;;) {
-      if (frame.action === "stop") await Promise.all([...runs.values()].filter(matches).map((run) => stop(run, "Project activation stopped")));
+      if (stopping) await Promise.all([...runs.values()].filter(matches).map((run) => stop(run, "Project activation stopped", { sweep })));
       await Promise.allSettled([...runs.values()].filter(matches).map((run) => run.starting));
       const live = [...runs.values()].filter(matches).filter((run) => run.proc);
-      if (frame.action === "stop") {
-        await Promise.all(live.map((run) => stop(run, "Project activation stopped")));
-        for (const run of [...runs.values()].filter(matches)) { dismissQuestion(run); pendingNotices.delete(run.id); }
+      if (stopping) {
+        await Promise.all(live.map((run) => stop(run, "Project activation stopped", { sweep })));
+        for (const run of [...runs.values()].filter(matches)) { dismissQuestion(run, { sweep: false }); pendingNotices.delete(run.id); }
       } else await Promise.all(live.map((run) => run.closed));
       if (![...runs.values()].some((run) => matches(run) && (run.proc || run.state === "queued")) && ![...workflows.values()].some((w) => matches(w) && !w.cleaned)) {
         const noticeWillWake = !userInputWaiting && !directInputWaiting && [...pendingNotices].some(([id, n]) => n.wake && matches(runs.get(id) ?? workflows.get(id) ?? {}));
@@ -746,7 +756,11 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       });
     });
   }
-  async function stop(run, reason = "Cancelled") {
+  function sweepAttempt(attempt) {
+    if (attempt && process.env.SHEPHERD_OWNED_THREAD) requestBashSweep(attempt);
+  }
+  const cancel = (run, reason) => stop(run, reason, { sweep: true });
+  async function stop(run, reason = "Cancelled", { sweep = false } = {}) {
     if (run.stopping) return run.stopping;
     if (!run.proc) {
       if (run.preparing) run.cancelled = true;
@@ -754,6 +768,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     abortRelays(run);
     run.cancelled = true; run.paused = false; run.error = reason; run.state = "running";
+    const attempt = run.attempt;
     run.stopping = (async () => {
       try { await command(run, "clear_queue", {}, 500); await command(run, "abort", {}, 1000); } catch { /* Escalate below. */ }
       if (!run.exited) {
@@ -769,15 +784,17 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         }
       }
       await run.closed;
+      if (sweep) sweepAttempt(attempt);
     })();
     return run.stopping;
   }
   // Stop on a child that finished its turn to ask has no process to stop: it closes the question instead, so nothing
   // waits on an answer, and an answer the parent sends later is refused as obsolete.
-  function dismissQuestion(run, reason = "Cancelled") {
+  function dismissQuestion(run, { sweep = true } = {}) {
     if (run.proc || !run.needsReply) return;
+    if (sweep && !run.cancelled) sweepAttempt(run.attempt);
     run.needsReply = false; run.questionID = undefined; run.questionText = undefined; run.questionShort = undefined; run.questionOptions = undefined;
-    run.state = "stopped"; run.error = reason; run.endedAt ??= Date.now();
+    run.state = "stopped"; run.error = "Cancelled"; run.endedAt ??= Date.now();
     pendingNotices.delete(run.id); save(run);
   }
   function releaseWriter(run) {
@@ -900,7 +917,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       run.drainTimer.unref();
     }
   }
-  async function launch(run, message, signal, images) {
+  async function launch(run, message, signal, { images, parentTool = false, workflow } = {}) {
     run.cancelled = false; run.preparing = true;
     signal?.throwIfAborted();
     checkScope(run.projectScope);
@@ -966,8 +983,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       drain.unref(); proc.once("close", () => clearTimeout(drain));
     });
     proc.once("close", (code, signal) => finish(run, code, signal));
-    const abort = () => { void stop(run); };
+    const abort = () => { void stop(run, undefined, { sweep: workflow?.explicitCancel }); };
     signal?.addEventListener("abort", abort, { once: true });
+    if (parentTool) stopWithParent.add(run);
     save(run);
     try {
       const state = await command(run, "get_state", {}, 20_000);
@@ -986,7 +1004,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (hint) error = new Error(error.message.trimEnd() + hint);
       await stop(run, clip(error.message)); throw error;
     }
-    finally { signal?.removeEventListener("abort", abort); }
+    finally { signal?.removeEventListener("abort", abort); stopWithParent.delete(run); }
     return summary(run);
   }
   function get(id) {
@@ -1040,7 +1058,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           const request = JSON.parse(fs.readFileSync(stopFile, "utf8"));
           if (typeof request.id === "string" && /^[\w-]{1,80}$/.test(request.id)) requestID = request.id;
           fs.unlinkSync(stopFile);
-          await stop(run); dismissQuestion(run);
+          await cancel(run); dismissQuestion(run);
           run.controlNotice = `stop accepted · ${run.state}`;
         } catch (error) { run.controlNotice = `control failed: ${clip(error.message)}`; try { fs.unlinkSync(stopFile); } catch {} }
         run.controlRequestID = requestID;
@@ -1104,7 +1122,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   async function childCommand(frame) {
     const run = get(String(frame.runID ?? ""));
     const text = typeof frame.text === "string" ? frame.text : "";
-    if (frame.action === "cancel") { await stop(run); dismissQuestion(run); return; }
+    if (frame.action === "cancel") { await cancel(run); dismissQuestion(run); return; }
     if (frame.action === "resume") { await resume(run, run.task, undefined, sessionContext); return; }
     if (frame.action === "pause" || frame.action === "continue") {
       if (!run.proc || run.exited || run.settled || run.cancelled) throw Error("Child is not running");
@@ -1123,7 +1141,15 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       control = s; s.unref();
       s.on("connect", () => { try { s.write(JSON.stringify({ type: "helloChildren", agentID: process.env.SHEPHERD_AGENT_ID, projectScopes: true }) + "\n"); } catch { s.destroy(); } });
       s.on("data", jsonLines((frame) => {
-        if (frame?.type === "stopManagedBash") { bash.stopAll(); return; }
+        if (frame?.type === "stopManagedBash") {
+          if (frame.sweepChildren === true) {
+            // The host's Stop is explicit. Abort signals also carry deadlines, disconnects and interrupts.
+            for (const run of stopWithParent) void cancel(run);
+            for (const cli of cliRuns.values()) void cancel(cli.run, "Pi subprocess cancelled");
+            for (const w of workflows.values()) if (!w.async) cancelWorkflow(w);
+          }
+          bash.stopAll(); return;
+        }
         if (frame?.type === "parentInput") { parentInput(); return; }
         if (["childScope", "error"].includes(frame?.type) && scopeRequests.has(frame.id)) {
           const request = scopeRequests.get(frame.id); scopeRequests.delete(frame.id); clearTimeout(request.timer);
@@ -1321,7 +1347,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically.\n${CHILD_ASK_RULE}\n`, { mode: 0o600 });
         const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
-        run.starting = launch(run, cli?.prompt ?? queueInput?.text ?? params.task, signal, queueInput?.images);
+        run.starting = launch(run, cli?.prompt ?? queueInput?.text ?? params.task, signal, {
+          images: queueInput?.images, parentTool: !cli && !queueInput && !workflowId && !!signal, workflow: workflows.get(workflowId),
+        });
         const receipt = await run.starting;
         return startNote ? { ...receipt, note: startNote } : receipt;
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
@@ -1426,7 +1454,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         ...(r.needsReply ? { needsReply: true, questionID: r.questionID, question: r.questionText } : {}) })));
     } });
   pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", ...later, description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
-    parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); dismissQuestion(run); pendingNotices.delete(run.id); return result(summary(run)); } });
+    parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await cancel(run); dismissQuestion(run); pendingNotices.delete(run.id); return result(summary(run)); } });
   pi.registerTool({ name: "shepherd_child_resume", label: "continue child", description: "Continue a completed, failed, or stopped child session with a new task or answer. This is how you answer a child's question (needsReply): pass its questionID. Keeps its role, model, cwd, and history. Rejects concurrent writers and missing transcripts. Does not replay interrupted work automatically.",
     parameters: Type.Object({ id: idSchema, message: textSchema, questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result or its notice; refuses stale answers." })) }), async execute(_id, p, signal, _update, ctx) {
       const run = get(p.id);
@@ -1447,7 +1475,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     run.workflowId = undefined;
     run.tools = run.tools.filter((name) => parentAllows(name, pi.getActiveTools()));
     run.state = "queued";
-    try { run.starting = launch(run, message, signal); return await run.starting; }
+    try { run.starting = launch(run, message, signal, { parentTool: !!signal }); return await run.starting; }
     catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
   // Every caller is the user (the app's cards and inspector, shepherd-inspect, the fleet view),
@@ -1477,13 +1505,18 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema, ...later,
     description: "Start a background JavaScript statement body with runs.run(key,{agent,name,task,...}), runs.all([{key,agent,name,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
     async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
+  function cancelWorkflow(w) {
+    if (w.state !== "running" || w.controller.signal.aborted) return;
+    w.explicitCancel = true;
+    w.controller.abort();
+  }
   async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
       const p = checked(workflowSchema, params), action = p.action ?? "start";
       if (!active) throw Error("No active parent session");
       signal?.throwIfAborted();
       if (action !== "start") {
         const w = workflows.get(p.id); if (!w) throw Error("Unknown workflow in this parent session");
-        if (action === "cancel") { w.controller.abort(); await w.done; }
+        if (action === "cancel") { cancelWorkflow(w); await w.done; }
         if (action === "wait") {
           const deadline = Date.now() + Math.min(p.timeoutSeconds ?? 30, 60) * 1000;
           const inputVersion = parentInputVersion;
@@ -1563,7 +1596,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         const run = w.keys.get(args.key); if (!run) throw Error("Unknown workflow child key");
         guard();
         if (method === "steer") return send(run, args.message, ["follow_up", "followUp"].includes(args.options.mode) ? "followUp" : "steer");
-        if (method === "cancel") await stop(run);
+        if (method === "cancel") await cancel(run);
         return { key: args.key, id: run.id, state: run.state, output: run.output, error: run.error };
       }
       w.done = (async () => {
@@ -1576,7 +1609,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         finally {
           w.controller.abort();
           await Promise.allSettled([...w.starts]);
-          await Promise.all([...runs.values()].filter((r) => r.workflowId === w.id).map((r) => stop(r, "Workflow ended")));
+          await Promise.all([...runs.values()].filter((r) => r.workflowId === w.id).map((r) => stop(r, "Workflow ended", { sweep: w.explicitCancel })));
           w.cleaned = true;
           if (active && owner === w.owner && onSlashComplete) { if (w.async) onSlashComplete(workflowSummary(w)); }
           else if (active && owner === w.owner && w.async && !closedScopes.has(scopeKey(w.projectScope))) {
@@ -1610,7 +1643,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     defaults, catalog: (ctx) => discoverChildAgents(ctx, defaults.scope), resolveModel,
     list: () => [...runs.values()].map(summary), get: (id) => summary(get(id)),
     send: (id, message, mode) => messageChild(get(id), checked(Type.Object({ message: textSchema }), { message }).message, mode, sessionContext),
-    stop: async (id) => { const run = get(id); await stop(run); return summary(run); },
+    stop: async (id) => { const run = get(id); await cancel(run); dismissQuestion(run); return summary(run); },
     workflow: (params, ctx, onComplete) => runWorkflow(params, undefined, ctx, onComplete).then((r) => r.details),
     workflows: (id) => {
       if (!id) return [...workflows.values()].map(workflowSummary);

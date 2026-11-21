@@ -1415,7 +1415,8 @@ public struct PaneInfo: Codable, Hashable, Sendable {
 public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Accepted host-queued user input: stop waiting in the parent, without stopping children.
     case parentInput
-    case stopManagedBash
+    /// Only an explicit Stop may sweep the attempts it aborts.
+    case stopManagedBash(sweepChildren: Bool? = nil)
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
@@ -1423,7 +1424,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case childStart(id: Int, requestID: String, text: String, images: [NativeImage])
     case childScope(id: Int, scope: ProjectChildScope?, deadline: Double? = nil)
     /// Uses the existing childCommandResult acknowledgement, bound to this connection.
-    case projectChildren(id: Int, scope: ProjectChildScope, action: ProjectChildAction)
+    case projectChildren(id: Int, scope: ProjectChildScope, action: ProjectChildAction, sweepChildren: Bool? = nil)
     case ok(id: Int)
     /// Register returns the canonical space; refresh returns nil. Existing spaces are unchanged.
     case projectResult(id: Int, space: Space?, created: Bool)
@@ -1506,7 +1507,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case requestID, targetAgentID, request, result
         case space, created
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
-        case runID, action, mode, scope, deadline
+        case runID, action, mode, scope, deadline, sweepChildren
         case outcome
         case snapshot, board, replaced, path, designs
         case comments, comment
@@ -1535,10 +1536,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case .childScope:
             self = .childScope(id: try c.decode(Int.self, forKey: .id), scope: try c.decodeIfPresent(ProjectChildScope.self, forKey: .scope), deadline: try c.decodeIfPresent(Double.self, forKey: .deadline))
         case .projectChildren:
-            self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action))
+            self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action), sweepChildren: try c.decodeIfPresent(Bool.self, forKey: .sweepChildren))
         case .parentInput:
             self = .parentInput
-        case .stopManagedBash: self = .stopManagedBash
+        case .stopManagedBash: self = .stopManagedBash(sweepChildren: try c.decodeIfPresent(Bool.self, forKey: .sweepChildren))
         case .childStart:
             self = .childStart(id: try c.decode(Int.self, forKey: .id), requestID: try c.decode(String.self, forKey: .requestID),
                                text: try c.decode(String.self, forKey: .text), images: try c.decode([NativeImage].self, forKey: .images))
@@ -1735,13 +1736,16 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         switch self {
         case .parentInput:
             try c.encode(Kind.parentInput, forKey: .type)
-        case .stopManagedBash: try c.encode(Kind.stopManagedBash, forKey: .type)
+        case .stopManagedBash(let sweepChildren):
+            try c.encode(Kind.stopManagedBash, forKey: .type)
+            try c.encodeIfPresent(sweepChildren, forKey: .sweepChildren)
         case .childScope(let id, let scope, let deadline):
             try c.encode(Kind.childScope, forKey: .type); try c.encode(id, forKey: .id)
             try c.encodeIfPresent(scope, forKey: .scope); try c.encodeIfPresent(deadline, forKey: .deadline)
-        case .projectChildren(let id, let scope, let action):
+        case .projectChildren(let id, let scope, let action, let sweepChildren):
             try c.encode(Kind.projectChildren, forKey: .type); try c.encode(id, forKey: .id)
             try c.encode(scope, forKey: .scope); try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(sweepChildren, forKey: .sweepChildren)
         case .childStart(let id, let requestID, let text, let images):
             try c.encode(Kind.childStart, forKey: .type)
             try c.encode(id, forKey: .id)
