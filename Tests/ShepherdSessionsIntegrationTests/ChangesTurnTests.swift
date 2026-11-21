@@ -615,15 +615,25 @@ struct ChangesTurnTests {
         let damaged = try await changes.overview(agentID: pi.agent.id)
         #expect(damaged.turnHistoryProblem != nil)
 
-        let turn = ChangesTurn(messageTimestamp: 1000, startedAt: 1000, endedAt: 2000, state: .ready, fileCount: 1)
+        let prompt = "Edit the ledger"
+        #expect(try await pi.send(prompt, from: seeded).failureCode == nil)
+        let settled = try await pi.snapshot("the new thread's turn to settle") {
+            !$0.running && $0.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == prompt } }
+        }
+        let user = try #require(settled.messages.last { $0.role == "user" })
+        #expect(settled.turnChanges == nil)
+        #expect(try Data(contentsOf: url) == Data("{".utf8))
+
+        // Cold-start damage blocks capture. Supply the turn's record in the repaired file.
+        let turn = ChangesTurn(messageTimestamp: user.timestamp, startedAt: user.timestamp, state: .ready, fileCount: 1)
         let record = TurnRecord(turn: turn, cwd: directory.path)
         try JSONEncoder().encode([pi.agent.id.rawValue: [record]]).write(to: url, options: .atomic)
         let repaired = try await changes.overview(agentID: pi.agent.id)
         #expect(repaired.turnHistoryProblem == nil)
-        let snapshot = try await pi.snapshot("the already-seeded thread receives its repaired card") {
+        let snapshot = try await pi.snapshot("the already-seeded thread's repaired card") {
             $0.turnChanges?.last?.id == turn.id && $0.turnChanges?.last?.canUndo == true
         }
-        #expect(snapshot.turnChanges?.last?.id == turn.id)
+        #expect(changesTurn(forMessageAt: user.timestamp, in: snapshot.turnChanges)?.id == turn.id)
     }
 
     /// The next turn ends the last one's Undo; the engine's turns and their Undo also reach a
