@@ -212,6 +212,15 @@ struct AutomationRunLogTests {
 struct AutomationRunLogDamageTests {
     static let run = #"{"id":"00000000-0000-4000-8000-000000000010","startedAt":12,"endedAt":13,"result":"finished"}"#
     static let legacy = #"{"version":1,"runs":{"a":["# + run + "]}}"
+    static let otherRun = #"{"id":"00000000-0000-4000-8000-000000000011","startedAt":14,"endedAt":15,"result":"finished"}"#
+    static let otherBackup = #"{"version":1,"runs":{"a":["# + otherRun + "]}}"
+
+    /// The run ids on disk for automation "a".
+    private static func ids(at url: URL) throws -> Set<String> {
+        let file = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let runs = try #require((file["runs"] as? [String: [[String: Any]]])?["a"])
+        return Set(runs.compactMap { ($0["id"] as? String)?.lowercased() })
+    }
     static let newRun = Date(timeIntervalSince1970: 1_000)
 
     private static func scratch() throws -> (dir: URL, url: URL) {
@@ -335,12 +344,60 @@ struct AutomationRunLogDamageTests {
         // Only the writer saw the damage. A backup restored now must survive the next change.
         log.changed = {}
         try Data(Self.legacy.utf8).write(to: url)
-        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Sample", now: Self.newRun)
+        log.recordFailure(AutomationRunLogTests.automation.id, trigger: nil, triggerURL: nil, message: "Appended", now: Self.newRun)
         log.flush()
-        let written = try String(contentsOf: url, encoding: .utf8)
-        #expect(written.contains("00000000-0000-4000-8000-000000000010"))
-        let ids = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-        #expect((ids["runs"] as? [String: [Any]])?["a"]?.count == 2)
+        let appended = try #require(log.runs[AutomationRunLogTests.automation.id]?.first { $0.failure == "Appended" })
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010", appended.id.uuidString.lowercased()])
+    }
+
+    /// The writer reports damage after a change was built, and the backup is restored: the change
+    /// is applied to the restored history instead of replacing it.
+    @Test func aChangeBuiltBeforeTheWriterFoundDamageIsAppliedToTheRestoredHistory() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let id = AutomationRunLogTests.automation.id
+        try Data("{".utf8).write(to: url)
+        let log = AutomationRunLog(url: url)
+        try Data(Self.legacy.utf8).write(to: url)
+        // The change below recovers the file first; its `changed` call is the one point where
+        // the writer can find new damage and a different backup be restored before it commits.
+        var once = true
+        log.changed = {
+            guard once else { return }
+            once = false
+            log.changed = { log.changed = {}; try? Data("{".utf8).write(to: url) }
+            log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Inner", now: Self.newRun)
+            log.flush()
+            try? Data(Self.otherBackup.utf8).write(to: url)
+        }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Outer", now: Self.newRun)
+        log.flush()
+        let outer = try #require(log.runs[id]?.first { $0.failure == "Outer" })
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000011", outer.id.uuidString.lowercased()])
+    }
+
+    /// A second change is already queued behind the write that finds damage: it was built before
+    /// the damage was known, so it must not replace the backup restored after.
+    @Test func aWriteQueuedBehindOneThatFoundDamageDoesNotOverwriteTheRestoredBackup() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        let open = DispatchSemaphore(value: 0), reached = DispatchSemaphore(value: 0), restored = DispatchSemaphore(value: 0)
+        log.writes.async { open.wait() }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        log.writes.async { reached.signal(); restored.wait() }
+        log.changed = { log.changed = {}; try? Data("{".utf8).write(to: url) }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "Second", now: Self.newRun)
+        // The queue now holds: the first write, a pause, the second write. The file is damaged.
+        open.signal()
+        reached.wait()
+        try Data(Self.legacy.utf8).write(to: url)
+        restored.signal()
+        log.flush()
+        #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010"])
+        #expect(log.recheck() == nil)
+        #expect(log.runs[id]?.map { $0.id.uuidString.lowercased() } == ["00000000-0000-4000-8000-000000000010"])
     }
 
     /// A backup restored while the log still shows the damage: the first change builds on it, not on what was in memory.

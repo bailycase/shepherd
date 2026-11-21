@@ -26,12 +26,15 @@ final class AutomationRunLog: @unchecked Sendable {
     let url: URL
     /// Oldest first, by automation.
     private(set) var runs: [AutomationID: [AutomationRun]] = [:]
-    private let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
+    let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
     private let openLock = NSLock()
     private var published: [AutomationID: AutomationRun] = [:]
     private var publishedProblem: String?
     /// Damage the queued writer saw, taken over by the next `refresh` (guarded by `openLock`).
     private var writerDamage: AutomationFileDamage?
+    /// Bumped each time the writer finds damage (guarded by `openLock`). A write queued under an
+    /// older number was built before that was known and is dropped, so it can't replace a restore.
+    private var generation = 0
     /// Why the file can't be read; changes are refused while it is set.
     private var damage: AutomationFileDamage?
     /// The history when the file went bad, written back if the file is then removed. Nil when it
@@ -108,39 +111,38 @@ final class AutomationRunLog: @unchecked Sendable {
                 triggered[origin.automationID, default: []].append(agent)
             }
         }
-        guard refresh(reading: false) else { return }
-        var next = runs
-        for automation in new.automations {
-            let previous = before[automation.id]?.agentID
-            var list = next[automation.id] ?? []
-            if previous != automation.agentID {
-                if let previous, let index = list.lastIndex(where: { $0.agentID == previous }) {
-                    if list[index].endedAt == nil {
-                        list[index] = Self.closed(list[index], status: oldAgents[previous]?.status, at: time, result: nil)
-                    } else {
-                        // Its pi stopped on its own and it ended then: only the thread it kept goes now.
-                        list[index].agentID = nil
+        mutate { next in
+            for automation in new.automations {
+                let previous = before[automation.id]?.agentID
+                var list = next[automation.id] ?? []
+                if previous != automation.agentID {
+                    if let previous, let index = list.lastIndex(where: { $0.agentID == previous }) {
+                        if list[index].endedAt == nil {
+                            list[index] = Self.closed(list[index], status: oldAgents[previous]?.status, at: time, result: nil)
+                        } else {
+                            // Its pi stopped on its own and it ended then: only the thread it kept goes now.
+                            list[index].agentID = nil
+                        }
                     }
+                    if let agentID = automation.agentID {
+                        let status = agents[agentID]?.status ?? .idle
+                        list.append(Self.following(AutomationRun(startedAt: time, result: .running, agentID: agentID),
+                                                   status: status, at: time))
+                    }
+                } else if let agentID = automation.agentID,
+                          let index = list.lastIndex(where: { $0.agentID == agentID && $0.endedAt == nil }),
+                          let status = agents[agentID]?.status {
+                    list[index] = Self.following(list[index], status: status, at: time)
                 }
-                if let agentID = automation.agentID {
-                    let status = agents[agentID]?.status ?? .idle
-                    list.append(Self.following(AutomationRun(startedAt: time, result: .running, agentID: agentID),
-                                               status: status, at: time))
-                }
-            } else if let agentID = automation.agentID,
-                      let index = list.lastIndex(where: { $0.agentID == agentID && $0.endedAt == nil }),
-                      let status = agents[agentID]?.status {
-                list[index] = Self.following(list[index], status: status, at: time)
+                list = Self.recordTriggered(automation, list: list, before: oldAgents, agents: agents,
+                                            triggered: triggered[automation.id] ?? [], projects: new.projects, at: time)
+                next[automation.id] = Array(list.suffix(Self.limit))
             }
-            list = Self.recordTriggered(automation, list: list, before: oldAgents, agents: agents,
-                                        triggered: triggered[automation.id] ?? [], projects: new.projects, at: time)
-            next[automation.id] = Array(list.suffix(Self.limit))
+            let kept = Set(new.automations.map(\.id))
+            for id in next.keys where !kept.contains(id) { next[id] = nil }
+            next = next.filter { !$0.value.isEmpty }
+            return next != runs
         }
-        let kept = Set(new.automations.map(\.id))
-        for id in next.keys where !kept.contains(id) { next[id] = nil }
-        next = next.filter { !$0.value.isEmpty }
-        guard next != runs else { return }
-        commit(next)
     }
 
     /// Triggered runs: a thread an automation started (`Agent.automationOrigin`) opens a run
@@ -207,13 +209,13 @@ final class AutomationRunLog: @unchecked Sendable {
     /// A run delivered to an existing thread (a `.thread` destination) opens here; it closes when
     /// the thread's turn settles.
     func openThreadRun(_ automationID: AutomationID, agentID: AgentID, trigger: String?, triggerURL: String?, now: Date = Date()) {
-        guard refresh(reading: false) else { return }
-        var next = runs
-        var list = next[automationID] ?? []
-        list.append(AutomationRun(startedAt: now.timeIntervalSince1970, result: .running, agentID: agentID,
-                                  trigger: trigger, triggerURL: triggerURL))
-        next[automationID] = Array(list.suffix(Self.limit))
-        commit(next)
+        mutate { next in
+            var list = next[automationID] ?? []
+            list.append(AutomationRun(startedAt: now.timeIntervalSince1970, result: .running, agentID: agentID,
+                                      trigger: trigger, triggerURL: triggerURL))
+            next[automationID] = Array(list.suffix(Self.limit))
+            return true
+        }
     }
 
     /// The agent's pi stopped on its own: each run of it that had not settled ends as failed with
@@ -223,89 +225,89 @@ final class AutomationRunLog: @unchecked Sendable {
     @discardableResult
     func agentStopped(_ agentID: AgentID, failure: String, now: Date = Date()) -> Bool {
         let time = now.timeIntervalSince1970
-        guard refresh(reading: false) else { return false }
-        var changed = false
-        var next = runs
-        for (id, list) in next {
-            next[id] = list.map { run in
-                guard run.agentID == agentID, run.endedAt == nil, run.settledAt == nil else { return run }
-                changed = true
-                var run = run
-                run.result = .failed
-                run.failure = String(failure.prefix(500))
-                run.endedAt = time
-                run.unread = true
-                return run
+        return mutate { next in
+            var changed = false
+            for (id, list) in next {
+                next[id] = list.map { run in
+                    guard run.agentID == agentID, run.endedAt == nil, run.settledAt == nil else { return run }
+                    changed = true
+                    var run = run
+                    run.result = .failed
+                    run.failure = String(failure.prefix(500))
+                    run.endedAt = time
+                    run.unread = true
+                    return run
+                }
             }
+            return changed
         }
-        return changed && commit(next)
     }
 
     /// A run that never started (its thread or worktree couldn't be made).
     func recordFailure(_ automationID: AutomationID, trigger: String?, triggerURL: String?, message: String, now: Date = Date()) {
-        guard refresh(reading: false) else { return }
         let time = now.timeIntervalSince1970
-        var next = runs
-        var list = next[automationID] ?? []
-        list.append(AutomationRun(startedAt: time, endedAt: time, result: .failed, trigger: trigger, triggerURL: triggerURL,
-                                  unread: true, failure: String(message.prefix(500))))
-        next[automationID] = Array(list.suffix(Self.limit))
-        commit(next)
+        mutate { next in
+            var list = next[automationID] ?? []
+            list.append(AutomationRun(startedAt: time, endedAt: time, result: .failed, trigger: trigger, triggerURL: triggerURL,
+                                      unread: true, failure: String(message.prefix(500))))
+            next[automationID] = Array(list.suffix(Self.limit))
+            return true
+        }
     }
 
     /// Clears unread dots: one run, or every run of a thread the user opened. True when any changed.
     @discardableResult
     func markRead(runID: UUID? = nil, agentID: AgentID? = nil) -> Bool {
-        guard refresh(reading: false) else { return false }
-        var changed = false
-        var next = runs
-        for (id, list) in next {
-            next[id] = list.map { run in
-                guard run.unread, run.id == runID || (agentID != nil && run.agentID == agentID) else { return run }
-                changed = true
-                var run = run
-                run.unread = false
-                return run
+        mutate { next in
+            var changed = false
+            for (id, list) in next {
+                next[id] = list.map { run in
+                    guard run.unread, run.id == runID || (agentID != nil && run.agentID == agentID) else { return run }
+                    changed = true
+                    var run = run
+                    run.unread = false
+                    return run
+                }
             }
+            return changed
         }
-        return changed && commit(next)
     }
 
     /// The pull request a run's thread opened.
     func setPullRequest(agentID: AgentID, url: String) {
-        guard refresh(reading: false) else { return }
-        var changed = false
-        var next = runs
-        for (id, list) in next {
-            next[id] = list.map { run in
-                guard run.agentID == agentID, run.pullRequestURL != url else { return run }
-                changed = true
-                var run = run
-                run.pullRequestURL = url
-                return run
+        mutate { next in
+            var changed = false
+            for (id, list) in next {
+                next[id] = list.map { run in
+                    guard run.agentID == agentID, run.pullRequestURL != url else { return run }
+                    changed = true
+                    var run = run
+                    run.pullRequestURL = url
+                    return run
+                }
             }
+            return changed
         }
-        if changed { commit(next) }
     }
 
     /// Closes every run still open: the host is starting, and their agents died with the last
     /// launch. A run that had finished its turn stays finished; any other was interrupted.
     /// Threads in `keeping` (triggered runs, which outlive a relaunch) stay linked to their run.
     func closeOpenRuns(keeping: Set<AgentID> = [], now: Date = Date()) {
-        guard refresh(reading: false) else { return }
         let time = now.timeIntervalSince1970
-        var changed = false
-        var next = runs
-        for (id, list) in next {
-            next[id] = list.map { run in
-                guard run.endedAt == nil else { return run }
-                changed = true
-                var closed = Self.closed(run, status: nil, at: time, result: run.settledAt == nil ? .interrupted : .finished)
-                if let agentID = run.agentID, keeping.contains(agentID) { closed.agentID = agentID }
-                return closed
+        mutate { next in
+            var changed = false
+            for (id, list) in next {
+                next[id] = list.map { run in
+                    guard run.endedAt == nil else { return run }
+                    changed = true
+                    var closed = Self.closed(run, status: nil, at: time, result: run.settledAt == nil ? .interrupted : .finished)
+                    if let agentID = run.agentID, keeping.contains(agentID) { closed.agentID = agentID }
+                    return closed
+                }
             }
+            return changed
         }
-        if changed { commit(next) }
     }
 
     /// Waits for every write queued so far (the server stopping, and tests).
@@ -344,6 +346,8 @@ final class AutomationRunLog: @unchecked Sendable {
         return run
     }
 
+    private var writerGeneration: Int { openLock.withLock { generation } }
+
     private func publish() {
         var open: [AutomationID: AutomationRun] = [:]
         for (id, list) in runs {
@@ -354,12 +358,23 @@ final class AutomationRunLog: @unchecked Sendable {
         openLock.withLock { published = open }
     }
 
-    /// Takes `next` as the history and saves it. False, with nothing changed, while the file is
-    /// damaged: the disk is checked first because it can go bad while the host runs. Callers build
-    /// `next` after `refresh(reading: false)`, so a repair is taken over before a change lands on it.
+    /// Applies `change` to a copy of the history and saves it; `change` returns false when it
+    /// has nothing to change. False, with nothing changed, while the file is damaged or when
+    /// `change` had nothing to do. The disk is checked before the save because it can go bad while
+    /// the host runs. If the queued writer found damage meanwhile, the check may have recovered a
+    /// restored file under the copy, so `change` is applied again to that history. `change` runs
+    /// on a copy and may run twice.
     @discardableResult
-    private func commit(_ next: [AutomationID: [AutomationRun]]) -> Bool {
+    private func mutate(_ change: (inout [AutomationID: [AutomationRun]]) -> Bool) -> Bool {
+        let seen = writerGeneration
+        guard refresh(reading: false) else { return false }
+        var next = runs
+        guard change(&next) else { return false }
         guard refresh(reading: true) else { return false }
+        if writerGeneration != seen {
+            next = runs
+            guard change(&next) else { return false }
+        }
         runs = next
         publish()
         save()
@@ -422,12 +437,18 @@ final class AutomationRunLog: @unchecked Sendable {
     private func writeAll() {
         let file = File(runs: Dictionary(uniqueKeysWithValues: runs.map { ($0.key.rawValue, $0.value) }))
         let url = url
+        let built = writerGeneration
         writes.async { [self] in
+            // Built before the writer found damage: the history it holds predates a possible restore.
+            guard built == writerGeneration else { return }
             // The file can go bad after the change was accepted, before this write runs. The log
             // learns of it here, so the next change recovers from a restore instead of overwriting it.
             if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
                 ShepherdLog.warning("automation runs not saved: the file is unreadable and was not rewritten")
-                openLock.withLock { writerDamage = AutomationFileDamage("run history", at: url, original: original, error: error) }
+                openLock.withLock {
+                    writerDamage = AutomationFileDamage("run history", at: url, original: original, error: error)
+                    generation += 1
+                }
                 return
             }
             do {
