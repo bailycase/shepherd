@@ -180,6 +180,58 @@ struct NativeThreadSendingTests {
         #expect(await send.value)
     }
 
+    /// An old host (no queue) is still on turn A when B is sent. A finishing saves an untagged message with a reply: that is
+    /// not B landing, so B's record stays and a later refusal still restores it.
+    @Test func anotherTurnFinishingDoesNotSettleASendTheHostLaterRefuses() async throws {
+        let hold = SendHold()
+        hold.answer = { _ in .failure(code: "rejected", message: "No") }
+        let running = F.snapshot(running: true, actions: ["send", "abort"], messages: [hi],
+                                 provisional: [F.user("first", id: "provisional:a"), F.assistant("working", status: "streaming", id: "r")])
+        let host = FakeHost(running)
+        let (store, loop) = await started(running, hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "second"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("first", id: "u1"), F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(store.submissions.first?.state == .sending && store.busy, "turn A ending is no evidence B was delivered")
+        hold.held = false
+        #expect(await send.value == false)
+        let record = try #require(store.submissions.first)
+        #expect(record.state == .failed)
+        #expect(store.restoreSubmission(record.id) != nil && store.draft == "second")
+    }
+
+    /// An accepted echo on a host without a queue is hidden only by a message the thread did not hold when the send was
+    /// captured: an earlier one with the same words, or another client's, leaves it showing.
+    @Test func anAcceptedEchoIsNotHiddenByAnEarlierMessageWithTheSameWords() async throws {
+        let hold = SendHold()
+        hold.held = false
+        let earlier = F.user("continue", id: "u0")
+        let start = F.snapshot(messages: [earlier, hi])
+        let host = FakeHost(start)
+        let (store, loop) = await started(start, hold: hold, host: host)
+        defer { loop.cancel(); store.stop() }
+        store.draft = "continue"
+        #expect(await store.send(delivery: .followUp))
+        let operation = try #require(hold.operation)
+        #expect(store.pending.count == 1)
+        host.snapshot = F.snapshot(revision: 2, messages: [earlier, hi])
+        await store.refresh()
+        #expect(store.pending.count == 1 && userRows(store).count == 2, "the earlier \"continue\" is not this send")
+        var theirs = F.user("continue", id: "u1")
+        theirs.operationID = UUID()
+        host.snapshot = F.snapshot(revision: 3, messages: [earlier, hi, theirs])
+        await store.refresh()
+        #expect(store.pending.count == 1, "another client's message is not this send")
+        var saved = F.user("continue", id: "u2")
+        saved.operationID = operation
+        host.snapshot = F.snapshot(revision: 4, messages: [earlier, hi, theirs, saved])
+        await store.refresh()
+        #expect(store.pending.isEmpty, "its own message replaces the echo")
+    }
+
     /// The composer's images go when the store captures the send, while the host has not answered, not after: a send the store
     /// never captured keeps them.
     @Test func theComposerLetsGoOfItsImagesAtCaptureNotAtTheAnswer() async throws {

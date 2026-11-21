@@ -680,25 +680,31 @@ public final class NativeThreadStore {
             for id in settled { echoAccepted[id] = nil }
             return
         }
-        let persisted = (messages + value.messages + value.provisional).filter { $0.role == "user" }
-        let texts = Set(persisted.map(Self.userText))
-        let landed = pending.filter { texts.contains(Self.userText($0)) }
-        guard !landed.isEmpty else { return }
-        for echo in landed {
+        // The user message each echo became: one the thread did not hold when the send was captured, that names this operation or
+        // none (another client's names its own), with the echo's words. An earlier message with the same words is never it.
+        let persisted = (messages + value.messages + value.provisional).filter { $0.role == "user" && !$0.entryID.hasPrefix("pending:") }
+        var settled: Set<String> = []
+        for echo in pending {
+            let operation = UUID(uuidString: String(echo.entryID.dropFirst("pending:".count)))
+            let earlier = operation.flatMap { captured[$0]?.earlier } ?? []
             let text = Self.userText(echo)
-            // The newest saved message with the echo's text is the one it became.
-            if let saved = persisted.last(where: { Self.userText($0) == text && aliases[$0.entryID] == nil }) {
-                aliases[saved.entryID] = echo.entryID
-                presentationDirty = 0
+            let candidates = persisted.filter {
+                Self.userText($0) == text && aliases[$0.entryID] == nil && !earlier.contains($0.entryID)
+                    && ($0.operationID == nil || $0.operationID == operation)
             }
+            // A message that names the operation is the one; else the newest saved one with the echo's words.
+            guard let saved = candidates.last(where: { $0.operationID != nil }) ?? candidates.last else { continue }
+            aliases[saved.entryID] = echo.entryID
+            presentationDirty = 0
+            settled.insert(echo.entryID)
         }
-        pending.removeAll { texts.contains(Self.userText($0)) }
+        pending.removeAll { settled.contains($0.entryID) }
     }
 
     /// Whether the history holds the send `id` captured as `capture`: pi's saved message names its operation; else (a host that
     /// never does) a user message with its words after what the thread held then; else a user message of other words (pi
     /// expanded a command) once the turn after it is over. Never an earlier message with the same words.
-    private func landed(_ id: UUID, _ capture: (text: String, after: String?, earlier: Set<String>)) -> Bool {
+    private func landed(_ id: UUID, _ capture: (text: String, after: String?, earlier: Set<String>), inferred: Bool) -> Bool {
         let rows = messages + (snapshot?.provisional ?? [])
         if rows.contains(where: { $0.operationID == id && $0.role == "user" && !$0.entryID.hasPrefix("pending:") }) { return true }
         var tail = ArraySlice(messages)
@@ -711,7 +717,10 @@ public final class NativeThreadStore {
                 && ($0.operationID == nil || $0.operationID == id)
         }
         if saved.contains(where: { Self.userText($0) == capture.text }) { return true }
-        guard snapshot?.running == false, let first = saved.first, let at = tail.firstIndex(where: { $0.entryID == first.entryID }) else { return false }
+        // A reply to some message of other words is only a guess: it settles the echo of a send the host took, never the send
+        // still waiting for its answer (its record restores the draft if the host refuses). A turn another client started, or
+        // the one the thread was already running, looks the same.
+        guard inferred, snapshot?.running == false, let first = saved.first, let at = tail.firstIndex(where: { $0.entryID == first.entryID }) else { return false }
         return tail[at...].contains { $0.role == "assistant" }
     }
 
@@ -722,8 +731,9 @@ public final class NativeThreadStore {
         captured = captured.filter { id, _ in inFlight.contains(id) || pending.contains { $0.entryID == "pending:\(id.uuidString)" } }
         guard !captured.isEmpty else { return }
         var freed = false
-        for (id, capture) in captured where landed(id, capture) {
+        for (id, capture) in captured {
             let echo = "pending:\(id.uuidString)"
+            guard landed(id, capture, inferred: pending.contains { $0.entryID == echo }) else { continue }
             if pending.contains(where: { $0.entryID == echo }) {
                 pending.removeAll { $0.entryID == echo }
                 echoAccepted[echo] = nil
