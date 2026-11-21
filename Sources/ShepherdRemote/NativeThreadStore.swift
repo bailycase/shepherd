@@ -221,9 +221,9 @@ public final class NativeThreadStore {
     /// The words of each send the store captured and the host has not answered, as the thread draws them
     /// (`NativeThreadMessage.sendingStatus`), and whether it waits behind the reply still streaming.
     @ObservationIgnored private var outgoing: [UUID: (message: NativeThreadMessage, queued: Bool)] = [:]
-    /// What each send was captured against: its words and the last message the thread held then. A host that never names
-    /// the send on its saved message (an older one) is still matched by what came after (`landed`).
-    @ObservationIgnored private var captured: [UUID: (text: String, after: String?)] = [:]
+    /// What each send was captured against: its words, the last message the thread held then, and the user messages it held. A
+    /// host that never names the send on its saved message (an older one) is still matched by what came after (`landed`).
+    @ObservationIgnored private var captured: [UUID: (text: String, after: String?, earlier: Set<String>)] = [:]
     /// Sends whose message the history showed before the host answered them: their answer adds no echo.
     @ObservationIgnored private var landedSends: Set<UUID> = []
     /// The accepted send's turn was already in the thread as "Sending…" when the host took it (a send while a turn runs
@@ -698,16 +698,18 @@ public final class NativeThreadStore {
     /// Whether the history holds the send `id` captured as `capture`: pi's saved message names its operation; else (a host that
     /// never does) a user message with its words after what the thread held then; else a user message of other words (pi
     /// expanded a command) once the turn after it is over. Never an earlier message with the same words.
-    private func landed(_ id: UUID, _ capture: (text: String, after: String?)) -> Bool {
+    private func landed(_ id: UUID, _ capture: (text: String, after: String?, earlier: Set<String>)) -> Bool {
         let rows = messages + (snapshot?.provisional ?? [])
         if rows.contains(where: { $0.operationID == id && $0.role == "user" && !$0.entryID.hasPrefix("pending:") }) { return true }
         var tail = ArraySlice(messages)
-        if let after = capture.after {
-            // What the thread held then has left the loaded history: nothing says where the send would be.
-            guard let index = messageIndex[after] else { return false }
-            tail = messages[(index + 1)...]
+        // What the thread held then may have left the loaded history (a replacement page): then the send is any user message
+        // the thread did not hold, which `earlier` tells apart.
+        if let after = capture.after, let index = messageIndex[after] { tail = messages[(index + 1)...] }
+        // A row that names another operation is another client's message, never this send.
+        let saved = tail.filter {
+            $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") && !capture.earlier.contains($0.entryID)
+                && ($0.operationID == nil || $0.operationID == id)
         }
-        let saved = tail.filter { $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") }
         if saved.contains(where: { Self.userText($0) == capture.text }) { return true }
         guard snapshot?.running == false, let first = saved.first, let at = tail.firstIndex(where: { $0.entryID == first.entryID }) else { return false }
         return tail[at...].contains { $0.role == "assistant" }
@@ -2433,7 +2435,7 @@ public final class NativeThreadStore {
     /// While pi works, `delivery` says whether the message waits in the queue (`followUp`) or
     /// is steered in; while pi is idle it goes at once either way.
     @discardableResult
-    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async -> Bool {
+    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery, onCapture: (() -> Void)? = nil) async -> Bool {
         guard hasDraft || (!images.isEmpty && supportedActions.contains("sendImages")), await readyToAct() else { return false }
         let typed = draft
         let files = attachedFiles
@@ -2460,7 +2462,7 @@ public final class NativeThreadStore {
                             designReferences: references.isEmpty ? nil : references.map(\.record),
                             browserElements: elements.isEmpty ? nil : elements.map(\.element)),
                       operation: operation, current: current, sentText: text, typed: typed, files: files, references: references,
-                      elements: elements, delivery: delivery, images: attached ?? [])
+                      elements: elements, delivery: delivery, images: attached ?? [], onCapture: onCapture)
     }
 
     /// Whether the draft has something to send: words, attached files, design references, or
@@ -2909,7 +2911,8 @@ public final class NativeThreadStore {
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
                          typed: String? = nil, files: [NativeAttachedFile] = [], references: [NativeAttachedReference] = [],
                          elements: [NativeAttachedElement] = [],
-                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async -> Bool {
+                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = [],
+                         onCapture: (() -> Void)? = nil) async -> Bool {
         guard let request else {
             // A thread shown once and hidden since keeps what it showed (`ready`) but has no host to ask.
             notice = "This thread isn't connected right now, so nothing was done. Open it and try again."
@@ -2958,13 +2961,15 @@ public final class NativeThreadStore {
             // older host's echo follows the turn), so the reply's own rows are never moved by it.
             outgoing[operation] = (echo(operation, text: sentText, status: NativeThreadMessage.sendingStatus, images: images.count,
                                         steered: false, elements: elements), current.running)
-            captured[operation] = (sentText.trimmingCharacters(in: .whitespacesAndNewlines), messages.last?.entryID)
+            captured[operation] = (sentText.trimmingCharacters(in: .whitespacesAndNewlines), messages.last?.entryID,
+                                   Set(messages.filter { $0.role == "user" }.map(\.entryID)))
         }
         if let submission {
             let interval = Self.signposter.beginInterval("Thread submit capture")
             submissions.append(submission)
             retainedSubmissionBytes += submissionBytes
             clearCapturedDraft(submission.typed, files: files, references: references, elements: elements)
+            onCapture?()
             Self.signposter.endInterval("Thread submit capture", interval)
         }
         defer {

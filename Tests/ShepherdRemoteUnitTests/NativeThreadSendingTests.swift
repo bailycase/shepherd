@@ -140,6 +140,65 @@ struct NativeThreadSendingTests {
         #expect(await send.value)
     }
 
+    /// The history is replaced by a page that no longer holds the message the thread held at the send: the delivered
+    /// message is still found, by the user messages that were not there before.
+    @Test func aReplacementPageWithoutTheAnchorStillShowsTheSendLanding() async throws {
+        let hold = SendHold()
+        let earlier = F.user("continue", id: "u0")
+        let host = FakeHost(F.snapshot(messages: [earlier, hi]))
+        let (store, loop) = await started(F.snapshot(messages: [earlier, hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "continue"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [F.assistant("later", id: "a1"), F.user("continue", id: "u1"), F.assistant("ok", id: "a2")])
+        await store.refresh()
+        #expect(store.submissions.isEmpty && !store.busy, "the delivered message settles the send")
+        #expect(userRows(store).map(\.id) == ["u1"])
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// Another client's turn (it names its own operation) is not this send landing, so the record that restores a
+    /// refused draft stays.
+    @Test func anotherClientsTurnDoesNotSettleThisSend() async throws {
+        let hold = SendHold()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "hello"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        for words in ["hello", "something else"] {
+            var theirs = F.user(words, id: "u1")
+            theirs.operationID = UUID()
+            host.snapshot = F.snapshot(revision: 2, messages: [hi, theirs, F.assistant("done", id: "a2")])
+            await store.refresh()
+            #expect(store.submissions.first?.state == .sending && store.busy, "\"\(words)\": still this send's to settle")
+        }
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// The composer's images go when the store captures the send, while the host has not answered, not after: a send the store
+    /// never captured keeps them.
+    @Test func theComposerLetsGoOfItsImagesAtCaptureNotAtTheAnswer() async throws {
+        let hold = SendHold()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        var captures = 0
+        #expect(await store.send(images: [], delivery: .followUp) { captures += 1 } == false, "nothing to send, nothing captured")
+        #expect(captures == 0)
+        store.draft = "look"
+        let send = Task { await store.send(images: [], delivery: .followUp) { captures += 1 } }
+        await until { hold.operation != nil }
+        #expect(captures == 1, "captured before the host answered")
+        hold.held = false
+        #expect(await send.value)
+        #expect(captures == 1)
+    }
+
     /// A send the host took, whose saved message reads differently from the words sent (a command or skill pi expanded):
     /// once its turn is over the echo does not wait for a match that never comes.
     @Test(arguments: [true, false])
