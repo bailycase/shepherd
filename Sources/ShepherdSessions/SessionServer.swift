@@ -4288,7 +4288,7 @@ public final class SessionServer: @unchecked Sendable {
         let timeout = Self.directoryReadTimeout
         let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
         let enumerate = enumerateRemoteDirectory
-        let task = Task.detached(priority: .userInitiated) { [weak self] in
+        let task = Task.detached(executorPreference: BlockingTaskExecutor.shared, priority: .userInitiated) { [weak self] in
             let reply: RemoteReply
             do {
                 reply = try Self.directoryListing(id: id, path: path, deadline: deadline, enumerate: enumerate)

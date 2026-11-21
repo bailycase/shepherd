@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdCore
 import ShepherdUI
 
 /// The app's start: the session server acquires the workspace (ownership, state, Changes
@@ -28,7 +29,7 @@ final class ShepherdLaunch<Model: AnyObject> {
         begun = true
         let start = start
         return Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) {
+            let result = await Task.detached(executorPreference: BlockingTaskExecutor.shared, priority: .userInitiated) {
                 let interval = AppSignposts.launch.beginInterval("server start")
                 defer { AppSignposts.launch.endInterval("server start", interval) }
                 return Result { try start() }

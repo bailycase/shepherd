@@ -112,7 +112,10 @@ A test that needs process-wide state anyway runs as an exit test
 touches the user's support directory, preferences, pi configuration, `~/.agents` or a running Shepherd.
 
 **Time limits.** Integration and preview suites carry `.integrationTimeLimit` (two minutes per
-test, so a hang fails by name). `@MainActor` suites carry `.mainActorExclusive` instead and never
+test). Swift Testing records an issue and requests cancellation from the cooperative pool. It
+cannot interrupt a blocking call or report on time if that pool is starved. Use async waits;
+use `blocking` when testing an API that must block, and `testHop` to access queue-owned
+state from an async test. `@MainActor` suites carry `.mainActorExclusive` instead and never
 a `.timeLimit` beside it: that clock also runs while the test waits for the main thread.
 `.serialized` orders tests within a suite and isolates nothing; every suite of a target shares
 one process.

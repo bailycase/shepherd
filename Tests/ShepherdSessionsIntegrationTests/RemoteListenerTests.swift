@@ -426,23 +426,37 @@ struct RemoteListenerTests {
         let r = try RemoteHost()
         defer { r.stop() }
         let server = r.server
-        server.stopRemoteListener()
-        let late = SessionServer.ListenerClose()
-        server.queue.sync { server.remoteListenerClosing = late }
+        await blocking { server.stopRemoteListener() }
+        let late = Locked(SessionServer.ListenerClose())
+        await server.queue.testHop { server.remoteListenerClosing = late.current }
+        defer {
+            // Release the blocking caller even if the test fails before it simulates the close.
+            server.queue.async {
+                guard server.remoteListenerClosing === late.current else { return }
+                server.remoteListenerClosing = nil
+                late.current.markClosed()
+            }
+        }
 
         // The stop is under way once its waiter is registered; only then does the deadline start to matter.
         server.remoteListenerExitDeadline = .milliseconds(200)
         let closed = Locked(false)
         let returnedAfterClose = Locked<Bool?>(nil)
-        let stopping = Task.detached { server.stopRemoteListener(); returnedAfterClose.withValue { $0 = closed.current } }
-        try await eventually("the stop to wait for the close") { server.queue.sync { late.waiters.count } == 1 }
+        let stopping = Task {
+            await blocking {
+                server.stopRemoteListener()
+                returnedAfterClose.withValue { $0 = closed.current }
+            }
+        }
+        try await eventually("the stop to wait for the close") { await server.queue.testHop { late.current.waiters.count } == 1 }
 
         // This waiter registers after the stop's and gives up later than any deadline the stop could have started, so
         // by the time it does, a stop that honoured the deadline has already returned.
-        #expect(!server.awaitRemoteListenerClosed(within: .milliseconds(400)), "the exit deadline passes without a close")
+        let closedWithinDeadline = await blocking { server.awaitRemoteListenerClosed(within: .milliseconds(400)) }
+        #expect(!closedWithinDeadline, "the exit deadline passes without a close")
         #expect(returnedAfterClose.current == nil, "the stop returned before the port closed")
 
-        server.queue.sync { server.remoteListenerClosing = nil; closed.withValue { $0 = true }; late.markClosed() }
+        await server.queue.testHop { server.remoteListenerClosing = nil; closed.withValue { $0 = true }; late.current.markClosed() }
         await stopping.value
         #expect(returnedAfterClose.current == true, "the stop returned only after the port closed")
     }

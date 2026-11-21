@@ -629,7 +629,7 @@ public final class NativeThreadStore {
     /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
     @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
     /// A non-cooperative synchronous parser gate used to verify actual worker reservations.
-    @ObservationIgnored var duringProseParse: (@Sendable () -> Void)?
+    @ObservationIgnored var duringProseParse: (@Sendable () async -> Void)?
     /// Parses handed off main (tests).
     @ObservationIgnored private(set) var offMainParses = 0
 
@@ -1366,8 +1366,8 @@ public final class NativeThreadStore {
                 return
             }
             let interval = Self.signposter.beginInterval("Thread Markdown parse", id: Self.signposter.makeSignpostID())
+            await duringParse?()
             let onMain = Thread.isMainThread
-            duringParse?()
             let value = parse(text)
             Self.signposter.endInterval("Thread Markdown parse", interval)
             await MainActor.run {

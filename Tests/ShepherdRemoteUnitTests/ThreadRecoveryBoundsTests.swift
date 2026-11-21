@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ShepherdProtocol
+import ShepherdTestKit
 @testable import ShepherdRemote
 
 @Suite(.timeLimit(.minutes(1)))
@@ -237,7 +238,7 @@ struct ThreadRecoveryBoundsTests {
         let gate = NonCooperativeParseGate()
         defer { gate.release() }
         let store = manualStore()
-        store.duringProseParse = { gate.hold() }
+        store.duringProseParse = { await blocking { gate.hold() } }
         let long = String(repeating: "word ", count: 2_000)
         func snapshot(_ generation: Int) -> NativeThreadSnapshot {
             F.snapshot(generation: "g\(generation)", messages: [
@@ -268,8 +269,8 @@ struct ThreadRecoveryBoundsTests {
     }
 }
 
-/// Blocks actual detached worker threads without honoring task cancellation. No sleeps or
-/// polling: a stream reports entry, and the test explicitly opens the condition gate.
+/// Holds a parse reservation on a dedicated thread without honoring cancellation. A stream
+/// reports entry, and the test explicitly opens the condition gate.
 private final class NonCooperativeParseGate: @unchecked Sendable {
     private let condition = NSCondition()
     private var held = true
