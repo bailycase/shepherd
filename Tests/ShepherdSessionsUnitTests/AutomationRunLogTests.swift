@@ -502,6 +502,43 @@ struct AutomationRunLogDamageTests {
         #expect(try Self.ids(at: url) == ["00000000-0000-4000-8000-000000000010", third.id.uuidString.lowercased()])
     }
 
+    /// A change with nothing to do (here, no unread run) must not read the history file: the damage written
+    /// behind the log's back stays unseen.
+    @Test func anUpdateThatChangesNothingDoesNotReadTheHistoryFile() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        log.markRead()
+        log.flush()
+        try Data("{".utf8).write(to: url)
+        #expect(!log.markRead())
+        #expect(log.problem == nil)
+    }
+
+    /// The server's recheck waits only for the writer's short commit, not for it to stage its replacement.
+    @Test func aRecheckDoesNotWaitForAWriterThatHasStagedItsReplacement() throws {
+        let (dir, url) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = AutomationRunLog(url: url)
+        let id = AutomationRunLogTests.automation.id
+        let reached = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        log.writerPaused = { point in
+            guard point == .staged else { return }
+            reached.signal()
+            resume.wait()
+        }
+        log.recordFailure(id, trigger: nil, triggerURL: nil, message: "First", now: Self.newRun)
+        reached.wait()
+        DispatchQueue.global().async { _ = log.recheck(); done.signal() }
+        let finished = done.wait(timeout: .now() + 5) == .success
+        resume.signal()
+        log.flush()
+        #expect(finished)
+        #expect(try Self.ids(at: url).count == 1)
+    }
+
     /// A backup restored while the log still shows the damage: the first change builds on it, not on what was in memory.
     @Test func theFirstChangeAfterARepairKeepsTheRestoredHistory() throws {
         let (dir, url) = try Self.scratch()

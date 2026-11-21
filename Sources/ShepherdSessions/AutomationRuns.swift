@@ -28,12 +28,14 @@ final class AutomationRunLog: @unchecked Sendable {
     private(set) var runs: [AutomationID: [AutomationRun]] = [:]
     let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
     private let openLock = NSLock()
-    /// Makes the writer's last generation check, read and file replacement one step against the
-    /// server's read and generation bump, so a restore the server saw can't be written over by a
-    /// writer that checked earlier. Taken before `openLock`, never the other way round.
+    /// Makes the writer's last generation check and rename one step against the server's read and
+    /// generation bump, so a restore the server saw can't be written over by a writer that checked
+    /// earlier. Held only for that check and the rename; the writer reads, encodes and stages its
+    /// replacement before taking it. Taken before `openLock`, never the other way round.
     private let fileLock = NSLock()
-    /// Where a test can hold the queued writer: after its first generation check, and after it read damage and before it reports it.
-    enum WriterPoint { case checked, readDamage }
+    /// Where a test can hold the queued writer: after its first generation check, after it staged its
+    /// replacement and before the commit, and after it read damage and before it reports it.
+    enum WriterPoint { case checked, staged, readDamage }
     var writerPaused: (WriterPoint) -> Void = { _ in }
     private var published: [AutomationID: AutomationRun] = [:]
     private var publishedProblem: String?
@@ -370,17 +372,18 @@ final class AutomationRunLog: @unchecked Sendable {
     /// `change` had nothing to do. The disk is checked before the save because it can go bad while
     /// the host runs. If the queued writer found damage meanwhile, the check may have recovered a
     /// restored file under the copy, so `change` is applied again to that history until none is
-    /// found, and the write carries the generation its copy was built under. `change` runs on a
-    /// copy and may run more than once.
+    /// found, and the write carries the generation its copy was built under. A change that finds
+    /// nothing to do never reads the file. `change` runs on a copy and may run more than once.
     @discardableResult
     private func mutate(_ change: (inout [AutomationID: [AutomationRun]]) -> Bool) -> Bool {
         var seen: Int
         var next: [AutomationID: [AutomationRun]]
         repeat {
             seen = writerGeneration
-            guard refresh(reading: true) else { return false }
+            guard refresh(reading: false) else { return false }
             next = runs
             guard change(&next) else { return false }
+            guard refresh(reading: true) else { return false }
         } while writerGeneration != seen
         runs = next
         publish()
@@ -398,7 +401,7 @@ final class AutomationRunLog: @unchecked Sendable {
             setDamage(seen)
         }
         guard damage != nil || reading else { return true }
-        // The read and the bump are one step against the writer's check and replacement.
+        // The read and the bump are one step against the writer's final check and rename.
         let loaded = fileLock.withLock { () -> PersistedFile<File> in
             let loaded = PersistedFile<File>.load(from: url)
             if case .damaged = loaded, damage == nil { openLock.withLock { generation += 1 } }
@@ -460,30 +463,42 @@ final class AutomationRunLog: @unchecked Sendable {
             writerPaused(.checked)
             // The file can go bad after the change was accepted, before this write runs. The log
             // learns of it below, so the next change recovers from a restore instead of overwriting it.
-            let damaged: AutomationFileDamage? = fileLock.withLock {
-                // Checked again: the server may have found damage, and a restore may have followed, since the first check.
+            if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
+                reportDamage(AutomationFileDamage("run history", at: url, original: original, error: error), built: built)
+                return
+            }
+            // Staged off the lock; only the generation check and the rename are serialized with the server.
+            let staged = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                try encoder.encode(file).write(to: staged)
+            } catch {
+                ShepherdLog.warning("automation runs not saved: \(error)")
+                try? FileManager.default.removeItem(at: staged)
+                return
+            }
+            writerPaused(.staged)
+            let renamed: Int32? = fileLock.withLock {
+                // The server may have found damage, and a restore may have followed, since the first check.
                 guard built == writerGeneration else { return nil }
-                if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
-                    return AutomationFileDamage("run history", at: url, original: original, error: error)
-                }
-                do {
-                    let encoder = JSONEncoder()
-                    encoder.outputFormatting = [.sortedKeys]
-                    try encoder.encode(file).write(to: url, options: .atomic)
-                } catch {
-                    ShepherdLog.warning("automation runs not saved: \(error)")
-                }
-                return nil
+                return rename(staged.path, url.path) == 0 ? 0 : errno
             }
-            guard let damaged else { return }
-            ShepherdLog.warning("automation runs not saved: the file is unreadable and was not rewritten")
-            writerPaused(.readDamage)
-            openLock.withLock {
-                // The server may have found this damage meanwhile, recovered and queued changes under a newer generation.
-                guard built == generation else { return }
-                writerDamage = damaged
-                generation += 1
+            if renamed != 0 {
+                try? FileManager.default.removeItem(at: staged)
+                if let renamed { ShepherdLog.warning("automation runs not saved: rename failed (errno \(renamed))") }
             }
+        }
+    }
+
+    private func reportDamage(_ damaged: AutomationFileDamage, built: Int) {
+        ShepherdLog.warning("automation runs not saved: the file is unreadable and was not rewritten")
+        writerPaused(.readDamage)
+        openLock.withLock {
+            // The server may have found this damage meanwhile, recovered and queued changes under a newer generation.
+            guard built == generation else { return }
+            writerDamage = damaged
+            generation += 1
         }
     }
 }
