@@ -220,6 +220,9 @@ test("a stub sitting where a value belongs is found, wherever it is; text that o
   assert.equal(placeholderIn({ edits: [{ oldText: "x", newText: argumentStub(5) }] }), "arguments.edits[0].newText");
   assert.equal(placeholderIn({ path: resultStub("read", "src/[id].ts", 2000) }), "arguments.path", "a path with brackets does not hide a result stub");
   assert.equal(placeholderIn({ path: resultStub("mcp__a__b", "", 120) }), "arguments.path");
+  assert.equal(placeholderIn({ content: resultStub("read", "", 1000) }), "arguments.content", "the producer writes 1k for 1000 tokens");
+  assert.equal(placeholderIn({ content: resultStub("read", "", 1000).replace("about 1k", "about 1000") }), undefined, "1000 is a spelling the producer never writes");
+  assert.equal(placeholderIn({ content: resultStub("read", "", 1000).replace("about 1k", "about 1.0k") }), undefined);
   assert.equal(placeholderIn({ n: argumentStub(5).replace("[5", "[05") }), undefined, "a count that is not the one the producer wrote is not a stub");
   for (const fine of [{ command: '[ -n "removed from context" ]' }, { command: "[ -n 'a' ] && [ -z \"x output removed from context: about 2k tokens\" ]" }, { command: "rg 'removed from context' Sources" }, { content: `notes: ${argumentStub(5)} and more` }, { content: "[ -f a ] && echo removed from context" }, { n: 3, flag: true, none: null }, "[abc]", undefined, null]) assert.equal(placeholderIn(fine), undefined, JSON.stringify(fine));
 });
@@ -232,7 +235,7 @@ test("a stub is found at any depth, and a large bracket-led string is checked in
   cyclic.a.push(cyclic);
   assert.equal(placeholderIn(cyclic), undefined);
   const started = Date.now();
-  for (const body of ["[".repeat(300_000), `[${"a ] [ ".repeat(50_000)}`, `[${"x output removed from context: about ".repeat(8_000)}`]) assert.equal(placeholderIn({ content: body }), undefined);
+  for (const body of ["[".repeat(300_000), `[${"a ] [ ".repeat(50_000)}`, `[${"x output removed from context: about ".repeat(8_000)}1000${resultStub("", "", 0).slice(resultStub("", "", 0).indexOf(" tokens."))}`]) assert.equal(placeholderIn({ content: body }), undefined);
   assert.ok(Date.now() - started < 2000, "no backtracking over bracket-led text");
 });
 

@@ -172,6 +172,9 @@ export const argumentStub = (chars: number) => `[${chars} characters removed fro
 // What sessions from before the reword hold, and what a model may have written out.
 const legacyArgumentStub = (chars: number) => `[${chars} characters removed from context]`;
 
+// True when `spelled` is exactly what `kilo` writes for some token count.
+const isKilo = (spelled: string) => /^\d+(\.\d)?k?$/.test(spelled) && kilo(parseFloat(spelled) * (spelled.endsWith("k") ? 1000 : 1)) === spelled;
+
 // True when the whole string, give or take whitespace, is one of the stubs above. One anchored check and one backward
 // search for the marker, so a large string costs a single pass at most.
 function isStub(value: string): boolean {
@@ -187,7 +190,7 @@ function isStub(value: string): boolean {
     if (!text.endsWith(part.tail)) continue;
     const end = text.length - part.tail.length;
     const at = text.lastIndexOf(part.mark, end - part.mark.length);
-    if (at > 1 && /^\d+(\.\d)?k?$/.test(text.slice(at + part.mark.length, end))) return true;
+    if (at > 1 && isKilo(text.slice(at + part.mark.length, end))) return true;
   }
   return false;
 }
