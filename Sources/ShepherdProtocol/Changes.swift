@@ -403,12 +403,16 @@ public struct ChangesBranches: Codable, Hashable, Sendable {
     /// Bases picked before in this repository, most recent first.
     public var recents: [String]
     public var branches: [ChangesBranch]
+    /// Host recovery instructions when saved recents can't be read. The branch list is still usable.
+    public var recentsProblem: String?
 
-    public init(defaultBase: String?, pullRequestBase: String? = nil, recents: [String] = [], branches: [ChangesBranch]) {
+    public init(defaultBase: String?, pullRequestBase: String? = nil, recents: [String] = [], branches: [ChangesBranch],
+                recentsProblem: String? = nil) {
         self.defaultBase = defaultBase
         self.pullRequestBase = pullRequestBase
         self.recents = recents
         self.branches = branches
+        self.recentsProblem = recentsProblem
     }
 }
 
