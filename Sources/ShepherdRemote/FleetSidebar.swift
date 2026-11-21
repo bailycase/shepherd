@@ -35,6 +35,9 @@ public struct FleetSidebarGroups: Equatable, Sendable {
     public var recents: [FleetThreadRow] = []
     /// Triggered automations' unpinned run threads, one group per automation, the group with the newest run first.
     public var runs: [FleetRunGroup] = []
+    /// Automations with a run of their own on screen, in `FleetModel.automations` order. One whose run waits on you is in
+    /// Needs you, once, so it is left out here.
+    public var automationRuns: [FleetAutomationRow] = []
 
     public init() {}
 }
@@ -239,6 +242,8 @@ public struct FleetSidebarState: Equatable, Sendable {
             }
         }
         let running = Set(model.running.map(\.ref))
+        let asking = Set(model.needsYou.map(\.ref))
+        groups.automationRuns = model.automations.filter { row in row.run.map { !asking.contains($0) } ?? false }
         var runRows: [AutomationKey: [FleetThreadRow]] = [:]
         var runOrder: [AutomationKey] = []
         for row in model.recents {

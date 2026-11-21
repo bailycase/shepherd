@@ -212,12 +212,13 @@ struct SidebarLists: Equatable {
 
     var all: [SidebarListRow] { sections.flatMap(\.rows) }
 
-    /// Needs you, Designs and Automations have no digit; folded groups have no visible hint or target.
+    /// Needs you, Designs and Automations have no digit; folded groups and the threads under a closed sender have no
+    /// visible hint or target. The badges and ⌘1–9 both read this.
     var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
 
-    func shortcutRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
+    func shortcutRows(collapsed: Set<SidebarActivitySection>, openFolds: Set<String> = []) -> [SidebarListRow] {
         sections.filter { ![.needsYou, .designs, .automations].contains($0.section) && !collapsed.contains($0.section) }
-            .flatMap(\.rows).filter { $0.id.dispatchID == nil }
+            .flatMap { $0.rows.foldingSent(open: openFolds) }.filter { $0.id.dispatchID == nil }
     }
 
     func presented(selected: SidebarRowID?, shortcuts: Bool,
@@ -226,7 +227,7 @@ struct SidebarLists: Equatable {
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents] {
             lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
         }
-        let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed).prefix(9).enumerated()
+        let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed, openFolds: openFolds).prefix(9).enumerated()
             .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs, \.automations] {
             for index in lists[keyPath: path].indices {

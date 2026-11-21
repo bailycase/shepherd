@@ -67,8 +67,7 @@ struct MobileCommandTarget {
         let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
         // The sidebar's order, without projects, designs, or runs in collapsed groups.
         let asks = groups.needsYou.filter { $0.origin != .project }.map(\.ref)
-        let waiting = Set(model.needsYou.map(\.ref))
-        let automationRuns = model.automations.compactMap(\.run).filter { !waiting.contains($0) }
+        let automationRuns = groups.automationRuns.compactMap(\.run)
             + groups.runs.filter(\.expanded).flatMap { $0.rows.map(\.ref) }
         return asks + automationRuns + groups.working.map(\.ref) + groups.done.map(\.ref)
             + groups.pinned.map(\.ref) + groups.recents.filter { $0.design == nil }.map(\.ref)
