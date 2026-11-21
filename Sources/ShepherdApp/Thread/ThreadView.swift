@@ -109,6 +109,10 @@ struct ThreadView: View {
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
     @State private var historyAnchor = ThreadHistoryAnchor()
+    #if DEBUG
+    @State private var measuredHistory = ThreadMeasuredHistory()
+    @Environment(\.shDensity) private var historyDensity
+    #endif
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
@@ -270,7 +274,8 @@ struct ThreadView: View {
                     .background {
                         #if DEBUG
                         ThreadScrollViewFinder(guardian: tailGuard,
-                                               historyAnchor: ThreadScrollValidation.measuredHistory ? historyAnchor : nil)
+                                               historyAnchor: ThreadScrollValidation.measuredHistory ? historyAnchor : nil,
+                                               measuredHistory: ThreadScrollValidation.measuredHistory ? measuredHistory : nil)
                         #else
                         ThreadScrollViewFinder(guardian: tailGuard)
                         #endif
@@ -353,6 +358,9 @@ struct ThreadView: View {
                     tailGuard.suspect()
                     // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
                     if historyAnchor.isEngaged { historyAnchor.moved() }
+                    #if DEBUG
+                    if ThreadScrollValidation.measuredHistory { measuredHistory.queueWindow() }
+                    #endif
                 }
                 .onScrollPhaseChange { old, phase, context in
                     scrollPhaseChanged(from: old, to: phase, distance: Self.distanceFromBottom(context.geometry))
@@ -623,19 +631,42 @@ struct ThreadView: View {
         if !parked {
             let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
                                  detached: !follower.sticky)
-            ThreadHistoryColumn(key: key) {
-                #if DEBUG
-                if ThreadScrollValidation.measuredHistory {
+            #if DEBUG
+            if ThreadScrollValidation.measuredHistory {
+                let settings = ThreadMeasuredHistory.Settings(session: store.sessionKey, textScale: ThemeStore.shared.textScale,
+                                                              density: historyDensity)
+                var measuredKey = key
+                let _ = measuredKey?.heightSettings = settings
+                ThreadHistoryColumn(key: measuredKey, measuredHistory: measuredHistory) { built in
+                    measuredHistory.update(history, spacing: spacing, settings: settings)
                     return AnyView(VStack(alignment: .leading, spacing: spacing) {
                         ForEach(history) { row in
-                            rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                            ThreadRowSlot(id: row.id, height: measuredHistory.height(of: row.id) ?? 0, built: built.contains(row.id)) {
+                                rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
+                                        historyRowID: historyRowID, slotOwnsID: true)
+                            }
                         }
                     }
+                    .background { ThreadMeasuredHistory.Probe(history: measuredHistory) }
                     .scrollTargetLayout()
                     .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
                 }
-                #endif
-                return AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+            } else {
+                lazyHistoryColumn(history, key: key, spacing: spacing, dormant: dormant, releasing: releasing, stack: stack,
+                                  running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+            }
+            #else
+            lazyHistoryColumn(history, key: key, spacing: spacing, dormant: dormant, releasing: releasing, stack: stack,
+                              running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+            #endif
+        }
+    }
+
+    private func lazyHistoryColumn(_ history: ArraySlice<NativeThreadRow>, key: ThreadHistoryCache.Key?, spacing: CGFloat,
+                                   dormant: Bool, releasing: Bool, stack: Int, running: Bool, catchingUp: Bool,
+                                   arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
+            ThreadHistoryColumn(key: key) {
+                AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                     ForEach(history) { row in
                         rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                     }
@@ -649,7 +680,6 @@ struct ThreadView: View {
                 // its restore is done: the two never change it in the same update.
                 .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
             }
-        }
     }
 
     /// What the history's rows are built from. None while there is no history, and for a thread whose rows also read what cannot be
@@ -800,7 +830,7 @@ struct ThreadView: View {
     /// row that could be nothing would make it evaluate every row of a long thread on each
     /// streamed chunk.
     @ViewBuilder private func rowView(_ row: NativeThreadRow, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
-                                      historyRowID: String?) -> some View {
+                                      historyRowID: String?, slotOwnsID: Bool = false) -> some View {
         let _ = SHRenderProbe.tick("thread.rowBuilder")
         ThreadRowLayer {
             // One view serves the streaming shell and the reply it becomes, so the turn's end updates its turn in place.
@@ -811,8 +841,13 @@ struct ThreadView: View {
         }
         .id(row.id)
         .background {
+            #if DEBUG
+            ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id, measuredHistory: slotOwnsID ? measuredHistory : nil)
+                .accessibilityHidden(true)
+            #else
             ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id)
                 .accessibilityHidden(true)
+            #endif
         }
         .background {
             if row.id == historyRowID {
@@ -971,7 +1006,12 @@ struct ThreadView: View {
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
-        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey)
+        #if DEBUG
+        let measuredScroll = ThreadScrollValidation.measuredHistory ? tailGuard.scrollView() : nil
+        #else
+        let measuredScroll: NSScrollView? = nil
+        #endif
+        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey, measuredScroll: measuredScroll)
         Task {
             await store.loadOlder()
             historyAnchor.finished(token, firstID: store.rows.first?.id)
@@ -1335,6 +1375,10 @@ final class ThreadHistoryCache {
         let actions: [Bool]
         let store: ObjectIdentifier
         let tailGuard: ObjectIdentifier
+        #if DEBUG
+        var builtRange: Set<String> = []
+        var heightSettings: ThreadMeasuredHistory.Settings?
+        #endif
 
         /// The rows of `arrived` that are among the `history`'s. Rows arrive at the thread's tail, so unless a batch larger than the
         /// tail arrived at once, every one is in `tail` and only it is looked at; the history is walked only for such a batch.
@@ -1374,13 +1418,39 @@ private struct ThreadHistoryColumn: View {
     let key: ThreadHistoryCache.Key?
     let make: () -> AnyView
     @State private var cache = ThreadHistoryCache()
+    #if DEBUG
+    private var measuredHistory: ThreadMeasuredHistory?
+    private var makeMeasured: ((Set<String>) -> AnyView)?
+    #endif
 
     init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
         self.key = key
         self.make = make
     }
 
-    var body: some View { cache.view(for: key, make: make) }
+    #if DEBUG
+    init(key: ThreadHistoryCache.Key?, measuredHistory: ThreadMeasuredHistory, make: @escaping (Set<String>) -> AnyView) {
+        self.key = key
+        self.make = { make([]) }
+        self.measuredHistory = measuredHistory
+        self.makeMeasured = make
+    }
+    #endif
+
+    var body: some View {
+        #if DEBUG
+        if let measuredHistory, let makeMeasured {
+            let built = measuredHistory.builtRange
+            var key = key
+            let _ = key?.builtRange = built
+            cache.view(for: key) { makeMeasured(built) }
+        } else {
+            cache.view(for: key, make: make)
+        }
+        #else
+        cache.view(for: key, make: make)
+        #endif
+    }
 }
 
 /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.

@@ -27,29 +27,31 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var prependHeight: CGFloat?
     @ObservationIgnored private var samePassPending = false
 
-    func correctPrepend(in scroll: NSScrollView?, pass: String) {
-        guard samePassPending, let scroll, self.scroll === scroll, let prependHeight else { return }
+    @discardableResult
+    func correctPrepend(in scroll: NSScrollView?, pass: String) -> Bool {
+        guard samePassPending, let scroll, self.scroll === scroll, let prependHeight else { return false }
         let height = scroll.contentView.documentRect.height
         let origin = scroll.contentView.bounds.minY
         SHRenderProbe.scrollEvent("probe.prepend.pass", "\(pass) document=\(height) clip=\(origin)",
                                   from: scroll, target: rowID, kind: "layout")
         let delta = height - prependHeight
-        guard delta > 0, MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
+        guard delta > 0, MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return false }
         samePassPending = false
         Self.correct(delta, in: scroll, rowID: rowID)
         SHRenderProbe.scrollEvent("probe.prepend.result",
                                   "\(pass) delta=\(delta) clip=\(origin)->\(scroll.contentView.bounds.minY)",
                                   from: scroll, target: rowID, kind: "layout")
+        return true
     }
     #endif
 
-    func begin(_ id: String?, session: String?) -> Int {
+    func begin(_ id: String?, session: String?, measuredScroll: NSScrollView? = nil) -> Int {
         cancel()
         guard let id else { return generation }
         self.session = session
         waiting = true
         rowID = id
-        scroll = marker?.enclosingScrollView
+        scroll = measuredScroll ?? marker?.enclosingScrollView
         if marker?.rowID == id { savedTop = marker?.viewportTop }
         #if DEBUG
         if ThreadScrollValidation.measuredHistory { prependHeight = scroll?.contentView.documentRect.height }
@@ -142,11 +144,12 @@ final class ThreadHistoryAnchor {
         }
     }
 
-    private static func correct(_ delta: CGFloat, in scroll: NSScrollView, rowID: String?) {
+    static func correct(_ delta: CGFloat, in scroll: NSScrollView, rowID: String?,
+                        actor: StaticString = "thread.write.M6", caller: String = "history.correct") {
         let clip = scroll.contentView
         var bounds = clip.bounds
         bounds.origin.y += delta
-        ThreadScrollTrace.write("thread.write.M6", "history.correct", in: scroll, target: rowID)
+        ThreadScrollTrace.write(actor, caller, in: scroll, target: rowID)
         clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
         scroll.reflectScrolledClipView(clip)
     }

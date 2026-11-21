@@ -343,6 +343,9 @@ final class ThreadTailGuard {
     struct RowProbe: NSViewRepresentable {
         let guardian: ThreadTailGuard
         let rowID: String
+        #if DEBUG
+        var measuredHistory: ThreadMeasuredHistory? = nil
+        #endif
 
         func makeNSView(context: Context) -> RowMarker {
             let marker = RowMarker()
@@ -352,12 +355,28 @@ final class ThreadTailGuard {
 
         func updateNSView(_ view: RowMarker, context: Context) {
             guardian.registerRow(view, id: rowID)
+            #if DEBUG
+            view.measuredHistory = measuredHistory
+            #endif
         }
     }
 
     final class RowMarker: NSView {
         var rowID = ""
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        #if DEBUG
+        weak var measuredHistory: ThreadMeasuredHistory?
+        override func setFrameSize(_ newSize: NSSize) {
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed && measuredHistory != nil { needsLayout = true }
+        }
+        override func layout() {
+            super.layout()
+            measuredHistory?.rowLaidOut(rowID, height: bounds.height, in: enclosingScrollView)
+        }
+        #endif
     }
 }
 
@@ -366,6 +385,7 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
     let guardian: ThreadTailGuard
     #if DEBUG
     var historyAnchor: ThreadHistoryAnchor? = nil
+    var measuredHistory: ThreadMeasuredHistory? = nil
     #endif
 
     func makeNSView(context: Context) -> Finder { Finder() }
@@ -374,6 +394,8 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
         #if DEBUG
         view.historyAnchor = historyAnchor
+        view.measuredHistory = measuredHistory
+        measuredHistory?.guardrail = guardian
         #endif
     }
 
@@ -382,12 +404,15 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
 
         #if DEBUG
         weak var historyAnchor: ThreadHistoryAnchor?
+        weak var measuredHistory: ThreadMeasuredHistory?
 
         override func setFrameSize(_ newSize: NSSize) {
             let changed = newSize.height != frame.height
             super.setFrameSize(newSize)
             if changed {
-                historyAnchor?.correctPrepend(in: enclosingScrollView, pass: "column finder frame change")
+                let scroll = enclosingScrollView
+                let prepended = historyAnchor?.correctPrepend(in: scroll, pass: "column finder frame change") ?? false
+                measuredHistory?.columnLaidOut(in: scroll, prepended: prepended)
             }
         }
         #endif
