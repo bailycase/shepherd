@@ -19,6 +19,8 @@ public struct ScrollIntent {
     private var scrollerHeld = false
     public private(set) var physicalScrollerHeld = false
     private var commandFramesRemaining = 0
+    private var animatedCommandFramesRemaining = 0
+    private var previousIOSPhase: Phase = .idle
     private var commandAnimating = false
     private var layoutFramesRemaining = 0
 
@@ -72,9 +74,10 @@ public struct ScrollIntent {
         return phase == .animating ? .programmatic : .idle
     }
 
-    public mutating func noteIOSCommand() {
+    public mutating func noteIOSCommand(animated: Bool) {
         // A command can land on the next layout pass, not just the frame that logged it.
         commandFramesRemaining = 2
+        if animated { animatedCommandFramesRemaining = 2 }
     }
 
     public mutating func noteIOSLayout() {
@@ -83,13 +86,17 @@ public struct ScrollIntent {
 
     public mutating func sampleIOS(phase: Phase, offsetDelta: Double, layoutChanged: Bool) -> State {
         defer {
+            previousIOSPhase = phase
             commandFramesRemaining = max(0, commandFramesRemaining - 1)
+            animatedCommandFramesRemaining = max(0, animatedCommandFramesRemaining - 1)
             layoutFramesRemaining = max(0, layoutFramesRemaining - 1)
         }
-        // Only an animation that starts within a command's grace keeps its attribution.
-        commandAnimating = phase == .animating && (commandAnimating || commandFramesRemaining > 0)
+        // Only a new animation within an animated command's grace keeps its attribution.
+        let canStartCommandAnimation = previousIOSPhase != .animating && animatedCommandFramesRemaining > 0
+        commandAnimating = phase == .animating && (commandAnimating || canStartCommandAnimation)
         if phase == .touching || phase == .coasting {
             commandFramesRemaining = 0
+            animatedCommandFramesRemaining = 0
             return phase == .touching ? .touching : .coasting
         }
         if commandAnimating || commandFramesRemaining > 0 { return .programmatic }

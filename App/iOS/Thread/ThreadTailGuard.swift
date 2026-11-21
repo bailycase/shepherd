@@ -98,7 +98,7 @@ final class ThreadTailGuard {
         switch event.kind {
         case "layout": intent.noteIOSLayout()
         case "fixture": break
-        default: intent.noteIOSCommand()
+        default: intent.noteIOSCommand(animated: event.detail == "find")
         }
     }
 

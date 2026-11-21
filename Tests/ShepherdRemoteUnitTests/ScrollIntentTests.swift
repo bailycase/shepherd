@@ -76,12 +76,44 @@ struct ScrollIntentTests {
 
     @Test func commandedFindScrollStaysProgrammaticUntilAnimationEnds() {
         var intent = ScrollIntent()
-        intent.noteIOSCommand()
+        intent.noteIOSCommand(animated: true)
         #expect(intent.sampleIOS(phase: .idle, offsetDelta: 0, layoutChanged: false) == .programmatic)
         for _ in 0..<4 {
             #expect(intent.sampleIOS(phase: .animating, offsetDelta: 20, layoutChanged: false) == .programmatic)
         }
         #expect(intent.sampleIOS(phase: .idle, offsetDelta: 0, layoutChanged: false) == .idle)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
+    }
+
+    @Test func animatedCommandMidPageDoesNotLatch() {
+        var intent = ScrollIntent()
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
+        intent.noteIOSCommand(animated: true)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .programmatic)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .programmatic)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
+    }
+
+    @Test func unanimatedTailLandingDoesNotLatchTheNextPage() {
+        var intent = ScrollIntent()
+        intent.noteIOSCommand(animated: false)
+        #expect(intent.sampleIOS(phase: .idle, offsetDelta: 0, layoutChanged: false) == .programmatic)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .programmatic)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
+    }
+
+    @Test func fingerWinsDuringLayoutGrace() {
+        var intent = ScrollIntent()
+        intent.noteIOSLayout()
+        #expect(intent.sampleIOS(phase: .touching, offsetDelta: 0, layoutChanged: false) == .touching)
+    }
+
+    @Test func fingerInterruptsTheCommandAnimation() {
+        var intent = ScrollIntent()
+        intent.noteIOSCommand(animated: true)
+        #expect(intent.sampleIOS(phase: .animating, offsetDelta: 20, layoutChanged: false) == .programmatic)
+        #expect(intent.sampleIOS(phase: .touching, offsetDelta: 0, layoutChanged: false) == .touching)
+        #expect(intent.sampleIOS(phase: .coasting, offsetDelta: -20, layoutChanged: false) == .coasting)
         #expect(intent.sampleIOS(phase: .animating, offsetDelta: -20, layoutChanged: false) == .touching)
     }
 }
