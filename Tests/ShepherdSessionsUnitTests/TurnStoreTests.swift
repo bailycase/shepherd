@@ -6,6 +6,7 @@ import Testing
 
 struct TurnStoreTests {
     private static let agent = AgentID(rawValue: "00000000-0000-4000-8000-000000000001")
+    private static let otherAgent = AgentID(rawValue: "00000000-0000-4000-8000-000000000003")
     private static let legacy = """
         {"00000000-0000-4000-8000-000000000001":[{"cwd":"/tmp/acme","startTree":"start","endTree":"end",
         "turn":{"id":"00000000-0000-4000-8000-000000000002","startedAt":1000,"state":"ready",
@@ -116,6 +117,48 @@ struct TurnStoreTests {
         let persisted = try JSONDecoder().decode([String: [TurnRecord]].self, from: Data(contentsOf: url))
         #expect(persisted[Self.agent.rawValue]?.last == live)
         #expect(TurnStore(url: url).latest(Self.agent)?.turn.state == .unavailable, "only cold startup relabels running turns")
+    }
+
+    @Test func repairAfterDamagedStartupMarksRunningTurnsUnavailableAndPrunesDeletedAgents() throws {
+        let root = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("turns.json")
+        try Data("{".utf8).write(to: url)
+        let store = TurnStore(url: url)
+        store.prune(keeping: [Self.agent])
+        let interrupted = TurnRecord(turn: .init(startedAt: 1000, state: .running), cwd: root.path, startTree: "start")
+        let deleted = TurnRecord(turn: .init(startedAt: 2000, state: .ready), cwd: root.path)
+        try JSONEncoder().encode([Self.agent.rawValue: [interrupted], Self.otherAgent.rawValue: [deleted]])
+            .write(to: url, options: .atomic)
+
+        let repaired = try #require(store.history(Self.agent).records.last)
+        #expect(repaired.turn.id == interrupted.turn.id)
+        #expect(repaired.turn.state == .unavailable)
+        #expect(store.all(Self.otherAgent).isEmpty)
+        store.flush()
+        let persisted = try JSONDecoder().decode([String: [TurnRecord]].self, from: Data(contentsOf: url))
+        #expect(persisted == [Self.agent.rawValue: [repaired]])
+    }
+
+    @Test func repairInLiveHostOnlyKeepsHostOwnedTurnsRunning() throws {
+        let root = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("turns.json")
+        let store = TurnStore(url: url)
+        let live = TurnRecord(turn: .init(startedAt: 2000, state: .running), cwd: root.path)
+        let interrupted = TurnRecord(turn: .init(startedAt: 1000, state: .running), cwd: root.path, startTree: "start")
+        try store.updateAndCheckpoint(Self.agent) { $0 = [live] }
+        try Data("{".utf8).write(to: url, options: .atomic)
+        try #require(throws: (any Error).self) { try store.history(Self.agent) }
+        try JSONEncoder().encode([Self.otherAgent.rawValue: [interrupted]]).write(to: url, options: .atomic)
+
+        let repaired = try #require(store.history(Self.otherAgent).records.last)
+        #expect(repaired.turn.id == interrupted.turn.id)
+        #expect(repaired.turn.state == .unavailable)
+        #expect(store.latest(Self.agent) == live)
+        store.flush()
+        let persisted = try JSONDecoder().decode([String: [TurnRecord]].self, from: Data(contentsOf: url))
+        #expect(persisted == [Self.agent.rawValue: [live], Self.otherAgent.rawValue: [repaired]])
     }
 
     @Test func deletionRepairsDamageAndDropsPastHistory() throws {

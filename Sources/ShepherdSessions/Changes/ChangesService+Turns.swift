@@ -39,6 +39,7 @@ final class TurnStore: @unchecked Sendable {
     private let url: URL
     private let lock = NSLock()
     private var records: Records?
+    private var deferredPrune: Set<String>?
     private var dirty: [String: Int] = [:]
     private var revision = 0
     private var damage: ChangesError?
@@ -120,13 +121,23 @@ final class TurnStore: @unchecked Sendable {
                     restored[key] = previous?[key]
                     markDirty(key)
                 }
+                // A running record from the repaired file does not belong to a live capture.
+                for key in restored.keys where !retain.contains(key) {
+                    for i in restored[key]!.indices where restored[key]![i].turn.state == .running {
+                        restored[key]![i].turn.state = .unavailable
+                        restored[key]![i].turn.reason = "Shepherd couldn’t recover the end of this turn."
+                        markDirty(key)
+                    }
+                }
                 records = restored
+                if let deferredPrune { pruneLocked(keeping: deferredPrune) }
                 if !dirty.isEmpty { scheduleWrite() }
             } else {
                 // Deleting damaged history is an explicit repair, not a request to restore it.
                 records = [:]
                 dirty = [:]
             }
+            deferredPrune = nil
             return (previous ?? [:], records ?? [:])
         }
         if let (previous, current) = changed {
@@ -184,6 +195,7 @@ final class TurnStore: @unchecked Sendable {
     /// Drops a deleted agent's records, and saves only when it had any.
     func remove(_ agentID: AgentID) {
         lock.withLock {
+            deferredPrune?.remove(agentID.rawValue)
             guard records?.removeValue(forKey: agentID.rawValue) != nil else { return }
             markDirty(agentID.rawValue)
             scheduleWrite()
@@ -194,14 +206,21 @@ final class TurnStore: @unchecked Sendable {
     func prune(keeping agents: Set<AgentID>) {
         let keep = Set(agents.map(\.rawValue))
         lock.withLock {
-            guard let records else { return }
-            let removed = records.keys.filter { !keep.contains($0) }
-            guard !removed.isEmpty else { return }
-            for key in removed {
-                self.records?[key] = nil
-                markDirty(key)
+            guard records != nil else {
+                deferredPrune = keep
+                return
             }
-            scheduleWrite()
+            pruneLocked(keeping: keep)
+            if !dirty.isEmpty { scheduleWrite() }
+        }
+    }
+
+    /// Caller holds `lock`.
+    private func pruneLocked(keeping keep: Set<String>) {
+        let removed = records?.keys.filter { !keep.contains($0) } ?? []
+        for key in removed {
+            records?[key] = nil
+            markDirty(key)
         }
     }
 
