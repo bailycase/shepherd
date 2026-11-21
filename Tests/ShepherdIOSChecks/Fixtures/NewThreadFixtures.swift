@@ -116,7 +116,7 @@ enum NewThreadFixtures {
     /// The thread the iPad board shows behind the sheet.
     static let behind = [MobileRoute.thread(FixtureData.ref(FixtureData.preview))]
 
-    static let shepherd = Space(id: FixtureData.shepherdSpace.id, name: "shepherd", path: "/Users/dev/code/shepherd")
+    static let shepherd = Space(id: FixtureData.shepherdSpace.id, name: "acme-web", path: "/Users/dev/code/acme-web")
     static let dashboard = Space(id: SpaceID(rawValue: "space-dashboard"), name: "dashboard-web", path: "/Users/dev/code/dashboard-web")
     static let orders = Space(id: FixtureData.shepherdSpace.id, name: "orders-svc", path: "/home/ci/orders-svc")
     /// A working Mac's longer repo list, so Where it runs shows how it scrolls.
@@ -134,9 +134,9 @@ enum NewThreadFixtures {
     static let branches: ChangesBranches = {
         let now = Date().timeIntervalSince1970
         let names: [(String, Bool, String?)] = [
-            ("main", false, nil), ("origin/main", true, nil), ("worktree/calm-otter-4821", false, "/Users/dev/.shepherd/worktrees/calm-otter-4821"),
+            ("main", false, nil), ("origin/main", true, nil), ("worktree/calm-otter-4821", false, "/Users/dev/.acme/worktrees/calm-otter-4821"),
             ("feat/mobile-new-thread-pickers", false, nil), ("origin/feat/mobile-new-thread-pickers", true, nil),
-            ("worktree/brisk-heron-1907", false, "/Users/dev/.shepherd/worktrees/brisk-heron-1907"),
+            ("worktree/brisk-heron-1907", false, "/Users/dev/.acme/worktrees/brisk-heron-1907"),
             ("fix/tool-rows-show-the-command-or-path-instead-of-complete", false, nil), ("origin/release/2.4", true, nil),
             ("feat/ledger-v2", false, nil), ("chore/bump-swift-term", false, nil), ("origin/nightly", true, nil),
             ("spike/duo-fold-aware-composer-layout-experiments", false, nil), ("docs/remote-protocol", false, nil),

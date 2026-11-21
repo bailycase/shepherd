@@ -95,8 +95,8 @@ enum FixtureData {
     static let buildBox = UUID(uuidString: "5E0A0000-0000-4000-8000-000000000002")!
     static let laptop = UUID(uuidString: "5E0A0000-0000-4000-8000-000000000003")!
 
-    static let shepherdSpace = Space(id: SpaceID(rawValue: "space-shepherd"), name: "Shepherd", path: "/Users/dev/Shepherd")
-    static let orbitSpace = Space(id: SpaceID(rawValue: "space-orbit"), name: "orbit", path: "/Users/dev/orbit")
+    static let shepherdSpace = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/Users/dev/acme-web")
+    static let orbitSpace = Space(id: SpaceID(rawValue: "space-acme-api"), name: "acme-api", path: "/Users/dev/acme-api")
 
     static let preview = AgentID(rawValue: "agent-preview")
     static let extensions = AgentID(rawValue: "agent-extensions")
@@ -115,7 +115,7 @@ enum FixtureData {
                 agent(extensions, "Plan shepherd extensions", .working, worktree: "pi/shepherd-extensions", changed: 1),
                 agent(dock, "Dock review pane", .blocked, checkout: "chore/remove-homarr", changed: 11),
                 agent(deletion, "Fix remote subagent deletion", .done, space: orbitSpace),
-            ], automations: [Automation(name: "Merge PR #24 after CI", prompt: "watch CI", cwd: "/Users/dev/Shepherd", enabled: false)]),
+            ], automations: [Automation(name: "Merge PR #24 after CI", prompt: "watch CI", cwd: "/Users/dev/acme-web", enabled: false)]),
             threads: [preview: thread(), extensions: runningThread(), dock: questionThread()]),
             FixtureHostData(id: buildBox, name: "build-01", state: ShepherdState(spaces: [shepherdSpace], agents: [
                 agent(buffer, "Fix terminal output buffer", .idle, worktree: "pi/refund-events"),

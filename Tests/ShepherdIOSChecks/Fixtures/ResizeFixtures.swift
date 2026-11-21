@@ -103,8 +103,6 @@ enum ResizeFixtures {
     nonisolated static let rewrites: [(String, String)] = [
         ("Sources/ShepherdApp/DesktopNativeThreadView.swift", "src/pages/Cart.tsx"),
         ("App/iOS/ThreadView.swift", "src/components/CartRow.tsx"),
-        ("/Users/dev/Shepherd", "/Users/dev/acme-web"), ("/Users/dev/code/shepherd", "/Users/dev/code/acme-web"),
-        ("/Users/dev/.shepherd/worktrees", "/Users/dev/.acme/worktrees"),
         ("Investigate SwiftUI live preview", "Investigate slow cart page"), ("Plan shepherd extensions", "Plan promo code rollout"),
         ("Dock review pane", "Move order summary"), ("Fix remote subagent deletion", "Fix stale cart totals"),
         ("Fix terminal output buffer", "Fix order export buffer"), ("Queue steering polish", "Polish the cart drawer"),
@@ -136,36 +134,26 @@ enum ResizeFixtures {
         ("a review of the buffer flush found two copies of each", "a review of the export flush found two copies of each"),
     ]
 
-    /// The report's two repos, written out here: the shared fixtures' first and second repo (ids, names, paths) become these.
-    static let web = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/Users/dev/acme-web")
-    static let api = Space(id: SpaceID(rawValue: "space-acme-api"), name: "acme-api", path: "/Users/dev/acme-api")
-
-    /// `value` with every `rewrites` entry and each `swaps` pair applied to the text it encodes to (a snapshot, a state, a reply).
-    nonisolated static func rewritten<T: Codable>(_ value: T, swaps: [(String, String)] = []) -> T {
+    /// `value` with every `rewrites` entry applied to the text it encodes to (a snapshot, a state, a reply).
+    nonisolated static func rewritten<T: Codable>(_ value: T) -> T {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         func escaped(_ text: String) -> String {
             (try? encoder.encode(text)).flatMap { String(data: $0, encoding: .utf8) }.map { String($0.dropFirst().dropLast()) } ?? text
         }
         guard let data = try? encoder.encode(value), var json = String(data: data, encoding: .utf8) else { return value }
-        for (from, to) in rewrites + swaps { json = json.replacingOccurrences(of: escaped(from), with: escaped(to)) }
+        for (from, to) in rewrites { json = json.replacingOccurrences(of: escaped(from), with: escaped(to)) }
         return (try? JSONDecoder().decode(T.self, from: Data(json.utf8))) ?? value
     }
 
-    /// The made-up names the report shows: every fixture host's repos, threads, paths and answers are acme's.
+    /// The made-up names the report shows: the shared fixtures' repos, ids and paths are already acme-web and acme-api;
+    /// this rewrites the thread names, branches and answers that still name Shepherd's own work.
     static func acme(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
         var hosts = hosts
-        let replacements = Dictionary(uniqueKeysWithValues: zip(FixtureData.hosts()[0].state.spaces, [web, api]).map { ($0.id, ($0, $1)) })
-        let swaps = replacements.values.flatMap { [($0.id.rawValue, $1.id.rawValue), ($0.path, $1.path)] }
         for index in hosts.indices {
-            for (spaceIndex, space) in hosts[index].state.spaces.enumerated() {
-                guard let (_, made) = replacements[space.id] else { continue }
-                hosts[index].state.spaces[spaceIndex].name = made.name
-                hosts[index].state.spaces[spaceIndex].path = made.path
-            }
-            hosts[index].state = rewritten(hosts[index].state, swaps: swaps)
-            hosts[index].threads = rewritten(hosts[index].threads, swaps: swaps)
-            if let reply = hosts[index].reply { hosts[index].reply = { request in reply(request).map { rewritten($0, swaps: swaps) } } }
+            hosts[index].state = rewritten(hosts[index].state)
+            hosts[index].threads = rewritten(hosts[index].threads)
+            if let reply = hosts[index].reply { hosts[index].reply = { request in reply(request).map { rewritten($0) } } }
         }
         return hosts
     }
@@ -254,25 +242,27 @@ enum ResizeFixtures {
         }
         func look(_ stage: String, editorVisible: Bool) async {
             try? await Task.sleep(for: .seconds(2))
+            // The sheet first, as it stands: a kept sheet would cover the pane below, so it is recorded and then dismissed.
+            let form = NewThreadModel.active
+            report("sheet", stage, navigator.presented != nil && form?.prompt == sheetText,
+                   "presented: \(navigator.presented != nil), form \(form == nil ? "gone" : "present"), prompt \(form?.prompt.count ?? 0) of \(sheetText.count) characters, "
+                   + "text on screen: \(shows(sheetText))")
             let edit = model.edits[path]
-            // Once the window is regular again, expose the Files pane and look at the editor a person would see: a model that
-            // kept the edit is not enough if the pane is blank.
+            // Once the window is regular again, dismiss the sheet and expose the Files pane, then look at the editor a person
+            // would see: a model that kept the edit is not enough if the pane is blank, covered or clipped.
             var onScreen = true
             if editorVisible {
+                navigator.dismissPresented()
                 navigator.sidePane.show(.files)
-                try? await Task.sleep(for: .seconds(1)) // a pane the switch just removed is gone by now
+                try? await Task.sleep(for: .seconds(1)) // a sheet or pane the switch just removed is gone by now
                 let deadline = Date().addingTimeInterval(10)
                 while !visibleEditorShowsCheckout(), Date() < deadline { try? await Task.sleep(for: .milliseconds(100)) }
                 onScreen = visibleEditorShowsCheckout()
             }
             report("editor", stage, edit?.isDirty == true && edit?.text.hasPrefix(draftEdit) == true && onScreen,
-                   "the unsaved edit \(edit?.isDirty == true ? "is" : "is not") in the file's model\(editorVisible ? ", visible editor shows Checkout.tsx with the edit: \(onScreen)" : "")")
+                   "the unsaved edit \(edit?.isDirty == true ? "is" : "is not") in the file's model\(editorVisible ? ", visible editor shows Checkout.tsx with the edit, uncovered and unclipped: \(onScreen)" : "")")
             report("terminal", stage, session.surface.map(ObjectIdentifier.init) == terminalView,
                    "its session \(session.surface == nil ? "has no view" : session.surface.map(ObjectIdentifier.init) == terminalView ? "keeps the same view" : "got a new view")")
-            let model = NewThreadModel.active
-            report("sheet", stage, navigator.presented != nil && model?.prompt == sheetText,
-                   "presented: \(navigator.presented != nil), form \(model == nil ? "gone" : "present"), prompt \(model?.prompt.count ?? 0) of \(sheetText.count) characters, "
-                   + "text on screen: \(shows(sheetText))")
         }
 
         for (pose, closed) in [("closed", true), ("open", false)] {
@@ -313,14 +303,31 @@ enum ResizeFixtures {
     }
 
     /// Whether the Files editor (the text view labelled "File contents") that a person sees in the fixture's window holds
-    /// Checkout.tsx's code under the unsaved edit. A hidden or offscreen editor, or one in another window, does not count.
+    /// Checkout.tsx's code under the unsaved edit, and is drawn in full: not hidden, not clipped by an ancestor or the window,
+    /// and not covered by another view (a sheet, a pane). Another window's editor does not count.
     static func visibleEditorShowsCheckout() -> Bool {
         guard let window = FixtureWindows.shared.framed ?? window(), !window.isHidden else { return false }
         func visible(_ view: UIView) -> Bool {
             if view.isHidden || view.alpha < 0.01 { return false }
             if let text = view as? UITextView, text.accessibilityLabel == "File contents" {
-                let frame = text.convert(text.bounds, to: window).intersection(window.bounds)
-                return !frame.isEmpty && text.text.hasPrefix(draftEdit) && text.text.contains("export function Checkout")
+                guard text.text.hasPrefix(draftEdit), text.text.contains("export function Checkout") else { return false }
+                // Clip the editor's frame by every ancestor, then by the window.
+                var shown = text.bounds
+                var current: UIView = text
+                while let parent = current.superview {
+                    shown = parent.convert(shown, from: current)
+                    if parent.clipsToBounds || parent === window { shown = shown.intersection(parent.bounds) }
+                    current = parent
+                }
+                let full = text.convert(text.bounds, to: window)
+                guard !shown.isNull, shown.width >= full.width - 1, shown.height >= full.height - 1 else { return false }
+                // Covered: whatever is hit at the corners and centre of the editor must be the editor.
+                let probes = [CGPoint(x: 0.1, y: 0.1), CGPoint(x: 0.9, y: 0.1), CGPoint(x: 0.5, y: 0.5), CGPoint(x: 0.1, y: 0.9), CGPoint(x: 0.9, y: 0.9)]
+                return probes.allSatisfy { fraction in
+                    let point = CGPoint(x: full.minX + full.width * fraction.x, y: full.minY + full.height * fraction.y)
+                    let hit = window.hitTest(point, with: nil)
+                    return hit === text || hit?.isDescendant(of: text) == true
+                }
             }
             return view.subviews.contains(where: visible)
         }
