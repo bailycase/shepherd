@@ -36,7 +36,7 @@ struct TurnStoreTests {
         let store = TurnStore(url: url)
         #expect(store.all(Self.agent).isEmpty)
         store.remove(Self.agent)
-        store.prune(keeping: [])
+        store.prune(keeping: [Self.agent])
         store.update(Self.agent) { _ in Issue.record("A damaged store ran an asynchronous mutation") }
         store.flush()
         #expect(throws: (any Error).self) {
