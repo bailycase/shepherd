@@ -398,7 +398,7 @@ The table is from the correcting spike with the `.bottom` size anchor. Frame num
 
 The guard checked 520 ms after `readerMoved`. No anchor (nil size anchor) gave the same false intersection at 512 ms in frame 40. The release applied in frame 2 in both runs. History had measured 72,916 pt under a 74,103 pt hold before release, then re-estimated to 78,698 pt. The clip correction was −1,187 pt while the document grew 4,595 pt. With the bottom anchor the fixture posted `newTurn` in frame 68. The new turn did not cause the first M7 write.
 
-On the unchanged Nightly scroll code, both the normal wheel move and the spike's scripted interacting → idle move reported `user-216/reply` in both sets. Neither walked. Turning the hold off but leaving the spike's geometry/frame wrappers installed still left tail IDs in SwiftUI's set and walked before the new turn. The regression is in the wrapped history's target-visibility reporting, not the simulated phase or the height release alone. The phase-matched Nightly control also grew 5,124 pt before the turn without stranding the reader. These controls are in `.orchestrator/scroll6-baseline-*.frames.json.gz`.
+On the unchanged Nightly scroll code, both the normal wheel move and the spike's scripted interacting → idle move reported `user-216/reply` in both sets. Neither walked. Turning the hold off but leaving the spike's geometry/frame wrappers installed still left tail IDs in SwiftUI's set and walked before the new turn. The regression is in the wrapped history's target-visibility reporting, not the simulated phase or the height release alone. The phase-matched Nightly control also grew 5,124 pt on the new-turn sample without stranding the reader. These controls are in `.orchestrator/scroll6-baseline-*.frames.json.gz`.
 
 The two whole-viewport blanks followed the walk, not the release. In frame 43 M7 moved the clip up 640 pt. The previous top row was now at y=581 pt under the composer, and the new rows did not appear until frame 44. In frame 50 M7 moved up another 10,240 pt and the closest placed row, `user-148/reply`, was at y=10,240 pt. Nothing was placed under the clip until frame 51. Offscreen layer captures show only the composer and Jump to latest in both blanks. In the original nil-anchor recording the corresponding walk blanks were frames 44 and 49. Frame counts vary with sampling; the writer precedes the blanks in each trace.
 
@@ -407,6 +407,30 @@ The two whole-viewport blanks followed the walk, not the release. In frame 43 M7
 **The two fixes are independent.** Refresh the guard from current, registered native row markers in the unobscured reading area when SwiftUI's IDs prove nothing. A real empty reading area still returns false and the walk is unchanged. This removed both downstream blanks and all detached walks in the seven fixture scenarios, but the bottom-aligned hold still lost the top rows on the release frame. Holding the history frame at `.topLeading` puts the height difference below the lazy stack instead of shifting its existing rows up when the frame comes off. With the same native refresh, top-aligned history kept `user-220/reply` and its painted content across release while the document grew 4,437 pt and the clip stayed at 39,963 pt. The first-move check passed, streaming and flick each measured 0 pt, and the seven scenarios had zero whole-viewport blanks and zero detached walks in that probe. This permits a slice candidate. It does not establish that every release preserves placement or that the hold can safely leave a gap between the lazy history and the eager tail while crossing it.
 
 Local evidence is in `.orchestrator/scroll6-diagnosis.log`, `.orchestrator/scroll6-{observed,controls}-*.frames.json.gz`, and `.orchestrator/scroll6-pixels/`. The probe and its controls are in `.orchestrator/scroll6-diagnosis.patch`. No production scroll code is in this diagnosis commit. iPhone and iPad: not changed and not checked.
+
+### Slice 5 Mac pinned readers
+
+`ThreadHistoryAnchor` now saves the top visible row ID and offset for detached readers, plus the other visible rows in order. It checks the saved placement after AppKit lays out a geometry change, then uses the existing M6 clip writer at most once for that update. It writes only when `ScrollIntent` is idle. The oldest-page restore still owns its existing M5/M6 path while engaged.
+
+For D3, if the top row was unrealized or removed, use the first still-realized saved row in viewport order. A row rebuilt with the same ID uses its new marker. If no saved row has a marker, do not guess a clip offset. Take a new pin from the next placement. This slice does not add a separate `reveal` for that case or change how the follower decides to resume.
+
+Hold the history height on detach near the tail. Keep the lazy history top-aligned so the height difference stays below it. Release when following resumes, or when an idle reader has enough room below their viewport to absorb the change. M7 checks live native placement in the reading area when SwiftUI's target IDs have no placed match; the real blank recovery path still runs.
+
+Mac Dev fixture on macOS 27.0.1, using the stricter PR #840 input-frame rule. Each cell lists runs 1, 2 and 3. There were zero whole-viewport blanks and zero detached guard walks in every scenario on every run, before and after.
+
+| Scenario | Before, total displacement (pt) | After, total displacement (pt) |
+| --- | --- | --- |
+| Slow scroll while streaming | 477 / 477 / 477 | 0 / 0 / 0 |
+| Flick and stop | 615 / 615 / 615 | 0 / 0 / 0 |
+| Mid-history new turn | 0 / 0 / 0 | 0 / 0 / 0 |
+| Page older history | 0 / 0 / 0 | 0 / 0 / 0 |
+| Window resize | 0 / 0 / 0 | 0 / 0 / 0 |
+| Switch away and back | 0 / 0 / 0 | 0 / 0 / 0 |
+| Wheel walk to top | 43 / 43 / 43 | 43 / 43 / 43 |
+
+First move off the tail lost 902 pt of document height before and 0 pt after, all three times. The validator still exits 1 for baseline findings: one page-in anchor swap, and the 43 pt wheel-walk displacement with no gap at the top. The synthetic sentinel fallback is not proof of native sentinel delivery. All three after runs exercised detached width changes. The fixture did not toggle a disclosure above or below the viewport, isolate a large async parse landing, or require a new pin correction during one of those frames. The offscreen guard and pin tests exercise native placement and the clip writer directly. Physical input and same-total-height row shifts were not checked. iPhone and iPad: not changed and not checked.
+
+Local Dev fixture summaries and reports are in `.orchestrator/scroll6-before-{1,2,3}.log` and `.orchestrator/scroll6-after-{1,2,3}.log`.
 
 ## 6. What this plan does not prove
 

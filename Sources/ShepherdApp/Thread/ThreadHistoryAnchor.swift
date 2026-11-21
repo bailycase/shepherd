@@ -22,6 +22,45 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var pendingMaterialization: ((String) -> Void)?
     @ObservationIgnored private var session: String?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var pinned: [(id: String, top: CGFloat)] = []
+    @ObservationIgnored private var pinQueued = false
+    @ObservationIgnored private var pinLayoutChanged = false
+
+    func pin(_ visible: [(Marker, CGFloat)]) {
+        pinned = visible.map { ($0.0.rowID, $0.1) }
+    }
+
+    func queuePinUpdate(layoutChanged: Bool, update: @escaping (Bool) -> Void) {
+        pinLayoutChanged = pinLayoutChanged || layoutChanged
+        guard !pinQueued else { return }
+        pinQueued = true
+        let token = generation
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let layout = self.pinLayoutChanged && self.generation == token
+            defer {
+                self.pinLayoutChanged = false
+                self.pinQueued = false
+            }
+            update(layout)
+        }
+    }
+
+    func correctPin(in scroll: NSScrollView, marker: (String) -> Marker?) {
+        let savedRows = pinned
+        pinned = []
+        // A layout can evict the first row before its new offset can be read.
+        for saved in savedRows {
+            guard let row = marker(saved.id), row.enclosingScrollView === scroll, let top = row.viewportTop else { continue }
+            let delta = top - saved.top
+            if abs(delta) > 0.25 {
+                Self.correct(delta, in: scroll, actor: "thread.write.M6", caller: "pin.correct", rowID: saved.id)
+            }
+            return
+        }
+    }
+
+    func cancelPin() { pinned = [] }
 
     func begin(_ id: String?, session: String?) -> Int {
         cancel()
@@ -35,6 +74,7 @@ final class ThreadHistoryAnchor {
     }
 
     func cancel() {
+        cancelPin()
         if rowID != nil {
             ThreadScrollTrace.write("thread.write.M5", "history.cancel", in: scroll, target: rowID)
             position = ScrollPosition(idType: String.self)
@@ -101,13 +141,17 @@ final class ThreadHistoryAnchor {
                   let top = marker.viewportTop else { return }
             let delta = top - savedTop
             guard abs(delta) > 0.25 else { return }
-            let clip = scroll.contentView
-            var bounds = clip.bounds
-            bounds.origin.y += delta
-            ThreadScrollTrace.write("thread.write.M6", "history.correct", in: scroll, target: self.rowID)
-            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
-            scroll.reflectScrolledClipView(clip)
+            Self.correct(delta, in: scroll, actor: "thread.write.M6", caller: "history.correct", rowID: self.rowID)
         }
+    }
+
+    private static func correct(_ delta: CGFloat, in scroll: NSScrollView, actor: StaticString, caller: String, rowID: String?) {
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        bounds.origin.y += delta
+        ThreadScrollTrace.write(actor, caller, in: scroll, target: rowID)
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
@@ -132,7 +176,7 @@ final class ThreadHistoryAnchor {
         }
     }
 
-    final class Marker: NSView {
+    class Marker: NSView {
         weak var anchor: ThreadHistoryAnchor?
         var rowID = ""
 

@@ -164,14 +164,20 @@ final class ThreadTailGuard {
         guard requiresNativeRows else { return !rowIDs.isDisjoint(with: visible) }
         guard let scroll = scrollView() else { return false }
         let clip = scroll.contentView
-        return visible.contains { id in
-            guard rowIDs.contains(id), let marker = rowMarkers.object(forKey: id as NSString),
-                  marker.rowID == id, marker.window != nil, marker.enclosingScrollView === scroll,
-                  !marker.isHiddenOrHasHiddenAncestor, !marker.visibleRect.isEmpty else { return false }
-            // A non-clipping NSView can report a visibleRect outside its own bounds.
-            let visible = marker.bounds.intersection(marker.visibleRect)
-            return !visible.isEmpty && marker.convert(visible, to: clip).intersects(clip.bounds)
-        }
+        if visible.contains(where: { id in
+            placedRect(id, in: scroll)?.intersects(clip.bounds) == true
+        }) { return true }
+        // The lazy history can be drawn while SwiftUI still reports the previous targets.
+        // Check its current native placement before treating an empty intersection as a blank.
+        return !visiblePinMarkers(in: scroll).isEmpty
+    }
+
+    private func placedRect(_ id: String, in scroll: NSScrollView) -> NSRect? {
+        guard rowIDs.contains(id), let marker = rowMarkers.object(forKey: id as NSString),
+              marker.rowID == id, marker.window != nil, marker.enclosingScrollView === scroll,
+              !marker.isHiddenOrHasHiddenAncestor else { return nil }
+        let visible = marker.bounds.intersection(marker.visibleRect)
+        return visible.isEmpty ? nil : marker.convert(visible, to: scroll.contentView)
     }
 
     /// No content in view, the tail missing from it while the thread follows it from afar, or a
@@ -355,9 +361,24 @@ final class ThreadTailGuard {
         }
     }
 
-    final class RowMarker: NSView {
-        var rowID = ""
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    func marker(for id: String) -> ThreadHistoryAnchor.Marker? {
+        guard let marker = rowMarkers.object(forKey: id as NSString), marker.rowID == id else { return nil }
+        return marker
+    }
+
+    func visiblePinMarkers(in scroll: NSScrollView) -> [(ThreadHistoryAnchor.Marker, CGFloat)] {
+        var readingArea = scroll.contentView.bounds
+        readingArea.origin.y += scroll.contentInsets.top
+        readingArea.size.height -= scroll.contentInsets.top + scroll.contentInsets.bottom
+        return (rowMarkers.objectEnumerator()?.allObjects as? [RowMarker] ?? []).compactMap { marker -> (ThreadHistoryAnchor.Marker, CGFloat)? in
+            guard placedRect(marker.rowID, in: scroll)?.intersects(readingArea) == true,
+                  let top = marker.viewportTop else { return nil }
+            return (marker, top)
+        }.sorted { ($0.1, $0.0.rowID) < ($1.1, $1.0.rowID) }
+    }
+
+    final class RowMarker: ThreadHistoryAnchor.Marker {
+        override var isFlipped: Bool { false }
     }
 }
 

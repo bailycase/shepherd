@@ -176,6 +176,56 @@ struct ThreadTailGuardTests {
         #expect(rig.landings == ThreadTailGuard.maxAttempts)
     }
 
+    @Test func pinCorrectsOnceUsingTheFirstSurvivingRow() throws {
+        let rig = Rig()
+        let window = OffscreenWindow(size: rig.scroll.frame.size)
+        defer { rig.close(); window.close() }
+        rig.guardian.stop()
+        rig.guardian.active = false
+        rig.guardian.rowIDs = ["top", "next"]
+        window.window.contentView = rig.scroll
+        rig.clip.scroll(to: NSPoint(x: 0, y: 400))
+        let top = ThreadTailGuard.RowMarker(frame: NSRect(x: 0, y: 500, width: 200, height: 50))
+        let next = ThreadTailGuard.RowMarker(frame: NSRect(x: 0, y: 580, width: 200, height: 50))
+        rig.document.addSubview(top)
+        rig.document.addSubview(next)
+        rig.guardian.registerRow(top, id: "top")
+        rig.guardian.registerRow(next, id: "next")
+        let anchor = ThreadHistoryAnchor()
+        let saved = try #require(next.viewportTop)
+        anchor.pin(rig.guardian.visiblePinMarkers(in: rig.scroll))
+
+        top.removeFromSuperview()
+        next.setFrameOrigin(NSPoint(x: 0, y: 652))
+        anchor.correctPin(in: rig.scroll, marker: rig.guardian.marker(for:))
+        #expect(rig.clip.bounds.minY == 472)
+        #expect(next.viewportTop == saved)
+
+        next.setFrameOrigin(NSPoint(x: 0, y: 680))
+        anchor.correctPin(in: rig.scroll, marker: rig.guardian.marker(for:))
+        #expect(rig.clip.bounds.minY == 472)
+    }
+
+    @Test func staleSwiftUITargetsDoNotMakePlacedHistoryLookBlank() {
+        let rig = Rig()
+        let window = OffscreenWindow(size: rig.scroll.frame.size)
+        defer { rig.close(); window.close() }
+        rig.guardian.stop()
+        rig.guardian.active = false
+        rig.guardian.following = false
+        rig.guardian.requiresNativeRows = true
+        window.window.contentView = rig.scroll
+        rig.clip.scroll(to: NSPoint(x: 0, y: 400))
+        let marker = ThreadTailGuard.RowMarker(frame: NSRect(x: 0, y: 500, width: 200, height: 50))
+        rig.document.addSubview(marker)
+        rig.guardian.registerRow(marker, id: "row")
+        rig.guardian.targets(["old-tail", "thread-bottom"])
+
+        #expect(rig.guardian.rowsInView)
+        marker.setFrameOrigin(NSPoint(x: 0, y: 1200))
+        #expect(!rig.guardian.rowsInView)
+    }
+
     @Test func aPhysicallyVisibleCurrentRowEndsRepairWithoutRebuildingAndObsoleteIDsLoseTheirMarkers() async throws {
         let rig = Rig()
         let window = OffscreenWindow(size: rig.scroll.frame.size)

@@ -10,14 +10,10 @@ enum ThreadScrollTrace {
     }
 }
 
-#if DEBUG
-import QuartzCore
-import ShepherdCore
-import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
 
-private extension ScrollPhase {
+extension ScrollPhase {
     var intentPhase: ScrollIntent.Phase {
         switch self {
         case .tracking, .interacting: .touching
@@ -28,12 +24,17 @@ private extension ScrollPhase {
     }
 }
 
-private extension NSEvent.Phase {
+extension NSEvent.Phase {
     var intentPhase: ScrollIntent.WheelPhase {
         if isEmpty { return .absent }
         return intersection([.began, .changed, .stationary]).isEmpty ? .inactive : .active
     }
 }
+
+#if DEBUG
+import QuartzCore
+import ShepherdCore
+import ShepherdProtocol
 
 @MainActor
 final class MacScrollValidationTrace: NSObject {
@@ -89,6 +90,12 @@ final class MacScrollValidationTrace: NSObject {
     var wheelUntil = ContinuousClock.now
     private var scriptedWrite = false
     private var intent = ScrollIntent()
+
+    var pinIntent: ScrollIntent.State {
+        var copy = intent
+        return copy.sampleMac(phase: phaseState.intentPhase, now: .now,
+                              leftMouseDown: copy.physicalScrollerHeld && NSEvent.pressedMouseButtons & 1 != 0)
+    }
 
     func phaseChanged(to phase: ScrollPhase) {
         intent.phaseChanged(from: phaseState.intentPhase, to: phase.intentPhase, now: .now)

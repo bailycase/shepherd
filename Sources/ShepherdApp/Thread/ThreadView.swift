@@ -134,6 +134,7 @@ struct ThreadView: View {
     @State private var restore = ThreadRestore()
     @State private var eagerTail = ThreadEagerTail()
     @State private var historyBuilt = ThreadHistoryBuilt()
+    @State private var historyHeight = ThreadHistoryHeight()
     @State private var shownSignpost = ThreadShownSignpost()
     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
     @State private var loopRun = 0
@@ -342,6 +343,7 @@ struct ThreadView: View {
                         ThreadScrollTrace.write("thread.write.M1", "follower.repin", in: tailGuard.scrollView(), target: Self.bottomID)
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
+                    historyGeometryChanged(from: old, to: new)
                     tailGuard.distance = new.distance
                     tailGuard.suspect()
                     // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
@@ -349,6 +351,9 @@ struct ThreadView: View {
                 }
                 .onScrollPhaseChange { old, phase, context in
                     scrollPhaseChanged(from: old, to: phase, distance: Self.distanceFromBottom(context.geometry))
+                }
+                .onChange(of: follower.sticky) { _, following in
+                    if following && historyMotion == .idle { historyHeight.release() }
                 }
                 .onChange(of: store.sentCount) { _, _ in
                     // A send that goes in now re-attaches to the tail: the echoed turn is the last
@@ -496,6 +501,9 @@ struct ThreadView: View {
                 if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
                 wheelMonitor = nil
                 hovering = false
+                historyHeight.release()
+                historyHeight.intent = ScrollIntent()
+                historyHeight.phase = .idle
                 historyAnchor.cancel()
                 historyAnchor.animating = false
                 // A flick's momentum ends with no word once the view is hidden: the next showing's restore does not wait for it.
@@ -616,7 +624,7 @@ struct ThreadView: View {
         if !parked {
             let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
                                  detached: !follower.sticky)
-            ThreadHistoryColumn(key: key) {
+            ThreadHistoryColumn(key: key, height: historyHeight) {
                 AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                     ForEach(history) { row in
                         rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
@@ -1040,6 +1048,8 @@ struct ThreadView: View {
         #if DEBUG
         if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard { trace.phaseChanged(to: phase) }
         #endif
+        historyHeight.intent.phaseChanged(from: old.intentPhase, to: phase.intentPhase, now: .now)
+        historyHeight.phase = phase.intentPhase
         historyAnchor.animating = phase == .animating
         follower.userScrolling = phase == .interacting
         input.decelerating = phase == .decelerating
@@ -1051,7 +1061,47 @@ struct ThreadView: View {
         if phase == .idle, old == .interacting || old == .decelerating {
             follower.observe(distanceFromBottom: distance, userIntent: true)
         }
-        if phase == .idle { loadVisibleHistory() }
+        historyHeight.read(distance: distance, following: follower.sticky)
+        if phase == .idle {
+            if historyMotion == .idle, !historyAnchor.isEngaged {
+                if follower.sticky {
+                    historyHeight.release()
+                } else if let scroll = tailGuard.scrollView() {
+                    historyAnchor.pin(tailGuard.visiblePinMarkers(in: scroll))
+                    historyHeight.releaseAtIdle()
+                }
+            }
+            loadVisibleHistory()
+        }
+    }
+
+    private var historyMotion: ScrollIntent.State {
+        #if DEBUG
+        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard { return trace.pinIntent }
+        #endif
+        var copy = historyHeight.intent
+        return copy.sampleMac(phase: historyHeight.phase, now: .now,
+                              leftMouseDown: copy.physicalScrollerHeld && NSEvent.pressedMouseButtons & 1 != 0)
+    }
+
+    private func historyGeometryChanged(from old: NativeScrollProbe, to new: NativeScrollProbe) {
+        historyHeight.read(distance: CGFloat(new.distance), viewport: CGFloat(new.container), following: follower.sticky)
+        guard active, !follower.sticky, !historyAnchor.isEngaged, !tailGuard.repairing,
+              let scroll = tailGuard.scrollView() else { historyAnchor.cancelPin(); return }
+        let layoutChanged = new.layoutDiffers(from: old)
+        let mayCorrect = historyMotion == .idle
+        historyAnchor.queuePinUpdate(layoutChanged: layoutChanged && mayCorrect) { [weak scroll] layout in
+            defer { _ = historyHeight.intent.sampleMac(phase: historyHeight.phase, now: .now, leftMouseDown: NSEvent.pressedMouseButtons & 1 != 0) }
+            guard let scroll, active, tailGuard.active, !follower.sticky, !historyAnchor.isEngaged,
+                  !tailGuard.repairing, tailGuard.scrollView() === scroll else { historyAnchor.cancelPin(); return }
+            // As for a prepend, commit the native placement before reading the saved row's new offset.
+            scroll.window?.contentView?.layoutSubtreeIfNeeded()
+            if layout, historyMotion == .idle, !historyAnchor.isEngaged {
+                historyAnchor.correctPin(in: scroll, marker: tailGuard.marker(for:))
+            }
+            historyAnchor.pin(tailGuard.visiblePinMarkers(in: scroll))
+            if historyMotion == .idle { historyHeight.releaseAtIdle() }
+        }
     }
 
     private func wheelIntent() -> (CGFloat) -> Void {
@@ -1076,8 +1126,18 @@ struct ThreadView: View {
         // handler holds only what it moves.
         let hovering = $hovering
         let wheel = wheelIntent()
-        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .keyDown, .leftMouseDown, .leftMouseUp]) {
+            [weak height = historyHeight, weak guardian = tailGuard] event in
+            if event.type == .scrollWheel {
+                if hovering.wrappedValue || height?.intent.wheelInFlight(at: .now) == true {
+                    height?.intent.wheelInput(phase: event.phase.intentPhase, momentum: event.momentumPhase.intentPhase,
+                                              moved: event.scrollingDeltaY != 0, now: .now)
+                    wheel(event.scrollingDeltaY)
+                }
+            } else if let height, let scroll = guardian?.scrollView(), let window = scroll.window, event.window === window,
+                      !scroll.isHiddenOrHasHiddenAncestor {
+                height.observe(event, in: scroll)
+            }
             return event
         }
     }
@@ -1354,15 +1414,73 @@ final class ThreadHistoryCache {
 /// (`ThreadHistoryRetentionTests`).
 private struct ThreadHistoryColumn: View {
     let key: ThreadHistoryCache.Key?
+    let height: ThreadHistoryHeight
     let make: () -> AnyView
     @State private var cache = ThreadHistoryCache()
 
-    init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
-        self.key = key
-        self.make = make
+    var body: some View {
+        cache.view(for: key, make: make)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height.measured($0) }
+            .frame(height: height.held, alignment: .topLeading)
+    }
+}
+
+@MainActor @Observable
+private final class ThreadHistoryHeight {
+    private(set) var held: CGFloat?
+    @ObservationIgnored var intent = ScrollIntent()
+    @ObservationIgnored var phase = ScrollIntent.Phase.idle
+    @ObservationIgnored private var natural: CGFloat?
+    @ObservationIgnored private var viewport: CGFloat = 0
+    @ObservationIgnored private var gap: CGFloat = 0
+    @ObservationIgnored private var followingLastReading = true
+
+    func read(distance: CGFloat, viewport: CGFloat? = nil, following: Bool) {
+        if let viewport { self.viewport = viewport }
+        gap = distance
+        defer { followingLastReading = following }
+        guard followingLastReading, !following, held == nil, gap < self.viewport,
+              let natural, natural > 0 else { return }
+        held = natural
     }
 
-    var body: some View { cache.view(for: key, make: make) }
+    func measured(_ height: CGFloat) {
+        natural = height
+        if let held, height > held { self.held = height }
+    }
+
+    func releaseAtIdle() {
+        guard let held, let natural, gap - max(0, held - natural) >= viewport else { return }
+        release()
+    }
+
+    func release() { held = nil }
+
+    func observe(_ event: NSEvent, in scroll: NSScrollView) {
+        switch event.type {
+        case .keyDown:
+            guard let key = event.charactersIgnoringModifiers?.utf16.first,
+                  !event.modifierFlags.contains(.option), !event.modifierFlags.contains(.control),
+                  !event.modifierFlags.contains(.command) || [NSUpArrowFunctionKey, NSDownArrowFunctionKey].contains(Int(key)) else { return }
+            switch Int(key) {
+            case NSPageUpFunctionKey, NSPageDownFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey,
+                 NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSHomeFunctionKey, NSEndFunctionKey, 32: break
+            default: return
+            }
+            if let responder = scroll.window?.firstResponder as? NSView {
+                guard responder === scroll || responder.isDescendant(of: scroll),
+                      !(responder is NSTextView), !(responder is NSControl) else { return }
+            } else if scroll.window?.firstResponder !== scroll.window { return }
+            intent.keyInput(at: .now)
+        case .leftMouseDown:
+            guard let scroller = scroll.verticalScroller, scroller.isEnabled, !scroller.isHiddenOrHasHiddenAncestor,
+                  scroller.testPart(scroller.convert(event.locationInWindow, from: nil)) == .knob else { return }
+            intent.scrollerGrab(physical: true)
+        case .leftMouseUp:
+            intent.scrollerRelease()
+        default: break
+        }
+    }
 }
 
 /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
