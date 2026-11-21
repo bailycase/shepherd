@@ -2775,6 +2775,7 @@ public final class SessionServer: @unchecked Sendable {
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
+        if case .snapshot = request { logRunDisagreement(agentID: agentID, thread: thread) }
         // Arm before dispatch: pi can exit before acknowledging a prompt.
         let previousPush = (thread.pushRunArmed, thread.pushAwaitingStart)
         if isSend {
@@ -7144,6 +7145,24 @@ public final class SessionServer: @unchecked Sendable {
         source.activate()
     }
 
+    /// A thread that serves `running` (what a client's Stop button follows) while its agent's status, which the sidebar shows, says
+    /// it is not working, for longer than a run takes to report its start: logged once, with what holds the run state. A client stuck on
+    /// Stop after a turn ended leaves this line (its absence says the host agrees, and the client's own settle or polling is at fault).
+    private func logRunDisagreement(agentID: AgentID, thread: RPCThreadState) {
+        let status = store.state.agents.first { $0.id == agentID }?.status
+        let hostRunning = thread.running || thread.retryDispatch != nil
+        guard hostRunning, status == .done || status == .idle else {
+            thread.disagreementSince = nil
+            thread.disagreementLogged = false
+            return
+        }
+        let since = thread.disagreementSince ?? .now
+        thread.disagreementSince = since
+        guard !thread.disagreementLogged, since.duration(to: .now) > .seconds(5) else { return }
+        thread.disagreementLogged = true
+        ShepherdLog.warning("agent \(agentID): thread serves running (rpc=\(thread.running) retryDispatch=\(thread.retryDispatch != nil) doneHeld=\(thread.doneHeld) piBusy=\(thread.piBusy) settleCapture=\(thread.settleCapture != nil)) but its status is \(status?.rawValue ?? "none") since \(thread.secondsSinceDisagreement)s; pi last spoke \(thread.secondsSinceLastEvent)s ago")
+    }
+
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
         let thread = rpcThread(forAgent: agentID)
         let goal = thread?.goal
@@ -7162,6 +7181,7 @@ public final class SessionServer: @unchecked Sendable {
             // arrive before pi's own settle on stdout, which says how the turn ended: wait for it.
             if thread.continuesAfterSettle || thread.running {
                 thread.doneHeld = true
+                ShepherdLog.info("agent \(agentID): done report held (running=\(thread.running) continuesAfterSettle=\(thread.continuesAfterSettle)); pi last spoke \(thread.secondsSinceLastEvent)s ago")
                 return
             }
             failure = thread.turnFailure
