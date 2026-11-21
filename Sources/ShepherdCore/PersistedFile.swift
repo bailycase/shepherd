@@ -8,19 +8,22 @@ public enum PersistedFile<Value: Decodable> {
     case damaged(original: Data?, error: any Error)
 
     public static func load(from url: URL, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
-                            validate: (Value) throws -> Void = { _ in }) -> Self {
+                            exactEnvelope: Bool = false, validate: (Value) throws -> Void = { _ in }) -> Self {
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
-            // A dangling symlink is not a missing file that a writer is free to replace.
+            // Foundation can report a directory as "no such file" too. Only absence at the path,
+            // without following a dangling symlink, permits a writer to start fresh.
+            var entry = stat()
             if (error as? CocoaError)?.code == .fileReadNoSuchFile,
-               (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) == nil { return .missing }
+               lstat(url.path, &entry) == -1, errno == ENOENT { return .missing }
             return .damaged(original: nil, error: error)
         }
         do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = dateDecodingStrategy
+            decoder.userInfo[exactEnvelopeKey] = exactEnvelope
             let document = try decoder.decode(Document.self, from: data)
             try validate(document.value)
             return .loaded(document.value)
@@ -44,6 +47,8 @@ public enum PersistedFile<Value: Decodable> {
         return value
     }
 
+    private static var exactEnvelopeKey: CodingUserInfoKey { CodingUserInfoKey(rawValue: "PersistedFile.exactEnvelope")! }
+
     private struct Document: Decodable {
         let value: Value
 
@@ -51,7 +56,8 @@ public enum PersistedFile<Value: Decodable> {
             // A `value` key marks the envelope, so an extra key can't make it fall through to a bare
             // decode, where a missing field defaults (all hooks on). No stored model has a `value` field.
             if let container = try? decoder.container(keyedBy: Key.self), container.contains(.value) {
-                guard try container.decode(Int.self, forKey: .version) == 1 else {
+                guard decoder.userInfo[PersistedFile.exactEnvelopeKey] as? Bool != true || container.allKeys.count == 2,
+                      try container.decode(Int.self, forKey: .version) == 1 else {
                     throw DecodingError.dataCorruptedError(forKey: .version, in: container,
                                                           debugDescription: "Unsupported persisted file version")
                 }

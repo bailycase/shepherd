@@ -26,6 +26,16 @@ struct FixtureScreen {
     var frameWidth: CGFloat? = nil
 }
 
+extension NativeThreadSnapshot {
+    func withDamagedOrigins() -> Self {
+        var snapshot = self
+        snapshot.originsProblem = "Saved questions and message details could not be read at /tmp/shepherd/thread-origins/acme-web.json. Invalid thread history JSON. Fix access or restore a known-good backup on the host, then refresh the thread. New details won't be saved until then."
+        snapshot.clips = NativeThreadClips(history: true)
+        snapshot.clipped = true
+        return snapshot
+    }
+}
+
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.
 struct FixtureHostData {
     static let token = "fixture-only"
@@ -217,7 +227,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + apps + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + spaceConfiguration + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + supervision + startProblems + composerImages + spaceMCPSignIn + resize
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + spaceConfiguration + spaceLifecycle + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + supervision + startProblems + composerImages + spaceMCPSignIn + resize
     }
 
     static func screen(named name: String) -> FixtureScreen? {

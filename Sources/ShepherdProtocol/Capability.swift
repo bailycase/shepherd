@@ -129,6 +129,7 @@ public struct Capability: RawRepresentable, Hashable, Sendable {
     public static let pushNotifications = Capability("push.notifications.v1")
     public static let reviewCommit = Capability("review.commit.v1")
     public static let skills = Capability("skills.v1")
+    public static let spaceLifecycle = Capability("spaces.lifecycle.v1")
     public static let suggestions = Capability("suggestions.v1")
     public static let terminalActivity = Capability("terminal.activity.v1")
     public static let terminalControl = Capability("terminal.control.v1")

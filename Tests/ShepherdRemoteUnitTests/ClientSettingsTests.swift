@@ -30,6 +30,10 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     var requests: [String] { lock.withLock { log } }
     var saved: InstructionsSnapshot { lock.withLock { files } }
 
+    func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        lock.withLock { log.append("spaceLifecycle.\(action)") }
+    }
+
     /// Settings' pages never ask for skills (ClientSkillsTests has a host that answers them).
     func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult {
         throw RemoteHostClientError.rejected(code: "unsupported", message: "No skills here.")

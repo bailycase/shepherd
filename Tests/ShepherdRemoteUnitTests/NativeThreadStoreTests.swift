@@ -1078,18 +1078,20 @@ struct NativeThreadStoreTests {
         #expect(store.displayedMessages.map(\.entryID) == ["a", echo.entryID, "live"], "history, then the echo, then the live reply")
     }
 
-    @Test func aLegacyHostsEchoLeavesOnlyWhenPiPersistsTheSameText() async {
-        let (store, host, task) = await started()
+    /// A host that never names the send leaves the echo standing until a message the thread did not hold arrives after it: by
+    /// position, whatever its words (pi may save a command expanded), never by a match against older history.
+    @Test func aLegacyHostsEchoLeavesWithTheNextMessageAfterItNotByItsWords() async {
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("do the thing", id: "old"), hi]))
         defer { task.cancel() }
         host.acceptAll()
         store.draft = "do the thing"
         await store.send()
-        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("something else")])
+        host.snapshot = F.snapshot(revision: 2, messages: [F.user("do the thing", id: "old"), hi])
         await store.refresh()
-        #expect(store.pending.count == 1)
-        host.snapshot = F.snapshot(revision: 3, messages: [hi, F.user("do the thing\n", id: "u")])
+        #expect(store.pending.count == 1, "the earlier message with the same words is not it")
+        host.snapshot = F.snapshot(revision: 3, messages: [F.user("do the thing", id: "old"), hi, F.user("Do the thing, carefully", id: "u")])
         await store.refresh()
-        #expect(store.pending.isEmpty && store.displayedMessages.map(\.entryID) == ["a", "u"])
+        #expect(store.pending.isEmpty && store.displayedMessages.map(\.entryID) == ["old", "a", "u"] && store.rows.last?.id.hasPrefix("pending:") == true, "one copy, under the echo's identity")
     }
 
     @Test func aSessionChangeDiscardsEchoes() async {
