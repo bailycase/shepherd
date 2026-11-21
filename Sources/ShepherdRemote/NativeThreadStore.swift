@@ -180,8 +180,8 @@ public final class NativeThreadStore {
     /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending").
     /// A host that holds the queue (`NativeQueue`) shows its own pending row under the same id,
     /// so an echo lasts only until the host's next snapshot. From an older host, an echo is
-    /// "queued" when it was sent as a follow-up while a turn ran, and leaves once pi persists a
-    /// user message with the same text, or when the session changes.
+    /// "queued" when it was sent as a follow-up while a turn ran, and leaves once pi persists the
+    /// message it stands for (found by position, never by its words: `landings`), or when the session changes.
     public private(set) var pending: [NativeThreadMessage] = []
     /// The host's queue as this client shows it: the last snapshot's, with this client's own
     /// changes applied at once until the host's next snapshot confirms them. Empty from a host
@@ -753,10 +753,6 @@ public final class NativeThreadStore {
             }
         }
         if freed { busy = !startWaiters.isEmpty || !inFlight.isEmpty }
-    }
-
-    private static func userText(_ message: NativeThreadMessage) -> String {
-        message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Live subagents keep the fast cadence too: their cards tick counters and activity. A
