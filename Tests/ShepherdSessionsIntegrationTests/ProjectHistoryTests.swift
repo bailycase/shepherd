@@ -390,7 +390,12 @@ struct ProjectHistoryTests {
             rig.host.server.projectChildTakenOver.insert(scope)
             return scope
         }
-        await #expect(throws: Error.self) { try await client.projectExecution(.worker(key: assignment.key)) }
+        do {
+            _ = try await client.projectExecution(.worker(key: assignment.key))
+            Issue.record("A taken-over worker must not provide an exact proof")
+        } catch RemoteHostClientError.rejected(let code, _) {
+            #expect(code == "stale_execution")
+        }
         try await worker.thread { thread in
             _ = rig.host.server.projectChildTakenOver.remove(scope)
             #expect(thread.session.send(.newSession))
@@ -487,9 +492,11 @@ struct ProjectHistoryTests {
         rig.owner.server.setProjectExecutionSpaces([binding: rig.host.server.state.spaces])
         client.disconnect(); rig.host.server.stop(); try rig.host.server.start()
         rig.owner.server.stop(); try rig.owner.server.start()
-        let port = try rig.host.server.startRemoteListener(port: 0, tokenURL: rig.host.dir.appendingPathComponent("remote-token"))
+        // The fixture's device token is in memory and does not survive host restart.
+        let token = rig.host.server.clientTokenForTests()
+        let port = try rig.host.server.startRemoteListener(port: 0)
         let reconnect = RemoteHostClient(); defer { reconnect.disconnect() }
-        _ = try await reconnect.connect(host: "127.0.0.1", port: port, token: rig.remote.token, clientName: "result restart fixture")
+        _ = try await reconnect.connect(host: "127.0.0.1", port: port, token: token, clientName: "result restart fixture")
         rig.owner.server.onProjectPlacement = { host, request, done in
             #expect(host == binding)
             Task { do { done(.success(try await reconnect.projectExecution(request))) } catch { done(.failure(error)) } }
