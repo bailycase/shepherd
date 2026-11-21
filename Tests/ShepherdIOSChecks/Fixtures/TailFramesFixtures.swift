@@ -214,7 +214,7 @@ enum TailFrames {
                 }?.key
                 ledger.append(LedgerFrame(timestamp: link.timestamp, refreshInterval: link.targetTimestamp - link.timestamp,
                                           motion: guardian?.traceMotion ?? "idle", first: first,
-                                          rows: rows.mapValues(\.minY), events: pending))
+                                          rows: rows.mapValues { Double($0.minY) }, events: pending))
                 pending.removeAll(keepingCapacity: true)
             }
             guard let scroll else { return frames.append(nil) }
