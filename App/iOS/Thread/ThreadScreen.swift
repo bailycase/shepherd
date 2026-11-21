@@ -225,6 +225,7 @@ struct ThreadScreen: View {
         if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         if let error = store.loadError { return error }
+        if let problem = store.snapshot?.originsProblem { return problem }
         // A stopped pi's problem is the composer's banner (`StartProblemBanner`), with Retry where the host takes it.
         if let notice = store.clipNotice { return notice.text }
         return nil

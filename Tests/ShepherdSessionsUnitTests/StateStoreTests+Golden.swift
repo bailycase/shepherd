@@ -12,6 +12,7 @@ extension StateStoreTests {
         "instruction-history-bad-element", "instruction-history-damaged",
         "turns-bad-element", "turns-damaged",
         "automation-runs-bad-element", "automation-runs-damaged",
+        "thread-origins-bad-element", "thread-origins-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",
@@ -106,7 +107,7 @@ extension StateStoreTests {
             let session = store.loadSession(sessionID: "sample")
             loaded = ["entries": try session.entries.map { ["id": $0.id, "record": try json($0.record)] },
                       "questions": try json(session.questions)]
-            store.save(sessionID: "sample", records: session.entries, questions: session.questions)
+            store.save(sessionID: "sample", records: session.entries, questions: session.questions, generation: session.generation)
             store.flush()
         case "instructions/history.json":
             let store = InstructionsStore(directory: url.deletingLastPathComponent())

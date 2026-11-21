@@ -71,6 +71,12 @@ extension ThreadPreviewTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1))) func damagedThreadOriginsNotice() async throws {
+        var snapshot = Self.shortThread()
+        snapshot.originsProblem = "Saved questions and message details could not be read at /tmp/shepherd/thread-origins/sample.json. Invalid thread history JSON. Fix access or restore a known-good backup on the host, then refresh the thread. New details won't be saved until then."
+        try await renderClips("thread-origins-damaged", Self.served(snapshot), lines: [], size: Self.clipNarrow)
+    }
+
     @Test func unreadHistoryTellsWhatIsMissingAndWhenItReturns() async throws {
         let snapshot = try Self.served(Self.shortThread(), clips: NativeThreadClips(history: true))
         #expect(snapshot.clipped && snapshot.clips == NativeThreadClips(history: true))

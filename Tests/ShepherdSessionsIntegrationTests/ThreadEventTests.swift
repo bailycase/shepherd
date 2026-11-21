@@ -103,6 +103,32 @@ struct ThreadEventTests {
         #expect(legacy.questions.isEmpty)
     }
 
+    @Test(.timeLimit(.minutes(1))) func threadSnapshotNamesDamageAndClearsOnRepair() async throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        let t = try Thread(originStore: store)
+        defer { t.stop() }
+        _ = try await t.ready()
+        let url = dir.appendingPathComponent("stub-session.json")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+        let bad = try await t.snapshot()
+        let encoded = try JSONEncoder().encode(bad)
+        let wire = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let warning = try #require(wire["originsProblem"] as? String)
+        #expect(warning.contains(url.path) && warning.contains("Invalid thread history JSON"))
+        #expect(warning.contains("restore a known-good backup"))
+        #expect(try Data(contentsOf: url) == damaged)
+        try Data(#"{"version":1,"entries":[],"questions":[{"id":"backup","endedAt":2,"record":{"kind":"input","question":"Which one?","answer":"This one","outcome":"answered","askedAt":1}}]}"#.utf8)
+            .write(to: url, options: .atomic)
+        try await eventually("the recovered answer to reach the transcript") {
+            let recovered = try await t.snapshot()
+            let repaired = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recovered)) as? [String: Any]
+            return repaired?["originsProblem"] == nil && recovered.messages.contains { $0.question?.answer == "This one" }
+        }
+    }
+
     @Test func startupQuestionsWinCollisionsWithinTheLimitAndDoNotLeakAcrossSessions() async throws {
         let dir = try makeScratchDirectory("origins")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -115,10 +141,12 @@ struct ThreadEventTests {
             ThreadOriginStore.Question(id: "q-\($0)", record: NativeQuestionRecord(kind: .confirm, question: "Saved \($0)",
                 confirmed: false, outcome: .answered, askedAt: Double($0)), endedAt: Double($0 + 1))
         }
-        store.save(sessionID: "stub-session", records: [("duplicate", older), ("middle", middle), ("duplicate", winner)], questions: saved)
+        store.save(sessionID: "stub-session", records: [("duplicate", older), ("middle", middle), ("duplicate", winner)],
+                   questions: saved, generation: store.loadSession(sessionID: "stub-session").generation)
         let otherQuestion = ThreadOriginStore.Question(id: "q-128", record: NativeQuestionRecord(kind: .confirm,
             question: "Other session", confirmed: false, outcome: .answered, askedAt: 1), endedAt: 2)
-        store.save(sessionID: "stub-session-2", records: [("other", middle)], questions: [otherQuestion])
+        store.save(sessionID: "stub-session-2", records: [("other", middle)], questions: [otherQuestion],
+                   generation: store.loadSession(sessionID: "stub-session-2").generation)
         store.flush()
         let combined = store.loadSession(sessionID: "stub-session")
         #expect(combined.entries.map(\.id) == ["duplicate", "middle", "duplicate"])
@@ -159,7 +187,7 @@ struct ThreadEventTests {
         }
         #expect(try switched.get().success)
         try await eventually("the next session's origins and questions to load") {
-            t.queue.sync { t.state.piSessionID == "stub-session-2" }
+            t.queue.sync { t.state.piSessionID == "stub-session-2" && t.state.isServable }
         }
         t.queue.sync {
             #expect(t.state.originOrder == ["other"])
