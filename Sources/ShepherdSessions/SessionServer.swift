@@ -2775,6 +2775,7 @@ public final class SessionServer: @unchecked Sendable {
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
+        if case .snapshot = request { logRunDisagreement(agentID: agentID, status: agent.status, thread: thread) }
         // Arm before dispatch: pi can exit before acknowledging a prompt.
         let previousPush = (thread.pushRunArmed, thread.pushAwaitingStart)
         if isSend {
@@ -7145,6 +7146,16 @@ public final class SessionServer: @unchecked Sendable {
         source.activate()
     }
 
+    /// A thread that serves `running` (what a client's Stop button follows) while its agent's status, which the sidebar shows, says
+    /// it is not working, for longer than a run takes to report its start: logged once, with what holds the run state. This runs only
+    /// when a client asks for a snapshot, so a line proves the host holds the state and its absence proves nothing (a resting client
+    /// asks for none). Any status or run change restarts the count.
+    private func logRunDisagreement(agentID: AgentID, status: AgentStatus, thread: RPCThreadState) {
+        let hostRunning = thread.running || thread.retryDispatch != nil
+        guard thread.runDisagreement.shouldWarn(disagrees: hostRunning && (status == .done || status == .idle)) else { return }
+        ShepherdLog.warning("agent \(agentID): thread serves running (rpc=\(thread.running) retryDispatch=\(thread.retryDispatch != nil) doneHeld=\(thread.doneHeld) piBusy=\(thread.piBusy) settleCapture=\(thread.settleCapture != nil)) but its status is \(status.rawValue) for \(thread.runDisagreement.seconds())s; pi last spoke \(thread.secondsSinceLastEvent)s ago")
+    }
+
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
         let thread = rpcThread(forAgent: agentID)
         let goal = thread?.goal
@@ -7177,6 +7188,7 @@ public final class SessionServer: @unchecked Sendable {
                 hopToMain { [weak self] in self?.onAgentStatus?(agentID, status, failure) }
                 return
             }
+            thread?.runDisagreement.reset()
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }

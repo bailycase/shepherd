@@ -2117,8 +2117,18 @@ public final class NativeThreadStore {
                     let before = overlays.count
                     overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
                     if overlays.count != before { deriveQueue() }
+                    // The snapshot held is the host's current word, so the run state follows it: a release to the tail, or a
+                    // load error, left it as the thread was not (a host that is still mid-turn says nothing new for a while).
+                    // An idle snapshot with the end-of-run hold in flight keeps that hold: restarting it would stretch the
+                    // 400 ms with nothing new from the host.
+                    let was = settledRunning
+                    if snapshot?.running == true || !was || settleTask == nil {
+                        settleRunning(snapshot?.running == true, catchingUp: catchUp == nil)
+                    }
                     if loadError != nil {
                         loadError = nil
+                        derive()
+                    } else if settledRunning != was {
                         derive()
                     }
                     caughtUp()

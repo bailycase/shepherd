@@ -84,6 +84,23 @@ struct ThreadEventTests {
         }
     }
 
+    /// A snapshot catches retry A while the status is Done; A fails and clears without starting pi; a snapshot a minute later catches
+    /// retry B. The host was idle between them, so B is a new disagreement and must not warn at once.
+    @Test func aSecondRetryCaughtAfterAGapDoesNotWarnTheRunDisagreement() throws {
+        let h = try Thread(bootstrap: false)
+        defer { h.stop() }
+        let start = ContinuousClock.now
+        let warned = h.queue.sync {
+            h.state.retryDispatch = UUID()
+            let first = h.state.runDisagreement.shouldWarn(disagrees: true, now: start)
+            h.state.retryDispatch = nil
+            h.state.retryDispatch = UUID()
+            let second = h.state.runDisagreement.shouldWarn(disagrees: true, now: start + .seconds(60))
+            return [first, second]
+        }
+        #expect(warned == [false, false])
+    }
+
     @Test func combinedOriginsLoadKeepsLegacyAndUnreadableFileFallbacks() throws {
         let dir = try makeScratchDirectory("origins")
         defer { try? FileManager.default.removeItem(at: dir) }

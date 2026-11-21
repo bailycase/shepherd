@@ -81,6 +81,50 @@ struct ThreadReleasedTailTests {
         #expect(!store.running && store.liveRowID == nil && store.rows.allSatisfy { !$0.live }, "what it was doing when it left is not what it is doing now")
     }
 
+    /// The tail's release shows the thread as not running until its pull lands. On a warm reconnect (the same connection, as the phone
+    /// and iPad have it) a host that is still mid-turn with nothing new to say answers "unchanged": the view has to take its run state
+    /// from the host's last word then, not keep the release's.
+    @Test func aThreadReleasedMidTurnRunsAgainWhenTheHostSaysUnchanged() async {
+        let host = FakeHost(F.snapshot(running: true, messages: session(turns: 3)))
+        host.answersUnchanged = true
+        let store = manualStore()
+        let first = await start(store, host, connection: "link")
+        first.cancel()
+        store.suspend()
+        store.releaseToTail(rows: 30, maxBytes: .max)
+        #expect(!store.running)
+
+        let again = await start(store, host, connection: "link")
+        defer { again.cancel() }
+        #expect(host.requests.last.map { if case .snapshot(_, _, let after) = $0 { after != nil } else { false } } == true, "a warm pull names its revision")
+        #expect(store.running && store.hostRunning, "the host never stopped: the thread says so")
+    }
+
+    /// A turn ends and Stop stays for the 400 ms hold. A pull that lands inside it and finds nothing new (the host says "unchanged")
+    /// is not a new word from the host: it must not start the hold over.
+    @Test func anUnchangedPullKeepsTheEndOfRunHoldInFlight() async throws {
+        let prompt = F.user("go", id: "u")
+        let host = FakeHost(F.snapshot(running: true, messages: [prompt]))
+        host.answersUnchanged = true
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        let (hold, release) = AsyncStream<Void>.makeStream()
+        store.settlePause = { _ in for await _ in hold {} }
+        defer { release.finish() }
+        host.snapshot = F.snapshot(revision: 2, messages: [prompt, F.assistant("Done.", id: "a")])
+        await store.refresh()
+        let settling = try #require(store.settleTask)
+        #expect(store.settledRunning, "Stop stays through the hold")
+
+        await store.refresh()
+        #expect(host.requests.last.map { if case .snapshot(_, _, let after) = $0 { after == 2 } else { false } } == true)
+        #expect(store.settleTask == settling && !settling.isCancelled, "the pending hold is the one that ends the turn")
+        release.finish()
+        await settling.value
+        #expect(!store.settledRunning)
+    }
+
     /// The rows the host adds while a turn runs (its question and the reply so far) are not history: the tail starts in history, and they stay.
     @Test func theLiveRowsOfAThreadThatLeftRunningStayAfterTheTail() async {
         let all = session(turns: 100)
