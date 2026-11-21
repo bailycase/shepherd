@@ -205,12 +205,23 @@ struct ProjectBrowserControlTests {
         let clear = try ControlPress.press("Clear cookies for one.test", under: window.host)
         #expect(ControlPress.undersized([clear], minimum: .desktop).isEmpty)
         #expect(await store.httpCookieStore.allCookies().count == 2)
-        try await eventuallyOnMain("the confirmation") { window.layout(); return AccessibilityNode.all(under: window.host).contains { $0.label == "Cancel" } }
+        func confirmationShown() -> Bool { window.layout(); return AccessibilityNode.all(under: window.host).contains { $0.label == "Cancel" } }
+        try await eventuallyOnMain("the confirmation") { confirmationShown() }
         let confirmationNodes = AccessibilityNode.all(under: window.host)
-        // The page behind the confirmation is out of reach. "Back to Shepherd" stays: it is Esc, which cancels the confirmation first.
+        // The page behind the confirmation is out of reach: its controls are not in the tree and cannot be pressed.
         #expect(!confirmationNodes.contains { $0.label == "Space category Instructions" || $0.label == "Clear cookies for two.test" }, "\(confirmationNodes.compactMap(\.label))")
+        #expect(throws: ControlPressError.self) { try ControlPress.press("Clear cookies for two.test", under: window.host) }
+        #expect(vm.projectCookies.pending == .site("one.test"))
         let labels = confirmationNodes.compactMap(\.label).joined(separator: " ")
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
+        // "Back to Shepherd" stays in reach: it is Esc, which cancels the confirmation first and goes nowhere else.
+        try ControlPress.press("Back to Shepherd", under: window.host)
+        #expect(vm.projectCookies.pending == nil)
+        #expect(vm.showSettings && vm.settingsSection == .projects && vm.projects.showingBrowser, "Back stayed on the page")
+        #expect(await store.httpCookieStore.allCookies().count == 2)
+        try await eventuallyOnMain("the confirmation to close") { !confirmationShown() }
+        try ControlPress.press("Clear cookies for one.test", under: window.host)
+        try await eventuallyOnMain("the confirmation again") { confirmationShown() }
         try ControlPress.press("Cancel", under: window.host)
         #expect(await store.httpCookieStore.allCookies().count == 2)
         for width in [900.0, 720.0] {
