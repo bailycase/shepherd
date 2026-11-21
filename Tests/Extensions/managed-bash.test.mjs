@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { setImmediate, setTimeout as sleep } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, symlink, unlink, rmdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, symlink, unlink, rmdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -128,8 +128,8 @@ test("a managed Bash timeout kills orphaned descendants", async () => {
 // Starts a supervisor and keeps its stdin open, as pi does, so only its own reaping can end it.
 // Exit is observed through a listener registered at spawn, so nothing here ever signals a pid
 // that might have been recycled.
-async function startSupervisor(command) {
-  const child = spawn(process.execPath, [supervisorPath, "--supervise", command], {
+async function startSupervisor(command, args = []) {
+  const child = spawn(process.execPath, [...args, supervisorPath, "--supervise", command], {
     detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
   });
   const exit = once(child, "exit");
@@ -153,7 +153,36 @@ test("the supervisor exits by itself once its command is done and nothing else i
   finally { child.stdin.destroy(); }
 });
 
-test("the supervisor outlives a background job until the test releases it, then exits", { timeout: 70000 }, async () => {
+test("a probe that spawns without stdout, then errors, is retried once and the supervisor survives", { timeout: 40000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shepherd-bash-"));
+  const calls = join(dir, "calls");
+  // The first pgrep spawn fails as EMFILE does: a child with no stdout that emits error on the next tick.
+  const preload = `import cp from 'node:child_process';
+    import { appendFileSync } from 'node:fs';
+    import { EventEmitter } from 'node:events';
+    import { syncBuiltinESMExports } from 'node:module';
+    const spawn = cp.spawn;
+    let probes = 0;
+    cp.spawn = (file, ...args) => {
+      if (file !== '/usr/bin/pgrep') return spawn(file, ...args);
+      appendFileSync(${JSON.stringify(calls)}, 'x');
+      if (probes++ > 0) return spawn(file, ...args);
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('error', Object.assign(new Error('spawn pgrep EMFILE'), { code: 'EMFILE' })));
+      return child;
+    };
+    syncBuiltinESMExports();`;
+  const { child, exit } = await startSupervisor("exit 0", ["--import", `data:text/javascript,${encodeURIComponent(preload)}`]);
+  try {
+    assert.deepEqual(await exitsWithin(exit, 30000), [0, null], "an unhandled probe error would crash it");
+    assert.equal((await readFile(calls, "utf8")).length, 2, "one failed probe schedules exactly one retry");
+  } finally {
+    child.stdin.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the supervisor outlives a background job until the test releases it, then exits", { timeout: 100000 }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "shepherd-bash-"));
   const hold = join(dir, "hold");
   await writeFile(hold, "");
@@ -165,7 +194,8 @@ test("the supervisor outlives a background job until the test releases it, then 
     await sleep(1500); // several probes at the 100 ms backoff start; a late wakeup cannot weaken the check
     assert.ok(!exited, "supervisor must stay while the job is in its group");
     await unlink(hold);
-    assert.deepEqual(await exitsWithin(exit, 30000), [0, null]);
+    // The back-off caps at 30 s: allow a probe that just missed the release plus one more interval and margin.
+    assert.deepEqual(await exitsWithin(exit, 75000), [0, null]);
   } finally {
     child.stdin.destroy();
     await rm(dir, { recursive: true, force: true });

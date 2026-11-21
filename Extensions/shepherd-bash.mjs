@@ -98,9 +98,11 @@ if (isSupervisor()) {
       // first field of each line is the pid. The live supervisor pins the group during the check.
       const flags = process.platform === "darwin" ? ["-a", "-g"] : ["-g"];
       const probe = spawn("/usr/bin/pgrep", [...flags, ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
+      // Listen first: a resource error (EMFILE) can return a child without stdout, then emit error.
+      probe.on("error", retry);
+      if (!probe.stdout) return retry();
       let listing = "";
       probe.stdout.on("data", (chunk) => { listing += chunk; }).on("error", retry);
-      probe.on("error", retry);
       probe.on("close", (code) => {
         const pids = listing.split("\n").filter((line) => line.trim()).map((line) => line.trim().split(/\s+/)[0]);
         if (!retried && code === 0 && pids.length > 0 && pids.every((pid) => pid === ownGroup)) process.exit(0);
