@@ -217,6 +217,62 @@ struct ThreadEventTests {
         #expect(affected.queue.sync { affected.state.origins["user:1"] } == persisted.entries.first?.record)
     }
 
+    @Test func theNextOriginsWritePersistsAnEditThatFailedToWrite() async throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("stub-session.json")
+        let original = Data(#"{"version":1,"entries":[]}"#.utf8)
+        try original.write(to: url)
+        let store = ThreadOriginStore(directory: dir)
+        let t = try Thread(originStore: store)
+        defer { t.stop() }
+        _ = try await t.ready()
+
+        do {
+            // Leave the file readable but prevent atomic replacement in its directory.
+            try #require(chmod(dir.path, 0o500) == 0)
+            defer { _ = chmod(dir.path, 0o700) }
+            t.queue.sync { t.state.recordReferences(["first-ref"], entryID: "user:1") }
+            store.flush()
+            #expect(try Data(contentsOf: url) == original)
+            #expect(try await t.snapshot().originsProblem == nil)
+        }
+
+        t.queue.sync { t.state.recordCommand("/second", entryID: "user:1") }
+        store.flush()
+        let persisted = ThreadOriginStore(directory: dir).load(sessionID: "stub-session")
+        #expect(persisted.map(\.record) == [.init(references: ["first-ref"], command: "/second")])
+    }
+
+    @Test func damageRefusalsAreLoggedOncePerEpisode() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try Self.checkDamageRefusalLog() }
+        }
+    }
+
+    private static func checkDamageRefusalLog() throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        ShepherdLog.persistHostLog(in: dir)
+        let url = dir.appendingPathComponent("session.json")
+        let log = dir.appendingPathComponent("host.log")
+        let store = ThreadOriginStore(directory: dir)
+        for episode in 1...2 {
+            try Data("{".utf8).write(to: url, options: .atomic)
+            let damaged = store.loadSession(sessionID: "session")
+            for id in ["first", "second"] {
+                store.update(sessionID: "session", change: .origin(id: id) { $0.command = "/refused" },
+                             generation: damaged.generation) { _ in }
+            }
+            store.flush()
+            let refusals = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+                .filter { $0.contains("Thread history metadata write refused at \(url.path): the saved history is unreadable.") }
+            #expect(refusals.count == episode)
+            try Data(#"{"version":1,"entries":[]}"#.utf8).write(to: url, options: .atomic)
+            try #require(store.loadSession(sessionID: "session").problem == nil)
+        }
+    }
+
     @Test func startupQuestionsWinCollisionsWithinTheLimitAndDoNotLeakAcrossSessions() async throws {
         let dir = try makeScratchDirectory("origins")
         defer { try? FileManager.default.removeItem(at: dir) }

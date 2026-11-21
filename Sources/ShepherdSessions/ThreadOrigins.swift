@@ -197,10 +197,15 @@ final class ThreadOriginStore: @unchecked Sendable {
         var generation: UInt64 = 0
         var problem: String?
         var loggedRefusal = false
+        // Keep edits that failed to write separate from the disk copy used to detect changes.
+        var pendingUpdates: [(File) -> File] = []
+
+        var fileWithPendingUpdates: File { pendingUpdates.reduce(file) { file, update in update(file) } }
 
         var snapshot: Snapshot {
-            Snapshot(entries: file.entries.map { ($0.id, $0.record) }, questions: file.questions ?? [],
-                     generation: generation, problem: problem)
+            let visible = fileWithPendingUpdates
+            return Snapshot(entries: visible.entries.map { ($0.id, $0.record) }, questions: visible.questions ?? [],
+                            generation: generation, problem: problem)
         }
     }
 
@@ -236,7 +241,7 @@ final class ThreadOriginStore: @unchecked Sendable {
         }, receive: { if let snapshot = $0 { refused?(snapshot) } })
     }
 
-    /// Rebuild only the new change on the latest readable file. Never replay a refused change.
+    /// Apply the new change and any failed writes to the latest readable file. Never replay a refused change.
     func update(sessionID: String, change: Change, generation: UInt64, receive: @escaping (Snapshot?) -> Void) {
         write(sessionID: sessionID, generation: generation, rebase: true, build: { file in
             var file = file
@@ -269,17 +274,19 @@ final class ThreadOriginStore: @unchecked Sendable {
                 return
             }
             do {
-                let file = build(current.file)
+                let file = build(rebase ? current.fileWithPendingUpdates : current.file)
                 let data = try JSONEncoder().encode(file)
+                if rebase { current.pendingUpdates.append(build) }
                 try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
                 current.file = file
                 current.missing = false
                 current.stamp = Stamp(url)
-                self.cache[url] = current
+                if rebase { current.pendingUpdates.removeAll() }
             } catch {
                 ShepherdLog.warning("thread origins not saved at \(url.path): \(error.localizedDescription)")
             }
+            self.cache[url] = current
             receive(changed ? current.snapshot : nil)
         }
     }
