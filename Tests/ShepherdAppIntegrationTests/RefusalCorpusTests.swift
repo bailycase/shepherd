@@ -268,7 +268,12 @@ private final class Corpus {
 
     init(seed: [String: String]) async throws {
         let directory = try makeScratchDirectory("refusals")
-        app = try AppHarness(directory: directory, pi: WaitingMCP.setup(in: directory))
+        app = try AppHarness(directory: directory, pi: WaitingMCP.setup(in: directory), modelCatalog: {
+            ModelListing(models: ["stub/model-a", "stub/model-b"], defaultModel: "stub/model-a",
+                         withoutThinking: ["stub/model-b"], thinkingLevels: ["stub/model-a": ["low", "high"]],
+                         serviceTiers: ["stub/model-a": ["fast"]], contexts: ["stub/model-a": "128k"],
+                         withoutImages: ["stub/model-a"])
+        })
         space = Fixture.space(seed["space"]!, path: app.dir.path)
         thread = Fixture.agent(seed["thread"]!, in: space)
         // A Project's coordinator lives in the Space the host keeps for Projects, out of every client's list.
@@ -535,7 +540,7 @@ private final class Corpus {
         try await fleetPeerAnswers()
         try await extensionSocket()
         try await spaceMCP()
-        // Last, so the ids it names are numbered after every earlier step's.
+        // Keep this after the earlier ID-bearing steps so their numbering stays stable.
         try await spaceLifecycle()
         try await modelCatalog()
     }
