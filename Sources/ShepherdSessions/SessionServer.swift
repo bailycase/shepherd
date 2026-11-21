@@ -929,6 +929,8 @@ public final class SessionServer: @unchecked Sendable {
     var publicationTransfers: Set<UUID> = []
     var publicationTransferQueue: [ProjectArtifactReceipt] = []
     var publicationTransferDuration = ProjectArtifactReceipt.transferSeconds
+    /// Test barrier before a publication first reaches the file queue (admitted, source not yet read), outside both queues.
+    var publicationBeforeSource: (@Sendable () async -> Void)?
     /// Test barrier after preparation, outside both state and file queues.
     var publicationBeforeCommit: (@Sendable () async -> Void)?
     /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.

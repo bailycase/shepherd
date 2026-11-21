@@ -106,15 +106,17 @@ struct ProjectPublicationTests {
                 sha256: ProjectPublicationFiles.hash(bytes), sourceIdentity: ProjectPublicationFiles.hash(Data("source.txt".utf8)))
             try await rig.host.server.publicationIO { try ProjectPublicationFiles.stage(bytes, receipt: receipt, beside: rig.host.server.store.url) }
         }
-        let entered = Locked(false), gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() }
-        rig.host.server.logicalProjectFiles.async { entered.withValue { $0 = true }; gate.wait() }
-        try await eventually("publication file queue held") { entered.current }
+        // Hold this publication alone, admitted and not yet reading its source: the file queue stays free for the
+        // mutations below, which stage state on it.
+        let held = Locked<CheckedContinuation<Void, Never>?>(nil)
+        defer { held.withValue { $0?.resume(); $0 = nil } }
+        try await rig.host.server.enqueue {
+            rig.host.server.publicationBeforeSource = { await withCheckedContinuation { continuation in held.withValue { $0 = continuation } } }
+        }
         let publishing = Task { try await rig.host.server.projectPublish(task.workerAgentID,
             request: .publish(publicationID: id, sourcePath: "source.txt", artifactName: "report.txt")) }
-        try await eventually("publication admitted before source access") {
-            try await rig.host.server.enqueue { rig.host.server.publicationPending.contains(id) }
-        }
+        try await eventually("publication held before source access") { held.current != nil }
+        #expect(try await rig.host.server.enqueue { rig.host.server.publicationPending.contains(id) })
         var mutation: Task<Void, Never>?
         switch action {
         case "pause": mutation = Task { _ = try? await rig.perform(project.id, .pause) }
@@ -133,7 +135,7 @@ struct ProjectPublicationTests {
         try await eventually("native scope revoked during held publication") {
             try await rig.host.server.enqueue { (try? rig.host.server.publicationAuthority(task.workerAgentID)) == nil }
         }
-        gate.signal()
+        held.withValue { $0?.resume(); $0 = nil }
         await #expect(throws: (any Error).self) { try await publishing.value }
         await mutation?.value
         #expect(!FileManager.default.fileExists(atPath: rig.host.dir.appendingPathComponent("logical-projects/\(project.id)/report.txt").path))

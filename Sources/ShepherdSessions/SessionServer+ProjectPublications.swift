@@ -71,6 +71,8 @@ extension SessionServer {
             guard try self.publicationAuthority(worker) == authority else { throw LogicalProjectsError("publication_scope", "Native publication authority expired.") }
         }
         let identity = ProjectPublicationFiles.hash(Data(path.utf8))
+        let beforeSource = try await enqueue { self.publicationBeforeSource }
+        await beforeSource?()
         let receipt: ProjectArtifactReceipt = try await publicationIO(revalidate: revalidate) {
             if let retained = try ProjectPublicationFiles.retained(id, beside: stateURL) {
                 guard retained.key == scope.key, retained.taskID == authority.taskID,
