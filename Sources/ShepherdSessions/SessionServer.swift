@@ -3438,7 +3438,21 @@ public final class SessionServer: @unchecked Sendable {
         ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
     }
 
+    private typealias Route = @Sendable (SessionServer, RemoteRequest, ExtensionConnection) -> Void
+
+    private static let remoteRoutes: [RemoteRequest.Kind: Route] = [
+        .listModels: { server, request, client in
+            guard case .listModels(let id) = request else { preconditionFailure("Mismatched listModels route") }
+            server.remoteListModels(id: id, client: client)
+        },
+    ]
+
     private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        if let handler = Self.remoteRoutes[request.kind] {
+            handler(self, request, client)
+            return
+        }
         switch request {
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
@@ -4103,19 +4117,8 @@ public final class SessionServer: @unchecked Sendable {
                     self.send(refusal.map { .error(id: id, code: "refused", message: $0) } ?? .ok(id: id), to: client)
                 }
             }
-        case .listModels(let id):
-            // Asking pi shells out (~0.5s cold); never block the server
-            // queue. Reply from the queue once the catalog returns.
-            let catalog = modelCatalog
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let listing = catalog()
-                self?.queue.async {
-                    guard let self, self.clients[client.fd] === client else { return }
-                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
-                }
-            }
+        case .listModels:
+            preconditionFailure("Missing listModels route")
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
         case .focusThread(let id, let agentID, let paneID):
@@ -4235,6 +4238,21 @@ public final class SessionServer: @unchecked Sendable {
 
     /// One frame of a tunnel from a remote client. A client that did not say it reads tunnel
     /// replies, or a host that has them off, refuses the open and ignores the rest.
+    private func remoteListModels(id: Int, client: ExtensionConnection) {
+        // Asking pi shells out (~0.5s cold); never block the server
+        // queue. Reply from the queue once the catalog returns.
+        let catalog = modelCatalog
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let listing = catalog()
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
+            }
+        }
+    }
+
     private func remoteTunnel(_ frame: BrowserTunnelFrame, client: ExtensionConnection) {
         guard tunnelsServed, offeredCapabilities.contains(RemoteProtocol.browserTunnelCapability),
               client.clientCapabilities.contains(RemoteProtocol.browserTunnelCapability) else {
