@@ -317,6 +317,33 @@ On the first move to mid-history, the frame released a pending 1,491 pt shrink w
 
 Local evidence: `.build/validation/scroll-stability-gblxeqd0/` (unchanged app, first-move check red) and `.build/validation/scroll-stability-bm1leynu/` (candidate run 1). The reverted candidate and its first-move check are in `.orchestrator/conditional-height-experiment.patch`.
 
+### Slice 4 idle-release probe and stop
+
+[PR #840](https://github.com/bailycase/shepherd/pull/840) changes measurement only. On macOS 27.0.1, three offscreen runs at `b51802d93` matched the unchanged Nightly baseline: 477 pt streaming, 615 pt flick, and 0 pt for mid-history, paging, resize and switch in each run. All seven scenarios had zero blanks and zero detached guard walks. The wheel walk measured 43 pt and left no gap at the top. Each flick lost 902 pt on its first move from a 0 pt tail gap; the validator reports it as `known-red` and keeps the entire run.
+
+Both probe arms held the lazy stack's height across detach without changing `StackID`. The fixture moved into mid-history, sampled the move, then sent `.idle` without another clip move. Arm 1 released with no size anchor. Arm 2 set the `.bottom` size anchor while the held height came off. Neither arm wrote the position on release.
+
+| Scenario | Nil: jump pt / blanks / detached guard walks | Bottom: jump pt / blanks / detached guard walks |
+| --- | ---: | ---: |
+| Slow scroll while streaming | 0 / 0 / 0 | 0 / 0 / 0 |
+| Flick and stop | 0 / 0 / 0 | 0 / 0 / 0 |
+| Mid-history new turn | 40,197 / 3 / 14 | 40,197 / 2 / 14 |
+| Page older history | 28 plus one unknown / 0 / 9 | 28 plus one unknown / 0 / 9 |
+| Window resize | 0 / 0 / 1 | 0 / 0 / 1 |
+| Switch away and back | 0 / 0 / 0 | 0 / 0 / 0 |
+| Wheel walk to top | 0 / 0 / 0 | 0 / 0 / 0 |
+
+| Arm | Pending shrink | Document change on release | In-view row displacement |
+| --- | ---: | ---: | ---: |
+| Nil | 1,187 pt | +4,595 pt | −1,187 pt |
+| `.bottom` | 1,187 pt | +4,595 pt | −1,187 pt |
+
+The two release markers were sampled in mid-history frame 2 (zero-based). The native document and visible rows still had their old geometry on that sample. The visible release landed in frame 3: the document grew from 80,338 to 84,933 pt, the clip stayed at 40,169 pt, and `user-216/reply` moved up 1,187 pt in both arms. That row intersected the viewport on both frames. Neither frame carried reader input or a streaming chunk. The release re-estimated the stack and neither anchor kept the row still.
+
+**Stop.** Both arms crossed the 2 pt release limit, showed blank frames and ran M7 while detached. The guard reached the top early, so the page request belonged to mid-history. Paging failed, its anchor did not recover, and some writer probes did not fire. The wheel scenario measured zero gap at the top but started there, so it did not exercise a wheel traversal in either arm. Both runs wrote all seven summaries and exited 3 on the missing writer probes.
+
+Keep the hold: the three height experiments measured 0 pt at the tail, and both arms of this probe repeated it. The release needs slice 5's detached row compensator and slice 2b's idle signal. Make the hold slice 5's first consumer. The candidate is reverted, saved locally as `.orchestrator/probe.patch`, and not shipped. No variant was run. Evidence: `.build/validation/scroll-stability-wgdh1taq/` (nil) and `.build/validation/scroll-stability-lqyrcyuo/` (bottom).
+
 ### Slice 4 driver contract and open checks
 
 Feed every geometry callback, including the first after a mount. Reconcile intent on release, cancel and remount, and call `turn()` on the first eligible lift when `wantsTurn` is true. Discard driver-side asks invalidated by a mount, session change or newer request.
