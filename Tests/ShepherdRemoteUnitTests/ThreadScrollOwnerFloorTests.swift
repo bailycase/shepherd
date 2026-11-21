@@ -128,7 +128,10 @@ struct ThreadScrollOwnerFloorTests {
         _ = owner.read(.init(probe: Fixture.tail), intent: .idle)
         _ = owner.read(.init(probe: Fixture.probe(offset: 820)), intent: .touching)
         owner.contentArrived()
-        #expect(owner.mount() == .land)
+        // Their hand is still on it (the last reading was a drag): the mount re-attaches and lands when they stop.
+        #expect(owner.mount() == .none)
+        owner.setIntent(.idle)
+        #expect(owner.turn() == .land)
         #expect(owner.follows && !owner.unseen)
     }
 

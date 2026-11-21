@@ -368,7 +368,13 @@ struct ThreadScrollOwnerTests {
         _ = detached.read(Self.reading(offset: 1100), intent: .touching)
         detached.newSession()
         _ = detached.jumpToRow("row-1")
-        #expect(detached.mount() == .land)
+        // The reader's hand is still on it: a mount is not their ask, so it waits for them to stop and then lands once.
+        #expect(detached.mount() == .none)
+        #expect(detached.turn() == .none)
+        detached.setIntent(.idle)
+        #expect(detached.wantsTurn)
+        #expect(detached.turn() == .land)
+        #expect(detached.turn() == .none)
         #expect(detached.follows && !detached.unseen)
     }
 
