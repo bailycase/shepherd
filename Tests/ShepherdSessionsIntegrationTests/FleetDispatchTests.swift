@@ -679,7 +679,7 @@ struct FleetDispatchTests {
         }
         let preparing = "The dispatch is still being prepared."
         do {
-            try await eventually("the receiver to reach thread creation") { await preparation.waiting == 1 }
+            try await eventually("the receiver to reach thread creation") { @Sendable in await preparation.waiting == 1 }
             let held = try await send("Refused by sender.")
             guard case .error(_, "starting", preparing) = held else { throw WireError("expected sender startup refusal, got \(held)") }
             do {
