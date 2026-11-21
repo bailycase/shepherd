@@ -291,6 +291,11 @@ extension PreviewTests {
         #expect(await vm.forgeStore.perform(.setPinned(ref: ForgeItemRef(kind: .pullRequest, repo: ForgeFixtures.repo, number: 31),
                                                        title: "t", pinned: true)) == false)
         #expect(try Data(contentsOf: pins) == Data("{broken".utf8))
+        #expect(vm.forgeStore.actionTitle == "Couldn't pin")
+        let banner = CGSize(width: AppLayout.forgeContentWidth, height: 140)
+        try await Preview.render("forge-pin-refused", size: banner, ready: { vm.forgeStore.actionError != nil }) {
+            ForgeBanners(vm: vm, store: vm.forgeStore).frame(width: banner.width, height: banner.height, alignment: .top).background(Color.sh.bgWindow)
+        }
         vm.selectAgent(try #require(vm.state.agents.first).id)
         try await Preview.render("forge-sidebar-pins-damaged", size: CGSize(width: Self.forgeSidebar, height: 600),
                                  ready: { vm.forgeStore.sidebar?.pinsProblem != nil }) {

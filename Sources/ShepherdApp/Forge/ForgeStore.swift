@@ -78,7 +78,9 @@ final class ForgeStore {
     /// A change on its way to GitHub; its buttons wait.
     private(set) var working = false
     /// A change GitHub refused, said over the page.
-    var actionError: ForgeError?
+    var actionError: ForgeError? { didSet { actionTitle = nil } }
+    /// Names a refused pin or unpin: the host refuses those over a file on its own disk, not over GitHub.
+    private(set) var actionTitle: String?
     /// What an agent action did ("Sent to Add refund events"), with its thread to open.
     var notice: ForgeNotice?
     var mergeOptions = MergeOptions()
@@ -443,6 +445,7 @@ final class ForgeStore {
             return true
         case .failure(let failure):
             actionError = failure
+            if case .setPinned(_, _, let pinned) = request { actionTitle = pinned ? "Couldn't pin" : "Couldn't unpin" }
             return false
         }
     }

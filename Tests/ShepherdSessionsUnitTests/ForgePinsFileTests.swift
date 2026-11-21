@@ -18,6 +18,9 @@ struct ForgePinsFileTests {
 
     private static let damage: [(String, Data)] = [
         ("not UTF-8", Data([0xFF, 0xFE, 0x00, 0x7B])),
+        // Foundation's decoder reads UTF-16 as JSON, so these are valid JSON apart from their encoding.
+        ("UTF-16 without a pin", Data(#"{"pins":[]}"#.data(using: .utf16)!)),
+        ("UTF-16 with a pin", Data(Self.writtenByNightly.data(using: .utf16)!)),
         ("not JSON", Data(#"{"truncated":"#.utf8)),
         ("empty", Data()),
         ("an array", Data("[]".utf8)),

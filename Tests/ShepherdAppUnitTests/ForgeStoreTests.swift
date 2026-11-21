@@ -168,6 +168,11 @@ struct ForgeStoreTests {
         #expect(store.sidebar?.pinsProblem == note && store.sidebar?.needsYou == 3)
         #expect(await store.perform(.setPinned(ref: ref, title: "t", pinned: true)) == false)
         #expect(store.actionError?.message == note && !store.isPinned(ref))
+        #expect(store.actionTitle == "Couldn't pin", "a file on the host, not GitHub")
+        #expect(await store.perform(.setPinned(ref: ref, title: "t", pinned: false)) == false)
+        #expect(store.actionTitle == "Couldn't unpin")
+        await store.toggleSection(.closed)
+        #expect(store.actionTitle == nil, "another refusal keeps its own title")
         #expect(store.sidebar?.pinsProblem == note && store.sidebar?.needsYou == 3)
     }
 

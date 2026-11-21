@@ -792,10 +792,18 @@ public final class ForgeService: @unchecked Sendable {
     }
 
     private static func readPins(_ url: URL) throws(PinsDamaged) -> [ForgePin] {
-        switch PersistedFile<PinsFile>.load(from: url) {
+        switch PersistedFile<PinsFile>.load(from: url, validateBytes: requireUTF8) {
         case .loaded(let file): return file.pins
         case .missing: return []
         case .damaged: throw PinsDamaged(url: url)
+        }
+    }
+
+    /// Foundation's JSON decoder also reads UTF-16, so a file in it would load as healthy and the next
+    /// pin would write over it. Only UTF-8 text without NUL bytes reads (as `SkillsStore` requires).
+    private static func requireUTF8(_ data: Data) throws {
+        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "The file isn't UTF-8 text."))
         }
     }
 

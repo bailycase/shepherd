@@ -29,7 +29,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "forge-filtered", hosts: IssuesPRsFixture.hosts(), routes: [.forge(.list)], prepare: { app in
                 let store = ForgeStore.of(app.hosts)
                 await IssuesPRsFixture.showList(app, kind: .pullRequest)
-                store.filter.author = "baily"
+                store.filter.author = "avery"
                 await FixtureCheck.wait("the browse", seconds: 15) { store.results?.value != nil }
             }),
             FixtureScreen(name: "forge-empty", hosts: IssuesPRsFixture.hosts(.open, empty: true), routes: [.forge(.list)], prepare: list(.pullRequest)),
@@ -174,27 +174,27 @@ enum IssuesPRsFixture {
         case .repos: return .repos([ForgeRepo(nameWithOwner: repo, path: root)])
         case .list(let kind, _, let sections):
             let ids = sections ?? ForgeSectionID.defaults(for: kind)
-            return .list(ForgeList(kind: kind, repo: repo, viewer: "baily",
+            return .list(ForgeList(kind: kind, repo: repo, viewer: "avery",
                                    sections: ForgeSectionID.all(for: kind).filter(ids.contains).map { empty ? ForgeSection(id: $0) : section($0) }))
         case .search(let kind, _, let query):
             let rows = ForgeSectionID.all(for: kind).map(section)
             let pulls = rows.flatMap(\.pullRequests).filter { $0.title.localizedCaseInsensitiveContains(query) }
             let issues = rows.flatMap(\.issues).filter { $0.title.localizedCaseInsensitiveContains(query) }
-            return .list(ForgeList(kind: kind, repo: repo, viewer: "baily", sections: [ForgeSection(id: .results, pullRequests: pulls, issues: issues)]))
+            return .list(ForgeList(kind: kind, repo: repo, viewer: "avery", sections: [ForgeSection(id: .results, pullRequests: pulls, issues: issues)]))
         case .browse(let kind, let scope, let filter, let after):
             let rows = ForgeSectionID.all(for: kind).map(section)
             var seen = Set<String>()
             let pulls = rows.flatMap(\.pullRequests).filter { pull in
-                seen.insert(pull.id).inserted && (filter.author.map { $0 == "@me" ? pull.author == "baily" : pull.author == $0 } ?? true)
+                seen.insert(pull.id).inserted && (filter.author.map { $0 == "@me" ? pull.author == "avery" : pull.author == $0 } ?? true)
                     && (filter.text.isEmpty || pull.title.localizedCaseInsensitiveContains(filter.text))
             }
             let issues = rows.flatMap(\.issues).filter { issue in
                 seen.insert(issue.id).inserted && (filter.label.map { label in issue.labels.contains { $0.name == label } } ?? true)
                     && (filter.text.isEmpty || issue.title.localizedCaseInsensitiveContains(filter.text))
             }
-            return .list(ForgeList(kind: kind, repo: scope, viewer: "baily",
+            return .list(ForgeList(kind: kind, repo: scope, viewer: "avery",
                                    sections: [ForgeSection(id: .results, pullRequests: pulls, issues: issues)], next: after == nil ? "page-2" : nil))
-        case .people: return .people(ForgeRepoPeople(labels: [ForgeLabel(name: "bug", color: "d73a4a")], assignable: ["baily", "devon", "mara"]))
+        case .people: return .people(ForgeRepoPeople(labels: [ForgeLabel(name: "bug", color: "d73a4a")], assignable: ["avery", "devon", "mara"]))
         case .pullRequest(let ref) where ref.number == 31: return .pullRequest(pull31(state))
         case .pullRequestFiles(let ref) where ref.number == 31:
             return .files(PullRequestFiles(ref: ref, files: DiffFile.parse(diff31).map { ChangesFileDiff(file: $0) }))
@@ -214,7 +214,7 @@ enum IssuesPRsFixture {
     }
 
     nonisolated static func summary31(_ state: PullRequestState) -> PullRequestSummary {
-        PullRequestSummary(ref: ref(.pullRequest, 31), title: "Add refund events to the ledger outbox", author: "baily", updatedAt: ago(120),
+        PullRequestSummary(ref: ref(.pullRequest, 31), title: "Add refund events to the ledger outbox", author: "avery", updatedAt: ago(120),
                            state: state, checks: .failing, reviewDecision: .changesRequested, headRef: "agent/refund-events", baseRef: "main",
                            additions: 200, deletions: 8, thread: refundThread)
     }
@@ -229,13 +229,13 @@ enum IssuesPRsFixture {
         func issue(_ number: Int, _ title: String, _ author: String, _ minutes: Double, labels: [ForgeLabel] = [], mine: Bool = false,
                    linked: [Int] = [], thread: ForgeThreadLink? = nil, automation: String? = nil) -> IssueSummary {
             IssueSummary(ref: ref(.issue, number), title: title, author: author, updatedAt: ago(minutes), state: .open, labels: labels,
-                         assignees: mine ? ["baily"] : [], assignedToViewer: mine, linkedPullRequests: linked, thread: thread, automationName: automation)
+                         assignees: mine ? ["avery"] : [], assignedToViewer: mine, linkedPullRequests: linked, thread: thread, automationName: automation)
         }
         switch id {
         case .authored:
             return ForgeSection(id: id, pullRequests: [
                 summary31(.open),
-                pull(30, "Split payout reports by currency", "baily", 1_440, decision: .approved),
+                pull(30, "Split payout reports by currency", "avery", 1_440, decision: .approved),
             ])
         case .reviewRequested:
             return ForgeSection(id: id, pullRequests: [
@@ -244,7 +244,7 @@ enum IssuesPRsFixture {
             ])
         case .openedByAgents:
             return ForgeSection(id: id, pullRequests: [
-                pull(26, "Fix pay button jump on slow networks", "baily", 20, state: .draft, checks: .none, decision: nil,
+                pull(26, "Fix pay button jump on slow networks", "avery", 20, state: .draft, checks: .none, decision: nil,
                      thread: ForgeThreadLink(agentID: FixtureData.buffer, title: "Fix pay button", running: false, branch: "agent/pay-button")),
             ])
         case .teamReview:
@@ -257,7 +257,7 @@ enum IssuesPRsFixture {
             return ForgeSection(id: id, issues: [
                 issue(34, "Partial refunds round down by a cent", "mara", 60,
                       labels: [ForgeLabel(name: "bug", color: "d73a4a"), ForgeLabel(name: "ledger", color: "ededed")], mine: true),
-                issue(33, "Refund events skip the outbox", "baily", 4_320, mine: true, linked: [31]),
+                issue(33, "Refund events skip the outbox", "avery", 4_320, mine: true, linked: [31]),
             ])
         case .mentioned:
             return ForgeSection(id: id, issues: [issue(32, "Payout CSV has no currency column", "devon", 2_880)])
@@ -282,13 +282,13 @@ enum IssuesPRsFixture {
         let comment = ForgeLineComment(id: 501, author: "mara", path: "ledger/outbox.go", line: 103, diffHunk: "@@ -90,6 +90,14 @@\n+\treturn wrap(err)",
                                        body: "Can we wrap with the event ID too? Kind alone won't tell us which refund failed.", createdAt: ago(40))
         var events = [
-            ForgeEvent(id: "opened", actor: "baily", at: ago(180), kind: .opened),
+            ForgeEvent(id: "opened", actor: "avery", at: ago(180), kind: .opened),
             ForgeEvent(id: "push", actor: "agent", at: ago(12), kind: .pushed(commits: 1)),
             ForgeEvent(id: "review", actor: "mara", at: ago(40), kind: .reviewed(state: .changesRequested, body: "", comments: [comment])),
         ]
         switch state {
-        case .merged: events.append(ForgeEvent(id: "merged", actor: "baily", at: ago(5), kind: .merged))
-        case .closed: events.append(ForgeEvent(id: "closed", actor: "baily", at: ago(5), kind: .closed))
+        case .merged: events.append(ForgeEvent(id: "merged", actor: "avery", at: ago(5), kind: .merged))
+        case .closed: events.append(ForgeEvent(id: "closed", actor: "avery", at: ago(5), kind: .closed))
         default: break
         }
         return PullRequestDetail(
@@ -303,7 +303,7 @@ enum IssuesPRsFixture {
             changedFiles: 5,
             reviewers: [ForgeReviewer(login: "mara", state: .changesRequested), ForgeReviewer(login: "devon", state: .pending)],
             checks: checks, events: events, mergeable: .mergeable, mergeMethods: [.squash, .merge, .rebase], defaultMergeMethod: .squash,
-            mergeCommit: state == .merged ? "7d41c0a9e2" : nil, closesIssues: state == .merged ? [28] : [], viewer: "baily")
+            mergeCommit: state == .merged ? "7d41c0a9e2" : nil, closesIssues: state == .merged ? [28] : [], viewer: "avery")
     }
 
     nonisolated static var issue34: IssueDetail {
@@ -315,10 +315,10 @@ enum IssuesPRsFixture {
             """,
             events: [
                 ForgeEvent(id: "opened", actor: "mara", at: ago(60), kind: .opened),
-                ForgeEvent(id: "assigned", actor: "mara", at: ago(60), kind: .assigned(login: "baily")),
+                ForgeEvent(id: "assigned", actor: "mara", at: ago(60), kind: .assigned(login: "avery")),
                 ForgeEvent(id: "c1", actor: "devon", at: ago(45), kind: .commented(body: "Payouts have the same split. Worth fixing both in one place.")),
             ],
-            linkedPullRequests: [], viewer: "baily")
+            linkedPullRequests: [], viewer: "avery")
     }
 
     nonisolated static func sidebar(_ state: PullRequestState) -> ForgeSidebar {
