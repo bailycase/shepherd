@@ -182,6 +182,8 @@ struct ProjectChildrenTests {
         #expect(rig.host.server.state.projects.first?.interruptPending == true)
         try controller.send(.childCommandResult(id: stopID, error: nil))
         try await eventually("native stop after helpers exited") { !pi.stdin("abort").isEmpty }
+        // Every Stop of a thread also tells its children extension to stop the Bash it manages.
+        #expect(try controller.readReply() == .stopManagedBash)
         try await eventually("Project settled after helper ACK") {
             rig.host.server.state.projects.first?.tasks.first?.phase == .settled && rig.host.server.state.projects.first?.interruptPending == false
         }
@@ -482,6 +484,8 @@ struct ProjectChildrenTests {
         let pi = try await rig.pi(assignment)
         let (controller, scope) = try await authorize(pi, on: rig.host)
         let stopping = Task { try await pi.request(.abort(expectedSessionID: scope.sessionID, generation: scope.generation, operationID: UUID())) }
+        // Every Stop of a thread also tells its children extension to stop the Bash it manages, ahead of the helpers' own stop.
+        #expect(try controller.readReply() == .stopManagedBash)
         guard case .projectChildren(let id, scope, .stop) = try controller.readReply() else { throw WireError("Native Stop bypassed helpers") }
         #expect(pi.stdin("abort").isEmpty)
         try controller.send(.childCommandResult(id: id, error: nil))
