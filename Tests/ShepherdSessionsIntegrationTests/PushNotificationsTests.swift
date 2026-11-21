@@ -305,7 +305,8 @@ struct PushNotificationsTests {
             finish(status)
         }
         try queue.sync {
-            #expect(try Data(contentsOf: file) == damage)
+            let saved = try Data(contentsOf: file)
+            #expect(saved == damage)
             pushes.send(agentID: AgentID(), kind: .done)
             #expect(requests.current == 2, "damage suspends delivery and relay fallback")
         }
