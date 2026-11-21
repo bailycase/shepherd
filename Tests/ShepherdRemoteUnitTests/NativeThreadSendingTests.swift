@@ -40,6 +40,7 @@ struct NativeThreadSendingTests {
     private static let withImages = ["send", "sendImages", "abort", "answer"]
 
     private func userRows(_ store: NativeThreadStore) -> [NativeThreadRow] { store.rows.filter(\.isUser) }
+    private func userMessages(_ store: NativeThreadStore) -> [NativeThreadMessage] { store.displayedMessages.filter { $0.role == "user" } }
 
     @Test func aSendIsInTheTranscriptAsSendingAndItsEchoKeepsTheTurn() async throws {
         let hold = SendHold()
@@ -185,10 +186,111 @@ struct NativeThreadSendingTests {
         host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("Review the diff carefully", id: "u1"), F.assistant("done", id: "a2")])
         await store.refresh()
         #expect(store.submissions.first?.state == .sending, "an expanded command is only a guess until the host answers")
+        // Before the answer: the thread shows the delivered message and its reply, no "Sending…" copy below them, and the record
+        // that restores the draft is still there.
+        #expect(userRows(store).map(\.id) == ["u1"] && store.rows.last?.isUser == false)
+        #expect(store.displayedMessages.allSatisfy { $0.status != NativeThreadMessage.sendingStatus })
+        #expect(store.submissions.count == 1 && store.recoverySnapshot.count == 1)
         host.answersUnchanged = true
         hold.held = false
         #expect(await send.value)
         #expect(store.pending.isEmpty && userRows(store).count == 1 && !store.busy)
+    }
+
+    /// An idle thread and a send that left no user message at all (a command that only ran): the finished turn ends the copy,
+    /// the record stays.
+    @Test func aFinishedTurnAfterAnIdleSendHidesItsCopyAndKeepsTheRecord() async throws {
+        let hold = SendHold()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "/review"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(userRows(store).isEmpty && store.recoverySnapshot.count == 1 && store.submissions.first?.state == .sending)
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// Rule: a send that is not the composer's (a design's, Forge's) is captured too. An old host that is still running when it
+    /// goes shows it below the reply; an earlier message with the same words does not hide it, and a snapshot taken while the
+    /// thread still runs keeps it.
+    @Test func aDirectSendWhileRunningIsNotHiddenByAnEarlierMessageWithTheSameWords() async throws {
+        let hold = SendHold()
+        hold.held = false
+        let earlier = F.user("continue", id: "u0")
+        let running = F.snapshot(running: true, actions: ["send", "abort"], messages: [earlier, hi],
+                                 provisional: [F.assistant("working", status: "streaming", id: "r")])
+        let host = FakeHost(running)
+        let (store, loop) = await started(running, hold: hold, host: host)
+        defer { loop.cancel(); store.stop() }
+        await store.send(text: "continue")
+        #expect(store.pending.count == 1)
+        host.snapshot = F.snapshot(revision: 2, running: true, actions: ["send", "abort"], messages: [earlier, hi],
+                                   provisional: [F.assistant("still working", status: "streaming", id: "r")])
+        await store.refresh()
+        #expect(store.pending.count == 1 && userRows(store).count == 2, "the earlier \"continue\" is not this send")
+        host.snapshot = F.snapshot(revision: 3, messages: [earlier, hi, F.user("continue", id: "u2"), F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(store.pending.isEmpty && userRows(store).count == 2 && userRows(store).first?.id == "u0")
+    }
+
+    /// Two identical sends, the first accepted and the second still waiting for its answer, and the history holds one message
+    /// with those words: it replaces one copy (the first's), and the second send stays on screen with its record.
+    @Test func oneDeliveredMessageReplacesOneOfTwoIdenticalSends() async throws {
+        let hold = SendHold()
+        hold.held = false
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.answersUnchanged = true
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "continue"
+        #expect(await store.send(delivery: .followUp))
+        hold.held = true
+        hold.operation = nil
+        store.draft = "continue"
+        let second = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        #expect(userMessages(store).count == 2 && store.pending.count == 1 && store.submissions.count == 1)
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("continue", id: "u1")])
+        await store.refresh()
+        #expect(userMessages(store).count == 2 && store.pending.isEmpty, "the saved message, and the second send still Sending…")
+        #expect(userMessages(store).filter { $0.status == NativeThreadMessage.sendingStatus }.count == 1)
+        #expect(store.submissions.first?.state == .sending)
+        hold.held = false
+        #expect(await second.value)
+        #expect(userMessages(store).count == 2 && store.pending.count == 1, "the second send waits for a message of its own")
+    }
+
+    /// Turn A is still live (its message shown as it streams) when B, with the same words, is sent. The live message is not B
+    /// landing: B stays on screen while the host holds it.
+    @Test func aLiveMessageWithTheSameWordsDoesNotHideANewSend() async throws {
+        let hold = SendHold()
+        hold.held = false
+        let live = F.snapshot(running: true, actions: ["send", "abort"], messages: [hi],
+                              provisional: [F.user("continue", id: "provisional:a"), F.assistant("working", status: "streaming", id: "r")])
+        let host = FakeHost(live)
+        host.answersUnchanged = true
+        let (store, loop) = await started(live, hold: hold, host: host)
+        defer { loop.cancel(); store.stop() }
+        store.draft = "continue"
+        #expect(await store.send(delivery: .followUp))
+        #expect(store.pending.count == 1)
+        host.snapshot = F.snapshot(revision: 2, running: true, actions: ["send", "abort"], messages: [hi],
+                                   provisional: [F.user("continue", id: "provisional:a"), F.assistant("more", status: "streaming", id: "r")])
+        await store.refresh()
+        #expect(store.pending.count == 1 && userRows(store).count == 2, "A is live, B is queued: two messages")
+        // A is saved under a new id: that is A, not B. B's message comes after it.
+        host.snapshot = F.snapshot(revision: 3, running: true, actions: ["send", "abort"],
+                                   messages: [hi, F.user("continue", id: "u1")], provisional: [F.assistant("more", status: "streaming", id: "r")])
+        await store.refresh()
+        #expect(store.pending.count == 1 && userRows(store).count == 2)
+        host.snapshot = F.snapshot(revision: 4, messages: [hi, F.user("continue", id: "u1"), F.assistant("done", id: "a1"),
+                                                           F.user("continue", id: "u2"), F.assistant("again", id: "a2")])
+        await store.refresh()
+        #expect(store.pending.isEmpty && userRows(store).count == 2 && userRows(store).first?.id == "u1")
     }
 
     /// The same words sent before are not this send landing.
