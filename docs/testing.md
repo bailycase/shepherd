@@ -40,11 +40,11 @@ Filtering narrows execution, not the package build graph; a cold build can still
 Use [Xcode](build-and-run.md) when the change needs app-level validation, not as a test prerequisite.
 Docs-only changes need the applicable docs guards, not Swift builds or tests.
 
-Expand to a whole tier (`--filter UnitTests` or `--filter IntegrationTests`) or `swift test` for
-shared changes or wider regressions. `CI=true swift test` is an unfiltered run with timing-sensitive
-tests skipped; opt-in suites, including previews, remain gated. It is not ordinary PR selection.
-The existing [CI planner](#ci) provides required broader coverage before merge; no duplicate full
-local run is needed solely to reproduce CI.
+An unfiltered `swift test -j 4` now finishes in about an hour. It currently reports roughly 900 to
+1,000 failures; most of those tests pass when run alone. For PR work, use filtered runs and the
+applicable `scripts/validate.py --case` gates. Expand to a whole tier (`--filter UnitTests` or
+`--filter IntegrationTests`) when needed. The [CI planner](#ci) selects broader coverage before merge.
+`CI=true swift test` still skips timing-sensitive tests, and opt-in suites such as previews stay gated.
 
 ## Simulator renders
 
