@@ -1097,7 +1097,7 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
   }
 });
 
-test("the parent's Bash asks its authenticated control socket to sweep only an aborted or timed-out call's scope", { timeout: 60000 }, async () => {
+test("the parent's Bash asks its control socket to sweep only stopped, aborted or timed-out calls", { timeout: 60000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-bash-sweep-"));
   const frames = [], sockets = new Set();
   const control = net.createServer((socket) => {
@@ -1137,13 +1137,21 @@ test("the parent's Bash asks its authenticated control socket to sweep only an a
     const timedOut = run("timed", { timeout: 1 });
     const [, timedScope] = await timedOut.scope();
     await assert.rejects(timedOut.done);
+    const stopController = new AbortController();
+    const stopped = run("stopped", { timeout: 5 }, stopController.signal);
+    const stoppedResult = assert.rejects(stopped.done, /supervisor exited without reporting a status/);
+    const [, stoppedScope] = await stopped.scope();
+    // The host sends this before clear_queue and abort. Bash can settle before the abort arrives.
+    sockets.values().next().value.write('{"type":"stopManagedBash"}\n');
+    await stoppedResult;
+    stopController.abort();
     assert.equal(abortedThread, "thread-marker");
-    assert.notEqual(abortedScope, timedScope);
-    // One socket keeps its order: the requests are the only two, in call order, each for its own scope.
-    await until(() => frames.filter((f) => f.type === "stopBashProcesses").length >= 2);
+    assert.equal(new Set([abortedScope, timedScope, stoppedScope]).size, 3);
+    await until(() => frames.some((f) => f.type === "stopBashProcesses" && f.bashScope === stoppedScope), 2000);
     assert.deepEqual(frames.filter((f) => f.type === "stopBashProcesses"), [
       { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: abortedScope },
       { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: timedScope },
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: stoppedScope },
     ]);
   } finally {
     await h?.shutdown();
