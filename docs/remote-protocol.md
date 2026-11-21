@@ -288,6 +288,8 @@
     experiment's settings and its lines
   - `pushRegistration` / `pushUnregister` (`push.notifications.v1`): an opted-in mobile client
     registers or removes a relay destination over the authenticated connection, answered with `ok`.
+    If the host's registration file is damaged, both requests return `push_registration` with recovery
+    instructions for the host. The host leaves the file alone and suspends delivery once it detects damage.
     Registration carries only its opaque ID and scoped send credential. The APNs device token
     and revocation credential stay with the phone and relay. Alerts include the current thread title
     and a short final reply, error, or explicit question preview by default, with generic text when

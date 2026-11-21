@@ -4,13 +4,19 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
+public enum RemoteHostClientError: LocalizedError, CustomStringConvertible, Sendable {
     case resolveFailed(host: String)
     case system(call: String, errno: Int32)
     case rejected(code: String, message: String)
     case outcomeUnknown(message: String)
     case disconnected
     case timeout
+
+    public var errorDescription: String? {
+        // Notification settings display localizedDescription, not the debugging description.
+        guard case .rejected("push_registration", let message) = self else { return nil }
+        return message
+    }
 
     public var description: String {
         switch self {

@@ -3401,14 +3401,16 @@ public final class SessionServer: @unchecked Sendable {
                 try pushNotifications.register(registration)
                 send(.ok(id: id), to: client)
             } catch {
-                send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
+                send(.error(id: id, code: "push_registration",
+                            message: (error as? PushNotifications.Failure)?.errorDescription ?? "Could not save push registration."), to: client)
             }
         case .pushUnregister(let id, let registrationID):
             do {
                 try pushNotifications.unregister(registrationID)
                 send(.ok(id: id), to: client)
             } catch {
-                send(.error(id: id, code: "push_registration", message: "Could not remove push registration."), to: client)
+                send(.error(id: id, code: "push_registration",
+                            message: (error as? PushNotifications.Failure)?.errorDescription ?? "Could not remove push registration."), to: client)
             }
         case .nativeThreadSubscribe(let id, let agentIDs):
             let visible = Set(remoteState(store.state, for: client).agents.map(\.id))

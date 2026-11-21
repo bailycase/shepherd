@@ -20,6 +20,12 @@ public enum PersistedFile<Value: Decodable> {
                lstat(url.path, &entry) == -1, errno == ENOENT { return .missing }
             return .damaged(original: nil, error: error)
         }
+        return load(data: data, dateDecodingStrategy: dateDecodingStrategy, exactEnvelope: exactEnvelope, validate: validate)
+    }
+
+    /// For callers that bound their own read before decoding on the server queue.
+    package static func load(data: Data, dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate,
+                             exactEnvelope: Bool = false, validate: (Value) throws -> Void = { _ in }) -> Self {
         do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = dateDecodingStrategy
