@@ -13,6 +13,13 @@ public enum SubagentFixtures {
         return engine
     }
 
+    /// Skips the running test where no engine is staged. A test that runs its body in a child process
+    /// (`processExitsWith`) calls this first: a skip raised inside the child fails the child, not the test.
+    public static func requireStagedEngine() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        _ = try stagedEngine(under: root)
+    }
+
     public static func store(in directory: URL, populated: Bool = false, seed: Bool = true) throws -> SubagentDefinitionsStore {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let engine = try stagedEngine(under: root)

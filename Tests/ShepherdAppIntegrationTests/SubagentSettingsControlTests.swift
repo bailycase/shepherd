@@ -10,7 +10,8 @@ import ShepherdTestSupport
 @Suite("Subagent settings controls", .mainActorExclusive)
 @MainActor
 struct SubagentSettingsControlTests {
-    @Test func nativeControlsReadSaveDeleteRestoreAndProtectDirtyNavigation() async {
+    @Test func nativeControlsReadSaveDeleteRestoreAndProtectDirtyNavigation() async throws {
+        try SubagentFixtures.requireStagedEngine()
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.pressControls() }
         }
