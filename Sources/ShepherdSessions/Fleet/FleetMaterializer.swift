@@ -176,6 +176,7 @@ final class FleetMaterializer {
             var observed = self.observed
             var pending = self.pending
             var sourceChanged = false
+            // Buffer values so damage found mid-scan leaves nothing written.
             var toEmit: [(unit: String, value: Data?, seed: Bool)] = []
             for unit in units(of: source, holding: present) {
                 let hash = present[unit] ?? "-"
@@ -244,9 +245,11 @@ final class FleetMaterializer {
         var notices: [Notice] = []
         var failed = false
         var changed = false
-        for source in sources where source.isReady {
+        for source in sources {
+            guard source.isReady else { failed = true; continue }
             guard var present = try? source.fingerprints() else { failed = true; continue }
-            let (previousObserved, previousPending, previousChanged, noticeCount) = (observed, pending, changed, notices.count)
+            var (keptObserved, keptPending, keptChanged) = (observed, pending, changed)
+            let noticeCount = notices.count
             var damaged = false
             /// Units that must wait for another unit of the same pass (a skill's state, for its files).
             var waiting: [String] = []
@@ -283,6 +286,10 @@ final class FleetMaterializer {
                 do {
                     try source.write(unit, target, origin: winner.macName.isEmpty ? "another Mac" : winner.macName)
                     changed = true
+                    // A later refusal can't undo a successful write. Keep what the next scan must know.
+                    keptObserved[unit] = observed[unit]
+                    keptPending[unit] = pending[unit]
+                    keptChanged = true
                     if replacedSeed { notices.append(Notice(unit: unit, from: winner.macName)) }
                 } catch SkillsStore.StoreError.damagedRecords {
                     damaged = true
@@ -307,7 +314,7 @@ final class FleetMaterializer {
                 }
             }
             if damaged {
-                (observed, pending, changed) = (previousObserved, previousPending, previousChanged)
+                (observed, pending, changed) = (keptObserved, keptPending, keptChanged)
                 notices.removeLast(notices.count - noticeCount)
                 failed = true
             }
