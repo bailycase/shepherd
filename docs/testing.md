@@ -29,9 +29,12 @@ not a checklist; replace the suite, test or file with the one relevant to the ch
 ```bash
 swift test --filter PaneNodeTests
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests/threadActivityIdle
-PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test Tests/Extensions/instructions.test.mjs
+python3 scripts/pi_engine.py stage   # once; re-run after the pin changes
+PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test Tests/Extensions/instructions.test.mjs
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
 ```
+
+Use the staged Node locally: older Node versions may lack the TypeScript transform mode that `anthropic-oauth.test.mjs` needs. Use `Tests/Extensions/*.test.mjs` for the whole suite.
 
 `swift test` builds before running; a separate `swift build` is unnecessary. Keep build flags and
 configuration consistent across runs. Use `--skip-build` only after a successful build with the
