@@ -135,55 +135,12 @@ struct ComposerSubmissionTests {
         #expect(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions)
         host.answer = .refuse
         input.attachments.add([("kept.png", image("kept.png"))])
-        input.attachments.reject("notes.pdf is not an image Shepherd can attach.")
         store.draft = "one more"
         let sends = host.sends
         #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) == false)
         #expect(host.sends == sends)
         #expect(store.draft == "one more")
         #expect(input.attachments.items.map(\.name) == ["kept.png"], "nothing captured: the images stay")
-        #expect(input.attachments.error != nil, "nothing captured: the error stays too")
-    }
-
-    /// A text-only send has no image to remove, so the error an earlier import left (shown with zero images) must go with it.
-    @Test func aTextOnlySendClearsAnEarlierImportError() async {
-        let host = Host()
-        host.answer = .accept
-        let (store, loop) = await ready(host)
-        defer { loop.cancel() }
-        let input = ThreadInput()
-        input.attachments.add([("notes.pdf", nil)])
-        #expect(input.attachments.error != nil && input.attachments.isEmpty)
-        store.draft = "words only"
-        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
-        #expect(input.attachments.error == nil, "the stale error is gone once the send went through")
-    }
-
-    /// The stale error goes once, when the store captures the send. An import rejected after that is newer than the send,
-    /// so the host's answer must not clear it.
-    @Test func aNewerImportErrorSurvivesTheHostAcceptingAnEarlierSend() async {
-        let host = Host()
-        host.answer = .accept
-        host.holding = true
-        let (store, loop) = await ready(host)
-        defer { loop.cancel() }
-        let input = ThreadInput()
-        input.attachments.add([("old.pdf", nil)])
-        #expect(input.attachments.error != nil)
-        store.draft = "words only"
-        let send = Task { await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) }
-        // Captured: the stale error is cleared.
-        while input.attachments.error != nil {
-            await withCheckedContinuation { changed in
-                withObservationTracking { _ = input.attachments } onChange: { changed.resume() }
-            }
-        }
-        input.attachments.add([("new.pdf", nil)])
-        let rejection = input.attachments.error
-        #expect(rejection != nil && input.attachments.isEmpty)
-        host.hold?.resume()
-        #expect(await send.value)
-        #expect(input.attachments.error == rejection, "the newer rejection is still showing")
     }
 }
 
