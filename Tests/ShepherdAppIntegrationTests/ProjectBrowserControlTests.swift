@@ -205,9 +205,10 @@ struct ProjectBrowserControlTests {
         let clear = try ControlPress.press("Clear cookies for one.test", under: window.host)
         #expect(ControlPress.undersized([clear], minimum: .desktop).isEmpty)
         #expect(await store.httpCookieStore.allCookies().count == 2)
-        window.layout()
+        try await eventuallyOnMain("the confirmation") { window.layout(); return AccessibilityNode.all(under: window.host).contains { $0.label == "Cancel" } }
         let confirmationNodes = AccessibilityNode.all(under: window.host)
-        #expect(!confirmationNodes.contains { $0.label == "Back to Shepherd" || $0.label == "Space category Instructions" || $0.label == "Clear cookies for two.test" })
+        // The page behind the confirmation is out of reach. "Back to Shepherd" stays: it is Esc, which cancels the confirmation first.
+        #expect(!confirmationNodes.contains { $0.label == "Space category Instructions" || $0.label == "Clear cookies for two.test" }, "\(confirmationNodes.compactMap(\.label))")
         let labels = confirmationNodes.compactMap(\.label).joined(separator: " ")
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
         try ControlPress.press("Cancel", under: window.host)

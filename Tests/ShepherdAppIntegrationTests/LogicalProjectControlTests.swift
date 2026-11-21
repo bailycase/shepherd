@@ -311,7 +311,8 @@ struct LogicalProjectControlTests {
         let help = try box { ($0.value ?? "").hasPrefix("Folders threads work in") }
         #expect(help.width == 526 || help.width > 500, "help \(help)")
         let popupBox = try box { $0.role == ControlRole.menuButton }
-        #expect(popupBox.origin == CGPoint(x: 17, y: 269) && abs(popupBox.width - 129) < 0.6 && popupBox.height == 32, "Add a space popup \(popupBox)")
+        // The popup is Settings' own (26pt since the grouped Settings), as Project settings' "Add a space…" is.
+        #expect(popupBox.origin == CGPoint(x: 17, y: 269) && abs(popupBox.width - 116) < 0.6 && popupBox.height == SHSettingsControlMetrics.controlHeight, "Add a space popup \(popupBox)")
         // Name is required: Create is disabled while it is blank.
         let create = try #require(ControlPress.controls(in: sheet).first { $0.label == "Create project" })
         #expect(!create.isEnabled)

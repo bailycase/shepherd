@@ -165,9 +165,9 @@ struct ChildProjectTests {
                                      ProjectsSettings(vm: vm, model: vm.projects))
         defer { window.close() }
         try await eventuallyOnMain("settings parent row") { vm.projects.visible.count == 1 }
-        window.layout()
-        let add = try window.press("Add subspace to Parent")
-        #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
+        // The row offers Add subspace… as an action, as its context menu does.
+        try await eventuallyOnMain("the row's actions") { window.layout(); return ControlPress.actions(onLabelContaining: "Open Parent", under: window.host).contains("Add subspace…") }
+        try ControlPress.perform("Add subspace…", onLabelContaining: "Open Parent", under: window.host)
         try await eventuallyOnMain("child sheet from Settings") { window.window.attachedSheet?.contentView != nil }
         let content = try #require(window.window.attachedSheet?.contentView)
         #expect(ControlPress.controls(in: content).contains { $0.label == "Create and add" })
