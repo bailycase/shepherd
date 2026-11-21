@@ -90,6 +90,9 @@ class ValidateTests(unittest.TestCase):
         self.assertFalse(summary["jumps"])
         after["offset"] = 2
         self.assertEqual([jump["delta_pt"] for jump in validate.measure_scroll([before, after])["jumps"]], [3])
+        before["rows"]["history"] = -5
+        before["visibleRows"].append("history")
+        self.assertFalse(validate.measure_scroll([before, after])["jumps"])  # The shared visible row wins.
 
     def test_first_move_keeps_the_known_height_loss_red(self):
         before = frame(0, "a", {"a": 0}, following=True, height=1500)

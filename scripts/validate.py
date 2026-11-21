@@ -262,17 +262,19 @@ def measure_scroll(frames):
                        "following_before": previous["following"], "following": frame["following"],
                        "distance_before": previous["distance"], "distance": frame["distance"],
                        "events": pending.copy()}
-        row_marked = row in frame["rows"] and row in previous["rows"]
-        row_visible = row in frame["visibleRows"]
-        if frame.get("first") and row_marked and (not inputs or row_visible):
-            delta = frame["rows"][row] - previous["rows"][row] + scripted_delta
-            measured = "row"
-        elif frame.get("first") and inputs and previous.get("offset") is not None:
-            # A mounted marker outside the clip is not the reader's anchor after an input.
-            if row_marked:
+        if inputs and row not in frame["visibleRows"]:
+            # Keep the old marker only as a diagnostic. Prefer another row the reader still sees.
+            if row in frame["rows"]:
                 shift = frame["rows"][row] - previous["rows"][row] + scripted_delta
                 if abs(shift) > 2:
                     offscreen_shifts.append({**observation, "delta_pt": round(shift, 3)})
+            common = set(previous["visibleRows"]) & set(frame["visibleRows"])
+            row = min(common, key=lambda r: (previous["rows"][r], r), default=None)
+            observation["row"] = row
+        if frame.get("first") and row in frame["rows"] and row in previous["rows"]:
+            delta = frame["rows"][row] - previous["rows"][row] + scripted_delta
+            measured = "row"
+        elif frame.get("first") and inputs and previous.get("offset") is not None:
             delta = previous["offset"] - frame["offset"] + scripted_delta
             measured = "clip offset"
         else:
@@ -473,7 +475,7 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
     for name in SCROLL_SCENARIOS:
         summary = summaries[name]
         jumps, drift, losses = summary["jumps"], summary["drift"], summary["anchor_losses"]
-        total = sum(jump["delta_pt"] is not None and abs(jump["delta_pt"]) for jump in jumps)
+        total = sum(abs(jump["delta_pt"]) for jump in jumps if jump["delta_pt"] is not None)
         actual = (f"{len(jumps)} jumps ({total:.3f} pt measured), {len(drift)} drift excursions, {len(losses)} anchor swaps/losses, "
                   f"{len(summary['sticky_follows'])} expected sticky follows, "
                   f"{len(summary['in_band_inputs'])} in-band input residuals, "
