@@ -758,6 +758,46 @@ public final class SessionServer: @unchecked Sendable {
     /// When each thread left its recent notes back (ms), for `DesignThreadNote.rateLimit`.
     /// Queue-confined.
     private var noteTimes: [AgentID: [Double]] = [:]
+    // Retain the marker after pi exits or retries: its former tools can still be alive.
+    private var threadProcessMarkers: [AgentID: Set<String>] = [:]
+
+    private var pendingBashSweeps: [AgentID: Set<UUID>] = [:]
+
+    private func enqueueBashSweep(_ agent: AgentID, scope: UUID) {
+        guard threadProcessMarkers[agent] != nil else { return }
+        if let pending = pendingBashSweeps[agent] {
+            // ponytail: cap a burst per thread; excessive requests still have supervisor cleanup.
+            if pending.count < 64 { pendingBashSweeps[agent]?.insert(scope) }
+            return
+        }
+        pendingBashSweeps[agent] = [scope]
+        scheduleBashSweep(agent)
+    }
+
+    private func scheduleBashSweep(_ agent: AgentID) {
+        queue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
+            guard let self else { return }
+            guard let scopes = self.pendingBashSweeps[agent], !scopes.isEmpty,
+                  let markers = self.threadProcessMarkers[agent] else {
+                self.pendingBashSweeps.removeValue(forKey: agent)
+                return
+            }
+            // At most one scoped sweep per thread at a time. Batch requests received in the meantime.
+            self.pendingBashSweeps[agent] = []
+            let sweep = ThreadProcessSweep(markers: markers, bashScopes: scopes)
+            Task.detached { [weak self] in
+                _ = await sweep.run()
+                self?.queue.async { [weak self] in self?.scheduleBashSweep(agent) }
+            }
+        }
+    }
+
+    private func sweepThreadProcesses(_ agent: AgentID, tracked: Set<OwnedProcessTree.Birth> = [],
+                                      forget: Bool = false) -> Task<ThreadProcessSweep.Report, Never>? {
+        guard let markers = forget ? threadProcessMarkers.removeValue(forKey: agent) : threadProcessMarkers[agent] else { return nil }
+        let sweep = ThreadProcessSweep(markers: markers, tracked: tracked)
+        return Task.detached { await sweep.run() }
+    }
     /// Every design system this host keeps (the support directory's `design-systems/`, plus the
     /// built-ins the app registers). Reads go to it directly; writes, installs and re-syncs go
     /// through the server.
@@ -1748,14 +1788,16 @@ public final class SessionServer: @unchecked Sendable {
             terminateThread: { [weak self] agentID in self?.terminateFleetThread(agentID) },
             closeThread: { [weak self] agent, dispatch in
                 guard let self else { throw FleetDispatchRefusal(code: "unreachable", message: "The receiving host is shutting down.") }
-                let sessions = try await self.deleteAgent(agent, closingDispatch: dispatch)
-                let clock = ContinuousClock()
-                let deadline = clock.now + .seconds(4)
+                let (sessions, sweep) = try await self.deleteAgent(agent, closingDispatch: dispatch)
+                let deadline = ContinuousClock.now + .seconds(4)
+                let processes = await sweep?.value
                 repeat {
-                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) { return true }
-                    try await clock.sleep(for: .milliseconds(20))
-                } while clock.now < deadline
-                return false
+                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) {
+                        return FleetCloseProcesses(sessionsStopped: true, sweep: processes)
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                } while ContinuousClock.now < deadline
+                return FleetCloseProcesses(sessionsStopped: false, sweep: processes)
             },
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
@@ -5835,6 +5877,9 @@ public final class SessionServer: @unchecked Sendable {
             // Project membership was refused above. Never turn retained activation identity
             // (also used by publishers and native questions) into helper admission.
             reply(.childScope(id: id, scope: nil, deadline: nil), to: client)
+        case .stopBashProcesses(let agentID, let scope):
+            guard client.childrenAgentID == agentID else { return }
+            enqueueBashSweep(agentID, scope: scope)
         case .helloChildren(let agentID, let projectScopes):
             guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
@@ -8336,10 +8381,12 @@ public final class SessionServer: @unchecked Sendable {
     /// layout. The GUI never observes the invalid intermediate state where
     /// only one side of that relationship exists.
     public func deleteAgent(_ agentID: AgentID) async throws {
-        _ = try await deleteAgent(agentID, closingDispatch: nil)
+        let (_, sweep) = try await deleteAgent(agentID, closingDispatch: nil)
+        _ = await sweep?.value
     }
 
-    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws -> Set<SessionID> {
+    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws
+        -> (Set<SessionID>, Task<ThreadProcessSweep.Report, Never>?) {
         try await enqueue {
             guard let agent = self.store.state.agents.first(where: { $0.id == agentID }) else {
                 throw SessionServerError.noSuchAgent(agentID)
@@ -8384,16 +8431,18 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
 
+            var tracked = Set<OwnedProcessTree.Birth>()
             for sessionID in layoutSessions {
                 // A stopped pi's session is already retired; its kept start (and the opening
                 // prompt it holds) goes with the agent.
                 self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
-                if closingDispatch != nil, let session = self.sessions[sessionID], session.isAlive {
-                    session.signalProcessGroup(SIGKILL)
+                if closingDispatch != nil, let session = self.sessions[sessionID] {
+                    if session.isAlive { session.signalProcessGroup(SIGKILL) }
+                    if let rpc = session.thread?.session { tracked.formUnion(rpc.trackedProcessBirths) }
                 }
             }
-            return layoutSessions
+            return (layoutSessions, self.sweepThreadProcesses(agentID, tracked: tracked, forget: true))
         }
     }
 
@@ -9828,6 +9877,7 @@ public final class SessionServer: @unchecked Sendable {
             // group and captures descendants before signaling; no scan by cwd or name.
             session.signalProcessGroup(SIGKILL)
         }
+        _ = sweepThreadProcesses(id)
         applyAgentQuestion(agentID: id, question: nil)
         applyAgentStatus(agentID: id, status: .idle)
     }
@@ -9885,7 +9935,14 @@ public final class SessionServer: @unchecked Sendable {
             let session: RPCSession
             writeServiceTierFile(forLaunch: params)
             do {
-                session = try RPCSession(params: params, queue: sessionQueue)
+                let marker = params.env?["SHEPHERD_AGENT_ID"].map { raw in
+                    let agent = AgentID(rawValue: raw)
+                    // A delayed sweep keeps its old markers, never the replacement pi's.
+                    let marker = UUID().uuidString
+                    threadProcessMarkers[agent, default: []].insert(marker)
+                    return marker
+                }
+                session = try RPCSession(params: params, queue: sessionQueue, processMarker: marker)
             } catch {
                 throw PTYSession.SpawnError(message: String(describing: error))
             }
@@ -10332,7 +10389,9 @@ public final class SessionServer: @unchecked Sendable {
     /// first and call `killSessionOnQueue`, so they are unaffected.
     public func killSession(_ sessionID: SessionID) {
         queue.async {
-            if self.agentID(forSession: sessionID) != nil { self.startRecords[sessionID]?.requestStop() }
+            if self.agentID(forSession: sessionID) != nil {
+                self.startRecords[sessionID]?.requestStop()
+            }
             self.killSessionOnQueue(sessionID)
         }
     }

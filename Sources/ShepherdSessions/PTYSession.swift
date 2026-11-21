@@ -204,6 +204,7 @@ final class PTYSession: @unchecked Sendable {
             "TMUX", "TMUX_PANE", "STY", "KITTY_WINDOW_ID", "GHOSTTY_RESOURCES_DIR",
             "WEZTERM_PANE", "WARP_SESSION_ID", "ITERM_SESSION_ID", "WT_SESSION",
             "TERMINAL_EMULATOR", "TERM_PROGRAM_VERSION",
+            ThreadProcessSweep.threadKey, ThreadProcessSweep.bashKey,
         ] {
             env.removeValue(forKey: key)
         }

@@ -287,16 +287,18 @@ test("a hook gets the event on stdin, runs in the root with its variables; exit 
   assert.match(pi.sent.at(-1).details.meta, /timed out/);
 });
 
-test("a hook never inherits the agent's socket, identity, secrets or Shepherd's pi", async () => {
+test("a hook never inherits the agent's socket, identity, secrets, process markers or Shepherd's pi", async () => {
   const { project, hooksDir, macFile } = fixture();
-  writeJSON(macFile, { hooks: { Stop: [{ hooks: [{ type: "command", command: 'printf "%s|%s|%s|%s|%s" "${SHEPHERD_SOCKET-unset}" "${SHEPHERD_AGENT_ID-unset}" "${SHEPHERD_MCP_SECRET_GITHUB-unset}" "${PI_CODING_AGENT_DIR-unset}" "$KEEP_ME" > env.txt' }] }] } });
+  writeJSON(macFile, { hooks: { Stop: [{ hooks: [{ type: "command", command: 'printf "%s|%s|%s|%s|%s" "${SHEPHERD_SOCKET-unset}" "${SHEPHERD_AGENT_ID-unset}" "${SHEPHERD_MCP_SECRET_GITHUB-unset}" "${PI_CODING_AGENT_DIR-unset}" "$KEEP_ME" > env.txt; printf "%s|%s" "${SHEPHERD_OWNED_THREAD-unset}" "${SHEPHERD_OWNED_BASH-unset}" > owned.txt' }] }] } });
   const pi = load(hooksDir);
-  const secrets = { SHEPHERD_SOCKET: "/tmp/s.sock", SHEPHERD_AGENT_ID: "a1", SHEPHERD_MCP_SECRET_GITHUB: "ghp_x", KEEP_ME: "kept" };
+  const secrets = { SHEPHERD_SOCKET: "/tmp/s.sock", SHEPHERD_AGENT_ID: "a1", SHEPHERD_MCP_SECRET_GITHUB: "ghp_x", KEEP_ME: "kept", SHEPHERD_OWNED_THREAD: "thread-marker", SHEPHERD_OWNED_BASH: "bash-scope" };
   const saved = process.env.PI_CODING_AGENT_DIR;
   Object.assign(process.env, secrets);
   try { await pi.emit("agent_before_settle", { outcome: "completed", entries: [] }, context(project)); }
   finally { for (const key of Object.keys(secrets)) delete process.env[key]; process.env.PI_CODING_AGENT_DIR = saved; }
   assert.equal(fs.readFileSync(path.join(project, "env.txt"), "utf8"), "unset|unset|unset|unset|kept");
+  // A detached hook carries no ownership marker even if it runs during a managed Bash call.
+  assert.equal(fs.readFileSync(path.join(project, "owned.txt"), "utf8"), "unset|unset");
 });
 
 test("an aborted turn kills the hooks it waits on", async () => {
