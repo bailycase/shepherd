@@ -14,7 +14,7 @@ Choose only what the change needs; these are alternatives, not a checklist. Repl
 ```bash
 swift test --filter '<affected suite or test>' # builds before running; no separate swift build
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<affected preview>'
-PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test 'Tests/Extensions/<affected>.test.mjs'
+python3 scripts/pi_engine.py stage; PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test 'Tests/Extensions/<affected>.test.mjs' # staged Node only
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py' # docs guards
 ```
 
