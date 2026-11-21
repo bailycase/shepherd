@@ -1,0 +1,369 @@
+diff --git a/Sources/ShepherdApp/Thread/ThreadHistoryAnchor.swift b/Sources/ShepherdApp/Thread/ThreadHistoryAnchor.swift
+index 515297902..ffc5af5a7 100644
+--- a/Sources/ShepherdApp/Thread/ThreadHistoryAnchor.swift
++++ b/Sources/ShepherdApp/Thread/ThreadHistoryAnchor.swift
+@@ -22,6 +22,39 @@ final class ThreadHistoryAnchor {
+     @ObservationIgnored private var pendingMaterialization: ((String) -> Void)?
+     @ObservationIgnored private var session: String?
+     @ObservationIgnored private var generation = 0
++    @ObservationIgnored private var pinned: (rows: [(id: String, top: CGFloat)], height: CGFloat)?
++    var hasPin: Bool { pinned != nil }
++
++    func pin(_ visible: [(Marker, CGFloat)], in scroll: NSScrollView) {
++        guard pinned == nil, let (first, top) = visible.first else { return }
++        let height = scroll.contentView.documentRect.height
++        pinned = (visible.map { ($0.0.rowID, $0.1) }, height)
++        SHRenderProbe.scrollEvent("probe.pin.snapshot", "top=\(top) height=\(height)", from: scroll, target: first.rowID, kind: "layout")
++    }
++
++    func correctPin(in scroll: NSScrollView, marker: (String) -> Marker?, canWrite: Bool, enabled: Bool) {
++        guard let pin = pinned, let first = pin.rows.first else { return }
++        let heightDelta = scroll.contentView.documentRect.height - pin.height
++        SHRenderProbe.scrollEvent("probe.pin.layout", "heightDelta=\(heightDelta) canWrite=\(canWrite)",
++                                  from: scroll, target: first.id, kind: "layout")
++        guard heightDelta != 0 else { return }
++        pinned = nil
++        // If layout evicted the top marker, use the first surviving marker to test the timing of one write.
++        for saved in pin.rows {
++            guard let row = marker(saved.id), row.enclosingScrollView === scroll, let top = row.viewportTop else { continue }
++            let delta = top - saved.top
++            SHRenderProbe.scrollEvent("probe.pin.read", "delta=\(delta) heightDelta=\(heightDelta) canWrite=\(canWrite)",
++                                      from: scroll, target: saved.id, kind: "layout")
++            // Reader motion cancels the snapshot; while idle the saved offset is still what we want.
++            if canWrite, enabled, delta != 0 {
++                Self.correct(delta, in: scroll, actor: "thread.write.spike5", caller: "pin.correct", rowID: saved.id)
++            }
++            return
++        }
++        SHRenderProbe.scrollEvent("probe.pin.missing", "no saved marker survived", from: scroll, target: first.id, kind: "layout")
++    }
++
++    func cancelPin() { pinned = nil }
+
+     func begin(_ id: String?, session: String?) -> Int {
+         cancel()
+@@ -101,15 +134,19 @@ final class ThreadHistoryAnchor {
+                   let top = marker.viewportTop else { return }
+             let delta = top - savedTop
+             guard abs(delta) > 0.25 else { return }
+-            let clip = scroll.contentView
+-            var bounds = clip.bounds
+-            bounds.origin.y += delta
+-            ThreadScrollTrace.write("thread.write.M6", "history.correct", in: scroll, target: self.rowID)
+-            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+-            scroll.reflectScrolledClipView(clip)
++            Self.correct(delta, in: scroll, actor: "thread.write.M6", caller: "history.correct", rowID: self.rowID)
+         }
+     }
+
++    private static func correct(_ delta: CGFloat, in scroll: NSScrollView, actor: StaticString, caller: String, rowID: String?) {
++        let clip = scroll.contentView
++        var bounds = clip.bounds
++        bounds.origin.y += delta
++        ThreadScrollTrace.write(actor, caller, in: scroll, target: rowID)
++        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
++        scroll.reflectScrolledClipView(clip)
++    }
++
+     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
+     /// sends, switches session or hides the thread. Geometry bookkeeping never invalidates rows.
+     /// `ThreadView` calls it from its scroll observer while engaged.
+@@ -132,7 +169,7 @@ final class ThreadHistoryAnchor {
+         }
+     }
+
+-    final class Marker: NSView {
++    class Marker: NSView {
+         weak var anchor: ThreadHistoryAnchor?
+         var rowID = ""
+
+diff --git a/Sources/ShepherdApp/Thread/ThreadScrollValidation.swift b/Sources/ShepherdApp/Thread/ThreadScrollValidation.swift
+index 521b86956..9554738e2 100644
+--- a/Sources/ShepherdApp/Thread/ThreadScrollValidation.swift
++++ b/Sources/ShepherdApp/Thread/ThreadScrollValidation.swift
+@@ -88,8 +88,16 @@ final class MacScrollValidationTrace: NSObject {
+     private var phaseState = ScrollPhase.idle
+     var wheelUntil = ContinuousClock.now
+     private var scriptedWrite = false
++    var hasScriptedScroll: Bool { events.contains { $0.caller == "fixture.scrollInput" } }
+     private var intent = ScrollIntent()
+
++    /// The spike can query the live signal without consuming input from the display-frame sampler.
++    var pinIntent: ScrollIntent.State {
++        var copy = intent
++        return copy.sampleMac(phase: phaseState.intentPhase, now: .now,
++                              leftMouseDown: copy.physicalScrollerHeld && NSEvent.pressedMouseButtons & 1 != 0)
++    }
++
+     func phaseChanged(to phase: ScrollPhase) {
+         intent.phaseChanged(from: phaseState.intentPhase, to: phase.intentPhase, now: .now)
+         phaseState = phase
+@@ -446,7 +454,11 @@ private final class ScrollFixture {
+
+         trace.scenario = "mid-history-new-turn"
+         await trace.advance()
+-        try scroll(to: try scrollView().contentView.documentRect.height / 2)
++        // A scroller-like move can end with idle; wheels do not send that callback.
++        try phase(from: .idle, to: .interacting)
++        try scroll(to: try scrollView().contentView.documentRect.height / 2, wheel: false)
++        await trace.advance()
++        try phase(from: .interacting, to: .idle)
+         await trace.settle()
+         let oldHeight = trace.latest?.documentHeight
+         trace.mark("fixture.newTurn")
+diff --git a/Sources/ShepherdApp/Thread/ThreadTailGuard.swift b/Sources/ShepherdApp/Thread/ThreadTailGuard.swift
+index 4d43f2d76..be85fc4d2 100644
+--- a/Sources/ShepherdApp/Thread/ThreadTailGuard.swift
++++ b/Sources/ShepherdApp/Thread/ThreadTailGuard.swift
+@@ -355,9 +355,23 @@ final class ThreadTailGuard {
+         }
+     }
+
+-    final class RowMarker: NSView {
+-        var rowID = ""
+-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
++    func marker(for id: String) -> ThreadHistoryAnchor.Marker? {
++        guard let marker = rowMarkers.object(forKey: id as NSString), marker.rowID == id else { return nil }
++        return marker
++    }
++
++    func visiblePinMarkers(in scroll: NSScrollView) -> [(ThreadHistoryAnchor.Marker, CGFloat)] {
++        let bottom = scroll.contentView.bounds.height - scroll.contentInsets.bottom
++        return (rowMarkers.objectEnumerator()?.allObjects as? [RowMarker] ?? []).compactMap { marker -> (RowMarker, CGFloat)? in
++            guard marker.enclosingScrollView === scroll, !marker.isHiddenOrHasHiddenAncestor,
++                  !marker.bounds.isEmpty, let top = marker.viewportTop,
++                  top < bottom, top + marker.bounds.height > scroll.contentInsets.top else { return nil }
++            return (marker, top)
++        }.sorted { ($0.1, $0.0.rowID) < ($1.1, $1.0.rowID) }.map { ($0.0, $0.1) }
++    }
++
++    final class RowMarker: ThreadHistoryAnchor.Marker {
++        override var isFlipped: Bool { false }
+     }
+ }
+
+diff --git a/Sources/ShepherdApp/Thread/ThreadView.swift b/Sources/ShepherdApp/Thread/ThreadView.swift
+index 4aaaeacdb..ba4b5345d 100644
+--- a/Sources/ShepherdApp/Thread/ThreadView.swift
++++ b/Sources/ShepherdApp/Thread/ThreadView.swift
+@@ -134,6 +134,7 @@ struct ThreadView: View {
+     @State private var restore = ThreadRestore()
+     @State private var eagerTail = ThreadEagerTail()
+     @State private var historyBuilt = ThreadHistoryBuilt()
++    @State private var historyHeight = ThreadHistoryHeight()
+     @State private var shownSignpost = ThreadShownSignpost()
+     /// Bumped when another view showing this thread hands the store's loop back to this one (`ThreadReaderPins`).
+     @State private var loopRun = 0
+@@ -327,7 +328,8 @@ struct ThreadView: View {
+                     historyAnchor.cancel()
+                     loadVisibleHistory()
+                 }
+-                .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail, restoring: restored != nil))
++                .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail, restoring: restored != nil,
++                                           sizeAnchorOverride: historyHeight.settling ? historyHeight.bottomArm : nil))
+                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
+                     if old.container != new.container {
+                         SHRenderProbe.scrollEvent("thread.write.L12", "viewport.resized", from: tailGuard, kind: "layout")
+@@ -342,6 +344,16 @@ struct ThreadView: View {
+                         ThreadScrollTrace.write("thread.write.M1", "follower.repin", in: tailGuard.scrollView(), target: Self.bottomID)
+                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                     }
++                    if old.content != new.content, historyAnchor.hasPin, let scroll = tailGuard.scrollView() {
++                        // As with the prepend, SwiftUI can report size before native row placement.
++                        DispatchQueue.main.async { [weak scroll] in
++                            guard let scroll, tailGuard.scrollView() === scroll, historyAnchor.hasPin else { return }
++                            scroll.window?.contentView?.layoutSubtreeIfNeeded()
++                            historyAnchor.correctPin(in: scroll, marker: tailGuard.marker(for:), canWrite: canPinHistory,
++                                                     enabled: historyHeight.compensates)
++                        }
++                    }
++                    historyHeight.read(distance: CGFloat(new.distance), viewport: CGFloat(new.container), following: follower.sticky)
+                     tailGuard.distance = new.distance
+                     tailGuard.suspect()
+                     // Every reading that can move the boundary row lands here, so the row itself is not measured per frame.
+@@ -350,6 +362,11 @@ struct ThreadView: View {
+                 .onScrollPhaseChange { old, phase, context in
+                     scrollPhaseChanged(from: old, to: phase, distance: Self.distanceFromBottom(context.geometry))
+                 }
++                .onChange(of: follower.sticky) { _, following in
++                    if following && !historyAnchor.isEngaged && !readerInputForHeightRelease {
++                        historyHeight.release("following")
++                    }
++                }
+                 .onChange(of: store.sentCount) { _, _ in
+                     // A send that goes in now re-attaches to the tail: the echoed turn is the last
+                     // thing in the thread, and the reply streams in under it. A follow-up that
+@@ -496,6 +513,7 @@ struct ThreadView: View {
+                 if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+                 wheelMonitor = nil
+                 hovering = false
++                if !historyAnchor.isEngaged && !scriptedHeightInput { historyHeight.release("hidden") }
+                 historyAnchor.cancel()
+                 historyAnchor.animating = false
+                 // A flick's momentum ends with no word once the view is hidden: the next showing's restore does not wait for it.
+@@ -616,7 +634,7 @@ struct ThreadView: View {
+         if !parked {
+             let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
+                                  detached: !follower.sticky)
+-            ThreadHistoryColumn(key: key) {
++            ThreadHistoryColumn(key: key, height: historyHeight, beforeHeightChange: pinHistory) {
+                 AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+                     ForEach(history) { row in
+                         rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+@@ -1044,6 +1062,7 @@ struct ThreadView: View {
+         follower.userScrolling = phase == .interacting
+         input.decelerating = phase == .decelerating
+         if phase == .interacting {
++            historyAnchor.cancelPin()
+             historyAnchor.cancel()
+             historyPaging.beginScroll()
+             tailGuard.readerMoved()
+@@ -1051,7 +1070,44 @@ struct ThreadView: View {
+         if phase == .idle, old == .interacting || old == .decelerating {
+             follower.observe(distanceFromBottom: distance, userIntent: true)
+         }
+-        if phase == .idle { loadVisibleHistory() }
++        historyHeight.read(distance: distance, following: follower.sticky)
++        if phase == .idle {
++            if !historyAnchor.isEngaged && !readerInputForHeightRelease {
++                if follower.sticky {
++                    historyHeight.release("following")
++                } else {
++                    historyHeight.releaseAtIdle(beforeChange: pinHistory)
++                }
++            }
++            loadVisibleHistory()
++        }
++    }
++
++    private var canPinHistory: Bool {
++        #if DEBUG
++        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard {
++            let intent = trace.pinIntent
++            return !follower.sticky && !historyAnchor.isEngaged && intent != .touching && intent != .coasting
++        }
++        #endif
++        return false
++    }
++
++    private func pinHistory() {
++        guard canPinHistory, let scroll = tailGuard.scrollView() else { return }
++        historyAnchor.pin(tailGuard.visiblePinMarkers(in: scroll), in: scroll)
++    }
++
++    private var scriptedHeightInput: Bool {
++        #if DEBUG
++        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard { return trace.hasScriptedScroll }
++        #endif
++        return false
++    }
++
++    private var readerInputForHeightRelease: Bool {
++        scriptedHeightInput || follower.userScrolling || input.decelerating
++            || input.hasWheelIntent(movingUp: true) || input.hasWheelIntent(movingUp: false)
+     }
+
+     private func wheelIntent() -> (CGFloat) -> Void {
+@@ -1354,15 +1410,80 @@ final class ThreadHistoryCache {
+ /// (`ThreadHistoryRetentionTests`).
+ private struct ThreadHistoryColumn: View {
+     let key: ThreadHistoryCache.Key?
++    let height: ThreadHistoryHeight
++    let beforeHeightChange: () -> Void
+     let make: () -> AnyView
+     @State private var cache = ThreadHistoryCache()
+
+-    init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
+-        self.key = key
+-        self.make = make
++    var body: some View {
++        cache.view(for: key, make: make)
++            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height.measured($0, beforeChange: beforeHeightChange) }
++            .frame(height: height.held, alignment: .bottomLeading)
++            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height.applied($0) }
++    }
++}
++
++@MainActor @Observable
++private final class ThreadHistoryHeight {
++    private(set) var held: CGFloat?
++    private(set) var settling = false
++    let bottomArm = ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_RELEASE_ANCHOR"] == "bottom"
++    let compensates = ProcessInfo.processInfo.environment["SHEPHERD_SCROLL_SPIKE5"] == "on"
++    @ObservationIgnored private var natural: CGFloat?
++    @ObservationIgnored private var viewport: CGFloat = 0
++    @ObservationIgnored private var gap: CGFloat = 0
++    @ObservationIgnored private var followingLastReading = true
++    @ObservationIgnored private var lastApplied: CGFloat?
++    @ObservationIgnored private var releaseDetail: String?
++
++    func read(distance: CGFloat, viewport: CGFloat? = nil, following: Bool) {
++        if let viewport { self.viewport = viewport }
++        gap = distance
++        defer { followingLastReading = following }
++        guard followingLastReading, !following, held == nil, !settling, gap < self.viewport,
++              let natural, natural > 0 else { return }
++        held = natural
++        SHRenderProbe.scrollEvent("probe.history.hold", "\(natural)", kind: "layout")
+     }
+
+-    var body: some View { cache.view(for: key, make: make) }
++    func measured(_ height: CGFloat, beforeChange: () -> Void) {
++        natural = height
++        if let held, height > held {
++            beforeChange()
++            self.held = height
++        }
++        finishIfNatural()
++    }
++
++    func applied(_ height: CGFloat) {
++        lastApplied = height
++        finishIfNatural()
++    }
++
++    func releaseAtIdle(beforeChange: () -> Void) {
++        guard let held, let natural, gap - max(0, held - natural) >= viewport else { return }
++        if held != natural { beforeChange() }
++        release("idle")
++    }
++
++    func release(_ reason: String) {
++        guard let held else { return }
++        let shrink = max(0, held - (natural ?? held))
++        if shrink > 0 {
++            let detail = "\(reason) \(shrink)"
++            releaseDetail = detail
++            SHRenderProbe.scrollEvent("probe.history.release", detail, kind: "layout")
++            settling = true
++        }
++        self.held = nil
++    }
++
++    private func finishIfNatural() {
++        guard settling, lastApplied == natural, let detail = releaseDetail else { return }
++        SHRenderProbe.scrollEvent("probe.history.applied", detail, kind: "layout")
++        releaseDetail = nil
++        settling = false
++    }
+ }
+
+ /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
+@@ -1754,6 +1875,7 @@ struct ThreadTailAnchor: ViewModifier {
+     /// A released thread's rows are coming back (`ThreadRestore`): the first frame draws only its last screen, which may be shorter
+     /// than the window, and the rows above it join over the frames after.
+     var restoring = false
++    var sizeAnchorOverride: Bool? = nil
+
+     /// The scroll view keeps the tail itself, as the follower's `nativeAnchor` says.
+     static let isNative = true
+@@ -1764,7 +1886,8 @@ struct ThreadTailAnchor: ViewModifier {
+                 .defaultScrollAnchor(SHRenderProbe.scrollAnchorEnabled("M2") ? .bottom : nil, for: .initialOffset)
+                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
+                 // ever happens on user scroll intent.
+-                .defaultScrollAnchor(sticky && SHRenderProbe.scrollAnchorEnabled("M3") ? .bottom : nil, for: .sizeChanges)
++                .defaultScrollAnchor((sizeAnchorOverride ?? (sticky && SHRenderProbe.scrollAnchorEnabled("M3")))
++                                     ? .bottom : nil, for: .sizeChanges)
+                 // Content shorter than the window rests at the bottom of it while the rows above come back, not at the top with
+                 // a blank band under it that the rest then pushes the end of the thread out of. A thread whose rows are all
+                 // drawn rests where it always did.

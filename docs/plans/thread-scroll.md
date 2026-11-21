@@ -361,6 +361,26 @@ The pure walk is open loop. Slice 4 needs closed-loop evidence:
 
 Run the full pure walk with `python3 scripts/validate.py --case scroll-owner`. Its remaining event gaps are `nativeAnchor: false`, a positive `markerGap`, a second jump to a different row, a prepend or replacement of all rows (D3 case 3), `quietPassed` and budget stalls, and rebuilding the owner from `kept`. Mount mid-jump is covered and may land by design. `measured()` can still anchor on a sliver of the previous row after a drag, costing a `reveal` then `hold`; leave that for the pinned work.
 
+### Slice 5 Mac pinned-row spike and stop
+
+On macOS 27.0.1, the offscreen Dev fixture ran the same idle release with the size-changes anchor off in both arms. It moved into mid-history while `.interacting`, sampled the move, then sent `.idle` without moving the clip again. The spike reused `ThreadHistoryAnchor.Marker.viewportTop` and the history correction's clip writer. It saved the visible row offsets before changing the hold and checked `ScrollIntent` before writing. Only the write was disabled in the control.
+
+| Measure | Control | One correction enabled |
+| --- | ---: | ---: |
+| Pending shrink at release | 1,187 pt | 1,187 pt |
+| Native document height change on release | +4,595 pt | +4,595 pt |
+| Top row `user-214/reply` on release | Marker absent | Marker absent |
+| Shared visible row `user-216/reply`, displacement on release | −1,187 pt | 0 pt |
+| Blank frames / detached guard walks on release | 0 / 0 | 0 / 0 |
+| Blank frames / detached guard walks from release to new turn | 2 / 8 | 2 / 9 |
+| Blank frames / detached guard walks in the whole mid-history scenario | 2 / 14 | 2 / 15 |
+
+The first attempt read the marker directly in `onScrollGeometryChange`. Both arms read 0 pt of document and marker change there, before AppKit placed the rows. Neither wrote. In the tabled run, one main-queue hop and `layoutSubtreeIfNeeded()` reached the new geometry. The top marker was already gone. The spike used the first surviving saved marker, `user-216/reply`, which moved up 1,187 pt. One clip write moved 40,169 to 38,982 pt in release frame 2 in the enabled arm. No reader move, M1, M6, M7 or other bounds write occurred on that frame in either arm.
+
+**Stop.** The write reached the release frame and kept the shared row still. The original top row did not return until frame 3, one sampled frame later, at its original offset of −59 pt. The delay was in lazy row placement, not the clip write. M7 first walked at frame 41 with correction and frame 44 without it, well after the release. It moved the reader again despite the correction. This does not meet the top-row or no-detached-walk bar. It does not show a same-frame writer fight.
+
+Both Dev fixture runs exited 0 and wrote the frame ledger. The full validator and Phase 2 scenarios were not run as acceptance checks. No iPhone or iPad code changed or was tested. The reverted spike is [`.orchestrator/spike5.patch`](../../.orchestrator/spike5.patch). Local evidence is in `.orchestrator/spike5-measurements.log` and `.orchestrator/spike5-{off,on}.frames.json.gz`.
+
 ## 6. What this plan does not prove
 
 - In slice 1's iOS simulator runs (#820), I1, I5, I6, I8, L6, L7, L8, L9, L10 and L13 never fired. L7 counts thread version observer firings, not stream chunks. I2 is a native anchor and has no counted probe.
