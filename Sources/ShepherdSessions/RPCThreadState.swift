@@ -205,7 +205,7 @@ final class RPCThreadState {
     /// From `agent_start` until `agent_settled`: pi's own `isStreaming`. A run's `agent_end` is not
     /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
     /// needs a streaming behavior.
-    private(set) var running = false
+    private(set) var running = false { didSet { if running != oldValue { runDisagreement.reset() } } }
     /// What a running hook says (`setStatus` key `shepherd.hook`), until it clears or the turn settles.
     private(set) var hookStatus: String?
     private(set) var model: String?
@@ -629,11 +629,8 @@ final class RPCThreadState {
     /// shown the run settle yet (the extension's socket can be a whole run ahead while a long
     /// record decodes). `idleAfterQueue` applies it once pi is idle and nothing continues.
     var doneHeld = false
-    /// When a snapshot first found this thread serving `running` while its agent's status says it is not working, and whether that
-    /// was logged (`SessionServer.logRunDisagreement`). A new run's first moments look like this too, so only a disagreement that lasts is logged.
-    var disagreementSince: ContinuousClock.Instant?
-    var disagreementLogged = false
-    var secondsSinceDisagreement: Int { disagreementSince.map { Int($0.duration(to: .now).components.seconds) } ?? 0 }
+    /// Whether the thread has served `running` against its agent's status for a while (`SessionServer.logRunDisagreement`).
+    var runDisagreement = RunDisagreement()
     /// How long ago pi last said anything, in whole seconds.
     var secondsSinceLastEvent: Int { Int(lastEventAt.duration(to: .now).components.seconds) }
     /// pi is retrying a failed request (`auto_retry_start` until `auto_retry_end`).
