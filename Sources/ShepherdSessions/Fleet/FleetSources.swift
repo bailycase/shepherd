@@ -219,6 +219,7 @@ final class FleetSkillsSource: FleetUnitSource {
 
     /// A skill's state is a few words, so it travels inline; its files by hash.
     func storesBlob(_ unit: String) -> Bool { FleetUnit.skillParts(of: unit)?.path != nil }
+    var isReady: Bool { store.recordsAreReadable }
     var watchedFiles: [URL] { [store.syncedRecords] }
     var watchedTrees: [URL] { store.syncedFolders }
 
