@@ -832,7 +832,7 @@ public struct NativeScrollProbe: Equatable, Sendable {
         self.insetTop = insetTop
     }
 
-    fileprivate var offset: Double { content - distance - container - insetTop }
+    public var offset: Double { content - distance - container - insetTop }
 
     public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
         content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop
