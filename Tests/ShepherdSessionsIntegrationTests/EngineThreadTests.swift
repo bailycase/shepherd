@@ -503,7 +503,7 @@ final class RealPi: @unchecked Sendable {
         """
 
     /// `history`: session entries (`{"type":"message",...}`) saved after the header, as a resumed thread's.
-    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false) async throws -> RealPi {
+    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false, nativeChildren: Bool = false) async throws -> RealPi {
         let directory = try makeScratchDirectory("real-pi")
         let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
                             userHome: directory.appendingPathComponent("home").path)
@@ -558,13 +558,21 @@ final class RealPi: @unchecked Sendable {
             let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
             try ([header] + history).map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) + Data("\n".utf8) }
                 .reduce(Data(), +).write(to: sessionFile)
-            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
-                                          extensions: [fixture.path] + extensions + (status ? [try StatusExtension.installedPath()] : []))
             let agentID = AgentID()
-            let statusEnv = status ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
+            var env = (status || nativeChildren) ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
+            var installed = status ? [try StatusExtension.installedPath()] : []
+            if nativeChildren {
+                host.useRealPeerCheck()
+                let children = try ChildrenExtension.installedPath(in: directory, snapshot: EmbeddedExtensions.snapshot)
+                env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+                env["SHEPHERD_EXT_CHILDREN"] = children
+                installed.append(children)
+            }
+            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
+                                          extensions: [fixture.path] + extensions + installed)
             let session = try await host.server.createSession(params: CreateSessionParams(
                 cwd: project.path, command: line.argv,
-                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(statusEnv) { a, _ in a }, runtime: .rpc), resuming: sessionID)
+                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(env) { a, _ in a }, runtime: .rpc), resuming: sessionID)
             let space = Space(name: "rpc", path: project.path)
             try await host.server.addSpace(space)
             let pane = LeafPane(sessionID: session.id, cwd: project.path)

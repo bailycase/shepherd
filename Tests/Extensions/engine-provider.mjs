@@ -49,6 +49,29 @@ const server = http.createServer(async (req, res) => {
       function: { name: "bash", arguments: JSON.stringify({ command: recoveryTools ? "echo recovered" : "exit 1" }) } }] }));
     return finish("tool_calls");
   }
+  const orphan = /^(launch )?orphan job ([a-z]+)$/.exec(text);
+  if (orphan) {
+    const [, launch, name] = orphan;
+    if (last.role === "tool" && !launch) return; // Keep the helper active until its parent closes.
+    if (last.role !== "tool") {
+      const tool = launch ? "shepherd_child_start" : "bash";
+      const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
+      // A bounded fixture, started in a new session by a short-lived launcher. The test
+      // can stop it by creating a file, so cleanup never sends a signal to a raw PID.
+      const job = `const fs = require('node:fs');
+        const timer = setInterval(() => {
+          if (fs.existsSync('${name}.release') || !fs.existsSync(process.cwd())) clearInterval(timer);
+        }, 50);
+        setTimeout(() => clearInterval(timer), 45000).unref();
+        fs.writeFileSync('${name}.pid', String(process.pid));`;
+      const detach = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(job)}], {detached: true, stdio: 'ignore'}).unref()`;
+      const args = launch ? { task: `orphan job ${name}`, agent: "worker", delivery: "report" }
+        : { command: `${quote(process.execPath)} -e ${quote(detach)}` };
+      res.write(chunk({ tool_calls: [{ index: 0, id: "call_orphan", type: "function",
+        function: { name: tool, arguments: JSON.stringify(args) } }] }));
+      return finish("tool_calls");
+    }
+  }
   if (last.role === "tool" && text !== "slow after tool failure") {
     res.write(chunk({ content: "tool done" }));
     return finish("stop");
