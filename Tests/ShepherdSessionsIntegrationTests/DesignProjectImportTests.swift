@@ -147,7 +147,9 @@ struct DesignProjectImportTests {
         let zip = try write([.file("canvas.json", #"{"v":3,"boards":{}}"#), big])
         let folder = try makeScratchDirectory("unzip").appendingPathComponent("out")
 
-        let failure = #expect(throws: DesignImportFailure.self) { try DesignStore.unzip(zip, into: folder, limit: 1_000_000) }
+        let failure = await #expect(throws: DesignImportFailure.self) {
+            try await blocking { try DesignStore.unzip(zip, into: folder, limit: 1_000_000) }
+        }
         guard case .tooLarge(let bytes, 1_000_000)? = failure else {
             Issue.record("expected tooLarge, got \(String(describing: failure))")
             return

@@ -638,8 +638,8 @@ public final class NativeThreadStore {
     }
     /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
     @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
-    /// A non-cooperative synchronous parser gate used to verify actual worker reservations.
-    @ObservationIgnored var duringProseParse: (@Sendable () -> Void)?
+    /// An async parser gate that holds a worker reservation until it returns, even after cancellation.
+    @ObservationIgnored var duringProseParse: (@Sendable () async -> Void)?
     /// Parses handed off main (tests).
     @ObservationIgnored private(set) var offMainParses = 0
 
@@ -694,8 +694,11 @@ public final class NativeThreadStore {
         row.role == "user" && row.operationID != nil && !row.entryID.hasPrefix("pending:")
     }
 
-    /// A tag names the send. On a legacy host, each user row after the capture anchor can replace one copy, oldest send first.
-    /// A finished reply with no new user row can stand for an idle send too. Neither guess settles the send.
+    /// Once a tagged user row has been seen (`sawTaggedUser`), only a row with a send's operation id lands that send, so an
+    /// untagged row never hides a copy. Before that, by position: each delivered user row after `Capture.after` (less
+    /// `Capture.live` turns that vanished) replaces one copy, oldest send first, `taken` once. Failing that, an idle capture
+    /// on a stopped snapshot is stood in for by an assistant reply that is the first user or assistant row after the anchor
+    /// (later rows may follow). `claimed` keeps a row or reply from a second send. Only a tag settles a send.
     private func landings() -> [UUID: (named: Bool, row: NativeThreadMessage)] {
         let live = (snapshot?.provisional ?? []).filter { messageIndex[$0.entryID] == nil }
         var found: [UUID: (named: Bool, row: NativeThreadMessage)] = [:]
@@ -1438,8 +1441,8 @@ public final class NativeThreadStore {
                 return
             }
             let interval = Self.signposter.beginInterval("Thread Markdown parse", id: Self.signposter.makeSignpostID())
+            await duringParse?()
             let onMain = Thread.isMainThread
-            duringParse?()
             let value = parse(text)
             Self.signposter.endInterval("Thread Markdown parse", interval)
             await MainActor.run {

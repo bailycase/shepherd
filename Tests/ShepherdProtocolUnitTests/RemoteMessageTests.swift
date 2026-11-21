@@ -113,7 +113,7 @@ enum RemoteSamples {
         clone: FleetCloneProgress(name: "orders-svc", source: "github.com/acme/orders-svc", phase: "receiving objects", fraction: 0.37),
         createdAt: 1_790_000_000_000, updatedAt: 1_790_000_001_000)
     static let branchFacts = FleetBranchFacts(branch: "fleet/fix-flaky-payment-test", head: String(repeating: "b", count: 40), ahead: 2, pushed: true,
-                                              filesChanged: 3, insertions: 10, deletions: 2)
+                                              filesChanged: 3, insertions: 10, deletions: 2, uncommittedModified: 2, uncommittedUntracked: 1)
     static let fleetOp = FleetOp(mac: fleetHost, seq: 3, hlc: FleetHLC(wallMs: 1_790_000_000_123, counter: 2), unit: "instruction:AGENTS.md",
                                  change: .blob(hash: String(repeating: "cd", count: 32), size: 424), seed: true, macName: "MacBook Pro")
     static let fleetSettingOp = FleetOp(mac: fleetHost, seq: 4, hlc: FleetHLC(wallMs: 1_790_000_000_200), unit: "setting:host.defaultModel",
@@ -526,6 +526,13 @@ enum RemoteSamples {
 
 @Suite("Remote requests")
 struct RemoteRequestTests {
+    @Test func legacyFleetBranchFactsDecodeWithoutCheckoutStatus() throws {
+        let json = #"{"branch":"fleet/checkout-notes","head":"abc","ahead":1,"pushed":true,"filesChanged":2,"insertions":3,"deletions":4}"#
+        let facts = try JSONDecoder().decode(FleetBranchFacts.self, from: Data(json.utf8))
+        #expect(facts == FleetBranchFacts(branch: "fleet/checkout-notes", head: "abc", ahead: 1, pushed: true,
+                                          filesChanged: 2, insertions: 3, deletions: 4))
+    }
+
     typealias S = RemoteSamples
 
     /// Exhaustive on purpose: a new case fails to compile here until it is named, then
@@ -621,6 +628,8 @@ struct RemoteRequestTests {
         .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
         .fleetDispatchResult(id: 117, dispatchID: RemoteSamples.dispatchID, text: "Nothing to change.", branchFacts: nil),
+        .fleetDispatchResult(id: 118, dispatchID: RemoteSamples.dispatchID, text: "Updated the notes.",
+                             branchFacts: FleetBranchFacts(branch: "fleet/checkout-notes", uncommittedCheckFailed: true)),
         .fleetRoutes(id: 140, report: RemoteSamples.routeReport),
         .fleetRoutes(id: 141, report: FleetRouteReport(port: 7434, routes: [])),
         .fleetPeerAnswer(id: 142, reply: .ok(id: 142)),

@@ -56,10 +56,15 @@ final class FakeHost {
 
 /// Suspends until `condition` holds, woken by the store's observation rather than polling.
 @MainActor
-func until(_ condition: @escaping @MainActor () -> Bool) async {
+func until(sourceLocation: SourceLocation = #_sourceLocation, _ condition: @escaping @MainActor () -> Bool) async {
     while !condition() {
-        await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
-            withObservationTracking { _ = condition() } onChange: { changed.resume() }
+        let (changes, change) = AsyncStream<Void>.makeStream()
+        withObservationTracking { _ = condition() } onChange: { change.finish() }
+        var iterator = changes.makeAsyncIterator()
+        _ = await iterator.next()
+        if Task.isCancelled {
+            Issue.record("Cancelled while waiting for a store change", sourceLocation: sourceLocation)
+            return
         }
     }
 }
@@ -527,6 +532,7 @@ struct NativeThreadStoreTests {
         host.snapshot = stopped
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
         #expect(!store.busy && store.draft == "hello" && host.actions.isEmpty)
     }
@@ -707,6 +713,7 @@ struct NativeThreadStoreTests {
 
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
 
         guard case .send(let session, _, _, let text, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
@@ -728,6 +735,7 @@ struct NativeThreadStoreTests {
 
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
 
         let texts = host.actions.compactMap { action -> String? in
@@ -757,6 +765,7 @@ struct NativeThreadStoreTests {
         await until { store.busy }
         host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent exited (code 127)."))]
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
         #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
         #expect(!store.starting && store.loadError == "native_unavailable: The agent exited (code 127).")

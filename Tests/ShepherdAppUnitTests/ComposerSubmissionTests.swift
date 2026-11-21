@@ -21,12 +21,17 @@ struct ComposerSubmissionTests {
         var whenRefreshHeld: (() -> Void)?
         var whenSendHeld: (() -> Void)?
         var sends = 0
-        let snapshot = NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false,
-                                            supportedActions: ["send", "sendImages"], dialogsSupported: true, dialogs: [],
+        var lastSend: (text: String, images: [NativeImage]?)?
+        let snapshot: NativeThreadSnapshot
+
+        init(supportedActions: [String] = ["send", "sendImages"]) {
+            snapshot = NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1, running: false,
+                                            supportedActions: supportedActions, dialogsSupported: true, dialogs: [],
                                             messages: [], provisional: [], clipped: false)
+        }
 
         func request(_ request: NativeThreadRequest) async throws -> NativeThreadResult {
-            guard case .send = request else {
+            guard case .send(_, _, let id, let text, _, let images, _, _, _) = request else {
                 if holdRefresh, sends > 0 {
                     holdRefresh = false
                     await withCheckedContinuation { refreshHold = $0; whenRefreshHeld?() }
@@ -34,13 +39,12 @@ struct ComposerSubmissionTests {
                 return .snapshot(value: snapshot)
             }
             sends += 1
+            lastSend = (text, images)
             if holding { await withCheckedContinuation { hold = $0; whenSendHeld?() } }
             switch answer {
             case .refuse: return .failure(code: "refused", message: "The agent refused it.")
             case .unknown: throw CancellationError()
-            case .accept:
-                guard case .send(_, _, let id, _, _, _, _, _, _) = request else { return .snapshot(value: snapshot) }
-                return .accepted(operationID: id)
+            case .accept: return .accepted(operationID: id)
             }
         }
     }
@@ -58,6 +62,22 @@ struct ComposerSubmissionTests {
             }
         }
         return (store, loop)
+    }
+
+    private func holdSend(_ host: Host, store: NativeThreadStore, input: ThreadInput,
+                          afterCapture: @escaping () -> Void) async -> Task<Bool, Never> {
+        host.holding = true
+        let send = Task { await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) }
+        await withCheckedContinuation { held in
+            host.whenSendHeld = {
+                // The request starts just after store capture, before any scheduled observer runs.
+                #expect(store.submissions.last?.state == .sending)
+                afterCapture()
+                held.resume()
+            }
+        }
+        host.whenSendHeld = nil
+        return send
     }
 
     private func image(_ name: String) -> ImageAttachment {
@@ -103,6 +123,24 @@ struct ComposerSubmissionTests {
         #expect(store.submissions.isEmpty)
     }
 
+    @Test func sendingTextKeepsImagesWhenTheHostDoesNotSupportThem() async throws {
+        let host = Host(supportedActions: ["send"])
+        host.answer = .accept
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("shot.png", image("shot.png"))])
+        let attachments = input.attachments
+        store.draft = "send these words"
+
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
+        let sent = try #require(host.lastSend)
+        #expect(sent.text == "send these words")
+        #expect(sent.images == nil)
+        #expect(store.draft.isEmpty)
+        #expect(input.attachments == attachments)
+    }
+
     @Test func anUnknownOutcomeIsNeverRestoredOnlyDiscardedHere() async {
         let host = Host()
         host.answer = .unknown
@@ -134,13 +172,71 @@ struct ComposerSubmissionTests {
         }
         #expect(store.submissions.count == NativeThreadStore.maximumRetainedSubmissions)
         host.answer = .refuse
-        input.attachments.add([("kept.png", image("kept.png"))])
+        input.attachments.add([("kept.png", image("kept.png")), ("old.pdf", nil)])
+        let attachments = input.attachments
         store.draft = "one more"
         let sends = host.sends
         #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) == false)
         #expect(host.sends == sends)
         #expect(store.draft == "one more")
-        #expect(input.attachments.items.map(\.name) == ["kept.png"], "nothing captured: the images stay")
+        #expect(input.attachments == attachments, "nothing captured: the image and error stay")
+    }
+
+    @Test(arguments: [false, true])
+    func aSendClearsAnEarlierImportErrorAtCapture(withImage: Bool) async {
+        let host = Host()
+        host.answer = .accept
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        if withImage { input.attachments.add([("shot.png", image("shot.png"))]) }
+        input.attachments.add([("old.pdf", nil)])
+        #expect(input.attachments.error != nil)
+        store.draft = "send this"
+        let send = await holdSend(host, store: store, input: input) {
+            #expect(store.submissions.last?.images.count == (withImage ? 1 : 0))
+            #expect(input.attachments.isEmpty)
+            #expect(input.attachments.error == nil)
+        }
+        host.hold?.resume()
+        #expect(await send.value)
+        #expect(input.attachments.error == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func anImportRejectedAfterCaptureSurvivesAcceptance(immediately: Bool) async {
+        let host = Host()
+        host.answer = .accept
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("old.pdf", nil)])
+        store.draft = "words only"
+        let send = await holdSend(host, store: store, input: input) {
+            if immediately { input.attachments.add([("new.pdf", nil)]) }
+        }
+        if !immediately { input.attachments.add([("new.pdf", nil)]) }
+        #expect(input.attachments.error == "new.pdf is not an image Shepherd can attach.")
+        host.hold?.resume()
+        #expect(await send.value)
+        #expect(input.attachments.error == "new.pdf is not an image Shepherd can attach.")
+    }
+
+    @Test func restoringRefusedImagesKeepsANewerImportError() async {
+        let host = Host()
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("shot.png", image("shot.png"))])
+        store.draft = "refused"
+        let send = await holdSend(host, store: store, input: input) {
+            input.attachments.add([("new.pdf", nil)])
+        }
+        host.hold?.resume()
+        #expect(await send.value == false)
+        #expect(store.draft == "refused" && store.submissions.isEmpty)
+        #expect(input.attachments.items.map(\.name) == ["shot.png"])
+        #expect(input.attachments.error == "new.pdf is not an image Shepherd can attach.")
     }
 }
 

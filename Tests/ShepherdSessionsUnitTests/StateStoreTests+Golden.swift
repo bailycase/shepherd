@@ -17,7 +17,9 @@ extension StateStoreTests {
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",
+        "skill-records-damaged",
         "suggestions-bad-element", "suggestions-damaged",
+        "push-drops-invalid-registrations", "push-registrations-bad-element", "push-registrations-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {

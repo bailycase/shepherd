@@ -12,6 +12,7 @@ final class FakeSkillsClient: SkillsClient, @unchecked Sendable {
     private var log: [String] = []
     var repo: RepoSkills?
     var refusesInstalls = false
+    var refusesRemovals: String?
     var beforeRequest: (@Sendable (RemoteSkillsRequest) async throws -> Void)?
     var afterRequest: (@Sendable (RemoteSkillsRequest) async throws -> Void)?
 
@@ -57,6 +58,7 @@ final class FakeSkillsClient: SkillsClient, @unchecked Sendable {
             case .setInvocation(let name, let invocation):
                 snapshot.skills[try index(name)].invocation = invocation
             case .remove(let name):
+                if let reason = refusesRemovals { throw RemoteHostClientError.rejected(code: "write_failed", message: reason) }
                 removed[name] = snapshot.skills.remove(at: try index(name))
             case .restore(let name):
                 guard let skill = removed.removeValue(forKey: name) else {
@@ -153,14 +155,41 @@ struct ClientSkillsTests {
         await model.refresh(hosts)
         let removing = model.remove("pdf", in: hosts)
         #expect(model.rows(in: hosts).map(\.name) == ["docx"])
+        #expect(model.removal == nil, "Undo waits for the host to have removed it")
+        await removing.value
         let removal = try #require(model.removal)
         #expect(SkillsPresentation.removed(removal) == "Removed pdf")
-        await removing.value
         #expect(first.skills.skill("pdf") == nil && first.skills.skill("docx") != nil)
         await model.undoRemoval(in: hosts)?.value
         #expect(model.removal == nil)
         #expect(model.rows(in: hosts).map(\.name) == ["docx", "pdf"])
         #expect(first.skills.skill("pdf") != nil)
+    }
+
+    /// A host that refuses (its skills records can't be written) removed nothing: the skill comes back
+    /// and no Undo is offered for a removal that didn't happen. Mac and iPhone share this model.
+    @Test func aRemovalTheHostRefusesKeepsTheSkillAndOffersNoUndo() async {
+        let first = FakeSkillsClient([Self.skill("pdf"), Self.skill("docx")])
+        first.refusesRemovals = "Couldn't read where your skills came from."
+        let hosts = [Self.host("This Mac", first)]
+        let model = ClientSkills()
+        await model.refresh(hosts)
+        await model.remove("pdf", in: hosts).value
+        #expect(model.removal == nil)
+        #expect(model.problem == "Couldn't read where your skills came from.")
+        #expect(model.rows(in: hosts).map(\.name) == ["docx", "pdf"])
+        #expect(first.skills.skill("pdf") != nil)
+        #expect(model.undoRemoval(in: hosts) == nil)
+    }
+
+    /// While the records can't be read a skill with no source isn't known to be Local, so nothing says it never updates.
+    @Test func aSkillWithNoSourceIsNotCalledLocalWhileTheRecordsAreUnreadable() {
+        let bare = Self.skill("pdf"), repo = Self.skill("docx", source: Self.anthropic)
+        #expect(SkillsPresentation.source(bare) == "Local")
+        #expect(SkillsPresentation.unmanagedNote(bare).contains("never updates"))
+        #expect(SkillsPresentation.source(bare, recordsUnavailable: true) == "Source unavailable")
+        #expect(!SkillsPresentation.unmanagedNote(bare, recordsUnavailable: true).contains("never updates"))
+        #expect(SkillsPresentation.source(repo, recordsUnavailable: true) == "anthropics/skills")
     }
 
     @Test func updateInstallsTheNewerCommit() async {

@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Testing
+import ShepherdTestKit
 @testable import ShepherdProtocol
 @testable import ShepherdSessions
 
@@ -216,7 +217,7 @@ struct HookFollowUpTests {
 
     // MARK: The server queue never waits for the settings lock
 
-    @Test(.timeLimit(.minutes(1))) func aFleetWriteGivesUpWhileAnotherProcessHoldsTheSettingsLockAndSucceedsOnceItIsFree() throws {
+    @Test(.timeLimit(.minutes(1))) func aFleetWriteGivesUpWhileAnotherProcessHoldsTheSettingsLockAndSucceedsOnceItIsFree() async throws {
         let f = try HookCatalogTests.Fixture(); defer { f.remove() }
         let catalog = f.catalog
         let source = FleetHooksSource(catalog: { catalog })
@@ -239,10 +240,10 @@ struct HookFollowUpTests {
             }
             finished.signal()
         }
-        let returned = finished.wait(timeout: .now() + 10) == .success
+        let returned = await blocking { finished.wait(timeout: .now() + 10) == .success }
         close(fd)
         held = false
-        if !returned { finished.wait() }
+        if !returned { await blocking { finished.wait() } }
         #expect(returned, "the write returned while the lock was held")
         #expect(outcome.value == ["busy", "busy"])
         #expect(catalog.load().entries.isEmpty, "nothing was written")

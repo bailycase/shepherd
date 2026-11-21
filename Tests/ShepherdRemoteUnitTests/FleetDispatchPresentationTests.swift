@@ -230,6 +230,18 @@ struct FleetDispatchPresentationTests {
         #expect(result.branch == "fleet/fix-flaky-payment" && result.pushed == true)
         let unknown = text.replacingOccurrences(of: "pushed to origin", with: "could not verify origin")
         #expect(FleetResultMessage.parse(unknown)?.branch == result.branch && FleetResultMessage.parse(unknown)?.pushed == nil)
+        #expect(result.checkoutNotice == nil)
+        let notices = ["Uncommitted in the checkout on Mac mini: 1 file (1 modified). Counts include any edits sent with the dispatch.",
+                       "Uncommitted in the checkout on Mac mini: 3 files (2 modified, 1 untracked).", // An existing result from round 1.
+                       "Could not check the checkout for uncommitted work."]
+        for notice in notices {
+            let parsed = try #require(FleetResultMessage.parse(text + " " + notice))
+            #expect(parsed.branch == result.branch && parsed.pushed == true)
+            #expect(parsed.text == result.text && parsed.checkoutNotice == notice)
+        }
+        let noBranchWork = text.replacingOccurrences(of: "2 commits ahead of the start, pushed to origin, 3 files changed (+10 -2).", with: "branch work unavailable.")
+        let parsed = try #require(FleetResultMessage.parse(noBranchWork + " " + notices[0]))
+        #expect(parsed.branch == result.branch && parsed.pushed == nil && parsed.checkoutNotice == notices[0])
         #expect(FleetResultMessage.parse("[from: a, an agent, not the user.] Please look at this") == nil)
         #expect(FleetResultMessage.parse("Result from X on Y:\nhi") == nil, "only the host's framing counts")
     }

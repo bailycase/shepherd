@@ -165,10 +165,10 @@ struct ProjectChildrenTests {
         let pi = try #require(rig.agents.current.values.first)
         let (controller, scope) = try await authorize(pi, on: rig.host)
         pi.finishTool(1)
-        guard case .projectChildren(let drainID, scope, .drain) = try controller.readReply() else { throw WireError("Expected helper drain") }
+        guard case .projectChildren(let drainID, scope, .drain, _) = try controller.readReply() else { throw WireError("Expected helper drain") }
         #expect(rig.host.server.state.projects.first?.tasks.first?.phase == .running)
         _ = try await rig.perform(project.id, .pause)
-        guard case .projectChildren(let stopID, scope, .stop) = try controller.readReply() else { throw WireError("Expected scoped stop") }
+        guard case .projectChildren(let stopID, scope, .stop, _) = try controller.readReply() else { throw WireError("Expected scoped stop") }
         #expect(pi.stdin("abort").isEmpty)
         #expect(rig.host.server.state.projects.first?.interruptPending == true)
         // An ACK on another connection cannot discharge this controller's command.
@@ -182,8 +182,6 @@ struct ProjectChildrenTests {
         #expect(rig.host.server.state.projects.first?.interruptPending == true)
         try controller.send(.childCommandResult(id: stopID, error: nil))
         try await eventually("native stop after helpers exited") { !pi.stdin("abort").isEmpty }
-        // Every Stop of a thread also tells its children extension to stop the Bash it manages.
-        #expect(try controller.readReply() == .stopManagedBash)
         try await eventually("Project settled after helper ACK") {
             rig.host.server.state.projects.first?.tasks.first?.phase == .settled && rig.host.server.state.projects.first?.interruptPending == false
         }
@@ -216,7 +214,7 @@ struct ProjectChildrenTests {
         if drainBeforeTakeover {
             pi.finishTool(1)
             let reply = try controller.readReply()
-            guard case .projectChildren(let id, scope, .drain) = reply else { throw WireError("Missing original-scope drain; received \(reply)") }
+            guard case .projectChildren(let id, scope, .drain, _) = reply else { throw WireError("Missing original-scope drain; received \(reply)") }
             pendingDrain = id
         }
         try await rig.host.server.enqueue {
@@ -235,12 +233,12 @@ struct ProjectChildrenTests {
         }
         _ = try await rig.perform(project.id, .pause)
         var stopReply = try controller.readReply()
-        if case .projectChildren(let drain, scope, .drain) = stopReply {
+        if case .projectChildren(let drain, scope, .drain, _) = stopReply {
             #expect(pendingDrain == nil, "At most one drain is in flight per exact scope")
             pendingDrain = drain
             stopReply = try controller.readReply()
         }
-        guard case .projectChildren(let id, scope, .stop) = stopReply else { throw WireError("Missing original-scope stop; received \(stopReply)") }
+        guard case .projectChildren(let id, scope, .stop, _) = stopReply else { throw WireError("Missing original-scope stop; received \(stopReply)") }
         if let pendingDrain {
             try controller.send(.childCommandResult(id: pendingDrain, error: nil))
             try await eventually("earlier drain acknowledged without acknowledging Stop") {
@@ -275,7 +273,7 @@ struct ProjectChildrenTests {
         let (controller, scope) = try await authorize(pi, on: rig.host)
         let original = try await pi.snapshot("original question") { !$0.dialogs.isEmpty }
         _ = try await rig.perform(project.id, .pause)
-        guard case .projectChildren(let id, scope, .stop) = try controller.readReply() else { throw WireError("Missing local question helper stop") }
+        guard case .projectChildren(let id, scope, .stop, _) = try controller.readReply() else { throw WireError("Missing local question helper stop") }
         #expect(rig.host.server.state.projects.first?.interruptPending == true)
         try controller.send(.childCommandResult(id: id, error: nil))
         try await eventually("local helpers acknowledged") { rig.host.server.state.projects.first?.interruptPending == false }
@@ -304,7 +302,7 @@ struct ProjectChildrenTests {
         _ = try await rig.host.server.nativeThread(agentID: pi.agent.id,
             request: .answer(expectedSessionID: scope.sessionID, generation: scope.generation, operationID: UUID(),
                              dialogID: try #require(retained.dialogs.first?.id), answer: .confirm(value: true)))
-        guard case .projectChildren(let drain, fresh, .drain) = try freshController.readReply() else { throw WireError("Resumed local work did not drain its fresh helpers") }
+        guard case .projectChildren(let drain, fresh, .drain, _) = try freshController.readReply() else { throw WireError("Resumed local work did not drain its fresh helpers") }
         #expect(rig.host.server.state.projects.first?.tasks.first?.phase.occupiesSlot == true)
         try freshController.send(.childCommandResult(id: drain, error: nil))
         try await eventually("resumed question and helpers settle") { rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
@@ -322,7 +320,7 @@ struct ProjectChildrenTests {
         #expect(scope.key == assignment.key)
         let reconnected = try await rig.remote.typed(); defer { reconnected.disconnect() }
         let paused = Task { try await reconnected.projectExecution(.pause(key: assignment.key)) }
-        guard case .projectChildren(_, scope, .stop) = try controller.readReply() else { throw WireError("Missing question helper stop") }
+        guard case .projectChildren(_, scope, .stop, _) = try controller.readReply() else { throw WireError("Missing question helper stop") }
         #expect(rig.receipt(assignment)?.helpersStopped == false)
         controller.closeConnection()
         await #expect(throws: RemoteHostClientError.self) { try await paused.value }
@@ -337,7 +335,7 @@ struct ProjectChildrenTests {
                                   userTimestamp: (question.messages + question.provisional).last { $0.role == "user" }?.timestamp))
         guard case .error(103, "project_scope", _) = try retry.readReply() else { throw WireError("Project policy lost on reconnect") }
         let again = Task { try await reconnected.projectExecution(.pause(key: assignment.key)) }
-        guard case .projectChildren(let id, scope, .stop) = try retry.readReply() else { throw WireError("Missing retried scope stop") }
+        guard case .projectChildren(let id, scope, .stop, _) = try retry.readReply() else { throw WireError("Missing retried scope stop") }
         try retry.send(.childCommandResult(id: id, error: nil))
         let result = try await again.value
         #expect(result.receipt.helpersStopped == true && result.receipt.phase == .waiting)
@@ -375,7 +373,7 @@ struct ProjectChildrenTests {
         _ = try await reconnected.projectExecution(.answer(key: assignment.key,
             request: .answer(expectedSessionID: scope.sessionID, generation: scope.generation, operationID: UUID(),
                              dialogID: try #require(question.dialogs.first?.id), answer: .confirm(value: true))))
-        guard case .projectChildren(let drain, fresh, .drain) = try freshController.readReply() else { throw WireError("Resumed executor did not drain its fresh helpers") }
+        guard case .projectChildren(let drain, fresh, .drain, _) = try freshController.readReply() else { throw WireError("Resumed executor did not drain its fresh helpers") }
         #expect(rig.receipt(assignment)?.phase.active == true)
         try freshController.send(.childCommandResult(id: drain, error: nil))
         try await eventually("resumed executor question and helpers settle") { rig.receipt(assignment)?.phase == .settled }
@@ -390,7 +388,7 @@ struct ProjectChildrenTests {
         try await eventually("parked question") { rig.receipt(assignment)?.phase == .waiting }
         let (controller, scope) = try await authorize(pi, on: rig.host)
         let pause = Task { try await rig.host.server.projectExecution(.pause(key: assignment.key)) }
-        guard case .projectChildren(let id, scope, .stop) = try controller.readReply() else { throw WireError("Missing scoped Stop") }
+        guard case .projectChildren(let id, scope, .stop, _) = try controller.readReply() else { throw WireError("Missing scoped Stop") }
         try controller.send(.childCommandResult(id: id, error: nil))
         _ = try await pause.value
         let gate = DispatchSemaphore(value: 0), entered = Locked(false)
@@ -435,7 +433,7 @@ struct ProjectChildrenTests {
         let (controller, scope) = try await authorize(pi, on: rig.host)
         try await eventually("consumed activation receipt persisted") { rig.receipt(assignment)?.phase == .sent }
         pi.finishTool(1)
-        guard case .projectChildren(let id, scope, .drain) = try controller.readReply() else { throw WireError("Missing executor drain") }
+        guard case .projectChildren(let id, scope, .drain, _) = try controller.readReply() else { throw WireError("Missing executor drain") }
         #expect(rig.receipt(assignment)?.phase == .sent)
         try controller.send(.childCommandResult(id: id, error: nil))
         try await eventually("executor helpers settled") { rig.receipt(assignment)?.phase == .settled }
@@ -468,7 +466,7 @@ struct ProjectChildrenTests {
         pi.finishTool(1)
         try await eventually("executor native takeover") { rig.receipt(assignment)?.phase == .unknown }
         _ = try await rig.host.server.projectExecution(.cancel(key: assignment.key))
-        guard case .projectChildren(let id, scope, .stop) = try controller.readReply() else { throw WireError("Missing superseded helper stop") }
+        guard case .projectChildren(let id, scope, .stop, _) = try controller.readReply() else { throw WireError("Missing superseded helper stop") }
         #expect(rig.receipt(assignment)?.phase == .interruptPending)
         try controller.send(.childCommandResult(id: id, error: nil))
         try await eventually("old executor slot released with exit evidence") { rig.receipt(assignment)?.phase == .cancelled }
@@ -484,9 +482,9 @@ struct ProjectChildrenTests {
         let pi = try await rig.pi(assignment)
         let (controller, scope) = try await authorize(pi, on: rig.host)
         let stopping = Task { try await pi.request(.abort(expectedSessionID: scope.sessionID, generation: scope.generation, operationID: UUID())) }
-        // Every Stop of a thread also tells its children extension to stop the Bash it manages, ahead of the helpers' own stop.
-        #expect(try controller.readReply() == .stopManagedBash)
-        guard case .projectChildren(let id, scope, .stop) = try controller.readReply() else { throw WireError("Native Stop bypassed helpers") }
+        #expect(try controller.readReply() == .stopManagedBash(sweepChildren: true))
+        let reply = try controller.readReply()
+        guard case .projectChildren(let id, scope, .stop, .some(true)) = reply else { throw WireError("Native Stop did not authorize sweeping the helpers it stops: \(reply)") }
         #expect(pi.stdin("abort").isEmpty)
         try controller.send(.childCommandResult(id: id, error: nil))
         guard case .accepted = try await stopping.value else { throw WireError("Native Stop not acknowledged") }
@@ -531,7 +529,7 @@ struct ProjectChildrenTests {
         let pi = try #require(rig.agents.current.values.first)
         let (controller, scope) = try await authorize(pi, on: rig.host)
         _ = try await rig.perform(project.id, .pause)
-        guard case .projectChildren(_, scope, .stop) = try controller.readReply() else { throw WireError("Missing scoped Stop") }
+        guard case .projectChildren(_, scope, .stop, _) = try controller.readReply() else { throw WireError("Missing scoped Stop") }
         if manualTakeover {
             _ = try await pi.send("tools:2 manual during helper timeout", delivery: .steer, from: pi.ready())
             pi.finishTool(1)
@@ -564,7 +562,7 @@ struct ProjectChildrenTests {
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         let pi = try await rig.pi(assignment)
         let (controller, scope) = try await authorize(pi, on: rig.host)
-        guard case .projectChildren(let id, scope, .stop) = try controller.readReply() else { throw WireError("Deadline did not stop helpers") }
+        guard case .projectChildren(let id, scope, .stop, nil) = try controller.readReply() else { throw WireError("Deadline did not stop helpers without sweeping") }
         #expect(rig.receipt(assignment)?.phase == .interruptPending)
         #expect(pi.stdin("abort").isEmpty)
         try controller.send(.childCommandResult(id: id, error: nil))

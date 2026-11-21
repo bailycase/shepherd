@@ -234,6 +234,8 @@ private struct ChangesBasePicker: View {
                         SHChangesMenuRow("The PR’s base", systemImage: SHChangesScopeGlyph.pullRequest.systemImage,
                                          trailing: .text(pullBase)) { choose(pullBase) }
                     }
+                } else if let failure = session.branchesError {
+                    SHChangesMenuNote(failure)
                 } else {
                     HStack(spacing: SH.Space.m) {
                         ProgressView().progressViewStyle(.shSpinner(size: 10))

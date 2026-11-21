@@ -44,6 +44,38 @@ struct PushNotificationsTests {
         #expect(requests.current.count == 1)
     }
 
+    @Test func damagedFileReachesExistingClientErrorAndCanBeDeletedWithoutRestart() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let file = host.host.dir.appendingPathComponent("push-registrations.json")
+        let client = try await host.typed()
+        defer { client.disconnect() }
+        let original = registration()
+        try await client.registerPush(original)
+        let registration = RemotePushRegistration(id: original.id, sendToken: String(repeating: "b", count: 64))
+        let damaged = Data("{\"version\":99,\"value\":[]}".utf8)
+        try damaged.write(to: file)
+        for register in [true, false] {
+            do {
+                if register { try await client.registerPush(registration) }
+                else { try await client.unregisterPush(registration.id) }
+                Issue.record("Expected damaged push file to be refused")
+            } catch let error as RemoteHostClientError {
+                guard case .rejected("push_registration", let message) = error else {
+                    Issue.record("Unexpected push error: \(error)")
+                    continue
+                }
+                #expect(error.localizedDescription == message)
+                #expect(message.contains("\(file.path) on the host"))
+                #expect(message.contains("move or delete the file"))
+            }
+            #expect(try Data(contentsOf: file) == damaged)
+        }
+        try FileManager.default.removeItem(at: file)
+        try await client.registerPush(registration)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [registration])
+    }
+
     @Test func payloadValidationRegistrationAndFlightCapsAndDeadline() async throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -244,6 +276,40 @@ struct PushNotificationsTests {
             pushes.stop()
         }
         #expect(callbacks.current.count == 16, "revocation never retries")
+    }
+
+    @Test(arguments: [nil, 400, 410] as [Int?])
+    func damageAfterDeliveryStartsBlocksNewSendsFallbackAndPruning(_ status: Int?) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.damaged-revocation")
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let pushes = PushNotifications(file: file, queue: queue)
+        let callback = Locked<(@Sendable (Int?) -> Void)?>(nil)
+        let requests = Locked(0)
+        try queue.sync {
+            try pushes.register(registration())
+            try pushes.register(registration())
+            pushes.transport = { _, finished in
+                requests.withValue { $0 += 1 }
+                callback.withValue { $0 = finished }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done)
+        }
+        #expect(requests.current == 2)
+        let damage = Data("[null]".utf8)
+        try damage.write(to: file)
+        if let status {
+            let finish = try #require(callback.current)
+            finish(status)
+        }
+        try queue.sync {
+            let saved = try Data(contentsOf: file)
+            #expect(saved == damage)
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(requests.current == 2, "damage suspends delivery and relay fallback")
+        }
     }
 
     @Test func alertsCarryTheirStackLoudnessAndSummaryRankAndFallBackForAnOlderRelay() throws {

@@ -56,6 +56,10 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-skill", routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
             FixtureScreen(name: "settings-skills-repo", hosts: FixtureData.skillsRepoHosts(),
                           routes: [.settings(.skills), .settings(.skillsRepo("anthropics/skills"))], tab: .settings),
+            // A host whose skills.json won't read: the banner, with every skill shown without a source.
+            FixtureScreen(name: "settings-skills-damaged", hosts: FixtureData.skillsDamagedHosts(), routes: [.settings(.skills)], tab: .settings),
+            FixtureScreen(name: "settings-skill-damaged", hosts: FixtureData.skillsDamagedHosts(),
+                          routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
             // Suggested instructions on every host (suggestions.v1).
             FixtureScreen(name: "settings-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
@@ -96,6 +100,8 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-pad-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .experiments }),
             FixtureScreen(name: "settings-pad-skills", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in app.navigator.settingsSelection.page = .skills }),
+            FixtureScreen(name: "settings-pad-skills-damaged", hosts: FixtureData.skillsDamagedHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .skills }),
         ]
     }

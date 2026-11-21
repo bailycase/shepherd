@@ -11,6 +11,7 @@
 //               is answered with a fixed summary
 //   otherwise   "ok"
 import * as http from "node:http";
+import { existsSync } from "node:fs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const textOf = (message) => (typeof message?.content === "string" ? message.content : (message?.content ?? []).map((part) => part.text ?? "").join("\n"));
@@ -48,6 +49,54 @@ const server = http.createServer(async (req, res) => {
     res.write(chunk({ tool_calls: [{ index: 0, id: `recovery_${recoveryTools}`, type: "function",
       function: { name: "bash", arguments: JSON.stringify({ command: recoveryTools ? "echo recovered" : "exit 1" }) } }] }));
     return finish("tool_calls");
+  }
+  const orphan = /^(?:(launch|workflow) )?orphan job ([a-z]+)( finish| gated| question| failure| deadline| sibling| cancel)?$/.exec(text);
+  if (orphan) {
+    const [, dispatch, name, settle = ""] = orphan;
+    const call = (tool, args) => {
+      res.write(chunk({ tool_calls: [{ index: 0, id: `call_${tool}`, type: "function",
+        function: { name: tool, arguments: JSON.stringify(args) } }] }));
+      return finish("tool_calls");
+    };
+    if (last.role === "tool" && dispatch === "workflow" && settle === " cancel" && lastTool === "shepherd_workflow") {
+      const workflow = JSON.parse(textOf(last));
+      if (workflow.state === "running") {
+        const deadline = Date.now() + 30000;
+        while (!closed && !existsSync(`${name}.finish`) && Date.now() < deadline) await sleep(30);
+        if (!closed) return call("shepherd_workflow", { action: "cancel", id: workflow.id });
+      }
+    } else if (last.role === "tool" && !dispatch) {
+      if (!settle) return; // Keep the helper active until it is stopped.
+      if (settle !== " finish") {
+        const deadline = Date.now() + 30000;
+        while (!closed && !existsSync(`${name}.finish`) && Date.now() < deadline) await sleep(30);
+      }
+      if (settle === " question" && lastTool === "bash") {
+        return call("shepherd_parent_message", { message: "Which test answer?", needsReply: true });
+      }
+      if (settle === " failure") return finish("length");
+    } else if (last.role !== "tool") {
+      const task = { task: `orphan job ${name}${settle}`, name, agent: "worker", delivery: "report" };
+      if (dispatch === "launch") return call("shepherd_child_start", task);
+      if (dispatch === "workflow") {
+        const run = `runs.run(${JSON.stringify(name)}, ${JSON.stringify({ ...task, task: `orphan job ${name}` })})`;
+        const failure = 'runs.run("robin", { name: "robin", task: "orphan job robin failure", delivery: "report" })';
+        return call("shepherd_workflow", {
+          async: settle === " cancel", delivery: "report",
+          workflowScript: `return await ${settle === " sibling" ? `Promise.all([${run}, ${failure}])` : run}`,
+          ...(settle === " deadline" ? { timeoutSeconds: 8 } : {}),
+        });
+      }
+      const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`;
+      // The fixture leaves its group and ancestry. Removing the scratch directory
+      // also releases it, so fixture cleanup never signals a raw PID.
+      const job = `const fs = require('node:fs'), cwd = process.cwd();
+        const timer = setInterval(() => { if (!fs.existsSync(cwd)) clearInterval(timer); }, 50);
+        setTimeout(() => clearInterval(timer), 45000).unref();
+        fs.writeFileSync('${name}.pid', String(process.pid));`;
+      const detach = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(job)}], {detached: true, stdio: 'ignore'}).unref()`;
+      return call("bash", { command: `${quote(process.execPath)} -e ${quote(detach)}` });
+    }
   }
   if (last.role === "tool" && text !== "slow after tool failure") {
     res.write(chunk({ content: "tool done" }));

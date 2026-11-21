@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -28,6 +29,8 @@ public final class SkillsStore: @unchecked Sendable {
         case invalidFiles(String)
         case git(String)
         case writeFailed(String)
+        /// `skills.json` exists but can't be read; the message names it and how to fix it.
+        case damagedRecords(String)
 
         /// The code a remote client gets with the message.
         public var code: String {
@@ -39,7 +42,7 @@ public final class SkillsStore: @unchecked Sendable {
             case .noSuchPath: "no_such_path"
             case .invalidFiles: "invalid"
             case .git: "git_failed"
-            case .writeFailed: "write_failed"
+            case .writeFailed, .damagedRecords: "write_failed"
             }
         }
 
@@ -53,6 +56,7 @@ public final class SkillsStore: @unchecked Sendable {
             case .invalidFiles(let reason): reason
             case .git(let message): message
             case .writeFailed(let reason): "Couldn't change the skills: \(reason)"
+            case .damagedRecords(let problem): problem
             }
         }
     }
@@ -77,6 +81,8 @@ public final class SkillsStore: @unchecked Sendable {
     private let piLock = NSLock()
     private var reader: PiSkillsReader?
     private var copied: @Sendable () -> [String: String]
+    /// Whether this damage episode of `skills.json` is already in the log; guarded by `lock`.
+    private var loggedRecordsDamage = false
 
     /// `copiedFrom` names the skills Shepherd copied from the user's own pi, with where each came
     /// from (`YourPiImport.copiedSkills`).
@@ -172,8 +178,8 @@ public final class SkillsStore: @unchecked Sendable {
     public func remove(_ name: String) throws -> SkillsSnapshot {
         try lock.withLock {
             try Self.check(name)
+            var records = try loadRecords()
             guard let found = locate(name) else { throw StoreError.noSuchSkill(name) }
-            var records = loadRecords()
             let date = now().timeIntervalSince1970
             let kept = removedDirectory.appendingPathComponent(name, isDirectory: true)
             try writing {
@@ -183,7 +189,11 @@ public final class SkillsStore: @unchecked Sendable {
                 records.removed[name] = Removed(wasOn: found.isOn, record: records.skills[name], removedAt: date)
                 records.skills[name] = nil
                 prune(&records, at: date)
-                try save(records)
+                // A skill that couldn't be recorded as removed goes back, so it keeps its source.
+                do { try save(records) } catch {
+                    try? FileManager.default.moveItem(at: kept, to: found.folder)
+                    throw error
+                }
             }
             return unlockedSnapshot()
         }
@@ -194,7 +204,7 @@ public final class SkillsStore: @unchecked Sendable {
     public func restore(_ name: String) throws -> SkillsSnapshot {
         try lock.withLock {
             try Self.check(name)
-            var records = loadRecords()
+            var records = try loadRecords()
             let kept = removedDirectory.appendingPathComponent(name, isDirectory: true)
             guard let removed = records.removed[name], exists(kept) else { throw StoreError.noSuchSkill(name) }
             guard locate(name) == nil else { throw StoreError.alreadyThere(name) }
@@ -204,7 +214,10 @@ public final class SkillsStore: @unchecked Sendable {
                 try FileManager.default.moveItem(at: kept, to: destination)
                 records.skills[name] = removed.record
                 records.removed[name] = nil
-                try save(records)
+                do { try save(records) } catch {
+                    try? FileManager.default.moveItem(at: destination, to: kept)
+                    throw error
+                }
             }
             return unlockedSnapshot()
         }
@@ -214,7 +227,7 @@ public final class SkillsStore: @unchecked Sendable {
     @discardableResult
     public func configure(autoUpdate: Bool) throws -> SkillsSnapshot {
         try lock.withLock {
-            var records = loadRecords()
+            var records = try loadRecords()
             if records.autoUpdate != autoUpdate {
                 records.autoUpdate = autoUpdate
                 try writing { try save(records) }
@@ -255,11 +268,13 @@ public final class SkillsStore: @unchecked Sendable {
     /// it's used unless `invocation` says otherwise; a new one is on and automatic unless it says.
     @discardableResult
     public func install(repo: String, paths: [String], commit: String?, invocation: SkillInvocation?) throws -> SkillsSnapshot {
+        // Refused before the fetch, not after it.
+        _ = try lock.withLock { try loadRecords() }
         let staging = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: staging) }
         let staged = try stage(repo: repo, paths: paths, commit: commit, into: staging)
         return try lock.withLock {
-            var records = loadRecords()
+            var records = try loadRecords()
             let date = now().timeIntervalSince1970
             try writing {
                 for skill in staged {
@@ -345,6 +360,7 @@ public final class SkillsStore: @unchecked Sendable {
         guard files.reduce(0, { $0 + $1.contents.count }) <= SkillFile.maxTotalBytes else {
             throw StoreError.invalidFiles("\(name) is too big to copy to another host. Put it in a git repository instead.")
         }
+        _ = try lock.withLock { try loadRecords() }
         let staging = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: staging) }
         let target = staging.appendingPathComponent(name, isDirectory: true)
@@ -356,7 +372,7 @@ public final class SkillsStore: @unchecked Sendable {
             try Self.apply(invocation, to: target)
         }
         return try lock.withLock {
-            var records = loadRecords()
+            var records = try loadRecords()
             try writing {
                 let destination = locate(name)?.folder ?? directory.appendingPathComponent(name, isDirectory: true)
                 try swap(target, into: destination)
@@ -375,7 +391,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// what the last check found.
     @discardableResult
     public func checkUpdates() throws -> SkillsSnapshot {
-        let records = lock.withLock { loadRecords() }
+        let records = try lock.withLock { try loadRecords() }
         var found: [String: SkillUpdate?] = [:]
         let byRepo = Dictionary(grouping: records.skills, by: { $0.value.source.repo })
         gitLock.withLock {
@@ -402,7 +418,7 @@ public final class SkillsStore: @unchecked Sendable {
             }
         }
         let (snapshot, autoUpdate) = try lock.withLock {
-            var records = loadRecords()
+            var records = try loadRecords()
             for (name, update) in found where records.skills[name] != nil {
                 records.skills[name]?.update = update
             }
@@ -424,7 +440,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// Checks for updates when the last check is a day old, or there was none.
     @discardableResult
     public func checkUpdatesIfDue() -> SkillsSnapshot? {
-        let checkedAt = lock.withLock { loadRecords().checkedAt }
+        let checkedAt = lock.withLock { (try? loadRecords())?.checkedAt }
         if let checkedAt, now().timeIntervalSince1970 - checkedAt < Self.checkInterval { return nil }
         return (try? checkUpdates()).map(withPi)
     }
@@ -440,9 +456,9 @@ public final class SkillsStore: @unchecked Sendable {
     }
 
     /// Every skill here, on and off (the ones pi loads from elsewhere are not Shepherd's to sync).
-    func syncedSkills() -> [Synced] {
-        lock.withLock {
-            let records = loadRecords()
+    func syncedSkills() throws -> [Synced] {
+        try lock.withLock {
+            let records = try loadRecords()
             var skills: [String: Synced] = [:]
             for (base, isOn) in [(offDirectory, false), (directory, true)] {
                 for name in skillNames(in: base) {
@@ -457,6 +473,10 @@ public final class SkillsStore: @unchecked Sendable {
     /// The folder of a skill here, on or off.
     func syncedFolder(_ name: String) -> URL? {
         lock.withLock { locate(name)?.folder }
+    }
+
+    func syncedAutoUpdate() throws -> Bool {
+        try lock.withLock { try loadRecords().autoUpdate }
     }
 
     /// One file of a skill that is here, on or off, even before its SKILL.md has arrived (a skill whose
@@ -480,6 +500,8 @@ public final class SkillsStore: @unchecked Sendable {
     func writeSynced(_ name: String, path: String, data: Data?, on: Bool) throws {
         try Self.check(name)
         try lock.withLock {
+            // Before any file or folder is touched: a sync of files can't land while the records are damaged.
+            _ = try loadRecords()
             let folder = locate(name)?.folder ?? (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
             if let data {
                 try FleetFileTree.write(data, to: path, under: folder)
@@ -498,6 +520,7 @@ public final class SkillsStore: @unchecked Sendable {
     func applySynced(_ name: String, on: Bool, source: SkillSource?) throws -> Bool {
         try Self.check(name)
         return try lock.withLock {
+            var records = try loadRecords()
             guard let found = locate(name) else { return false }
             if found.isOn != on {
                 let to = (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
@@ -507,7 +530,6 @@ public final class SkillsStore: @unchecked Sendable {
                     try FileManager.default.moveItem(at: found.folder, to: to)
                 }
             }
-            var records = loadRecords()
             if records.skills[name]?.source != source {
                 if let source {
                     var record = records.skills[name] ?? Record(source: source, installedAt: now().timeIntervalSince1970)
@@ -569,11 +591,156 @@ public final class SkillsStore: @unchecked Sendable {
     private var stagingDirectory: URL { stateDirectory.appendingPathComponent("staging", isDirectory: true) }
     private var recordsURL: URL { stateDirectory.appendingPathComponent("skills.json") }
 
-    private func loadRecords() -> Records {
-        guard let data = try? Data(contentsOf: recordsURL), let records = try? JSONDecoder().decode(Records.self, from: data) else {
+    /// The records, or `damagedRecords` when the file is there and can't be read: nothing may then be
+    /// saved over it. Read on every use, so a repaired or deleted file takes over at once.
+    private func loadRecords() throws -> Records {
+        switch Self.readRecords(at: recordsURL) {
+        case .loaded(let records):
+            if loggedRecordsDamage { ShepherdLog.info("skills.json is readable again at \(recordsURL.path)") }
+            loggedRecordsDamage = false
+            return records
+        case .missing:
+            loggedRecordsDamage = false
             return Records()
+        case .damaged(let original, let cause):
+            let problem = Self.damageMessage(at: recordsURL, original: original, cause: cause)
+            if !loggedRecordsDamage {
+                ShepherdLog.error(problem)
+                loggedRecordsDamage = true
+            }
+            throw StoreError.damagedRecords(problem)
         }
-        return records
+    }
+
+    /// The disk reader: only what this store wrote reads. The shared decoder is told to take the
+    /// envelope exactly, and `requireWritten` holds the rest.
+    private static func readRecords(at url: URL) -> PersistedFile<Records> {
+        PersistedFile<Records>.load(from: url, exactEnvelope: true, validateBytes: requireWritten)
+    }
+
+    private static func damaged(_ why: String) -> DecodingError { .dataCorrupted(.init(codingPath: [], debugDescription: why)) }
+
+    /// Foundation's JSON decoder also reads UTF-16, repairs invalid UTF-8, keeps one of two members with
+    /// the same key, and the wire types turn an explicit null into "absent". The next save would then
+    /// write over what was really there. Anything this can't read as JSON is damage too.
+    private static func requireWritten(_ data: Data) throws {
+        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else { throw damaged("The file isn't UTF-8 text.") }
+        // A strict parse too: the decoder reads some JSON that isn't (a number like 01 in a key it ignores).
+        guard (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+            throw damaged("The file isn't valid JSON.")
+        }
+        let scan = RecordsScan(bytes: Array(data))
+        try scan.document()
+    }
+
+    /// Walks the JSON's tokens, not a parsed copy of it, so a repeated key or a null is seen even where
+    /// a dictionary would drop it. It checks only what this store forbids; the decoder checks the rest.
+    private final class RecordsScan {
+        let bytes: [UInt8]
+        private var at = 0
+
+        private static let maxDepth = 64
+
+        init(bytes: [UInt8]) { self.bytes = bytes }
+
+        func document() throws {
+            try value(depth: 0)
+            skipSpace()
+            guard at == bytes.count else { throw SkillsStore.damaged("The file isn't one JSON value.") }
+        }
+
+        private func skipSpace() {
+            while at < bytes.count, [0x20, 0x09, 0x0A, 0x0D].contains(bytes[at]) { at += 1 }
+        }
+
+        private func value(depth: Int) throws {
+            guard depth < Self.maxDepth else { throw SkillsStore.damaged("The file is nested too deeply.") }
+            skipSpace()
+            guard at < bytes.count else { throw SkillsStore.damaged("The file ends early.") }
+            switch bytes[at] {
+            case UInt8(ascii: "{"):
+                at += 1
+                var keys: Set<String> = []
+                try members(until: UInt8(ascii: "}")) {
+                    let key = try string()
+                    guard keys.insert(key).inserted else {
+                        throw SkillsStore.damaged("The file repeats the key \"\(key)\", which this version never writes.")
+                    }
+                    skipSpace()
+                    guard at < bytes.count, bytes[at] == UInt8(ascii: ":") else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+                    at += 1
+                    try value(depth: depth + 1)
+                }
+            case UInt8(ascii: "["):
+                at += 1
+                try members(until: UInt8(ascii: "]")) { try value(depth: depth + 1) }
+            case UInt8(ascii: "\""):
+                _ = try string()
+            case UInt8(ascii: "n"):
+                throw SkillsStore.damaged("The file holds an explicit null, which this version never writes.")
+            default:
+                // A number, true or false: the decoder reads these.
+                let start = at
+                while at < bytes.count, ![0x20, 0x09, 0x0A, 0x0D, 0x2C, 0x5D, 0x7D].contains(bytes[at]) { at += 1 }
+                guard at > start else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+            }
+        }
+
+        /// Each member of an object or array, separated by commas, up to `close`.
+        private func members(until close: UInt8, _ member: () throws -> Void) throws {
+            skipSpace()
+            if at < bytes.count, bytes[at] == close { at += 1; return }
+            while true {
+                try member()
+                skipSpace()
+                guard at < bytes.count else { throw SkillsStore.damaged("The file ends early.") }
+                at += 1
+                if bytes[at - 1] == close { return }
+                guard bytes[at - 1] == UInt8(ascii: ",") else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+            }
+        }
+
+        /// A string's value, escapes resolved: `"a"` and `"\u0061"` are the same key.
+        private func string() throws -> String {
+            skipSpace()
+            guard at < bytes.count, bytes[at] == UInt8(ascii: "\"") else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+            let start = at
+            at += 1
+            while at < bytes.count, bytes[at] != UInt8(ascii: "\"") { at += bytes[at] == UInt8(ascii: "\\") ? 2 : 1 }
+            guard at < bytes.count else { throw SkillsStore.damaged("The file ends early.") }
+            at += 1
+            guard let text = try? JSONSerialization.jsonObject(with: Data(bytes[start..<at]), options: [.fragmentsAllowed]) as? String else {
+                throw SkillsStore.damaged("The file isn't valid JSON.")
+            }
+            return text
+        }
+    }
+
+    private static func damageMessage(at url: URL, original: Data?, cause: any Error) -> String {
+        let detail: String
+        switch cause {
+        case DecodingError.dataCorrupted(let context), DecodingError.typeMismatch(_, let context),
+             DecodingError.valueNotFound(_, let context), DecodingError.keyNotFound(_, let context):
+            detail = context.debugDescription
+        default:
+            detail = original == nil ? "The file could not be read." : cause.localizedDescription
+        }
+        return "Couldn't read where your skills came from at \(url.path). \(detail) "
+            + "Installing, updating, removing and restoring skills, and Fleet sync of skills, are paused. "
+            + "Restore the file from a backup or repair its JSON; nothing is lost until then."
+    }
+
+    /// Why the records in `stateDirectory` can't be read, nil when they can or aren't there. For a
+    /// writer outside the store that would replace a skill's folder (copying again from your pi).
+    public static func recordsProblem(stateDirectory: URL) -> String? {
+        let url = stateDirectory.appendingPathComponent("skills.json")
+        guard case .damaged(let original, let cause) = readRecords(at: url) else { return nil }
+        return damageMessage(at: url, original: original, cause: cause)
+    }
+
+    /// For a read-only answer: the records, or empty ones with the problem to show beside them.
+    private func recordsOrProblem() -> (records: Records, problem: String?) {
+        do { return (try loadRecords(), nil) } catch { return (Records(), "\(error)") }
     }
 
     private func save(_ records: Records) throws {
@@ -594,7 +761,8 @@ public final class SkillsStore: @unchecked Sendable {
     // MARK: Reading the folders
 
     private func unlockedSnapshot() -> SkillsSnapshot {
-        let records = loadRecords()
+        let loaded = recordsOrProblem()
+        let records = loaded.records
         let copiedSkills = copiedFrom()
         var skills: [String: InstalledSkill] = [:]
         for (base, isOn) in [(offDirectory, false), (directory, true)] {
@@ -614,7 +782,7 @@ public final class SkillsStore: @unchecked Sendable {
         }
         return SkillsSnapshot(directory: (directory.path as NSString).abbreviatingWithTildeInPath,
                               skills: skills.values.sorted { $0.name < $1.name }, checkedAt: records.checkedAt,
-                              autoUpdate: records.autoUpdate)
+                              autoUpdate: records.autoUpdate, problem: loaded.problem)
     }
 
     /// The folders in `base` that hold a SKILL.md, skipping hidden ones as pi does.

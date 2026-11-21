@@ -481,7 +481,7 @@ struct ExtensionReplyTests {
         .projectResult(id: 70, space: Space(id: SpaceID(rawValue: "project"), name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),
         .parentInput,
-        .stopManagedBash,
+        .stopManagedBash(),
         .childStart(id: 1, requestID: "queued-1", text: "Review this", images: [NativeImage(mimeType: "image/png", data: Data([1, 2]))]),
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
         .ok(id: 1),
@@ -506,7 +506,8 @@ struct ExtensionReplyTests {
         .fleetDispatch(id: 142, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "failed", failure: "repo_missing", detail: "Mac mini")),
         .fleetDispatch(id: 143, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "delivering", host: "Mac mini", title: "Flaky test",
                                                         branch: "fleet/flaky-test", activity: "idle", resultText: "Fixed.",
-                                                        branchFacts: FleetBranchFacts(branch: "fleet/flaky-test", head: "abc", ahead: 1, pushed: true, filesChanged: 1, insertions: 2, deletions: 1))),
+                                                        branchFacts: FleetBranchFacts(branch: "fleet/flaky-test", head: "abc", ahead: 1, pushed: true,
+                                                                                      filesChanged: 1, insertions: 2, deletions: 1, uncommittedModified: 2, uncommittedUntracked: 1))),
         .message(id: 0, text: "[from: worker] done"),
         .message(id: 0, text: "[from: worker] done", delivery: .report),
         .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
@@ -680,12 +681,21 @@ struct ExtensionReplyTests {
         let initial = try JSONDecoder().decode(ProjectChildScope.self, from: JSONSerialization.data(withJSONObject: legacy))
         #expect(initial.epoch == 0 && initial != scope)
         #expect(initial == ProjectChildScope(key: scope.key, workerAgentID: scope.workerAgentID, sessionID: scope.sessionID, generation: scope.generation))
-        let reply = ExtensionReply.projectChildren(id: 81, scope: scope, action: .stop)
-        #expect(try JSONDecoder().decode(ExtensionReply.self, from: JSONEncoder().encode(reply)) == reply)
+        for sweep in [nil, true] as [Bool?] {
+            let reply = ExtensionReply.projectChildren(id: 81, scope: scope, action: .stop, sweepChildren: sweep)
+            #expect(try JSONDecoder().decode(ExtensionReply.self, from: JSONEncoder().encode(reply)) == reply)
+        }
         let task = ProjectTask(operationID: UUID(), spaceID: .init(), title: "Legacy", prompt: "task")
         #expect(try JSONDecoder().decode(ProjectTask.self, from: JSONEncoder().encode(task)).childScopeEpoch == nil)
         let receipt = ProjectExecutionReceipt(key: scope.key, phase: .cancelled)
         #expect(try JSONDecoder().decode(ProjectExecutionReceipt.self, from: JSONEncoder().encode(receipt)).childScopeEpoch == nil)
+    }
+
+    @Test func stopManagedBashRequiresExplicitSweepAuthorization() throws {
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"stopManagedBash"}"#) == .stopManagedBash())
+        let explicit = ExtensionReply.stopManagedBash(sweepChildren: true)
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"stopManagedBash","sweepChildren":true}"#) == explicit)
+        #expect(try Wire.object(explicit)["sweepChildren"] as? Bool == true)
     }
 
     @Test func parentInputHasNoPayload() throws {

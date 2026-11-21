@@ -376,6 +376,13 @@ struct FleetResultCard: View, Equatable {
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+            if let notice = result.checkoutNotice {
+                Text(verbatim: notice)
+                    .font(.sh(.caption, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
             if let card, card.remoteAgentID != nil {
                 HStack(spacing: SH.Space.m) {
                     Button("Open thread") { actions?.openResult(card) }

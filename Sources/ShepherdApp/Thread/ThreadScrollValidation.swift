@@ -43,6 +43,7 @@ final class MacScrollValidationTrace: NSObject {
         let hidden: Bool
         let first: String?
         let rows: [String: Double]
+        let visibleRows: [String]
         let offset: Double?
         let documentHeight: Double?
         let streamingRowHeight: Double?
@@ -65,6 +66,7 @@ final class MacScrollValidationTrace: NSObject {
         var motion: String? = nil
         var anchor: String? = nil
         var target: String? = nil
+        var following: Bool? = nil
     }
 
     static weak var current: MacScrollValidationTrace?
@@ -161,7 +163,7 @@ final class MacScrollValidationTrace: NSObject {
     func record(_ event: SHRenderProbe.ScrollEvent, source: AnyObject?) {
         if let source, source !== guardian, source !== guardian.scrollView() { return }
         events.append(Event(caller: event.caller, detail: event.detail, kind: event.kind, motion: motion,
-                            anchor: latest?.first, target: event.target))
+                            anchor: latest?.first, target: event.target, following: guardian.following))
     }
 
     func mark(_ caller: String) { events.append(Event(caller: caller)) }
@@ -209,12 +211,12 @@ final class MacScrollValidationTrace: NSObject {
         let rows = hidden ? [:] : scroll.map { guardian.scrollTraceRows(in: $0) } ?? [:]
         let top = scroll?.contentInsets.top ?? 0
         let bottom = (clip?.bounds.height ?? 0) - (scroll?.contentInsets.bottom ?? 0)
-        let first = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }.min {
-            ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
-        }?.key
+        let visible = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }
         let sampledIntent = sampleIntent(visible: scroll != nil && !hidden)
         let frame = Frame(timestamp: CACurrentMediaTime(), refreshInterval: link.targetTimestamp - link.timestamp,
-                          hidden: hidden, first: first, rows: rows.mapValues { $0.minY - top },
+                          hidden: hidden, first: visible.min {
+                              ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
+                          }?.key, rows: rows.mapValues { $0.minY - top }, visibleRows: visible.keys.sorted(),
                           offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
                           streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
                           clipSize: clip.map { [Double($0.bounds.width), Double($0.bounds.height)] },
@@ -298,6 +300,7 @@ private final class ScrollFixture {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .environment(\.liveResizing, fixture.presentation.resizing)
                 .environment(\.composerModelDefaults, fixture.defaults)
+                .environment(\.threadCommands, fixture.commands)
         }
     }
 
@@ -309,6 +312,8 @@ private final class ScrollFixture {
     let trace = MacScrollValidationTrace()
     let store = NativeThreadStore()
     let input = ThreadInput()
+    private let commands = ThreadCommandCenter()
+    private static let commandKey = "scroll-fixture"
     let defaults = UserDefaults(suiteName: "shepherd.scroll-validation.\(UUID())")!
     private let presentation = Presentation()
     private let tabs: [ShepherdCore.Tab] = {
@@ -372,7 +377,8 @@ private final class ScrollFixture {
         trace.deckPage = { [unowned self] model in
             if model.tab.id == tabs[0].id {
                 return AnyView(ThreadView(store: store, active: model.isVisible, isFocused: false, request: request,
-                                          listModels: { .empty }, retainedInput: input, retainedTailGuard: trace.guardian))
+                                          commandKey: Self.commandKey, listModels: { .empty }, retainedInput: input,
+                                          retainedTailGuard: trace.guardian))
             }
             return AnyView(Color.clear)
         }
@@ -410,6 +416,15 @@ private final class ScrollFixture {
         }
         await trace.settle()
 
+        // The flick starts at the tail regardless of where the streaming drag ended.
+        if !trace.guardian.following || trace.guardian.distance > ThreadTailGuard.slack {
+            trace.scenario = ""
+            commands.send(.nextTurn, to: Self.commandKey)
+            try await trace.waitFor("the flick to start at the tail") {
+                self.trace.guardian.following && self.trace.guardian.distance <= ThreadTailGuard.slack
+            }
+            await trace.settle()
+        }
         trace.scenario = "flick-and-stop"
         await trace.advance()
         // Drive the production phase handler without posting events or relying on device inertia.
@@ -496,6 +511,7 @@ private final class ScrollFixture {
         guard try scrollView() === retained else { throw ValidationError("deck remounted the thread scroll view") }
         await trace.settle()
         try await captureOtherInputs(in: retained)
+        try await wheelWalkToTop(in: retained)
 
         // Keep this out of the motion baseline: the original switch retains all of its rows.
         trace.scenario = "released-thread"
@@ -574,6 +590,26 @@ private final class ScrollFixture {
         presentation.active = true
         try await trace.waitFor("the thread to show after hiding with the scroller held") { self.trace.latest?.first != nil }
         try requireIntent(.idle)
+    }
+
+    private func wheelWalkToTop(in scroll: NSScrollView) async throws {
+        trace.scenario = "wheel-walk-to-top"
+        await trace.advance()
+        let clip = scroll.contentView
+        let step = (clip.bounds.height - scroll.contentInsets.top - scroll.contentInsets.bottom) / 2
+        let deadline = ContinuousClock.now + .seconds(8)
+        while true {
+            let bounds = clip.bounds
+            let next = clip.constrainBoundsRect(bounds.offsetBy(dx: 0, dy: -step)).minY
+            if next >= bounds.minY {
+                trace.mark("fixture.wheelTopReached")
+                break
+            }
+            guard ContinuousClock.now < deadline else { break }
+            try self.scroll(up: step)
+            await trace.advance()
+        }
+        await trace.settle()
     }
 
     private func streamChunk(_ index: Int, marker: String) async throws {

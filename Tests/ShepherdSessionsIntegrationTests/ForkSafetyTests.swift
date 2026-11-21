@@ -20,9 +20,11 @@ struct ForkSafetyTests {
         // Other threads instantiating tuple metadata, as any generic code does on first use; each
         // instantiation holds the runtime's tuple-metadata lock the child's loop then needs.
         let stop = Locked(false)
+        // Swift Testing's timeout needs the cooperative pool; these threads must stop even if it stalls.
+        let deadline = ContinuousClock.now + .seconds(120)
         let busy = (0..<4).map { _ in
             Thread {
-                while !stop.current { _ = freshTupleType(depth: 24) }
+                while !stop.current && ContinuousClock.now < deadline { _ = freshTupleType(depth: 24) }
             }
         }
         busy.forEach { $0.start() }
@@ -30,6 +32,7 @@ struct ForkSafetyTests {
 
         var ids: [SessionID] = []
         for _ in 0..<150 { ids.append(try await h.shell("exit 0").id) }
+        #expect(ContinuousClock.now < deadline, "all forks must run while the spinners are active")
         try await eventually("every session to exit", timeout: .seconds(30)) { exits.current.count == ids.count }
         let killed = exits.current.values.filter { $0 == nil }.count
         #expect(killed == 0, "\(killed) of \(ids.count) children died before exec")

@@ -33,6 +33,25 @@ extension FixtureData {
         ])
     }
 
+    /// The same hosts with a skills.json that won't read: every skill shows with no source, under the host's message.
+    static func skillsDamagedHosts() -> [FixtureHostData] {
+        hosts().map { host in
+            var host = host
+            var snapshot = skills()
+            snapshot.skills = snapshot.skills.map { skill in
+                var skill = skill
+                skill.source = nil
+                skill.update = nil
+                return skill
+            }
+            snapshot.problem = "Couldn't read where your skills came from at ~/Library/Application Support/Shepherd/skills/skills.json. "
+                + "The given data was not valid JSON. Installing, updating, removing and restoring skills, and Fleet sync of skills, are paused. "
+                + "Restore the file from a backup or repair its JSON; nothing is lost until then."
+            host.skills = snapshot
+            return host
+        }
+    }
+
     /// The board's eight skills: six from repositories (two with an update waiting), two copied in
     /// by hand and used only through /skill, one of them off.
     static func skills(checkedAgo: TimeInterval = 7_200) -> SkillsSnapshot {
