@@ -75,6 +75,7 @@ public enum SessionHost {
             shutdown.async {
                 BoundedCommand.stopForAppTermination()
                 server.stop()
+                ShepherdLog.info("host stopped (pid \(getpid()))")
                 exit(EXIT_SUCCESS)
             }
         }
@@ -112,7 +113,10 @@ public enum SessionHost {
             input.activate()
             stdinSource = input
         }
-        ShepherdLog.info("host serving (pid \(getpid()))")
+        if !supervised, Bundle.main.bundleURL.pathExtension == "app" {
+            ShepherdLog.persistHostLog(in: server.supportDirectory)
+        }
+        ShepherdLog.info("host serving (build \(server.hostBuild ?? "?"), pid \(getpid()))")
         // A hung queue never recovers by itself and every client request to it just times out:
         // exit, and launchd (KeepAlive) starts a host that respawns the agents with unfinished
         // work. No clean stop: it would wait on the hung queue. pi and the shells see their pipes

@@ -590,7 +590,10 @@ final class RemoteHostStore {
                     token: connection.config.token,
                     clientName: Host.current().localizedName ?? "shepherd",
                     capabilities: RemoteProtocol.clientCapabilities
-                        + (connection.isLocalHost ? [RemoteProtocol.localThreadsCapability] : [])
+                        + (connection.isLocalHost ? [RemoteProtocol.localThreadsCapability] : []),
+                    shouldDrainLocalHost: { [appBuild = self.appBuild] hostBuild, capabilities in
+                        BackgroundHostClient.asksToDrain(appBuild: appBuild, hostBuild: hostBuild, capabilities: capabilities)
+                    }
                 )
                 guard !Task.isCancelled,
                       connection.client === client,
@@ -610,10 +613,6 @@ final class RemoteHostStore {
                 connection.designs.connect(client, available: client.supports(.designs))
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
-                if connection.isLocalHost, BackgroundHostClient.asksToDrain(appBuild: self.appBuild, hostBuild: client.hostBuild,
-                                                                          capabilities: client.capabilities) {
-                    Task { do { try await client.drain() } catch { NSLog("Shepherd: background host didn't drain: \(error)") } }
-                }
                 self.onHostConnected?(connection.id)
                 self.onProjectExecutorConnected?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID))
             } catch {
