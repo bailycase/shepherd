@@ -61,12 +61,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-suggestions-damaged", hosts: damagedSuggestionsHosts(),
                           routes: [.settings(.experiments)], tab: .settings,
-                          prepare: { app in await SettingsStore.of(app.hosts).refresh() },
-                          verify: { app in
-                              let problem = SettingsStore.of(app.hosts).suggestions.unavailable.values.first
-                              FixtureCheck.report(problem == suggestionsDamageMessage
-                                  ? "FIXTURE CHECK ok: Experiments received the host's suggestions warning"
-                                  : "FIXTURE CHECK FAILED: missing suggestions warning")
+                          prepare: { app in
+                              let store = SettingsStore.of(app.hosts)
+                              Task { await store.suggestions.refresh(store.hosts) }
+                              await FixtureCheck.wait("the host's suggestions warning", seconds: 12) {
+                                  store.suggestions.unavailable.values.contains(suggestionsDamageMessage)
+                              }
+                              FixtureCheck.report("FIXTURE CHECK ok: Experiments received the host's suggestions warning")
                           }),
             FixtureScreen(name: "settings-suggestion", hosts: FixtureData.suggestingHosts(),
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
