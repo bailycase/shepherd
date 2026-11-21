@@ -13,9 +13,11 @@ extension StateStoreTests {
         "turns-bad-element", "turns-damaged",
         "automation-runs-bad-element", "automation-runs-damaged",
         "thread-origins-bad-element", "thread-origins-damaged",
+        "design-thread-notes-bad-element", "design-thread-notes-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",
+        "suggestions-bad-element", "suggestions-damaged",
         "push-drops-invalid-registrations", "push-registrations-bad-element", "push-registrations-damaged",
     ]
 
@@ -143,7 +145,7 @@ extension StateStoreTests {
             try store.setReader(.claude, settings.readers.claude)
         case "suggestions.json":
             let store = SuggestionsStore(url: url, instructions: InstructionsStore(directory: root))
-            let snapshot = store.snapshot()
+            let snapshot = try store.snapshot()
             loaded = try json(snapshot)
             try store.configure(snapshot.settings, now: now)
         case "skills/skills.json":

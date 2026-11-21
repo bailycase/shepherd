@@ -16,7 +16,7 @@ if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
 const source = path.join(root, "Extensions/shepherd-context.ts");
 const { createJiti } = createRequire(path.join(pkg, "package.json"))("jiti");
 const ext = await createJiti(import.meta.url).import(source);
-const { clip, clipMarker, trimContext, planBatch, callsSince, limitsFrom, resultStub, imageStub, customStub, argumentStub, DEFAULTS, ENTRY } = ext;
+const { clip, clipMarker, trimContext, planBatch, callsSince, limitsFrom, resultStub, imageStub, customStub, argumentStub, placeholderIn, DEFAULTS, ENTRY } = ext;
 
 const same = (a, b, message) => assert.ok(JSON.stringify(a) === JSON.stringify(b), message);
 
@@ -208,6 +208,56 @@ test("the three share numbers and the call counts come from the environment, and
     { clipTokens: 1500, triggerPercent: 40, targetPercent: 20, keepCalls: 3, gapCalls: 5 });
   assert.deepEqual(limitsFrom({ SHEPHERD_CONTEXT_CLIP_TOKENS: "abc", SHEPHERD_CONTEXT_KEEP_CALLS: "0", SHEPHERD_CONTEXT_GAP_CALLS: "-4" }), DEFAULTS);
   assert.deepEqual(limitsFrom({ SHEPHERD_CONTEXT_TRIGGER_PERCENT: "30", SHEPHERD_CONTEXT_TARGET_PERCENT: "60" }), DEFAULTS, "a target above the trigger is ignored");
+});
+
+// MARK: a copied stub is not a value
+
+test("a stub sitting where a value belongs is found, wherever it is; text that only mentions one is not", () => {
+  for (const stub of [argumentStub(1234), "[1234 characters removed from context]", resultStub("read", "a.swift", 2000), imageStub(1), customStub("note", 900)]) {
+    assert.equal(placeholderIn({ command: stub }), "arguments.command");
+    assert.equal(placeholderIn({ a: { b: [1, { task: `\n${stub}\n` }] } }), "arguments.a.b[1].task");
+  }
+  assert.equal(placeholderIn({ edits: [{ oldText: "x", newText: argumentStub(5) }] }), "arguments.edits[0].newText");
+  assert.equal(placeholderIn({ path: resultStub("read", "src/[id].ts", 2000) }), "arguments.path", "a path with brackets does not hide a result stub");
+  assert.equal(placeholderIn({ path: resultStub("mcp__a__b", "", 120) }), "arguments.path");
+  assert.equal(placeholderIn({ content: resultStub("read", "", 1000) }), "arguments.content", "the producer writes 1k for 1000 tokens");
+  assert.equal(placeholderIn({ content: resultStub("read", "", 1000).replace("about 1k", "about 1000") }), undefined, "1000 is a spelling the producer never writes");
+  assert.equal(placeholderIn({ content: resultStub("read", "", 1000).replace("about 1k", "about 1.0k") }), undefined);
+  assert.equal(placeholderIn({ n: argumentStub(5).replace("[5", "[05") }), undefined, "a count that is not the one the producer wrote is not a stub");
+  for (const fine of [{ command: '[ -n "removed from context" ]' }, { command: "[ -n 'a' ] && [ -z \"x output removed from context: about 2k tokens\" ]" }, { command: "rg 'removed from context' Sources" }, { content: `notes: ${argumentStub(5)} and more` }, { content: "[ -f a ] && echo removed from context" }, { n: 3, flag: true, none: null }, "[abc]", undefined, null]) assert.equal(placeholderIn(fine), undefined, JSON.stringify(fine));
+});
+
+test("a stub is found at any depth, and a large bracket-led string is checked in linear time", () => {
+  let nested = { task: argumentStub(900) };
+  for (let i = 0; i < 20_000; i++) nested = i % 2 ? { next: nested } : [nested];
+  assert.match(placeholderIn(nested), /^arguments(\.next|\[0\]){20000}\.task$/);
+  const cyclic = { a: [] };
+  cyclic.a.push(cyclic);
+  assert.equal(placeholderIn(cyclic), undefined);
+  const started = Date.now();
+  for (const body of ["[".repeat(300_000), `[${"a ] [ ".repeat(50_000)}`, `[${"x output removed from context: about ".repeat(8_000)}1000${resultStub("", "", 0).slice(resultStub("", "", 0).indexOf(" tokens."))}`]) assert.equal(placeholderIn({ content: body }), undefined);
+  assert.ok(Date.now() - started < 2000, "no backtracking over bracket-led text");
+});
+
+test("what the model sees where an old argument was says it is no value, and is itself found as one", () => {
+  const long = "let x = 1\n".repeat(900);
+  const out = trimContext([user(), ...round({ tool: "write", args: { path: "a.swift", content: long } }), ...rounds(3)], 1e18);
+  const stub = out[1].content[0].arguments.content;
+  assert.equal(stub, argumentStub(long.length));
+  assert.match(stub, /Not a value: never send it\./);
+  assert.equal(placeholderIn(out[1].content[0].arguments), "arguments.content");
+});
+
+test("the tool_call handler blocks a call carrying a stub, names the tool and the argument, and lets every other call and a broken event through", () => {
+  const handlers = {};
+  const prior = process.env.SHEPHERD_EXT_CONTEXT;
+  process.env.SHEPHERD_EXT_CONTEXT = "1";
+  try { ext.default({ on: (name, handler) => { handlers[name] = handler; } }); } finally { if (prior === undefined) delete process.env.SHEPHERD_EXT_CONTEXT; else process.env.SHEPHERD_EXT_CONTEXT = prior; }
+  const blocked = handlers.tool_call({ toolName: "shepherd_child_start", input: { task: "[2400 characters removed from context]", agent: "worker" } });
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /"shepherd_child_start" call was not run: arguments\.task is a placeholder/);
+  assert.equal(handlers.tool_call({ toolName: "bash", input: { command: "ls" } }), undefined);
+  for (const event of [undefined, {}, { input: null }, { input: 5 }]) assert.doesNotThrow(() => handlers.tool_call(event));
 });
 
 // MARK: the handler, against a session of hundreds of calls from one user message
@@ -545,4 +595,42 @@ test("compaction, a new session and /compact still work with the extension on", 
   const input = thread.mainRequests().at(-1).body.input;
   assert.equal(input.filter((item) => item.role === "user").length, 1, "a new session carries nothing of the old one");
   assert.ok(!thread.events.some((e) => e.type === "extension_error"));
+});
+
+// A model copies the stub it sees where its own old arguments were into a new call. Old commands of 6,000 characters
+// are cleared at the first batch; the model then sends the marker it was shown, and after it a legacy one.
+test("a call whose argument is a stub is refused, not run; the old calls it was copied from show the stub, and the newest call arrives whole", { timeout: 180000 }, async (t) => {
+  const pad = (n) => `: ${String(n).repeat(6000)}`;
+  const legacy = "[6002 characters removed from context]";
+  const script = scriptedBashCalls([[{ command: pad(1) }, { command: pad(2) }, { command: pad(3) }, { command: pad(4) }]]);
+  const sent = [];
+  const onRequest = (entry) => {
+    const planned = script(entry);
+    if (planned.call !== undefined || planned.tool) return planned;
+    const calls = (entry.body.input ?? []).filter((item) => item.type === "function_call").map((item) => JSON.parse(item.arguments).command);
+    const stub = calls.find((command) => /^\[\d+ characters removed from context/.test(command));
+    // First the marker the extension produced, as the model saw it; then the old literal.
+    const next = stub && sent.length === 0 ? stub : sent.length === 1 && calls.length === 5 ? legacy : undefined;
+    if (next === undefined) return {};
+    sent.push(next);
+    return { call: next };
+  };
+  const thread = await lone(t, { onRequest, env: { SHEPHERD_CONTEXT_KEEP_CALLS: "1", SHEPHERD_CONTEXT_GAP_CALLS: "1", SHEPHERD_CONTEXT_TRIGGER_PERCENT: "10", SHEPHERD_CONTEXT_TARGET_PERCENT: "5" },
+    contextWindow: 20_000, usage: (entry) => ({ input: Math.ceil(JSON.stringify(entry.body).length / 4), output: 40 }) });
+  await thread.turn("one");
+  const requests = thread.mainRequests();
+  const commandsIn = (request) => request.body.input.filter((item) => item.type === "function_call").map((item) => JSON.parse(item.arguments).command);
+  const fourth = commandsIn(requests[4]);
+  assert.equal(fourth[0], ext.argumentStub(6002), "an old command is sent as the stub");
+  assert.equal(fourth.at(-1), pad(4), "the newest call is whole");
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0], ext.argumentStub(6002), "the model echoed the marker the extension produced");
+  assert.equal(sent[1], legacy);
+  const last = requests.at(-1);
+  assert.deepEqual(commandsIn(last).slice(-2), sent, "the copied calls are in the history as the model made them");
+  const outputs = resultTexts(last).slice(-2);
+  for (const output of outputs) assert.match(output, /"bash" call was not run: arguments\.command is a placeholder.*ask for the missing text/);
+  const messages = await thread.messages();
+  assert.ok(messages.filter((m) => m.role === "toolResult").slice(-2).every((m) => m.isError), "the refusals are error results");
+  assert.ok(!thread.events.some((e) => e.type === "extension_error"), JSON.stringify(thread.events.filter((e) => e.type === "extension_error")));
 });

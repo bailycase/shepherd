@@ -72,6 +72,14 @@ struct DesignCanvasPane: View {
             if let vm { DesignReferenceToastLayer(vm: vm, designID: screen.designID) }
         }
         .overlay { DesignJumpBackLayer(screen: screen) }
+        .safeAreaInset(edge: .top) {
+            if let warning = screen.snapshot?.threadNotesWarning {
+                SHBanner(.failed, title: "Thread notes unavailable", message: warning) {
+                    Button("Refresh") { Task { await screen.refresh() } }.buttonStyle(.sh(.secondary))
+                }
+                .padding(SH.Space.l)
+            }
+        }
         .background {
             if referencing {
                 DesignCanvasKeys(active: screen.isActive && screen.presented == nil,

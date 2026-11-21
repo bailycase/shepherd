@@ -143,7 +143,7 @@ final class PushNotifications: @unchecked Sendable {
         let data = try handle.read(upToCount: Self.fileLimit + 1) ?? Data()
         guard data.count <= Self.fileLimit else { throw CocoaError(.fileReadCorruptFile) }
         if data != diskBytes || storageDamaged {
-            switch PersistedFile<[RemotePushRegistration]>.load(data: data, validate: { saved in
+            switch PersistedFile<[RemotePushRegistration]>.decode(data, validate: { saved in
                 guard saved.count <= 16, saved.allSatisfy(Self.valid) else { throw Failure.invalid }
             }) {
             case .loaded(let saved):

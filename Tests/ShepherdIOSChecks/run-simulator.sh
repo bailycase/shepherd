@@ -217,6 +217,10 @@ fi
 [[ -n "$text_size" ]] && "${simctl[@]}" ui "$device" content_size "$text_size"
 
 status=0
+# Under the Xcode 27 beta `simctl launch --console` captured nothing here (and neither did
+# `--stdout=<file>`), while a pty console delivers each marker as printed. A pty ends lines
+# with CRLF, so the carriage returns are stripped before the log is matched.
+cr=$(printf '\r')
 # A posed Duo turns the app itself; only a plain device asks the fixture to turn its window.
 fixture_orientation=$orientation
 [[ -n "$pose" ]] && fixture_orientation=portrait
@@ -240,7 +244,7 @@ for screen in "${screens[@]}"; do
         SIMCTL_CHILD_FIXTURE_SCROLL_LEDGER="${FIXTURE_SCROLL_LEDGER:-}" \
         SIMCTL_CHILD_FIXTURE_SCROLL_PAGING="${FIXTURE_SCROLL_PAGING:-}" \
         SIMCTL_CHILD_FIXTURE_SCROLL_ANCHOR_OFF="${FIXTURE_SCROLL_ANCHOR_OFF:-}" \
-            "${simctl[@]}" launch --console --terminate-running-process "$device" com.shepherd.ios-fixture >"$log" 2>&1 &
+            "${simctl[@]}" launch --console-pty --terminate-running-process "$device" com.shepherd.ios-fixture 2>&1 | sed -l "s/$cr\$//" >"$log" &
         console=$!
         pose_requests=0
         for _ in $(seq 1 "${FIXTURE_WAIT_STEPS:-300}"); do
@@ -270,7 +274,9 @@ for screen in "${screens[@]}"; do
             fi
             echo "$shot"
         else
-            echo "FAIL: $screen ($scheme) never became ready"; tail -20 "$log" 2>/dev/null; status=1
+            echo "FAIL: $screen ($scheme) never became ready"
+            if [[ -s "$log" ]]; then tail -20 "$log"; else echo "(the app printed nothing to its console: it did not start, or its output was not captured)"; fi
+            status=1
         fi
         # Whether the window offers a new window (iPhone Duo: only open and upright).
         [[ -n "$pose" ]] && { grep "^FIXTURE WINDOWS AVAILABLE" "$log" | tail -1 | sed "s/^/$screen ($scheme): /" || true; }

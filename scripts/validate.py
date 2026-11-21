@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LOG = "mac/run.log"
 TOOLBAR = "the narrow toolbar in Sources/ShepherdApp/DiffReviewView.swift"
 SCROLL_CASE = "scroll-stability"
+SCROLL_OWNER_CASE = "scroll-owner"
 SCROLL_SCENARIOS = {
     "slow-scroll-streaming": ("fixture.stickyChunk", "fixture.streamChunk", "fixture.scrollInput"),
     "flick-and-stop": ("fixture.scrollInput", "fixture.phase.interacting", "fixture.phase.decelerating", "fixture.phase.idle"),
@@ -57,6 +58,11 @@ CASES = {
     SCROLL_CASE: Case("Shepherd (Dev) / ThreadScrollValidation",
                       {(scenario, None) for scenario in (*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS, "writer-probes")},
                       SCROLL_COMPLETION, "offscreen Dev app", scenario="Sources/ShepherdApp/Thread/ThreadView.swift"),
+    SCROLL_OWNER_CASE: Case(
+        "ThreadScrollOwner", {(f"{platform}-{walk}", None) for platform in ("mac", "ios") for walk in ("broad", "requests")},
+        "all four full-depth owner walks passed", "pure scroll owner",
+        scenario="Tests/ShepherdRemoteUnitTests/ThreadScrollOwnerExhaustiveTests.swift",
+    ),
     "changes-review": Case(
         "ReviewFlowTests/opensCommitSheetWithoutChangingGit",
         {(step, appearance)
@@ -478,6 +484,8 @@ def run_case(name, anchor_off=None, ios_frames=None):
               "log": LOG, "source": None, "toolchain": None, "exit_status": None, "build_test_seconds": None}
     env = {**os.environ, "SHEPHERD_VALIDATION_DIR": str(mac)}
     env.pop("SHEPHERD_LIVE_MODEL", None)
+    if name == SCROLL_OWNER_CASE:
+        env["SHEPHERD_SCROLL_OWNER_FULL"] = "1"
     setup_error = None
     start = None
     with (run / LOG).open("w", encoding="utf-8") as log:

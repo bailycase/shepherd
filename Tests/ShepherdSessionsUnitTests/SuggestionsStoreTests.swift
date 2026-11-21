@@ -30,7 +30,7 @@ struct SuggestionsStoreTests {
     @Test func theExperimentIsOffUntilTurnedOn() throws {
         let host = try Host()
         defer { try? FileManager.default.removeItem(at: host.dir) }
-        #expect(host.suggestions.snapshot() == SuggestionsSnapshot())
+        #expect(try host.suggestions.snapshot() == SuggestionsSnapshot())
         var settings = SuggestedInstructionsSettings(enabled: true)
         let on = try host.suggestions.configure(settings, now: Self.start)
         #expect(on.settings.since == 1_000)
@@ -44,7 +44,7 @@ struct SuggestionsStoreTests {
         defer { try? FileManager.default.removeItem(at: host.dir) }
         #expect(try host.suggest("Ask for join keys first.", at: 1_000) == .waiting)
         #expect(try host.suggest("- Never skip a flaky test.", at: 2_000) == .waiting)
-        let waiting = host.suggestions.snapshot().waiting
+        let waiting = try host.suggestions.snapshot().waiting
         #expect(waiting.map(\.line) == ["- Never skip a flaky test.", "- Ask for join keys first."])
         #expect(waiting.first?.reason == "It failed twice.")
         #expect(waiting.first?.source == Self.thread)
@@ -62,7 +62,7 @@ struct SuggestionsStoreTests {
         #expect(try host.suggest("Ask for join keys first") == .alreadyWaiting)
         try host.suggestions.dismiss(try #require(host.suggestions.snapshot().waiting.first?.id))
         #expect(try host.suggest("- Ask for join keys first.") == .dismissed)
-        #expect(host.suggestions.snapshot().waiting.isEmpty)
+        #expect(try host.suggestions.snapshot().waiting.isEmpty)
     }
 
     @Test func addingWritesTheLineToItsFileAndUndoTakesItBack() throws {
@@ -108,7 +108,7 @@ struct SuggestionsStoreTests {
         try host.suggestions.add(id, line: "Ask for join keys before adding an event.", file: .appendSystem)
         #expect(host.instructions.snapshot().agents.isEmpty)
         #expect(host.instructions.snapshot().appendSystem == "- Ask for join keys before adding an event.\n")
-        #expect(host.suggestions.snapshot().added.first?.file == .appendSystem)
+        #expect(try host.suggestions.snapshot().added.first?.file == .appendSystem)
     }
 
     @Test func addAllWritesTheOldestFirst() throws {
@@ -147,6 +147,77 @@ struct SuggestionsStoreTests {
         try host.instructions.save(.agents, content: "- Something else.\n")
         #expect(try host.suggestions.undo(id).added.isEmpty)
         #expect(host.instructions.snapshot().agents == "- Something else.\n")
+    }
+
+    @Test(arguments: [
+        "{truncated",
+        #"{"version":1,"settings":{"enabled":false,"files":["AGENTS.md"],"sources":["thread"]},"waiting":[{}],"added":[],"dismissed":[]}"#,
+        #"{"version":2,"settings":{"enabled":false,"files":["AGENTS.md"],"sources":["thread"]},"waiting":[],"added":[],"dismissed":[]}"#,
+        #"{"version":2,"value":{"version":1,"settings":{"enabled":false,"files":["AGENTS.md"],"sources":["thread"]},"waiting":[],"added":[],"dismissed":[]}}"#,
+    ])
+    func damageRefusesEveryMutationAndPreservesTheFile(json: String) throws {
+        let host = try Host()
+        defer { try? FileManager.default.removeItem(at: host.dir) }
+        let store = host.suggestions
+        _ = try host.suggest("Prefer explicit joins.")
+        let added = try #require(store.snapshot().waiting.first?.id)
+        try store.add(added)
+        _ = try host.suggest("Add fixtures for exports.")
+        let waiting = try #require(store.snapshot().waiting.first?.id)
+        let instructions = host.instructions.snapshot()
+        let bytes = Data(json.utf8)
+        try bytes.write(to: store.url)
+        let refusal = SuggestionsStore.StoreError.damaged(store.url)
+
+        #expect(throws: refusal) { try store.snapshot() }
+        #expect(throws: refusal) { try store.configure(.init(enabled: true)) }
+        #expect(throws: refusal) { try host.suggest("Document export columns.") }
+        #expect(throws: refusal) { try store.add(waiting) }
+        #expect(throws: refusal) { try store.addAll() }
+        #expect(throws: refusal) { try store.dismiss(waiting) }
+        #expect(throws: refusal) { try store.undo(added) }
+        #expect(try Data(contentsOf: store.url) == bytes)
+        #expect(host.instructions.snapshot() == instructions)
+    }
+
+    @Test func aV1EnvelopeReadsButWritesTheLegacyShape() throws {
+        let host = try Host()
+        defer { try? FileManager.default.removeItem(at: host.dir) }
+        let store = host.suggestions
+        let input = #"{"value":{"dismissed":["prefer explicit joins"],"waiting":[],"added":[],"settings":{"files":["AGENTS.md"],"since":null,"sources":["thread"],"enabled":true},"version":1},"version":1}"#
+        try Data(input.utf8).write(to: store.url)
+        let snapshot = try store.snapshot()
+        #expect(snapshot.settings.enabled)
+        #expect(snapshot.settings.since == nil)
+        #expect(try host.suggest("Prefer explicit joins.") == .dismissed)
+        try store.configure(snapshot.settings, now: Self.start)
+
+        struct LegacyFile: Decodable {
+            let version: Int
+            let settings: SuggestedInstructionsSettings
+            let dismissed: [String]
+        }
+        let disk = try JSONDecoder().decode(LegacyFile.self, from: Data(contentsOf: store.url))
+        #expect(disk.version == 1)
+        #expect(disk.settings.since == 1_000)
+        #expect(disk.dismissed == ["prefer explicit joins"])
+    }
+
+    @Test func aDanglingLinkIsNotMissingButMovingItAllowsWrites() throws {
+        let host = try Host()
+        defer { try? FileManager.default.removeItem(at: host.dir) }
+        let store = host.suggestions
+        let destination = host.dir.appendingPathComponent("acme-missing.json")
+        let moved = host.dir.appendingPathComponent("acme-backup.json")
+        try FileManager.default.createSymbolicLink(at: store.url, withDestinationURL: destination)
+        #expect(throws: SuggestionsStore.StoreError.damaged(store.url)) { try store.snapshot() }
+        #expect(throws: SuggestionsStore.StoreError.damaged(store.url)) { try store.configure(.init(enabled: true)) }
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: store.url.path) == destination.path)
+
+        try FileManager.default.moveItem(at: store.url, to: moved)
+        #expect(try store.snapshot() == SuggestionsSnapshot())
+        #expect(try store.configure(.init(enabled: true)).settings.enabled)
+        #expect(try store.snapshot().settings.enabled)
     }
 
     @Test func aSuggestionNoLongerWaitingCantBeActedOn() throws {

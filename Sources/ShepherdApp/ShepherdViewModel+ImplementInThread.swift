@@ -60,7 +60,7 @@ extension ShepherdViewModel {
     /// A thread left or the user removed a note: the canvas reads the notes again.
     func designThreadNotesChanged(_ id: DesignID) {
         guard let screen = designScreens[id] else { return }
-        Task { await screen.refreshNotes() }
+        Task { await screen.refresh() }
     }
 
     /// Implement in a thread… (the board actions, the right-click menu, the design's •••, ⌘↩):
