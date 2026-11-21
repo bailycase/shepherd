@@ -13,6 +13,7 @@ extension StateStoreTests {
         "turns-bad-element", "turns-damaged",
         "automation-runs-bad-element", "automation-runs-damaged",
         "thread-origins-bad-element", "thread-origins-damaged",
+        "design-thread-notes-bad-element", "design-thread-notes-damaged",
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",

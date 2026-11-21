@@ -204,6 +204,15 @@ struct RemoteDesignMessageTests {
         #expect(try Wire.roundTrip(message) == message)
     }
 
+    @Test func threadNotesWarningIsOptionalOnTheWire() throws {
+        var snapshot = S.snapshot
+        #expect(try Wire.object(snapshot)["threadNotesWarning"] == nil)
+        #expect(try JSONDecoder().decode(DesignSnapshot.self, from: JSONEncoder().encode(snapshot)).threadNotesWarning == nil)
+        snapshot.threadNotesWarning = "Restore /tmp/design/thread-notes.json from a backup or repair its JSON."
+        let reply = RemoteReply.design(id: 41, result: .index(RemoteDesignIndex(snapshot: snapshot, files: [])))
+        #expect(try Wire.roundTrip(reply) == reply)
+    }
+
     /// Exhaustive on purpose: a new request fails to compile here until it is named, then the
     /// samples fail until it has one.
     static func caseName(_ request: RemoteDesignRequest) -> String {

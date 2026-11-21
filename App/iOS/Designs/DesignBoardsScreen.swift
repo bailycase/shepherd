@@ -24,6 +24,9 @@ struct DesignBoardsScreen: View {
         let name = designs.design(ref)?.name ?? index?.snapshot.index.title ?? "Design"
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                if let warning = index?.snapshot.threadNotesWarning {
+                    SHBanner(.failed, title: "Thread notes unavailable", message: warning)
+                }
                 if let failure = designs.failures[ref], index == nil {
                     SHEmptyState(Text("Couldn't read this design"), message: failure, showsMark: false)
                         .frame(maxWidth: .infinity)

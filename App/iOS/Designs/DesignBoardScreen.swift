@@ -34,6 +34,15 @@ struct DesignBoardScreen: View {
                 Color.sh.bgBase
             }
         }
+        .safeAreaInset(edge: .top) {
+            let designs = MobileDesigns.of(hosts)
+            if let warning = designs.indexes[ref]?.snapshot.threadNotesWarning {
+                SHBanner(.failed, title: "Thread notes unavailable", message: warning, stacked: true) {
+                    Button("Refresh") { Task { await designs.sync(ref) } }.buttonStyle(.sh(.secondary))
+                }
+                .padding(.horizontal, MobileDesignLayout.gutter)
+            }
+        }
         .onAppear {
             let designs = MobileDesigns.of(hosts)
             let made = model ?? DesignBoardModel(ref: ref, designs: designs, initial: path)
