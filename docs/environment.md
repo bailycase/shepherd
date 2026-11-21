@@ -25,7 +25,7 @@
     `AGENTS.md` and `APPEND_SYSTEM.md`), and `SHEPHERD_OWNED_THREAD`, a random marker per thread pi
     launch used to find processes that left tracked groups. Managed Bash adds `SHEPHERD_OWNED_BASH`
     per call. A subagent inherits the thread marker and gets one Bash scope per launch attempt,
-    which its parent asks the host to sweep when the subagent exits. User hooks and terminal tabs
+    which its parent asks the host to sweep when the subagent is cancelled. User hooks and terminal tabs
     get neither marker.
   - By the launcher (`<support>/pi/bin/pi`), after setting aside every `PI_*`, `JITI_*`, `NODE_*`
     and `OPENSSL_CONF` it was started with under `_SHEPHERD_STASH_<name>` (listed in
