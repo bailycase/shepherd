@@ -422,6 +422,41 @@ struct FleetDispatchTests {
         #expect(try Self.head(a.folder) == origin.sha)
     }
 
+    @Test func theResultReportsWorkPushedToAnExistingCheckedOutBranch() async throws {
+        let (a, b, origin) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let target = "fix/payment"
+        try git(["push", "-q", "origin", "HEAD:refs/heads/\(target)"], in: a.folder)
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("Push changes to \(target).", title: "Payment review", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to run the dispatch") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let assigned = try #require(thread.worktreeBranch)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the receiver to report working") { b.taken().first?.activity == "working" }
+
+        try git(["fetch", "-q", "origin", target], in: worktree)
+        try git(["switch", "-q", "--track", "origin/\(target)"], in: worktree)
+        try "payments\n".write(to: worktree.appendingPathComponent("PAYMENTS.md"), atomically: true, encoding: .utf8)
+        try git(["add", "PAYMENTS.md"], in: worktree)
+        try git(["commit", "-qm", "Add payment notes"], in: worktree)
+        try git(["push", "-q", "origin", target], in: worktree)
+        let pushed = try Self.head(worktree)
+        try git(["update-ref", "-d", "refs/remotes/origin/\(target)"], in: worktree)
+        try b.report(thread.id, .done)
+
+        let result = try #require(await parent.nextMessage())
+        #expect(result.text.contains("Branch \(target): 1 commit ahead of origin/main, pushed to origin, 1 file changed (+1 -0)."))
+        #expect(!result.text.contains("Branch \(assigned):"))
+        try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
+        let read = try await parent.status(info)
+        #expect(read.branchFacts?.branch == target && read.branchFacts?.head == pushed && read.branchFacts?.pushed == true)
+        #expect(try git(["rev-parse", assigned], in: worktree).trimmingCharacters(in: .whitespacesAndNewlines) == origin.sha)
+        #expect(try git(["for-each-ref", "refs/remotes/origin/\(target)"], in: worktree).isEmpty, "reporting does not fetch")
+    }
+
     @Test func theDispatchResultExcludesUpstreamCommitsAfterAFastForward() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }

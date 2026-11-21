@@ -249,12 +249,12 @@ extension FleetDispatch {
         return request
     }
 
-    /// What the thread is asked: the task, and where its work goes.
+    /// What the thread is asked and where it starts.
     static func prompt(for record: FleetDispatchRecord, branch: String) -> String {
         let sender = record.kind == .userThread || record.parentTitle.isEmpty ? "the person" : record.parentTitle
         let tail = record.kind == .userThread ? "" : " Your last message goes back to whoever sent you."
         return record.task + FleetDispatchProtocol.promptSeparator + "\(sender) on \(record.parentHostName) to do the task above. "
-            + "Your branch is \(branch). Commit your work there and push it with git push -u origin \(branch)." + tail
+            + "You start on \(branch); if the task names another branch, follow the task." + tail
     }
 
     private func prepared(_ id: UUID, _ outcome: Result<AgentID, RemoteCreateAgentError>) {
