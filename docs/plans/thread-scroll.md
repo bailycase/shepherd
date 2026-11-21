@@ -275,6 +275,27 @@ Candidate run 1, streaming frame 8, had no reader input, writer request, new mar
 
 Local evidence: `.build/validation/scroll-stability-{jr_aezxz,s3yedtaj,ysz7o6mk,8pah7dt_}/mac/` (regression red, then candidate runs 1 to 3). The unshipped patch and regression check are in `.orchestrator/cache-key-experiment.patch`. No iPhone or iPad behavior was changed or checked.
 
+### Slice 4 pinned-height experiment and stop
+
+The off-screen Mac Dev app on macOS 27.0.1 tried a bottom-leading fixed-height frame around the cached history `LazyVStack`. `onGeometryChange` captured the first positive stack height at mount, 298,556 pt. The frame kept that height for the run. The candidate also removed `detached` from the history cache key, kept M3 on, and added no offset writes, timers or identity changes. This first pass tested whether the frame could isolate the estimate and still draw history before adding any height correction.
+
+| Scenario | Baseline jump displacement | Pinned frame, run 1 | Blank frames, baseline to run 1 |
+| --- | ---: | ---: | ---: |
+| Slow scroll while streaming | 337 to 477 pt | 0 pt | 0 to 0 |
+| Flick and stop | 615 pt | 0 pt | 0 to 0 |
+| Mid-history new turn | 0 pt | Unknown: anchor never returned | 0 to 200 of 201 |
+| Page older history | 0 pt, one transient anchor loss | Unknown: timed out before the initial boundary appeared | 0 to 783 of 783 |
+| Window resize | 0 pt | Not run | Not run |
+| Switch away and back | 0 pt | Not run | Not run |
+
+The frame isolated the estimate at the tail. In streaming frame 8, the stack lost 30,309 pt of reported height, but the document grew by exactly the same 29 pt as the live reply and the clip did not move. The next 28 pt wheel move changed only the clip offset. The raw flick trace satisfies the first-move regression predicate: it started following at a 0 pt gap, moved up the requested 210 pt, and the document stayed at 304,791 pt. The Python runner could not record a flick check for this run because the fixture exited at the later page timeout. The validator's Python tests, including the first-move assertion, passed: 20 tests.
+
+The history stack did not supply any marked rows at the positions the fixture scrolled to. The first move into mid-history placed the clip at 152,395.5 pt with the document still at 304,791 pt. On that frame and the next 199, the trace saw only the 30 eager row markers, all outside the viewport. At the end of streaming, the last observed natural height was 75,933 pt, leaving 222,623 pt of unused space above the bottom-aligned stack. The midpoint falls in that space. The new turn triggered the existing M7 guard walk to the top without finding a row. The top sentinel requested the page, but the fixture timed out waiting for `user-60`, so no page was delivered. The trace shows the frame can pin the document while stranding the reader in empty space. It does not establish whether SwiftUI would realize rows correctly if the clip were inside the stack's current extent.
+
+**Stop: do not ship.** The mid-history and page scenarios regressed on the first run. Runs 2 and 3, the optional standalone reproduction and the layout/spacer fallback were not run. The prototype never corrected its initial height, so there is no result for a compensated idle or prepend correction, a restore step, a remount or a width change. Whether pinning would still need the cache-key change was not tested independently. The candidate and the cache-key change were both removed. No Mac fix shipped; iPhone and iPad were not changed or checked.
+
+Local evidence: `.build/validation/scroll-stability-t42mqs2b/mac/frames.json` and `run.log` (Dev build succeeded; fixture exited 2 at the timeout). The unshipped patch is `.orchestrator/pinned-height-experiment.patch`.
+
 ### Slice 4 driver contract and open checks
 
 Feed every geometry callback, including the first after a mount. Reconcile intent on release, cancel and remount, and call `turn()` on the first eligible lift when `wantsTurn` is true. Discard driver-side asks invalidated by a mount, session change or newer request.
