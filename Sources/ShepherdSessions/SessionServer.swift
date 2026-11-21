@@ -6073,7 +6073,10 @@ public final class SessionServer: @unchecked Sendable {
         case .designRead(let id, let agentID, let designID, let path):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
-                return .design(id: id, snapshot: try await server.designSnapshot(designID))
+                var snapshot = try await server.designSnapshot(designID)
+                // Thread notes belong to the canvas viewer, not the design agent.
+                snapshot.threadNotesWarning = nil
+                return .design(id: id, snapshot: snapshot)
             }
         case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
@@ -6223,9 +6226,22 @@ public final class SessionServer: @unchecked Sendable {
                                     revision: grant.revision, text: words, createdAt: now)
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
-            let kept = try await server.designs.addThreadNote(designID, note)
-            server.designNotesChanged(designID)
-            return .designNote(id: id, note: kept)
+            do {
+                let kept = try await server.designs.addThreadNote(designID, note)
+                server.designNotesChanged(designID)
+                return .designNote(id: id, note: kept)
+            } catch let error as DesignStoreError {
+                if case .threadNotesUnavailable = error {
+                    // The user can repair the file and retry on this thread without waiting.
+                    await server.enqueueValue {
+                        if let index = server.noteTimes[agentID]?.firstIndex(of: now) {
+                            server.noteTimes[agentID]?.remove(at: index)
+                        }
+                    }
+                }
+                // Recovery details belong on the canvas, not in the implementing agent's tool output.
+                return .error(id: id, code: error.code, message: "Thread notes can't be saved right now. Tell the user to open the design.")
+            }
         }
     }
 

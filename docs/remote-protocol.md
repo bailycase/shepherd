@@ -456,7 +456,9 @@
     (`capabilitiesChanged` when the experiment turns on or off). This Mac's own app alone may
     import from a path on the shared disk (`importPrepare`, `importConfirm`, `importDiscard`) and
     read the whole @ picker catalog (`mentionCatalog`); it alone gets `designNotesChanged`,
-    `designGitChanged` and its import's `designImportProgress` pushes.
+    `designGitChanged` and its import's `designImportProgress` pushes. A host that cannot read
+    a design's saved thread notes refuses note reads and writes (`thread_notes_unavailable`).
+    The design index still loads, with an optional `threadNotesWarning` in its snapshot.
     Answered by the server itself; boards render on the client
   - `tunnel` (`browser.tunnel.v1`, offered while the host can serve it, and only to a client that
     lists it in `hello`): a thread's Browser page on a viewing Mac reaches the host's dev server.

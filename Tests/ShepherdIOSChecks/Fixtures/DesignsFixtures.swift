@@ -14,6 +14,7 @@ extension FixtureCatalog {
         let phone = DesignsFixtures.phone.rawValue
         let quiet = DesignsFixtures.hosts(updating: false)
         let updating = DesignsFixtures.hosts(updating: true)
+        let damaged = DesignsFixtures.hosts(updating: false, damagedNotes: true)
         return [
             FixtureScreen(name: "home-designs", hosts: quiet, prepare: { app in
                 await DesignsFixtures.listed(app)
@@ -26,6 +27,30 @@ extension FixtureCatalog {
             FixtureScreen(name: "design", hosts: quiet, routes: [.designs(.design(checkout))], prepare: { app in
                 await DesignsFixtures.synced(app, checkout)
                 await DesignsFixtures.drawn(images: 4)
+            }),
+            FixtureScreen(name: "design-list-damaged-notes", hosts: damaged, routes: [.designs(.design(checkout))], prepare: { app in
+                await DesignsFixtures.synced(app, checkout)
+                guard MobileDesigns.of(app.hosts).indexes[checkout]?.snapshot.threadNotesWarning != nil else {
+                    FixtureCheck.fail("No thread notes warning in the design index")
+                }
+                await DesignsFixtures.drawn(images: 4)
+                await DesignsFixtures.checkNotesRefresh()
+            }),
+            FixtureScreen(name: "design-board-damaged-notes", hosts: damaged,
+                          routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { _ in
+                guard let model = await DesignsFixtures.board(),
+                      model.designs.indexes[checkout]?.snapshot.threadNotesWarning != nil else {
+                    FixtureCheck.fail("No thread notes warning on the live board")
+                }
+            }),
+            FixtureScreen(name: "design-board-notes-details", hosts: damaged,
+                          routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { _ in
+                _ = await DesignsFixtures.board()
+                SidebarAutomationsCheck.enableAccessibility()
+                await TriggerFlowCheck.press("Details")
+                await TriggerFlowCheck.press("Hide details")
+                await TriggerFlowCheck.press("Details")
+                await DesignsFixtures.checkNotesRefresh()
             }),
             FixtureScreen(name: "design-board", hosts: updating,
                           routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))], prepare: { app in
@@ -188,7 +213,7 @@ enum DesignsFixtures {
 
     /// Studio serves designs; build-01 doesn't (its Design tool off), and the laptop is offline.
     /// `updating`: the design agent is at work on the Steps list comment (MobileDesignBoard).
-    static func hosts(updating: Bool) -> [FixtureHostData] {
+    static func hosts(updating: Bool, damagedNotes: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         let now = Date().timeIntervalSince1970 * 1000
         let records = [
@@ -222,7 +247,7 @@ enum DesignsFixtures {
                 phone: DesignIndex.Board(x: 0, y: 920, w: 390, h: 844, title: "A · phone", isInteractive: true),
             ], order: [wide, table, trend, phone]), files: [
                 wide.rawValue: Boards.funnel, table.rawValue: Boards.table, trend.rawValue: Boards.trend, phone.rawValue: Boards.phone,
-            ], comments: comments(now: now)),
+            ], comments: comments(now: now), threadNotesWarning: damagedNotes ? FixtureDesigns.notesWarning : nil),
             FixtureDesigns.Item(design: records[1], revision: 3, index: DesignIndex(title: "Events explorer", boards: [
                 explorer: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · Table first"),
                 table: DesignIndex.Board(x: 1360, y: 0, w: 1280, h: 800, title: "B · Steps"),
@@ -346,6 +371,15 @@ enum DesignsFixtures {
         if !live.booted { FixtureCheck.fail("The board didn't draw: \(String(describing: live.failure))") }
         await model.measurePins()
         return model
+    }
+
+    @MainActor static func checkNotesRefresh() async {
+        SidebarAutomationsCheck.enableAccessibility()
+        guard let host = FixtureHost.running(FixtureData.studio) else { FixtureCheck.fail("No fixture host to refresh") }
+        let requests = { host.requests.filter { $0 == "design.index" }.count }
+        let before = requests()
+        await TriggerFlowCheck.press("Refresh")
+        await FixtureWindows.wait("Refresh to read the index again", seconds: 10) { requests() > before }
     }
 
     /// At most two web views lived at once: the board on screen and the renderer's.
