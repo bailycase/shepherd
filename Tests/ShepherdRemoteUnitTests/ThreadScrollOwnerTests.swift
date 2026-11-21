@@ -14,14 +14,15 @@ struct ThreadScrollOwnerTests {
     }
 
     /// Rows are 200 pt tall and the viewport starts at `offset`: `row-N` sits at `200 * N - offset`.
-    static func reading(content: Double = 2000, offset: Double = 1420, shift: Double = 0, drop: Set<String> = []) -> ThreadScrollOwner.Reading {
+    static func reading(content: Double = 2000, offset: Double = 1420, shift: Double = 0, drop: Set<String> = [],
+                        container: Double = 520, width: Double = 640) -> ThreadScrollOwner.Reading {
         var rows: [String: Double] = [:]
         for n in 0..<10 where !drop.contains("row-\(n)") {
             let top = 200 * Double(n) - offset + shift
-            if top > -200, top < 520 { rows["row-\(n)"] = top }
+            if top > -200, top < container { rows["row-\(n)"] = top }
         }
         let first = rows.filter { $0.value > -200 }.min { $0.value < $1.value }?.key
-        return .init(probe: probe(content: content, offset: offset), topRow: first, rows: rows)
+        return .init(probe: probe(content: content, offset: offset, container: container), width: width, topRow: first, rows: rows)
     }
 
     static let order = (0..<10).map { "row-\($0)" }

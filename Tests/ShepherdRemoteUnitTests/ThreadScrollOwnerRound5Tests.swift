@@ -58,6 +58,73 @@ struct ThreadScrollOwnerRound5Tests {
         #expect(owner.turn() == .none)
     }
 
+    @Test func aSendKeepsJumpToLatestWaitingForTheFinger() {
+        var owner = Self.atTail(ask: false)
+        owner.setIntent(.touching)
+        #expect(owner.read(Fixture.reading(offset: 700), intent: .touching) == .none)
+        #expect(owner.jumpToLatest() == .none)
+        #expect(owner.sent(queued: false, turnPresent: true) == .none)
+        owner.setIntent(.idle)
+        #expect(owner.wantsTurn)
+        #expect(owner.turn() == .land)
+        #expect(owner.turn() == .none)
+    }
+
+    @Test func twoSendsUnderOneFingerFromHistoryLandOnceOnLift() {
+        var owner = Fixture.pinned(ask: false)
+        owner.setIntent(.touching)
+        #expect(owner.sent(queued: false, turnPresent: true) == .none)
+        #expect(owner.sent(queued: false, turnPresent: true) == .none)
+        owner.setIntent(.idle)
+        #expect(owner.wantsTurn)
+        #expect(owner.turn() == .land)
+        #expect(owner.turn() == .none)
+    }
+
+    @Test func anIdleResizeDoesNotLandAheadOfAWaitingTailAsk() {
+        var owner = Self.atTail(ask: false)
+        owner.setIntent(.touching)
+        #expect(owner.jumpToLatest() == .none)
+        #expect(owner.read(Fixture.reading(container: 460, width: 500), intent: .idle) == .none)
+        #expect(owner.turn() == .land)
+        #expect(owner.turn() == .none)
+    }
+
+    @Test func aWidthOnlyResizeIsLayoutRatherThanReaderMotion() {
+        var owner = Self.atTail()
+        #expect(owner.read(Fixture.reading(offset: 1400, width: 500), intent: .idle) == .land)
+        #expect(owner.follows)
+    }
+
+    @Test func aNativeShrinkInvalidatesAnOlderLandingUntilTheOverrunIsStable() {
+        var owner = Self.atTail()
+        #expect(owner.read(Fixture.reading(content: 2400), intent: .touching) == .none)
+        let shrunk = Fixture.reading(content: 1800)
+        #expect(owner.read(shrunk, intent: .idle) == .none)
+        #expect(owner.turn() == .none)
+        #expect(owner.read(shrunk, intent: .idle) == .land)
+        #expect(owner.turn() == .none)
+    }
+
+    @Test func aRevealedRowNoLongerMasksAnIdleReaderDisplacement() {
+        var owner = Fixture.pinned(at: 1200)
+        #expect(owner.read(Fixture.reading(content: 2400), intent: .idle) == .reveal("row-6"))
+        #expect(owner.read(Fixture.reading(offset: 1200), intent: .programmatic) == .none)
+        #expect(owner.read(Fixture.reading(offset: 1100), intent: .idle) == .none)
+        #expect(owner.mode == .pinned(Anchor(row: "row-5", offset: -100)))
+    }
+
+    @Test func aClampedJumpKeepsAVisibleSurvivorWhenItsLastReadingNamesADeletedTopRow() {
+        var owner = Self.atTail()
+        #expect(owner.jumpToRow("row-2") == .scroll(toRow: "row-2", animated: true))
+        #expect(owner.read(Fixture.reading(offset: 1200), intent: .idle) == .none)
+        #expect(owner.rowsChanged(Fixture.order.filter { $0 != "row-6" }) == .none)
+        owner.jumpCompleted()
+        #expect(owner.kept == .pinned(Anchor(row: "row-7", offset: 200)))
+        #expect(owner.rowsChanged(Fixture.order.filter { $0 != "row-6" && $0 != "row-2" }) == .none)
+        #expect(owner.mount() == .none)
+    }
+
     @Test func aJumpWhoseRowIsAtTheTopOfItsFirstReadingHasArrived() {
         var owner = Owner(mode: .jumping(row: "row-2"))
         _ = owner.rowsChanged(Fixture.order)
