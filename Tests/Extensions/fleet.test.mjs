@@ -293,6 +293,63 @@ test("fleet_send and fleet_cancel send their messages; delivery defaults to foll
   } finally { await h.close(); }
 });
 
+const refuse = (frame, write, code, message) => write({ type: "error", id: frame.id, code, message });
+const starting = (frame, write) => refuse(frame, write, "starting", "The thread is still starting. Send it again in a moment.");
+
+test("fleet_send retries starting with a fresh request, but returns not_running without another send", async () => {
+  let attempts = 0;
+  const h = await harness({ onFrame(frame, write) {
+    if (frame.type !== "fleetDispatchMessage") return;
+    if (++attempts === 1) starting(frame, write);
+    else refuse(frame, write, "not_running", "The thread didn't take the message.");
+  } });
+  try {
+    const send = h.tools.get("fleet_send");
+    const params = { dispatch: "d1", text: "Try this instead", delivery: "steer" };
+    assert.equal(output(await send.execute("c", params)), "not done: The thread didn't take the message. (not_running)");
+    const sends = h.of("fleetDispatchMessage");
+    assert.equal(sends.length, 2);
+    assert.notEqual(sends[0].id, sends[1].id);
+    assert.deepEqual(shape(sends[0]), shape(sends[1]));
+    assert.equal(sends[1].delivery, "steer");
+    assert.equal(output(await send.execute("next", params)), "not done: The thread didn't take the message. (not_running)");
+    assert.equal(h.of("fleetDispatchMessage").length, 3, "not_running on the first attempt does not retry");
+  } finally { await h.close(); }
+});
+
+test("fleet_send gives up after about eight seconds of starting replies", { timeout: 15_000 }, async () => {
+  const h = await harness({ onFrame(frame, write) {
+    if (frame.type === "fleetDispatchMessage") starting(frame, write);
+  } });
+  try {
+    const start = performance.now();
+    const result = await h.tools.get("fleet_send").execute("c", { dispatch: "d1", text: "Follow up" });
+    const elapsed = performance.now() - start;
+    assert.equal(output(result), "not done: The thread is still starting. Send it again shortly. (starting)");
+    assert.ok(elapsed >= 7_500 && elapsed < 10_000, `retry window was ${elapsed} ms`);
+    const attempts = h.of("fleetDispatchMessage").length;
+    assert.ok(attempts > 1 && attempts <= 12, `sent ${attempts} times`);
+  } finally { await h.close(); }
+});
+
+test("stopping fleet_send cancels an in-flight retry and sends no more", { timeout: 5_000 }, async () => {
+  let attempts = 0;
+  const h = await harness({ onFrame(frame, write) {
+    if (frame.type === "fleetDispatchMessage" && ++attempts === 1) starting(frame, write);
+  } });
+  try {
+    const controller = new AbortController();
+    const sending = h.tools.get("fleet_send").execute("c", { dispatch: "d1", text: "Follow up" }, controller.signal);
+    await h.waitFor(() => h.of("fleetDispatchMessage").length === 2);
+    controller.abort();
+    assert.equal(output(await sending), "send cancelled");
+    await h.waitFor(() => h.of("cancelAgentRequest").length === 1);
+    assert.equal(h.of("cancelAgentRequest")[0].id, h.of("fleetDispatchMessage")[1].id);
+    assert.equal(output(await h.tools.get("fleet_send").execute("next", { dispatch: "d1", text: "Never sent" }, controller.signal)), "send cancelled");
+    assert.equal(h.of("fleetDispatchMessage").length, 2);
+  } finally { await h.close(); }
+});
+
 test("fleet_close repeats the receiver's receipt and cancel on a settled dispatch does not claim a stop", async () => {
   const receipt = "Thread removed. Owned process groups stopped. 8192 allocated bytes freed. Kept the checkout, branches, and saved conversation.";
   const h = await harness({ onFrame: answer(() => info({ state: "done", closeReport: receipt })) });
