@@ -5,6 +5,20 @@ import ShepherdRemote
 
 // Home track's settings and hosts screens.
 extension FixtureCatalog {
+    private static let suggestionsDamageMessage = "Couldn't read suggested instructions at /tmp/acme/instructions/suggestions.json on the host. Fix access, restore a backup, or move or delete the file to start fresh. Then refresh Experiments."
+
+    private static func damagedSuggestionsHosts() -> [FixtureHostData] {
+        let message = suggestionsDamageMessage
+        return FixtureData.hosts().prefix(1).map { data in
+            var host = data
+            host.reply = { request in
+                guard case .suggestions(let id, _) = request else { return nil }
+                return .error(id: id, code: "suggestions_unavailable", message: message)
+            }
+            return host
+        }
+    }
+
     static var settings: [FixtureScreen] {
         [
             FixtureScreen(name: "settings", routes: [.settings(.root)], tab: .settings),
@@ -45,6 +59,15 @@ extension FixtureCatalog {
             // Suggested instructions on every host (suggestions.v1).
             FixtureScreen(name: "settings-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
+            FixtureScreen(name: "settings-suggestions-damaged", hosts: damagedSuggestionsHosts(),
+                          routes: [.settings(.experiments)], tab: .settings,
+                          prepare: { app in await SettingsStore.of(app.hosts).refresh() },
+                          verify: { app in
+                              let problem = SettingsStore.of(app.hosts).suggestions.unavailable.values.first
+                              FixtureCheck.report(problem == suggestionsDamageMessage
+                                  ? "FIXTURE CHECK ok: Experiments received the host's suggestions warning"
+                                  : "FIXTURE CHECK FAILED: missing suggestions warning")
+                          }),
             FixtureScreen(name: "settings-suggestion", hosts: FixtureData.suggestingHosts(),
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
             // Settings search (S5): "model" matches the Models page and its model rows.

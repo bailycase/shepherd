@@ -16,6 +16,7 @@ extension StateStoreTests {
         "workspace-invalid-split", "workspace-dangling-tab", "workspace-unreadable-agent", "workspace-truncated",
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",
+        "suggestions-bad-element", "suggestions-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
@@ -142,7 +143,7 @@ extension StateStoreTests {
             try store.setReader(.claude, settings.readers.claude)
         case "suggestions.json":
             let store = SuggestionsStore(url: url, instructions: InstructionsStore(directory: root))
-            let snapshot = store.snapshot()
+            let snapshot = try store.snapshot()
             loaded = try json(snapshot)
             try store.configure(snapshot.settings, now: now)
         case "skills/skills.json":

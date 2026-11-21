@@ -52,7 +52,7 @@ struct SuggestionsTests {
         try agent.send(.suggestInstruction(id: 7, agentID: AgentID(), line: "Anything.", reason: "", file: nil))
         guard case .error(7, "no_such_agent", _) = try await agent.reply() else { Issue.record("a stranger suggested"); return }
 
-        let waiting = h.server.suggestions.snapshot().waiting
+        let waiting = try h.server.suggestions.snapshot().waiting
         #expect(waiting.map(\.line) == ["- Ask for join keys first."])
         #expect(waiting.first?.reason == "Two services re-ran.")
         #expect(waiting.first?.source == SuggestionSource(kind: .thread, name: "Fix flaky ledger test"))
@@ -102,6 +102,43 @@ struct SuggestionsTests {
         #expect(undone.added.isEmpty)
         #expect(host.server.instructions.snapshot().agents.isEmpty)
         try await eventually("the GUI to hear both changes to the file") { heard.current == 2 }
+    }
+
+    @Test func damageIsExplainedToTheUserButNotTheAgentAndRepairNeedsNoRestart() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let (thread, _) = try await workspace(host.host)
+        let client = try await host.typed()
+        defer { client.disconnect() }
+        let agent = try ExtensionClient(path: host.host.socketPath)
+        let settings = SuggestedInstructionsSettings(enabled: true)
+        _ = try await client.suggestions(.configure(settings))
+        let url = host.server.suggestions.url
+        let bad = Data("{truncated".utf8)
+        try bad.write(to: url)
+        let warning = "Couldn't read suggested instructions at \(url.path) on the host. Fix access, restore a backup, or move or delete the file to start fresh. Then refresh Experiments."
+
+        for request: RemoteSuggestionsRequest in [.fetch, .configure(settings), .addAll] {
+            do {
+                _ = try await client.suggestions(request)
+                Issue.record("host accepted \(request) while the file was damaged")
+            } catch RemoteHostClientError.rejected(let code, let message) {
+                #expect(code == "suggestions_unavailable")
+                #expect(message == warning)
+            }
+        }
+        try agent.send(.suggestInstruction(id: 12, agentID: thread.id, line: "Add fixtures for exports.", reason: "Coverage was missing.", file: nil))
+        #expect(try await agent.reply() == .error(id: 12, code: "write_failed", message: "Suggested instructions are unavailable. Tell the user to open Settings › Experiments."))
+        #expect(try Data(contentsOf: url) == bad)
+
+        try FileManager.default.removeItem(at: url)
+        #expect(try await client.suggestions() == SuggestionsSnapshot())
+        _ = try await client.suggestions(.configure(settings))
+        try agent.send(.suggestInstruction(id: 13, agentID: thread.id, line: "Add fixtures for exports.", reason: "Coverage was missing.", file: nil))
+        #expect(try await agent.reply() == .suggestion(id: 13, outcome: .waiting))
+        let saved = try await client.suggestions(.addAll)
+        #expect(saved.added.map(\.line) == ["- Add fixtures for exports."])
+        #expect(host.server.instructions.snapshot().agents == "- Add fixtures for exports.\n")
     }
 
     @Test func actingOnASuggestionNoLongerWaitingIsRefused() async throws {

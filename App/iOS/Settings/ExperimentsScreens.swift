@@ -31,10 +31,19 @@ struct ExperimentsScreen: View {
                         .shText(.caption)
                         .foregroundStyle(Color.sh.textSecondary)
                         .padding(.horizontal, SH.Space.xs)
-                    SuggestedInstructionsCard(isOn: on, enabled: serving) { turnOn in
-                        model.post(settingsHosts) { $0.enabled = turnOn }
+                    if serving || model.unavailable.isEmpty {
+                        SuggestedInstructionsCard(isOn: on, enabled: serving) { turnOn in
+                            model.post(settingsHosts) { $0.enabled = turnOn }
+                        }
                     }
-                    if !serving {
+                    ForEach(settingsHosts) { host in
+                        if let message = model.unavailable[host.id] {
+                            SHBanner(.failed, title: "Suggested instructions on \(host.name)", message: message, stacked: true) {
+                                Button("Refresh") { Task { await model.refresh(settingsHosts) } }.buttonStyle(.sh(.secondary))
+                            }
+                        }
+                    }
+                    if !serving && model.unavailable.isEmpty {
                         SettingsFootnote(settingsHosts.contains(where: \.isConnected)
                             ? "Your hosts' Shepherd is too old for suggested instructions. Update it to try them here."
                             : "No host is online. Suggested instructions appears once one is back.")

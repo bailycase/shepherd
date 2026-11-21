@@ -17,6 +17,7 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     var beforeInstructions: (@Sendable (RemoteInstructionsRequest) async throws -> Void)?
     var beforeHostSettings: (@Sendable () async -> Void)?
     var beforeSuggestions: (@Sendable () async -> Void)?
+    var suggestionsFailure: RemoteHostClientError?
     /// Saved versions a restore can put back (their entries are in the files' history).
     var revisions: [InstructionRevision] = []
 
@@ -70,8 +71,9 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
 
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot {
         await beforeSuggestions?()
-        return lock.withLock {
+        return try lock.withLock {
             log.append("suggestions.\(String(describing: request).prefix { $0 != "(" })")
+            if let suggestionsFailure { throw suggestionsFailure }
             switch request {
             case .fetch:
                 break
@@ -496,6 +498,27 @@ struct ClientSettingsTests {
         #expect(model.waiting(hosts).isEmpty)
         // Only the host with lines waiting was asked.
         #expect(!second.requests.contains("suggestions.addAll"))
+    }
+
+    @Test func damageOnOneHostDoesNotHideHealthyHostsAndRefreshPicksUpRepair() async {
+        let studio = FakeSettingsClient()
+        let build = FakeSettingsClient()
+        let hosts = [Self.host("acme-studio", studio), Self.host("acme-build", build)]
+        let model = ClientSuggestions()
+        await model.refresh(hosts)
+        let message = "Couldn't read /tmp/acme/instructions/suggestions.json on the host."
+        studio.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        await model.refresh(hosts)
+        #expect(model.unavailable == [hosts[0].id: message])
+        #expect(model.hosts(hosts).map(\.id) == [hosts[1].id])
+        await model.configure(hosts) { $0.enabled = true }
+        #expect(!studio.requests.contains("suggestions.configure"))
+        #expect(build.requests.contains("suggestions.configure"))
+
+        studio.suggestionsFailure = nil
+        await model.refresh(hosts)
+        #expect(model.unavailable.isEmpty)
+        #expect(model.hosts(hosts).map(\.id) == hosts.map(\.id))
     }
 
     @Test func theExperimentChangesOnEveryHost() async {

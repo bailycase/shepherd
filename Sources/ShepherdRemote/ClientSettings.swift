@@ -372,11 +372,13 @@ public final class ClientSuggestions {
     }
 
     private var snapshots: [UUID: SuggestionsSnapshot] = [:]
+    public private(set) var unavailable: [UUID: String] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
 
     public func forget(host: UUID) {
         forgotten.insert(host)
         snapshots[host] = nil
+        unavailable[host] = nil
     }
     public private(set) var busy = false
     /// The last change a host refused, in words.
@@ -391,13 +393,21 @@ public final class ClientSuggestions {
                 snapshots[host.id] = nil
                 continue
             }
-            if let snapshot = try? await client.suggestions(.fetch), !forgotten.contains(host.id) { snapshots[host.id] = snapshot }
+            do {
+                let snapshot = try await client.suggestions(.fetch)
+                guard !forgotten.contains(host.id) else { continue }
+                snapshots[host.id] = snapshot
+                if let message = unavailable.removeValue(forKey: host.id), problem == message { problem = nil }
+            } catch RemoteHostClientError.rejected("suggestions_unavailable", let message) {
+                guard !forgotten.contains(host.id) else { continue }
+                unavailable[host.id] = message
+            } catch { continue }
         }
     }
 
     /// The hosts that serve suggestions now.
     public func hosts(_ hosts: [SettingsHost]) -> [SettingsHost] {
-        hosts.filter { $0.serves(RemoteProtocol.suggestionsCapability) && snapshots[$0.id] != nil }
+        hosts.filter { $0.serves(RemoteProtocol.suggestionsCapability) && snapshots[$0.id] != nil && unavailable[$0.id] == nil }
     }
 
     /// The experiment's settings as the page draws them: the first such host's.
@@ -419,7 +429,13 @@ public final class ClientSuggestions {
     }
 
     public func waiting(_ id: UUID, in hosts: [SettingsHost]) -> Waiting? {
-        waiting(hosts).first { $0.id == id }
+        // Keep an already-open detail identifiable if its host's next fetch fails.
+        for host in hosts where host.serves(RemoteProtocol.suggestionsCapability) {
+            if let suggestion = snapshots[host.id]?.waiting.first(where: { $0.id == id }) {
+                return Waiting(host: host.id, hostName: host.name, suggestion: suggestion)
+            }
+        }
+        return nil
     }
 
     /// Changes the experiment on every host that serves it, showing it at once.
@@ -483,9 +499,13 @@ public final class ClientSuggestions {
                 let snapshot = try await client.suggestions(request)
                 guard !forgotten.contains(host.id) else { continue }
                 snapshots[host.id] = snapshot
+                unavailable[host.id] = nil
             } catch {
                 guard !forgotten.contains(host.id) else { continue }
                 problem = settingsProblem(error)
+                if case RemoteHostClientError.rejected("suggestions_unavailable", let message) = error {
+                    unavailable[host.id] = message
+                }
             }
         }
     }

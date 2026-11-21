@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -28,11 +29,14 @@ public final class SuggestionsStore: @unchecked Sendable {
 
     public enum StoreError: Error, Equatable, CustomStringConvertible {
         case noSuchSuggestion
+        case damaged(URL)
         case writeFailed(String)
 
         public var description: String {
             switch self {
             case .noSuchSuggestion: "That suggestion is no longer waiting."
+            case .damaged(let url):
+                "Couldn't read suggested instructions at \(url.path) on the host. Fix access, restore a backup, or move or delete the file to start fresh. Then refresh Experiments."
             case .writeFailed(let reason): "Couldn't save the suggestions: \(reason)"
             }
         }
@@ -47,8 +51,8 @@ public final class SuggestionsStore: @unchecked Sendable {
         self.instructions = instructions
     }
 
-    public func snapshot() -> SuggestionsSnapshot {
-        lock.withLock { Self.snapshot(of: load()) }
+    public func snapshot() throws -> SuggestionsSnapshot {
+        try lock.withLock { Self.snapshot(of: try load()) }
     }
 
     /// Changes the experiment's settings. Turning it on starts "on since" now; turning it off
@@ -56,7 +60,7 @@ public final class SuggestionsStore: @unchecked Sendable {
     @discardableResult
     public func configure(_ settings: SuggestedInstructionsSettings, now: Date = Date()) throws -> SuggestionsSnapshot {
         try lock.withLock {
-            var stored = load()
+            var stored = try load()
             var settings = settings
             if settings.enabled {
                 settings.since = stored.settings.enabled ? stored.settings.since ?? now.timeIntervalSince1970 : now.timeIntervalSince1970
@@ -75,7 +79,7 @@ public final class SuggestionsStore: @unchecked Sendable {
     public func suggest(line: String, reason: String, file: InstructionFile, source: SuggestionSource,
                         now: Date = Date()) throws -> (outcome: SuggestionOutcome, snapshot: SuggestionsSnapshot) {
         try lock.withLock {
-            var stored = load()
+            var stored = try load()
             let item = InstructionsText.listItem(line)
             let key = InstructionsText.lineKey(item)
             if stored.waiting.contains(where: { InstructionsText.lineKey($0.line) == key }) {
@@ -97,7 +101,7 @@ public final class SuggestionsStore: @unchecked Sendable {
     @discardableResult
     public func add(_ id: UUID, line: String? = nil, file: InstructionFile? = nil, now: Date = Date()) throws -> SuggestionsSnapshot {
         try lock.withLock {
-            var stored = load()
+            var stored = try load()
             guard let index = stored.waiting.firstIndex(where: { $0.id == id }) else { throw StoreError.noSuchSuggestion }
             let suggestion = stored.waiting.remove(at: index)
             try write(suggestion, line: line, file: file, into: &stored, now: now)
@@ -111,7 +115,7 @@ public final class SuggestionsStore: @unchecked Sendable {
     @discardableResult
     public func addAll(now: Date = Date()) throws -> SuggestionsSnapshot {
         try lock.withLock {
-            var stored = load()
+            var stored = try load()
             let waiting = stored.waiting
             stored.waiting = []
             for suggestion in waiting.reversed() {
@@ -126,7 +130,7 @@ public final class SuggestionsStore: @unchecked Sendable {
     @discardableResult
     public func dismiss(_ id: UUID) throws -> SuggestionsSnapshot {
         try lock.withLock {
-            var stored = load()
+            var stored = try load()
             guard let index = stored.waiting.firstIndex(where: { $0.id == id }) else { throw StoreError.noSuchSuggestion }
             let suggestion = stored.waiting.remove(at: index)
             stored.dismissed.insert(InstructionsText.lineKey(suggestion.line), at: 0)
@@ -141,7 +145,7 @@ public final class SuggestionsStore: @unchecked Sendable {
     @discardableResult
     public func undo(_ id: UUID) throws -> SuggestionsSnapshot {
         try lock.withLock {
-            var stored = load()
+            var stored = try load()
             guard let index = stored.added.firstIndex(where: { $0.id == id }) else { throw StoreError.noSuchSuggestion }
             let added = stored.added.remove(at: index)
             if let text = InstructionsText.removing(added.line, from: instructions.snapshot()[added.file]) {
@@ -171,19 +175,27 @@ public final class SuggestionsStore: @unchecked Sendable {
         SuggestionsSnapshot(settings: stored.settings, waiting: stored.waiting, added: stored.added)
     }
 
-    private func load() -> Stored {
-        guard let data = try? Data(contentsOf: url), let stored = try? JSONDecoder().decode(Stored.self, from: data) else {
-            return Stored()
+    private func load() throws -> Stored {
+        switch PersistedFile<Stored>.load(from: url, validate: { stored in
+            guard stored.version == 1 else { throw CocoaError(.fileReadCorruptFile) }
+        }) {
+        case .loaded(let stored): return stored
+        case .missing: return Stored()
+        case .damaged: throw StoreError.damaged(url)
         }
-        return stored
     }
 
     private func save(_ stored: Stored) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         do {
+            let data = try encoder.encode(stored)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            try encoder.encode(stored).write(to: url, options: .atomic)
+            // Add and Undo may have spent time updating the instruction files since the first read.
+            _ = try load()
+            try data.write(to: url, options: .atomic)
+        } catch let error as StoreError {
+            throw error
         } catch {
             throw StoreError.writeFailed(error.localizedDescription)
         }
