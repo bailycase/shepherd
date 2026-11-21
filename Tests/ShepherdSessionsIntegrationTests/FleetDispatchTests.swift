@@ -545,6 +545,61 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("both dispatch records to finish the second turn") { a.sent().first?.state == .done && b.taken().first?.state == .done }
     }
 
+    @Test(arguments: ["stop", "delete", "cancel", "close"])
+    func explicitTeardownStopsEscapedJobsButNotASameDirectoryDecoy(action: String) async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        b.server.queue.sync { b.server.fleet?.dispatch.freeWorktreeBytes = { _ in .max } }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("flaky-hold escaped-job-fixtures fleet-disk-failure", host: "Mac mini"))
+        try await eventuallyOnMain("the receiver to start") { b.taken().first?.state == .running }
+        let thread = try #require(b.dispatched.first)
+        let cwd = URL(fileURLWithPath: try #require(thread.worktreePath))
+        func pid(_ name: String) -> pid_t? {
+            (try? String(contentsOf: cwd.appendingPathComponent(name + ".pid"), encoding: .utf8)).flatMap(pid_t.init)
+        }
+        func reparented(_ pid: pid_t) -> Bool {
+            var info = proc_bsdinfo()
+            return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout.size(ofValue: info))) > 0 && info.pbi_ppid == 1
+        }
+        try await eventuallyOnMain("both jobs to be reparented to launchd") {
+            [pid("orphan"), pid("session")].allSatisfy { $0.map(reparented) == true }
+        }
+        let orphan = try #require(pid("orphan")), detached = try #require(pid("session"))
+        #expect(getpgid(orphan) == orphan && getsid(orphan) != orphan)
+        #expect(getsid(detached) == detached)
+
+        let decoy = Process()
+        decoy.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        decoy.arguments = ["20"]
+        decoy.environment = [:]
+        decoy.currentDirectoryURL = cwd
+        try decoy.run()
+        defer { if decoy.isRunning { decoy.terminate() } }
+
+        switch action {
+        case "stop": b.pressStop(thread.id)
+        case "delete": try await b.server.deleteAgent(thread.id)
+        case "cancel": #expect(try await parent.cancel(info).state == "cancelled")
+        default:
+            try b.report(thread.id, .working)
+            try await eventuallyOnMain("the dispatch to work") { b.taken().first?.activity == "working" }
+            try Data().write(to: cwd.appendingPathComponent("flaky-go"))
+            try b.report(thread.id, .done)
+            try await eventuallyOnMain("the dispatch to settle") { a.sent().first?.state == .failed }
+            let closed = try parent.info(try await parent.call {
+                .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID)
+            })
+            let report = try #require(closed.closeReport)
+            #expect(report.contains("2 found; 2 confirmed exited after signaling; SIGKILL sent to 1 after SIGTERM"))
+        }
+        try await eventuallyOnMain("both escaped jobs to exit", timeout: .seconds(5)) {
+            kill(orphan, 0) != 0 && kill(detached, 0) != 0
+        }
+        #expect(decoy.isRunning)
+    }
+
     @Test func ordinaryStopTellsTheThreadToStopItsRetainedBashGroups() async throws {
         let (a, b, _) = try await Self.pair()
         defer { a.stop(); b.stop() }
@@ -637,7 +692,7 @@ struct FleetDispatchTests {
             guard case .error(_, "unknown_dispatch", _) = reply else { Issue.record("Expected a missing dispatch refusal, got \(reply)"); return }
         } else {
             let report = try #require(try parent.info(reply).closeReport)
-            #expect(report.contains("Thread removed") && report.contains("process groups stopped") && report.contains("bytes freed"))
+            #expect(report.contains("Thread removed") && report.contains("Tracked sessions stopped") && report.contains("bytes freed"))
             #expect(report.contains("Kept the checkout, branches, and saved conversation"))
             #expect(try parent.info(try await close()).closeReport == report, "a repeated close returns the same receipt")
         }
