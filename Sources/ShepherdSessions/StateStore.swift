@@ -143,9 +143,9 @@ final class StateStore: @unchecked Sendable {
         historyPrepared = true
     }
 
-    /// Commits a change that no invariant depends on and no relaunch needs (an agent's status,
-    /// which `start()` resets to idle anyway): published at once, but neither validated nor
-    /// written. The next `update` writes it along with its own change.
+    /// Commits a change that no invariant depends on (an agent's status): published at once, but
+    /// neither validated nor written. The next `update` writes it along with its own change, as
+    /// the server's stop does.
     func updateLive(_ mutate: (inout ShepherdState) -> Void) {
         var next = state
         mutate(&next)
