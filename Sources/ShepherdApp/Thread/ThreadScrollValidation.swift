@@ -514,10 +514,13 @@ private final class ScrollFixture {
         // the clip's measured page instead.
         let previous = scroll.contentView.bounds.minY
         try self.scroll(to: previous + scroll.contentView.bounds.height, wheel: false)
-        await trace.advance()
-        try requireIntent(.touching)
-        guard trace.latest.map({ ($0.offset ?? previous) > previous }) == true else {
-            throw ValidationError("paging fixture did not move the viewport")
+        // layoutSubtreeIfNeeded can itself sample the key; check that frame, not a later one.
+        func pageFrame() -> MacScrollValidationTrace.Frame? {
+            trace.frames[trace.scenario]?.first { frame in frame.events.contains { $0.caller == "fixture.pageDown" } }
+        }
+        try await trace.waitFor("the page down frame") { pageFrame() != nil }
+        guard let frame = pageFrame(), frame.intent == .touching, (frame.offset ?? previous) > previous else {
+            throw ValidationError("page down did not move the viewport with touching intent")
         }
         try phase(from: .idle, to: .animating)
         await trace.advance()
