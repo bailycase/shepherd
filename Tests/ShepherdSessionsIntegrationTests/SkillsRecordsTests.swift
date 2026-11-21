@@ -149,6 +149,21 @@ struct SkillsRecordsTests {
         #expect(over.store.snapshot().problem == nil)
     }
 
+    /// The writer holds the bound the reader does: a save that would write a file the next read refuses fails instead.
+    @Test func aSaveThatWouldWriteRecordsTheNextReadRefusesFailsAndLeavesTheFileAlone() throws {
+        let fixture = try Fixture()
+        try fixture.write(Self.legacy)
+        let huge = SkillSource(repo: "acme/skills", path: String(repeating: "p", count: SkillsStore.maxRecordsBytes), commit: "abc123")
+        do {
+            _ = try fixture.store.applySynced("pdf", on: true, source: huge)
+            Issue.record("the save should have been refused")
+        } catch {
+            #expect("\(error)".contains("256 KiB"))
+        }
+        #expect(try fixture.bytes() == Data(Self.legacy.utf8), "nothing was written")
+        #expect(fixture.store.snapshot().problem == nil, "and the records still read")
+    }
+
     @Test func aChangeThatDoesNotWriteTheRecordsStillWorks() throws {
         let fixture = try Fixture()
         try fixture.write("{")

@@ -226,6 +226,9 @@ final class FleetSkillsSource: FleetUnitSource {
         records = store.syncedView()
         return records != nil
     }
+    /// False once the store has changed since `isReady` read: a replaced skill's new files would be
+    /// published with the old source. Nothing is emitted from such a pass; the next one starts over.
+    var passIsCurrent: Bool { records.map(store.isCurrent) ?? false }
     var watchedFiles: [URL] { [store.syncedRecords] }
     var watchedTrees: [URL] { store.syncedFolders }
 
@@ -308,13 +311,18 @@ final class FleetSkillsSource: FleetUnitSource {
         guard let view = passRecords() else { return nil }
         if unit == Self.autoUpdate { return Self.autoUpdateJSON(view.autoUpdate) }
         guard let (name, path) = FleetUnit.skillParts(of: unit) else { return nil }
-        guard let path else {
-            guard let skill = view.skills.first(where: { $0.name == name }),
-                  let hashes = files(of: skill.name, in: skill.folder) else { return nil }
-            return Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of(hashes)))
+        let value: Data?
+        if let path {
+            value = store.syncedFile(name, path).flatMap { try? Data(contentsOf: $0) }
+        } else {
+            value = view.skills.first(where: { $0.name == name }).flatMap { skill in
+                files(of: skill.name, in: skill.folder).map {
+                    Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of($0)))
+                }
+            }
         }
-        guard let url = store.syncedFile(name, path) else { return nil }
-        return try? Data(contentsOf: url)
+        // Read after the change it would be wrong for: nil is "changed again", and the next scan reads it.
+        return passIsCurrent ? value : nil
     }
 
     private static func autoUpdateJSON(_ on: Bool) -> Data { Data((on ? "true" : "false").utf8) }

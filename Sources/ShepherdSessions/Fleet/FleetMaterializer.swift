@@ -42,6 +42,9 @@ protocol FleetUnitSource: AnyObject {
     func value(of unit: String) -> Data?
     /// Called before each scan: a source that mirrors a folder outside the store makes its copy current.
     func prepare()
+    /// Whether what `isReady` read still holds after `fingerprints()`. A scan whose source says no emits
+    /// nothing, and changes nothing it has recorded, so the next scan reads it all again.
+    var passIsCurrent: Bool { get }
     /// What the fleet holds for a unit now (nil: unset or its content isn't here yet), for a write
     /// that depends on another unit (where a skill's file goes depends on the skill's state).
     func attach(fleetValue: @escaping (String) -> Data?)
@@ -70,6 +73,7 @@ struct FleetUnitWaiting: Error, CustomStringConvertible {
 
 extension FleetUnitSource {
     var isReady: Bool { true }
+    var passIsCurrent: Bool { true }
     var watchedFiles: [URL] { [] }
     var watchedFilesOnly: [URL] { [] }
     var writesAsynchronously: Bool { false }
@@ -172,6 +176,7 @@ final class FleetMaterializer {
         for source in sources where (!credentialsOnly || source.isCredential) && source.isReady {
             source.prepare()
             let present = source.fingerprints()
+            guard source.passIsCurrent else { continue }
             for unit in units(of: source, holding: present) {
                 let hash = present[unit] ?? "-"
                 if let waiting = pending[unit] {

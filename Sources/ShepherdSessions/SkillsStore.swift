@@ -83,6 +83,18 @@ public final class SkillsStore: @unchecked Sendable {
     private var copied: @Sendable () -> [String: String]
     /// Whether this damage episode of `skills.json` is already in the log; guarded by `lock`.
     private var loggedRecordsDamage = false
+    /// Counts every change to the skills or their records, so a Fleet pass can tell the folders it
+    /// pinned have changed under it; guarded by `lock`. Bumped by `mutating`, even when the change fails
+    /// half way: what it left on disk is a change too.
+    private var generation = 0
+
+    /// Holds the lock for a change to the skills or the records, and counts it.
+    private func mutating<T>(_ change: () throws -> T) rethrows -> T {
+        try lock.withLock {
+            defer { generation += 1 }
+            return try change()
+        }
+    }
 
     /// `copiedFrom` names the skills Shepherd copied from the user's own pi, with where each came
     /// from (`YourPiImport.copiedSkills`).
@@ -147,7 +159,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// Moves a skill out of the folder pi reads (off) or back into it (on).
     @discardableResult
     public func setOn(_ name: String, on: Bool) throws -> SkillsSnapshot {
-        try lock.withLock {
+        try mutating {
             try Self.check(name)
             let from = (on ? offDirectory : directory).appendingPathComponent(name, isDirectory: true)
             let to = (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
@@ -165,7 +177,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// Rewrites the skill's SKILL.md for how it's used (`disable-model-invocation`).
     @discardableResult
     public func setInvocation(_ name: String, _ invocation: SkillInvocation) throws -> SkillsSnapshot {
-        try lock.withLock {
+        try mutating {
             try Self.check(name)
             guard let folder = locate(name)?.folder else { throw StoreError.noSuchSkill(name) }
             try writing { try Self.apply(invocation, to: folder) }
@@ -176,7 +188,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// Takes a skill off the host, on or off; `restore` puts it back for a day.
     @discardableResult
     public func remove(_ name: String) throws -> SkillsSnapshot {
-        try lock.withLock {
+        try mutating {
             try Self.check(name)
             guard let found = locate(name) else { throw StoreError.noSuchSkill(name) }
             var records = try loadRecords()
@@ -202,7 +214,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// Puts back a skill `remove` took, where it was (on or off).
     @discardableResult
     public func restore(_ name: String) throws -> SkillsSnapshot {
-        try lock.withLock {
+        try mutating {
             try Self.check(name)
             var records = try loadRecords()
             let kept = removedDirectory.appendingPathComponent(name, isDirectory: true)
@@ -226,7 +238,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// Update automatically: a check that finds a newer commit installs it.
     @discardableResult
     public func configure(autoUpdate: Bool) throws -> SkillsSnapshot {
-        try lock.withLock {
+        try mutating {
             var records = try loadRecords()
             if records.autoUpdate != autoUpdate {
                 records.autoUpdate = autoUpdate
@@ -273,7 +285,7 @@ public final class SkillsStore: @unchecked Sendable {
         let staging = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: staging) }
         let staged = try stage(repo: repo, paths: paths, commit: commit, into: staging)
-        return try lock.withLock {
+        return try mutating {
             var records = try loadRecords()
             let date = now().timeIntervalSince1970
             try writing {
@@ -371,7 +383,7 @@ public final class SkillsStore: @unchecked Sendable {
             }
             try Self.apply(invocation, to: target)
         }
-        return try lock.withLock {
+        return try mutating {
             var records = try loadRecords()
             try writing {
                 let destination = locate(name)?.folder ?? directory.appendingPathComponent(name, isDirectory: true)
@@ -417,7 +429,7 @@ public final class SkillsStore: @unchecked Sendable {
                 }
             }
         }
-        let (snapshot, autoUpdate) = try lock.withLock {
+        let (snapshot, autoUpdate) = try mutating {
             var records = try loadRecords()
             for (name, update) in found where records.skills[name] != nil {
                 records.skills[name]?.update = update
@@ -461,6 +473,14 @@ public final class SkillsStore: @unchecked Sendable {
     struct SyncedView {
         var skills: [Synced]
         var autoUpdate: Bool
+        /// The store's generation when this was read.
+        fileprivate(set) var generation: Int
+    }
+
+    /// Whether nothing has changed since `view` was read. The view holds folders by URL, so once something
+    /// has, what is in them (or its provenance) may not be what the view says: the pass is dropped.
+    func isCurrent(_ view: SyncedView) -> Bool {
+        lock.withLock { generation == view.generation }
     }
 
     /// The skills and records for one Fleet pass, read under one lock; nil while the records can't be read.
@@ -475,7 +495,7 @@ public final class SkillsStore: @unchecked Sendable {
                                           source: records.skills[name]?.source)
                 }
             }
-            return SyncedView(skills: skills.values.sorted { $0.name < $1.name }, autoUpdate: records.autoUpdate)
+            return SyncedView(skills: skills.values.sorted { $0.name < $1.name }, autoUpdate: records.autoUpdate, generation: generation)
         }
     }
 
@@ -504,7 +524,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// made where `on` says; one that is here keeps its place.
     func writeSynced(_ name: String, path: String, data: Data?, on: Bool) throws {
         try Self.check(name)
-        try lock.withLock {
+        try mutating {
             // Before any file or folder is touched: a sync of files can't land while the records are damaged.
             _ = try loadRecords()
             let folder = locate(name)?.folder ?? (on ? directory : offDirectory).appendingPathComponent(name, isDirectory: true)
@@ -524,7 +544,7 @@ public final class SkillsStore: @unchecked Sendable {
     /// here yet (its files come first).
     func applySynced(_ name: String, on: Bool, source: SkillSource?) throws -> Bool {
         try Self.check(name)
-        return try lock.withLock {
+        return try mutating {
             guard let found = locate(name) else { return false }
             var records = try loadRecords()
             if found.isOn != on {
@@ -766,7 +786,12 @@ public final class SkillsStore: @unchecked Sendable {
         try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        try encoder.encode(records).write(to: recordsURL, options: .atomic)
+        let data = try encoder.encode(records)
+        // Not a file the next read would refuse (`readRecords`).
+        guard data.count < Self.maxRecordsBytes else {
+            throw StoreError.writeFailed("The records would be \(data.count / 1024) KiB; this version reads records under \(Self.maxRecordsBytes / 1024) KiB.")
+        }
+        try data.write(to: recordsURL, options: .atomic)
     }
 
     /// Forgets removed skills older than a day, and their folders.

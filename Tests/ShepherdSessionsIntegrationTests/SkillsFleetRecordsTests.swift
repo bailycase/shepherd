@@ -43,6 +43,7 @@ struct SkillsFleetRecordsTests {
             init(_ inner: FleetSkillsSource, before: @escaping () -> Void) { self.inner = inner; self.before = before }
             var units: [String] { inner.units }
             var isReady: Bool { inner.isReady }
+            var passIsCurrent: Bool { inner.passIsCurrent }
             var watchedFiles: [URL] { inner.watchedFiles }
             var watchedTrees: [URL] { inner.watchedTrees }
             func owns(_ unit: String) -> Bool { inner.owns(unit) }
@@ -138,6 +139,45 @@ struct SkillsFleetRecordsTests {
 
         let next = mac.scan()
         #expect(try mac.stateValue(next, "docx")?.source?.commit == "abc123", "from its record, never Local")
+    }
+
+    /// The pass pins the folder by URL, and a repository install can replace that folder with other files and
+    /// a source before the pass hashes it. Those files must not go out under the source it saw (none: Local).
+    @Test func aSkillReplacedByAnInstallInTheMiddleOfAScanIsNeverPublishedAsLocal() throws {
+        let mac = try Mac(); defer { mac.remove() }
+        let repo = try makeScratchRepo(files: ["skills/pdf/SKILL.md": Self.skillText + "from the repository\n"])
+        try mac.put(Self.skillText + "local\n", at: "SKILL.md")
+        var installed = false
+        mac.betweenReads = {
+            guard !installed else { return }
+            installed = true
+            _ = try? mac.skills.install(repo: "file://" + repo.path, paths: ["skills/pdf"], commit: nil, invocation: nil)
+        }
+        let during = mac.scan()
+        #expect(installed)
+        #expect(mac.skills.snapshot().skill("pdf")?.source != nil, "the install replaced the Local skill")
+        #expect(during.filter { $0.unit.contains("pdf") }.isEmpty, "the pass saw the skill before the install: nothing of it goes out")
+
+        let next = mac.scan()
+        let state = try #require(try mac.stateValue(next))
+        #expect(state.source != nil, "from its record, never Local")
+        let file = try #require(next.first { $0.unit == FleetUnit.skillFile("pdf", "SKILL.md") })
+        guard case .blob(let hash, _) = file.change else { Issue.record("a file travels by hash"); return }
+        #expect(mac.store.blob(hash) == Data((Self.skillText + "from the repository\n").utf8))
+        #expect(state.digest == FleetTreeDigest.of(["SKILL.md": hash]))
+    }
+
+    /// Only a change to the skills drops a pass: reading them, or a request that changes nothing, does not.
+    @Test func aPassWithNoChangeToTheSkillsStillPublishes() throws {
+        let mac = try Mac(); defer { mac.remove() }
+        try mac.installPDF()
+        mac.betweenReads = {
+            _ = mac.skills.snapshot()
+            _ = try? mac.skills.perform(.fetch)
+        }
+        let ops = mac.scan()
+        #expect(try mac.stateValue(ops)?.source?.commit == "abc123")
+        #expect(ops.contains { $0.unit == FleetUnit.skillFile("pdf", "SKILL.md") })
     }
 
     private struct Sender {
