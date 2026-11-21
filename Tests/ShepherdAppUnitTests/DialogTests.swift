@@ -17,6 +17,11 @@ struct DialogTests {
         enum Dump: Error { case noSuchAgent(AgentID) }
         #expect(ActionError.describe(ChangesError("busy", "A turn is still running.")) == "A turn is still running.")
         #expect(ActionError.describe(RemoteHostClientError.rejected(code: "unavailable", message: "Couldn’t read the branches.")) == "Couldn’t read the branches.")
+        // A refusal without words says its code, else the generic line.
+        #expect(ActionError.describe(RemoteHostClientError.rejected(code: "unavailable", message: "")) == "unavailable")
+        #expect(ActionError.describe(RemoteHostClientError.rejected(code: "", message: "")) == ActionError.genericTitle)
+        #expect(ActionError.describe(RemoteHostClientError.rejected(code: "unavailable", message: " \n ")) == "unavailable")
+        #expect(ActionError.describe(RemoteHostClientError.rejected(code: " ", message: " ")) == ActionError.genericTitle)
         #expect(ActionError.describe(Localized()) == "The host refused the rename.")
         #expect(ActionError.describe(Plain()) == "the branch is checked out elsewhere")
         #expect(!ActionError.describe(Dump.noSuchAgent(AgentID(rawValue: "a"))).contains("rawValue"))

@@ -109,6 +109,8 @@ final class ReviewSession: Identifiable {
     var branches: ChangesBranches?
     /// Why the last branch request failed, until the next one starts.
     var branchesError: String?
+    /// The newest branch request; an older one's reply is dropped.
+    var branchesRequestID = UUID()
     var options = ChangesOptions(fullFiles: true)
     var wordDiffs = true
     /// Long lines wrap at the pane's edge instead of scrolling sideways.
@@ -176,6 +178,7 @@ final class ReviewSession: Identifiable {
         overview = nil
         branches = nil
         branchesError = nil
+        branchesRequestID = UUID()
         truncated = []
     }
 
