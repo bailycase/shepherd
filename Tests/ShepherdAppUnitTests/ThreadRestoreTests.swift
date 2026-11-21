@@ -8,13 +8,16 @@ import ShepherdRemote
 @Suite("Thread restore")
 @MainActor
 struct ThreadRestoreTests {
-    /// A store whose thread is `turns` question and answer pairs, each of one short line, or, where `heavy` says so, an answer of
-    /// text and a fence (what a code-heavy reply costs the views).
-    private func store(turns: Int, heavy: (Int) -> Bool = { _ in false }) -> NativeThreadStore {
+    /// A store whose thread is `turns` question and answer pairs, each of one short line, or, where `paragraphs` is more than none, an
+    /// answer of that many short paragraphs, or, where `heavy` says so, an answer of text and a fence (what a code-heavy reply costs the
+    /// views).
+    private func store(turns: Int, paragraphs: Int = 0, heavy: (Int) -> Bool = { _ in false }) -> NativeThreadStore {
         let code = (0..<60).map { "let value\($0) = compute(\($0), scale: 2.5) // a line of Swift" }.joined(separator: "\n")
+        let prose = { (i: Int) in (0..<paragraphs).map { "Paragraph \($0) of answer \(i), with enough words to take a line of its own." }.joined(separator: "\n\n") }
         let messages = (0..<turns).flatMap { i in
             ["user", "assistant"].map { role in
-                let text = role == "assistant" && heavy(i) ? "Here is the change.\n\n```swift\n\(code)\n```" : "\(role) \(i)"
+                let answer = paragraphs > 0 ? prose(i) : "\(role) \(i)"
+                let text = role == "assistant" && heavy(i) ? "Here is the change.\n\n```swift\n\(code)\n```" : role == "assistant" ? answer : "\(role) \(i)"
                 return NativeThreadMessage(entryID: "\(role)-\(i)", role: role, blocks: [NativeThreadBlock(kind: .text, text: text)])
             }
         }
@@ -25,12 +28,17 @@ struct ThreadRestoreTests {
     }
 
     /// Hidden at its last screen, then shown: what the first update back draws.
-    private func firstFrame(_ store: NativeThreadStore, restore: ThreadRestore = ThreadRestore()) -> (plan: ThreadRestore.Plan?, restoring: Bool) {
+    private func firstFrame(_ store: NativeThreadStore, restore: ThreadRestore = ThreadRestore(), covering: Int = 0) -> (plan: ThreadRestore.Plan?, restoring: Bool) {
         let rows = store.rows, eager = ThreadView.eagerRows
         let owed: (Int) -> Int = { store.restoreCost(drawn: $0, upTo: eager) }
-        _ = restore.plan(active: false, hiddenKept: store.keptRows, rows: rows, eagerRows: eager, owed: owed)
-        let plan = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, owed: owed)
+        _ = restore.plan(active: false, hiddenKept: store.keptRows, rows: rows, eagerRows: eager, covering: { covering }, owed: owed)
+        let plan = restore.plan(active: true, hiddenKept: nil, rows: rows, eagerRows: eager, covering: { covering }, owed: owed)
         return (plan, restore.restoring)
+    }
+
+    /// How many rows at the end of `store`'s thread cover the window of a default window's height, as the view asks (`ThreadView.body`).
+    private func covering(_ store: NativeThreadStore) -> Int {
+        store.eagerTailRows(maxRows: ThreadView.eagerRows, costCap: 0, coveringHeight: AppLayout.eagerCoverHeight(forViewport: AppLayout.windowDefaultHeight))
     }
 
     @Test func aThreadThatOwesMoreThanAStepDrawsOnlyItsLastScreenFirst() {
@@ -38,6 +46,43 @@ struct ThreadRestoreTests {
         #expect(long.keptRows == 4 && long.restoreCost(drawn: 4, upTo: ThreadView.eagerRows) > AppLayout.restoreStepBytes)
         let frame = firstFrame(long)
         #expect(frame.plan == ThreadRestore.Plan(eager: 4, history: false) && frame.restoring, "the rows it kept, and the rest after that frame")
+    }
+
+    /// A last screen of a few short rows is not the window's: the first frame draws the rows that cover it too, for what they owe beyond the
+    /// rows it kept, which is no more than a step. What is above the last screen waits for the pull, and until then stays blank.
+    @Test func aLastScreenShorterThanTheWindowDrawsTheRowsThatCoverTheWindowInTheFirstFrame() {
+        let short = store(turns: 24, paragraphs: 3)
+        let cover = covering(short)
+        #expect(short.keptRows == 4 && cover > short.keptRows, "the last screen is four rows, and the window takes \(cover)")
+        #expect(short.restoreCost(drawn: short.keptRows, upTo: ThreadView.eagerRows) > AppLayout.restoreStepBytes, "what it owes is more than a step")
+        let frame = firstFrame(short, covering: cover)
+        #expect(frame.plan == ThreadRestore.Plan(eager: cover, history: false) && frame.restoring, "the rows that cover the window, and the rest after that frame")
+        let extra = short.restoreCost(drawn: short.keptRows, upTo: ThreadView.eagerRows) - short.restoreCost(drawn: cover, upTo: ThreadView.eagerRows)
+        #expect(extra <= AppLayout.restoreStepBytes, "the rows beyond its last screen owe no more than a step: \(extra)")
+    }
+
+    /// A last screen that covers the window is all the first frame draws, as it was.
+    @Test func aLastScreenThatCoversTheWindowIsAllTheFirstFrameDraws() {
+        let long = store(turns: 12, heavy: { _ in true })
+        let cover = covering(long)
+        #expect(long.keptRows == 4 && cover <= long.keptRows, "four heavy rows cover the window: it takes \(cover)")
+        let frame = firstFrame(long, covering: cover)
+        #expect(frame.plan == ThreadRestore.Plan(eager: 4, history: false) && frame.restoring)
+    }
+
+    /// The first frame draws the rows that cover the window up to what they owe beyond the last screen, a step at most: no more rows than
+    /// that fit, and none past the window's.
+    @Test func theRowsBeyondTheLastScreenThatTheFirstFrameDrawsOweNoMoreThanAStep() {
+        let mebibyte = 1 << 20
+        // Each row below the eager tail's 30 owes one mebibyte.
+        let owed: (Int) -> Int = { max(0, ThreadView.eagerRows - $0) * mebibyte }
+        let step = AppLayout.restoreStepBytes / mebibyte
+        #expect(ThreadRestore.firstFrameRows(kept: 4, covering: 3, owed: owed) == 4, "a last screen that covers the window")
+        #expect(ThreadRestore.firstFrameRows(kept: 4, covering: 4, owed: owed) == 4)
+        #expect(ThreadRestore.firstFrameRows(kept: 4, covering: 6, owed: owed) == 6, "the rows that cover the window, when they owe a step or less")
+        #expect(ThreadRestore.firstFrameRows(kept: 4, covering: ThreadView.eagerRows, owed: owed) == 4 + step, "no more than a step of them")
+        #expect(ThreadRestore.firstFrameRows(kept: 4, covering: ThreadView.eagerRows, owed: { _ in AppLayout.restoreStepBytes * 3 }) == ThreadView.eagerRows,
+                "rows that owe nothing beyond the last screen cost nothing to draw")
     }
 
     /// Mostly short rows with a heavy reply now and then still owe more than a step: what they cost to build is the replies'.

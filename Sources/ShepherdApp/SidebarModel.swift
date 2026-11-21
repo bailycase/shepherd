@@ -661,8 +661,7 @@ enum SidebarDerivation {
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
             accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
                 + (agent.goalState != nil ? ", goal" : ""),
-            worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live,
-            subtitle: SpendFormat.line(agent.spend).map { .init($0) })
+            worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
     }
 
     /// An active automation's row: its bolt, name and one word, from what its runs add up to and its trigger's status.
@@ -737,8 +736,7 @@ enum SidebarDerivation {
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
-            worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false,
-            subtitle: SpendFormat.line(agent.spend).map { .init($0) })
+            worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false)
     }
 
     private static func label(_ agent: Agent, word: String, automation: Bool, host: String?) -> String {

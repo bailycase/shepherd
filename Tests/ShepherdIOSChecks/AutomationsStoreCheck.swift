@@ -151,6 +151,22 @@ struct AutomationsStoreCheck {
         await fallback.refreshStatuses()
         check(fallback.detailDerivations[fallbackKey] == fallbackCount + 1, "unknown host zone invalidates with the device zone")
         check(fallback.details[fallbackKey]?.runs.first?.started.hasSuffix("11:00") == true, "fallback dates use the changed device zone")
+        // A host whose run history file is damaged says why in place of the runs, until a read works.
+        var damaged = true
+        let problem = "Invalid run history JSON: /tmp/automation-runs.json"
+        let damagedHost = MobileHost(state: ShepherdState(agents: [runAgent], automations: [a]))
+        let damagedStore = AutomationsStore(hosts: MobileHosts(damagedHost), readRuns: { _, id in
+            if damaged { throw RemoteHostClientError.rejected(code: RemoteAutomationRequest.runHistoryDamagedCode, message: problem) }
+            return runs[id] ?? []
+        }, dates: { (now, locale, deviceZone) })
+        let damagedKey = AutomationKey(host: damagedHost.id, automation: a.id)
+        await damagedStore.refresh()
+        check(damagedStore.details[damagedKey]?.runsProblem == problem && damagedStore.details[damagedKey]?.runsKnown == false,
+              "a damaged run history is shown, not read as no runs")
+        damaged = false
+        await damagedStore.refreshRuns()
+        check(damagedStore.details[damagedKey]?.runsProblem == nil && damagedStore.details[damagedKey]?.runsKnown == true,
+              "the notice clears once the host reads its runs again")
         host.state.automations.removeAll { $0.id == a.id }
         await eventually("selected automation removed") { store.model.rows.map(\.key) == [kb] }
         check(store.chosen == ka && store.selection == kb, "a removed selection falls back to the first remaining row")

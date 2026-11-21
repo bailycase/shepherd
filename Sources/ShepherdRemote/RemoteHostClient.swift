@@ -343,7 +343,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A fleet link (`FleetService`) passes `expectingHostID`: the host is asked who it is before
     /// the token is sent, and one that answers as another host never receives it
     /// (`RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost)`). It passes
-    /// `fetchesState: false` too, having no use for the host's workspace.
+    /// `fetchesState: false` too, having no use for the host's workspace. `shouldDrainLocalHost`
+    /// decides from `helloOk`, before a workspace fetch or normal app traffic can fail.
     public func connect(
         host: String,
         port: UInt16,
@@ -351,7 +352,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         clientName: String,
         capabilities: [String] = RemoteProtocol.clientCapabilities,
         expectingHostID: UUID? = nil,
-        fetchesState: Bool = true
+        fetchesState: Bool = true,
+        shouldDrainLocalHost: (@Sendable (String?, Set<String>) -> Bool)? = nil
     ) async throws -> ShepherdState {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
@@ -423,6 +425,10 @@ public final class RemoteHostClient: @unchecked Sendable {
                     self.hostBuild = build
                     self.hostID = answeredHostID
                     if !fetchesState { established = true }
+                }
+                if isLocal, shouldDrainLocalHost?(build, Set(capabilities)) == true {
+                    do { try await drain(connectionGeneration: attempt) }
+                    catch { ShepherdLog.warning("no drain acknowledgement from local host build \(build ?? "?"): \(error)") }
                 }
                 guard fetchesState else { return ShepherdState() }
                 let stateReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in .stateFetch(id: id) }
@@ -567,8 +573,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     /// Asks this Mac's background host to drain (`hostDrainCapability`): the app is newer.
-    public func drain() async throws {
-        let reply = try await request { id in .drain(id: id) }
+    public func drain() async throws { try await drain(connectionGeneration: nil) }
+
+    private func drain(connectionGeneration: UUID?) async throws {
+        let reply = try await request(connectionGeneration: connectionGeneration) { id in .drain(id: id) }
         guard case .ok = reply else {
             if case .error(_, let code, let message) = reply {
                 throw RemoteHostClientError.rejected(code: code, message: message)

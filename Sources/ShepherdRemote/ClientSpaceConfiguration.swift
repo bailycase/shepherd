@@ -193,6 +193,18 @@ public final class ClientSpaceConfiguration {
         }
     }
 
+    public func signIn(_ server: Server, authorize: @MainActor (URL, Duration) async throws -> String) async throws {
+        guard canUseMCP, !busy, server.usesOAuth, servers.contains(server), signedIn[server.file]?.contains(server.name) != true,
+              drafts[server.file]?.isEdited != true else { return }
+        try await ClientSpaceMCPSignIn.run(server: server.name, send: { action in
+            do { return try await mcp(server.file, action) }
+            catch let error as ProjectFileError where error.code == "offline" { throw RemoteHostClientError.disconnected }
+        }, authorize: authorize)
+        if signedIn[server.file]?.contains(server.name) != true {
+            signedIn[server.file, default: []].append(server.name)
+        }
+    }
+
     public func signOut(_ server: Server) async {
         guard canUseMCP, server.usesOAuth, servers.contains(server), signedIn[server.file]?.contains(server.name) == true,
               drafts[server.file]?.isEdited != true else { return }

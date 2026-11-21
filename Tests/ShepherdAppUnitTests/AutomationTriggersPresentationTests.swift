@@ -117,6 +117,23 @@ struct AutomationTriggersPresentationTests {
         #expect(detail.facts.first { $0.label == "Limits" }?.value == "2 at once · 20 a day · 2 today")
     }
 
+    /// A host that can't read its run history says why on the automation, over a trigger's own banner.
+    @Test(arguments: [false, true])
+    func aDamagedRunHistoryShowsItsFileAndHowToFixIt(triggered: Bool) throws {
+        let automation = Automation(name: "pr-loop", prompt: "fix it", cwd: "/tmp",
+                                    trigger: triggered ? .schedule(AutomationSchedule(rrule: "FREQ=DAILY")) : .manual)
+        let key = AutomationKey(host: PageHost.localID, automation: automation.id)
+        let host = AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true,
+                                  state: ShepherdState(automations: [automation]), triggers: true)
+        let message = "Invalid run history JSON: /tmp/automation-runs.json. Move the file aside to start with no history."
+        let paused = AutomationTriggerStatus(state: .paused, reason: "gh isn't signed in")
+        let model = AutomationsPageModel.make(hosts: [host], runs: [:], selection: key, filter: "", triggers: triggered ? [key: paused] : [:],
+                                              runProblems: [key: message], now: now, timeZone: utc, locale: locale)
+        let detail = try #require(model.detail)
+        #expect(detail.banner == AutomationsPageBanner(state: .failed, title: "Run history is damaged", message: message, canResume: false))
+        #expect(detail.runsNote == "Runs can't be read from this host.")
+    }
+
     // MARK: Sidebar
 
     @Test func theAutomationsRowSaysWhatNeedsALook() {

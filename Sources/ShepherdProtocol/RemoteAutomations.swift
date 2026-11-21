@@ -87,7 +87,8 @@ public struct AutomationRun: Codable, Hashable, Sendable, Identifiable {
         trigger = try c.decodeIfPresent(String.self, forKey: .trigger)
         triggerURL = try c.decodeIfPresent(String.self, forKey: .triggerURL)
         pullRequestURL = try c.decodeIfPresent(String.self, forKey: .pullRequestURL)
-        unread = try c.decodeIfPresent(Bool.self, forKey: .unread) ?? false
+        // Older files omit it; a present null is damage, not false.
+        unread = try c.contains(.unread) ? c.decode(Bool.self, forKey: .unread) : false
         failure = try c.decodeIfPresent(String.self, forKey: .failure)
     }
 
@@ -214,6 +215,12 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
         allPaused = try c.decodeIfPresent(Bool.self, forKey: .allPaused) ?? false
         timeZone = try c.decodeIfPresent(String.self, forKey: .timeZone)
     }
+}
+
+extension RemoteAutomationRequest {
+    /// The error `.runs` answers with while the host can't read its run history file. Its message
+    /// names the file and the fix; a client shows it where the runs would be.
+    public static let runHistoryDamagedCode = "run_history_damaged"
 }
 
 public enum RemoteAutomationRequest: Codable, Hashable, Sendable {
