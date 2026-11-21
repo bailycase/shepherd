@@ -18,6 +18,7 @@ extension StateStoreTests {
         "pi-import-bad-element", "pi-import-damaged", "hook-settings-bad-element", "hook-settings-damaged",
         "automation-triggers-bad-element", "automation-triggers-damaged",
         "suggestions-bad-element", "suggestions-damaged",
+        "push-drops-invalid-registrations", "push-registrations-bad-element", "push-registrations-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
