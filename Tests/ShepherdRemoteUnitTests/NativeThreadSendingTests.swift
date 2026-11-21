@@ -116,11 +116,79 @@ struct NativeThreadSendingTests {
         await store.refresh()
         #expect(userRows(store).count == 1 && userRows(store).allSatisfy { $0.turn.sendingNote == nil },
                 "the saved message is the only copy")
-        #expect(store.submissions.isEmpty, "a delivered send is not still sending")
-        #expect(!store.busy, "the composer is not left spinning for an answer the thread already has")
+        // Only a message that names the send settles it. Words alone hide the duplicate row and keep the record for the host's answer.
+        #expect(store.submissions.isEmpty == named && store.busy == !named)
         hold.held = false
         #expect(await send.value)
-        #expect(userRows(store).count == 1 && store.pending.isEmpty && store.submissions.isEmpty)
+        #expect(userRows(store).count == 1 && store.pending.isEmpty && store.submissions.isEmpty && !store.busy)
+    }
+
+    /// Rule: a text match is display-only. Turn A (provisional) and held send B say the same words; A saves under a new untagged
+    /// id, which matches B by text. B's record stays until the host answers, so a refusal still restores the draft.
+    @Test func aTextMatchNeverDeletesTheRecordOfASendTheHostRefuses() async throws {
+        let hold = SendHold()
+        hold.answer = { _ in .failure(code: "rejected", message: "No") }
+        let running = F.snapshot(running: true, actions: ["send", "abort"], messages: [hi],
+                                 provisional: [F.user("continue", id: "provisional:a"), F.assistant("working", status: "streaming", id: "r")])
+        let host = FakeHost(running)
+        let (store, loop) = await started(running, hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "continue"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("continue", id: "u1"), F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(store.submissions.first?.state == .sending, "words alone never settle the send")
+        hold.held = false
+        #expect(await send.value == false)
+        let record = try #require(store.submissions.first)
+        #expect(record.state == .failed)
+        #expect(store.restoreSubmission(record.id) != nil && store.draft == "continue")
+    }
+
+    /// Rule: a text match counts only for rows after the send's capture anchor. A page of older history loaded afterwards
+    /// never hides the accepted echo.
+    @Test func anOlderPageLoadedAfterTheAcceptanceNeverHidesTheEcho() async throws {
+        let hold = SendHold()
+        hold.held = false
+        let start = F.snapshot(messages: [hi], olderCursor: "a")
+        let host = FakeHost(start)
+        let (store, loop) = await started(start, hold: hold, host: host)
+        defer { loop.cancel(); store.stop() }
+        store.draft = "continue"
+        #expect(await store.send(delivery: .followUp))
+        let operation = try #require(hold.operation)
+        #expect(store.pending.count == 1)
+        host.next = [.success(.snapshot(value: F.snapshot(messages: [F.user("continue", id: "u0"), hi], olderCursor: nil)))]
+        await store.loadOlder()
+        #expect(store.messages.map(\.entryID) == ["u0", "a"])
+        host.snapshot = F.snapshot(revision: 2, messages: [hi], olderCursor: "a")
+        await store.refresh()
+        #expect(store.pending.count == 1 && userRows(store).count == 2, "the older \"continue\" is not this send")
+        var saved = F.user("continue", id: "u2")
+        saved.operationID = operation
+        host.snapshot = F.snapshot(revision: 3, messages: [hi, saved], olderCursor: "a")
+        await store.refresh()
+        #expect(store.pending.isEmpty, "a matching row after the anchor replaces the echo")
+    }
+
+    /// The command and its reply are saved while the answer is held. The acceptance then adds an echo, and a host that
+    /// answers "unchanged" gives no snapshot to settle it with: it settles against the history already loaded.
+    @Test func anEchoAddedByALateAcceptanceSettlesAgainstTheLoadedHistory() async throws {
+        let hold = SendHold()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "/review"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("Review the diff carefully", id: "u1"), F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(store.submissions.first?.state == .sending, "an expanded command is only a guess until the host answers")
+        host.answersUnchanged = true
+        hold.held = false
+        #expect(await send.value)
+        #expect(store.pending.isEmpty && userRows(store).count == 1 && !store.busy)
     }
 
     /// The same words sent before are not this send landing.
@@ -153,10 +221,11 @@ struct NativeThreadSendingTests {
         await until { hold.operation != nil }
         host.snapshot = F.snapshot(revision: 2, messages: [F.assistant("later", id: "a1"), F.user("continue", id: "u1"), F.assistant("ok", id: "a2")])
         await store.refresh()
-        #expect(store.submissions.isEmpty && !store.busy, "the delivered message settles the send")
-        #expect(userRows(store).map(\.id) == ["u1"])
+        #expect(userRows(store).map(\.id) == ["u1"], "the delivered message is the only copy")
+        #expect(store.submissions.first?.state == .sending, "its words do not settle the send: the host's answer does")
         hold.held = false
         #expect(await send.value)
+        #expect(store.submissions.isEmpty && store.pending.isEmpty && userRows(store).map(\.id) == ["u1"])
     }
 
     /// Another client's turn (it names its own operation) is not this send landing, so the record that restores a

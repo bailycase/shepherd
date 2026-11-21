@@ -680,17 +680,23 @@ public final class NativeThreadStore {
             for id in settled { echoAccepted[id] = nil }
             return
         }
-        // The user message each echo became: one the thread did not hold when the send was captured, that names this operation or
-        // none (another client's names its own), with the echo's words. An earlier message with the same words is never it.
-        let persisted = (messages + value.messages + value.provisional).filter { $0.role == "user" && !$0.entryID.hasPrefix("pending:") }
+        // The user message each echo became: one that follows what the thread held when the send was captured, that names this
+        // operation or none (another client's names its own), with the echo's words. Older history is never it, loaded or not.
+        var history = value.messages
+        if value.olderCursor != nil, let first = value.messages.first, let overlap = messageIndex[first.entryID] {
+            history = Array(messages[..<overlap]) + value.messages
+        }
+        history += value.provisional
         var settled: Set<String> = []
         for echo in pending {
             let operation = UUID(uuidString: String(echo.entryID.dropFirst("pending:".count)))
-            let earlier = operation.flatMap { captured[$0]?.earlier } ?? []
+            let capture = operation.flatMap { captured[$0] }
+            var rows = ArraySlice(history)
+            if let after = capture?.after, let index = history.firstIndex(where: { $0.entryID == after }) { rows = history[(index + 1)...] }
             let text = Self.userText(echo)
-            let candidates = persisted.filter {
-                Self.userText($0) == text && aliases[$0.entryID] == nil && !earlier.contains($0.entryID)
-                    && ($0.operationID == nil || $0.operationID == operation)
+            let candidates = rows.filter {
+                $0.role == "user" && !$0.entryID.hasPrefix("pending:") && Self.userText($0) == text && aliases[$0.entryID] == nil
+                    && !(capture?.earlier.contains($0.entryID) ?? false) && ($0.operationID == nil || $0.operationID == operation)
             }
             // A message that names the operation is the one; else the newest saved one with the echo's words.
             guard let saved = candidates.last(where: { $0.operationID != nil }) ?? candidates.last else { continue }
@@ -701,12 +707,15 @@ public final class NativeThreadStore {
         pending.removeAll { settled.contains($0.entryID) }
     }
 
-    /// Whether the history holds the send `id` captured as `capture`: pi's saved message names its operation; else (a host that
-    /// never does) a user message with its words after what the thread held then; else a user message of other words (pi
-    /// expanded a command) once the turn after it is over. Never an earlier message with the same words.
-    private func landed(_ id: UUID, _ capture: (text: String, after: String?, earlier: Set<String>), inferred: Bool) -> Bool {
+    private enum Landing { case none, named, guessed }
+
+    /// Whether the history holds the send `id` captured as `capture`: `.named` when pi's saved message names its operation, the
+    /// only proof; `.guessed` for a host that never does: a user message with its words after what the thread held then, else
+    /// a user message of other words (pi expanded a command) once the turn after it is over. Never an earlier message with the
+    /// same words. A guess may hide a duplicate row; it never settles the send.
+    private func landed(_ id: UUID, _ capture: (text: String, after: String?, earlier: Set<String>), inferred: Bool) -> Landing {
         let rows = messages + (snapshot?.provisional ?? [])
-        if rows.contains(where: { $0.operationID == id && $0.role == "user" && !$0.entryID.hasPrefix("pending:") }) { return true }
+        if rows.contains(where: { $0.operationID == id && $0.role == "user" && !$0.entryID.hasPrefix("pending:") }) { return .named }
         var tail = ArraySlice(messages)
         // What the thread held then may have left the loaded history (a replacement page): then the send is any user message
         // the thread did not hold, which `earlier` tells apart.
@@ -716,29 +725,31 @@ public final class NativeThreadStore {
             $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") && !capture.earlier.contains($0.entryID)
                 && ($0.operationID == nil || $0.operationID == id)
         }
-        if saved.contains(where: { Self.userText($0) == capture.text }) { return true }
+        if saved.contains(where: { Self.userText($0) == capture.text }) { return .guessed }
         // A reply to some message of other words is only a guess: it settles the echo of a send the host took, never the send
         // still waiting for its answer (its record restores the draft if the host refuses). A turn another client started, or
         // the one the thread was already running, looks the same.
-        guard inferred, snapshot?.running == false, let first = saved.first, let at = tail.firstIndex(where: { $0.entryID == first.entryID }) else { return false }
-        return tail[at...].contains { $0.role == "assistant" }
+        guard inferred, snapshot?.running == false, let first = saved.first, let at = tail.firstIndex(where: { $0.entryID == first.entryID }) else { return .none }
+        return tail[at...].contains { $0.role == "assistant" } ? .guessed : .none
     }
 
-    /// A send whose message the history already holds is delivered, whatever the host has or has not answered: its "Sending…"
-    /// copy and record go, its composer is free, and its echo (if the host took it) does not wait for a match that may never
-    /// come. So a delivered message always replaces its pending copy, and no pending copy outlives a settled turn.
+    /// A send whose message the history already holds replaces its pending copy, and no pending copy outlives a settled turn. A
+    /// message that names the send also frees it: its record goes and its composer is free. One matched by words only hides the
+    /// copy (and the echo, if the host took it); the record stays until the host answers, so a refusal still restores the draft.
     private func settleLandedSends() {
         captured = captured.filter { id, _ in inFlight.contains(id) || pending.contains { $0.entryID == "pending:\(id.uuidString)" } }
         guard !captured.isEmpty else { return }
         var freed = false
         for (id, capture) in captured {
             let echo = "pending:\(id.uuidString)"
-            guard landed(id, capture, inferred: pending.contains { $0.entryID == echo }) else { continue }
+            let landing = landed(id, capture, inferred: pending.contains { $0.entryID == echo })
+            guard landing != .none else { continue }
             if pending.contains(where: { $0.entryID == echo }) {
                 pending.removeAll { $0.entryID == echo }
                 echoAccepted[echo] = nil
                 captured[id] = nil
             }
+            guard landing == .named else { outgoing[id] = nil; continue }
             if let index = submissions.firstIndex(where: { $0.id == id && $0.state == .sending }) {
                 _ = removeSubmission(at: index)
                 landedSends.insert(id)
@@ -3047,6 +3058,8 @@ public final class NativeThreadStore {
                         pending.append(echo(operation, text: sentText, status: queued ? "queued" : "pending", images: images.count,
                                             steered: current.running && delivery == .steer, elements: elements))
                         if hostQueues { echoAccepted[id] = pulls }
+                        // The history may already hold it, and a host that answers "unchanged" sends nothing to settle it with.
+                        settleLandedSends()
                     }
                     derive()
                 }
