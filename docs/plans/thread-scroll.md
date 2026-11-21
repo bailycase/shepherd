@@ -207,6 +207,27 @@ Per slice:
 - Reuse existing tests. `ThreadTailFlowTests`, `ThreadSendScrollTests`, `ThreadScrollingTests`, `ThreadBlankScreenTests` and `ScrollTrace` stay green; the ones that pin an old mechanism by name (for example the guard's known-issue run) change in the slice that removes the mechanism and say so in the PR.
 - Stop rule: a slice that regresses any scenario is reverted or fixed in its own PR before the next starts. No slice adds a gate to hide a regression.
 
+### Slice 4 measurement and stop
+
+On `d30e0683c`, macOS 27.0.1, the off-screen Dev app ran `validate.py --case scroll-stability` three times per arm. The existing `--scroll-anchor-off M3` switch changes only the size-changes anchor. It leaves initial offset, restore alignment, and the follower's `nativeAnchor` argument alone.
+
+| M3 | Run | Streaming jump displacement | Flick jump displacement | Total jump displacement | In-band input residuals |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| On | 1 | 337 pt | 615 pt | 952 pt | 595 pt |
+| On | 2 | 477 pt | 615 pt | 1,092 pt | 595 pt |
+| On | 3 | 477 pt | 615 pt | 1,092 pt | 595 pt |
+| Off | 1 | 1,135 pt | 644 pt | 1,779 pt | 0 pt |
+| Off | 2 | 1,135 pt | 644 pt | 1,779 pt | 0 pt |
+| Off | 3 | 1,135 pt | 644 pt | 1,779 pt | 0 pt |
+
+Total is the sum of absolute measured jump deltas, not the number of jumps. The other measured scenarios added no jump displacement. Even counting the in-band residuals, M3 off was worse: 1,779 pt in every run versus 1,547, 1,687 and 1,687 pt on. Both arms had zero blank frames in the six displacement scenarios and one transient history anchor loss per run. All six runs exited 1 on stability assertions; the Dev fixture and required writer probes completed.
+
+**D1: keep M3 in the current implementation.** Turning it off does not take control of the AppKit offset write. In baseline run 1, the first flick input moved the clip from 73,281 to 73,071 pt. `HostingScrollView.updateContext` resized the document from 73,787 to 72,885 pt. `NSClipView._reflectDocumentViewFrameChange` wrote the new tail offset of 72,379 pt. The same row stayed at the same viewport y, and the tail gap returned to zero. AppKit erased the 210 pt of visible reader movement by clamping to the new end; it did not literally write the old numeric offset. The write still occurs with M3 off.
+
+Two temporary probes failed to provide a usable handoff. Setting SwiftUI's `Transaction.scrollContentOffsetAdjustmentBehavior` to `.disabled` left the AppKit writer active and measured 1,779 pt of jump displacement with M3 either on or off. Replacing SwiftUI's `HostingClipView` with an `NSClipView` subclass reached the documented `scroll(to:)` override from the frame adjustment, but made the transcript go blank and timed out before the original history page's first row appeared. Copying the clip's flipped coordinate setting did not close that regression: the flick had no visible row for all 78 sampled frames, versus zero blanks on baseline.
+
+The stop rule applies. Both probes were removed, no owner driver was installed, and no after-run is claimed. A viable next experiment must control the frame adjustment without replacing the clip's SwiftUI behavior or correcting the offset in a second write. Local evidence is under `.build/validation/scroll-stability-*/mac/` (`frames.json`, `scroll-jumps.json` for completed runs, and `run.log`).
+
 ### Slice 4 driver contract and open checks
 
 Feed every geometry callback, including the first after a mount. Reconcile intent on release, cancel and remount, and call `turn()` on the first eligible lift when `wantsTurn` is true. Discard driver-side asks invalidated by a mount, session change or newer request.
