@@ -84,11 +84,14 @@ final class AutomationsStore {
         var row: AutomationListRow
         var runs: [AutomationRun]?
         var status: AutomationTriggerStatus?
+        var runsProblem: String?
         var day: Date
         var timeZone: TimeZone
         var locale: Locale
     }
     @ObservationIgnored private var runs: [AutomationKey: [AutomationRun]] = [:]
+    /// Why a host can't give an automation's runs: its run history file is damaged.
+    @ObservationIgnored private var runsProblems: [AutomationKey: String] = [:]
     /// Each triggered automation's trigger, on a host that serves `automationTriggersCapability`.
     @ObservationIgnored private var statuses: [AutomationKey: AutomationTriggerStatus] = [:]
     /// What each automation's run looked like when its runs were last read (its agent and status).
@@ -205,6 +208,7 @@ final class AutomationsStore {
         inputs = next
         let live = Set(next.flatMap { host in host.state.automations.map { AutomationKey(host: host.id, automation: $0.id) } })
         runs = runs.filter { live.contains($0.key) }
+        runsProblems = runsProblems.filter { live.contains($0.key) }
         statuses = statuses.filter { live.contains($0.key) }
         for (key, enabled) in pendingEnabled where Self.automation(key, in: next)?.enabled == enabled || !live.contains(key) {
             pendingEnabled[key] = nil
@@ -221,7 +225,7 @@ final class AutomationsStore {
         for row in next.rows {
             let hostZone = zone(row.key.host)
             let input = DetailInput(row: row, runs: runs[row.key], status: statuses[row.key],
-                                    day: hostZone.calendar.startOfDay(for: now), timeZone: hostZone.timeZone, locale: locale)
+                                    runsProblem: runsProblems[row.key], day: hostZone.calendar.startOfDay(for: now), timeZone: hostZone.timeZone, locale: locale)
             nextDetailInputs[row.key] = input
             if detailInputs[row.key] == input {
                 nextDetails[row.key] = details[row.key]
@@ -229,8 +233,10 @@ final class AutomationsStore {
                 #if DEBUG
                 detailDerivations[row.key, default: 0] += 1
                 #endif
-                nextDetails[row.key] = AutomationsModel.detail(row: row, runs: input.runs, status: input.status, now: now,
-                                                               timeZone: input.timeZone, locale: input.locale)
+                var detail = AutomationsModel.detail(row: row, runs: input.runs, status: input.status, now: now,
+                                                     timeZone: input.timeZone, locale: input.locale)
+                detail.runsProblem = input.runsProblem
+                nextDetails[row.key] = detail
             }
         }
         detailInputs = nextDetailInputs
@@ -321,11 +327,24 @@ final class AutomationsStore {
                 let signature = Self.signature(key, in: inputs)
                 guard readAt[key] != signature else { continue }
                 readAt[key] = signature
-                guard let read = try? await readRuns(client, automation.id) else {
+                let read: [AutomationRun]
+                do {
+                    read = try await readRuns(client, automation.id)
+                } catch {
+                    // Read again next time, so a repaired file clears the notice.
                     readAt[key] = nil
+                    if case RemoteHostClientError.rejected(RemoteAutomationRequest.runHistoryDamagedCode, let message) = error,
+                       runsProblems[key] != message {
+                        runsProblems[key] = message
+                        changed = true
+                    }
                     continue
                 }
                 guard !forgotten.contains(host.id) else { break }
+                if runsProblems[key] != nil {
+                    runsProblems[key] = nil
+                    changed = true
+                }
                 if runs[key] != read {
                     runs[key] = read
                     changed = true

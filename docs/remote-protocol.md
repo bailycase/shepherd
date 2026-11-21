@@ -246,7 +246,9 @@
     `pane.control.v1` fails the request `unsupported` and the client beeps
   - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
     create, edit, delete. A manual automation that is on starts a run when Shepherd launches on
-    the host. With `automationTriggers.v1` a draft also carries `settings` (trigger, destination,
+    the host. While the host's `automation-runs.json` can't be read, `runs` answers the error
+    `run_history_damaged` (its message names the file and the fix) and the host starts no run.
+    With `automationTriggers.v1` a draft also carries `settings` (trigger, destination,
     workspace, author gate, limits, pins; a nil field keeps the host's value, so an older client's
     edit never clears a trigger), runs carry their trigger, PR link, unread dot and failure, and
     the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead`,
