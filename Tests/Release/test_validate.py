@@ -17,7 +17,7 @@ import validate
 
 def frame(t, first, rows, *callers, hidden=False, height=500, following=False, clip=(200, 100)):
     return {"timestamp": t, "refreshInterval": 0.01, "first": first, "rows": rows, "hidden": hidden,
-            "offset": 10, "documentHeight": height, "streamingRowHeight": height - 450,
+            "visibleRows": list(rows), "offset": 10, "documentHeight": height, "streamingRowHeight": height - 450,
             "following": following, "distance": 0, "clipSize": clip,
             "events": [{"caller": caller} for caller in callers]}
 
@@ -80,6 +80,31 @@ class ValidateTests(unittest.TestCase):
         [jump] = validate.measure_scroll(frames[:2])["jumps"]
         self.assertEqual((jump["measured"], jump["delta_pt"]), ("clip offset", 5))
 
+    def test_offscreen_input_shift_is_separate_but_clip_motion_still_fails(self):
+        before = frame(0, "tail", {"tail": 0})
+        after = frame(0.01, "history", {"history": 0, "tail": 39000})
+        after["visibleRows"], after["offset"] = ["history"], 5
+        after["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -5}]
+        summary = validate.measure_scroll([before, after])
+        self.assertEqual([shift["delta_pt"] for shift in summary["offscreen_input_shifts"]], [38995])
+        self.assertFalse(summary["jumps"])
+        after["offset"] = 2
+        self.assertEqual([jump["delta_pt"] for jump in validate.measure_scroll([before, after])["jumps"]], [3])
+        before["rows"]["history"] = -5
+        before["visibleRows"].append("history")
+        self.assertFalse(validate.measure_scroll([before, after])["jumps"])  # The shared visible row wins.
+
+    def test_first_move_keeps_the_known_height_loss_red(self):
+        before = frame(0, "a", {"a": 0}, following=True, height=1500)
+        after = frame(0.01, "a", {"a": 0}, height=621)
+        after["events"] = [{"caller": "fixture.scrollInput", "scrollDelta": -210}]
+        result = validate.first_move_off_tail([before, after])
+        self.assertEqual((result["status"], result["height_loss_pt"]), ("known-red", 879))
+        after["documentHeight"] = 1498
+        self.assertEqual(validate.first_move_off_tail([before, after])["status"], "passed")
+        before["following"] = False
+        self.assertEqual(validate.first_move_off_tail([before, after])["status"], "invalid-start")
+
     def test_paging_anchor_swap_counts_once_and_has_no_invented_delta(self):
         frames = [frame(0, "user-60", {"user-60": -1}), frame(0.01, "user-0", {"user-0": -1}),
                   frame(0.02, "user-0", {"user-0": -1}), frame(0.03, "user-60", {"user-60": -1})]
@@ -130,7 +155,7 @@ class ValidateTests(unittest.TestCase):
         frames[2]["clipSize"] = frames[1]["clipSize"]
         with self.assertRaisesRegex(ValueError, "did not change clipSize"):
             validate.check_scroll_actions(name, frames, required)
-        with self.assertRaisesRegex(ValueError, "expected all six"):
+        with self.assertRaisesRegex(ValueError, "expected all seven"):
             validate.scroll_evidence({})
 
     def test_missing_writer_site_keeps_motion_and_step_evidence_with_its_own_exit(self):
@@ -144,6 +169,18 @@ class ValidateTests(unittest.TestCase):
         cancel = next(event for event in switch[1]["events"] if event["detail"] == "history.cancel")
         cancel["detail"] = "history.materialize"
         switch[1]["rows"]["a"] = 8  # A motion failure must not hide the missing probe.
+        scenarios["mid-history-new-turn"][1]["events"] = [
+            {"caller": "fixture.pageRequested"},
+            {"caller": "thread.write.M7", "detail": "guard.walk", "following": False},
+        ]
+        scenarios["mid-history-new-turn"][1]["first"] = None
+
+        def check_actions(name, frames, required):
+            if name == "page-older-history":
+                # The request fired in mid-history instead of in paging.
+                validate_actions(name, frames, ("fixture.pageRequested",))
+
+        validate_actions = validate.check_scroll_actions
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -157,7 +194,8 @@ class ValidateTests(unittest.TestCase):
                   patch.object(validate, "source_identity", return_value={}),
                   patch.object(validate.subprocess, "check_output", return_value=b"Xcode fixture"),
                   patch.object(validate.subprocess, "run", side_effect=dev_fixture),
-                  patch.object(validate, "check_scroll_actions"), contextlib.redirect_stdout(io.StringIO())):
+                  patch.object(validate, "check_scroll_actions", side_effect=check_actions),
+                  contextlib.redirect_stdout(io.StringIO())):
                 code = validate.main(["--case", "scroll-stability"])
             [report] = (root / ".build/validation").glob("*/result.json")
             result = json.loads(report.read_text(encoding="utf-8"))
@@ -168,6 +206,11 @@ class ValidateTests(unittest.TestCase):
             self.assertEqual(steps["complete"]["status"], "passed")
             summary = json.loads((report.parent / "mac/scroll-jumps.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["switch-away-back"]["jumps"][0]["delta_pt"], 8)
+            self.assertEqual(steps["page-older-history"]["status"], "failed")
+            self.assertIn("missing actions ['fixture.pageRequested']", steps["page-older-history"]["actual"])
+            self.assertEqual(set(summary), set(scenarios))
+            mid_history = summary["mid-history-new-turn"]
+            self.assertEqual((mid_history["blank_frames"], mid_history["detached_guard_walks"]), (1, 1))
 
     def test_intent_mismatch_is_distinct_from_setup_and_motion_failures(self):
         diagnostic = "error: flick-and-stop: expected idle, saw coasting"
