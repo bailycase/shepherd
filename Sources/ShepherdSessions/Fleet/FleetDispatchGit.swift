@@ -150,15 +150,27 @@ enum FleetDispatchGit {
         return GitWorktree.defaultBranch(repo: cwd, network: false)
     }
 
+    /// One porcelain row per changed path, including staged changes. Git quotes embedded newlines,
+    /// excludes ignored files and leaves the index alone (`GIT_OPTIONAL_LOCKS=0` in `run`).
+    static func uncommittedFiles(worktree: String) -> (modified: Int, untracked: Int)? {
+        guard let status = run(["status", "--porcelain=v1", "--untracked-files=all", "--", "."], in: worktree),
+              status.status == 0, !status.output.isEmpty else { return nil }
+        let rows = status.output.split(separator: "\n")
+        let untracked = rows.count(where: { $0.hasPrefix("?? ") })
+        return (rows.count - untracked, untracked)
+    }
+
     /// What the finished thread left on its branch, as the receiving host reads it. Compare with
     /// its merge base against the target, falling back to the pinned start when unavailable.
     static func branchFacts(worktree: String, branch: String, start: String?, comparison: String? = nil) -> FleetBranchFacts? {
+        let changes = uncommittedFiles(worktree: worktree)
+        var facts = FleetBranchFacts(branch: branch, uncommittedModified: changes?.modified, uncommittedUntracked: changes?.untracked)
         let ref = "refs/heads/\(branch)"
         // The thread may have switched branches or detached HEAD. Pin the dispatch ref once so all
         // facts describe the same commit even if the branch moves while git is running.
         guard let start, isCommit(start),
               let tip = run(["rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"], in: worktree),
-              tip.status == 0, isCommit(tip.output) else { return nil }
+              tip.status == 0, isCommit(tip.output) else { return changes == nil ? nil : facts }
         let head = tip.output
         var diffBase = start
         var comparedTo: String?
@@ -174,9 +186,10 @@ enum FleetDispatchGit {
         guard let count = run(["rev-list", "--count", range], in: worktree), count.status == 0,
               let ahead = Int(count.output),
               let stat = run(["diff", "--shortstat", range, "--"], in: worktree, environment: ["LC_ALL": "C"]), stat.status == 0
-        else { return nil }
-        let (files, insertions, deletions) = parseShortstat(stat.output)
-        var facts = FleetBranchFacts(branch: branch, head: head, ahead: ahead, filesChanged: files, insertions: insertions, deletions: deletions)
+        else { return changes == nil ? nil : facts }
+        facts.head = head
+        facts.ahead = ahead
+        (facts.filesChanged, facts.insertions, facts.deletions) = parseShortstat(stat.output)
         facts.comparedTo = comparedTo
         // Ask origin without writing refs or falling back to a possibly stale remote-tracking ref.
         let remote = run(["ls-remote", "--exit-code", "--refs", "origin", ref], in: worktree, timeout: 30)

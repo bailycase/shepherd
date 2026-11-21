@@ -344,6 +344,8 @@ struct FleetDispatchTests {
         #expect(result.text.contains("Branch fleet/checkout-notes: 0 commits ahead of origin/main, not on origin, 0 files changed (+0 -0). Uncommitted in the checkout on Mac mini: 3 files (2 modified, 1 untracked)."))
         #expect(!result.text.contains("new notes.txt") && !result.text.contains("updated notes"))
         try await eventuallyOnMain("the sender to finish delivery") { a.sent().first?.state == .done }
+        let facts = try #require(try await parent.status(info).branchFacts)
+        #expect(facts.ahead == 0 && facts.filesChanged == 0 && facts.uncommittedModified == 2 && facts.uncommittedUntracked == 1)
         #expect(try git(["status", "--porcelain=v1"], in: worktree) == status, "reporting leaves the index and worktree alone")
 
         // The close reply describes what is kept now, not the earlier result snapshot.

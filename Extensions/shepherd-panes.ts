@@ -62,7 +62,10 @@ interface FleetDispatchInfo {
   hostRunningDispatches?: number | null;
   closeReport?: string | null;
   resultText?: string | null;
-  branchFacts?: { branch: string; head?: string | null; ahead: number; comparedTo?: string; pushed: boolean; originCheckFailed?: boolean; filesChanged: number; insertions: number; deletions: number } | null;
+  branchFacts?: {
+    branch: string; head?: string | null; ahead: number; comparedTo?: string; pushed: boolean; originCheckFailed?: boolean;
+    filesChanged: number; insertions: number; deletions: number; uncommittedModified?: number; uncommittedUntracked?: number;
+  } | null;
   failure?: string | null;
   detail?: string | null;
   without?: string[] | null;
@@ -885,6 +888,12 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       lines.push(`branch work at result: ${facts.ahead} commit(s) ahead${base}, ${facts.filesChanged} file(s) +${facts.insertions} -${facts.deletions}, ${push}`);
     } else if (info.branch && (info.state === "done" || info.state === "delivering")) {
       lines.push("branch work at result: unavailable");
+    }
+    const modified = facts?.uncommittedModified ?? 0;
+    const untracked = facts?.uncommittedUntracked ?? 0;
+    const total = modified + untracked;
+    if (total > 0) {
+      lines.push(`Uncommitted in the checkout on ${info.host ?? "another Mac"}: ${total} ${total === 1 ? "file" : "files"} (${modified} modified, ${untracked} untracked).`);
     }
     if (info.state === "running") {
       lines.push(`last reported thread activity: ${info.activity ? String(info.activity).split("\n")[0] : "unknown"}`);

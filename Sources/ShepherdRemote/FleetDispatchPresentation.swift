@@ -563,9 +563,12 @@ public struct FleetResultMessage: Equatable, Sendable {
             let line = body[facts.upperBound...]
             if let colon = line.firstIndex(of: ":") {
                 branch = String(line[..<colon])
-                if line.contains(", pushed to origin,") { pushed = true }
-                else if line.contains(", not on origin,") { pushed = false }
+                let notice = line.range(of: ". Uncommitted in the checkout on ")
+                let committed = line[..<(notice?.lowerBound ?? line.endIndex)]
+                if committed.contains(", pushed to origin,") { pushed = true }
+                else if committed.contains(", not on origin,") { pushed = false }
                 body = String(body[..<facts.lowerBound])
+                if let notice { body += "\n\n" + line[line.index(notice.lowerBound, offsetBy: 2)...] }
             }
         }
         return FleetResultMessage(title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines), branch: branch, pushed: pushed)

@@ -1079,6 +1079,12 @@ final class FleetDispatch: @unchecked Sendable {
         } else if let branch = record.branch {
             body += "\n\nBranch \(branch): branch work unavailable."
         }
+        let modified = record.resultBranchFacts?.uncommittedModified ?? 0
+        let untracked = record.resultBranchFacts?.uncommittedUntracked ?? 0
+        let (total, overflow) = modified.addingReportingOverflow(untracked)
+        if !overflow, modified >= 0, untracked >= 0, total > 0 {
+            body += " Uncommitted in the checkout on \(place): \(total) \(total == 1 ? "file" : "files") (\(modified) modified, \(untracked) untracked)."
+        }
         return AgentMessageFraming.framed(from: "\(record.title) on \(place)", body)
     }
 

@@ -230,6 +230,10 @@ struct FleetDispatchPresentationTests {
         #expect(result.branch == "fleet/fix-flaky-payment" && result.pushed == true)
         let unknown = text.replacingOccurrences(of: "pushed to origin", with: "could not verify origin")
         #expect(FleetResultMessage.parse(unknown)?.branch == result.branch && FleetResultMessage.parse(unknown)?.pushed == nil)
+        let notice = "Uncommitted in the checkout on Mac mini: 3 files (2 modified, 1 untracked)."
+        let dirty = try #require(FleetResultMessage.parse(text + " " + notice))
+        #expect(dirty.branch == result.branch && dirty.pushed == true)
+        #expect(dirty.text == "Fixed: the test raced the clock.\n\n" + notice)
         #expect(FleetResultMessage.parse("[from: a, an agent, not the user.] Please look at this") == nil)
         #expect(FleetResultMessage.parse("Result from X on Y:\nhi") == nil, "only the host's framing counts")
     }

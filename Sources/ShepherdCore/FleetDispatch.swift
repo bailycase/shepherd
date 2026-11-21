@@ -224,9 +224,13 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
     public var filesChanged: Int
     public var insertions: Int
     public var deletions: Int
+    /// Tracked or staged changes in the checkout, separate from the branch diff. Nil when not reported.
+    public var uncommittedModified: Int?
+    public var uncommittedUntracked: Int?
 
     public init(branch: String, head: String? = nil, ahead: Int = 0, pushed: Bool = false,
-                filesChanged: Int = 0, insertions: Int = 0, deletions: Int = 0) {
+                filesChanged: Int = 0, insertions: Int = 0, deletions: Int = 0,
+                uncommittedModified: Int? = nil, uncommittedUntracked: Int? = nil) {
         self.branch = branch
         self.head = head
         self.ahead = ahead
@@ -234,6 +238,8 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
         self.filesChanged = filesChanged
         self.insertions = insertions
         self.deletions = deletions
+        self.uncommittedModified = uncommittedModified
+        self.uncommittedUntracked = uncommittedUntracked
     }
 }
 

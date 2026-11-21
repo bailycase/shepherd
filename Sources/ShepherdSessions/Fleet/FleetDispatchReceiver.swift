@@ -408,7 +408,11 @@ extension FleetDispatch {
                 let processes = stopped.summary + (stopped.allowsBuildCleanup ? "" : " Build output kept.")
                 let bytes = cleaned?.bytes ?? 0
                 let detail = cleaned.flatMap { $0.removed.isEmpty ? nil : " Removed \($0.removed.joined(separator: ", "))." } ?? ""
-                result = .success("Thread removed. \(processes) \(bytes) allocated bytes freed from build output.\(detail) Kept the checkout, branches, and saved conversation; unverified output was left alone.")
+                let keptWork = path.flatMap { FleetDispatchGit.uncommittedFiles(worktree: $0) }.map { changes in
+                    let count = changes.modified + changes.untracked
+                    return ", including \(count) uncommitted \(count == 1 ? "file" : "files") in the checkout"
+                } ?? ""
+                result = .success("Thread removed. \(processes) \(bytes) allocated bytes freed from build output.\(detail) Kept the checkout, branches, and saved conversation\(keptWork); unverified output was left alone.")
             } catch let refusal as FleetDispatchRefusal {
                 result = .failure(refusal)
             } catch {
