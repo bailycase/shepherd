@@ -48,6 +48,17 @@ struct FleetDispatchRefusal: Error, Equatable {
     var detail: String?
 }
 
+struct FleetCloseProcesses: Sendable {
+    let sessionsStopped: Bool
+    let sweep: ThreadProcessSweep.Report?
+
+    var confirmed: Bool { sessionsStopped && sweep?.complete == true }
+    var summary: String {
+        let sessions = sessionsStopped ? "Tracked sessions stopped." : "Could not confirm tracked session exit."
+        return sessions + " " + (sweep?.summary ?? "No process ownership marker available.")
+    }
+}
+
 /// What the dispatch engine needs of the server that hosts it: the threads, the settings, and how to
 /// start, stop and message a thread. Closures, so the engine holds no reference to the server.
 struct FleetDispatchHost: @unchecked Sendable {
@@ -66,7 +77,7 @@ struct FleetDispatchHost: @unchecked Sendable {
     /// Stops a thread's turn, as Stop does (server queue).
     var stopThread: @Sendable (AgentID) -> Void = { _ in }
     var terminateThread: @Sendable (AgentID) -> Void = { _ in }
-    var closeThread: @Sendable (AgentID, UUID) async throws -> Bool = { _, _ in false }
+    var closeThread: @Sendable (AgentID, UUID) async throws -> FleetCloseProcesses = { _, _ in .init(sessionsStopped: false, sweep: nil) }
     /// Sends a message into a thread's queue; false when it can't take one.
     var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> Bool = { _, _, _ in false }
     /// What a thread is doing (server queue); nil when it is gone. Does not read its transcript.

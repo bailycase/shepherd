@@ -164,15 +164,16 @@ final class RPCSession: @unchecked Sendable {
         SessionInfo(id: id, cwd: cwd, command: command, cols: 0, rows: 0, isAlive: isAlive)
     }
 
-    convenience init(id: SessionID = SessionID(), params: CreateSessionParams, queue: DispatchQueue) throws {
-        try self.init(id: id, params: params, queue: queue, workBudget: .shared)
+    convenience init(id: SessionID = SessionID(), params: CreateSessionParams, queue: DispatchQueue, processMarker: String? = nil) throws {
+        try self.init(id: id, params: params, queue: queue, workBudget: .shared, processMarker: processMarker)
     }
 
     init(
         id: SessionID = SessionID(),
         params: CreateSessionParams,
         queue: DispatchQueue,
-        workBudget: ThreadReadCache
+        workBudget: ThreadReadCache,
+        processMarker: String? = nil
     ) throws {
         self.id = id
         self.queue = queue
@@ -188,6 +189,8 @@ final class RPCSession: @unchecked Sendable {
         if let extra = params.env {
             env.merge(extra) { _, new in new }
         }
+        env[ThreadProcessSweep.threadKey] = processMarker
+        env.removeValue(forKey: ThreadProcessSweep.bashKey)
         // Same sanitising as PTYSession: the child is not hosted by whichever
         // terminal launched the app. No TERM: there is no terminal at all.
         for key in [

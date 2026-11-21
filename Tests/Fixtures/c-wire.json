@@ -391,6 +391,9 @@
       "stopAutomation": [
         "{\"automationID\":\"au1\",\"id\":15,\"type\":\"stopAutomation\"}\n"
       ],
+      "stopBashProcesses": [
+        "{\"agentID\":\"a1\",\"bashScope\":\"10000000-0000-0000-0000-000000000000\",\"type\":\"stopBashProcesses\"}\n"
+      ],
       "suggestInstruction": [
         "{\"agentID\":\"a1\",\"file\":\"APPEND_SYSTEM.md\",\"id\":20,\"line\":\"- Run `go mod tidy` with any dependency bump.\",\"reason\":\"CI failed twice on a stale go.sum.\",\"type\":\"suggestInstruction\"}\n"
       ],

@@ -758,6 +758,15 @@ public final class SessionServer: @unchecked Sendable {
     /// When each thread left its recent notes back (ms), for `DesignThreadNote.rateLimit`.
     /// Queue-confined.
     private var noteTimes: [AgentID: [Double]] = [:]
+    // Retain the marker after pi exits or retries: its former tools can still be alive.
+    private var threadProcessMarkers: [AgentID: Set<String>] = [:]
+
+    private func sweepThreadProcesses(_ agent: AgentID, preservingGroup: pid_t? = nil,
+                                      bash: UUID? = nil, forget: Bool = false) -> Task<ThreadProcessSweep.Report, Never>? {
+        guard let markers = forget ? threadProcessMarkers.removeValue(forKey: agent) : threadProcessMarkers[agent] else { return nil }
+        let sweep = ThreadProcessSweep(markers: markers, bash: bash, preservingGroup: preservingGroup)
+        return Task.detached { await sweep.run() }
+    }
     /// Every design system this host keeps (the support directory's `design-systems/`, plus the
     /// built-ins the app registers). Reads go to it directly; writes, installs and re-syncs go
     /// through the server.
@@ -1748,14 +1757,16 @@ public final class SessionServer: @unchecked Sendable {
             terminateThread: { [weak self] agentID in self?.terminateFleetThread(agentID) },
             closeThread: { [weak self] agent, dispatch in
                 guard let self else { throw FleetDispatchRefusal(code: "unreachable", message: "The receiving host is shutting down.") }
-                let sessions = try await self.deleteAgent(agent, closingDispatch: dispatch)
-                let clock = ContinuousClock()
-                let deadline = clock.now + .seconds(4)
+                let (sessions, sweep) = try await self.deleteAgent(agent, closingDispatch: dispatch)
+                let deadline = ContinuousClock.now + .seconds(4)
+                let processes = await sweep?.value
                 repeat {
-                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) { return true }
-                    try await clock.sleep(for: .milliseconds(20))
-                } while clock.now < deadline
-                return false
+                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) {
+                        return FleetCloseProcesses(sessionsStopped: true, sweep: processes)
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                } while ContinuousClock.now < deadline
+                return FleetCloseProcesses(sessionsStopped: false, sweep: processes)
             },
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
@@ -5835,6 +5846,9 @@ public final class SessionServer: @unchecked Sendable {
             // Project membership was refused above. Never turn retained activation identity
             // (also used by publishers and native questions) into helper admission.
             reply(.childScope(id: id, scope: nil, deadline: nil), to: client)
+        case .stopBashProcesses(let agentID, let scope):
+            guard client.childrenAgentID == agentID else { return }
+            _ = sweepThreadProcesses(agentID, bash: scope)
         case .helloChildren(let agentID, let projectScopes):
             guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
@@ -8336,10 +8350,12 @@ public final class SessionServer: @unchecked Sendable {
     /// layout. The GUI never observes the invalid intermediate state where
     /// only one side of that relationship exists.
     public func deleteAgent(_ agentID: AgentID) async throws {
-        _ = try await deleteAgent(agentID, closingDispatch: nil)
+        let (_, sweep) = try await deleteAgent(agentID, closingDispatch: nil)
+        _ = await sweep?.value
     }
 
-    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws -> Set<SessionID> {
+    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws
+        -> (Set<SessionID>, Task<ThreadProcessSweep.Report, Never>?) {
         try await enqueue {
             guard let agent = self.store.state.agents.first(where: { $0.id == agentID }) else {
                 throw SessionServerError.noSuchAgent(agentID)
@@ -8393,7 +8409,7 @@ public final class SessionServer: @unchecked Sendable {
                     session.signalProcessGroup(SIGKILL)
                 }
             }
-            return layoutSessions
+            return (layoutSessions, self.sweepThreadProcesses(agentID, forget: true))
         }
     }
 
@@ -9828,6 +9844,7 @@ public final class SessionServer: @unchecked Sendable {
             // group and captures descendants before signaling; no scan by cwd or name.
             session.signalProcessGroup(SIGKILL)
         }
+        _ = sweepThreadProcesses(id)
         applyAgentQuestion(agentID: id, question: nil)
         applyAgentStatus(agentID: id, status: .idle)
     }
@@ -9841,6 +9858,9 @@ public final class SessionServer: @unchecked Sendable {
             ShepherdLog.info("rpc session \(sessionID) stop requested; its agent stays")
             self.sessions[sessionID]?.thread?.pushRunArmed = false
             session.kill()
+            if let agent = self.agentID(forSession: sessionID) ?? session.launchAgentID {
+                _ = self.sweepThreadProcesses(agent)
+            }
         }
     }
 
@@ -9885,7 +9905,14 @@ public final class SessionServer: @unchecked Sendable {
             let session: RPCSession
             writeServiceTierFile(forLaunch: params)
             do {
-                session = try RPCSession(params: params, queue: sessionQueue)
+                let marker = params.env?["SHEPHERD_AGENT_ID"].map { raw in
+                    let agent = AgentID(rawValue: raw)
+                    // A delayed sweep keeps its old markers, never the replacement pi's.
+                    let marker = UUID().uuidString
+                    threadProcessMarkers[agent, default: []].insert(marker)
+                    return marker
+                }
+                session = try RPCSession(params: params, queue: sessionQueue, processMarker: marker)
             } catch {
                 throw PTYSession.SpawnError(message: String(describing: error))
             }
@@ -9925,11 +9952,13 @@ public final class SessionServer: @unchecked Sendable {
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
+            let piGroup = session.processIdentifier
             thread.onStopRequested = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
                     server.reply(.stopManagedBash, to: children)
                 }
+                _ = server.sweepThreadProcesses(agentID, preservingGroup: piGroup)
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
             thread.onIdleAfterQueue = { [weak serverWeak] in
@@ -10332,7 +10361,10 @@ public final class SessionServer: @unchecked Sendable {
     /// first and call `killSessionOnQueue`, so they are unaffected.
     public func killSession(_ sessionID: SessionID) {
         queue.async {
-            if self.agentID(forSession: sessionID) != nil { self.startRecords[sessionID]?.requestStop() }
+            if let agent = self.agentID(forSession: sessionID) {
+                self.startRecords[sessionID]?.requestStop()
+                _ = self.sweepThreadProcesses(agent)
+            }
             self.killSessionOnQueue(sessionID)
         }
     }

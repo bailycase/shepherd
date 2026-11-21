@@ -820,6 +820,22 @@ def flaky_turn(message):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
     text = text_of(message)
+    if "escaped-job-fixtures" in text:
+        import subprocess
+        # Wait for the intermediate parent to exit. Neither grandchild is in pi's group.
+        subprocess.run([sys.executable, "-c", '''
+import os, signal, sys
+for name in ('orphan', 'session'):
+    if os.fork() == 0:
+        if name == 'session':
+            os.setsid()
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        else:
+            os.setpgid(0, 0)
+        with open(name + '.pid', 'w') as f:
+            f.write(str(os.getpid()))
+        os.execv(sys.executable, [sys.executable, '-c', 'import time; time.sleep(25)'])
+'''], check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if "fleet-close-background" in text:
         import subprocess
         child = subprocess.Popen(["/usr/bin/nohup", "/bin/sleep", "120"], stdin=subprocess.DEVNULL,
