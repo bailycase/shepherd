@@ -18,6 +18,7 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored private var stackSize: CGSize = .zero
     @ObservationIgnored private var settings: Settings?
     @ObservationIgnored weak var guardrail: ThreadTailGuard?
+    @ObservationIgnored weak var paging: ThreadHistoryAnchor?
 
     struct Settings: Equatable {
         let session: String?
@@ -59,7 +60,9 @@ final class ThreadMeasuredHistory {
         guard let stack, let scroll = stack.enclosingScrollView, guardrail?.active == true else { return }
         let clip = scroll.contentView
         let top = stack.convert(stack.bounds, to: clip).minY
-        let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
+        // Until the prepend lands, keep building around the old first row on the new page.
+        let prepend = paging?.prependRowID.flatMap(table.index(for:)).map(table.offset(at:)) ?? 0
+        let rect = clip.bounds.offsetBy(dx: 0, dy: prepend - top)
         let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
         let kept = builtRange.intersection(table.rows.map(\.id))
         let built = kept.union(table.rows[window].map(\.id))
@@ -72,27 +75,31 @@ final class ThreadMeasuredHistory {
     }
 
     func rowLaidOut(_ id: String, height: CGFloat, in scroll: NSScrollView?) {
-        guard height > 0, table.index(for: id) != nil, table.height(for: id) != height else { return }
-        pending[id] = height
+        guard height > 0, table.index(for: id) != nil else { return }
+        if table.height(for: id) != height { pending[id] = height }
+        else if paging?.prependRowID == nil { return }
         commit(in: scroll, pass: "row marker layout")
     }
 
-    func columnLaidOut(in scroll: NSScrollView?, prepended: Bool) {
-        commit(in: scroll, pass: "column finder frame change", prepended: prepended)
+    func columnLaidOut(in scroll: NSScrollView?) {
+        commit(in: scroll, pass: "column finder frame change")
         queueWindow()
     }
 
-    private func commit(in scroll: NSScrollView?, pass: String, prepended: Bool = false) {
+    private func commit(in scroll: NSScrollView?, pass: String) {
         guard let scroll, let stack, stack.enclosingScrollView === scroll else { return }
         let clip = scroll.contentView
         let height = clip.documentRect.height
         defer { lastDocumentHeight = height }
-        guard !pending.isEmpty, stackSize.width > 0 else { return }
+        let prepend = paging?.prependRowID.flatMap(table.index(for:)).flatMap { $0 > 0 ? $0 : nil }
+        guard (prepend != nil || !pending.isEmpty), stackSize.width > 0 else { return }
         let top = stack.convert(stack.bounds, to: clip).minY
         let reading = clip.bounds.minY + scroll.contentInsets.top - top
-        let anchor = table.range(for: CGRect(x: 0, y: reading, width: 0, height: 1), viewports: 0).lowerBound
+        let anchor = prepend ?? table.range(for: CGRect(x: 0, y: reading, width: 0, height: 1), viewports: 0).lowerBound
         var updated = table
-        let delta = updated.measure(pending, width: stackSize.width, above: anchor)
+        let measured = updated.measure(pending, width: stackSize.width, above: anchor)
+        // The old first row had a zero prefix before the page was inserted.
+        let delta = prepend == nil ? measured : updated.offset(at: anchor)
         // The markers and column can be placed in either order. Don't apply a prefix change
         // while the stack still has its old height or only some of the rows have reported.
         guard abs(updated.height - stackSize.height) <= 1 / (stack.window?.backingScaleFactor ?? 1) else {
@@ -102,12 +109,13 @@ final class ThreadMeasuredHistory {
         }
         table = updated
         pending.removeAll(keepingCapacity: true)
+        if prepend != nil { paging?.consumePrepend() }
         // At an explicit landing there is no previous reader position to preserve. Keep
         // the measurements, and let the next layout anchor to the landed clip instead.
-        guard !landingJump, !prepended, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
+        guard !landingJump, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
               MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
         ThreadHistoryAnchor.correct(delta, in: scroll, rowID: anchor < table.rows.count ? table.rows[anchor].id : nil,
-                                    actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height)")
+                                    actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height) prepend=\(prepend != nil)")
     }
 
     struct Probe: NSViewRepresentable {
