@@ -262,14 +262,18 @@ def measure_scroll(frames):
                        "following_before": previous["following"], "following": frame["following"],
                        "distance_before": previous["distance"], "distance": frame["distance"],
                        "events": pending.copy()}
+        unexplained_eviction = False
         if inputs and row not in frame["visibleRows"]:
-            # Keep the old marker only as a diagnostic. Prefer another row the reader still sees.
-            if row in frame["rows"]:
+            clip_size = previous.get("clipSize")
+            viewport_move = bool(clip_size and 0 < clip_size[1] <= abs(scripted_delta))
+            if viewport_move and row in frame["rows"]:
                 shift = frame["rows"][row] - previous["rows"][row] + scripted_delta
                 if abs(shift) > 2:
                     offscreen_shifts.append({**observation, "delta_pt": round(shift, 3)})
             common = set(previous["visibleRows"]) & set(frame["visibleRows"])
-            row = min(common, key=lambda r: (previous["rows"][r], r), default=None)
+            unexplained_eviction = not common and not viewport_move
+            if not unexplained_eviction:
+                row = min(common, key=lambda r: (previous["rows"][r], r), default=None)
             observation["row"] = row
         if frame.get("first") and row in frame["rows"] and row in previous["rows"]:
             delta = frame["rows"][row] - previous["rows"][row] + scripted_delta
@@ -295,7 +299,12 @@ def measure_scroll(frames):
         observation.update(delta_pt=round(delta, 3), measured=measured)
         # NativeScrollFollower.threshold is 80 pt. A detached reader reattaching is not expected follow.
         sticky_in_band = streaming and previous["following"] and frame["following"] and previous["distance"] <= 80
-        if (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
+        if unexplained_eviction:
+            # Matching the scripted clip offset cannot rule out a relayout without a shared row.
+            if abs(delta) <= 2:
+                observation.update(delta_pt=None, measured="unexplained input eviction")
+            jumps.append(observation)
+        elif (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
                 and growth > 2 and abs(delta + growth) <= 2):
             sticky_follows.append(observation)
             baseline -= growth
@@ -334,16 +343,22 @@ def measure_scroll(frames):
 
 
 def first_move_off_tail(frames):
-    for i, frame in enumerate(frames):
-        if not any(e["caller"] == "fixture.scrollInput" and e["scrollDelta"] < 0 for e in frame["events"]):
-            continue
-        if i and (before := frames[i - 1]).get("documentHeight") is not None and frame.get("documentHeight") is not None:
-            loss = round(before["documentHeight"] - frame["documentHeight"], 3)
-            at_tail = before["following"] and abs(before["distance"]) <= 4
-            return {"frame": i, "tail_gap_pt": before["distance"], "following_before": before["following"],
-                    "height_loss_pt": loss, "status": "invalid-start" if not at_tail else "known-red" if loss > 2 else "passed"}
-        break
-    return {"status": "missing-samples"}
+    inputs = [(i, e["scrollDelta"]) for i, frame in enumerate(frames) for e in frame["events"]
+              if e["caller"] == "fixture.scrollInput"]
+    if not inputs:
+        return {"status": "missing-samples"}
+    i, delta = inputs[0]
+    stop = inputs[1][0] if len(inputs) > 1 else len(frames)
+    if i == 0 or delta >= 0 or stop == i:
+        return {"status": "missing-samples"}
+    before = frames[i - 1]
+    heights = [frame.get("documentHeight") for frame in frames[i - 1:stop]]
+    if None in heights:
+        return {"status": "missing-samples"}
+    loss = round(heights[0] - min(heights[1:]), 3)
+    at_tail = before["following"] and abs(before["distance"]) <= 4
+    return {"frame": i, "tail_gap_pt": before["distance"], "following_before": before["following"],
+            "height_loss_pt": loss, "status": "invalid-start" if not at_tail else "known-red" if loss > 2 else "passed"}
 
 
 def scroll_ledger(frames, summary=None):
@@ -498,8 +513,8 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
                 diagnostic += f": lost {first['height_loss_pt']} pt from a {first['tail_gap_pt']} pt tail gap"
             record("first-move-off-tail", "passed" if first["status"] == "passed" else "failed",
                    "first move starts following at the tail and loses at most 2 pt of document height", diagnostic)
-        if any(jump["delta_pt"] is None for jump in jumps):
-            actual += "\nUnrestored anchor loss counted as a jump of unknown magnitude."
+        if unknown := sorted({jump["measured"] for jump in jumps if jump["delta_pt"] is None}):
+            actual += f"\nJumps of unknown magnitude: {', '.join(unknown)}."
         if name == "page-older-history" and any(e["caller"] == "fixture.historyVisibilityFallback"
                                                  for f in scenarios[name] for e in f["events"]):
             actual += "\nfixture.historyVisibilityFallback used; sentinel delivery not verified."
