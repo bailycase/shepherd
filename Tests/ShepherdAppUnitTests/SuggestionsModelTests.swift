@@ -86,6 +86,21 @@ struct SuggestionsModelTests {
         #expect(model.snapshot.waiting.isEmpty)
     }
 
+    @Test func refreshExplainsDamageAndRestoresThePageAfterRepair() async throws {
+        let (model, _) = try await makeModels(waiting: ["Document export columns."])
+        let good = try Data(contentsOf: store.url)
+        try Data("{truncated".utf8).write(to: store.url)
+        await model.refresh()
+        #expect(model.unavailable?.contains("\(store.url.path) on the host") == true)
+        #expect(model.snapshot.waiting.map(\.line) == ["- Document export columns."])
+
+        try good.write(to: store.url)
+        await model.refresh()
+        #expect(model.unavailable == nil)
+        await model.add(try #require(model.snapshot.waiting.first))
+        #expect(instructionsStore.snapshot().agents == "- Document export columns.\n")
+    }
+
     @Test func turningTheExperimentOffDropsWhatWaits() async throws {
         let (model, _) = try await makeModels()
         await model.setEnabled(true)

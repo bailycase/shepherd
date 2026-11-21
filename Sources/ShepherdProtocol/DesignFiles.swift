@@ -25,16 +25,20 @@ public struct DesignSnapshot: Hashable, Sendable, Codable {
     /// Each board file's SHA-256, lower-case hex.
     public var boards: [DesignPath: String]
     public var usage: DesignUsage?
+    /// Host-side recovery message when the design's thread notes cannot be read.
+    public var threadNotesWarning: String?
 
-    public init(designID: DesignID, revision: UInt64, index: DesignIndex, boards: [DesignPath: String], usage: DesignUsage? = nil) {
+    public init(designID: DesignID, revision: UInt64, index: DesignIndex, boards: [DesignPath: String], usage: DesignUsage? = nil,
+                threadNotesWarning: String? = nil) {
         self.designID = designID
         self.revision = revision
         self.index = index
         self.boards = boards
         self.usage = usage
+        self.threadNotesWarning = threadNotesWarning
     }
 
-    private enum CodingKeys: String, CodingKey { case designID, revision, index, boards, usage }
+    private enum CodingKeys: String, CodingKey { case designID, revision, index, boards, usage, threadNotesWarning }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -43,6 +47,7 @@ public struct DesignSnapshot: Hashable, Sendable, Codable {
         index = try c.decode(DesignIndex.self, forKey: .index)
         boards = try Self.decodePathMap(c.decode([String: String].self, forKey: .boards), in: c, key: .boards)
         usage = try c.decodeIfPresent(DesignUsage.self, forKey: .usage)
+        threadNotesWarning = try c.decodeIfPresent(String.self, forKey: .threadNotesWarning)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -52,6 +57,7 @@ public struct DesignSnapshot: Hashable, Sendable, Codable {
         try c.encode(index, forKey: .index)
         try c.encode(Dictionary(uniqueKeysWithValues: boards.map { ($0.key.rawValue, $0.value) }), forKey: .boards)
         try c.encodeIfPresent(usage, forKey: .usage)
+        try c.encodeIfPresent(threadNotesWarning, forKey: .threadNotesWarning)
     }
 
     private static func decodePathMap(_ raw: [String: String], in c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> [DesignPath: String] {

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { closeSync, realpathSync, writeSync } from "node:fs";
 import { constants } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -7,16 +8,23 @@ const executable = fileURLToPath(import.meta.url);
 
 // One supervisor per Bash call. It leads the group until the jobs leave it, so neither an
 // intermediary's exit nor a normal tool return loses ownership of a background process.
-export function managedBash() {
+export function managedBash(sweep) {
   const groups = new Set();
+  const pendingSweeps = new Set();
   const stop = (group) => group.stdin.destroy(); // EOF is an owned handle, not a reusable PID.
   return {
-    stopAll() { for (const group of groups) stop(group); },
+    stopAll() {
+      for (const group of groups) stop(group);
+      // Request sweeps now: closing stdin can settle these calls before pi's abort arrives.
+      for (const requestSweep of pendingSweeps) requestSweep();
+    },
     async exec(command, cwd, { onData, signal, timeout, env }) {
       signal?.throwIfAborted();
       if (timeout !== undefined && (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483.647)) throw new Error("Invalid bash timeout");
+      const scope = sweep && process.env.SHEPHERD_OWNED_THREAD ? randomUUID() : undefined;
       const group = spawn(process.execPath, [executable, "--supervise", command], {
-        cwd, env, detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
+        cwd, env: scope ? { ...(env ?? process.env), SHEPHERD_OWNED_THREAD: process.env.SHEPHERD_OWNED_THREAD, SHEPHERD_OWNED_BASH: scope } : env,
+        detached: true, stdio: ["pipe", "ignore", "ignore", "pipe", "pipe", "pipe"],
       });
       const [, , , stdout, stderr, status] = group.stdio;
       groups.add(group);
@@ -24,8 +32,14 @@ export function managedBash() {
       group.on("error", () => groups.delete(group));
       group.stdin.on("error", () => {});
       stdout.on("data", onData); stderr.on("data", onData);
-      let timedOut = false;
-      const abort = () => stop(group);
+      let timedOut = false, sweepRequested = false;
+      const requestSweep = () => {
+        if (!scope || sweepRequested) return;
+        sweepRequested = true;
+        sweep(scope);
+      };
+      if (scope) pendingSweeps.add(requestSweep);
+      const abort = () => { stop(group); requestSweep(); };
       const timer = timeout === undefined ? undefined : setTimeout(() => { timedOut = true; abort(); }, timeout * 1000);
       signal?.addEventListener("abort", abort, { once: true });
       // Supervisors that survive a successful call do not keep the engine alive. Its pipe closes
@@ -42,6 +56,7 @@ export function managedBash() {
         if (exitCode === null) throw new Error("Bash supervisor exited without reporting a status");
         return { exitCode };
       } finally {
+        pendingSweeps.delete(requestSweep);
         clearTimeout(timer); signal?.removeEventListener("abort", abort);
         stdout.destroy(); stderr.destroy(); status.destroy();
       }
@@ -80,17 +95,34 @@ if (isSupervisor()) {
     writeSync(5, `${code}\n`);
     // Keep stdio open. libuv uses those descriptors when it spawns the group probe.
     for (const fd of [3, 4, 5]) closeSync(fd);
-    reapWhenEmpty();
+    reapWhenEmpty(100);
   }
-  function reapWhenEmpty() {
-    // pgrep excludes itself. The live supervisor pins the group identity during every check.
-    const probe = spawn("/usr/bin/pgrep", ["-g", ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
-    let count = "";
-    probe.stdout.on("data", (chunk) => { count += chunk; });
-    probe.on("error", () => {});
-    probe.on("close", (code) => {
-      if (code === 0 && count.trim() === ownGroup) process.exit(0);
-      else setTimeout(reapWhenEmpty, 5_000);
-    });
+  // Probe at once, then back off while a background job keeps the group alive. Any probe
+  // failure retries: only a clean listing of our own pid may end the supervisor.
+  function reapWhenEmpty(delay) {
+    let retried = false;
+    const retry = () => {
+      if (retried) return;
+      retried = true;
+      setTimeout(reapWhenEmpty, delay, Math.min(delay * 2, 30_000));
+    };
+    try {
+      // macOS pgrep leaves out itself and its ancestors unless given -a, and the probe is our
+      // child, so without it we would never see our own pid. On Linux (procps) -a prints the
+      // full command line and pgrep never lists itself, so -g alone is right. Either way the
+      // first field of each line is the pid. The live supervisor pins the group during the check.
+      const flags = process.platform === "darwin" ? ["-a", "-g"] : ["-g"];
+      const probe = spawn("/usr/bin/pgrep", [...flags, ownGroup], { stdio: ["ignore", "pipe", "ignore"] });
+      // Listen first: a resource error (EMFILE) can return a child without stdout, then emit error.
+      probe.on("error", retry);
+      if (!probe.stdout) return retry();
+      let listing = "";
+      probe.stdout.on("data", (chunk) => { listing += chunk; }).on("error", retry);
+      probe.on("close", (code) => {
+        const pids = listing.split("\n").filter((line) => line.trim()).map((line) => line.trim().split(/\s+/)[0]);
+        if (!retried && code === 0 && pids.length > 0 && pids.every((pid) => pid === ownGroup)) process.exit(0);
+        retry();
+      });
+    } catch { retry(); }
   }
 }

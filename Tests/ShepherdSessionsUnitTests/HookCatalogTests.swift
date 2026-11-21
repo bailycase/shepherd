@@ -60,7 +60,8 @@ struct HookCanonicalTests {
     /// Hooks inherit none of the agent's own variables, in the app's tester and the runtime alike.
     @Test func hooksDropTheAgentsOwnEnvironment() throws {
         let kept = PiHome.withoutAgentOnly(["SHEPHERD_SOCKET": "/s", "SHEPHERD_AGENT_ID": "a", "SHEPHERD_MCP_SECRET_GITHUB": "x",
-                                            "SHEPHERD_HOOKS_DIR": "/h", "PI_CODING_AGENT_DIR": "/p", "PATH": "/bin"])
+                                            "SHEPHERD_HOOKS_DIR": "/h", "PI_CODING_AGENT_DIR": "/p", "PATH": "/bin",
+                                            "SHEPHERD_OWNED_THREAD": "outer-thread", "SHEPHERD_OWNED_BASH": "outer-call"])
         #expect(kept == ["PATH": "/bin"])
         let runtime = try String(contentsOf: HookCanonicalTests.vectors.deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Extensions/shepherd-hooks.ts"), encoding: .utf8)

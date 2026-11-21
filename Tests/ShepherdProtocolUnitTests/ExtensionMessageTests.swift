@@ -16,7 +16,7 @@ struct ExtensionMessageTests {
     static func caseName(_ message: ExtensionMessage) -> String {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming, .nativeQueueBoundary,
-             .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
+             .helloChildren, .stopBashProcesses, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .app, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
@@ -28,7 +28,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 69
+    static let caseCount = 70
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -57,6 +57,7 @@ struct ExtensionMessageTests {
         .notify(agentID: agent, title: "CI passed", body: "PR #42 is green"),
         .helloAgent(agentID: agent),
         .helloChildren(agentID: agent, projectScopes: true),
+        .stopBashProcesses(agentID: agent, bashScope: UUID(uuidString: "10000000-0000-0000-0000-000000000000")!),
         .childScope(id: 77, agentID: agent, sessionID: "session", userTimestamp: 1234),
         .childCommandResult(id: 2, error: "Child is not running"),
         .listPanes(id: 1, agentID: agent),

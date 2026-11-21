@@ -488,7 +488,11 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const runs = new Map(), workflows = new Map(), cliRuns = new Map(), dropped = new Map();
   const admission = lifecycleWaiters(), savedStates = new WeakMap();
   let cancelCli;
-  const bash = managedBash();
+  const bash = managedBash((bashScope) => {
+    try {
+      if (control && !control.destroyed) control.write(JSON.stringify({ type: "stopBashProcesses", agentID: process.env.SHEPHERD_AGENT_ID, bashScope }) + "\n");
+    } catch { /* The supervisor still stops its process group when the host isn't available. */ }
+  });
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
   const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
   const continuationScopes = new Set(), settleWaiters = new Set();

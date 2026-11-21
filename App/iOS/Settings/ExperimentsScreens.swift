@@ -31,10 +31,19 @@ struct ExperimentsScreen: View {
                         .shText(.caption)
                         .foregroundStyle(Color.sh.textSecondary)
                         .padding(.horizontal, SH.Space.xs)
-                    SuggestedInstructionsCard(isOn: on, enabled: serving) { turnOn in
-                        model.post(settingsHosts) { $0.enabled = turnOn }
+                    if serving || model.unavailable.isEmpty {
+                        SuggestedInstructionsCard(isOn: on, enabled: serving) { turnOn in
+                            model.post(settingsHosts) { $0.enabled = turnOn }
+                        }
                     }
-                    if !serving {
+                    ForEach(settingsHosts) { host in
+                        if let message = model.unavailable[host.id] {
+                            SuggestionsUnavailableBanner(hostName: host.name, message: message) {
+                                Task { await model.refresh(settingsHosts) }
+                            }
+                        }
+                    }
+                    if !serving && model.unavailable.isEmpty {
                         SettingsFootnote(settingsHosts.contains(where: \.isConnected)
                             ? "Your hosts' Shepherd is too old for suggested instructions. Update it to try them here."
                             : "No host is online. Suggested instructions appears once one is back.")
@@ -305,6 +314,18 @@ private struct WaitingRow: View {
     }
 }
 
+private struct SuggestionsUnavailableBanner: View {
+    let hostName: String
+    let message: String
+    let refresh: () -> Void
+
+    var body: some View {
+        SHBanner(.failed, title: "Suggested instructions on \(hostName)", message: message, stacked: true) {
+            Button("Refresh", action: refresh).buttonStyle(.sh(.secondary))
+        }
+    }
+}
+
 /// One suggested line (MobileExperiments' chevron): where it came from and why, the line to edit
 /// first, the file it goes to, and Add or Dismiss. Once it is added or dismissed, here or
 /// elsewhere, the screen says so.
@@ -398,7 +419,11 @@ struct SuggestionScreen: View {
                 }
             }
         }
-        if let problem = model.problem {
+        if let message = model.unavailable[item.host] {
+            SuggestionsUnavailableBanner(hostName: item.hostName, message: message) {
+                Task { await model.refresh(hosts) }
+            }
+        } else if let problem = model.problem {
             SHBanner(.failed, title: problem) {
                 Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
             }
@@ -408,7 +433,7 @@ struct SuggestionScreen: View {
                 Task {
                     await model.add(item, line: text == suggestion.line ? nil : text, file: target == suggestion.file ? nil : target,
                                     in: hosts)
-                    if model.problem == nil { dismiss() }
+                    if model.problem == nil && model.unavailable[item.host] == nil { dismiss() }
                 }
             }
             .buttonStyle(.sh(.primary, size: .l))
@@ -416,12 +441,12 @@ struct SuggestionScreen: View {
             Button("Dismiss") {
                 Task {
                     await model.dismiss(item, in: hosts)
-                    if model.problem == nil { dismiss() }
+                    if model.problem == nil && model.unavailable[item.host] == nil { dismiss() }
                 }
             }
             .buttonStyle(.sh(.ghost, size: .l))
         }
-        .disabled(model.busy)
+        .disabled(model.busy || model.unavailable[item.host] != nil)
     }
 }
 
