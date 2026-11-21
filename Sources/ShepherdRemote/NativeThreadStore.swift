@@ -694,12 +694,14 @@ public final class NativeThreadStore {
         row.role == "user" && row.operationID != nil && !row.entryID.hasPrefix("pending:")
     }
 
-    /// A tag names the send. On a legacy host, each user row after the capture anchor can replace one copy, oldest send first.
-    /// A finished reply with no new user row can stand for an idle send too. Neither guess settles the send.
+    /// A host that tags (it sent a tagged user row, or a snapshot with `queue`, which every protocol v3 host sends) names a send by
+    /// its operation id alone, so an untagged row never stands for one. A legacy host is matched by position: each user row after
+    /// `Capture.after` (minus `Capture.live` turns that vanished) replaces one copy, oldest send first, `taken` once, and an
+    /// idle send's finished reply can stand in when no row follows. `claimed` keeps a row or reply from a second send. Only a tag settles a send.
     private func landings() -> [UUID: (named: Bool, row: NativeThreadMessage)] {
         let live = (snapshot?.provisional ?? []).filter { messageIndex[$0.entryID] == nil }
         var found: [UUID: (named: Bool, row: NativeThreadMessage)] = [:]
-        if sawTaggedUser {
+        if sawTaggedUser || snapshot?.queue != nil {
             for row in messages + live where Self.tagsSend(row) {
                 if let id = row.operationID, captured[id] != nil, found[id] == nil { found[id] = (true, row) }
             }

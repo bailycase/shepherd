@@ -361,6 +361,67 @@ struct NativeThreadSendingTests {
         #expect(store.pending.count == 1 && userMessages(store).count == 2)
     }
 
+    /// A host with a queue (every protocol v3 host) tags its sends, even before this session has shown a tagged row (after a host
+    /// restart, every thread starts like that). An untagged user row (another client's message, an extension's) is not this
+    /// send landing, so its copy stays until the host's own row names it.
+    @Test func anUntaggedRowOnAHostWithAQueueDoesNotHideASendingCopy() async throws {
+        let hold = SendHold()
+        let start = F.snapshot(messages: [hi], queue: NativeQueue())
+        let host = FakeHost(start)
+        let (store, loop) = await started(start, hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "hello"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        let operation = try #require(hold.operation)
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("from my laptop", id: "u1"), F.assistant("done", id: "a2")],
+                                   queue: NativeQueue())
+        await store.refresh()
+        #expect(userMessages(store).map(\.entryID) == ["u1", "pending:\(operation.uuidString)"], "the copy is still shown")
+        #expect(userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
+        var mine = F.user("hello", id: "u3")
+        mine.operationID = operation
+        host.snapshot = F.snapshot(revision: 3, messages: [hi, F.user("from my laptop", id: "u1"), F.assistant("done", id: "a2"), mine],
+                                   queue: NativeQueue())
+        await store.refresh()
+        #expect(userMessages(store).map(\.entryID) == ["u1", "u3"] && store.submissions.isEmpty, "its own tagged row replaces it")
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// The same for a send that left no user message: a finished reply on a host with a queue says nothing about it.
+    @Test func aFinishedReplyOnAHostWithAQueueDoesNotHideAnIdleSendsCopy() async throws {
+        let hold = SendHold()
+        let start = F.snapshot(messages: [hi], queue: NativeQueue())
+        let host = FakeHost(start)
+        let (store, loop) = await started(start, hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "/review"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("done", id: "a2")], queue: NativeQueue())
+        await store.refresh()
+        #expect(userRows(store).count == 1 && userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
+        hold.held = false
+        #expect(await send.value)
+    }
+
+    /// A snapshot without a queue is a legacy host: it never tags, so the first user row after the capture anchor is the send.
+    @Test func aHostWithoutAQueueStillMatchesTheSendByPosition() async throws {
+        let hold = SendHold()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let (store, loop) = await started(F.snapshot(messages: [hi]), hold: hold, host: host)
+        defer { hold.held = false; loop.cancel(); store.stop() }
+        store.draft = "hello"
+        let send = Task { await store.send(delivery: .followUp) }
+        await until { hold.operation != nil }
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("hello", id: "u1"), F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(userMessages(store).map(\.entryID) == ["u1"] && store.submissions.first?.state == .sending, "the copy is hidden, the record stays")
+        hold.held = false
+        #expect(await send.value)
+    }
+
     /// An old host (no queue) is still on turn A when B is sent. A finishing saves an untagged message with a reply: that is
     /// not B landing, so B's record stays and a later refusal still restores it.
     @Test func anotherTurnFinishingDoesNotSettleASendTheHostLaterRefuses() async throws {

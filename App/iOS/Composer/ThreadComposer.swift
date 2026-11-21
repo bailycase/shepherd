@@ -419,8 +419,7 @@ struct ThreadComposer: View {
             // Let go of the images as soon as the store owns them, not after the host answers. New attachments stay.
             _ = await store.send(images: images, delivery: delivery) {
                 // The synchronous callback follows appending this send's record. A host without image support captures only text.
-                guard store.submissions.last?.images.isEmpty == false else { return }
-                for id in submitted { state.remove(id) }
+                if store.submissions.last?.images.isEmpty == false { for id in submitted { state.remove(id) } }
                 if state.attachments.isEmpty { state.clearAttachments() }
             }
             state.saveDraft(store)

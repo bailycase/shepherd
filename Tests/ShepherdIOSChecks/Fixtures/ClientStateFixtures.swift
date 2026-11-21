@@ -215,6 +215,12 @@ enum ClientStateChecks {
         check(requests == 1 && refused?.state == .failed && refused?.images.isEmpty == true && restored != nil
               && store.draft == "Inspect this" && state.attachments.map(\.id) == kept,
               "a refused text send keeps the unsupported image in the composer and can restore the text")
+        // A text-only send never reaches the image removal, but it still clears an attachment error left by an earlier import.
+        let wordsOnly = ComposerState()
+        wordsOnly.attachmentError = "design-notes.pdf isn't an image. Only images can be attached here."
+        store.draft = "Words only"
+        await ThreadComposer.send(.followUp, store: store, state: wordsOnly).value
+        check(requests == 2 && wordsOnly.attachmentError == nil, "a text-only send clears a stale attachment error")
         serving.cancel()
         store.stop()
         await serving.value
