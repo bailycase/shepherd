@@ -257,16 +257,16 @@ private final class ScrollFixture {
             self.trace.latest.map { $0.following && $0.distance <= ThreadTailGuard.band } == true
         }
         try await streamChunk(1, marker: "fixture.stickyChunk")
-        try phase(from: .idle, to: .interacting)
-        // End the scripted drag at the actual clip position before the next SwiftUI layout.
-        try scroll(up: 140, wheel: false, endDrag: true)
-        try await trace.waitFor("the follower to release its bottom anchor") { self.trace.latest?.following == false }
-        // The old bottom anchor can consume that first drag before SwiftUI removes it.
-        if trace.guardian.distance <= ThreadTailGuard.band {
-            try scroll(up: 140)
+        // The lazy stack can rebase its height and consume a drag while its old bottom anchor
+        // is still installed. Try again only until layout confirms the reader is out of the band.
+        for _ in 0..<12 {
+            try phase(from: .idle, to: .interacting)
+            try scroll(up: 140, wheel: false, endDrag: true)
+            await trace.advance(3)
+            if !trace.guardian.following, trace.guardian.distance > ThreadTailGuard.band { break }
         }
-        try await trace.waitFor("the reader to detach before streaming") {
-            self.trace.latest.map { !$0.following && $0.distance > ThreadTailGuard.band } == true
+        guard !trace.guardian.following, trace.guardian.distance > ThreadTailGuard.band else {
+            throw ValidationError("scripted drag did not detach the reader before streaming")
         }
         for i in 2...17 {
             try scroll(up: 28)
