@@ -37,6 +37,12 @@ private extension NSEvent.Phase {
 
 @MainActor
 final class MacScrollValidationTrace: NSObject {
+    static func readingCoverage(of row: CGRect, top: CGFloat, bottom: CGFloat) -> [Double]? {
+        let start = max(top, row.minY)
+        let end = min(bottom, row.maxY + AppLayout.turnSpacing)
+        return start < end ? [start - top, end - top] : nil
+    }
+
     struct Frame: Encodable {
         let timestamp: Double
         let refreshInterval: Double
@@ -44,6 +50,10 @@ final class MacScrollValidationTrace: NSObject {
         let first: String?
         let rows: [String: Double]
         let visibleRows: [String]
+        let readingHeight: Double?
+        let readingCoverage: [[Double]]
+        let eagerTail: String?
+        let seamGap: Double?
         let offset: Double?
         let documentHeight: Double?
         let streamingRowHeight: Double?
@@ -79,6 +89,7 @@ final class MacScrollValidationTrace: NSObject {
     var historyVisibility: ((Bool) -> Void)?
     var deckPage: ((AgentLayoutModel) -> AnyView)?
     var streamingRowID: String?
+    var historyBoundary: (() -> (lazy: String, eager: String)?)?
     private(set) var frames: [String: [Frame]] = [:]
     private(set) var latest: Frame?
     private var events: [Event] = []
@@ -212,11 +223,22 @@ final class MacScrollValidationTrace: NSObject {
         let top = scroll?.contentInsets.top ?? 0
         let bottom = (clip?.bounds.height ?? 0) - (scroll?.contentInsets.bottom ?? 0)
         let visible = rows.filter { $0.value.maxY > top && $0.value.minY < bottom }
+        // Insets exclude the header margin and floating composer. The transcript ends with
+        // a 1 pt bottom sentinel. Coverage measures mounted rows in an offscreen window, not drawn pixels.
+        let readingBottom = min(bottom, clip.map { $0.documentRect.maxY - $0.bounds.minY - 1 } ?? bottom)
+        let spacing = AppLayout.turnSpacing
+        let coverage = rows.values.compactMap { Self.readingCoverage(of: $0, top: top, bottom: readingBottom) }
+        let boundary = historyBoundary?()
+        let seamGap = boundary.flatMap { ids in
+            rows[ids.lazy].flatMap { last in rows[ids.eager].map { Double($0.minY - last.maxY - spacing) } }
+        }
         let sampledIntent = sampleIntent(visible: scroll != nil && !hidden)
         let frame = Frame(timestamp: CACurrentMediaTime(), refreshInterval: link.targetTimestamp - link.timestamp,
                           hidden: hidden, first: visible.min {
                               ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
                           }?.key, rows: rows.mapValues { $0.minY - top }, visibleRows: visible.keys.sorted(),
+                          readingHeight: clip != nil && !hidden ? max(0, readingBottom - top) : nil,
+                          readingCoverage: coverage, eagerTail: boundary?.eager, seamGap: seamGap,
                           offset: clip.map { Double($0.bounds.minY) }, documentHeight: clip.map { Double($0.documentRect.height) },
                           streamingRowHeight: streamingRowID.flatMap { rows[$0] }.map { Double($0.height) },
                           clipSize: clip.map { [Double($0.bounds.width), Double($0.bounds.height)] },
@@ -266,16 +288,21 @@ public enum ThreadScrollValidation {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         Task { @MainActor in
-            let fixture = ScrollFixture()
+            let fixtures = [ScrollFixture(), ScrollFixture(), ScrollFixture()]
+            @MainActor func frames() -> [String: [MacScrollValidationTrace.Frame]] {
+                fixtures.reduce(into: [:]) { $0.merge($1.trace.frames, uniquingKeysWith: { _, new in new }) }
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             let url = URL(fileURLWithPath: path)
             do {
-                try await fixture.run()
-                try encoder.encode(fixture.trace.frames).write(to: url, options: .atomic)
+                try await fixtures[0].run()
+                try await fixtures[1].run(crossing: .slow)
+                try await fixtures[2].run(crossing: .flick)
+                try encoder.encode(frames()).write(to: url, options: .atomic)
                 exit(0)
             } catch {
-                try? encoder.encode(fixture.trace.frames).write(to: url, options: .atomic)
+                try? encoder.encode(frames()).write(to: url, options: .atomic)
                 print("error: \(error)")
                 exit(error is IntentMismatch ? 4 : 2)
             }
@@ -347,7 +374,9 @@ private final class ScrollFixture {
         return .snapshot(value: thread)
     }
 
-    func run() async throws {
+    enum Crossing { case slow, flick }
+
+    func run(crossing: Crossing? = nil) async throws {
         guard let screen = NSScreen.main else { throw ValidationError("display link requires a WindowServer screen") }
         MacScrollValidationTrace.current = trace
         SHRenderProbe.scrollEvents = { [weak trace] event, source in trace?.record(event, source: source) }
@@ -386,12 +415,16 @@ private final class ScrollFixture {
         window.orderBack(nil)
         try await trace.waitFor("the streaming tail to mount") { self.store.liveRow != nil && self.trace.latest?.first != nil }
         trace.streamingRowID = store.liveRow?.id
+        trace.historyBoundary = { [weak store] in
+            guard let store, let eager = store.drawnEagerRows, eager > 0, eager < store.rows.count else { return nil }
+            let split = store.rows.count - eager
+            return (store.rows[split - 1].id, store.rows[split].id)
+        }
         await trace.advance()
         // The first live layout replaces the stack's initial height estimate. Warm it before measuring.
         try await streamChunk(0, marker: "fixture.warmupChunk")
         await trace.settle()
-
-        trace.scenario = "slow-scroll-streaming"
+        if crossing == nil { trace.scenario = "slow-scroll-streaming" }
         await trace.advance()
         try await trace.waitFor("the reader inside the sticky band") {
             self.trace.latest.map { $0.following && $0.distance <= ThreadTailGuard.band } == true
@@ -424,6 +457,10 @@ private final class ScrollFixture {
                 self.trace.guardian.following && self.trace.guardian.distance <= ThreadTailGuard.slack
             }
             await trace.settle()
+        }
+        if let crossing {
+            try await crossBand(crossing)
+            return
         }
         trace.scenario = "flick-and-stop"
         await trace.advance()
@@ -612,14 +649,88 @@ private final class ScrollFixture {
         await trace.settle()
     }
 
-    private func streamChunk(_ index: Int, marker: String) async throws {
+    private func crossBand(_ crossing: Crossing) async throws {
+        try await trace.waitFor("the crossing to start at the tail") {
+            self.trace.guardian.following && self.trace.guardian.distance <= ThreadTailGuard.slack
+        }
+        trace.scenario = crossing == .flick ? "cross-band-flick" : "cross-band-slow"
+        await trace.advance()
+        let viewport = try scrollView().contentView.bounds.height
+        func inHistory(from distance: CGFloat = 0) -> Bool {
+            guard let drawn = store.drawnEagerRows, let frame = trace.latest else { return false }
+            return !frame.following && frame.distance - distance >= 5 * viewport
+                && store.rows.dropLast(drawn).contains { frame.visibleRows.contains($0.id) }
+        }
+        if crossing == .flick {
+            for index in 0..<2 {
+                try phase(from: .idle, to: .interacting)
+                // Start inside a viewport so the first departure can exercise the hold.
+                for delta in [140.0, 280, 400] {
+                    try scroll(up: delta, wheel: false)
+                    await trace.advance()
+                }
+                try phase(from: .interacting, to: .decelerating)
+                for step in 0..<(index == 0 ? 40 : 4) {
+                    try scroll(up: max(0.35, 0.8 - 0.04 * CGFloat(step)) * viewport, wheel: false)
+                    await trace.advance()
+                    if step == 2 { try await crossingChunk(60 + index) }
+                    if index == 0 && step >= 8 && inHistory() { break }
+                }
+                if index == 0 {
+                    guard inHistory() else { throw ValidationError("the first flick did not reach lazy history") }
+                    trace.mark("fixture.crossedIntoHistory")
+                }
+                try phase(from: .decelerating, to: .idle)
+                await trace.settle()
+            }
+        } else {
+            // A height re-estimate can swallow the drag and leave the viewport at distance 0
+            // even after the phase callback reports detached. Require actual departure.
+            for _ in 0..<20 {
+                try phase(from: .idle, to: .interacting)
+                try scroll(up: 140, wheel: false, endDrag: true)
+                await trace.advance(3)
+                if !trace.guardian.following, trace.guardian.distance > ThreadTailGuard.band { break }
+            }
+            guard !trace.guardian.following, trace.guardian.distance > ThreadTailGuard.band else {
+                throw ValidationError("the crossing did not leave the tail band")
+            }
+            let start = trace.guardian.distance
+            for step in 0..<60 {
+                try scroll(up: viewport / 3)
+                await trace.advance(4)
+                if step <= 15 && step % 5 == 0 { try await crossingChunk(40 + step) }
+                if step >= 15 && inHistory(from: start) { break }
+            }
+            guard inHistory(from: start) else { throw ValidationError("the notches did not reach lazy history") }
+            trace.mark("fixture.crossedIntoHistory")
+        }
+        for _ in 0..<96 {
+            try scroll(up: -viewport / 3)
+            await trace.advance(4)
+            if trace.guardian.following && trace.guardian.distance <= ThreadTailGuard.slack { break }
+        }
+        guard trace.guardian.following, trace.guardian.distance <= ThreadTailGuard.slack else {
+            throw ValidationError("the notched return did not resume following")
+        }
+        trace.mark("fixture.crossBandBackAtTail")
+        await trace.settle()
+    }
+
+    private func crossingChunk(_ index: Int) async throws {
+        // The hold may mask layout changes; require the streamed row itself to grow.
+        try await streamChunk(index, marker: "fixture.crossBandChunk", requireDocumentChange: false)
+    }
+
+    private func streamChunk(_ index: Int, marker: String, requireDocumentChange: Bool = true) async throws {
         let oldHeight = trace.latest?.documentHeight
         guard let oldRowHeight = trace.latest?.streamingRowHeight else { throw ValidationError("missing streaming row") }
         trace.mark(marker)
         thread.provisional[0].blocks[0].text += "Inspecting fixture group \(index). The query returns the rows in ascending order.\n\n"
         await publish()
-        try await trace.waitFor("stream chunk \(index) to grow the row and change the document height") {
-            (self.trace.latest?.streamingRowHeight ?? 0) > oldRowHeight && self.trace.latest?.documentHeight != oldHeight
+        try await trace.waitFor("stream chunk \(index) to grow the row") {
+            (self.trace.latest?.streamingRowHeight ?? 0) > oldRowHeight
+                && (!requireDocumentChange || self.trace.latest?.documentHeight != oldHeight)
         }
         await trace.advance(2)
     }

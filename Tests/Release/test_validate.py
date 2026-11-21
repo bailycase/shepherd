@@ -20,6 +20,7 @@ def frame(t, first, rows, *callers, hidden=False, height=500, following=False, c
     return {"timestamp": t, "refreshInterval": 0.01, "first": first, "rows": rows, "hidden": hidden,
             "visibleRows": list(rows), "offset": 10, "documentHeight": height, "streamingRowHeight": height - 450,
             "following": following, "distance": 0, "clipSize": clip,
+            "readingHeight": 100, "readingCoverage": [[0, 100]],
             "events": [{"caller": caller} for caller in callers]}
 
 
@@ -183,7 +184,7 @@ class ValidateTests(unittest.TestCase):
         frames[2]["clipSize"] = frames[1]["clipSize"]
         with self.assertRaisesRegex(ValueError, "did not change clipSize"):
             validate.check_scroll_actions(name, frames, required)
-        with self.assertRaisesRegex(ValueError, "expected all seven"):
+        with self.assertRaisesRegex(ValueError, "expected all nine"):
             validate.scroll_evidence({})
 
     def test_missing_writer_site_keeps_motion_and_step_evidence_with_its_own_exit(self):
@@ -239,6 +240,48 @@ class ValidateTests(unittest.TestCase):
             self.assertEqual(set(summary), set(scenarios))
             mid_history = summary["mid-history-new-turn"]
             self.assertEqual((mid_history["blank_frames"], mid_history["detached_guard_walks"]), (1, 1))
+
+    def test_blank_height_is_the_largest_hole_not_the_sum_and_skips_hidden_frames(self):
+        frames = [frame(i / 100, "a", {"a": 0}) for i in range(4)]
+        frames[0]["readingCoverage"] = [[82, 98], [0, 12], [3, 5], [20, 67]]  # Gaps of 8, 15, 2.
+        frames[1]["readingCoverage"] = [[8, 100]]
+        frames[2].update(hidden=True, readingCoverage=[])
+        frames[3]["readingCoverage"] = [[0, 10], [10, 100]]
+        summary = validate.band_evidence(frames)
+        self.assertEqual((summary["max_blank_height_pt"], summary["frames_blank_over_8_pt"]), (15, 1))
+        self.assertEqual(summary["blank_samples_over_8_pt"], [{"frame": 0, "height_pt": 15}])
+        frames[1]["readingCoverage"] = [[0, 87]]  # A 13 pt hole at the bottom edge.
+        frames[3]["readingCoverage"] = [[0, 87]]
+        self.assertEqual(validate.blank_height(frames[1]), 13)
+        summary = validate.band_evidence(frames)
+        self.assertEqual((summary["frames_blank_over_8_pt"], summary["longest_blank_run_over_8_pt"]), (3, 2))
+        frames[3]["readingCoverage"] = []
+        self.assertEqual(validate.band_evidence(frames)["max_blank_height_pt"], 100)
+
+    def test_release_needs_a_seam_to_close_without_scripted_input_and_tracks_same_rows(self):
+        before = frame(0, "reader", {"reader": -5, "tail": 200}, height=1000)
+        after = frame(0.01, "next", {"reader": -8, "tail": 21, "next": 0}, height=820)
+        before.update(seamGap=180, eagerTail="tail")
+        after.update(seamGap=0, eagerTail="tail")
+        self.assertEqual(validate.band_evidence([before, after])["hold_releases"], [
+            {"frame": 1, "released_pt": 180, "top_row": "reader",
+             "top_row_displacement_pt": -3, "tail_displacement_pt": -179}])
+        self.assertFalse(validate.band_evidence([dict(before, seamGap=0), after])["hold_releases"])
+        mismatch = validate.band_evidence([before, dict(after, documentHeight=900)])
+        self.assertEqual((mismatch["hold_releases"], mismatch["unconfirmed_no_input_height_drops"]), ([], 0))
+
+        no_marker = {key: value for key, value in after.items() if key != "seamGap"}
+        unconfirmed = validate.band_evidence([before, no_marker])
+        self.assertEqual((unconfirmed["hold_releases"], unconfirmed["unconfirmed_no_input_height_drops"]), ([], 1))
+
+        [release] = validate.band_evidence([before, dict(after, rows={"tail": 200, "next": 0})])["hold_releases"]
+        self.assertIsNone(release["top_row_displacement_pt"])
+        self.assertEqual(release["tail_displacement_pt"], 0)
+
+        # Closing during input can coincide with document growth rather than a net drop.
+        after.update(documentHeight=1100, events=[{"caller": "fixture.scrollInput", "scrollDelta": -20}])
+        during_input = validate.band_evidence([before, after])
+        self.assertEqual((during_input["hold_releases"], during_input["input_seam_closures"]), ([], 1))
 
     def test_first_move_height_loss_and_top_gap_each_fail_the_case(self):
         scenarios = {name: [frame(i / 100, "user-0", {"user-0": 0}) for i in range(10)]

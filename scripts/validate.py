@@ -25,6 +25,11 @@ SCROLL_SCENARIOS = {
     "window-resize": ("fixture.windowResize",),
     "switch-away-back": ("fixture.switchAway", "fixture.switchBack"),
     "wheel-walk-to-top": ("fixture.scrollInput", "fixture.wheelTopReached"),
+    "cross-band-slow": ("fixture.scrollInput", "fixture.crossBandChunk", "fixture.crossedIntoHistory",
+                        "fixture.crossBandBackAtTail"),
+    "cross-band-flick": ("fixture.scrollInput", "fixture.crossBandChunk", "fixture.crossedIntoHistory",
+                         "fixture.phase.interacting", "fixture.phase.decelerating", "fixture.phase.idle",
+                         "fixture.crossBandBackAtTail"),
 }
 SCROLL_EXPECTED_WRITERS = {
     "slow-scroll-streaming": {("L7", "thread.version")},
@@ -35,7 +40,7 @@ SCROLL_EXPECTED_WRITERS = {
     "released-thread": {("L14", "thread.dormant")},
 }
 SCROLL_EXTRA_SCENARIOS = ("key-paging", "scroller-drag", "released-thread")
-SCROLL_COMPLETION = "seven Dev scroll motion scenarios and three capture scenarios finished"
+SCROLL_COMPLETION = "nine Dev scroll motion scenarios and three capture scenarios finished"
 MISSING_WRITER_EXIT = 3
 INTENT_MISMATCH_EXIT = 4
 
@@ -213,6 +218,7 @@ def check_scroll_actions(name, frames, required):
         "fixture.stickyChunk": ("documentHeight", 1), "fixture.streamChunk": ("documentHeight", 16),
         "fixture.newTurn": ("documentHeight", 1), "fixture.pageReply": ("documentHeight", 1),
         "fixture.windowResize": ("clipSize", 3),
+        "fixture.crossBandChunk": ("streamingRowHeight", 4 if name == "cross-band-slow" else 2),
     }
     first_chunk = next((i for i, caller in actions if caller == "fixture.streamChunk"), None)
     if first_chunk is not None and frames[first_chunk - 1]["following"]:
@@ -228,7 +234,10 @@ def check_scroll_actions(name, frames, required):
             before = frames[i - 1]
             stop = actions[j + 1][0] if j + 1 < len(actions) else len(frames)
             samples = frames[i:stop]
-            if caller in ("fixture.stickyChunk", "fixture.streamChunk"):
+            if caller == "fixture.crossBandChunk":
+                height = before.get(key, 0)
+                changed = any(frame.get(key, 0) > height for frame in samples)
+            elif caller in ("fixture.stickyChunk", "fixture.streamChunk"):
                 if caller == "fixture.stickyChunk" and not before["following"]:
                     raise ValueError(f"{name}: sticky control did not start following")
                 height = before["streamingRowHeight"]
@@ -411,13 +420,73 @@ def scroll_ledger(frames, summary=None):
             "writer_counts": dict(sorted(counts.items())), "frames": samples}
 
 
+def blank_height(frame):
+    """Largest uncovered interval after clipping rows and their normal spacing to the reading area."""
+    edge = largest = 0
+    for start, end in sorted(frame["readingCoverage"]):
+        largest = max(largest, start - edge)
+        edge = max(edge, end)
+    return max(largest, frame["readingHeight"] - edge)
+
+
+def band_evidence(frames):
+    gaps = [{"frame": i, "height_pt": round(blank_height(frame), 3)}
+            for i, frame in enumerate(frames) if not frame["hidden"] and "readingHeight" in frame]
+    releases = []
+    input_closures = unconfirmed_drops = 0
+    for i, (before, after) in enumerate(zip(frames, frames[1:]), 1):
+        if before["hidden"] or after["hidden"] or before.get("clipSize") != after.get("clipSize"):
+            continue
+        old_gap, new_gap = before.get("seamGap"), after.get("seamGap")
+        same_seam = before.get("eagerTail") == after.get("eagerTail")
+        markers_missing = old_gap is None or new_gap is None
+        if any(event["caller"] == "fixture.scrollInput" for event in after["events"]):
+            # Input can trigger re-estimation as the seam closes, masking the height drop.
+            if same_seam and not markers_missing and old_gap > 2 and new_gap <= 2:
+                input_closures += 1
+            continue
+        if markers_missing:
+            old_height, new_height = before.get("documentHeight"), after.get("documentHeight")
+            if old_height is not None and new_height is not None and old_height - new_height > 2:
+                unconfirmed_drops += 1
+            continue
+        if not same_seam:
+            continue
+        drop = before["documentHeight"] - after["documentHeight"]
+        # A lazy stack can shrink without a hold. Require the extra space at the seam to close.
+        if drop <= 2 or old_gap - new_gap <= 2 or abs(old_gap - new_gap - drop) > 2:
+            continue
+
+        def movement(row):
+            if row in before["rows"] and row in after["rows"]:
+                return round(after["rows"][row] - before["rows"][row], 3)
+            return None
+
+        row = before.get("first")
+        releases.append({"frame": i, "released_pt": round(drop, 3), "top_row": row,
+                         "top_row_displacement_pt": movement(row),
+                         "tail_displacement_pt": movement(before["eagerTail"])})
+    over_threshold = [gap for gap in gaps if gap["height_pt"] > 8]
+    longest = run = 0
+    previous = -2
+    for gap in over_threshold:
+        run = run + 1 if gap["frame"] == previous + 1 else 1
+        longest = max(longest, run)
+        previous = gap["frame"]
+    return {"max_blank_height_pt": max((gap["height_pt"] for gap in gaps), default=0),
+            "frames_blank_over_8_pt": len(over_threshold), "longest_blank_run_over_8_pt": longest,
+            "blank_samples_over_8_pt": over_threshold, "hold_releases": releases,
+            "input_seam_closures": input_closures, "unconfirmed_no_input_height_drops": unconfirmed_drops}
+
+
 def scroll_evidence(scenarios):
     if set(scenarios) != set((*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS)):
-        raise ValueError("expected all seven scroll motion scenarios and all three capture scenarios")
+        raise ValueError("expected all nine scroll motion scenarios and all three capture scenarios")
     summaries = {}
     for name, required in SCROLL_SCENARIOS.items():
         frames = scenarios[name]
         summary = measure_scroll(frames)
+        summary.update(band_evidence(frames))
         try:
             check_scroll_actions(name, frames, required)
             if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
@@ -495,7 +564,13 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
                   f"{len(summary['sticky_follows'])} expected sticky follows, "
                   f"{len(summary['in_band_inputs'])} in-band input residuals, "
                   f"{len(summary['offscreen_input_shifts'])} off-screen input shifts, "
-                  f"{summary['blank_frames']} blank frames, {summary['detached_guard_walks']} detached guard walks "
+                  f"{summary['blank_frames']} blank frames, {summary['max_blank_height_pt']:.3f} pt max blank height, "
+                  f"{summary['frames_blank_over_8_pt']} frames above 8 pt "
+                  f"(longest run: {summary['longest_blank_run_over_8_pt']}), "
+                  f"confirmed hold releases: {len(summary['hold_releases']) or 'none'}, "
+                  f"{summary['input_seam_closures']} input seam closures, "
+                  f"{summary['unconfirmed_no_input_height_drops']} unconfirmed no-input height drops, "
+                  f"{summary['detached_guard_walks']} detached guard walks "
                   f"across {summary['frames']} frames")
         if error := summary.get("action_error"):
             actual += f"\n{error}"
@@ -518,7 +593,13 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
         if name == "page-older-history" and any(e["caller"] == "fixture.historyVisibilityFallback"
                                                  for f in scenarios[name] for e in f["events"]):
             actual += "\nfixture.historyVisibilityFallback used; sentinel delivery not verified."
-        print(f"{name}: {actual}")
+        # Nightly 188c3ebcc plus the first measurement commit (06c87276d). Not a grading exception.
+        baseline = {
+            "cross-band-slow": "2 jumps (451 pt measured), 0 drift, 1 anchor swap/loss",
+            "cross-band-flick": "8 jumps (868.133 pt measured), 0 drift, 0 anchor swaps/losses",
+        }.get(name)
+        note = f" [known red on nightly (2026-11-21 baseline: {baseline})]" if baseline else ""
+        print(f"{name}{note}: {actual}")
         for label, observations in (("Jump paths", jumps), ("Drift paths", drift), ("Anchor swap/loss paths", losses)):
             if observations:
                 paths = sorted({path for observation in observations for path in observation["paths"]})
