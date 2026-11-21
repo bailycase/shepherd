@@ -29,7 +29,7 @@ struct ChangesBaseFailureTests {
         try await replies.waitForRequests(1)
         #expect(session.branches == nil && session.branchesError == nil, "reading while the request is in flight")
 
-        replies.fail(RemoteHostClientError.rejected(code: ChangesError.unavailable, message: "Couldn’t read the branches."))
+        try await replies.fail(RemoteHostClientError.rejected(code: ChangesError.unavailable, message: "Couldn’t read the branches."))
         try await eventuallyOnMain("the failure") { session.branchesError != nil }
         #expect(session.branchesError == "Couldn’t read the branches.")
         #expect(session.branches == nil && vm.actionError == nil, "the menu shows it, not a sheet")
@@ -37,7 +37,7 @@ struct ChangesBaseFailureTests {
         vm.loadChangesBranches(session)
         #expect(session.branchesError == nil, "asking again reads again")
         try await replies.waitForRequests(2)
-        replies.succeed(ChangesBranches(defaultBase: "main", branches: []))
+        try await replies.succeed(ChangesBranches(defaultBase: "main", branches: []))
         try await eventuallyOnMain("the branches") { session.branches != nil }
         #expect(session.branchesError == nil)
     }
@@ -66,35 +66,58 @@ struct ChangesBaseFailureTests {
 
         switch overlap {
         case .oldFailsAfterNewSucceeds:
-            replies.succeed(request: 1, list)
+            try await replies.succeed(request: 1, list)
             try await eventuallyOnMain("the new list") { session.branches != nil }
-            replies.fail(request: 0, refusal)
-            await settle()
+            try await replies.fail(request: 0, refusal)
             #expect(session.branches != nil && session.branchesError == nil)
         case .oldFailsBeforeNewSucceeds:
-            replies.fail(request: 0, refusal)
-            await settle()
+            try await replies.fail(request: 0, refusal)
             #expect(session.branches == nil && session.branchesError == nil, "still reading: the retry is pending")
-            replies.succeed(request: 1, list)
+            try await replies.succeed(request: 1, list)
             try await eventuallyOnMain("the new list") { session.branches != nil }
             #expect(session.branchesError == nil)
         case .oldSucceedsAfterNewFails:
-            replies.fail(request: 1, refusal)
+            try await replies.fail(request: 1, refusal)
             try await eventuallyOnMain("the failure") { session.branchesError != nil }
-            replies.succeed(request: 0, list)
-            await settle()
+            try await replies.succeed(request: 0, list)
             #expect(session.branches == nil && session.branchesError == "Couldn’t read the branches.")
         }
+    }
+
+    /// Retargeting the review (another worktree) starts the session over; a reply to a request
+    /// from before it changes neither the old state nor the new one.
+    @Test(arguments: [false, true])
+    func aReplyAfterTheReviewIsRetargetedChangesNothing(succeeds: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let replies = BranchReplies()
+        var engine = ChangesEngine.fixed([])
+        engine.branches = { try await replies.next() }
+        vm.changesEngineOverride = { _, _ in engine }
+        vm.openReview(agentID: agent.agent.id, path: nil)
+        let session = try #require(vm.reviewSessions.values.first)
+        let oldCwd = session.cwd
+
+        vm.loadChangesBranches(session)
+        try await replies.waitForRequests(1)
+        vm.beginReview(agentID: agent.agent.id, cwd: app.dir.appendingPathComponent("other").path, reference: nil)
+        #expect(vm.reviewSessions.values.first === session && session.cwd != oldCwd, "the review moved")
+        #expect(session.branches == nil && session.branchesError == nil)
+
+        if succeeds {
+            try await replies.succeed(request: 0, ChangesBranches(defaultBase: "main", branches: []))
+        } else {
+            try await replies.fail(request: 0, RemoteHostClientError.rejected(code: ChangesError.unavailable, message: "Couldn’t read the branches."))
+        }
+        #expect(session.branches == nil && session.branchesError == nil && vm.actionError == nil)
     }
 
     enum Overlap: CaseIterable, CustomTestStringConvertible {
         case oldFailsAfterNewSucceeds, oldFailsBeforeNewSucceeds, oldSucceedsAfterNewFails
         var testDescription: String { "\(self)" }
-    }
-
-    /// Lets a reply the app should drop reach the main actor, so its absence is a result.
-    private func settle() async {
-        for _ in 0..<20 { await Task.yield() }
     }
 }
 
@@ -103,9 +126,13 @@ struct ChangesBaseFailureTests {
 private final class BranchReplies {
     private var pending: [Int: CheckedContinuation<ChangesBranches, any Error>] = [:]
     private var issued = 0
+    private var returned = 0
 
     func next() async throws -> ChangesBranches {
-        try await withCheckedThrowingContinuation {
+        // The engine closure and the view model's handler both run on the main actor, so the
+        // handler runs in the same job right after this returns: once `returned` is seen, it is done.
+        defer { returned += 1 }
+        return try await withCheckedThrowingContinuation {
             pending[issued] = $0
             issued += 1
         }
@@ -115,12 +142,15 @@ private final class BranchReplies {
         try await eventuallyOnMain("\(count) branch request(s)") { self.issued >= count }
     }
 
-    /// Answers the request that arrived `index`th, or the oldest unanswered one.
-    func fail(request index: Int? = nil, _ error: any Error) { answer(index) { $0.resume(throwing: error) } }
-    func succeed(request index: Int? = nil, _ branches: ChangesBranches) { answer(index) { $0.resume(returning: branches) } }
+    /// Answers the request that arrived `index`th, or the oldest unanswered one, and returns once
+    /// the app has handled the reply.
+    func fail(request index: Int? = nil, _ error: any Error) async throws { try await answer(index) { $0.resume(throwing: error) } }
+    func succeed(request index: Int? = nil, _ branches: ChangesBranches) async throws { try await answer(index) { $0.resume(returning: branches) } }
 
-    private func answer(_ index: Int?, _ resume: (CheckedContinuation<ChangesBranches, any Error>) -> Void) {
+    private func answer(_ index: Int?, _ resume: (CheckedContinuation<ChangesBranches, any Error>) -> Void) async throws {
         guard let key = index ?? pending.keys.min(), let request = pending.removeValue(forKey: key) else { return }
+        let before = returned
         resume(request)
+        try await eventuallyOnMain("the reply handled") { self.returned > before }
     }
 }
