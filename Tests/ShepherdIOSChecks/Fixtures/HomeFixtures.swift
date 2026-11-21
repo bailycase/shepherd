@@ -277,9 +277,9 @@ enum HomeFixtureData {
                 ],
                 automations: [
                     Automation(id: AutomationID(rawValue: "auto-merge"), name: "Merge PR #24 after CI", prompt: "Merge PR #24 once CI is green",
-                               cwd: "/Users/dev/Shepherd", agentID: merge),
+                               cwd: "/Users/dev/acme-web", agentID: merge),
                     Automation(id: AutomationID(rawValue: "auto-cleanup"), name: "Stale branch cleanup", prompt: "Delete merged branches",
-                               cwd: "/Users/dev/orbit", enabled: false),
+                               cwd: "/Users/dev/acme-api", enabled: false),
                 ]),
                 threads: [
                     FixtureData.preview: command("git push origin main", startedAgo: 21_000, at: started),
