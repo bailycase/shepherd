@@ -364,14 +364,32 @@ final class ThreadTailGuard {
 /// Finds the scroll view a SwiftUI `ScrollView` is drawn in, from inside its content.
 struct ThreadScrollViewFinder: NSViewRepresentable {
     let guardian: ThreadTailGuard
+    #if DEBUG
+    var historyAnchor: ThreadHistoryAnchor? = nil
+    #endif
 
     func makeNSView(context: Context) -> Finder { Finder() }
 
     func updateNSView(_ view: Finder, context: Context) {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
+        #if DEBUG
+        view.historyAnchor = historyAnchor
+        #endif
     }
 
     final class Finder: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        #if DEBUG
+        weak var historyAnchor: ThreadHistoryAnchor?
+
+        override func setFrameSize(_ newSize: NSSize) {
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed {
+                historyAnchor?.correctPrepend(in: enclosingScrollView, pass: "column finder frame change")
+            }
+        }
+        #endif
     }
 }

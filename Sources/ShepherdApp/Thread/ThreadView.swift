@@ -267,7 +267,14 @@ struct ThreadView: View {
                     .modifier(ThreadGutterPadding(inset: composerInset, fixedGutter: workerStyle?.gutter))
                     .frame(maxWidth: .infinity)
                     .background { ThreadInputBackground(input: input) }
-                    .background { ThreadScrollViewFinder(guardian: tailGuard) }
+                    .background {
+                        #if DEBUG
+                        ThreadScrollViewFinder(guardian: tailGuard,
+                                               historyAnchor: ThreadScrollValidation.measuredHistory ? historyAnchor : nil)
+                        #else
+                        ThreadScrollViewFinder(guardian: tailGuard)
+                        #endif
+                    }
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images and file links resolve in its folder; a remote agent's files are not here.
@@ -617,7 +624,18 @@ struct ThreadView: View {
             let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
                                  detached: !follower.sticky)
             ThreadHistoryColumn(key: key) {
-                AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+                #if DEBUG
+                if ThreadScrollValidation.measuredHistory {
+                    return AnyView(VStack(alignment: .leading, spacing: spacing) {
+                        ForEach(history) { row in
+                            rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                        }
+                    }
+                    .scrollTargetLayout()
+                    .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
+                }
+                #endif
+                return AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
                     ForEach(history) { row in
                         rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                     }

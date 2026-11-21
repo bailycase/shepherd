@@ -100,6 +100,7 @@ final class MacScrollValidationTrace: NSObject {
     var wheelUntil = ContinuousClock.now
     private var scriptedWrite = false
     private var intent = ScrollIntent()
+    var physicalScrollerHeld: Bool { intent.physicalScrollerHeld }
 
     func phaseChanged(to phase: ScrollPhase) {
         intent.phaseChanged(from: phaseState.intentPhase, to: phase.intentPhase, now: .now)
@@ -273,6 +274,8 @@ private struct IntentMismatch: Error, CustomStringConvertible {
 /// Runs before SwiftUI's app/host startup. The offscreen window only mounts fixture-backed ThreadViews.
 @MainActor
 public enum ThreadScrollValidation {
+    private(set) static var measuredHistory = false
+
     public static func main() -> Never {
         let env = ProcessInfo.processInfo.environment
         guard Bundle.main.bundleIdentifier == "com.bailycase.shepherd.dev",
@@ -285,6 +288,7 @@ public enum ThreadScrollValidation {
             print("error: scroll validation requires the Dev bundle and an isolated scratch directory")
             exit(2)
         }
+        measuredHistory = env["SHEPHERD_SCROLL_MEASURED_HISTORY"] == "1"
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         Task { @MainActor in
@@ -411,9 +415,11 @@ private final class ScrollFixture {
             }
             return AnyView(Color.clear)
         }
+        let mountStart = CACurrentMediaTime()
         window.contentView = NSHostingView(rootView: Root(fixture: self))
         window.orderBack(nil)
         try await trace.waitFor("the streaming tail to mount") { self.store.liveRow != nil && self.trace.latest?.first != nil }
+        if crossing == nil { recordMount(since: mountStart) }
         trace.streamingRowID = store.liveRow?.id
         trace.historyBoundary = { [weak store] in
             guard let store, let eager = store.drawnEagerRows, eager > 0, eager < store.rows.count else { return nil }
@@ -557,6 +563,21 @@ private final class ScrollFixture {
         store.releaseTranscript(keepingLastScreen: true)
         guard store.transcriptReleased else { throw ValidationError("fixture did not release its hidden rows") }
         await trace.settle()
+    }
+
+    private func recordMount(since start: Double) {
+        let milliseconds = (CACurrentMediaTime() - start) * 1_000
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        let footprint = result == KERN_SUCCESS ? String(info.phys_footprint) : "unavailable"
+        let historyRows = store.rows.count - (store.drawnEagerRows ?? 0)
+        let mounted = trace.latest?.rows.count ?? 0
+        print("mount: \(milliseconds) ms, \(footprint) footprint bytes, \(historyRows) history rows, \(mounted) row markers")
     }
 
     private func requireIntent(_ expected: ScrollIntent.State) throws {
