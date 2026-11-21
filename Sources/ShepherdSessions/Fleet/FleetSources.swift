@@ -265,7 +265,7 @@ final class FleetSkillsSource: FleetUnitSource {
     func fingerprints() -> [String: String] {
         var result: [String: String] = [:]
         guard let view = passRecords() else { return result }
-        for skill in store.syncedSkills(view) {
+        for skill in view.skills {
             guard let hashes = files(of: skill.name, in: skill.folder) else {
                 if oversized.insert(skill.name).inserted {
                     ShepherdLog.info("fleet: the skill \(skill.name) is too big to sync, so it stays on this Mac")
@@ -309,7 +309,7 @@ final class FleetSkillsSource: FleetUnitSource {
         if unit == Self.autoUpdate { return Self.autoUpdateJSON(view.autoUpdate) }
         guard let (name, path) = FleetUnit.skillParts(of: unit) else { return nil }
         guard let path else {
-            guard let skill = store.syncedSkills(view).first(where: { $0.name == name }),
+            guard let skill = view.skills.first(where: { $0.name == name }),
                   let hashes = files(of: skill.name, in: skill.folder) else { return nil }
             return Self.json(State(on: skill.isOn, source: skill.source, digest: FleetTreeDigest.of(hashes)))
         }

@@ -455,32 +455,27 @@ public final class SkillsStore: @unchecked Sendable {
         var source: SkillSource?
     }
 
-    /// What a Fleet pass reads of the records, read once and valid: a skill with no known source would
-    /// sync as Local, and auto-update as off, so a pass that can't have this reads nothing.
+    /// What a Fleet pass reads of the skills: the records and the folders, taken in one hold of the lock
+    /// and valid. A skill with no known source would sync as Local, and auto-update as off, so a pass that
+    /// can't have this reads nothing, and an install that commits mid-pass is seen whole by the next one.
     struct SyncedView {
-        fileprivate var sources: [String: SkillSource]
+        var skills: [Synced]
         var autoUpdate: Bool
     }
 
-    /// The records for one Fleet pass; nil while they can't be read.
+    /// The skills and records for one Fleet pass, read under one lock; nil while the records can't be read.
+    /// Every skill here, on and off (the ones pi loads from elsewhere are not Shepherd's to sync).
     func syncedView() -> SyncedView? {
         lock.withLock {
             guard let records = try? loadRecords() else { return nil }
-            return SyncedView(sources: records.skills.mapValues(\.source), autoUpdate: records.autoUpdate)
-        }
-    }
-
-    /// Every skill here, on and off (the ones pi loads from elsewhere are not Shepherd's to sync).
-    func syncedSkills(_ view: SyncedView) -> [Synced] {
-        lock.withLock {
             var skills: [String: Synced] = [:]
             for (base, isOn) in [(offDirectory, false), (directory, true)] {
                 for name in skillNames(in: base) {
                     skills[name] = Synced(name: name, folder: base.appendingPathComponent(name, isDirectory: true), isOn: isOn,
-                                          source: view.sources[name])
+                                          source: records.skills[name]?.source)
                 }
             }
-            return skills.values.sorted { $0.name < $1.name }
+            return SyncedView(skills: skills.values.sorted { $0.name < $1.name }, autoUpdate: records.autoUpdate)
         }
     }
 
@@ -622,24 +617,121 @@ public final class SkillsStore: @unchecked Sendable {
         }
     }
 
+    /// Records of this size or more are refused, not decoded: a Fleet pass and the server's own
+    /// reads decode on the serial server queue, and nothing slow runs there (docs/rules.md, Server
+    /// concurrency). Records are a few KB; a file this big isn't one this version wrote.
+    static let maxRecordsBytes = 256 * 1024
+
     /// The disk reader: only what this store wrote reads. The shared decoder is told to take the
     /// envelope exactly, and `requireWritten` holds the rest.
     private static func readRecords(at url: URL) -> PersistedFile<Records> {
-        PersistedFile<Records>.load(from: url, exactEnvelope: true, validateBytes: requireWritten)
+        // Before the read, so a big file is never loaded: a file that grows meanwhile is caught in `requireWritten`.
+        if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int, size >= maxRecordsBytes {
+            return .damaged(original: nil, error: tooBig(size))
+        }
+        return PersistedFile<Records>.load(from: url, exactEnvelope: true, validateBytes: requireWritten)
     }
 
-    /// Foundation's JSON decoder also reads UTF-16 and repairs invalid UTF-8, and the wire types turn
-    /// an explicit null into "absent". The next save would then write over what was really there.
+    private static func damaged(_ why: String) -> DecodingError { .dataCorrupted(.init(codingPath: [], debugDescription: why)) }
+
+    private static func tooBig(_ size: Int) -> DecodingError {
+        damaged("The file is \(size / 1024) KiB; this version reads records under \(maxRecordsBytes / 1024) KiB.")
+    }
+
+    /// Foundation's JSON decoder also reads UTF-16, repairs invalid UTF-8, keeps one of two members with
+    /// the same key, and the wire types turn an explicit null into "absent". The next save would then
+    /// write over what was really there. Anything this can't read as JSON is damage too.
     private static func requireWritten(_ data: Data) throws {
-        func damaged(_ why: String) -> DecodingError { .dataCorrupted(.init(codingPath: [], debugDescription: why)) }
+        guard data.count < maxRecordsBytes else { throw tooBig(data.count) }
         guard !data.contains(0), String(data: data, encoding: .utf8) != nil else { throw damaged("The file isn't UTF-8 text.") }
-        func hasNull(_ value: Any) -> Bool {
-            if value is NSNull { return true }
-            if let object = value as? [String: Any] { return object.values.contains(where: hasNull) }
-            return (value as? [Any])?.contains(where: hasNull) ?? false
+        // A strict parse too: the decoder reads some JSON that isn't (a number like 01 in a key it ignores).
+        guard (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+            throw damaged("The file isn't valid JSON.")
         }
-        if let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]), hasNull(object) {
-            throw damaged("The file holds an explicit null, which this version never writes.")
+        let scan = RecordsScan(bytes: Array(data))
+        try scan.document()
+    }
+
+    /// Walks the JSON's tokens, not a parsed copy of it, so a repeated key or a null is seen even where
+    /// a dictionary would drop it. It checks only what this store forbids; the decoder checks the rest.
+    private final class RecordsScan {
+        let bytes: [UInt8]
+        private var at = 0
+
+        private static let maxDepth = 64
+
+        init(bytes: [UInt8]) { self.bytes = bytes }
+
+        func document() throws {
+            try value(depth: 0)
+            skipSpace()
+            guard at == bytes.count else { throw SkillsStore.damaged("The file isn't one JSON value.") }
+        }
+
+        private func skipSpace() {
+            while at < bytes.count, [0x20, 0x09, 0x0A, 0x0D].contains(bytes[at]) { at += 1 }
+        }
+
+        private func value(depth: Int) throws {
+            guard depth < Self.maxDepth else { throw SkillsStore.damaged("The file is nested too deeply.") }
+            skipSpace()
+            guard at < bytes.count else { throw SkillsStore.damaged("The file ends early.") }
+            switch bytes[at] {
+            case UInt8(ascii: "{"):
+                at += 1
+                var keys: Set<String> = []
+                try members(until: UInt8(ascii: "}")) {
+                    let key = try string()
+                    guard keys.insert(key).inserted else {
+                        throw SkillsStore.damaged("The file repeats the key \"\(key)\", which this version never writes.")
+                    }
+                    skipSpace()
+                    guard at < bytes.count, bytes[at] == UInt8(ascii: ":") else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+                    at += 1
+                    try value(depth: depth + 1)
+                }
+            case UInt8(ascii: "["):
+                at += 1
+                try members(until: UInt8(ascii: "]")) { try value(depth: depth + 1) }
+            case UInt8(ascii: "\""):
+                _ = try string()
+            case UInt8(ascii: "n"):
+                throw SkillsStore.damaged("The file holds an explicit null, which this version never writes.")
+            default:
+                // A number, true or false: the decoder reads these.
+                let start = at
+                while at < bytes.count, ![0x20, 0x09, 0x0A, 0x0D, 0x2C, 0x5D, 0x7D].contains(bytes[at]) { at += 1 }
+                guard at > start else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+            }
+        }
+
+        /// Each member of an object or array, separated by commas, up to `close`.
+        private func members(until close: UInt8, _ member: () throws -> Void) throws {
+            skipSpace()
+            if at < bytes.count, bytes[at] == close { at += 1; return }
+            while true {
+                try member()
+                skipSpace()
+                guard at < bytes.count else { throw SkillsStore.damaged("The file ends early.") }
+                at += 1
+                if bytes[at - 1] == close { return }
+                guard bytes[at - 1] == UInt8(ascii: ",") else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+            }
+        }
+
+        /// A string's value, escapes resolved: `"a"` and `"\u0061"` are the same key.
+        private func string() throws -> String {
+            skipSpace()
+            guard at < bytes.count, bytes[at] == UInt8(ascii: "\"") else { throw SkillsStore.damaged("The file isn't valid JSON.") }
+            let start = at
+            at += 1
+            while at < bytes.count, bytes[at] != UInt8(ascii: "\"") { at += bytes[at] == UInt8(ascii: "\\") ? 2 : 1 }
+            guard at < bytes.count else { throw SkillsStore.damaged("The file ends early.") }
+            at += 1
+            guard let text = try? JSONSerialization.jsonObject(with: Data(bytes[start..<at]), options: [.fragmentsAllowed]) as? String else {
+                throw SkillsStore.damaged("The file isn't valid JSON.")
+            }
+            return text
         }
     }
 

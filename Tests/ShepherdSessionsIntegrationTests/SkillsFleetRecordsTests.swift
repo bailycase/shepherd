@@ -20,6 +20,8 @@ struct SkillsFleetRecordsTests {
         let skills: SkillsStore
         let source: FleetSkillsSource
         var afterWrite: () -> Void = {}
+        /// Runs in a scan after the source says it is ready and before it reads: an install can land there.
+        var betweenReads: () -> Void = {}
         var records: URL { skills.stateDirectory.appendingPathComponent("skills.json") }
 
         init() throws {
@@ -29,9 +31,30 @@ struct SkillsFleetRecordsTests {
             skills = SkillsStore(directory: dir.appendingPathComponent("skills"), stateDirectory: dir.appendingPathComponent("skills-state"))
             let hook = Hook()
             source = FleetSkillsSource(skills, written: { hook.run() })
-            materializer.add(source)
+            materializer.add(Interposed(source, before: { [weak self] in self?.betweenReads() }))
             hook.owner = self
             try FileManager.default.createDirectory(at: skills.stateDirectory, withIntermediateDirectories: true)
+        }
+
+        /// The skills source, with a step between a scan's `isReady` and its reads (`prepare` is where the scan calls it).
+        final class Interposed: FleetUnitSource {
+            let inner: FleetSkillsSource
+            let before: () -> Void
+            init(_ inner: FleetSkillsSource, before: @escaping () -> Void) { self.inner = inner; self.before = before }
+            var units: [String] { inner.units }
+            var isReady: Bool { inner.isReady }
+            var watchedFiles: [URL] { inner.watchedFiles }
+            var watchedTrees: [URL] { inner.watchedTrees }
+            func owns(_ unit: String) -> Bool { inner.owns(unit) }
+            func storesBlob(_ unit: String) -> Bool { inner.storesBlob(unit) }
+            func read() -> [String: Data] { inner.read() }
+            func fingerprints() -> [String: String] { inner.fingerprints() }
+            func value(of unit: String) -> Data? { inner.value(of: unit) }
+            func isSeedable(_ unit: String, _ value: Data) -> Bool { inner.isSeedable(unit, value) }
+            func write(_ unit: String, _ value: Data?, origin: String) throws { try inner.write(unit, value, origin: origin) }
+            func prepare() { before(); inner.prepare() }
+            func attach(fleetValue: @escaping (String) -> Data?) { inner.attach(fleetValue: fleetValue) }
+            func attach(fleetWinners: @escaping (String) -> [String: String]) { inner.attach(fleetWinners: fleetWinners) }
         }
 
         /// The box that lets the source's callback reach the Mac that owns the source.
@@ -93,6 +116,28 @@ struct SkillsFleetRecordsTests {
         let state = try mac.stateValue(mac.scan())
         #expect(state?.source?.commit == "abc123", "from the repaired records, not Local")
         #expect(mac.scan().isEmpty)
+    }
+
+    /// An install commits its folder and its record under the store's lock. One that lands between a scan's
+    /// reads must not be seen as a folder with no record, which would publish a repository skill as Local.
+    @Test func aSkillInstalledInTheMiddleOfAScanIsNeverPublishedAsLocal() throws {
+        let mac = try Mac(); defer { mac.remove() }
+        try mac.installPDF()
+        var installed = false
+        mac.betweenReads = {
+            guard !installed else { return }
+            installed = true
+            try? mac.put(Self.skillText.replacingOccurrences(of: "pdf", with: "docx"), at: "SKILL.md", in: "docx")
+            let record = SkillsRecordsTests.record
+            try? Data(SkillsRecordsTests.legacy.replacingOccurrences(of: record, with: record + #","docx":"# + record).utf8).write(to: mac.records)
+        }
+        let during = mac.scan()
+        #expect(installed)
+        #expect(try mac.stateValue(during)?.source?.commit == "abc123")
+        #expect(during.filter { $0.unit.contains("docx") }.isEmpty, "a skill the pass didn't see whole is left to the next one")
+
+        let next = mac.scan()
+        #expect(try mac.stateValue(next, "docx")?.source?.commit == "abc123", "from its record, never Local")
     }
 
     private struct Sender {

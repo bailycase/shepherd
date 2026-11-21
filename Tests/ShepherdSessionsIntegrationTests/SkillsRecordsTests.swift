@@ -66,6 +66,14 @@ struct SkillsRecordsTests {
         ("null committedAt in an update", Data(legacy.replacingOccurrences(
             of: #""installedAt":1"#, with: #""installedAt":1,"update":{"commit":"def456","committedAt":null,"filesChanged":2}"#).utf8)),
         ("null where nothing reads it", Data(legacy.replacingOccurrences(of: #""removed":{}"#, with: #""removed":{},"extra":null"#).utf8)),
+        // A dictionary keeps one of two members with the same key, so these only show to a reader of the tokens.
+        ("a null before a repeated key", Data(legacy.replacingOccurrences(of: #""removed":{}"#, with: #""removed":{},"extra":null,"extra":1"#).utf8)),
+        ("a null after a repeated key", Data(legacy.replacingOccurrences(of: #""removed":{}"#, with: #""removed":{},"extra":1,"extra":null"#).utf8)),
+        ("a repeated key spelled with an escape", Data(legacy.replacingOccurrences(of: #""removed":{}"#, with: #""removed":{},"extra":1,"\u0065xtra":2"#).utf8)),
+        ("a repeated setting", Data(legacy.replacingOccurrences(of: #""autoUpdate":true"#, with: #""autoUpdate":false,"autoUpdate":true"#).utf8)),
+        ("a repeated skill", Data(legacy.replacingOccurrences(of: record, with: record + #","pdf":"# + record).utf8)),
+        // The decoder reads these where nothing needs them; a strict parse does not.
+        ("a number JSON forbids in a key nothing reads", Data(legacy.replacingOccurrences(of: #""removed":{}"#, with: #""removed":{},"extra":01"#).utf8)),
         ("an unknown envelope version", Data(envelope.replacingOccurrences(of: #""version":1,"value""#, with: #""version":2,"value""#).utf8)),
     ]
 
@@ -116,6 +124,29 @@ struct SkillsRecordsTests {
         #expect(try fixture.bytes() == shape.1, "\(shape.0): the damaged bytes are untouched")
         #expect(fixture.skillIsInstalled, "\(shape.0): a refused remove moved nothing")
         #expect(!FileManager.default.fileExists(atPath: fixture.directory.appendingPathComponent("docx").path))
+    }
+
+    /// Records of 256 KiB or more are refused unread, because the server queue does the decoding.
+    @Test func recordsAreReadBelowTheBoundAndRefusedAtIt() throws {
+        let limit = SkillsStore.maxRecordsBytes
+        func padded(to size: Int) -> String { Self.legacy + String(repeating: " ", count: size - Self.legacy.utf8.count) }
+
+        let under = try Fixture()
+        try under.write(padded(to: limit - 1))
+        #expect(under.store.snapshot().problem == nil)
+        #expect(under.store.snapshot().skill("pdf")?.source?.commit == "abc123")
+        #expect(FleetSkillsSource(under.store).isReady)
+
+        let over = try Fixture()
+        try over.write(padded(to: limit))
+        let problem = try #require(over.store.snapshot().problem)
+        #expect(problem.contains(over.records.path) && problem.contains("256 KiB") && problem.contains("backup"))
+        #expect(!FleetSkillsSource(over.store).isReady)
+        #expect(throws: SkillsStore.StoreError.self) { try over.store.configure(autoUpdate: false) }
+        #expect(try over.bytes().count == limit, "the big file is untouched")
+        // The same file, made small again, takes over at once.
+        try over.write(Self.legacy)
+        #expect(over.store.snapshot().problem == nil)
     }
 
     @Test func aChangeThatDoesNotWriteTheRecordsStillWorks() throws {
