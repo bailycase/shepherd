@@ -239,7 +239,7 @@ struct NativeThreadSendingTests {
 
     /// Two identical sends, the first accepted and the second still waiting for its answer, and the history holds one message
     /// with those words: it replaces one copy (the first's), and the second send stays on screen with its record.
-    @Test func oneDeliveredMessageReplacesOneOfTwoIdenticalSends() async throws {
+    @Test(arguments: [false, true]) func oneDeliveredMessageReplacesOneOfTwoIdenticalSends(withReply: Bool) async throws {
         let hold = SendHold()
         hold.held = false
         let host = FakeHost(F.snapshot(messages: [hi]))
@@ -254,7 +254,8 @@ struct NativeThreadSendingTests {
         let second = Task { await store.send(delivery: .followUp) }
         await until { hold.operation != nil }
         #expect(userMessages(store).count == 2 && store.pending.count == 1 && store.submissions.count == 1)
-        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("continue", id: "u1")])
+        let delivered = [hi, F.user("continue", id: "u1")]
+        host.snapshot = F.snapshot(revision: 2, messages: delivered + (withReply ? [F.assistant("done", id: "a2")] : []))
         await store.refresh()
         #expect(userMessages(store).count == 2 && store.pending.isEmpty, "the saved message, and the second send still Sending…")
         #expect(userMessages(store).filter { $0.status == NativeThreadMessage.sendingStatus }.count == 1)
@@ -266,7 +267,7 @@ struct NativeThreadSendingTests {
 
     /// Turn A is still live (its message shown as it streams) when B, with the same words, is sent. The live message is not B
     /// landing: B stays on screen while the host holds it.
-    @Test func aLiveMessageWithTheSameWordsDoesNotHideANewSend() async throws {
+    @Test(arguments: ["u1", "provisional:a"]) func aLiveMessageWithTheSameWordsDoesNotHideANewSend(savedID: String) async throws {
         let hold = SendHold()
         hold.held = false
         let live = F.snapshot(running: true, actions: ["send", "abort"], messages: [hi],
@@ -282,15 +283,20 @@ struct NativeThreadSendingTests {
                                    provisional: [F.user("continue", id: "provisional:a"), F.assistant("more", status: "streaming", id: "r")])
         await store.refresh()
         #expect(store.pending.count == 1 && userRows(store).count == 2, "A is live, B is queued: two messages")
-        // A is saved under a new id: that is A, not B. B's message comes after it.
+        // Whether A keeps its live id or gets a new one, B's message comes after it.
+        let first = F.user("continue", id: savedID)
         host.snapshot = F.snapshot(revision: 3, running: true, actions: ["send", "abort"],
-                                   messages: [hi, F.user("continue", id: "u1")], provisional: [F.assistant("more", status: "streaming", id: "r")])
+                                   messages: [hi, first], provisional: [F.assistant("more", status: "streaming", id: "r")])
         await store.refresh()
         #expect(store.pending.count == 1 && userRows(store).count == 2)
-        host.snapshot = F.snapshot(revision: 4, messages: [hi, F.user("continue", id: "u1"), F.assistant("done", id: "a1"),
-                                                           F.user("continue", id: "u2"), F.assistant("again", id: "a2")])
+        let second = F.user("continue", id: "provisional:b")
+        let firstTurn = [hi, first, F.assistant("done", id: "a1")]
+        host.snapshot = F.snapshot(revision: 4, running: true, messages: firstTurn, provisional: [second])
         await store.refresh()
-        #expect(store.pending.isEmpty && userRows(store).count == 2 && userRows(store).first?.id == "u1")
+        #expect(store.pending.isEmpty && userMessages(store).map(\.entryID) == [savedID, second.entryID])
+        host.snapshot = F.snapshot(revision: 5, messages: firstTurn + [second, F.assistant("again", id: "a2")])
+        await store.refresh()
+        #expect(store.pending.isEmpty && userMessages(store).map(\.entryID) == [savedID, second.entryID])
     }
 
     /// The same words sent before are not this send landing.
@@ -310,9 +316,8 @@ struct NativeThreadSendingTests {
         #expect(await send.value)
     }
 
-    /// The history is replaced by a page that no longer holds the message the thread held at the send: the delivered
-    /// message is still found, by the user messages that were not there before.
-    @Test func aReplacementPageWithoutTheAnchorStillShowsTheSendLanding() async throws {
+    /// A replacement page can renumber the same history. Without the anchor, nothing proves a row is new.
+    @Test func aReplacementPageWithoutTheAnchorKeepsTheSendVisible() async throws {
         let hold = SendHold()
         let earlier = F.user("continue", id: "u0")
         let host = FakeHost(F.snapshot(messages: [earlier, hi]))
@@ -321,13 +326,13 @@ struct NativeThreadSendingTests {
         store.draft = "continue"
         let send = Task { await store.send(delivery: .followUp) }
         await until { hold.operation != nil }
-        host.snapshot = F.snapshot(revision: 2, messages: [F.assistant("later", id: "a1"), F.user("continue", id: "u1"), F.assistant("ok", id: "a2")])
+        host.snapshot = F.snapshot(revision: 2, messages: [F.user("continue", id: "u1"), F.assistant("hi", id: "a1")])
         await store.refresh()
-        #expect(userRows(store).map(\.id) == ["u1"], "the delivered message is the only copy")
-        #expect(store.submissions.first?.state == .sending, "its words do not settle the send: the host's answer does")
+        #expect(userMessages(store).count == 2 && userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
+        #expect(store.submissions.first?.state == .sending)
         hold.held = false
         #expect(await send.value)
-        #expect(store.submissions.isEmpty && store.pending.isEmpty && userRows(store).map(\.id) == ["u1"])
+        #expect(store.submissions.isEmpty && store.pending.count == 1 && userMessages(store).count == 2)
     }
 
     /// Another client's turn (it names its own operation) is not this send landing, so the record that restores a
@@ -340,15 +345,20 @@ struct NativeThreadSendingTests {
         store.draft = "hello"
         let send = Task { await store.send(delivery: .followUp) }
         await until { hold.operation != nil }
-        for words in ["hello", "something else"] {
-            var theirs = F.user(words, id: "u1")
-            theirs.operationID = UUID()
-            host.snapshot = F.snapshot(revision: 2, messages: [hi, theirs, F.assistant("done", id: "a2")])
-            await store.refresh()
-            #expect(store.submissions.first?.state == .sending && store.busy, "\"\(words)\": still this send's to settle")
-        }
+        var theirs = F.user("hello", id: "u1")
+        theirs.operationID = UUID()
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, theirs, F.assistant("done", id: "a2")])
+        await store.refresh()
+        #expect(userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
+        #expect(store.submissions.first?.state == .sending && store.busy)
+
+        // The tagged row leaves the page, but the host has already shown that it tags sends.
+        host.snapshot = F.snapshot(revision: 3, messages: [hi, F.user("something else", id: "u2"), F.assistant("done", id: "a3")])
+        await store.refresh()
+        #expect(userMessages(store).last?.status == NativeThreadMessage.sendingStatus)
         hold.held = false
         #expect(await send.value)
+        #expect(store.pending.count == 1 && userMessages(store).count == 2)
     }
 
     /// An old host (no queue) is still on turn A when B is sent. A finishing saves an untagged message with a reply: that is

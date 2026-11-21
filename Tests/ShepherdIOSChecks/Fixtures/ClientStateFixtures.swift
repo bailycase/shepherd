@@ -208,6 +208,13 @@ enum ClientStateChecks {
         await ThreadComposer.send(.followUp, store: store, state: state).value
         check(kept.count == 1 && state.attachments.map(\.id) == kept && store.submissions.isEmpty && requests == 0,
               "a send rejected before capture keeps image A in the composer")
+        store.draft = "Inspect this"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let refused = store.submissions.first
+        let restored = refused.flatMap { store.restoreSubmission($0.id) }
+        check(requests == 1 && refused?.state == .failed && refused?.images.isEmpty == true && restored != nil
+              && store.draft == "Inspect this" && state.attachments.map(\.id) == kept,
+              "a refused text send keeps the unsupported image in the composer and can restore the text")
         serving.cancel()
         store.stop()
         await serving.value

@@ -224,10 +224,10 @@ public final class NativeThreadStore {
     /// The words of each send the store captured and the host has not answered, as the thread draws them
     /// (`NativeThreadMessage.sendingStatus`), and whether it waits behind the reply still streaming.
     @ObservationIgnored private var outgoing: [UUID: (message: NativeThreadMessage, queued: Bool)] = [:]
-    /// What each send was captured against: the last message the thread held then, the user messages it held, how many user turns
-    /// were still running, whether it was idle, and the send's place in line. A host that never names the send on its saved
-    /// message (an older one) is read by what came after, by position (`landings`).
-    private struct Capture { var after: String?; var earlier: Set<String>; var skip: Int; var idle: Bool; var order: Int }
+    /// The capture anchor, user rows already seen (including live rows), and the send's place in line.
+    private struct Capture { var after: String?; var earlier: Set<String>; var live: Set<String>; var idle: Bool; var order: Int }
+    /// Once the host shows a delivered user row with an operation id, do not guess for this session.
+    @ObservationIgnored private var sawTaggedUser = false
     @ObservationIgnored private var captured: [UUID: Capture] = [:]
     @ObservationIgnored private var captureCount = 0
     /// Sends whose message the history showed before the host answered them: their answer adds no echo.
@@ -672,6 +672,7 @@ public final class NativeThreadStore {
             echoAccepted = [:]
             claimed = [:]
             captured = [:]
+            sawTaggedUser = false
             overlays = []
             holding = []
             sentImages = [:]
@@ -689,37 +690,45 @@ public final class NativeThreadStore {
         for id in settled { echoAccepted[id] = nil }
     }
 
-    /// The delivered message each captured send's copy stands for. A host that tags its saved message with the send's
-    /// operation id names it (`named`: the only proof). One that never does (an older host) is read by position, never by words:
-    /// the saved or live user messages that arrived after what the thread held at capture, less the turns already running then
-    /// (`skip`), each taken by one send, the oldest send first. Failing that, a finished turn after a send made while the thread
-    /// was idle. A guess hides a copy; it never settles the send.
-    private func landings() -> [UUID: (named: Bool, row: String?)] {
+    private static func tagsSend(_ row: NativeThreadMessage) -> Bool {
+        row.role == "user" && row.operationID != nil && !row.entryID.hasPrefix("pending:")
+    }
+
+    /// A tag names the send. On a legacy host, each user row after the capture anchor can replace one copy, oldest send first.
+    /// A finished reply with no new user row can stand for an idle send too. Neither guess settles the send.
+    private func landings() -> [UUID: (named: Bool, row: NativeThreadMessage)] {
         let live = (snapshot?.provisional ?? []).filter { messageIndex[$0.entryID] == nil }
-        var taken: Set<String> = []
-        var found: [UUID: (named: Bool, row: String?)] = [:]
-        for id in captured.keys {
-            if let row = (messages + live).first(where: { $0.operationID == id && $0.role == "user" && !$0.entryID.hasPrefix("pending:") }) {
-                found[id] = (true, row.entryID)
-                taken.insert(row.entryID)
+        var found: [UUID: (named: Bool, row: NativeThreadMessage)] = [:]
+        if sawTaggedUser {
+            for row in messages + live where Self.tagsSend(row) {
+                if let id = row.operationID, captured[id] != nil, found[id] == nil { found[id] = (true, row) }
             }
+            return found
         }
-        for (id, capture) in captured.sorted(by: { $0.value.order < $1.value.order }) where found[id] == nil {
-            // What the thread held then may have left the loaded history (a replacement page): then the send is any user message
-            // the thread did not hold, which `earlier` tells apart.
+        let liveIDs = Set(live.map(\.entryID))
+        var taken: Set<String> = []
+        for (id, capture) in captured.sorted(by: { $0.value.order < $1.value.order }) {
             var tail = ArraySlice(messages)
-            if let after = capture.after, let index = messageIndex[after] { tail = messages[(index + 1)...] }
-            // A row that names another operation is another client's message, never this send.
+            if let after = capture.after {
+                guard let index = messageIndex[after] else { continue } // A renumbered page cannot establish what is new.
+                tail = messages[(index + 1)...]
+            }
+            // Only skip an earlier live turn if its id disappeared. Stable live ids are already excluded by `earlier`.
+            let skip = capture.live.count(where: { messageIndex[$0] == nil && !liveIDs.contains($0) })
             let delivered = (tail + live).filter {
                 $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") && !capture.earlier.contains($0.entryID)
-                    && $0.operationID == nil && !taken.contains($0.entryID) && (claimed[$0.entryID] ?? id) == id
             }
-            if delivered.count > capture.skip {
-                found[id] = (false, delivered[capture.skip].entryID)
-                taken.insert(delivered[capture.skip].entryID)
-            } else if capture.idle, snapshot?.running == false, tail.contains(where: { $0.role == "assistant" }) {
-                // A turn began and ended after the send: its command or skill was saved as other words, or not at all.
-                found[id] = (false, nil)
+            if let row = delivered.dropFirst(skip).first(where: { !taken.contains($0.entryID) && (claimed[$0.entryID] ?? id) == id }) {
+                found[id] = (false, row)
+                taken.insert(row.entryID)
+            } else if capture.idle, snapshot?.running == false,
+                      let reply = tail.first(where: { $0.role == "user" || $0.role == "assistant" }), reply.role == "assistant",
+                      !taken.contains(reply.entryID), (claimed[reply.entryID] ?? id) == id {
+                // The reply cannot be evidence for a second send if it belongs to a user row already taken at capture.
+                let previous = messages[..<tail.startIndex].last { $0.role == "user" || $0.role == "assistant" }
+                if let previous, previous.role == "user", claimed[previous.entryID] != nil { continue }
+                found[id] = (false, reply)
+                taken.insert(reply.entryID)
             }
         }
         return found
@@ -737,10 +746,13 @@ public final class NativeThreadStore {
             pending.removeAll { $0.entryID == echo.entryID }
             echoAccepted[echo.entryID] = nil
             captured[id] = nil
-            guard let row = landing.row else { continue }
-            claimed[row] = id
-            // An echo that was drawn hands its turn identity to the row that replaces it.
-            if displayedMessages.contains(where: { $0.entryID == echo.entryID }) { aliases[row] = echo.entryID; presentationDirty = 0 }
+            let row = landing.row
+            claimed[row.entryID] = id
+            // An echo that was drawn hands its turn identity to the user row that replaces it, not to a reply.
+            if row.role == "user", displayedMessages.contains(where: { $0.entryID == echo.entryID }) {
+                aliases[row.entryID] = echo.entryID
+                presentationDirty = 0
+            }
         }
         guard !found.isEmpty else { return }
         var freed = false
@@ -1095,6 +1107,7 @@ public final class NativeThreadStore {
         for index in changed..<messages.count {
             let message = messages[index]
             messageIndex[message.entryID] = index
+            if !sawTaggedUser, Self.tagsSend(message) { sawTaggedUser = true }
             if let id = message.toolCallID {
                 toolCounts[id, default: 0] += 1
                 toolPositions[id, default: []].append(index)
@@ -1739,6 +1752,7 @@ public final class NativeThreadStore {
         echoAccepted = [:]
         claimed = [:]
         captured = [:]
+        sawTaggedUser = false
         overlays = []
         presentationCache = [:]
         callCache = [:]
@@ -2160,6 +2174,10 @@ public final class NativeThreadStore {
                 }
                 keepsOnlyTail = false
                 if value != snapshot { snapshot = value }
+                if !sawTaggedUser {
+                    sawTaggedUser = value.provisional.contains(where: Self.tagsSend)
+                        || (!sameSession && messages.contains(where: Self.tagsSend))
+                }
                 images.configure(sessionID: value.piSessionID, fetch: request)
                 if previewing { previewing = false }
                 if !ready { ready = true }
@@ -2989,7 +3007,7 @@ public final class NativeThreadStore {
             captureCount += 1
             captured[operation] = Capture(after: messages.last?.entryID,
                                           earlier: Set(messages.filter { $0.role == "user" }.map(\.entryID) + live.map(\.entryID)),
-                                          skip: live.count, idle: !current.running, order: captureCount)
+                                          live: Set(live.map(\.entryID)), idle: !current.running, order: captureCount)
             if submission != nil {
                 // While a turn runs it waits below the reply streaming (whatever its delivery: the host holds it in Up next, or an
                 // older host's echo follows the turn), so the reply's own rows are never moved by it.
