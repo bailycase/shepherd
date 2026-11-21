@@ -150,7 +150,7 @@ if [[ -z "$products" ]]; then
     echo "Building Shepherd iOS into $derived"
     xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd iOS' -destination 'generic/platform=iOS Simulator' \
         -derivedDataPath "$derived" -skipPackagePluginValidation -skipMacroValidation \
-        -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO build -quiet
+        -onlyUsePackageVersionsFromResolvedFile -jobs 4 CODE_SIGNING_ALLOWED=NO build -quiet
     products="$derived/Build/Products/Debug-iphonesimulator"
 fi
 
@@ -180,7 +180,7 @@ sed -i '' -e "s|<MULTIPLE_WINDOWS/>|<$windows/>|" -e "s|<FULL_SCREEN/>|<$full_sc
 sources=()
 while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance App/NotificationContent -name '*.swift' ! -path 'App/NotificationContent/NotificationViewController.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
-    -Onone -D DEBUG -I "$products" \
+    -j 4 -Onone -D DEBUG -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \
     "$products/SwiftTerm.o" "$products/DesignSurfaceKit.o" \
     "${sources[@]}" Sources/ShepherdApp/Thread/ComposerMentions.swift Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift Tests/ShepherdIOSChecks/FixtureHost.swift \
@@ -237,6 +237,8 @@ for screen in "${screens[@]}"; do
         "${simctl[@]}" ui "$device" appearance "$scheme"
         SIMCTL_CHILD_FIXTURE_SCREEN="$screen" SIMCTL_CHILD_FIXTURE_SCHEME="$scheme" \
         SIMCTL_CHILD_FIXTURE_ORIENTATION="$fixture_orientation" SIMCTL_CHILD_FIXTURE_SIDEBAR="$sidebar" \
+        SIMCTL_CHILD_FIXTURE_SCROLL_LEDGER="${FIXTURE_SCROLL_LEDGER:-}" \
+        SIMCTL_CHILD_FIXTURE_SCROLL_ANCHOR_OFF="${FIXTURE_SCROLL_ANCHOR_OFF:-}" \
             "${simctl[@]}" launch --console --terminate-running-process "$device" com.shepherd.ios-fixture >"$log" 2>&1 &
         console=$!
         pose_requests=0
@@ -273,6 +275,10 @@ for screen in "${screens[@]}"; do
         [[ -n "$pose" ]] && { grep "^FIXTURE WINDOWS AVAILABLE" "$log" | tail -1 | sed "s/^/$screen ($scheme): /" || true; }
         # A screen that measures what it shows prints "FIXTURE CHECK ok|FAILED: …".
         grep "^FIXTURE CHECK" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
+        if [[ "$screen" == tail-frames && "${FIXTURE_SCROLL_LEDGER:-}" == 1 ]]; then
+            container=$("${simctl[@]}" get_app_container "$device" com.shepherd.ios-fixture data)
+            cp "$container/tmp/scroll-frames.json" "$out/$screen-$label-$suffix-scroll-frames.json"
+        fi
         if grep -q "^FIXTURE CHECK FAILED" "$log" 2>/dev/null; then status=1; fi
         if grep -q "^FIXTURE MUTATION" "$log" 2>/dev/null; then
             echo "FAIL: $screen ($scheme) asked a host to change something:"; grep "^FIXTURE MUTATION" "$log"; status=1

@@ -21,6 +21,10 @@ import ShepherdUI
 struct ThreadSimulatorFixture: App {
     @State private var runner = FixtureRunner()
 
+    init() {
+        SHRenderProbe.disabledScrollAnchor = ProcessInfo.processInfo.environment["FIXTURE_SCROLL_ANCHOR_OFF"]
+    }
+
     var body: some Scene {
         // Windows as the shipped app has them: a window a screen opens (`FixtureWindows.open`) is
         // a `MobileWindowRoot`; any other (the launch window, or one the system restored from an

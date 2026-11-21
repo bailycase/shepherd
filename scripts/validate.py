@@ -131,6 +131,8 @@ def log_diagnostic(path):
 
 
 def native_scroll_path(event):
+    if event.get("detail") == "fixture.clip.scroll":
+        return "fixture.clip.scroll"
     stack = event.get("stack", [])
     # Skip the bounds notification itself and name the code driving the write.
     start = next((i for i, line in enumerate(stack) if " _postBoundsChangeNotification]" in line), -1)
@@ -149,7 +151,8 @@ def native_scroll_path(event):
 
 
 def scroll_paths(previous, frame, events):
-    writes = [event["caller"] for _, event in events if event["caller"].startswith("Thread")]
+    writes = [event["caller"] for _, event in events
+              if event["caller"].startswith("Thread") or event.get("kind") == "write"]
     native = [native_scroll_path(event) for _, event in events if event["caller"] == "NSClipView.bounds"]
     if not native:
         native = ["SwiftUI row layout (clip offset unchanged)" if frame.get("offset") == previous.get("offset")
@@ -294,6 +297,54 @@ def measure_scroll(frames):
             "in_band_inputs": in_band_inputs}
 
 
+def scroll_ledger(frames, summary=None):
+    """Capture-only. Never use this ledger to grade the existing stability case."""
+    from collections import Counter
+    from itertools import combinations
+    from statistics import median
+
+    entries = [[event for event in frame["events"] if event["caller"].startswith("thread.write.")]
+               for frame in frames]
+    counts = Counter(event["caller"] for events in entries for event in events)
+    samples = []
+    for i, frame in enumerate(frames):
+        sample = {"frame": i, "motion": frame.get("motion"), "row": frame.get("first"),
+                  "writes": entries[i]}
+        if i:
+            previous = frames[i - 1]
+            row = previous.get("first")
+            if row is not None and row in frame["rows"] and frame.get("first") is not None:
+                reader_delta = sum(event.get("scrollDelta", 0) for event in frame["events"])
+                delta = frame["rows"][row] - previous["rows"][row] + reader_delta
+                sample.update(row=row, delta_pt=round(delta, 3))
+                if delta:
+                    # Commands can land a display frame after they were issued. These are
+                    # observations of co-occurrence, not proof that both commands moved the view.
+                    actors = sorted({event["caller"] for events in entries[i - 1:i + 1] for event in events
+                                     if event.get("kind") == "write"})
+                    sample["writer_pairs"] = list(combinations(actors, 2))
+            elif row != frame.get("first"):
+                sample["handoff"] = {"from": row, "to": frame.get("first")}
+        samples.append(sample)
+
+    if summary is not None:
+        for observation in (summary["jumps"] + summary["drift"] + summary["anchor_losses"]):
+            i = observation["frame"]
+            related = entries[max(0, i - 1)] + [event for _, event in observation["events"]]
+            observation["writer_candidates"] = list(dict.fromkeys(event["caller"] for event in related
+                                                                  if event.get("kind") in {"write", "fixture", "binding"}))
+            observation["layout_changes"] = list(dict.fromkeys(event["caller"] for event in related
+                                                               if event.get("kind") == "layout"))
+            if any(event["caller"] == "NSClipView.bounds" for _, event in observation["events"]):
+                observation["observed_offset_writers"] = list(dict.fromkeys(
+                    native_scroll_path(event) for _, event in observation["events"]
+                    if event["caller"] == "NSClipView.bounds"))
+            elif "SwiftUI row layout (clip offset unchanged)" in observation["paths"]:
+                observation["observed_offset_writers"] = []  # F8: a row moved, not the viewport.
+    return {"hz": round(1 / median(frame["refreshInterval"] for frame in frames), 2),
+            "writer_counts": dict(sorted(counts.items())), "frames": samples}
+
+
 def scroll_evidence(scenarios):
     if set(scenarios) != set(SCROLL_SCENARIOS):
         raise ValueError("expected all six scroll scenarios")
@@ -304,11 +355,13 @@ def scroll_evidence(scenarios):
         summary = measure_scroll(frames)
         if summary["final_comparable_frames"] < 8 and not summary["anchor_losses"]:
             raise ValueError(f"{name}: too few comparable settle frames")
+        summary["ledger"] = scroll_ledger(frames, summary)
+        summary["hz"] = summary["ledger"].pop("hz")
         summaries[name] = summary
     return summaries
 
 
-def run_scroll_case(mac, command, wrapper, log):
+def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None):
     pin = ROOT / ".build/pi-engine/pin.json"
     if not pin.is_file() or pin.read_bytes() != (ROOT / "scripts/pi-engine-pin.json").read_bytes():
         subprocess.run([*wrapper, sys.executable, "scripts/pi_engine.py", "stage"], cwd=ROOT,
@@ -321,12 +374,21 @@ def run_scroll_case(mac, command, wrapper, log):
     env = {"HOME": str(scratch), "CFFIXED_USER_HOME": str(scratch), "TMPDIR": str(scratch / "tmp"),
            "SHEPHERD_SUPPORT_DIR": str(scratch / "support"), "SHEPHERD_SCROLL_TRACE": str(trace),
            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    if anchor_off:
+        env["SHEPHERD_SCROLL_ANCHOR_OFF"] = anchor_off
     app = ROOT / ".build/scroll-dev/Build/Products/Debug/Shepherd.app/Contents/MacOS/Shepherd"
     subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
     scenarios = json.loads(trace.read_text(encoding="utf-8"))
     summaries = scroll_evidence(scenarios)
+    if anchor_off:
+        for summary in summaries.values():
+            summary["native_anchor_disabled"] = anchor_off
     (mac / "scroll-jumps.json").write_text(json.dumps(summaries, indent=2) + "\n", encoding="utf-8")
+    if ios_frames:
+        mobile = json.loads(ios_frames.read_text(encoding="utf-8"))
+        (mac.parent / "ios-scroll-ledger.json").write_text(
+            json.dumps({name: scroll_ledger(frames) for name, frames in mobile.items()}, indent=2) + "\n", encoding="utf-8")
     steps = mac / "steps"
     steps.mkdir()
 
@@ -354,7 +416,7 @@ def run_scroll_case(mac, command, wrapper, log):
     return 0
 
 
-def run_case(name):
+def run_case(name, anchor_off=None, ios_frames=None):
     case = CASES[name]
     parent = ROOT / ".build/validation"
     if parent.resolve() != parent:
@@ -387,7 +449,7 @@ def run_case(name):
                 result["toolchain"] = version.decode(errors="replace").strip()
                 start = time.monotonic()
                 if scroll:
-                    result["exit_status"] = run_scroll_case(mac, command, wrapper, log)
+                    result["exit_status"] = run_scroll_case(mac, command, wrapper, log, anchor_off, ios_frames)
                 else:
                     result["exit_status"] = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
@@ -458,12 +520,17 @@ def run_case(name):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=CASES)
-    name = parser.parse_args(argv).case
+    parser.add_argument("--scroll-anchor-off", choices=("M2", "M3", "M4", "M13"), help="fixture-only A/B arm")
+    parser.add_argument("--ios-scroll-frames", type=Path, help="also summarize a simulator fixture's scroll-frames.json")
+    args = parser.parse_args(argv)
+    name = args.case
+    if (args.scroll_anchor_off or args.ios_scroll_frames) and name != SCROLL_CASE:
+        parser.error("scroll options require --case scroll-stability")
     if name is None:
         print("selection not implemented", file=sys.stderr)
         return 1
     try:
-        return run_case(name)
+        return run_case(name, args.scroll_anchor_off, args.ios_scroll_frames)
     except OSError as error:
         print(f"NOT RUN mac/{name}: {error}", file=sys.stderr)
         return 1

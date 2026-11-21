@@ -68,8 +68,20 @@ enum TailFrames {
     }
 
     static func run(_ app: MobileApp) async {
+        defer {
+            if !ledger.isEmpty {
+                let path = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("tmp/scroll-frames.json")
+                do { try JSONEncoder().encode(ledger).write(to: path, options: .atomic) }
+                catch { FixtureCheck.fail("Could not save scroll frames: \(error.localizedDescription)") }
+            }
+        }
         let ref = FixtureData.ref(FixtureData.preview)
         let store = app.threads.store(for: ref)
+        NativeThreadStore.scrollTraceParsed = { [weak store] source, id in
+            guard store === source else { return }
+            SHRenderProbe.scrollEvent("thread.write.L8", "markdown.parseLanded", target: id, kind: "layout")
+        }
+        defer { NativeThreadStore.scrollTraceParsed = nil }
         await FixtureWindows.wait("the long thread", seconds: 20) { store.rows.count > 150 && FollowFixture.threadScrollView() != nil }
         try? await Task.sleep(for: .seconds(2))
         let draft = (1...8).map { "Line \($0) of a long message to the agent" }.joined(separator: "\n")
@@ -131,12 +143,23 @@ enum TailFrames {
     /// The tail's resting distance above the composer's top, from the first measure (idle).
     private static var reference: CGFloat?
     private static var insetReference: CGFloat?
+    private static var ledger: [String: [LedgerFrame]] = [:]
+
+    private struct LedgerFrame: Encodable {
+        let timestamp: Double
+        let refreshInterval: Double
+        let motion: String
+        let first: String?
+        let rows: [String: Double]
+        let events: [SHRenderProbe.ScrollEvent]
+    }
 
     private static func measure(_ what: String, _ action: () async -> Void) async {
         let recorder = Recorder()
         recorder.start()
         await action()
         FixtureCheck.report("FIXTURE CHECK ok: \(what): \(recorder.stop())")
+        if !recorder.ledger.isEmpty { ledger[what] = recorder.ledger }
     }
 
     /// Reads the thread's scroll view and the composer's layers on every display frame.
@@ -156,10 +179,22 @@ enum TailFrames {
         private var scroll: UIScrollView?
         private var keyboards = 0
         private var observer: NSObjectProtocol?
+        private(set) var ledger: [LedgerFrame] = []
+        private var pending: [SHRenderProbe.ScrollEvent] = []
+        private let capture = ProcessInfo.processInfo.environment["FIXTURE_SCROLL_LEDGER"] == "1"
 
         func start() {
-            let ticker = Ticker { [weak self] in self?.tick() }
-            let link = CADisplayLink(target: ticker, selector: #selector(Ticker.fire))
+            if capture {
+                SHRenderProbe.scrollEvents = { [weak self] event, source in
+                    guard let self, let guardian = ThreadTailGuard.measured, source == nil || source === guardian else { return }
+                    var event = event
+                    event.motion = guardian.traceMotion
+                    event.anchor = ledger.last?.first
+                    pending.append(event)
+                }
+            }
+            let ticker = Ticker { [weak self] link in self?.tick(link) }
+            let link = CADisplayLink(target: ticker, selector: #selector(Ticker.fire(_:)))
             link.add(to: .main, forMode: .common)
             self.link = link
             observer = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil,
@@ -168,8 +203,20 @@ enum TailFrames {
             }
         }
 
-        private func tick() {
+        private func tick(_ link: CADisplayLink) {
             if scroll?.window == nil { scroll = FollowFixture.threadScrollView() }
+            if capture {
+                let guardian = ThreadTailGuard.measured
+                let rows = scroll.flatMap { guardian?.traceRows(in: $0) } ?? [:]
+                let height = scroll.map { $0.bounds.inset(by: $0.adjustedContentInset).height } ?? 0
+                let first = rows.filter { $0.value.maxY > 0 && $0.value.minY < height }.min {
+                    ($0.value.minY, $0.key) < ($1.value.minY, $1.key)
+                }?.key
+                ledger.append(LedgerFrame(timestamp: link.timestamp, refreshInterval: link.targetTimestamp - link.timestamp,
+                                          motion: guardian?.traceMotion ?? "idle", first: first,
+                                          rows: rows.mapValues(\.minY), events: pending))
+                pending.removeAll(keepingCapacity: true)
+            }
             guard let scroll else { return frames.append(nil) }
             let regular = scroll.traitCollection.horizontalSizeClass == .regular
             let gutter = regular ? MobileLayout.padThreadGutter : MobileLayout.gutter
@@ -237,6 +284,7 @@ enum TailFrames {
         }
 
         func stop() -> String {
+            if capture { SHRenderProbe.scrollEvents = nil }
             link?.invalidate()
             link = nil
             observer.map(NotificationCenter.default.removeObserver)
@@ -283,8 +331,8 @@ enum TailFrames {
     }
 
     private final class Ticker: NSObject {
-        let tick: () -> Void
-        init(_ tick: @escaping () -> Void) { self.tick = tick }
-        @objc func fire() { tick() }
+        let tick: (CADisplayLink) -> Void
+        init(_ tick: @escaping (CADisplayLink) -> Void) { self.tick = tick }
+        @objc func fire(_ link: CADisplayLink) { tick(link) }
     }
 }

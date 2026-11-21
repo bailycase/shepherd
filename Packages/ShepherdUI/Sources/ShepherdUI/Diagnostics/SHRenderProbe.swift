@@ -10,6 +10,38 @@ import Synchronization
 ///     }
 public enum SHRenderProbe {
     #if DEBUG
+    /// Separate from render counts: fixtures associate ordered events with display frames.
+    @MainActor public static var scrollEvents: ((ScrollEvent, AnyObject?) -> Void)?
+    @MainActor public static var disabledScrollAnchor: String?
+    #endif
+
+    public struct ScrollEvent: Encodable {
+        public let caller: String
+        public let detail: String
+        public let kind: String
+        public let target: String?
+        public var motion: String?
+        public var anchor: String?
+    }
+
+    @MainActor @inline(__always)
+    public static func scrollEvent(_ caller: StaticString, _ detail: String, from source: @autoclosure () -> AnyObject? = nil,
+                                   target: @autoclosure () -> String? = nil, kind: String = "write") {
+        #if DEBUG
+        scrollEvents?(ScrollEvent(caller: caller.description, detail: detail, kind: kind, target: target()), source())
+        #endif
+    }
+
+    @MainActor @inline(__always)
+    public static func scrollAnchorEnabled(_ id: String) -> Bool {
+        #if DEBUG
+        disabledScrollAnchor != id
+        #else
+        true
+        #endif
+    }
+
+    #if DEBUG
     private struct Recording: Sendable {
         var active = false
         var counts: [String: Int] = [:]

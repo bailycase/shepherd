@@ -156,6 +156,7 @@ struct ActivityLineView: View, Equatable {
     /// A click on this line: the whole thread eases around the calls as they open, so the
     /// change animates as one transaction rather than from a container.
     private func toggle() {
+        SHRenderProbe.scrollEvent("thread.write.L9", "activity.disclosure", kind: "layout")
         withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
             if !expanded { seedScripts = true }
             expanded.toggle()
@@ -251,6 +252,7 @@ private struct ActivityCallDetails: View {
         // Also covers a quick reopen before the outgoing disclosure transition unmounted.
         seedInputDisclosure()
         if inputTexts[id] != nil {
+            SHRenderProbe.scrollEvent("thread.write.L9", "activity.inputDisclosure", target: id, kind: "layout")
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
@@ -264,6 +266,7 @@ private struct ActivityCallDetails: View {
         if call.kind == .edit, let path = call.path, let review {
             review(path)
         } else if call.expandable {
+            SHRenderProbe.scrollEvent("thread.write.L9", "activity.callDisclosure", target: id, kind: "layout")
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }

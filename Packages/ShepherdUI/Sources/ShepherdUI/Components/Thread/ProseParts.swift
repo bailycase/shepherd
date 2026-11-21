@@ -212,6 +212,7 @@ struct SHProseDetails<Code: SHProseCode>: View {
                 label(expandable: false)
             } else {
                 Button {
+                    SHRenderProbe.scrollEvent("thread.write.L9", "prose.disclosure", kind: "layout")
                     withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { open.toggle() }
                 } label: {
                     label(expandable: true)
