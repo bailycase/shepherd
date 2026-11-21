@@ -80,8 +80,9 @@ struct FleetDispatchHost: @unchecked Sendable {
     var stopThread: @Sendable (AgentID) -> Void = { _ in }
     var terminateThread: @Sendable (AgentID) -> Void = { _ in }
     var closeThread: @Sendable (AgentID, UUID) async throws -> FleetCloseProcesses = { _, _ in .init(sessionsStopped: false, sweep: nil) }
-    /// Sends a message into a thread's queue; false when it can't take one.
-    var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> Bool = { _, _, _ in false }
+    enum MessageResult { case accepted, starting, refused }
+    /// Tries the native send once. A starting thread has accepted nothing.
+    var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> MessageResult = { _, _, _ in .refused }
     /// What a thread is doing (server queue); nil when it is gone. Does not read its transcript.
     var threadFacts: @Sendable (AgentID) -> FleetThreadFacts? = { _ in nil }
     /// The text of the last assistant message, read only when a run ends (server queue).
@@ -1147,6 +1148,7 @@ final class FleetDispatch: @unchecked Sendable {
         case .commit:
             reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A thread's tools don't hand a move over.")))
         case .message(let text, let delivery):
+            if record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
             guard record.closeReport == nil, let target = record.targetHostID,
                   [.running, .delivering, .done].contains(record.state) else {
                 return reply(.failure(.init(code: "not_running", message: "That dispatch isn't running, so there is no thread to message (it is \(record.state.rawValue)).")))
@@ -1180,7 +1182,7 @@ final class FleetDispatch: @unchecked Sendable {
                         if case RemoteHostClientError.rejected(let code, let message) = error {
                             reply(.failure(.init(code: code, message: message)))
                         } else {
-                            reply(.failure(.init(code: "unreachable", message: "That Mac didn't answer. Try again.")))
+                            reply(.failure(.init(code: "unreachable", message: "That Mac didn't answer in time. The message may still arrive.")))
                         }
                     }
                 }

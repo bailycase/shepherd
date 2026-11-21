@@ -202,11 +202,11 @@ struct FleetDispatchTests {
 
         func hello() throws { try `extension`.send(.helloAgent(agentID: agent.id)) }
 
-        func call(_ make: (Int) -> ExtensionMessage) async throws -> ExtensionReply {
+        func call(timeout: Duration = .seconds(10), _ make: (Int) -> ExtensionMessage) async throws -> ExtensionReply {
             let id = Self.nextID.withValue { $0 += 1; return $0 }
             try `extension`.send(make(id))
             while true {
-                let reply = try await read()
+                let reply = try await read(timeout: timeout)
                 switch reply {
                 case .fleetHosts(id, _), .fleetDispatch(id, _), .error(id, _, _): return reply
                 default: continue
@@ -573,6 +573,229 @@ struct FleetDispatchTests {
         #expect(message.contains("disk space"))
         #expect(b.taken().isEmpty && b.dispatched.isEmpty)
         #expect(a.sent().first?.state == .failed)
+    }
+
+    private static func startingDispatch() async throws -> (a: Mac, b: Mac, parent: Parent, info: FleetDispatchInfo, thread: Agent) {
+        let (a, b, _) = try await pair(originExtra: ["stub-pi-startup.json": #"{"gate":"release-pi"}"#])
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        try await eventually("both Macs to hold the dispatch as running") { @Sendable in
+            let receiverRunning = await b.server.enqueueValue { @Sendable in b.server.fleet?.dispatch.inbound.values.first?.record.state == .running }
+            let senderRunning = await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.outbound.values.first?.state == .running }
+            return receiverRunning && senderRunning
+        }
+        let thread = try #require(b.dispatched.first)
+        let starting = await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.isServable == false }
+        try #require(starting)
+        return (a, b, parent, info, thread)
+    }
+
+    nonisolated private static func receivedTextCount(_ text: String, on mac: Mac, thread: Agent) async -> Int {
+        await mac.server.enqueueValue { @Sendable in
+            guard let rpc = mac.server.rpcThread(forAgent: thread.id) else { return 0 }
+            return (rpc.history + rpc.live.map(\.value)).filter {
+                $0.role == "user" && $0.blocks.map(\.text).joined() == text
+            }.count
+        }
+    }
+
+    @Test(.enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a staged engine"))
+    func aFollowUpSentWhileTheReceiversThreadIsStartingIsDeliveredOnceItServes() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let (a, b, parent, info, thread) = try await Self.startingDispatch()
+        defer { a.stop(); b.stop() }
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        let checked = Locked(false)
+        await b.server.enqueueValue { @Sendable in
+            guard let dispatch = b.server.fleet?.dispatch else { return }
+            let original = dispatch.host.messageThread
+            dispatch.host.messageThread = { id, text, delivery in
+                let result = await original(id, text, delivery)
+                checked.withValue { $0 = true }
+                return result
+            }
+        }
+        let script = #"""
+            import { createRequire } from "node:module";
+            import { join } from "node:path";
+            const [pkg, source, dispatch] = process.argv.slice(1);
+            const { createJiti } = createRequire(join(pkg, "package.json"))("jiti");
+            const jiti = createJiti(source, { alias: { typebox: join(pkg, "node_modules/typebox/build/index.mjs") } });
+            const { default: install } = await jiti.import(source);
+            let send, shutdown;
+            install({ registerTool(tool) { if (tool.name === "fleet_send") send = tool; },
+                      on(event, cb) { if (event === "session_shutdown") shutdown = cb; } });
+            const abort = new AbortController();
+            const timer = setTimeout(() => abort.abort(), 20_000);
+            try {
+              const result = await send.execute("call", { dispatch, text: "Follow up." }, abort.signal);
+              console.log(result.content[0].text);
+            } finally { clearTimeout(timer); shutdown?.(); }
+            """#
+        let source = EngineSmoke.repository.appendingPathComponent("Extensions/shepherd-panes.ts").path
+        var env = ProcessInfo.processInfo.environment
+        env["SHEPHERD_SOCKET"] = a.host.socketPath
+        env["SHEPHERD_AGENT_ID"] = parent.agent.id.rawValue
+        env["SHEPHERD_AUTOMATION"] = nil
+        let environment = env
+        let sending = Task {
+            try await blocking {
+                try EngineSmoke.runTool(engine.node.path, ["--input-type=module", "-e", script, engine.packageDirectory.path, source, info.dispatchID], environment: environment)
+            }
+        }
+        try await eventuallyOnMain("the first send attempt to reach the still-starting receiver") { checked.current }
+        try Data().write(to: worktree.appendingPathComponent("release-pi"))
+        let result = try await sending.value
+        try #require(result.status == 0, Comment(rawValue: result.output))
+        try #require(result.output.contains("followUp sent to dispatch \(info.dispatchID)"), Comment(rawValue: result.output))
+        try await eventually("the follow-up to reach the thread") { @Sendable in await Self.receivedTextCount("Follow up.", on: b, thread: thread) > 0 }
+        #expect(await Self.receivedTextCount("Follow up.", on: b, thread: thread) == 1)
+    }
+
+    @Test func aPreparingDispatchAnswersStartingOnBothMacsAndCanBeMessagedOnceReady() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let preparation = FleetTestGate()
+        await preparation.close()
+        await b.server.enqueueValue { @Sendable in
+            guard let dispatch = b.server.fleet?.dispatch else { return }
+            let original = dispatch.host.createThread
+            dispatch.host.createThread = { request in
+                await preparation.pass()
+                return await original(request)
+            }
+        }
+        let parent = try await a.parent()
+        try parent.hello()
+        let peer = try await b.connectAsPeer(a)
+        defer { peer.disconnect() }
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        let id = try #require(UUID(uuidString: info.dispatchID))
+        func send(_ text: String) async throws -> ExtensionReply {
+            try await parent.call {
+                .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: text, delivery: .followUp)
+            }
+        }
+        let preparing = "The dispatch is still being prepared."
+        do {
+            try await eventually("the receiver to reach thread creation") { @Sendable in await preparation.waiting == 1 }
+            let held = try await send("Refused by sender.")
+            guard case .error(_, "starting", preparing) = held else { throw WireError("expected sender startup refusal, got \(held)") }
+            do {
+                _ = try await peer.fleetDispatchControl(id, .message(text: "Refused by receiver.", delivery: .followUp))
+                Issue.record("receiver accepted a message before it created the thread")
+            } catch RemoteHostClientError.rejected(let code, let message) {
+                #expect(code == "starting" && message == preparing)
+            }
+        } catch {
+            await preparation.open()
+            throw error
+        }
+        await preparation.open()
+        try await eventually("the dispatch to serve on both Macs") { @Sendable in
+            let running = await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.outbound[id]?.state == .running }
+            guard running, let thread = b.dispatched.first else { return false }
+            return await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        let thread = try #require(b.dispatched.first)
+        _ = try parent.info(try await send("Sent once ready."))
+        try await eventually("the fresh request to reach the thread") { @Sendable in
+            await Self.receivedTextCount("Sent once ready.", on: b, thread: thread) == 1
+        }
+        #expect(await Self.receivedTextCount("Refused by sender.", on: b, thread: thread) == 0)
+        #expect(await Self.receivedTextCount("Refused by receiver.", on: b, thread: thread) == 0)
+    }
+
+    @Test func theReceiverRefusesStartingDeadAndMissingThreadsWithoutHoldingTheMessage() async throws {
+        let (a, b, _, info, thread) = try await Self.startingDispatch()
+        defer { a.stop(); b.stop() }
+        let peer = try await b.connectAsPeer(a)
+        defer { peer.disconnect() }
+        let dispatch = try #require(UUID(uuidString: info.dispatchID))
+        func refusal() async throws -> (String, String) {
+            do {
+                _ = try await peer.fleetDispatchControl(dispatch, .message(text: "Do not deliver.", delivery: .followUp))
+                throw WireError("a non-serving thread accepted input")
+            } catch RemoteHostClientError.rejected(let code, let message) { return (code, message) }
+        }
+        let (starting, message) = try await refusal() // The startup gate is still closed.
+        #expect(starting == "starting")
+        #expect(message == "The thread is still starting. Send it again in a moment.")
+        await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.bootstrap(timeout: 0.1) }
+        try await eventually("the live pi to miss its readiness deadline") { @Sendable in
+            await b.server.enqueueValue { @Sendable in
+                guard let rpc = b.server.rpcThread(forAgent: thread.id) else { return false }
+                return rpc.session.isAlive && !rpc.isServable && rpc.bootstrapFailure != nil
+            }
+        }
+        #expect(try await refusal().0 == "not_running")
+        let session = await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.session.id }
+        b.server.killSession(try #require(session))
+        try await eventually("the pi to exit while its thread still exists") { @Sendable in
+            await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.session.isAlive != true }
+        }
+        try #require(b.dispatched.contains { $0.id == thread.id })
+        #expect(try await refusal().0 == "not_running")
+        try await b.server.deleteAgent(thread.id)
+        #expect(try await refusal().0 == "not_running")
+    }
+
+    @Test(arguments: [false, true])
+    func aReadySteerDoesNotWaitAndAMissingAcknowledgementMayMeanDelivered(dropLink: Bool) async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        let dispatch = try #require(UUID(uuidString: info.dispatchID))
+        try await eventually("the dispatch to be ready to take input") { @Sendable in
+            let running = await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.outbound[dispatch]?.state == .running }
+            guard running, let thread = b.dispatched.first else { return false }
+            return await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        let thread = try #require(b.dispatched.first)
+        let peer = try await b.connectAsPeer(a)
+        defer { peer.disconnect() }
+        let acknowledgement = FleetTestGate()
+        await acknowledgement.close()
+        await b.server.enqueueValue { @Sendable in
+            guard let dispatch = b.server.fleet?.dispatch else { return }
+            let original = dispatch.host.messageThread
+            dispatch.host.messageThread = { id, text, delivery in
+                let result = await original(id, text, delivery)
+                if text == "Late acknowledgement." { await acknowledgement.pass() }
+                return result
+            }
+        }
+        let sending = Task { @MainActor in
+            try await parent.call(timeout: .seconds(15)) {
+                .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: "Late acknowledgement.", delivery: .followUp)
+            }
+        }
+        do {
+            try await eventually("the ready follow-up to arrive before its acknowledgement") { @Sendable in
+                guard await acknowledgement.waiting == 1 else { return false }
+                return await Self.receivedTextCount("Late acknowledgement.", on: b, thread: thread) == 1
+            }
+            let began = ContinuousClock.now
+            _ = try await peer.fleetDispatchControl(dispatch, .message(text: "Ready steer.", delivery: .steer))
+            #expect(ContinuousClock.now - began < .seconds(2), "a ready steer does not wait for the earlier acknowledgement")
+            try await eventually("the ready steer to reach the thread") { @Sendable in await Self.receivedTextCount("Ready steer.", on: b, thread: thread) == 1 }
+            if dropLink {
+                let target = try await b.hostID()
+                let link = await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.client(target) }
+                try #require(link).disconnect()
+            }
+            let reply = try await sending.value
+            guard case .error(_, let code, let message) = reply else { throw WireError("expected a missing acknowledgement, got \(reply)") }
+            #expect(code == "unreachable")
+            #expect(message == "That Mac didn't answer in time. The message may still arrive.")
+        } catch {
+            await acknowledgement.open()
+            throw error
+        }
+        await acknowledgement.open()
     }
 
     @Test func aFollowUpThatSettlesBeforeTheSendReplyDoesNotStayRunning() async throws {

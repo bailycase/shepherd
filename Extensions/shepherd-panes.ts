@@ -7,6 +7,7 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 import { textLines } from "./shepherd-lines.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -18,6 +19,11 @@ const MAX_REPLY_CHARS = 16 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 // Thread creation and process teardown may take longer than a normal peer request.
 const PEER_TIMEOUT_MS = 130_000;
+const FLEET_SEND_RETRY_MS = 8_000;
+
+class RequestError extends Error {
+  constructor(readonly hostMessage: string, readonly code?: string) { super(`${hostMessage} (${code})`); }
+}
 
 interface Reply {
   type: string;
@@ -281,7 +287,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     });
 
     if (reply.type === "error" || reply.result?.code) {
-      throw new Error(`${reply.result?.text ?? reply.message ?? "request failed"} (${reply.result?.code ?? reply.code})`);
+      throw new RequestError(reply.result?.text ?? reply.message ?? "request failed", reply.result?.code ?? reply.code);
     }
     return reply;
   }
@@ -858,11 +864,12 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   }
 
   // A refusal or failure is text for the model: "<message> (<code>)", as the host sent it.
-  async function fleetCall(payload: Record<string, unknown>, signal?: AbortSignal, timeout?: number): Promise<{ reply?: Reply; failure?: string }> {
+  async function fleetCall(payload: Record<string, unknown>, signal?: AbortSignal, timeout?: number): Promise<{ reply?: Reply; failure?: string; code?: string; hostMessage?: string }> {
     try {
       return { reply: await request(payload, signal, timeout) };
     } catch (error) {
-      return { failure: `not done: ${error instanceof Error ? error.message : String(error)}` };
+      const refusal = error instanceof RequestError ? error : undefined;
+      return { failure: `not done: ${error instanceof Error ? error.message : String(error)}`, code: refusal?.code, hostMessage: refusal?.hostMessage };
     }
   }
 
@@ -1029,10 +1036,30 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       }),
       async execute(_id, params, signal) {
         const delivery = params.delivery === "steer" ? "steer" : "followUp";
-        const { reply, failure } = await fleetCall({ type: "fleetDispatchMessage", dispatchID: params.dispatch, text: params.text, delivery },
-          signal, PEER_TIMEOUT_MS);
-        if (failure) return text(failure);
-        return text(`${delivery} sent to dispatch ${params.dispatch}${reply?.info ? `: ${reply.info.state}` : ""}`);
+        const message = { type: "fleetDispatchMessage", dispatchID: params.dispatch, text: params.text, delivery };
+        // Bound when we start new attempts, without shortening the timeout of a send already on the wire.
+        const deadline = performance.now() + FLEET_SEND_RETRY_MS;
+        let backoff = 200;
+        let lastHostMessage = "";
+        while (!signal?.aborted) {
+          const { reply, failure, code, hostMessage } = await fleetCall(message, signal, PEER_TIMEOUT_MS);
+          if (signal?.aborted) break;
+          if (!failure) return text(`${delivery} sent to dispatch ${params.dispatch}${reply?.info ? `: ${reply.info.state}` : ""}`);
+          if (code !== "starting") return text(failure);
+          lastHostMessage = hostMessage ?? failure;
+          if (performance.now() + backoff >= deadline) break;
+          await pause(backoff, undefined, { signal, ref: false }).catch(() => {});
+          if (performance.now() >= deadline) break;
+          backoff = Math.min(backoff * 2, 1_000);
+        }
+        if (signal?.aborted) return text("send cancelled");
+        if (lastHostMessage === "The dispatch is still being prepared.") {
+          return text(`${lastHostMessage} Check it with fleet_read or wait with fleet_wait before sending again.`);
+        }
+        // Replace the receiver's existing resend advice rather than repeating it.
+        const reason = lastHostMessage === "The thread is still starting. Send it again in a moment."
+          ? "The thread is still starting." : lastHostMessage;
+        return text(`${reason} Send it again shortly.`);
       },
     });
 

@@ -349,6 +349,7 @@ extension FleetDispatch {
             reply(.success(entry.record))
             pushPending()
         case .message(let text, let delivery):
+            if entry.record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
             guard !closingThreads.contains(id), entry.record.closeReport == nil,
                   let agent = entry.record.remoteAgentID, [.running, .delivering, .done].contains(entry.record.state),
                   let before = host.threadFacts(agent) else {
@@ -359,8 +360,11 @@ extension FleetDispatch {
                 let sent = await message(agent, text, delivery == .steer ? .steer : .followUp)
                 self?.queue.async {
                     guard let self, var entry = self.inbound[id] else { return }
-                    guard sent, !self.closingThreads.contains(id), entry.record.state != .cancelled else {
+                    guard !self.closingThreads.contains(id), entry.record.state != .cancelled, sent != .refused else {
                         return reply(.failure(.init(code: "not_running", message: "The thread didn't take the message.")))
+                    }
+                    if sent == .starting {
+                        return reply(.failure(.init(code: "starting", message: "The thread is still starting. Send it again in a moment.")))
                     }
                     // A finished dispatch starts a new run on the same thread, and that run's end is a new result.
                     entry.record.state = .running

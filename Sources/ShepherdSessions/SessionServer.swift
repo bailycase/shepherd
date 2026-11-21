@@ -1802,14 +1802,17 @@ public final class SessionServer: @unchecked Sendable {
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
-                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
-                            return continuation.resume(returning: false)
+                        guard let self, let thread = self.rpcThread(forAgent: agentID) else {
+                            return continuation.resume(returning: .refused)
+                        }
+                        guard thread.isServable else {
+                            return continuation.resume(returning: thread.session.isAlive && thread.bootstrapFailure == nil ? .starting : .refused)
                         }
                         thread.lastInputFromPerson = false
                         thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
-                            if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
+                            if case .accepted = result { continuation.resume(returning: .accepted) } else { continuation.resume(returning: .refused) }
                         }
-                    } ?? continuation.resume(returning: false)
+                    } ?? continuation.resume(returning: .refused)
                 }
             },
             threadFacts: { [weak self] agentID in
