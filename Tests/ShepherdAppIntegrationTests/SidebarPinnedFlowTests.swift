@@ -127,7 +127,7 @@ struct SidebarPinnedFlowTests {
         defer { app.stop() }
         let (state, _) = fleet(app, count: 1)
         let vm = try await app.start(with: state)
-        app.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
+        app.remoteHosts.addHost(name: "orbit", host: "127.0.0.1", port: 1, token: "x")
         let connection = try #require(app.remoteHosts.connections.first)
         let space = Fixture.space("remote", path: "/remote")
         let remote = Fixture.agent("remote thread", in: space).agent

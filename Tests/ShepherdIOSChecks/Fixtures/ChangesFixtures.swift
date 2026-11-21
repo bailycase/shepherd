@@ -43,6 +43,11 @@ extension FixtureCatalog {
                 await ReviewFixture.until { store.list?.scope == .lastTurn && !store.loading }
                 await ChangesFixture.filesLoaded(store)
             }),
+            FixtureScreen(name: "changes-history-damaged", hosts: ChangesFixture.hosts(damaged: true), routes: [thread, changes], prepare: { _ in
+                let store = ChangesFixture.store
+                await ReviewFixture.loaded(store)
+                await ReviewFixture.until { store.overview?.turnHistoryProblem != nil }
+            }),
             // Every file folded (Collapse all), and the unified diff forced wide.
             FixtureScreen(name: "changes-pad-collapsed", hosts: ChangesFixture.hosts(), routes: [thread, changes], prepare: { _ in
                 let store = ChangesFixture.store
@@ -162,7 +167,7 @@ enum ChangesFixture {
     }
 
     /// Studio serving the refund agent: its thread, the engine's reads and the commit's.
-    static func hosts() -> [FixtureHostData] {
+    static func hosts(damaged: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         if let index = hosts[0].state.agents.firstIndex(where: { $0.id == FixtureData.preview }) {
             hosts[0].state.agents[index].name = "Add refund events"
@@ -172,7 +177,7 @@ enum ChangesFixture {
         }
         hosts[0].threads[FixtureData.preview] = thread()
         let changes = reply(Repo(files: files, branch: branch, base: base, baseName: "main", mergeBase: "3f2a91c", lastTurn: turn,
-                                 turnFiles: files.map(\.id)))
+                                 turnFiles: files.map(\.id), turnHistoryProblem: damaged ? damage : nil))
         let info = RemoteCommitInfo(repository: "/Users/dev/payments", branch: branch, head: "a1c9f2e", upstream: nil, pushRemote: "origin",
                                     defaultBranch: "main", files: files.map {
                                         RemoteCommitFile(path: $0.id, status: $0.isNew ? "A" : "M", added: $0.addedCount, removed: $0.removedCount,
@@ -203,6 +208,8 @@ enum ChangesFixture {
         return hosts
     }
 
+    static let damage = "Undo/Redo history can't be read.\n/Users/dev/Library/Application Support/Shepherd/changes/turns.json\nThe given data was not valid JSON.\nOn the host Mac, fix the file's permissions if access was denied, or restore a known-good backup. As a last resort, delete this file to drop Undo/Redo history for past turns. This leaves the working tree untouched. Then refresh Changes; no restart is needed."
+
     struct Repo: Sendable {
         var files: [DiffFile]
         var branch: String
@@ -213,6 +220,7 @@ enum ChangesFixture {
         /// The files the last turn changed.
         var turnFiles: [String]
         var listError: String? = nil
+        var turnHistoryProblem: String? = nil
     }
 
     static let revision = ChangesRevision(old: "3f2a91c0d4", new: "9b8e7d60aa")
@@ -253,7 +261,8 @@ enum ChangesFixture {
         return ChangesOverview(
             repository: "/Users/dev/payments", branch: repo.branch, head: "a1c9f2e", defaultScope: .branch(base: nil), defaultBase: repo.base,
             entries: [
-                .init(scope: .lastTurn, files: turn.0, added: turn.1, removed: turn.2),
+                repo.turnHistoryProblem.map { .init(scope: .lastTurn, unavailable: $0) }
+                    ?? .init(scope: .lastTurn, files: turn.0, added: turn.1, removed: turn.2),
                 .init(scope: .uncommitted, files: 2, added: 33, removed: 11),
                 .init(scope: .unstaged, files: 1, added: 21, removed: 8),
                 .init(scope: .staged, files: 1, added: 12, removed: 3),
@@ -270,7 +279,7 @@ enum ChangesFixture {
             commitsBase: repo.base,
             pullRequest: ChangesPullRequest(number: 31, title: "Refund events", isDraft: true, state: "OPEN", base: "main", head: repo.branch,
                                             url: "https://github.com/acme/payments/pull/31"),
-            lastTurn: repo.lastTurn)
+            lastTurn: repo.turnHistoryProblem == nil ? repo.lastTurn : nil, turnHistoryProblem: repo.turnHistoryProblem)
     }
 
     static func list(_ repo: Repo, scope: ChangesScope) -> ChangesList {

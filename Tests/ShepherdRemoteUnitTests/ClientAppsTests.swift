@@ -44,7 +44,7 @@ final class FakeAppsHost: SettingsClient, AppsClient, @unchecked Sendable {
             case .list, .processes: break
             }
             let space = request.spaceID
-            let definitions = (space.flatMap { definitions[$0] } ?? []).map { RemoteApp(app: $0, mac: false) } + own.map { RemoteApp(app: $0, mac: true) }
+            let definitions = (space.flatMap { self.definitions[$0] } ?? []).map { RemoteApp(app: $0, mac: false) } + own.map { RemoteApp(app: $0, mac: true) }
             return RemoteAppsResult(space: "", apps: space == nil ? own.map { RemoteApp(app: $0, mac: true) } : definitions,
                                     processes: request == .processes ? runs : nil, lines: lines)
         }

@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestKit
 import ShepherdTestSupport
@@ -260,7 +261,8 @@ private final class Corpus {
     private static let current = RemoteProtocol.clientCapabilities
 
     init(seed: [String: String]) async throws {
-        app = try AppHarness()
+        let directory = try makeScratchDirectory("refusals")
+        app = try AppHarness(directory: directory, pi: WaitingMCP.setup(in: directory))
         space = Fixture.space(seed["space"]!, path: app.dir.path)
         thread = Fixture.agent(seed["thread"]!, in: space)
         // A Project's coordinator lives in the Space the host keeps for Projects, out of every client's list.
@@ -277,6 +279,8 @@ private final class Corpus {
         try await app.start(with: seeded)
         fileEvents = FileEvents(root: app.dir, barrierDirectory: try makeScratchDirectory("barrier"))
         forks = try ForkWatch()
+        // The corpus owns this ephemeral listener, even when Fleet opens or spends a join code.
+        app.server.onFleetListenerNeed { _ in }
         port = try app.server.startRemoteListener(port: 0, tokenURL: app.dir.appendingPathComponent("remote-token"))
         app.scratch.useRealPeerCheck()
         for (id, label) in [(thread.agent.id.rawValue, "<thread>"), (coordinator.agent.id.rawValue, "<coordinator>"),
@@ -365,9 +369,9 @@ private final class Corpus {
 
     // MARK: Connections
 
-    private func connect(capabilities: [String]?, name: String = "acme-phone") async throws -> Wire {
+    private func connect(capabilities: [String]?, name: String = "acme-phone", token: String? = nil) async throws -> Wire {
         let wire = try Wire(port: port)
-        let (_, reply) = try await exchange(wire, .hello(id: wire.nextID(), token: app.server.clientTokenForTests(), clientName: name,
+        let (_, reply) = try await exchange(wire, .hello(id: wire.nextID(), token: token ?? app.server.clientTokenForTests(), clientName: name,
                                                          protocolVersion: RemoteProtocol.version, capabilities: capabilities))
         guard case .object(let object) = reply, object["type"] as? String == "helloOk" else { throw WireFailure("no helloOk: \(reply)") }
         wire.offered = object["capabilities"] as? [String] ?? []
@@ -516,6 +520,7 @@ private final class Corpus {
         try await otherAgents()
         try await fleetPeerAnswers()
         try await extensionSocket()
+        try await spaceMCP()
     }
 
     private func recordSeed() async throws {
@@ -693,6 +698,45 @@ private final class Corpus {
     private func fleetPeerAnswers() async throws {
         let client = try await connect(capabilities: Self.current)
         try await refuse("peer/fleetPeerAnswer-not-a-peer", on: client) { .fleetPeerAnswer(id: $0, reply: .ok(id: $0)) }
+    }
+
+    private func spaceMCP() async throws {
+        let local = RemoteHostClient(localSocket: app.hostSocket)
+        defer { local.disconnect() }
+        _ = try await local.connect(host: "", port: 0, token: "", clientName: "acme-mac")
+        let code = try #require(try await local.fleetAction(.startJoin).join).code
+        let token = FleetProtocol.makeToken()
+        _ = try await RemoteHostClient.fleetPair(host: "127.0.0.1", port: port, code: code, introduction: .init(
+            hostID: UUID(), name: "acme-peer", myTokenHash: FleetProtocol.hash(token), port: 1))
+        let peer = try await connect(capabilities: Self.current, name: "acme-peer", token: token)
+        let project = app.dir.appendingPathComponent("acme-oauth")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try await app.server.addSpace(Space(name: "Acme OAuth", path: project.path), first: false)
+        let directory = project.path, file = ".shepherd/mcp.json"
+        _ = try await local.projects(.save(directory: directory, file: file,
+                                           text: #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#, expected: nil))
+        let owner = RemoteHostClient()
+        defer { owner.disconnect() }
+        _ = try await owner.connect(host: "127.0.0.1", port: port, token: app.server.clientTokenForTests(), clientName: "acme-phone")
+        func request(_ action: ProjectMCPAction) -> RemoteProjectsRequest { .mcp(directory: directory, file: file, action: action) }
+        let login = request(.login(server: "issues"))
+        // A valid, idle server would start a process if the Fleet guard were missing.
+        try await refuse("space-mcp/fleet-peer-login", on: peer) { .projects(id: $0, request: login) }
+        guard case .mcp(let run) = try await owner.projects(login) else { throw WireFailure("no MCP login result") }
+        let id = try #require(run.id)
+        let poll = request(.poll(id: id))
+        try await eventuallyAsync("the MCP bridge to be waiting for its callback") {
+            guard case .mcp(let status) = try await owner.projects(poll) else { return false }
+            return status.phase == .waiting && status.authorizationURL != nil
+        }
+        let completion = request(.complete(id: id, redirectURL: "http://localhost:1234/callback?code=acme"))
+        try await refuse("space-mcp/fleet-peer-complete", on: peer) { .projects(id: $0, request: completion) }
+        let other = try await connect(capabilities: Self.current, name: "acme-tablet")
+        try await refuse("space-mcp/other-device-complete", on: other) { .projects(id: $0, request: completion) }
+        guard case .mcp(let status) = try await owner.projects(poll), status.phase == .waiting else {
+            throw WireFailure("the refusals changed the owner's waiting login")
+        }
+        _ = try await owner.projects(request(.cancel(id: id)))
     }
 
     /// A message for an agent from a process that is not the pi Shepherd started for it: this test process is not.

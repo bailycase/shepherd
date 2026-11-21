@@ -118,7 +118,7 @@ struct SHGlanceEmpty: View {
     }
 }
 
-/// "● build-01, This Mac online · ○ horizon offline".
+/// "● build-01, This Mac online · ○ orbit offline".
 struct SHGlanceHostsLine: View {
     let glance: SHGlance
 

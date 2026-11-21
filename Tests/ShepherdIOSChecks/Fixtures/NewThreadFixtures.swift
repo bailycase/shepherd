@@ -153,7 +153,7 @@ enum NewThreadFixtures {
     /// images.
     static func hosts(oldBuildHost: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
-        hosts[0].state.spaces = [shepherd, dashboard, FixtureData.horizonSpace] + moreRepos
+        hosts[0].state.spaces = [shepherd, dashboard, FixtureData.orbitSpace] + moreRepos
         hosts[0].models = models
         hosts[0].reply = reply
         hosts[1].state.spaces = [orders]

@@ -426,6 +426,11 @@ extension AutomationsPageDetail {
         }
         // A host without triggers sends no status: its automation keeps the facts alone.
         guard let status else { return }
+        if status.storageDamaged == true {
+            banner = AutomationsPageBanner(state: .failed, title: "Trigger state is damaged",
+                                           message: status.reason, canResume: false)
+            return
+        }
         if local, allPaused || status.allPaused {
             banner = AutomationsPageBanner(state: .idle, title: "All triggers are paused",
                                            message: "Nothing starts on its own until you turn off Pause all triggers.", canResume: false)

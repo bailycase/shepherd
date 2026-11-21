@@ -674,7 +674,7 @@
               "timestamp": 20,
               "question": {
                 "kind": "select",
-                "question": "How should I handle Horizon's uncommitted edits?",
+                "question": "How should I handle Orbit's uncommitted edits?",
                 "answer": "Compare, keep what's unique (Recommended)",
                 "outcome": "answered",
                 "askedAt": 10

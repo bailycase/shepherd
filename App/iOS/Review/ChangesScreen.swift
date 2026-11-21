@@ -23,6 +23,11 @@ struct ChangesScreen: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.reviewCardSpacing) {
+                    if let problem = store.overview?.turnHistoryProblem {
+                        SHBanner(.failed, title: "Turn history", message: problem, stacked: true) {
+                            Button("Refresh") { store.refresh() }.buttonStyle(.sh(.ghost, size: .s))
+                        }
+                    }
                     if let error = store.loadError, store.loaded {
                         SHBanner(.failed, title: "Couldn't refresh the changes", message: error)
                     }
