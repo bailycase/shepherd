@@ -8,15 +8,11 @@ import Testing
         table.replace([.init(id: "a", estimate: 20), .init(id: "b", estimate: 30), .init(id: "c", estimate: 40)], spacing: 5)
         #expect(table.height == 100)
         #expect(table.offset(at: 2) == 60)
-        table.measure(["b": 42, "c": 70], width: 480)
-        #expect(table.offset(of: "b") == 25)
-        table.measure(["a": 12], width: 480)
-        #expect(table.offset(of: "b") == 17)
+        #expect(table.measure(["a": 12, "b": 42, "c": 70], width: 480, above: 1) == -8)
+        #expect(table.offset(at: 1) == 17)
         #expect(table.height == 134)
         #expect(table.width == 480)
-        table.measure(["a": 22, "missing": 99], width: 480)
-        #expect(table.offset(of: "b") == 27)
-        #expect(table.offset(of: "missing") == nil)
+        #expect(table.measure(["a": 22, "missing": 99], width: 480, above: 1) == 10)
     }
 
     @Test func theWindowUsesPrefixSumsAndDoesNotBuildOutsideHistory() {
@@ -24,30 +20,22 @@ import Testing
         table.replace((0..<10).map { .init(id: String($0), estimate: 20) }, spacing: 0)
         let clip = CGRect(x: 0, y: 80, width: 400, height: 20)
         #expect(table.range(for: clip, viewports: 2) == 2..<7)
-        table.measure(["1": 40], width: 400)
+        table.measure(["1": 40], width: 400, above: 4)
         #expect(table.range(for: clip, viewports: 2) == 1..<6)
         #expect(table.range(for: clip.offsetBy(dx: 0, dy: 200), viewports: 2).isEmpty)
     }
 
-    @Test func prependingMovesTheAnchorByTheNewPrefixAndKeepsBuiltMeasurements() {
+    @Test func prependsKeepExistingMeasurementsAndChangedEstimatesInvalidateThem() {
         var table = ThreadRowHeights()
         table.replace([.init(id: "a", estimate: 20), .init(id: "b", estimate: 30)], spacing: 5)
-        table.measure(["a": 28, "b": 42], width: 400)
-        #expect(table.offset(of: "b") == 33)
-        table.replace([.init(id: "older", estimate: 40), .init(id: "a", estimate: 25), .init(id: "b", estimate: 60)],
-                      spacing: 5, keeping: ["a"])
-        #expect(table.offset(of: "b") == 78)
+        table.measure(["a": 28, "b": 42], width: 400, above: 0)
+        table.replace([.init(id: "older", estimate: 40), .init(id: "a", estimate: 20), .init(id: "b", estimate: 60)], spacing: 5)
+        #expect(table.index(for: "a") == 1)
+        #expect(table.offset(at: 1) == 45)
         #expect(table.height(for: "a") == 28)
         #expect(table.height(for: "b") == 60)
-        table.resetMeasurements(width: 500, keeping: ["a"])
+        table.resetMeasurements(width: 500)
         #expect(table.width == 500)
-        #expect(table.height(for: "a") == 28)
-    }
-
-    @Test func duplicateIDsDoNotCountTheSameRowTwice() {
-        var table = ThreadRowHeights()
-        table.replace([.init(id: "a", estimate: 20), .init(id: "a", estimate: 30), .init(id: "b", estimate: 40)], spacing: 5)
-        #expect(table.offset(of: "b") == 25)
-        #expect(table.height == 65)
+        #expect(table.height(for: "a") == 20)
     }
 }

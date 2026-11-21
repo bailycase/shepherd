@@ -512,9 +512,9 @@ def missing_writer_probes(summaries, measured_history=False):
     missing = []
     for name, required in SCROLL_EXPECTED_WRITERS.items():
         if measured_history and name == "page-older-history":
-            # H1 replaces both the ScrollPosition request and the document-height correction.
-            required = required - {("M5", "history.materialize"), ("M6", "history.correct")} | {("H1", "stack marker layout")}
-        sites = {(event["caller"], (event.get("detail") or "").partition(" pass=")[0])
+            # The synchronous clip writer replaces the ScrollPosition request in this arm.
+            required = required - {("M5", "history.materialize")}
+        sites = {(event["caller"], event.get("detail"))
                  for frame in summaries[name]["ledger"]["frames"] for event in frame["writes"]}
         missing.extend(f"{name}: {writer} {detail}" for writer, detail in sorted(required)
                        if (f"thread.write.{writer}", detail) not in sites)

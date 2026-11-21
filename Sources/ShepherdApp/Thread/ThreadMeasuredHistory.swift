@@ -13,14 +13,8 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored private var pending: [String: CGFloat] = [:]
     @ObservationIgnored private weak var stack: StackMarker?
     @ObservationIgnored private var windowQueued = false
-    @ObservationIgnored private var anchor: Anchor?
-    @ObservationIgnored private var layoutPass = 0
-    @ObservationIgnored private var layingOut = false
-
-    private struct Anchor {
-        let id: String
-        let offset: CGFloat
-    }
+    @ObservationIgnored private var lastDocumentHeight: CGFloat?
+    @ObservationIgnored private var stackSize: CGSize = .zero
     @ObservationIgnored private var settings: Settings?
     @ObservationIgnored weak var guardrail: ThreadTailGuard?
 
@@ -31,19 +25,14 @@ final class ThreadMeasuredHistory {
     }
 
     func update(_ rows: ArraySlice<NativeThreadRow>, spacing: CGFloat, settings: Settings) {
-        guard self.settings != settings || self.rows != rows || table.spacing != spacing else { return }
-        if self.settings?.session != settings.session {
-            anchor = nil
-            pending.removeAll()
+        if self.settings != settings {
             table.resetMeasurements()
-        } else {
-            captureAnchor()
-            if self.settings != settings { table.resetMeasurements(keeping: builtRange) }
+            pending.removeAll()
+            self.settings = settings
         }
-        self.settings = settings
+        guard self.rows != rows || table.spacing != spacing else { return }
         self.rows = rows
-        table.replace(rows.map { .init(id: $0.id, estimate: CGFloat(NativeRowHeight.row($0))) }, spacing: spacing, keeping: builtRange)
-        if anchor != nil { stack?.needsLayout = true }
+        table.replace(rows.map { .init(id: $0.id, estimate: CGFloat(NativeRowHeight.row($0))) }, spacing: spacing)
         queueWindow()
     }
 
@@ -61,8 +50,6 @@ final class ThreadMeasuredHistory {
 
     private func publishWindow(synchronous: Bool = false) {
         guard let stack, let scroll = stack.enclosingScrollView, guardrail?.active == true else { return }
-        // Keep the old page's window until the clip has caught up with the new prefix.
-        guard !layingOut, anchor == nil else { queueWindow(); return }
         let clip = scroll.contentView
         let top = stack.convert(stack.bounds, to: clip).minY
         let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
@@ -78,39 +65,40 @@ final class ThreadMeasuredHistory {
     }
 
     func rowLaidOut(_ id: String, height: CGFloat, in scroll: NSScrollView?) {
-        guard height > 0, let scroll, let stack, stack.enclosingScrollView === scroll,
-              let previous = pending[id] ?? table.height(for: id), previous != height else { return }
+        guard height > 0, table.index(for: id) != nil, table.height(for: id) != height else { return }
         pending[id] = height
-        stack.needsLayout = true
+        commit(in: scroll, pass: "row marker layout")
     }
 
-    private func captureAnchor() {
-        guard anchor == nil, let stack, let scroll = stack.enclosingScrollView, guardrail?.following == false else { return }
+    func columnLaidOut(in scroll: NSScrollView?, prepended: Bool) {
+        commit(in: scroll, pass: "column finder frame change", prepended: prepended)
+        queueWindow()
+    }
+
+    private func commit(in scroll: NSScrollView?, pass: String, prepended: Bool = false) {
+        guard let scroll, let stack, stack.enclosingScrollView === scroll else { return }
         let clip = scroll.contentView
+        let height = clip.documentRect.height
+        defer { lastDocumentHeight = height }
+        guard !pending.isEmpty, stackSize.width > 0 else { return }
         let top = stack.convert(stack.bounds, to: clip).minY
         let reading = clip.bounds.minY + scroll.contentInsets.top - top
-        let index = table.range(for: CGRect(x: 0, y: reading, width: 0, height: 1), viewports: 0).lowerBound
-        guard index < table.rows.count else { return }
-        let id = table.rows[index].id
-        if builtRange.contains(id) { anchor = Anchor(id: id, offset: table.offset(at: index)) }
-    }
-
-    private func flush(_ marker: StackMarker) {
-        guard stack === marker, let scroll = marker.enclosingScrollView, !layingOut else { return }
-        layingOut = true
-        layoutPass += 1
-        let pass = layoutPass
-        defer { layingOut = false; queueWindow() }
-        if !pending.isEmpty { captureAnchor() }
-        let saved = anchor
-        anchor = nil
-        table.measure(pending, width: marker.bounds.width)
+        let anchor = table.range(for: CGRect(x: 0, y: reading, width: 0, height: 1), viewports: 0).lowerBound
+        var updated = table
+        let delta = updated.measure(pending, width: stackSize.width, above: anchor)
+        // The markers and column can be placed in either order. Don't apply a prefix change
+        // while the stack still has its old height or only some of the rows have reported.
+        guard abs(updated.height - stackSize.height) <= 1 / (stack.window?.backingScaleFactor ?? 1) else {
+            SHRenderProbe.scrollEvent("probe.heights.pending", "\(pass) stack=\(stackSize.height) measured=\(updated.height) document=\(height)",
+                                      from: scroll, kind: "layout")
+            return
+        }
+        table = updated
         pending.removeAll(keepingCapacity: true)
-        guard let saved, let offset = table.offset(of: saved.id), offset != saved.offset,
-              guardrail?.following == false, MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
-        let delta = offset - saved.offset
-        ThreadHistoryAnchor.correct(delta, in: scroll, rowID: saved.id, actor: "thread.write.H1",
-                                    caller: "stack marker layout pass=\(pass) delta=\(delta)")
+        guard !prepended, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
+              MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
+        ThreadHistoryAnchor.correct(delta, in: scroll, rowID: anchor < table.rows.count ? table.rows[anchor].id : nil,
+                                    actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height)")
     }
 
     struct Probe: NSViewRepresentable {
@@ -119,7 +107,7 @@ final class ThreadMeasuredHistory {
         func updateNSView(_ view: StackMarker, context: Context) {
             view.history = history
             history.stack = view
-            if history.anchor != nil || !history.pending.isEmpty { view.needsLayout = true }
+            history.stackSize = view.frame.size
             view.observeClip()
         }
     }
@@ -150,9 +138,10 @@ final class ThreadMeasuredHistory {
             guard let history, history.stack === self else { return }
             history.publishWindow(synchronous: true)
         }
-        override func layout() {
-            super.layout()
-            history?.flush(self)
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            history?.stackSize = newSize
+            history?.queueWindow()
         }
     }
 }

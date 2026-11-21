@@ -370,7 +370,7 @@ final class ThreadTailGuard {
         override func setFrameSize(_ newSize: NSSize) {
             let changed = newSize.height != frame.height
             super.setFrameSize(newSize)
-            if changed { measuredHistory?.rowLaidOut(rowID, height: bounds.height, in: enclosingScrollView) }
+            if changed && measuredHistory != nil { needsLayout = true }
         }
         override func layout() {
             super.layout()
@@ -384,6 +384,7 @@ final class ThreadTailGuard {
 struct ThreadScrollViewFinder: NSViewRepresentable {
     let guardian: ThreadTailGuard
     #if DEBUG
+    var historyAnchor: ThreadHistoryAnchor? = nil
     var measuredHistory: ThreadMeasuredHistory? = nil
     #endif
 
@@ -392,6 +393,8 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
     func updateNSView(_ view: Finder, context: Context) {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
         #if DEBUG
+        view.historyAnchor = historyAnchor
+        view.measuredHistory = measuredHistory
         measuredHistory?.guardrail = guardian
         #endif
     }
@@ -399,5 +402,19 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
     final class Finder: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+        #if DEBUG
+        weak var historyAnchor: ThreadHistoryAnchor?
+        weak var measuredHistory: ThreadMeasuredHistory?
+
+        override func setFrameSize(_ newSize: NSSize) {
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed {
+                let scroll = enclosingScrollView
+                let prepended = historyAnchor?.correctPrepend(in: scroll, pass: "column finder frame change") ?? false
+                measuredHistory?.columnLaidOut(in: scroll, prepended: prepended)
+            }
+        }
+        #endif
     }
 }
