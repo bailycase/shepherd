@@ -9984,8 +9984,9 @@ public final class SessionServer: @unchecked Sendable {
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
             thread.onStopRequested = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
-                // Pi's abort reaches the live Bash calls on its RPC stream. A separate control
-                // frame could arrive in the next turn or stop a group from an earlier one.
+                if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
+                    server.reply(.stopManagedBash, to: children)
+                }
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
             thread.onIdleAfterQueue = { [weak serverWeak] in

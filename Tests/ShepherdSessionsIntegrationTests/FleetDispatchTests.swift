@@ -545,6 +545,22 @@ struct FleetDispatchTests {
         try await eventuallyOnMain("both dispatch records to finish the second turn") { a.sent().first?.state == .done && b.taken().first?.state == .done }
     }
 
+    @Test func ordinaryStopTellsTheThreadToStopItsRetainedBashGroups() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        let spawn = AgentSpawn(agent: parent.agent, cwd: a.folder.path, settings: AgentLaunchSettings())
+        _ = try #require(try await a.server.respawnAgent(spawn))
+        try parent.extension.send(.helloChildren(agentID: parent.agent.id))
+        try await eventuallyOnMain("the parent agent to serve before stopping") {
+            a.server.queue.sync { a.server.rpcThread(forAgent: parent.agent.id)?.isServable == true }
+        }
+        // Ordering on one socket: a Fleet request answered after hello proves the control registration landed.
+        _ = try await parent.call { .fleetListHosts(id: $0, agentID: parent.agent.id) }
+        a.pressStop(parent.agent.id)
+        #expect(try await parent.read() == .stopManagedBash)
+    }
+
     @Test(arguments: ["stop then close", "scoped then close", "delete", "cancel", "close"])
     func explicitTeardownStopsEscapedJobsButNotReadableDecoys(action: String) async throws {
         let (a, b, _) = try await Self.pair()
@@ -587,8 +603,9 @@ struct FleetDispatchTests {
                 .fleetDispatchClose(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID)
             })
             let report = try #require(closed.closeReport)
-            #expect(report.contains("escapees found") && report.contains("already tracked"))
-            #expect(report.contains("Some processes could not be inspected for ownership markers"))
+            let found = try #require(report.firstMatch(of: /Marked process sweep: ([0-9]+) escapees found;/))
+            #expect((Int(found.1) ?? 0) >= 2)
+            #expect(report.contains("; 0 marked processes not confirmed stopped."))
         }
         try await eventuallyOnMain("all owned escapees to exit", timeout: .seconds(6)) {
             owned.allSatisfy { kill($0, 0) != 0 }
