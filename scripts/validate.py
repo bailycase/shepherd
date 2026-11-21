@@ -445,15 +445,14 @@ def band_evidence(frames):
             if same_seam and not markers_missing and old_gap > 2 and new_gap <= 2:
                 input_closures += 1
             continue
-        old_height, new_height = before.get("documentHeight"), after.get("documentHeight")
-        if old_height is None or new_height is None:
-            continue
-        drop = old_height - new_height
         if markers_missing:
-            unconfirmed_drops += drop > 2
+            old_height, new_height = before.get("documentHeight"), after.get("documentHeight")
+            if old_height is not None and new_height is not None and old_height - new_height > 2:
+                unconfirmed_drops += 1
             continue
         if not same_seam:
             continue
+        drop = before["documentHeight"] - after["documentHeight"]
         # A lazy stack can shrink without a hold. Require the extra space at the seam to close.
         if drop <= 2 or old_gap - new_gap <= 2 or abs(old_gap - new_gap - drop) > 2:
             continue
