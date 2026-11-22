@@ -189,6 +189,19 @@ struct AttentionReplies: View {
     }
 }
 
+/// The hosts that are not connected, one `HostNotice` each in a card: Home's first section, and the iPad overview's top.
+struct HostNotices: View {
+    let cards: [FleetHostCard]
+
+    var body: some View {
+        if !cards.isEmpty {
+            SHListCard {
+                ForEach(cards) { card in HostNotice(card: card).equatable() }
+            }
+        }
+    }
+}
+
 /// A host that is not connected, on Home: its name, why, and Retry.
 struct HostNotice: View, Equatable {
     let card: FleetHostCard

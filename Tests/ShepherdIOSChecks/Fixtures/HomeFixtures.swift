@@ -13,7 +13,10 @@ extension FixtureCatalog {
         let fleet = HomeFixtureData.fleet()
         return [
             FixtureScreen(name: "home", prepare: settle),
-            FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
+            FixtureScreen(name: "home-fleet", hosts: fleet, prepare: { app in
+                await settle(app)
+                await HostNoticeCheck.run(app, label: "Retry MacBook Air") { app in app.hosts.host(FixtureData.laptop)?.phase == .connecting }
+            }),
             FixtureScreen(name: "home-empty", hosts: []),
             // iPad: hosts with no threads, so the overview is its empty state.
             FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
@@ -33,7 +36,10 @@ extension FixtureCatalog {
             // The Designs tab while no host serves designs: its root says why (DuoClosedHome).
             FixtureScreen(name: "designs-unserved", hosts: fleet, routes: [.designs(.list)], prepare: settle),
             // The laptop is up but refuses the phone's token, instead of being unreachable.
-            FixtureScreen(name: "home-refused", hosts: FixtureData.refusingLaptop(fleet), prepare: settle),
+            FixtureScreen(name: "home-refused", hosts: FixtureData.refusingLaptop(fleet), prepare: { app in
+                await settle(app)
+                await HostNoticeCheck.run(app, label: "Add MacBook Air again with a code") { app in app.navigator.presented?.route == .settings(.host(nil)) }
+            }),
             FixtureScreen(name: "more-refused", hosts: FixtureData.refusingLaptop(fleet), routes: [.home(.more)], prepare: settle),
             FixtureScreen(name: "recents", hosts: fleet, routes: [.home(.recents)], prepare: settle),
             // iPad: the sidebar over a portrait thread (run with --sidebar).
@@ -170,6 +176,46 @@ extension FixtureCatalog {
             check(pressed && app.navigator.selectedThread == ref, "pressing \(what) opens its thread")
         }
         app.navigator.padSelection = nil
+    }
+}
+
+/// A host that is not connected is told on Home, and on the iPad overview with the sidebar out: its notice is drawn, and
+/// pressing its button (the way VoiceOver activates it) does what the button says.
+@MainActor enum HostNoticeCheck {
+    static func run(_ app: MobileApp, label: String, pressed effect: (MobileApp) -> Bool) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        if app.navigator.layout == .pad { await OverviewOpenCheck.hideSidebar(app) }
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        guard let button = SidebarAutomationsCheck.all.first(where: { $0.accessibilityLabel == label }) else {
+            return check(false, "the host notice's button is drawn (\(label))")
+        }
+        check(button.accessibilityActivate() && effect(app), "pressing \(label) does what it says")
+        // The shot shows the notice, not the sheet Add a Mac opened.
+        app.navigator.dismissPresented()
+        try? await Task.sleep(for: .seconds(1))
+    }
+}
+
+/// The iPad overview stays between the sidebar and the rail: with the sidebar docked (the split view brings it back after the
+/// fixture hides it) the review queue row and the first Open button sit inside the window's safe area, and clear of the sidebar.
+@MainActor enum OverviewFitCheck {
+    static func run(_ app: MobileApp) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        try? await Task.sleep(for: .seconds(3))
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) else {
+            return check(false, "a key window")
+        }
+        let safe = window.bounds.inset(by: window.safeAreaInsets)
+        // A sidebar that slides over the overview (portrait) covers it by design; only a docked one takes room.
+        let left = app.navigator.padColumns == .detailOnly || app.navigator.padSidebarOverlays ? safe.minX : MobileLayout.sidebarWidth
+        let titles = ["Review queue"] + HomeFeed.of(app.hosts).model.needsYou.map { "Open \($0.thread)" }
+        let placed = SidebarAutomationsCheck.all.filter { element in titles.contains { element.accessibilityLabel?.hasPrefix($0) == true } }
+        check(placed.count == titles.count, "the overview's rows are drawn (\(placed.count) of \(titles.count))")
+        check(placed.allSatisfy { $0.accessibilityFrame.minX >= left - 0.5 && $0.accessibilityFrame.maxX <= safe.maxX + 0.5 },
+              "no overview row runs under the sidebar (to \(left)) or the rail (from \(safe.maxX))")
     }
 }
 

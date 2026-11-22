@@ -62,11 +62,7 @@ private struct HomeSections: View {
     var body: some View {
         let automations = AutomationsStore.of(hosts)
         let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
-        if !model.offlineHosts.isEmpty {
-            SHListCard {
-                ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
-            }
-        }
+        HostNotices(cards: model.offlineHosts)
         if !groups.needsYou.isEmpty {
             section("Needs you", attention: true, count: groups.needsYou.count) {
                 SHListCard {

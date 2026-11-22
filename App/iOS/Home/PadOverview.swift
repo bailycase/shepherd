@@ -9,8 +9,10 @@ import ShepherdRemote
 struct PadOverview: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
-    @State private var width: CGFloat = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// Three columns at their narrowest, and the gaps between them.
+    private static let sideBySideWidth = MobileLayout.overviewColumnMinWidth * 3 + MobileLayout.blockSpacing * 2
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
@@ -19,20 +21,28 @@ struct PadOverview: View {
             if hosts.hosts.isEmpty {
                 NoHostsState().frame(maxHeight: .infinity)
             } else if model.overviewIsEmpty {
-                SHEmptyState(Text("No thread selected"), message: "Pick a thread in the sidebar, or start a new one.") {
-                    Button("New thread") { NewThreadHooks.open(navigator: navigator) }.buttonStyle(.sh(.primary))
+                VStack(spacing: 0) {
+                    if !model.offlineHosts.isEmpty { HostNotices(cards: model.offlineHosts).padding(MobileLayout.gutter) }
+                    SHEmptyState(Text("No thread selected"), message: "Pick a thread in the sidebar, or start a new one.") {
+                        Button("New thread") { NewThreadHooks.open(navigator: navigator) }.buttonStyle(.sh(.primary))
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                        HostNotices(cards: model.offlineHosts)
                         HomeReviewQueueRow()
-                        // Side by side when three columns fit; stacked in a narrow window or at large text.
-                        if !typeSize.isAccessibilitySize, width >= MobileLayout.overviewColumnMinWidth * 3 + MobileLayout.blockSpacing * 2 + MobileLayout.gutter * 2 {
-                            HStack(alignment: .top, spacing: MobileLayout.blockSpacing) {
-                                OverviewColumns(model: model, answering: feed.answering, failures: feed.failures)
+                        // Side by side when three columns fit; stacked in a narrow window or at large text. The fit is the
+                        // layout's own, not a width read back from the scroll view: that grows to its content's minimum
+                        // width, so a measured width never let the columns go back to stacked once a sidebar docked.
+                        ViewThatFits(in: .horizontal) {
+                            if !typeSize.isAccessibilitySize {
+                                HStack(alignment: .top, spacing: MobileLayout.blockSpacing) {
+                                    OverviewColumns(model: model, answering: feed.answering, failures: feed.failures)
+                                }
+                                .frame(minWidth: Self.sideBySideWidth, idealWidth: Self.sideBySideWidth, maxWidth: .infinity)
                             }
-                        } else {
                             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                                 OverviewColumns(model: model, answering: feed.answering, failures: feed.failures)
                             }
@@ -40,7 +50,6 @@ struct PadOverview: View {
                     }
                     .padding(MobileLayout.gutter)
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 .refreshable {
                     hosts.retryAll()
                     await feed.refresh()
