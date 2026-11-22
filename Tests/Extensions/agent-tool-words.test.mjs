@@ -142,7 +142,7 @@ test("agent_rename renames the caller without a target, another thread only by i
   } });
   try {
     const tool = h.tools.get("agent_rename");
-    assert.match(tool.description, /yours when agentID is omitted/);
+    assert.match(tool.description, /your thread like \/name when no id is given/);
     assert.match(tool.description, /only when the user explicitly asks you to rename it, in this conversation/);
     assert.deepEqual(tool.parameters.required, ["name"], "agentID is optional");
     assert.equal(output(await tool.execute("self", { name: " New " })), 'renamed "Old" to "New"', "the reply's cleaned name, not the one asked for");
@@ -160,6 +160,23 @@ test("agent_rename renames the caller without a target, another thread only by i
   const automation = await harness({ automation: true });
   try { assert.equal(automation.tools.has("agent_rename"), false); }
   finally { await automation.close(); }
+});
+
+test("agent_rename uses a separate request for dispatch ids and reports the observed title", async () => {
+  const h = await harness({ defer: true, onFrame(frame, write) {
+    if (frame.type === "fleetDispatchRename") write({ type: "fleetDispatch", id: frame.id,
+      info: { dispatchID: frame.dispatchID, title: "Payment test" } });
+  } });
+  try {
+    const tool = h.tools.get("agent_rename");
+    assert.equal(output(await tool.execute("fleet", { name: " Payment test ", dispatchID: "job" })), 'renamed dispatch job to "Payment test"');
+    const frame = h.frames.find((f) => f.type === "fleetDispatchRename");
+    assert.equal(frame.agentID, "agent-1");
+    assert.equal(frame.dispatchID, "job");
+    assert.equal(frame.name, " Payment test ");
+    await assert.rejects(tool.execute("both", { name: "New", agentID: "local", dispatchID: "job" }), /not both/);
+    assert.equal(h.frames.some((f) => f.type === "renameAgent"), false, "can't fall back to a local rename");
+  } finally { await h.close(); }
 });
 
 test("agent_rename gives up after 20 seconds when an old host ignores it", async () => {

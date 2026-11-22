@@ -79,7 +79,7 @@ struct FleetScreen: View {
                     } else if serves {
                         FleetSectionLabel(title: wide ? "Recent work today" : "Recent work", capitals: navigator.hingeClosed == nil)
                             .padding(.top, wide ? SH.Space.s : 0)
-                        FleetDispatchesCard()
+                        FleetDispatchesCard(rows: page.dispatches)
                     } else {
                         Text("Room and readings show for a Mac on the latest Shepherd. Update it to see them.")
                             .shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)

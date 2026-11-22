@@ -621,6 +621,7 @@ struct RemoteRequestTests {
         .fleetDispatchControl(id: 133, dispatchID: RemoteSamples.dispatchID, control: .close),
         .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
         .fleetDispatchControl(id: 130, dispatchID: RemoteSamples.dispatchID, control: .commit),
+        .fleetDispatchControl(id: 138, dispatchID: RemoteSamples.dispatchID, control: .rename(name: "Payment test")),
         .fleetDispatchCreate(id: 131, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .move, task: "", title: "Speed up checkout CI", repoKey: "github.com/acme/web",
                                                                   from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
                                                                   snapshot: RemoteSamples.repoOnlyHeader,

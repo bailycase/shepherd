@@ -12,6 +12,8 @@ extension FixtureCatalog {
             FixtureScreen(name: "fleet", hosts: FleetFixtureData.hosts(), routes: [.settings(.fleet)], tab: .settings,
                           prepare: { app in await FleetFixtureData.settle(app) }),
             // Settings' own entry, among the Machines.
+            FixtureScreen(name: "fleet-renamed-dispatch", hosts: FleetFixtureData.hosts(snapshot: FleetFixtureData.renamedDispatch()), routes: [.settings(.fleet)], tab: .settings,
+                          prepare: { app in await FleetFixtureData.settle(app) }),
             FixtureScreen(name: "fleet-settings", hosts: FleetFixtureData.hosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in await FleetFixtureData.settle(app) }),
             // A fleet of one Mac, and one with a Mac that has no room and one that hasn't answered yet.
@@ -80,6 +82,15 @@ enum FleetFixtureData {
                               readiness: FleetReadinessReport(model: "Mac mini", chip: "M4 Pro", repos: ["acme-web", "payments-api", "orders-svc"])),
                 FleetMacState(hostID: studio, readiness: FleetReadinessReport(model: "Mac Studio", chip: "M3 Ultra", repos: ["acme-web"])),
             ])
+    }
+
+    static func renamedDispatch() -> FleetSnapshot {
+        var source = snapshot()
+        var record = FleetDispatchRecord(parentHostID: here, parentHostName: "MacBook Pro", targetHostID: mini, targetHostName: "Mac mini",
+                                         state: .done, title: "Payment test complete", task: "", repoKey: "", createdAt: tenFortyTwo)
+        record.titleRevision = 1
+        source.dispatches = [record]
+        return source.clientView(withMoves: false, withDispatches: true)
     }
 
     /// The fleet with what each Mac found when it looked at itself (`FleetCheckReport`): Mac mini has node 20 where the repos pin 22 and no muse CLI,

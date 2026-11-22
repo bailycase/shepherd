@@ -52,6 +52,7 @@ public struct Capability: RawRepresentable, Hashable, Sendable {
     public static let fleetDevices = Capability("fleet.devices.v1")
     public static let fleetDispatch = Capability("fleet.dispatch.v1")
     public static let fleetDispatchClose = Capability("fleet.dispatch.close.v1")
+    public static let fleetDispatchRename = Capability("fleet.dispatch.rename.v1")
     public static let fleetFollow = Capability("fleet.follow.v1")
     public static let fleetLink = Capability("fleet.link.v1")
     public static let fleetMove = Capability("fleet.move.v1")

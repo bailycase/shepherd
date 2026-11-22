@@ -294,14 +294,23 @@ extension FleetSnapshot {
 
     /// `clientView`, with the moves of this Mac's threads for a client that reads them (`fleet.move.view.v1`: one that doesn't would draw a
     /// move as a failed dispatch).
-    public func clientView(withMoves moves: Bool) -> FleetSnapshot {
-        FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
+    public func clientView(withMoves moves: Bool, withDispatches work: Bool = false) -> FleetSnapshot {
+        let rows = dispatches.compactMap { record -> FleetDispatchRecord? in
+            if record.kind == .move { return moves ? record : nil }
+            guard work else { return nil }
+            // Recent Work needs no task, result, branch, or checkout details.
+            let title = record.titleGiven || record.titleRevision != nil ? record.title : ""
+            return FleetDispatchRecord(id: record.id, kind: record.kind, parentHostID: record.parentHostID,
+                                       parentHostName: record.parentHostName, targetHostID: record.targetHostID,
+                                       targetHostName: record.targetHostName, state: record.state, title: title,
+                                       task: "", repoKey: "", createdAt: record.createdAt)
+        }
+        return FleetSnapshot(enabled: enabled, hostID: hostID, name: name,
                       peers: peers.map {
                           FleetPeerStatus(hostID: $0.hostID, name: $0.name, kind: $0.kind, pairedAt: $0.pairedAt, link: $0.link, lastSeen: $0.lastSeen,
                                           takesThreads: $0.takesThreads, takesUpdates: $0.takesUpdates)
                       },
-                      // A thread that is moving shows its progress wherever it is open; nothing else a Mac sent.
-                      macs: macs, dispatches: moves ? dispatches.filter { $0.kind == .move } : [], members: members, limits: limits,
+                      macs: macs, dispatches: rows, members: members, limits: limits,
                       updates: updates, app: app)
     }
 }

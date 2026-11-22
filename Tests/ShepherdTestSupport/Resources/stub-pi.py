@@ -1688,6 +1688,14 @@ for raw in sys.stdin.buffer:
             respond(held_history_request, "get_messages", data={"messages": stale_history})
             held_history_request = None
             stale_history = None
+    elif t == "set_session_name":
+        name = cmd["name"].strip()
+        if not name:
+            respond(cmd, t, success=False, error="Session name cannot be empty")
+        else:
+            STATE["sessionName"] = name
+            emit({"type": "session_info_changed", "name": name})
+            respond(cmd, t)
     elif t == "new_session":
         STATE["sessionId"] = "stub-session-2"
         del MESSAGES[:]

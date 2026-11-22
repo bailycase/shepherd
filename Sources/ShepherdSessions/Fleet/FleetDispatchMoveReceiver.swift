@@ -106,14 +106,15 @@ extension FleetDispatch {
             entry.unsent = false
             inbound[id] = entry
             // Work the thread was sent here for goes on being reported to whoever sent it, from this Mac now.
-            if var dispatched = entry.handoff?.dispatch, dispatched.state.isLive, inbound[dispatched.id] == nil {
+            if var dispatched = entry.handoff?.dispatch, inbound[dispatched.id] == nil || inbound[dispatched.id]?.record.movedOn != nil {
+                let expectsResult = dispatched.state.isLive
                 dispatched.targetHostID = hostID
                 dispatched.targetHostName = hostName()
                 dispatched.remoteAgentID = agent
-                dispatched.state = .running
+                if expectsResult { dispatched.state = .running }
                 dispatched.movedOn = nil
                 dispatched.updatedAt = now
-                inbound[dispatched.id] = Inbound(record: dispatched, expectsResult: true, startedWorking: false, unsent: true,
+                inbound[dispatched.id] = Inbound(record: dispatched, expectsResult: expectsResult, startedWorking: false, unsent: true,
                                                  worktree: entry.worktree, acceptedAt: now)
             }
             save()

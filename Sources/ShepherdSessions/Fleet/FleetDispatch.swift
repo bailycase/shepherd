@@ -83,6 +83,10 @@ struct FleetDispatchHost: @unchecked Sendable {
     enum MessageResult { case accepted, starting, refused }
     /// Tries the native send once. A starting thread has accepted nothing.
     var messageThread: @Sendable (AgentID, String, NativeThreadDelivery) async -> MessageResult = { _, _, _ in .refused }
+    /// Server queue. Answers with the name Pi confirmed, or the same refusal as a local rename.
+    var renameThread: @Sendable (AgentID, String, @escaping (Result<String, FleetDispatchRefusal>) -> Void) -> Void = { _, _, reply in
+        reply(.failure(.init(code: "not_running", message: "This Mac can't rename threads right now.")))
+    }
     /// What a thread is doing (server queue); nil when it is gone. Does not read its transcript.
     var threadFacts: @Sendable (AgentID) -> FleetThreadFacts? = { _ in nil }
     /// The text of the last assistant message, read only when a run ends (server queue).
@@ -941,8 +945,16 @@ final class FleetDispatch: @unchecked Sendable {
     /// Codes that say the request didn't get an answer, not that it was refused.
     static let transportCodes: Set<String> = ["not_sent", "timeout", "closed", "disconnected", "protocol"]
 
+    private func mergeTitle(_ theirs: FleetDispatchRecord, into record: inout FleetDispatchRecord) {
+        guard let revision = theirs.titleRevision, revision > (record.titleRevision ?? 0) else { return }
+        record.title = theirs.title
+        record.titleRevision = revision
+        record.updatedAt = now
+    }
+
     /// Takes what the target says into the sender's record. A finished sender record never moves back.
     func merge(_ theirs: FleetDispatchRecord, into record: inout FleetDispatchRecord) {
+        mergeTitle(theirs, into: &record)
         guard record.state.isLive else { return }
         if record.kind == .move { return mergeMove(theirs, into: &record) }
         // A failed clone told a second time (the push and the answer to a status question both bring it) is the same attempt, already
@@ -1005,6 +1017,7 @@ final class FleetDispatch: @unchecked Sendable {
         guard var record = outbound[theirs.id], record.targetHostID == peer else { return false }
         // The thread this sent work to moved on to another Mac: the work is that Mac's now, and so is its result.
         if let moved = theirs.movedOn, record.kind != .move {
+            mergeTitle(theirs, into: &record)
             record.targetHostID = moved.hostID
             record.targetHostName = moved.hostName
             record.updatedAt = now
@@ -1135,7 +1148,7 @@ final class FleetDispatch: @unchecked Sendable {
         }
     }
 
-    /// The thread's own `fleet_cancel`, `fleet_send` and `fleet_read` against the dispatch it names.
+    /// Controls a dispatch only for the thread that sent it.
     func agentControl(from agentID: AgentID, key: String, _ control: FleetDispatchControl,
                       reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
         guard let record = dispatch(forKey: key, agent: agentID) else {
@@ -1150,6 +1163,8 @@ final class FleetDispatch: @unchecked Sendable {
             reply(.success(outbound[record.id] ?? record))
         case .close:
             closeRemoteThread(record, reply: reply)
+        case .rename:
+            renameRemoteThread(record, control: control, reply: reply)
         case .commit:
             reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A thread's tools don't hand a move over.")))
         case .message(let text, let delivery):
@@ -1204,6 +1219,41 @@ final class FleetDispatch: @unchecked Sendable {
             } else {
                 reply(.failure(.init(code: "unreachable", message: "That Mac isn't connected right now.")))
             }
+        }
+    }
+
+    private func renameRemoteThread(_ record: FleetDispatchRecord, control command: FleetDispatchControl,
+                                    reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
+        if record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
+        guard record.kind == .agentDispatch, record.closeReport == nil, let target = record.targetHostID else {
+            return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to rename.")))
+        }
+        let unknown = FleetDispatchRefusal(code: "unreachable", message: "That Mac didn't confirm the rename. The outcome is unknown; check the current name before retrying.")
+        let finish: (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void = { [weak self] result in
+            if case .success(let renamed) = result {
+                guard let self, var current = self.outbound[record.id], current.targetHostID == target,
+                      renamed.id == record.id, renamed.titleRevision != nil else { return reply(.failure(unknown)) }
+                self.mergeTitle(renamed, into: &current)
+                self.outbound[record.id] = current
+                self.save()
+            }
+            reply(result)
+        }
+        if target == hostID { return control(record.id, command, from: hostID, reply: finish) }
+        guard let link = client(target) else { return reply(.failure(unknown)) }
+        guard capabilities(of: target)?.contains(RemoteProtocol.fleetDispatchRenameCapability) == true else {
+            return reply(.failure(.init(code: "unsupported", message: "Update Shepherd on that Mac to rename dispatched threads.")))
+        }
+        Task {
+            let result: Result<FleetDispatchRecord, FleetDispatchRefusal>
+            do {
+                result = .success(try await link.fleetDispatchControl(record.id, command))
+            } catch RemoteHostClientError.rejected(let code, let message) where !Self.transportCodes.contains(code) {
+                result = .failure(.init(code: code, message: message))
+            } catch {
+                result = .failure(unknown)
+            }
+            queue.async { finish(result) }
         }
     }
 

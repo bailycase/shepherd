@@ -101,16 +101,26 @@ struct FleetSectionLabel: View {
     }
 }
 
-/// The Recent work log. Nothing sends work yet (slice 4d), so it holds its empty state, as the Mac's does.
+/// The read-only Recent work log.
 struct FleetDispatchesCard: View {
+    let rows: [FleetDispatchRow]
+
     var body: some View {
         SHListCard {
-            Text("Nothing yet. When a thread starts work on another Mac, it shows here with why it went there.")
-                .font(.sh(.ui, weight: .regular))
-                .foregroundStyle(Color.sh.textTertiary)
-                .padding(.vertical, SH.Space.xl)
-                .padding(.horizontal, SH.Space.xl)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if rows.isEmpty {
+                Text("Nothing yet. When a thread starts work on another Mac, it shows here with why it went there.")
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .padding(.vertical, SH.Space.xl)
+                    .padding(.horizontal, SH.Space.xl)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(rows) { row in
+                        SHListRow(row.title, subtitle: row.state, trailing: .host(row.host), chevron: false)
+                    }
+                }
+            }
         }
     }
 }

@@ -130,6 +130,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `fleet_cancel`: stop a dispatched thread. Answered with `ExtensionReply.fleetDispatch`.
     case fleetDispatchCancel(id: Int, agentID: AgentID, dispatchID: String)
     case fleetDispatchClose(id: Int, agentID: AgentID, dispatchID: String)
+    /// `agent_rename` with a dispatch ID. Answered with the updated dispatch only after Pi confirms the name.
+    case fleetDispatchRename(id: Int, agentID: AgentID, dispatchID: String, name: String)
     /// `fleet_read` with no dispatch: the dispatches this Mac sent, newest first. Read-only. Answered with `ExtensionReply.fleetDispatches`.
     case fleetListDispatches(id: Int, agentID: AgentID)
 
@@ -287,7 +289,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, moveAgent, renameAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
-        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel, fleetDispatchClose, fleetListDispatches
+        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel, fleetDispatchClose, fleetDispatchRename, fleetListDispatches
         case suggestInstruction
         case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
@@ -493,6 +495,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .fleetDispatchCancel:
             self = .fleetDispatchCancel(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                                         dispatchID: try c.decode(String.self, forKey: .dispatchID))
+        case .fleetDispatchRename:
+            self = .fleetDispatchRename(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                        dispatchID: try c.decode(String.self, forKey: .dispatchID), name: try c.decode(String.self, forKey: .name))
         case .fleetDispatchClose:
             self = .fleetDispatchClose(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                                         dispatchID: try c.decode(String.self, forKey: .dispatchID))
@@ -922,6 +927,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(dispatchID, forKey: .dispatchID)
+        case .fleetDispatchRename(let id, let agentID, let dispatchID, let name):
+            try c.encode(Kind.fleetDispatchRename, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
+            try c.encode(name, forKey: .name)
         case .fleetDispatchClose(let id, let agentID, let dispatchID):
             try c.encode(Kind.fleetDispatchClose, forKey: .type)
             try c.encode(id, forKey: .id)

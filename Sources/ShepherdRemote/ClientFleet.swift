@@ -91,7 +91,25 @@ public final class ClientFleet {
         let held = reads
         reads += 1
         do {
-            let read = try await (watching ? client.fleetWatching(true) : client.fleetRead()).snapshot
+            var read = try await (watching ? client.fleetWatching(true) : client.fleetRead()).snapshot
+            if watching {
+                // The sender holds each dispatch. The Mac supplying the Fleet page need not be that sender.
+                let peers = Set(read.peers.map(\.hostID))
+                let otherRows = await withTaskGroup(of: [FleetDispatchRecord].self) { group in
+                    for other in Self.sources(hosts) where other.id != host.id {
+                        guard let otherClient = other.client as? any FleetViewClient else { continue }
+                        group.addTask {
+                            guard let view = try? await otherClient.fleetRead().snapshot, let id = view.hostID, peers.contains(id) else { return [] }
+                            return view.dispatches.filter { $0.kind != .move && $0.parentHostID == id }
+                        }
+                    }
+                    var rows: [FleetDispatchRecord] = []
+                    for await batch in group { rows += batch }
+                    return rows
+                }
+                var seen = Set(read.dispatches.map(\.id))
+                read.dispatches += otherRows.filter { seen.insert($0.id).inserted }
+            }
             if held % Self.settingsEvery == 0 || hostSettings.settings(of: host) == nil { await hostSettings.refresh(host) }
             guard sourceID == host.id else { return }
             sourceName = host.name
@@ -164,9 +182,10 @@ public final class ClientFleet {
     public func update(_ hostID: UUID, _ command: FleetUpdateCommand, _ hosts: [SettingsHost]) async {
         guard let host = source(in: hosts), let client = host.client as? any FleetViewClient else { return }
         do {
-            let read = try await client.fleetUpdate(hostID, command).snapshot
+            var read = try await client.fleetUpdate(hostID, command).snapshot
             updateProblem = nil
             guard sourceID == host.id else { return }
+            read.dispatches += snapshot.dispatches.filter { $0.parentHostID != read.hostID }
             snapshot = read
             snapshotAt = now()
             recompute(host)
