@@ -264,11 +264,17 @@ struct ThreadView: View {
                     .overlay(alignment: .top) {
                         // With no history the lazy stack is empty and still takes the column's spacing: the first row starts that far below the
                         // column's top, and the sentinel reaches it, or turning to that row leaves it above the scroll view's margin.
-                        Color.clear.frame(height: AppLayout.turnSpacing + (history.isEmpty ? spacing : 0))
-                            .onScrollVisibilityChange { visible in
-                                historyVisibilityChanged(visible)
-                            }
-                            .accessibilityHidden(true)
+                        #if DEBUG
+                        if measuredHistory != nil {
+                            // At the AppKit top, the history starts under the reading inset.
+                            // Put the sentinel inside the reading area rather than behind it.
+                            historySentinel(spacing: history.isEmpty ? spacing : 0).padding(.top, threadTopMargin)
+                        } else {
+                            historySentinel(spacing: history.isEmpty ? spacing : 0)
+                        }
+                        #else
+                        historySentinel(spacing: history.isEmpty ? spacing : 0)
+                        #endif
                     }
                     .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
                     .modifier(ThreadGutterPadding(inset: composerInset, fixedGutter: workerStyle?.gutter))
@@ -315,7 +321,7 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
                                                present: !composerHidden))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
-                .contentMargins(.top, workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
+                .contentMargins(.top, threadTopMargin, for: .scrollContent)
                 // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
                 // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
@@ -1000,6 +1006,23 @@ struct ThreadView: View {
     // Starting history during an animated jump can discard its restoration scroll request.
     // The rows of a thread still to bring its lazy stack back (`ThreadRestore`) are in memory, drawn or not: nothing to load for them.
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating && !restore.awaitsHistory }
+
+    private var threadTopMargin: CGFloat {
+        workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop
+    }
+
+    private func historySentinel(spacing: CGFloat) -> some View {
+        Color.clear.frame(height: AppLayout.turnSpacing + spacing)
+            .onScrollVisibilityChange { visible in
+                #if DEBUG
+                if visible, let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard {
+                    trace.mark("fixture.nativeHistoryVisibility")
+                }
+                #endif
+                historyVisibilityChanged(visible)
+            }
+            .accessibilityHidden(true)
+    }
 
     private func historyVisibilityChanged(_ visible: Bool) {
         historyPaging.visible = visible
