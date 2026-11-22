@@ -414,7 +414,7 @@ private struct ForgeChecksTab: View {
                     .textSelection(.enabled)
                     SHHairline()
                     Button { fix(row.check, log?.value) } label: {
-                        Text("Fix with agent").font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.running)
+                        Text("Fix with agent").font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.lantern)
                             .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
                             .contentShape(Rectangle())
                     }

@@ -511,10 +511,10 @@ private struct ProviderAction: View {
                 }
                 Button(subscription ? "Sign out" : "Remove", role: .destructive) { run(.providerSignOut(provider: provider.id)) }
             } label: {
-                // Drawn as the row's other actions are (`shLink`): running blue, so it reads as one.
+                // Drawn as the row's other actions are (`shLink`): the accent, so it reads as one.
                 Text(subscription ? "Account" : "Key")
                     .font(.sh(.caption, weight: .medium))
-                    .foregroundStyle(Color.sh.running)
+                    .foregroundStyle(Color.sh.lantern)
             }
         } else if subscription {
             Button(provider.auth == .expired ? "Sign in again" : "Sign in") { run(.providerSignIn(provider: provider.id)) }

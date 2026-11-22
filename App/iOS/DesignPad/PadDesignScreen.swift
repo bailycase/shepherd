@@ -172,7 +172,7 @@ private struct PadDesignHeader: View {
                         .font(.shSans(MobileLayout.padDesignHeaderText, .semibold))
                     if wide { Text("Designs").font(.shSans(MobileLayout.padDesignHeaderText)) }
                 }
-                .foregroundStyle(sh.running)
+                .foregroundStyle(sh.lantern)
                 .frame(minHeight: SH.Height.touch)
                 .contentShape(Rectangle().inset(by: -SH.Space.m))
             }

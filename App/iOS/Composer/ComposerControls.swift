@@ -219,7 +219,7 @@ struct ModelPickerSheet: View {
                                             }
                                             Spacer(minLength: SH.Space.m)
                                             if model.isCurrent {
-                                                Image(systemName: "checkmark").foregroundStyle(Color.sh.running)
+                                                Image(systemName: "checkmark").foregroundStyle(Color.sh.lantern)
                                                     .accessibilityLabel("Current")
                                             }
                                         }

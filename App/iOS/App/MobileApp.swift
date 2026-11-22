@@ -127,6 +127,7 @@ extension View {
             .environment(app.pushRouter)
             .environment(\.mobileWindow, window)
             .environment(\.mobileApp, app)
+            .environment(\.shLinkColor, Color.sh.lantern)
     }
 }
 

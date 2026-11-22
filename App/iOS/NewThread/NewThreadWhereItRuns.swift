@@ -282,7 +282,7 @@ struct NewThreadRepoList: View {
                 SHChoiceRow("Add repo…", detail: model.host.map { "a folder on \($0.name)" }, mono: false) {
                     Image(systemName: "plus")
                         .font(.sh(.ui))
-                        .foregroundStyle(Color.sh.running)
+                        .foregroundStyle(Color.sh.lantern)
                 }
             }
             .buttonStyle(.shRow(selected: false, radius: 0))

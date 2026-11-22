@@ -253,16 +253,23 @@ extension ButtonStyle where Self == SHLinkButtonStyle {
     }
 }
 
+extension EnvironmentValues {
+    /// What a link button and a choice row's tick use when they name no color. `nil` is `running`,
+    /// the Mac's; the iPhone and iPad client sets its accent here once.
+    @Entry public var shLinkColor: Color?
+}
+
 private struct SHLinkButton: View {
     let configuration: ButtonStyleConfiguration
     let color: Color?
     let font: Font?
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.shLinkColor) private var linkColor
 
     var body: some View {
         configuration.label
             .font(font ?? .sh(.caption))
-            .foregroundStyle(color ?? .sh.running)
+            .foregroundStyle(color ?? linkColor ?? .sh.running)
             .opacity(configuration.isPressed ? 0.7 : 1)
             .shEnabledOpacity(enabled)
             .contentShape(Rectangle())

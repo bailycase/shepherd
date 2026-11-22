@@ -260,7 +260,7 @@ private struct SourceRow: View {
                 if chosen {
                     Image(systemName: "checkmark")
                         .font(.sh(.ui, weight: .semibold))
-                        .foregroundStyle(Color.sh.running)
+                        .foregroundStyle(Color.sh.lantern)
                         .accessibilityHidden(true)
                 }
             }

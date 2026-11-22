@@ -701,7 +701,7 @@ struct ThreadTitle: View {
 
     /// The parent's name: a link when it opens.
     @ViewBuilder private func parentName(_ parent: Parent) -> some View {
-        let text = Text(parent.name).foregroundStyle(parent.open == nil ? Color.sh.textSecondary : Color.sh.running).lineLimit(1)
+        let text = Text(parent.name).foregroundStyle(parent.open == nil ? Color.sh.textSecondary : Color.sh.lantern).lineLimit(1)
         if let open = parent.open {
             Button(action: open) { text }.buttonStyle(.plain)
         } else {

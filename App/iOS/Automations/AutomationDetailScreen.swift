@@ -205,7 +205,7 @@ struct AutomationDetailContent: View {
             Spacer(minLength: SH.Space.s)
             if let agent = run.agent {
                 Button("Open thread") { navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent))) }
-                    .buttonStyle(.shLink(color: sh.running, font: .sh(.ui)))
+                    .buttonStyle(.shLink(font: .sh(.ui)))
                     .shTouchTarget(height: SH.Height.controlL)
             }
         }
@@ -372,7 +372,7 @@ struct AutomationInboxRunRow: View, Equatable {
             }
             if let pr = run.pullRequestURL {
                 Link("PR", destination: pr)
-                    .buttonStyle(.shLink(color: Color.sh.running, font: .sh(.ui, weight: .semibold)))
+                    .buttonStyle(.shLink(font: .sh(.ui, weight: .semibold)))
                     .shTouchTarget(height: SH.Height.touch)
                     .accessibilityLabel("Open pull request")
             }

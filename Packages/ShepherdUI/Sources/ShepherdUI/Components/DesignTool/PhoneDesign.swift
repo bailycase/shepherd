@@ -284,6 +284,7 @@ public struct SHBoardToolbar: View {
     let active: String?
     let disabled: Set<String>
     let action: (String) -> Void
+    @Environment(\.shLinkColor) private var activeColor
 
     public init(tools: [Tool], active: String?, disabled: Set<String> = [], action: @escaping (String) -> Void) {
         self.tools = tools
@@ -305,7 +306,7 @@ public struct SHBoardToolbar: View {
                             .font(.shSans(SHPhoneDesignMetrics.toolLabelSize))
                             .lineLimit(1)
                     }
-                    .foregroundStyle(on ? Color.sh.running : Color.sh.textSecondary)
+                    .foregroundStyle(on ? (activeColor ?? Color.sh.running) : Color.sh.textSecondary)
                     .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }

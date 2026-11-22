@@ -63,6 +63,22 @@ struct DesignRulesTests {
         #expect(Self.scan.files > 300, "scanned \(Self.scan.files) files: did the folders move?")
     }
 
+    /// The iPhone and iPad client's link buttons and ticks are `running` blue unless `shLinkColor`
+    /// is set, and a sheet does not take the window's tint. The one place that sets it is
+    /// `mobileEnvironment`, which the window root and the presented sheet both apply.
+    @Test func theIOSAccentIsSetInMobileEnvironment() throws {
+        func source(_ path: String) throws -> String {
+            try String(contentsOf: DesignRules.root.appendingPathComponent(path), encoding: .utf8)
+        }
+        let app = try source("App/iOS/App/MobileApp.swift")
+        let helper = try #require(app.range(of: "func mobileEnvironment(")).upperBound
+        #expect(app[helper...].prefix { $0 != "}" }.contains(".environment(\\.shLinkColor, Color.sh.lantern)"),
+                "mobileEnvironment must set shLinkColor to the accent")
+        let root = try source("App/iOS/App/MobileRoot.swift")
+        let sheet = try #require(root.range(of: ".sheet(item: $navigator.presented)")).upperBound
+        #expect(root[sheet...].prefix(400).contains(".mobileEnvironment("), "the presented sheet must apply mobileEnvironment")
+    }
+
     // MARK: The patterns
 
     /// Each pattern fires on what its rule names and stays quiet on what the rules allow.

@@ -165,7 +165,7 @@ struct BranchStatusRows: View {
                     .foregroundStyle(Color.sh.failed)
                 Spacer(minLength: SH.Space.m)
                 Button("Abort") { Task { await store.abort(host) } }
-                    .foregroundStyle(Color.sh.running)
+                    .foregroundStyle(Color.sh.lantern)
                     .disabled(store.busy)
                     .accessibilityHint("Puts the branch back as it was before Update")
             }
@@ -178,7 +178,7 @@ struct BranchStatusRows: View {
                     ProgressView()
                 } else {
                     Button("Update") { choosing = true }
-                        .foregroundStyle(Color.sh.running)
+                        .foregroundStyle(Color.sh.lantern)
                         .confirmationDialog("Update from \(base)", isPresented: $choosing, titleVisibility: .visible) {
                             Button("Rebase") { Task { await store.update(host, rebase: true) } }
                             Button("Merge") { Task { await store.update(host, rebase: false) } }

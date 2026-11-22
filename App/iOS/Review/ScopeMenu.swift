@@ -127,7 +127,7 @@ struct ChangesTitle: View {
                     Image(systemName: "chevron.down").imageScale(.small)
                 }
                 .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(Color.sh.running)
+                .foregroundStyle(Color.sh.lantern)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Changes, \(store.scopeTitle)")

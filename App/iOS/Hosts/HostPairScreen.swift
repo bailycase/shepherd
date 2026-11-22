@@ -194,7 +194,7 @@ struct PairMacRow: View {
                     Text("Shepherd \(version)").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
                 if selected {
-                    Image(systemName: "checkmark").foregroundStyle(Color.sh.running).accessibilityHidden(true)
+                    Image(systemName: "checkmark").foregroundStyle(Color.sh.lantern).accessibilityHidden(true)
                 }
             }
             .frame(minHeight: MobileLayout.twoLineRowHeight)

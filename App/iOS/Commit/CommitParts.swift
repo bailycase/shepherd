@@ -116,7 +116,7 @@ struct CommitProgress: View {
                         .truncationMode(.middle)
                         .frame(minHeight: SH.Height.touch)
                 }
-                .foregroundStyle(Color.sh.running)
+                .foregroundStyle(Color.sh.lantern)
             }
         }
     }

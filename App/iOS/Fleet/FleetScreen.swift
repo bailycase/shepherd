@@ -375,7 +375,7 @@ private struct FleetHeader: View {
             Spacer(minLength: SH.Space.xl)
             if let add {
                 Button(action: add) {
-                    Label("Add a Mac", systemImage: "plus").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.running)
+                    Label("Add a Mac", systemImage: "plus").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.lantern)
                         .frame(minHeight: SH.Height.touch)
                 }
                 .buttonStyle(.plain)

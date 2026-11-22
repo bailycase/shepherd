@@ -21,6 +21,7 @@ public struct SHChoiceRow<Leading: View, Trailing: View>: View {
     let dimmed: Bool
     @ViewBuilder let leading: () -> Leading
     @ViewBuilder let trailing: () -> Trailing
+    @Environment(\.shLinkColor) private var tickColor
 
     public init(_ title: String, detail: String? = nil, note: String? = nil, mono: Bool = true, selected: Bool = false, dimmed: Bool = false,
                 @ViewBuilder leading: @escaping () -> Leading, @ViewBuilder trailing: @escaping () -> Trailing) {
@@ -60,7 +61,7 @@ public struct SHChoiceRow<Leading: View, Trailing: View>: View {
             if selected {
                 Image(systemName: "checkmark")
                     .font(.sh(.ui, weight: .semibold))
-                    .foregroundStyle(sh.running)
+                    .foregroundStyle(tickColor ?? sh.running)
                     .accessibilityHidden(true)
             }
         }

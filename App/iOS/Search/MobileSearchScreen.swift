@@ -21,7 +21,7 @@ struct MobileSearchScreen: View {
                 SHTouchSearchField("Search threads", text: $store.query, focus: $focused)
                 Button("Cancel") { dismiss() }
                     .font(.sh(.body))
-                    .foregroundStyle(Color.sh.running)
+                    .foregroundStyle(Color.sh.lantern)
                     .frame(minHeight: SH.Height.touch)
             }
             .padding(.horizontal, MobileLayout.searchGutter)
