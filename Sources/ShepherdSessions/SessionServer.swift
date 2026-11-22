@@ -5996,6 +5996,10 @@ public final class SessionServer: @unchecked Sendable {
                 dispatchPeerTask(deliveryID)
             }
         case .renameAgent(let id, let agentID, let targetAgentID, let name):
+            guard !Self.unattendedAgentIDs(in: store.state).contains(agentID) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Automation runs cannot rename threads."), to: client)
+                return
+            }
             let target = targetAgentID ?? agentID
             guard !refusesDesignPeer(id: id, sender: agentID, target: target, client: client),
                   target == agentID || agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
@@ -7456,10 +7460,14 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Same display limit as the namer's /name reports. Line breaks become spaces, and other
-    /// control characters are dropped. Pi still validates and saves the session name itself.
+    /// control and format characters are dropped. Pi still validates and saves the name.
     private static func cleanSessionName(_ name: String) -> String {
-        let singleLine = name.components(separatedBy: .newlines).joined(separator: " ")
-        let printable = String(singleLine.unicodeScalars.filter { $0.properties.generalCategory != .control })
+        let singleLine = name.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: .newlines).joined(separator: " ")
+        let printable = String(singleLine.unicodeScalars.filter {
+            let category = $0.properties.generalCategory
+            return category != .control && category != .format
+        })
         let trimmed = printable.trimmingCharacters(in: .whitespacesAndNewlines)
         var units = 0
         return String(trimmed.prefix { character in
@@ -7501,31 +7509,27 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Both /name and set_session_name produce this event. Explicit titles always win over the namer.
-    private func sessionNameChanged(_ raw: String, agentID: AgentID, owner: RPCThreadState) {
-        let name = Self.cleanSessionName(raw)
-        guard !name.isEmpty, let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+    /// Only a pending tool rename can override a title here. The namer still reports other
+    /// Pi name changes through setAgentName, which can only replace a provisional title.
+    private func sessionNameChanged(_ name: String, agentID: AgentID, owner: RPCThreadState) {
+        guard !name.isEmpty, let pending = liveRenames[agentID], !pending.observed,
+              pending.session == owner.session.id, pending.generation == owner.generation, pending.name == name,
+              let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        pending.observed = true
         let generation = owner.generation
-        let pending = liveRenames[agentID].flatMap {
-            !$0.observed && $0.session == owner.session.id && $0.generation == generation && $0.name == name ? $0 : nil
-        }
-        pending?.observed = true
         scheduleStateMutation({ state in
             guard self.rpcThread(forAgent: agentID) === owner, owner.generation == generation,
-                  let index = state.agents.firstIndex(where: { $0.id == agentID }) else {
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  state.isOrdinaryThread(state.agents[index]) else {
                 throw SessionServerError.noSuchAgent(agentID)
             }
             state.agents[index].name = name
             state.agents[index].nameIsFinal = true
         }) { result in
-            if let pending {
-                self.liveRenames[agentID] = nil
-                switch result {
-                case .success: pending.finish(.success((agent.name, name)))
-                case .failure: pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi set the name, but Shepherd could not save it.")))
-                }
-            } else if case .failure(let error) = result {
-                ShepherdLog.warning("Could not save Pi session name: \(error)")
+            self.liveRenames[agentID] = nil
+            switch result {
+            case .success: pending.finish(.success((agent.name, name)))
+            case .failure: pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi set the name, but Shepherd could not save it.")))
             }
         }
     }

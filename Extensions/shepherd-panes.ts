@@ -815,10 +815,17 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       agentID: Type.Optional(Type.String({ description: "Another thread's id from agent_list; omit for yourself" })),
     }),
     async execute(_id, params, signal) {
-      const reply = await request({ type: "renameAgent", name: params.name,
-        ...(params.agentID ? { targetAgentID: params.agentID } : {}) }, signal, PEER_TIMEOUT_MS);
-      if (reply.type !== "agentRenamed" || typeof reply.newName !== "string") return text("rename requested; the host did not confirm the new name");
-      return text(`renamed ${reply.oldName ? `"${reply.oldName}"` : "the thread"} to "${reply.newName}"`);
+      try {
+        const reply = await request({ type: "renameAgent", name: params.name,
+          ...(params.agentID ? { targetAgentID: params.agentID } : {}) }, signal, 20_000);
+        if (reply.type !== "agentRenamed" || typeof reply.newName !== "string") return text("rename requested; the host did not confirm the new name");
+        return text(`renamed ${reply.oldName ? `"${reply.oldName}"` : "the thread"} to "${reply.newName}"`);
+      } catch (error) {
+        if (error instanceof RequestError && error.code === "timeout") {
+          throw new RequestError("The host may be too old to rename threads. Check the current name before retrying.", error.code);
+        }
+        throw error;
+      }
     },
   });
 

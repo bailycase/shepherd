@@ -162,6 +162,27 @@ test("agent_rename renames the caller without a target, another thread only by i
   finally { await automation.close(); }
 });
 
+test("agent_rename gives up after 20 seconds when an old host ignores it", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const h = await harness();
+  try {
+    let failure;
+    const rename = h.tools.get("agent_rename").execute("call", { name: "New title" });
+    void rename.catch((error) => { failure = error; });
+    await h.waitFor(() => h.frames.some((f) => f.type === "renameAgent"));
+    mock.timers.tick(19_999);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(failure, undefined);
+    mock.timers.tick(1);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(failure?.code, "timeout");
+    assert.match(failure.message, /host may be too old to rename threads/);
+  } finally {
+    mock.timers.reset();
+    await h.close();
+  }
+});
+
 test("every tool that touches another thread leads with the rule and gives a wrong and a right use", async () => {
   const h = await harness();
   try {
