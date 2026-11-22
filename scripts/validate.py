@@ -309,9 +309,21 @@ def measure_scroll(frames):
         # NativeScrollFollower.threshold is 80 pt. A detached reader reattaching is not expected follow.
         sticky_in_band = streaming and previous["following"] and frame["following"] and previous["distance"] <= 80
         if unexplained_eviction:
-            # Matching the scripted clip offset cannot rule out a relayout without a shared row.
+            # A row can leave the reading area yet still be mounted in both samples.
+            # Report its displacement, but keep the eviction graded as a jump even at 0 pt.
             if abs(delta) <= 2:
-                observation.update(delta_pt=None, measured="unexplained input eviction")
+                if measured == "row":
+                    observation.update(measured="mounted row during unexplained input eviction")
+                else:
+                    shared = set(previous["rows"]) & set(frame["rows"])
+                    nearby = shared & set(frame["visibleRows"])
+                    if nearby:
+                        marker = min(nearby, key=lambda r: (frame["rows"][r], r))
+                        shift = frame["rows"][marker] - previous["rows"][marker] + scripted_delta
+                        observation.update(row=marker, delta_pt=round(shift, 3),
+                                           measured="mounted row during unexplained input eviction")
+                    else:
+                        observation.update(delta_pt=None, measured="unexplained input eviction")
             jumps.append(observation)
         elif (sticky_in_band and not inputs and frame["documentHeight"] != previous["documentHeight"]
                 and growth > 2 and abs(delta + growth) <= 2):
@@ -508,9 +520,12 @@ def scroll_evidence(scenarios):
     return summaries
 
 
-def missing_writer_probes(summaries):
+def missing_writer_probes(summaries, measured_history=False):
     missing = []
     for name, required in SCROLL_EXPECTED_WRITERS.items():
+        if measured_history and name == "page-older-history":
+            # The synchronous clip writer replaces the ScrollPosition request in this arm.
+            required = required - {("M5", "history.materialize")}
         sites = {(event["caller"], event.get("detail"))
                  for frame in summaries[name]["ledger"]["frames"] for event in frame["writes"]}
         missing.extend(f"{name}: {writer} {detail}" for writer, detail in sorted(required)
@@ -533,6 +548,9 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
     if anchor_off:
         env["SHEPHERD_SCROLL_ANCHOR_OFF"] = anchor_off
+    measured_history = os.environ.get("SHEPHERD_SCROLL_MEASURED_HISTORY") == "1"
+    if measured_history:
+        env["SHEPHERD_SCROLL_MEASURED_HISTORY"] = "1"
     app = ROOT / ".build/scroll-dev/Build/Products/Debug/Shepherd.app/Contents/MacOS/Shepherd"
     fixture = subprocess.run([app, "--validate-scroll-stability"], cwd=scratch, env=env,
                              stdout=log, stderr=subprocess.STDOUT, timeout=90)
@@ -544,6 +562,9 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
     if anchor_off:
         for summary in summaries.values():
             summary["native_anchor_disabled"] = anchor_off
+    if measured_history:
+        for summary in summaries.values():
+            summary["measured_history"] = True
     (mac / "scroll-jumps.json").write_text(json.dumps(summaries, indent=2) + "\n", encoding="utf-8")
     if ios_frames:
         mobile = json.loads(ios_frames.read_text(encoding="utf-8"))
@@ -608,7 +629,7 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
     for name in ("key-paging", "scroller-drag"):
         record(name, "passed", "Dev fixture observed movement and matching intent", "Dev fixture verified both")
     record("released-thread", "passed", "hidden transcript released", "Dev fixture observed release")
-    missing = missing_writer_probes(summaries)
+    missing = missing_writer_probes(summaries, measured_history=measured_history)
     record("writer-probes", "failed" if missing else "passed", "all required writer sites fired",
            "missing writer probes:\n" + "\n".join(missing) if missing else "all required writer sites fired")
     record("complete", "passed", SCROLL_COMPLETION, SCROLL_COMPLETION)

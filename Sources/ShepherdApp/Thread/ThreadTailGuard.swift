@@ -343,6 +343,9 @@ final class ThreadTailGuard {
     struct RowProbe: NSViewRepresentable {
         let guardian: ThreadTailGuard
         let rowID: String
+        #if DEBUG
+        var measuredHistory: ThreadMeasuredHistory? = nil
+        #endif
 
         func makeNSView(context: Context) -> RowMarker {
             let marker = RowMarker()
@@ -352,26 +355,63 @@ final class ThreadTailGuard {
 
         func updateNSView(_ view: RowMarker, context: Context) {
             guardian.registerRow(view, id: rowID)
+            #if DEBUG
+            view.measuredHistory = measuredHistory
+            #endif
         }
     }
 
     final class RowMarker: NSView {
         var rowID = ""
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        #if DEBUG
+        weak var measuredHistory: ThreadMeasuredHistory?
+        override func setFrameSize(_ newSize: NSSize) {
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed && measuredHistory != nil { needsLayout = true }
+        }
+        override func layout() {
+            if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.rowMarkerLayout") }
+            super.layout()
+            measuredHistory?.rowLaidOut(rowID, height: bounds.height, in: enclosingScrollView)
+        }
+        #endif
     }
 }
 
 /// Finds the scroll view a SwiftUI `ScrollView` is drawn in, from inside its content.
 struct ThreadScrollViewFinder: NSViewRepresentable {
     let guardian: ThreadTailGuard
+    #if DEBUG
+    var historyAnchor: ThreadHistoryAnchor? = nil
+    var measuredHistory: ThreadMeasuredHistory? = nil
+    #endif
 
     func makeNSView(context: Context) -> Finder { Finder() }
 
     func updateNSView(_ view: Finder, context: Context) {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
+        #if DEBUG
+        view.measuredHistory = measuredHistory
+        measuredHistory?.paging = historyAnchor
+        measuredHistory?.guardrail = guardian
+        #endif
     }
 
     final class Finder: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        #if DEBUG
+        weak var measuredHistory: ThreadMeasuredHistory?
+
+        override func setFrameSize(_ newSize: NSSize) {
+            if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.finderFrameSize") }
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed { measuredHistory?.columnLaidOut(in: enclosingScrollView) }
+        }
+        #endif
     }
 }
