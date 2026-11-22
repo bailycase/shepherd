@@ -68,6 +68,86 @@ struct PushNotificationsTests {
         #expect(posted.current == [retained.id])
     }
 
+    @Test func aRepairedDeviceReclaimsItsRegistrationFromARestoredFile() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let oldPhone = Device(), newPhone = Device()
+        defer { oldPhone.stop(); newPhone.stop() }
+        let old = registration()
+        try await connect(oldPhone, to: mac).registerPush(old)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let backup = try Data(contentsOf: file)
+        _ = try await mac.local.fleetAction(.revokeDevice(oldPhone.intro.deviceID))
+        try backup.write(to: file, options: .atomic)
+
+        let replacement = RemotePushRegistration(id: old.id, sendToken: String(repeating: "b", count: 64))
+        try await connect(newPhone, to: mac).registerPush(replacement)
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows == [.init(id: old.id, sendToken: replacement.sendToken, preferences: nil, deviceID: newPhone.intro.deviceID)])
+        let posted = Locked<[URLRequest]>([])
+        await mac.server.queue.testHop {
+            let pushes = mac.server.pushNotifications
+            pushes.transport = { request, _ in
+                posted.withValue { $0.append(request) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done, title: "Acme build")
+        }
+        let request = try #require(posted.current.first)
+        #expect(posted.current.count == 1)
+        #expect(request.url?.deletingLastPathComponent().lastPathComponent == replacement.id)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(replacement.sendToken)")
+    }
+
+    @Test(arguments: [false, true])
+    func registerKeepsRowsWithoutRevocationEvidence(pairingStoreUnreadable: Bool) async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fleetDir = dir.appendingPathComponent("fleet", isDirectory: true)
+        try FileManager.default.createDirectory(at: fleetDir, withIntermediateDirectories: true)
+        if pairingStoreUnreadable {
+            try Data("not valid JSON".utf8).write(to: fleetDir.appendingPathComponent(FleetDevices.fileName))
+        } else {
+            try FleetDevices().save(to: fleetDir)
+        }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let old = registration()
+        let owned = PushNotifications.Registration(id: old.id, sendToken: old.sendToken, preferences: nil, deviceID: UUID())
+        try JSONEncoder().encode([owned]).write(to: file)
+        let mac = try await Mac("Acme Studio", dir: dir)
+        defer { mac.stop(keepFiles: true) }
+        let added = registration()
+        try await mac.local.registerPush(added)
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows.count == 2)
+        #expect(rows.contains(owned))
+        #expect(rows.contains { $0.id == added.id })
+    }
+
+    @Test func aPeerMacIsNotOfferedPushAndCannotRegister() async throws {
+        let mac = try await Mac("Acme Studio"), peer = try await Mac("Acme Mini")
+        defer { mac.stop(); peer.stop() }
+        try await peer.pair(with: mac, code: try await mac.startJoin())
+        let token = try #require(peer.record(of: mac.name)["myToken"] as? String)
+        let client = try RawRemote(port: mac.port)
+        let capability = RemoteProtocol.pushNotificationsCapability
+        let offered = try await client.hello(token: token, capabilities: [capability])
+        #expect(!offered.contains(capability))
+        try client.send(.pushRegistration(id: 2, registration: registration()))
+        _ = try await client.frames(until: {
+            switch $0 {
+            case .error(2, let code, _):
+                #expect(code == "unsupported")
+                return true
+            case .ok(2):
+                Issue.record("Peer Mac was allowed to register for push")
+                return true
+            default: return false
+            }
+        })
+        #expect(!FileManager.default.fileExists(atPath: mac.host.dir.appendingPathComponent("push-registrations.json").path))
+    }
+
     @Test func devicesCannotChangeEachOthersRegistrations() async throws {
         let mac = try await Mac("Acme Studio")
         defer { mac.stop() }
@@ -104,15 +184,21 @@ struct PushNotificationsTests {
         let second = try await connect(pad, to: mac)
         let original = registration()
         try await first.registerPush(original)
-        var accepted = 1
-        for _ in 1..<16 {
-            do { try await first.registerPush(registration()); accepted += 1 }
-            catch RemoteHostClientError.rejected("push_registration", _) { break }
+        let secondSlot = registration(), overLimit = registration(), otherDevice = registration()
+        try await first.registerPush(secondSlot)
+        await #expect {
+            try await first.registerPush(overLimit)
+        } throws: { error in
+            if case RemoteHostClientError.rejected("push_registration", _) = error { return true }
+            return false
         }
-        #expect(accepted < 16, "one device cannot fill every host slot")
-        try await second.registerPush(registration())
+        try await second.registerPush(otherDevice)
         // A device at its limit can still update its existing registration.
         try await first.registerPush(original)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(Set(rows.filter { $0.deviceID == phone.intro.deviceID }.map(\.id)) == [original.id, secondSlot.id])
+        #expect(rows.first { $0.id == otherDevice.id }?.deviceID == pad.intro.deviceID)
     }
 
     @Test func aDeviceAdoptsALegacyRowAndAnOlderHostCanStillReadIt() async throws {
@@ -437,6 +523,34 @@ struct PushNotificationsTests {
             #expect(saved == damage)
             pushes.send(agentID: AgentID(), kind: .done)
             #expect(requests.current == 2, "damage suspends delivery and relay fallback")
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func relayFallbackChecksPairingState(revoked: Bool) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.fallback-pairing")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let deviceID = UUID()
+        let callbacks = Locked<[@Sendable (Int?) -> Void]>([])
+        try queue.sync {
+            try pushes.register(registration(), deviceID: deviceID)
+            pushes.canDeliverToDevice = { $0 == deviceID }
+            pushes.transport = { _, finished in
+                callbacks.withValue { $0.append(finished) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done, title: "Acme build")
+            // Keep the registration and pending delivery intact so cancellation cannot mask a missing check.
+            if revoked { pushes.canDeliverToDevice = { $0 != deviceID } }
+        }
+        let finish = try #require(callbacks.current.first)
+        #expect(callbacks.current.count == 1)
+        finish(400)
+        queue.sync {
+            #expect(callbacks.current.count == (revoked ? 1 : 2))
+            pushes.stop()
         }
     }
 

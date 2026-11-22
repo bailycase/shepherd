@@ -56,7 +56,7 @@ final class PushNotifications: @unchecked Sendable {
     private static let deviceLimit = 2
     private let file: URL
     private let queue: DispatchQueue
-    /// Keep the last readable bytes separate from in-memory revocations that haven't reached disk.
+    /// Keep the last readable bytes separate from in-memory unregisters that haven't reached disk.
     private var diskBytes: Data?
     private var storageDamaged = false
     private(set) var registrations: [String: Registration] = [:]
@@ -73,6 +73,7 @@ final class PushNotifications: @unchecked Sendable {
     var muted: (AgentID) -> Bool = { _ in false }
     /// Consult pairing state even after restart or when an older copy of the file is restored.
     var canDeliverToDevice: (UUID) -> Bool = { _ in true }
+    var isDeviceRevoked: (UUID) -> Bool = { _ in false }
     var now: () -> Date = Date.init
     /// Seconds since the person last touched this Mac, for away-only phones.
     var idleSeconds: () -> TimeInterval = {
@@ -101,7 +102,8 @@ final class PushNotifications: @unchecked Sendable {
     func register(_ registration: RemotePushRegistration, deviceID: UUID? = nil) throws {
         guard let id = UUID(uuidString: registration.id)?.uuidString,
               Self.validToken(registration.sendToken) else { throw Failure.invalid }
-        let original = try refreshRegistrations()
+        try pruneRevoked(replacing: refreshRegistrations())
+        let original = diskBytes
         let current = registrations[id]
         let foreign = deviceID != nil && current?.deviceID != nil && current?.deviceID != deviceID
         guard (current != nil && !foreign) || registrations.count < Self.registrationLimit else { throw Failure.full }
@@ -127,14 +129,18 @@ final class PushNotifications: @unchecked Sendable {
         try remove(foreign ? [] : [id], replacing: original)
     }
 
-    func revokeDevice(_ deviceID: UUID) {
-        do {
-            let original = try refreshRegistrations()
-            let ids = registrations.values.filter { $0.deviceID == deviceID }.map(\.id)
-            if !ids.isEmpty { try remove(ids, replacing: original) }
-        } catch {
-            ShepherdLog.warning("Could not remove push registrations for a revoked device: \(error.localizedDescription)")
-        }
+    func pruneRevokedDevices() {
+        do { try pruneRevoked(replacing: refreshRegistrations()) }
+        catch { ShepherdLog.warning("Could not remove push registrations for a revoked device: \(error.localizedDescription)") }
+    }
+
+    private func pruneRevoked(replacing original: Data?) throws {
+        let next = registrations.filter { $0.value.deviceID.map(isDeviceRevoked) != true }
+        guard next.count != registrations.count else { return }
+        for id in registrations.keys where next[id] == nil { cancel(id) }
+        // Delivery already checks pairing. Keep the rows visible to pruning until the save succeeds.
+        try persist(next, replacing: original)
+        registrations = next
     }
 
     private func remove(_ ids: [String], replacing original: Data?) throws {
@@ -289,10 +295,11 @@ final class PushNotifications: @unchecked Sendable {
         do { _ = try refreshRegistrations() }
         catch { return skip("push registrations unavailable") }
         guard !registrations.isEmpty else { return skip("no phone registered") }
+        let eligible = registrations.values.filter { canDeliver(to: $0) }
+        guard !eligible.isEmpty else { return skip("all registrations skipped because their devices are not paired") }
         let idle = idleSeconds()
         let away = idle >= RemotePushPreferences.awayAfter
-        let wanted = registrations.values.filter { registration in
-            guard canDeliver(to: registration) else { return false }
+        let wanted = eligible.filter { registration in
             guard let preferences = registration.preferences else { return true }
             return (away || !preferences.awayOnly) && preferences.allows(topic)
         }

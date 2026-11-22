@@ -292,11 +292,13 @@
     experiment's settings and its lines
   - `pushRegistration` / `pushUnregister` (`push.notifications.v1`): an opted-in mobile client
     registers or removes a relay destination over its authenticated device connection. A device can
-    hold up to two of the host's 16 registrations. A request against another device's ID does not
-    change it and gets the same reply as a request against an unused ID. Revoking a paired device
-    removes its registrations and cancels pending deliveries. An older row with no owner stays
-    unbound until a device registers the same ID, and cannot be matched to a revoke before that.
-    The Mac's local owner connection can still manage registrations.
+    hold up to two of the host's 16 registrations. At the same capacity, the single reply for
+    another device's ID is the same as for an unused ID. A foreign register neither writes a
+    registration nor uses a slot. Revoking a paired device removes its registrations and cancels
+    pending deliveries. Before registering, the host also prunes any rows whose owner has a
+    revocation tombstone. An older row with no owner stays unbound until a device registers the
+    same ID, and cannot be matched to a revoke before that. The Mac's local owner connection can
+    still manage registrations. The host does not offer the push capability to peer Macs.
     If the host's registration file is damaged, both requests return `push_registration` with recovery
     instructions for the host. The host leaves the file alone and suspends delivery once it detects damage.
     Registration carries only its opaque ID and scoped send credential. The APNs device token

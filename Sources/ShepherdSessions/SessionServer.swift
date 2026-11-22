@@ -865,6 +865,7 @@ public final class SessionServer: @unchecked Sendable {
         let pushes = PushNotifications(file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
         pushes.muted = { [weak self] id in self?.store.state.agents.first { $0.id == id }?.pushMuted == true }
         pushes.canDeliverToDevice = { [weak self] id in self?.fleet?.isDeviceActive(id) == true }
+        pushes.isDeviceRevoked = { [weak self] id in self?.fleet?.isDeviceRevoked(id) == true }
         return pushes
     }()
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
@@ -1686,7 +1687,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
-                    self.pushNotifications.revokeDevice(deviceID)
+                    self.pushNotifications.pruneRevokedDevices()
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
                     Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
