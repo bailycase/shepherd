@@ -2251,6 +2251,7 @@ public final class SessionServer: @unchecked Sendable {
             if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
+                pushNotifications.load()
                 acceptOnQueue()
                 if !repair && !recovered { recoverCommittedProjectPublications() }
             }

@@ -44,13 +44,15 @@ final class PushNotifications: @unchecked Sendable {
         let registrationID: String
         let cancel: () -> Void
     }
-    /// Disk-only metadata. Keep the old keys flat, and decode a missing owner as nil.
+    /// Disk-only metadata. Keep the old keys flat; missing metadata decodes as nil.
     struct Registration: Codable, Equatable {
         var id: String
         let sendToken: String
         let preferences: RemotePushPreferences?
         let deviceID: UUID?
+        var ownerlessFirstSeen: Date?
     }
+    private static let ownerlessLifetime: TimeInterval = 7 * 24 * 60 * 60
     private static let fileLimit = 32_768
     private static let registrationLimit = 16
     private static let deviceLimit = 2
@@ -74,15 +76,16 @@ final class PushNotifications: @unchecked Sendable {
     /// Consult pairing state even after restart or when an older copy of the file is restored.
     var canDeliverToDevice: (UUID) -> Bool = { _ in true }
     var isDeviceRevoked: (UUID) -> Bool = { _ in false }
-    var now: () -> Date = Date.init
+    var now: () -> Date
     /// Seconds since the person last touched this Mac, for away-only phones.
     var idleSeconds: () -> TimeInterval = {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
     }
 
-    init(file: URL, queue: DispatchQueue) {
+    init(file: URL, queue: DispatchQueue, now: @escaping () -> Date = Date.init) {
         self.file = file
         self.queue = queue
+        self.now = now
         transport = { request, finished in
             let task = PushHTTP.session.dataTask(with: request) { _, response, _ in
                 finished((response as? HTTPURLResponse)?.statusCode)
@@ -91,6 +94,10 @@ final class PushNotifications: @unchecked Sendable {
             return { task.cancel() }
         }
         _ = try? refreshRegistrations()
+    }
+
+    func load() {
+        try? refreshAndExpire() // Read and save failures are logged at their source.
     }
 
     private static func validToken(_ token: String) -> Bool {
@@ -103,21 +110,22 @@ final class PushNotifications: @unchecked Sendable {
         guard let id = UUID(uuidString: registration.id)?.uuidString,
               Self.validToken(registration.sendToken) else { throw Failure.invalid }
         try pruneRevoked(replacing: refreshRegistrations())
-        let original = diskBytes
-        let current = registrations[id]
+        let now = now()
+        var next = expiringOwnerless(at: now)
+        let current = next[id]
         let foreign = deviceID != nil && current?.deviceID != nil && current?.deviceID != deviceID
-        guard (current != nil && !foreign) || registrations.count < Self.registrationLimit else { throw Failure.full }
+        guard (current != nil && !foreign) || next.count < Self.registrationLimit else { throw Failure.full }
         if let deviceID, current?.deviceID != deviceID {
-            guard registrations.values.filter({ $0.deviceID == deviceID }).count < Self.deviceLimit else { throw Failure.full }
+            guard next.values.filter({ $0.deviceID == deviceID }).count < Self.deviceLimit else { throw Failure.full }
         }
         // A foreign ID gets the reply for a new ID at the same capacity, without changing the row.
         guard !foreign else { return }
-        var next = registrations
+        let owner = deviceID ?? current?.deviceID
         next[id] = Registration(id: id, sendToken: registration.sendToken, preferences: registration.preferences,
-                                deviceID: deviceID ?? current?.deviceID)
-        try persist(next, replacing: original)
+                                deviceID: owner, ownerlessFirstSeen: owner == nil ? current?.ownerlessFirstSeen ?? now : nil)
+        // Save expiry and registration together. A refused request must not stamp the file.
+        try saveWithExpiry(next, replacing: diskBytes)
         cancel(id)
-        registrations = next
     }
 
     func unregister(_ rawID: String, deviceID: UUID? = nil, matching expired: Registration? = nil) throws {
@@ -150,6 +158,52 @@ final class PushNotifications: @unchecked Sendable {
             registrations.removeValue(forKey: id)
         }
         try persist(registrations, replacing: original)
+    }
+
+    /// Only run expiry after a healthy read. Keep expiry in memory even if the save fails.
+    private func refreshAndExpire() throws {
+        let original = try refreshRegistrations()
+        let now = now()
+        let next = expiringOwnerless(at: now)
+        guard next != registrations else { return }
+        cancelExpired(keeping: next)
+        registrations = next
+        do { try persist(next, replacing: original) }
+        catch {
+            guard !storageDamaged else { throw error } // The reader already reported the damage.
+            ShepherdLog.warning("Could not update ownerless push registrations: \(error.localizedDescription)")
+            // If the save's re-read found a replacement file, expire its rows instead of restoring the old ones.
+            if diskBytes != original {
+                let current = expiringOwnerless(at: now)
+                cancelExpired(keeping: current)
+                registrations = current
+            }
+        }
+    }
+
+    private func expiringOwnerless(at now: Date) -> [String: Registration] {
+        var next = registrations
+        for (id, var row) in registrations where row.deviceID == nil {
+            if let firstSeen = row.ownerlessFirstSeen {
+                if now.timeIntervalSince(firstSeen) >= Self.ownerlessLifetime {
+                    next.removeValue(forKey: id)
+                }
+            } else {
+                row.ownerlessFirstSeen = now
+                next[id] = row
+            }
+        }
+        return next
+    }
+
+    private func saveWithExpiry(_ next: [String: Registration], replacing original: Data?) throws {
+        cancelExpired(keeping: next)
+        try persist(next, replacing: original)
+        registrations = next
+    }
+
+    private func cancelExpired(keeping next: [String: Registration]) {
+        for id in registrations.keys where next[id] == nil { cancel(id) }
     }
 
     private func refreshRegistrations() throws -> Data? {
@@ -193,8 +247,14 @@ final class PushNotifications: @unchecked Sendable {
             }) {
             case .loaded(let saved):
                 var next: [String: Registration] = [:]
+                let now = now()
                 for var registration in saved {
                     registration.id = UUID(uuidString: registration.id)!.uuidString
+                    // A rewrite must never silently drop a row with a colliding ID.
+                    guard next[registration.id] == nil else { throw Failure.invalid }
+                    if registration.deviceID == nil, let firstSeen = registration.ownerlessFirstSeen, firstSeen > now {
+                        registration.ownerlessFirstSeen = now
+                    }
                     next[registration.id] = registration
                 }
                 for (id, old) in registrations where next[id] != old { cancel(id) }
@@ -292,7 +352,7 @@ final class PushNotifications: @unchecked Sendable {
               topic: RemotePushPreferences.Topic? = nil, detail: PushDetail? = nil) {
         let topic = topic ?? Self.topic(kind)
         let skip = { (why: String) in ShepherdLog.push("push \(kind.rawValue) for \(agentID.rawValue) skipped: \(why)") }
-        do { _ = try refreshRegistrations() }
+        do { try refreshAndExpire() }
         catch { return skip("push registrations unavailable") }
         guard !registrations.isEmpty else { return skip("no phone registered") }
         let eligible = registrations.values.filter { canDeliver(to: $0) }
@@ -357,7 +417,7 @@ final class PushNotifications: @unchecked Sendable {
                 guard self.deliveries.removeValue(forKey: id) != nil else { return }
                 // The relay validates before it claims the event id, so the same event may go again.
                 if status == 400, let older = bodies.dropFirst().first {
-                    do { _ = try self.refreshRegistrations() }
+                    do { try self.refreshAndExpire() }
                     catch { return }
                     guard self.registrations[registration.id] == registration, self.canDeliver(to: registration) else { return }
                     self.relay = max(self.relay, older.0)
