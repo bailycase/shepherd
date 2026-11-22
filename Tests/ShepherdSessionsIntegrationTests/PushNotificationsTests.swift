@@ -197,6 +197,7 @@ struct PushNotificationsTests {
         try await first.registerPush(original)
         let file = mac.host.dir.appendingPathComponent("push-registrations.json")
         let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows.count == 3)
         #expect(Set(rows.filter { $0.deviceID == phone.intro.deviceID }.map(\.id)) == [original.id, secondSlot.id])
         #expect(rows.first { $0.id == otherDevice.id }?.deviceID == pad.intro.deviceID)
     }
