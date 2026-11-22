@@ -1364,6 +1364,8 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
+    // MARK: - Model catalog
+
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> ModelListing
@@ -1377,6 +1379,28 @@ public final class SessionServer: @unchecked Sendable {
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
     /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
     public func modelListing() -> ModelListing { modelCatalog() }
+
+    private func remoteListModels(_ input: RouteInput) {
+        switch input.request {
+        case .listModels(let id):
+            let connection = input.connection
+            let fd = input.fd
+            // Asking pi shells out (~0.5s cold); never block the server
+            // queue. Reply from the queue once the catalog returns.
+            let catalog = modelCatalog
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let listing = catalog()
+                self?.queue.async {
+                    guard let self, let client = self.clients[fd], client === connection else { return }
+                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
+                }
+            }
+        default:
+            preconditionFailure("Mismatched listModels route")
+        }
+    }
 
     /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
     /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
@@ -3444,50 +3468,35 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Routed requests (server queue)
 
-    private struct RouteInput {
+    struct RouteInput {
         let request: RemoteRequest
         let line: Data
-        let client: ExtensionConnection
-        var fd: Int32 { client.fd }
+        let fd: Int32
+        // Retain the connection for identity checks without exposing its private type.
+        fileprivate let connection: AnyObject
     }
 
-    private typealias Route = @Sendable (SessionServer, RouteInput) -> Void
+    typealias Route = @Sendable (SessionServer, RouteInput) -> Void
 
-    // A duplicate kind in this literal intentionally traps when the table is first used.
-    private static let remoteRoutes: [RemoteRequest.Kind: Route] = [
+    // Keep one kind per line in kind-name order. A duplicate kind traps on first use.
+    // Put each family handler beside its code; take RouteInput and switch on input.request.
+    // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
+    static let remoteRoutes: [RemoteRequest.Kind: Route] = [
         .listModels: { $0.remoteListModels($1) },
     ]
-
-    private func remoteListModels(_ input: RouteInput) {
-        guard case .listModels(let id) = input.request else { preconditionFailure("Mismatched listModels route") }
-        let client = input.client
-        let fd = input.fd
-        // Asking pi shells out (~0.5s cold); never block the server
-        // queue. Reply from the queue once the catalog returns.
-        let catalog = modelCatalog
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let listing = catalog()
-            self?.queue.async {
-                guard let self, self.clients[fd] === client else { return }
-                self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
-            }
-        }
-    }
 
     private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
         #if DEBUG
         dispatchPrecondition(condition: .onQueue(queue))
         #endif
         if let handler = Self.remoteRoutes[request.kind] {
-            handler(self, RouteInput(request: request, line: line, client: client))
+            handler(self, RouteInput(request: request, line: line, fd: client.fd, connection: client))
             return
         }
+        func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
-        // Kinds moved to the route table share this case; a body here is dead.
-        case .listModels:
-            preconditionFailure("Missing route for \(request.kind)")
+        // Keep the kinds moved to the route table in kind-name order.
+        case .listModels: missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
