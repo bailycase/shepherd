@@ -307,18 +307,20 @@ struct EngineThreadTests {
         }
 
         // Pi emits the event before answering this RPC. Send it without registering a host rename.
-        let response = try await withCheckedThrowingContinuation { continuation in
+        let (response, eventTimeAdvanced) = try await withCheckedThrowingContinuation { continuation in
             server.queue.async {
                 guard let thread = server.rpcThread(forAgent: id) else {
                     continuation.resume(throwing: WireError("Missing Pi thread"))
                     return
                 }
+                let before = thread.lastEventAt
                 thread.session.request(.setSessionName("Unsolicited Pi title")) { result in
-                    continuation.resume(with: result)
+                    continuation.resume(with: result.map { ($0, thread.lastEventAt > before) })
                 }
             }
-        } as RPCResponse
+        } as (RPCResponse, Bool)
         try #require(response.success)
+        #expect(eventTimeAdvanced)
         try await eventually("the host to finish processing the event") {
             try await server.enqueue { server.stateWritesInFlight == 0 }
         }
@@ -348,11 +350,15 @@ struct EngineThreadTests {
             return try await extensionSocket.reply()
         }
 
-        let callerName = "/Caller role 🚀"
-        #expect(try await rename(101, "  /Caller\r\nro\u{1B}\u{80}\u{202E}\u{200B}le 🚀  ")
+        let england = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"
+        let joinedText = "👨‍👩‍👧‍👦 \(england) می\u{200C}روم क्\u{200D}ष"
+        let callerName = "/Caller role \(joinedText)"
+        #expect(try await rename(101, "  /Caller\r\nro\u{1B}\u{80}\u{202E}\u{200B}\u{E0067}le \(joinedText)  ")
                 == .agentRenamed(id: 101, oldName: "rpc", newName: callerName))
         let blank = try await rename(102, " \n\u{7}\u{200B} ", target: targetID)
         #expect(blank == .error(id: 102, code: "rename_refused", message: "Session name cannot be empty"))
+        #expect(try await rename(108, "\u{200D}\u{200C}")
+                == .error(id: 108, code: "rename_refused", message: "Session name cannot be empty"))
         guard case .error(103, "no_such_agent", _) = try await rename(103, "Missing", target: AgentID()) else {
             Issue.record("Expected a missing local thread refusal"); return
         }

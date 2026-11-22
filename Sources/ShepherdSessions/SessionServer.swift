@@ -7459,21 +7459,30 @@ public final class SessionServer: @unchecked Sendable {
         })
     }
 
-    /// Same display limit as the namer's /name reports. Line breaks become spaces, and other
-    /// control and format characters are dropped. Pi still validates and saves the name.
+    /// Same display limit as the namer's /name reports. Line breaks become spaces. Keep joiners
+    /// and emoji flag tags, but drop other control and format characters. Pi validates and saves the name.
     private static func cleanSessionName(_ name: String) -> String {
         let singleLine = name.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: .newlines).joined(separator: " ")
+        var inFlag = false
         let printable = String(singleLine.unicodeScalars.filter {
+            if inFlag, (0xE0020...0xE007F).contains($0.value) {
+                inFlag = $0.value != 0xE007F
+                return true
+            }
+            inFlag = $0.value == 0x1F3F4
             let category = $0.properties.generalCategory
-            return category != .control && category != .format
+            return $0.value == 0x200C || $0.value == 0x200D || (category != .control && category != .format)
         })
         let trimmed = printable.trimmingCharacters(in: .whitespacesAndNewlines)
         var units = 0
-        return String(trimmed.prefix { character in
+        let capped = String(trimmed.prefix { character in
             units += character.utf16.count
             return units <= 60
         }).trimmingCharacters(in: .whitespacesAndNewlines)
+        return capped.unicodeScalars.contains {
+            $0.properties.generalCategory != .format && !$0.properties.isWhitespace
+        } ? capped : ""
     }
 
     /// Server queue. A Fleet receiver can use this once it resolves a dispatch to a local thread.
@@ -10212,7 +10221,6 @@ public final class SessionServer: @unchecked Sendable {
                     if let name, let thread, let server = serverWeak, let agentID = server.agentID(forSession: sid) {
                         server.sessionNameChanged(name, agentID: agentID, owner: thread)
                     }
-                    return
                 }
                 thread?.handle(event)
                 if case .messageEnd(let message) = event, message.role == "assistant", message.stopReason == "error",
