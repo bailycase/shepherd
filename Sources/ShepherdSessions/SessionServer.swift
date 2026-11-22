@@ -864,6 +864,7 @@ public final class SessionServer: @unchecked Sendable {
     lazy var pushNotifications: PushNotifications = {
         let pushes = PushNotifications(file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
         pushes.muted = { [weak self] id in self?.store.state.agents.first { $0.id == id }?.pushMuted == true }
+        pushes.canDeliverToDevice = { [weak self] id in self?.fleet?.isDeviceActive(id) == true }
         return pushes
     }()
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
@@ -1317,6 +1318,7 @@ public final class SessionServer: @unchecked Sendable {
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
             .filter { client.fleetDeviceID == nil || FleetAccess.device.isOffered($0) }
+            .filter { $0 != RemoteProtocol.pushNotificationsCapability || client.isLocal || client.fleetDeviceID != nil }
             + (client.isLocal ? [RemoteProtocol.localCapability, RemoteProtocol.changesWritesCapability] : [])
             + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
@@ -1684,6 +1686,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
+                    self.pushNotifications.revokeDevice(deviceID)
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
                     Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
@@ -3498,7 +3501,7 @@ public final class SessionServer: @unchecked Sendable {
             fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
             do {
-                try pushNotifications.register(registration)
+                try pushNotifications.register(registration, deviceID: client.fleetDeviceID)
                 send(.ok(id: id), to: client)
             } catch {
                 send(.error(id: id, code: "push_registration",
@@ -3506,7 +3509,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .pushUnregister(let id, let registrationID):
             do {
-                try pushNotifications.unregister(registrationID)
+                try pushNotifications.unregister(registrationID, deviceID: client.fleetDeviceID)
                 send(.ok(id: id), to: client)
             } catch {
                 send(.error(id: id, code: "push_registration",

@@ -446,6 +446,8 @@ final class FleetService: @unchecked Sendable {
     /// The Mac whose peer token this is.
     func authenticate(token: String) -> UUID? { peers.authenticate(token: token) ?? (testPeers.isEmpty ? nil : testPeers[FleetProtocol.hash(token)]) }
 
+    func isDeviceActive(_ id: UUID) -> Bool { devices.record(id)?.isRevoked == false }
+
     /// The device whose own token this is.
     func authenticateDevice(token: String) -> UUID? {
         devices.authenticate(token: token) ?? (testClients.isEmpty ? nil : testClients[FleetProtocol.hash(token)])
