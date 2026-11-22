@@ -229,7 +229,7 @@ struct FleetDispatchTests {
             while true {
                 let reply = try await read(timeout: timeout)
                 switch reply {
-                case .fleetHosts(id, _), .fleetDispatch(id, _), .fleetDispatches(id, _), .error(id, _, _): return reply
+                case .fleetHosts(id, _), .fleetDispatch(id, _), .fleetDispatches(id, _, _), .error(id, _, _): return reply
                 default: continue
                 }
             }
@@ -348,7 +348,7 @@ struct FleetDispatchTests {
         let before = a.sent()
 
         func rows(_ thread: FleetDispatchTests.Parent) async throws -> [FleetDispatchListRow] {
-            guard case .fleetDispatches(_, let rows) = try await thread.call({ .fleetListDispatches(id: $0, agentID: thread.agent.id) }) else { throw WireError("not a list") }
+            guard case .fleetDispatches(_, let rows, _) = try await thread.call({ .fleetListDispatches(id: $0, agentID: thread.agent.id) }) else { throw WireError("not a list") }
             return rows
         }
         let mine = try await rows(parent), theirs = try await rows(other)
@@ -372,6 +372,66 @@ struct FleetDispatchTests {
         // The other thread still cannot read or close it.
         guard case .error(_, FleetDispatchProtocol.Code.unknownDispatch, _) = try await other.call({ .fleetDispatchStatus(id: $0, agentID: other.agent.id, dispatchID: info.dispatchID) }) else {
             Issue.record("a thread read a dispatch it did not send"); return
+        }
+    }
+
+    /// Another thread's prompt never reaches the list. A dispatch sent with no title is named after the task's first line and its branch after
+    /// that, so a thread other than the sender sees `(untitled)` and no branch; the sender sees both. A title the sender gave is shown to all, and
+    /// a record from before `titleGiven` existed counts as task-titled.
+    @Test func anotherThreadsPromptNeverReachesTheDispatchList() async throws {
+        let (a, b, _) = try await Self.pair(busyA: 90, busyB: 10)
+        defer { a.stop(); b.stop() }
+        let sender = try await a.parent("Ship checkout"), reader = try await a.parent("Review docs")
+        try sender.hello(); try reader.hello()
+        let secret = "Rotate the zebra-quartz-7731 credentials"
+        let untitled = try sender.info(try await sender.dispatch(secret + " before friday.", key: "call-untitled"))
+        let titled = try sender.info(try await sender.dispatch("Fix the flaky payment test.", key: "call-titled", title: "Payment test fix"))
+        try await Self.wait("both dispatches to have a branch") { a.sent().count == 2 && a.sent().allSatisfy { $0.branch != nil } }
+
+        func rows(_ thread: Parent) async throws -> [FleetDispatchListRow] {
+            guard case .fleetDispatches(_, let rows, _) = try await thread.call({ .fleetListDispatches(id: $0, agentID: thread.agent.id) }) else { throw WireError("not a list") }
+            return rows
+        }
+        func row(_ id: String, _ rows: [FleetDispatchListRow]) throws -> FleetDispatchListRow { try #require(rows.first { $0.dispatchID == id }) }
+        let owned = try await rows(sender), others = try await rows(reader)
+        let ownerSees = try row(untitled.dispatchID, owned), readerSees = try row(untitled.dispatchID, others)
+        #expect(ownerSees.title == secret + " before friday." && ownerSees.branch?.contains("zebra-quartz-7731") == true && ownerSees.mine)
+        #expect(readerSees.title == "(untitled)" && readerSees.branch == nil && !readerSees.mine)
+        let text = String(describing: others).lowercased()
+        #expect(!text.contains("zebra") && !text.contains("quartz") && !text.contains("7731") && !text.contains("friday"), "the prompt is nowhere in the other thread's list: \(text)")
+        let explicit = try row(titled.dispatchID, others)
+        #expect(explicit.title == "Payment test fix" && explicit.branch == "fleet/payment-test-fix" && !explicit.mine, "a title the sender gave is shown")
+
+        // A record written before `titleGiven` existed decodes as task-titled, so another thread no longer sees its title or branch.
+        a.server.queue.sync { a.server.fleet?.dispatch.outbound[UUID(uuidString: titled.dispatchID)!]?.titleGiven = false }
+        let legacy = try row(titled.dispatchID, try await rows(reader))
+        #expect(legacy.title == "(untitled)" && legacy.branch == nil)
+        #expect(try row(titled.dispatchID, try await rows(sender)).title == "Payment test fix", "the sender still sees it")
+    }
+
+    /// The list is capped on the host, newest first, with the count of the rest; every text in it is one short line.
+    @Test func theDispatchListIsCappedOnTheHostAndItsTextsAreOneShortLine() async throws {
+        let (a, b, _) = try await Self.pair(busyA: 90, busyB: 10)
+        defer { a.stop(); b.stop() }
+        let thread = try await a.parent()
+        try thread.hello()
+        let nasty = "line one\nline two\t\u{1B}[31mred\u{0}" + String(repeating: "x", count: 10_000)
+        a.server.queue.sync {
+            for i in 0..<25 {
+                var record = FleetDispatchRecord(parentAgentID: thread.agent.id, parentHostID: UUID(), parentHostName: "Mac", targetHostName: nasty, state: .running,
+                                                 title: nasty, titleGiven: true, task: "t", repoKey: "k", branch: nasty, createdAt: Double(1_000 + i))
+                record.updatedAt = record.createdAt
+                a.server.fleet?.dispatch.outbound[record.id] = record
+            }
+        }
+        guard case .fleetDispatches(_, let rows, let omitted) = try await thread.call({ .fleetListDispatches(id: $0, agentID: thread.agent.id) }) else {
+            Issue.record("not a list"); return
+        }
+        #expect(rows.count == FleetDispatch.listRowsMax && omitted == 5)
+        for row in rows {
+            for text in [row.title, row.branch ?? "", row.host ?? ""] {
+                #expect(!text.contains { $0.isNewline || $0 == "\t" || $0 == "\u{1B}" || $0 == "\u{0}" } && text.count <= 120 && text.hasPrefix("line one line two [31mred"))
+            }
         }
     }
 

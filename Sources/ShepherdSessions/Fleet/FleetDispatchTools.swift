@@ -34,13 +34,24 @@ extension FleetDispatch {
         }
     }
 
-    /// The dispatches this Mac sent, newest first, as `fleet_read` lists them to `agentID`: `mine` marks the ones that thread sent, the only ones its
-    /// other `fleet_*` tools reach. A moved thread is no dispatch. Reads what the engine holds; touches no Mac.
-    func listRows(for agentID: AgentID) -> [FleetDispatchListRow] {
-        outbound.values.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt }.map { record in
-            FleetDispatchListRow(dispatchID: record.id.uuidString.lowercased(), state: record.state.rawValue, host: record.targetHostName, title: record.title,
-                             branch: record.branch, mine: record.parentAgentID == agentID, closed: record.closeReport != nil)
+    /// The most dispatches `fleet_read` lists; the rest are counted, not sent.
+    static let listRowsMax = 20
+
+    /// The dispatches this Mac sent, newest first, as `fleet_read` lists them to `agentID`, at most `listRowsMax`, and how many older ones it left out.
+    /// `mine` marks the ones that thread sent, the only ones its other `fleet_*` tools reach. For another thread's dispatch the title and branch are
+    /// shown only when the sender gave the title (else the title is the task's first line and the branch is made from it: a prompt): older records
+    /// never recorded that, so they are hidden too. Every text is one short line. A moved thread is no dispatch. Reads what the engine holds;
+    /// touches no Mac.
+    func listRows(for agentID: AgentID) -> (rows: [FleetDispatchListRow], omitted: Int) {
+        let all = outbound.values.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt }
+        let rows = all.prefix(Self.listRowsMax).map { record -> FleetDispatchListRow in
+            let mine = record.parentAgentID == agentID
+            let shown = mine || record.titleGiven
+            return FleetDispatchListRow(dispatchID: record.id.uuidString.lowercased(), state: record.state.rawValue, host: record.targetHostName?.listLabel(),
+                                        title: shown ? record.title.listLabel() : "(untitled)", branch: shown ? record.branch?.listLabel() : nil,
+                                        mine: mine, closed: record.closeReport != nil)
         }
+        return (Array(rows), all.count - rows.count)
     }
 
     /// Why a thread may not use the fleet tools, or nil: a project worker, a coordinator, a design's agent and an automation

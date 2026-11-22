@@ -53,8 +53,9 @@ extension SessionServer {
         }
 
         switch request {
-        case .list:
-            respond(.agents(Self.peerInfos(in: state, sender: sender.id)))
+        case .list(_, let details):
+            let list = Self.peerList(in: state, sender: sender.id, details: details)
+            respond(.agents(list.rows, omitted: list.omitted))
 
         case .send(_, let targetAgentID, let text, let delivery):
             guard targetAgentID != sender.id else {
@@ -197,19 +198,34 @@ extension SessionServer {
         return (branch, exists, exists ? nil : pin.sha, pin.subdir)
     }
 
+    /// The most threads a detailed `agent_list` returns; the rest are counted.
+    static let detailedListMax = 50
+
     /// What agent_list shows `sender`: every thread in every space on this host, and no design's agent. Reads state only.
     public static func peerInfos(in state: ShepherdState, sender: AgentID) -> [AgentPeerInfo] {
-        state.agents.filter { state.isOrdinaryThread($0) }.map { agent in
-            AgentPeerInfo(
+        peerList(in: state, sender: sender, details: false).rows
+    }
+
+    /// The same, as the plain list sends it (every thread, texts as they are) or, with `details`, newest first, at most `detailedListMax`, with
+    /// how many older ones it left out, and every text one short line.
+    static func peerList(in state: ShepherdState, sender: AgentID, details: Bool) -> (rows: [AgentPeerInfo], omitted: Int) {
+        var agents = state.agents.filter { state.isOrdinaryThread($0) }
+        if details { agents.sort { ($0.lastActiveAt ?? 0) > ($1.lastActiveAt ?? 0) } }
+        let shown = details ? Array(agents.prefix(detailedListMax)) : agents
+        let rows = shown.map { agent in
+            let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? ""
+            let space = state.spaces.first { $0.id == agent.spaceID }?.name
+            return AgentPeerInfo(
                 id: agent.id,
-                name: agent.name,
+                name: details ? agent.name.listLabel() : agent.name,
                 status: agent.status.rawValue,
-                cwd: state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? "",
+                cwd: details ? cwd.listLabel(limit: 240) : cwd,
                 isSelf: agent.id == sender,
-                space: state.spaces.first { $0.id == agent.spaceID }?.name,
+                space: details ? space?.listLabel() : space,
                 lastActiveAt: agent.lastActiveAt,
                 asking: agent.waitingOn != nil
             )
         }
+        return (rows, agents.count - rows.count)
     }
 }

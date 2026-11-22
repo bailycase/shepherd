@@ -206,7 +206,8 @@ public enum AutomationOutcome: Hashable, Sendable {
 /// another thread, or spawn a new one. Forwarded to the GUI like pane
 /// requests — it owns agent lifecycle and pi input.
 public enum AgentPeerRequest: Hashable, Sendable {
-    case list(agentID: AgentID)
+    /// `details`: the detailed list (`agent_list` with `details`): newest first, at most `SessionServer.detailedListMax`, each text one short line.
+    case list(agentID: AgentID, details: Bool = false)
     case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
     /// `byPerson`: the turn it was called in is one a person started (`SessionServer.spawnByPerson`).
     case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil,
@@ -216,7 +217,7 @@ public enum AgentPeerRequest: Hashable, Sendable {
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
+        case .list(let agentID, _), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
             return agentID
         }
     }
@@ -226,7 +227,8 @@ public enum AgentPeerRequest: Hashable, Sendable {
 public enum AgentPeerOutcome: Hashable, Sendable {
     case ok
     case failed(code: String, message: String)
-    case agents([AgentPeerInfo])
+    /// `omitted`: older threads a detailed list left out.
+    case agents([AgentPeerInfo], omitted: Int = 0)
 
     public func withID(_ id: Int) -> ExtensionReply {
         switch self {
@@ -234,8 +236,8 @@ public enum AgentPeerOutcome: Hashable, Sendable {
             return .ok(id: id)
         case .failed(let code, let message):
             return .error(id: id, code: code, message: message)
-        case .agents(let agents):
-            return .agents(id: id, agents: agents)
+        case .agents(let agents, let omitted):
+            return .agents(id: id, agents: agents, omitted: omitted)
         }
     }
 }

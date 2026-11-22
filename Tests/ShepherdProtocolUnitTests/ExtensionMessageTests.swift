@@ -70,6 +70,7 @@ struct ExtensionMessageTests {
         .app(id: 10, agentID: agent, action: .list, name: nil, lines: nil),
         .app(id: 11, agentID: agent, action: .logs, name: "Web app", lines: 40),
         .listAgents(id: 16, agentID: agent),
+        .listAgents(id: 17, agentID: agent, details: true),
         .peerMessageReceived(agentID: agent, deliveryID: 42),
         .prepareProjectConfiguration(id: 116, agentID: agent, cwd: "/project"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
@@ -502,11 +503,11 @@ struct ExtensionReplyTests {
         ]),
         .agents(id: 2, agents: [
             AgentPeerInfo(id: AgentID(rawValue: "far"), name: "far", status: "blocked", cwd: "/docs", isSelf: false, space: "acme-docs", lastActiveAt: 1_700_000_000_000, asking: true),
-        ]),
+        ], omitted: 3),
         .fleetDispatches(id: 145, dispatches: [
             FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test", branch: "fleet/flaky-test", mine: true),
             FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c12", state: "done", closed: true),
-        ]),
+        ], omitted: 4),
         .fleetHosts(id: 140, hosts: [FleetHostInfo(name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: ["muse"], hasRepo: true, weight: "Prefer"),
                                      FleetHostInfo(name: "MacBook Pro", isThisMac: true, room: "no room", connected: true, without: ["bearcli"], weight: "Normal")]),
         .fleetDispatch(id: 141, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test")),
