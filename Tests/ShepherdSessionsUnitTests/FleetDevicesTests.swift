@@ -50,6 +50,16 @@ struct FleetDevicesTests {
         #expect(!second.changed, "a second exchange changes nothing")
     }
 
+    @Test func mergingATombstoneReportsRevocationForAnUnknownDevice() {
+        var devices = FleetDevices()
+        let id = UUID()
+        let tombstone = FleetDeviceEntry(deviceID: id, name: "iPhone", kind: .iphone, tokenHash: nil, pairedAt: 10, revokedAt: 700)
+
+        let merged = devices.merge([tombstone])
+        #expect(merged.changed)
+        #expect(merged.revoked == [id])
+    }
+
     @Test func aRevocationIsFinalEvenWhenAStaleListStillHasTheDevice() {
         let phone = Self.device("iPhone", token: "a")
         var devices = FleetDevices()
