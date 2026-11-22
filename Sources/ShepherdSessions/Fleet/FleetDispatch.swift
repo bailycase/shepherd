@@ -1088,7 +1088,7 @@ final class FleetDispatch: @unchecked Sendable {
     /// the facts of its branch.
     static func resultMessage(_ record: FleetDispatchRecord) -> String {
         let place = record.targetHostName ?? "another Mac"
-        var body = "Result from \(record.title) on \(place):\n\(record.resultText ?? "")"
+        var body = "Result from \(record.title) on \(place):\nDispatch ID: \(record.id.uuidString.lowercased())\n\(record.resultText ?? "")"
         if let facts = record.resultBranchFacts, facts.head != nil {
             let commits = facts.ahead == 1 ? "1 commit" : "\(facts.ahead) commits"
             let files = facts.filesChanged == 1 ? "1 file" : "\(facts.filesChanged) files"

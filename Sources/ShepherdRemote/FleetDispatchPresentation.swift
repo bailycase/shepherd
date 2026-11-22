@@ -56,6 +56,7 @@ public struct FleetDispatchCard: Identifiable, Equatable, Sendable {
     public var layout: Layout
     public var state: FleetDispatchState
     public var title: String
+    public var branch: String?
     /// The Mac it went to, as the tag names it; nil while none is chosen.
     public var host: String?
     /// "Working", "Done", "Waiting for room", "Waiting", "Starting", "Not sent".
@@ -136,7 +137,7 @@ public enum FleetDispatchPresentation {
         let macs = context.snapshot.macNames
         let host = hostName(of: record, macs: macs)
         var card = FleetDispatchCard(
-            id: record.id, layout: .state, state: record.state, title: record.title.isEmpty ? "Untitled" : record.title, host: host, pill: "", tone: .tertiary,
+            id: record.id, layout: .state, state: record.state, title: record.title.isEmpty ? "Untitled" : record.title, branch: record.branch, host: host, pill: "", tone: .tertiary,
             detail: "", actions: [], parentAgentID: record.parentAgentID, parentHostID: record.parentHostID, targetHostID: record.targetHostID,
             remoteAgentID: record.remoteAgentID, createdAt: record.createdAt, updatedAt: record.updatedAt)
         switch record.state {
@@ -539,6 +540,7 @@ public struct FleetOfflineBanner: Equatable, Sendable {
 /// A dispatched thread's result as it reaches the thread that sent it (FleetDispatch's second card): the message the
 /// host delivers (`FleetDispatch.resultMessage`), read back. The text is data from another agent, drawn, never acted on.
 public struct FleetResultMessage: Equatable, Sendable {
+    public var dispatchID: UUID? = nil
     public var title: String
     public var host: String
     public var text: String
@@ -559,6 +561,13 @@ public struct FleetResultMessage: Equatable, Sendable {
         let title = String(first[..<on.lowerBound])
         let host = String(first[on.upperBound...].dropLast())
         rest = rest[rest.index(after: lineEnd)...]
+        var dispatchID: UUID?
+        let idPrefix = "Dispatch ID: "
+        if rest.hasPrefix(idPrefix), let end = rest.firstIndex(of: "\n"),
+           let id = UUID(uuidString: String(rest[..<end].dropFirst(idPrefix.count))) {
+            dispatchID = id
+            rest = rest[rest.index(after: end)...]
+        }
         var body = String(rest)
         var branch: String?, pushed: Bool?, checkoutNotice: String?
         if let facts = body.range(of: "\n\nBranch ", options: .backwards) {
@@ -574,14 +583,16 @@ public struct FleetResultMessage: Equatable, Sendable {
                 if let notice { checkoutNotice = String(line[line.index(notice.lowerBound, offsetBy: 2)...]) }
             }
         }
-        return FleetResultMessage(title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines),
+        return FleetResultMessage(dispatchID: dispatchID, title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines),
                                   branch: branch, pushed: pushed, checkoutNotice: checkoutNotice)
     }
 
-    /// The dispatch this result belongs to, among the sending thread's records: its title, the Mac and a finished state.
+    /// The dispatch this result belongs to, among the sending thread's records.
     public func record(in records: [FleetDispatchRecord], parent: AgentID) -> FleetDispatchRecord? {
-        records.filter {
-            $0.parentAgentID == parent && $0.title == title && $0.targetHostName == host && [.delivering, .done].contains($0.state)
+        let owned = records.filter { $0.parentAgentID == parent }
+        if let dispatchID { return owned.first { $0.id == dispatchID } }
+        return owned.filter {
+            $0.title == title && $0.targetHostName == host && [.delivering, .done].contains($0.state)
         }.max { $0.updatedAt < $1.updatedAt }
     }
 }

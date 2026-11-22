@@ -53,7 +53,13 @@ struct FleetThreadSurface: Equatable {
 
     /// The card of the dispatch a result message belongs to.
     func card(for result: FleetResultMessage) -> FleetDispatchCard? {
-        cards.filter { $0.title == result.title && $0.host == result.host && $0.layout == .row }.max { $0.createdAt < $1.createdAt }
+        if let id = result.dispatchID { return cards.first { $0.id == id && $0.layout == .row } }
+        // Older saved results have no ID. Use the branch after a rename only when it identifies one card.
+        let onHost = cards.filter { $0.host == result.host && $0.layout == .row }
+        if let exact = onHost.filter({ $0.title == result.title }).max(by: { $0.createdAt < $1.createdAt }) { return exact }
+        guard let branch = result.branch else { return nil }
+        let matches = onHost.filter { $0.branch == branch }
+        return matches.count == 1 ? matches.first : nil
     }
 }
 
@@ -349,6 +355,8 @@ struct FleetResultCard: View, Equatable {
     let card: FleetDispatchCard?
     var actions: FleetThreadActions?
 
+    private var title: String { card?.title ?? result.title }
+
     nonisolated static func == (a: FleetResultCard, b: FleetResultCard) -> Bool {
         a.result == b.result && a.time == b.time && a.card == b.card && a.actions === b.actions
     }
@@ -362,7 +370,7 @@ struct FleetResultCard: View, Equatable {
                     .foregroundStyle(sh.done)
                     .frame(width: AppLayout.fleetResultTick)
                     .accessibilityHidden(true)
-                (Text("Result from ") + Text(result.title).fontWeight(.semibold).foregroundStyle(sh.textPrimary) + Text(" on \(result.host)"))
+                (Text("Result from ") + Text(title).fontWeight(.semibold).foregroundStyle(sh.textPrimary) + Text(" on \(result.host)"))
                     .font(.sh(.caption, weight: .regular))
                     .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
@@ -399,7 +407,7 @@ struct FleetResultCard: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: SH.Radius.l, fill: sh.bgSunken, line: sh.lineSubtle)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Result from \(result.title) on \(result.host)")
+        .accessibilityLabel("Result from \(title) on \(result.host)")
     }
 
     /// The text with its inline code in mono.

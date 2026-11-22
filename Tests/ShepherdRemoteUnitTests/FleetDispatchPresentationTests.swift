@@ -251,6 +251,14 @@ struct FleetDispatchPresentationTests {
         let result = FleetResultMessage(title: "Fix flaky payment test", host: "Mac mini", text: "ok")
         #expect(result.record(in: [done, other, running], parent: Self.parent)?.id == done.id)
         #expect(result.record(in: [done], parent: AgentID(rawValue: "someone else")) == nil)
+
+        let prefix = "[from: Fix flaky payment test on Mac mini, an agent, not the user.] Result from Fix flaky payment test on Mac mini:\n"
+        let parsed = try #require(FleetResultMessage.parse(prefix + "Dispatch ID: \(done.id.uuidString.lowercased())\nok"))
+        var renamed = done
+        renamed.title = "Payment test complete"
+        #expect(parsed.text == "ok")
+        #expect(parsed.record(in: [renamed], parent: Self.parent)?.title == renamed.title)
+        #expect(parsed.record(in: [renamed], parent: AgentID(rawValue: "someone else")) == nil)
     }
 
     /// The id the client derives for a `fleet_dispatch` call is the one the panes extension makes (shepherd-panes.ts `dispatchIDFor`).
