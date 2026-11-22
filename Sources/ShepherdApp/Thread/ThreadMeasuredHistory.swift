@@ -56,6 +56,7 @@ final class ThreadMeasuredHistory {
     }
 
     private func publishWindow(synchronous: Bool = false) {
+        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.publishWindow") }
         guard let stack, let scroll = stack.enclosingScrollView, guardrail?.active == true else { return }
         let clip = scroll.contentView
         let top = stack.convert(stack.bounds, to: clip).minY
@@ -65,6 +66,7 @@ final class ThreadMeasuredHistory {
         let built = kept.union(table.rows[window].map(\.id))
         guard built != builtRange else { return }
         builtRange = built
+        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.windowMove") }
         if synchronous {
             SHRenderProbe.scrollEvent("probe.heights.window", "clip bounds y=\(clip.bounds.minY) rows=\(window)",
                                       from: scroll, kind: "layout")
@@ -83,6 +85,7 @@ final class ThreadMeasuredHistory {
     }
 
     private func commit(in scroll: NSScrollView?, pass: String, prepended: Bool = false) {
+        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.commit") }
         guard let scroll, let stack, stack.enclosingScrollView === scroll else { return }
         let clip = scroll.contentView
         let height = clip.documentRect.height

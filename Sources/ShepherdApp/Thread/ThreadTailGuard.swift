@@ -373,6 +373,7 @@ final class ThreadTailGuard {
             if changed && measuredHistory != nil { needsLayout = true }
         }
         override func layout() {
+            if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.rowMarkerLayout") }
             super.layout()
             measuredHistory?.rowLaidOut(rowID, height: bounds.height, in: enclosingScrollView)
         }
@@ -407,6 +408,7 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
         weak var measuredHistory: ThreadMeasuredHistory?
 
         override func setFrameSize(_ newSize: NSSize) {
+            if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.finderFrameSize") }
             let changed = newSize.height != frame.height
             super.setFrameSize(newSize)
             if changed {
