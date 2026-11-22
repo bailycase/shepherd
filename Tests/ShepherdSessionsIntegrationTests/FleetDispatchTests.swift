@@ -92,7 +92,7 @@ struct FleetDispatchTests {
             // pi's MCP file on this Mac, and what its login shell can't find (`lacking`, `noXcode`).
             if !mcp.isEmpty {
                 let servers = mcp.map { #""\#($0.key)": {"command": "\#($0.value)"}"# }.sorted().joined(separator: ",")
-                try Data(#"{"mcpServers": {\#(servers)}}"#.utf8).write(to: server.pi.files.mcpConfig)
+                try server.pi.files.installMCPConfig(Data(#"{"mcpServers": {\#(servers)}}"#.utf8))
             }
             if let links { server.fleetLinkOptions = links }
             server.configureFleet(clock: { clock.now }, pressure: { queue, facts in
@@ -1595,7 +1595,7 @@ struct FleetDispatchTests {
     // MARK: What a Mac lacks
 
     @Test func aMacMissingAnMCPServersCommandStillRunsTheWorkAndTheSenderIsToldWhatItLacked() async throws {
-        let (a, b, _) = try await Self.pair(busyA: 90, busyB: 10, mcp: ["bear": "/Applications/Bear.app/bearcli", "fetch": "npx"], lackingB: ["npx"])
+        let (a, b, _) = try await Self.pair(busyA: 90, busyB: 10, mcp: ["bear": "/Applications/Bear.app/bearcli", "fetch": "npx"], lackingB: ["npx"], isolatedPi: true)
         defer { a.stop(); b.stop() }
         let parent = try await a.parent()
         try parent.hello()
