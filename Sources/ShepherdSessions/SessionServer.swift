@@ -1384,6 +1384,74 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
+    // MARK: - Host settings
+
+    private func remoteHostSettings(_ input: RouteInput) {
+        let send = input.send
+        // The reply closure holds the server weakly. Keep it alive through each queued reply.
+        switch input.request {
+        case .hostSettings(let id, let request):
+            if case .change(let change) = request, let capability = change.capability,
+               !input.offeredCapabilities().contains(capability) {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."))
+                return
+            }
+            guard let handler = onRemoteHostSettings else {
+                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let settings): send(.hostSettings(id: id, settings: settings))
+                        case .failure(let error): send(.error(id: id, code: "settings_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        case .hostInventory(let id, let request):
+            // Read-only, and only the GUI knows: hops as hostSettings does.
+            guard let handler = onRemoteHostInventory else {
+                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let value): send(.hostInventory(id: id, result: value))
+                        case .failure(let error): send(.error(id: id, code: "inventory_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        case .hostConfig(let id, let request):
+            guard let handler = onRemoteHostConfig else {
+                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let value): send(.hostConfig(id: id, result: value))
+                        case .failure(let error): send(.error(id: id, code: "config_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+
     // MARK: - Model catalog
 
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
@@ -3522,6 +3590,9 @@ public final class SessionServer: @unchecked Sendable {
     // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
     static let remoteRoutes: [RemoteRequest.Kind: Route] = [
         // Host settings
+        .hostSettings: { $0.remoteHostSettings($1) },
+        .hostInventory: { $0.remoteHostSettings($1) },
+        .hostConfig: { $0.remoteHostSettings($1) },
         // Model catalog
         .listModels: { $0.remoteListModels($1) },
         // Push registration
@@ -3543,11 +3614,14 @@ public final class SessionServer: @unchecked Sendable {
         }
         func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
-        // Route-table kinds share this case. Use leading commas for kinds after .listModels.
+        // Route-table kinds share this case. Use leading commas after the first kind.
         case
             // Host settings
+            .hostSettings
+            , .hostInventory
+            , .hostConfig
             // Model catalog
-            .listModels
+            , .listModels
             // Push registration
             // Settings catalogs
             // Add new families above this line.
@@ -4088,63 +4162,6 @@ public final class SessionServer: @unchecked Sendable {
                 else { self.send(.error(id: id, code: "timeout", message: "Update handler timed out."), to: client) }
             })
             if let refusal { send(.error(id: id, code: refusal.code, message: refusal.message), to: client) }
-        case .hostSettings(let id, let request):
-            if case .change(let change) = request, let capability = change.capability,
-               !offeredCapabilities(to: client).contains(capability) {
-                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
-                return
-            }
-            guard let handler = onRemoteHostSettings else {
-                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let settings): self.send(.hostSettings(id: id, settings: settings), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "settings_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
-        case .hostInventory(let id, let request):
-            // Read-only, and only the GUI knows: hops as hostSettings does.
-            guard let handler = onRemoteHostInventory else {
-                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let value): self.send(.hostInventory(id: id, result: value), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "inventory_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
-        case .hostConfig(let id, let request):
-            guard let handler = onRemoteHostConfig else {
-                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let value): self.send(.hostConfig(id: id, result: value), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "config_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
         case .stateFetch(let id):
             if store.recoveryError != nil {
                 send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
