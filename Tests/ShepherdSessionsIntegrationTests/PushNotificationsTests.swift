@@ -202,6 +202,184 @@ struct PushNotificationsTests {
         #expect(rows.first { $0.id == otherDevice.id }?.deviceID == pad.intro.deviceID)
     }
 
+    private static let firstSeen = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    private static let week: TimeInterval = 604_800
+
+    @Test func ownerlessRowSendsUntilItsDeadlineThenLeavesTheFile() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        try JSONEncoder().encode([legacy]).write(to: file)
+        let queue = DispatchQueue(label: "push.expiry")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let requests = Locked(0)
+        try queue.sync { () throws -> Void in
+            pushes.transport = { _, _ in
+                requests.withValue { $0 += 1 }
+                return {}
+            }
+            pushes.load()
+            clock.withValue { $0 = Self.firstSeen + Self.week - 1 }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(requests.current == 1)
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [legacy])
+            clock.withValue { $0 = Self.firstSeen + Self.week }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(requests.current == 1)
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+        }
+    }
+
+    @Test func anOwnerlessRowCannotSendARelayFallbackAfterTheDeadline() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        try JSONEncoder().encode([registration()]).write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-fallback")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let callbacks = Locked<[@Sendable (Int?) -> Void]>([])
+        queue.sync {
+            pushes.transport = { _, finished in
+                callbacks.withValue { $0.append(finished) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done)
+        }
+        let finish = try #require(callbacks.current.first)
+        clock.withValue { $0 = Self.firstSeen + Self.week }
+        finish(400)
+        try queue.sync { () throws -> Void in
+            #expect(callbacks.current.count == 1)
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+        }
+    }
+
+    @Test func anIdleHostStartsTheClockAndThePreviousReaderCanStillLoadTheRows() throws {
+        struct PreviousRegistration: Decodable, Equatable {
+            var id: String
+            let sendToken: String
+            let preferences: RemotePushPreferences?
+            let deviceID: UUID?
+        }
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        let saved = try JSONEncoder().encode([legacy])
+        try saved.write(to: file)
+        let host = try ScratchServer(dir: dir)
+        defer { host.stop(keepFiles: true) }
+        let stamped = try Data(contentsOf: file)
+        #expect(stamped != saved, "the host starts the clock before any phone or alert touches the file")
+        guard case .loaded(let previous) = PersistedFile<[PreviousRegistration]>.decode(stamped) else {
+            Issue.record("The previous reader could not load a stamped row")
+            return
+        }
+        #expect(previous == [.init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: nil)])
+        #expect(try Data(contentsOf: file) == stamped)
+    }
+
+    @Test func anOwnerlessRowsDeadlineIsNotResetOnRestart() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        try JSONEncoder().encode([legacy]).write(to: file)
+        let queue = DispatchQueue(label: "push.restart")
+        PushNotifications(file: file, queue: queue, now: { Self.firstSeen }).load()
+        // A restart near the deadline must neither extend it nor remove the row early.
+        PushNotifications(file: file, queue: queue, now: { Self.firstSeen + Self.week - 1 }).load()
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [legacy])
+        PushNotifications(file: file, queue: queue, now: { Self.firstSeen + Self.week + 1 }).load()
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+    }
+
+    @Test func reconnectingBeforeTheDeadlineBindsTheRowAndKeepsDelivery() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let phone = Device()
+        defer { phone.stop() }
+        _ = try await connect(phone, to: mac)
+        phone.stop()
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration(), abandoned = registration()
+        try JSONEncoder().encode([legacy, abandoned]).write(to: file)
+        await mac.server.queue.testHop {
+            let pushes = mac.server.pushNotifications
+            pushes.now = { Self.firstSeen }
+            pushes.load()
+            pushes.now = { Self.firstSeen + Self.week - 1 }
+        }
+        try await phone.connect(to: mac).registerPush(legacy)
+        let posted = Locked<[String]>([])
+        await mac.server.queue.testHop {
+            let pushes = mac.server.pushNotifications
+            pushes.now = { Self.firstSeen + Self.week + 1 }
+            pushes.transport = { request, _ in
+                let id = request.url!.deletingLastPathComponent().lastPathComponent
+                posted.withValue { $0.append(id) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done, title: "Acme build")
+        }
+        #expect(posted.current == [legacy.id])
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows == [.init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: phone.intro.deviceID)])
+    }
+
+    @Test func registrationCanUseExpiredRowsSlotsWithoutASend() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        try JSONEncoder().encode((0..<16).map { _ in registration() }).write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-slots")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let replacement = registration()
+        try queue.sync {
+            pushes.load()
+            clock.withValue { $0 = Self.firstSeen + Self.week }
+            try pushes.register(replacement, deviceID: UUID())
+        }
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [replacement])
+    }
+
+    @Test(arguments: [false, true])
+    func expiryDoesNotRemoveAnythingFromADamagedFile(duplicateID: Bool) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        // In the duplicate case, a later ownerless row must not overwrite an owned row.
+        let first = duplicateID
+            ? """
+              {"id":"\(legacy.id.lowercased())","sendToken":"\(legacy.sendToken)","deviceID":"\(UUID())"}
+              """
+            : "null"
+        let damage = Data("""
+        [\(first),{"id":"\(legacy.id)","sendToken":"\(legacy.sendToken)","ownerlessFirstSeen":0}]
+        """.utf8)
+        try damage.write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-damage")
+        let pushes = PushNotifications(file: file, queue: queue, now: { Self.firstSeen })
+        try queue.sync {
+            pushes.load()
+            pushes.transport = { _, _ in
+                Issue.record("A damaged file must not send")
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect { try pushes.register(registration()) } throws: { error in
+                if case PushNotifications.Failure.damaged(file.path) = error { return true }
+                return false
+            }
+        }
+        #expect(try Data(contentsOf: file) == damage)
+    }
+
     @Test func aDeviceAdoptsALegacyRowAndAnOlderHostCanStillReadIt() async throws {
         let mac = try await Mac("Acme Studio")
         defer { mac.stop() }
