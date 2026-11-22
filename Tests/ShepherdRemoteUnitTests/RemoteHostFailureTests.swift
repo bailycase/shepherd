@@ -17,6 +17,7 @@ struct RemoteHostFailureTests {
         (.disconnected, .lost, true),
         (.system(call: "connect", errno: EISCONN), .other, true),
         (.rejected(code: "unauthenticated", message: "hello required"), .other, true),
+        (.rejected(code: FleetProtocol.Code.off, message: "Fleet has not started"), .other, true),
         (.rejected(code: RemoteProtocol.unauthorizedCode, message: "bad token"), .tokenRefused, false),
         (.rejected(code: RemoteProtocol.versionMismatchCode, message: "host speaks protocol \(RemoteProtocol.version + 1)"),
          .versionMismatch(hostNewer: true), false),

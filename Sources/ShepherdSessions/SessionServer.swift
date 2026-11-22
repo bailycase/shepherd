@@ -1041,6 +1041,7 @@ public final class SessionServer: @unchecked Sendable {
     private var changingListener = false
     /// The local socket (`host.sock`) the app connects to a background host through.
     private var localAcceptSource: DispatchSourceRead?
+    private var localBindRetry: Task<Void, Never>?
     private var localSocketPath: String?
     /// This host's fleet (`FleetService`), present from `startFleet` on. Server queue.
     var fleet: FleetService?
@@ -2636,6 +2637,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        localBindRetry?.cancel()
+        localBindRetry = nil
         // A stopped host holds no links and watches no files: its fleet ends with it.
         fleet?.stop()
         fleet = nil
@@ -3315,15 +3318,52 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// `startLocalListener` that suspends instead of waiting: the host's start-up runs on the main actor, and the server
-    /// queue may still hold the remote listener's bind. Start Fleet in the same queue turn when requested, so the
-    /// first local hello sees its capabilities and host ID.
+    /// queue may still hold the remote listener's bind. An already-running listener is ready. Start Fleet in the
+    /// same queue turn when requested, so the first local hello sees its capabilities and host ID.
     public func listenLocal(path: String, startFleet: Bool = false) async throws {
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             queue.async {
                 done.resume(with: Result {
-                    try self.startLocalListenerOnQueue(path: path)
+                    if self.localAcceptSource == nil { try self.startLocalListenerOnQueue(path: path) }
                     if startFleet { self.startFleetOnQueue() }
                 })
+            }
+        }
+    }
+
+    /// Retry independently of host startup. The server queue owns cancellation, so stop wakes a sleeping retry.
+    func retryLocalListener(path: String, after failure: Error) {
+        queue.async { [self] in
+            guard isStarted else { return }
+            localBindRetry?.cancel()
+            localBindRetry = Task { @MainActor in
+                let maxDelay = Duration.seconds(5)
+                var retryDelay = Duration.milliseconds(100)
+                var lastLoggedDelay: Duration?
+                var attempts = 1
+                var lastError = failure
+                while !Task.isCancelled {
+                    // Once the delay is capped, keep retrying without filling the host log.
+                    if retryDelay != lastLoggedDelay {
+                        ShepherdLog.error("host has no local socket: \(lastError); retrying in \(retryDelay) after \(attempts) attempt(s)")
+                        lastLoggedDelay = retryDelay
+                    }
+                    do { try await Task.sleep(for: retryDelay) } catch { return }
+                    guard !Task.isCancelled else { return }
+                    retryDelay = min(retryDelay * 2, maxDelay)
+                    attempts += 1
+                    do {
+                        try await self.listenLocal(path: path)
+                        return
+                    } catch {
+                        guard !Task.isCancelled else { return }
+                        if SessionServerError.isPermanentLocalBindFailure(error) {
+                            ShepherdLog.error("host has no local socket: \(error)")
+                            return
+                        }
+                        lastError = error
+                    }
+                }
             }
         }
     }

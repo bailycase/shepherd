@@ -181,29 +181,17 @@ public enum SessionHost {
         configure?(server)
         if let threads { server.serveThreads(threads(server)) }
         // Reserve the app's way in before Fleet opens its indexes.
-        let maxDelay = Duration.seconds(5)
-        var retryDelay = Duration.milliseconds(100)
-        var lastLoggedDelay: Duration?
-        var attempts = 0
-        while !Task.isCancelled {
-            attempts += 1
-            do {
-                try await server.listenLocal(path: socket, startFleet: startFleet)
-                break
-            } catch {
-                if SessionServerError.isPermanentLocalBindFailure(error) {
-                    ShepherdLog.error("host has no local socket: \(error)")
-                    // Keep serving without a local socket, as before bind retries.
-                    if startFleet { server.startFleet() }
-                    break
-                }
-                // Once the delay is capped, keep retrying without filling the host log.
-                if retryDelay != lastLoggedDelay {
-                    ShepherdLog.error("host has no local socket: \(error); retrying in \(retryDelay) after \(attempts) attempt(s)")
-                    lastLoggedDelay = retryDelay
-                }
-                do { try await Task.sleep(for: retryDelay) } catch { return nil }
-                retryDelay = min(retryDelay * 2, maxDelay)
+        guard !Task.isCancelled else { return nil }
+        do {
+            try await server.listenLocal(path: socket, startFleet: startFleet)
+        } catch {
+            guard !Task.isCancelled else { return nil }
+            // Queue Fleet before either a retry can bind or recovery can reach the credential fence.
+            if startFleet { server.startFleet() }
+            if SessionServerError.isPermanentLocalBindFailure(error) {
+                ShepherdLog.error("host has no local socket: \(error)")
+            } else {
+                server.retryLocalListener(path: socket, after: error)
             }
         }
         guard !Task.isCancelled else { return nil }
@@ -225,7 +213,7 @@ public enum SessionHost {
 }
 
 extension SessionServerError {
-    fileprivate static func isPermanentLocalBindFailure(_ error: Error) -> Bool {
+    static func isPermanentLocalBindFailure(_ error: Error) -> Bool {
         switch error as? SessionServerError {
         case .socketPathTooLong?, .conflict?: return true
         default: return isWorkspaceInUse(error)
