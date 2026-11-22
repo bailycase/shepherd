@@ -23,11 +23,14 @@ struct HostDrainTests {
     func aBusyAgentKeepsADrainingHostUpUntilItSettles(_ status: AgentStatus) async throws {
         let (h, state) = try await Self.host(status)
         defer { h.stop() }
+        let socket = h.dir.appendingPathComponent("host.sock").path
+        try await h.server.listenLocal(path: socket)
         let exited = Locked(false)
         let drain = await HostDrain(server: h.server, poll: .milliseconds(10)) { exited.withValue { $0 = true } }
         await drain.begin("test")
         #expect(await !h.server.quietForDrain)
         #expect(!exited.current, "the host keeps serving while its agent is \(status)")
+        #expect(RemoteHostClient.localSocketAnswers(socket), "a new app can launch while the host drains")
 
         var settled = state
         settled.agents[0].status = .done

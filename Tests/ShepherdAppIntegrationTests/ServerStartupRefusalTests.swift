@@ -1,43 +1,37 @@
 import Foundation
 import Testing
-import ShepherdRemote
 import ShepherdTestSupport
 @testable import ShepherdApp
 
-/// The app is a client of its host: another process that owns the workspace is followed when it
-/// answers (`HostSupervisorIntegrationTests`), and one that holds it without ever answering fails
-/// the launch, which ends the app (`ShepherdMacApp`'s `failed`) with no model made.
-@Suite("App startup ownership", .integrationTimeLimit)
+@Suite("App startup ownership", .mainActorExclusive)
 @MainActor
 struct ServerStartupRefusalTests {
     final class Model {}
 
-    @Test func anOwnerThatNeverAnswersFailsTheLaunchBeforeAnyModelIsMade() async throws {
-        let fixture = try HostSupervisorIntegrationTests.Fixture()
-        let owner = Process()
-        owner.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        owner.arguments = [fixture.script, "silent", fixture.socket, fixture.folder.path]
-        try owner.run()
-        defer { if owner.isRunning { kill(owner.processIdentifier, SIGKILL) } }
-        // Its lock is the only sign of it: the supervisor asks for the lock by taking it for an instant.
-        try await eventuallyOnMain("the owner holds the workspace lock") {
-            let fd = open(fixture.folder.appendingPathComponent("server.lock").path, O_RDWR | O_CLOEXEC)
-            defer { if fd >= 0 { close(fd) } }
-            return fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) != 0
+    @Test func launchKeepsWaitingForASilentOwnerUntilStopped() async throws {
+        let h = try ScratchServer()
+        defer { h.stop() }
+        let elapsed = Locked(Duration.zero)
+        let release = DispatchSemaphore(value: 0)
+        var configuration = HostSupervisor.Configuration(executable: URL(fileURLWithPath: "/usr/bin/false"), arguments: [],
+            socket: h.dir.appendingPathComponent("host.sock").path, lock: h.dir.appendingPathComponent("server.lock").path)
+        configuration.sleep = { step in
+            elapsed.withValue { $0 += step }
+            if elapsed.current >= .seconds(8) { release.wait() }
         }
-
-        var configuration = fixture.configuration("serve")
-        configuration.silentOwner = .milliseconds(300)
         let supervisor = HostSupervisor(configuration)
-        defer { supervisor.stop() }
-        var made = 0
+        defer { supervisor.stop(); release.signal() }
         var failure: Error?
-        let launch = ShepherdLaunch<Model>(start: { try supervisor.start() }, makeModel: { made += 1; return Model() },
-                                           failed: { failure = $0 })
-        await launch.begin()?.value
-
-        #expect(failure is BackgroundHostClient.HostStarting, "the launch failed as a workspace in use: \(String(describing: failure))")
-        #expect(made == 0 && launch.model == nil, "nothing that acts on the workspace was made")
+        let launch = ShepherdLaunch<Model>(start: { try supervisor.start() }, makeModel: { Model() }, failed: { failure = $0 })
+        launch.begin()
+        try await eventuallyOnMain("eight seconds of silence") { elapsed.current >= .seconds(8) }
+        #expect(launch.model == nil)
         #expect(supervisor.childPID == nil, "the owner's workspace is not contested")
+
+        supervisor.stop()
+        release.signal()
+        try await eventuallyOnMain("launch wait ends after stop") { failure != nil }
+        #expect(failure is CancellationError, "launch ended with \(String(describing: failure))")
+        #expect(launch.model == nil)
     }
 }

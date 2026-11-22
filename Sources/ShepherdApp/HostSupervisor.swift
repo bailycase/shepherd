@@ -71,8 +71,8 @@ final class HostSupervisor: @unchecked Sendable {
         /// (`ownerGrace`) before the app starts a child of its own.
         var preferOwner: @Sendable () -> Bool = { false }
         var ownerGrace: Duration = .seconds(5)
-        /// How long an owner holding the lock may stay silent before the launch says it is starting.
-        var silentOwner: Duration = .seconds(5)
+        /// Log a slow owner after this long, without ending the wait.
+        var slowOwnerNotice: Duration = .seconds(5)
         var probe: Duration = .milliseconds(100)
         var ownerPoll: Duration = .seconds(1)
         /// SIGTERM to SIGKILL at stop.
@@ -110,15 +110,21 @@ final class HostSupervisor: @unchecked Sendable {
         self.configuration = configuration
     }
 
-    /// Starts supervising and blocks until a host answers (off main, in the launch's start).
-    /// Throws `StartFailed` after three failed starts, or `HostStarting` for an owner that never
-    /// answers.
+    /// Starts supervising and waits off main until a host answers, three child starts fail, or the app quits.
     func start() throws {
+        let began = ContinuousClock.now
         let thread = Thread { [self] in supervise() }
         thread.name = "HostSupervisor"
         thread.start()
         launched.wait()
-        try lock.withLock { launchResult! }.get()
+        let result = lock.withLock { launchResult! }
+        let waited = began.duration(to: .now)
+        switch result {
+        case .success: ShepherdLog.connection("host launch waited \(waited): local socket answered")
+        case .failure(is CancellationError): ShepherdLog.connection("host launch waited \(waited): app quit")
+        case .failure(let error): ShepherdLog.connection("host launch waited \(waited): \(error)")
+        }
+        try result.get()
     }
 
     /// Whether the app's own child runs the agents now: Quit stops them.
@@ -155,6 +161,7 @@ final class HostSupervisor: @unchecked Sendable {
     private var isStopping: Bool { lock.withLock { stopping } }
 
     private func supervise() {
+        defer { _ = launch(.failure(CancellationError())) }
         var policy = RestartPolicy()
         var waitForOwner = configuration.preferOwner()
         while !isStopping {
@@ -175,8 +182,8 @@ final class HostSupervisor: @unchecked Sendable {
                 configuration.sleep(delay)
             case .fail:
                 let failure = StartFailed(lastExit: status.text)
-                ShepherdLog.connection("\(failure)")
                 if !launch(.failure(failure)) {
+                    ShepherdLog.connection("\(failure)")
                     DispatchQueue.main.async { [self] in onFailure?(failure) }
                 }
                 retried.wait()
@@ -236,15 +243,22 @@ final class HostSupervisor: @unchecked Sendable {
     private func follow(grace: Duration) -> Bool {
         var elapsed = Duration.zero
         var answered = false
+        var noticedSlowOwner = false
         while !isStopping {
             let held = ownerHoldsLock()
-            if !held, answered || elapsed >= grace { return answered }
+            if !held, answered || elapsed >= grace {
+                if noticedSlowOwner, !answered { ShepherdLog.connection("workspace owner released the lock without listening") }
+                return answered
+            }
             if !answered, RemoteHostClient.localSocketAnswers(configuration.socket) {
                 answered = true
                 ShepherdLog.connection("following the host that owns the workspace")
                 _ = launch(.success(()))
             }
-            if !answered, held, elapsed >= configuration.silentOwner { _ = launch(.failure(BackgroundHostClient.HostStarting())) }
+            if !answered, held, !noticedSlowOwner, elapsed >= configuration.slowOwnerNotice {
+                noticedSlowOwner = true
+                ShepherdLog.connection("workspace owner holds the lock but has not opened its local socket; still waiting")
+            }
             let wait = answered ? configuration.ownerPoll : configuration.probe
             configuration.sleep(wait)
             elapsed += wait
@@ -290,6 +304,7 @@ extension HostSupervisor.StartFailed {
         if canRetry { alert.addButton(withTitle: "Try Again") }
         alert.addButton(withTitle: "Quit")
         NSApp.activate()
-        return canRetry && alert.runModal() == .alertFirstButtonReturn
+        let response = alert.runModal()
+        return canRetry && response == .alertFirstButtonReturn
     }
 }

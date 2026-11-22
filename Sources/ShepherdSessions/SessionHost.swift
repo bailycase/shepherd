@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import os
 import ShepherdCore
 import ShepherdRemote
 
@@ -71,12 +72,12 @@ public enum SessionHost {
         // `server.stop()` waits for the server queue and the listener's port (up to 6 s): not on the main queue, whose
         // handlers and drain call this. A second call queues behind the first, which exits.
         let shutdown = DispatchQueue(label: "shepherd.host.shutdown")
-        let stop = {
+        let stop: @Sendable (Int32) -> Void = { status in
             shutdown.async {
                 BoundedCommand.stopForAppTermination()
                 server.stop()
                 ShepherdLog.info("host stopped (pid \(getpid()))")
-                exit(EXIT_SUCCESS)
+                exit(status)
             }
         }
         let sources = [SIGTERM, SIGINT].map { number -> DispatchSourceSignal in
@@ -84,13 +85,19 @@ public enum SessionHost {
             let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
             source.setEventHandler {
                 ShepherdLog.info("host stopping on signal \(number)")
-                stop()
+                stop(EXIT_SUCCESS)
             }
             source.activate()
             return source
         }
+        // Watch synchronous workspace startup too. Log directly to the unified log so
+        // a stall writing host.log cannot also stall the watchdog.
+        watchdog = HostWatchdog([("server", server.queue), ("main", .main)]) { name in
+            Logger(subsystem: "com.shepherd.app", category: "Connection").error("host exiting: its \(name, privacy: .public) queue stopped answering")
+            _exit(EXIT_FAILURE)
+        }
         do {
-            try server.start()
+            try server.start(persistHostLog: !supervised && Bundle.main.bundleURL.pathExtension == "app")
         } catch where SessionServerError.isWorkspaceInUse(error) {
             ShepherdLog.error("host not started: another Shepherd owns this workspace")
             exit(ownedExitStatus)
@@ -108,27 +115,15 @@ public enum SessionHost {
                 guard count == 0 || (count < 0 && errno != EAGAIN && errno != EINTR) else { return }
                 ShepherdLog.info("host stopping: the app closed its end of stdin")
                 input.cancel()
-                stop()
+                stop(EXIT_SUCCESS)
             }
             input.activate()
             stdinSource = input
         }
-        if !supervised, Bundle.main.bundleURL.pathExtension == "app" {
-            ShepherdLog.persistHostLog(in: server.supportDirectory)
-        }
-        ShepherdLog.info("host serving (build \(server.hostBuild ?? "?"), pid \(getpid()))")
-        // A hung queue never recovers by itself and every client request to it just times out:
-        // exit, and launchd (KeepAlive) starts a host that respawns the agents with unfinished
-        // work. No clean stop: it would wait on the hung queue. pi and the shells see their pipes
-        // and terminals close.
-        watchdog = HostWatchdog([("server", server.queue), ("main", .main)]) { name in
-            ShepherdLog.error("host exiting: its \(name) queue stopped answering")
-            _exit(EXIT_FAILURE)
-        }
         Task { @MainActor in
             // Handoff: a changed bundle, or a newer app's `drain`, lets the host exit once quiet.
             // The app's own child is the app's build already, and stops with it.
-            let drain = HostDrain(server: server, exit: stop)
+            let drain = HostDrain(server: server) { stop(EXIT_SUCCESS) }
             if !supervised { server.onDrainRequest = { drain.begin("a newer app asked") } }
             if !supervised, bundle.pathExtension == "app" {
                 watch = BundleVersionWatch(bundle: bundle, running: server.hostBuild) {
@@ -140,7 +135,8 @@ public enum SessionHost {
             server.holdStartsForFirstCopy()
             await serve(server, socket: support.appendingPathComponent("host.sock").path,
                         respawn: respawn, configure: configure,
-                        threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
+                        threads: threads, automations: automations, pullRequests: pullRequests, banners: banners,
+                        onLocalListenerFailure: { stop(EXIT_FAILURE) })
         }
         ready()
         signalSources = sources
@@ -154,6 +150,7 @@ public enum SessionHost {
     /// (`socket`), banners, automations, the respawn of unfinished work, pull request links and
     /// enabled automations. App tests serve their in-process host through it, as the host does;
     /// `recovering` false leaves unfinished work for a test that only draws it.
+    /// If the local socket cannot be opened, call `onLocalListenerFailure` and skip recovery and automation starts.
     /// Returns the banners' observer (also `banners`, the process's last), when `banners` was given.
     @MainActor @discardableResult
     public static func serve(_ server: SessionServer, socket: String, recovering: Bool = true, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
@@ -161,7 +158,8 @@ public enum SessionHost {
                              threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
                              automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                              pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
-                             banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil) async -> ThreadBanners? {
+                             banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
+                             onLocalListenerFailure: @MainActor () -> Void = {}) async -> ThreadBanners? {
         configure?(server)
         if let threads { server.serveThreads(threads(server)) }
         // The app's way in (`host.sock`), once its threads are served.
@@ -169,7 +167,10 @@ public enum SessionHost {
             try await server.listenLocal(path: socket)
         } catch {
             ShepherdLog.error("host has no local socket: \(error)")
+            onLocalListenerFailure()
+            return nil
         }
+        ShepherdLog.info("host serving (build \(server.hostBuild ?? "?"), pid \(getpid()))")
         var observer: ThreadBanners?
         if let banners {
             let made = ThreadBanners(server: server, state: { server.state }, sink: banners(server))

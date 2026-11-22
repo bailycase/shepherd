@@ -111,6 +111,38 @@ struct HostSupervisorIntegrationTests {
         await #expect(throws: HostSupervisor.StartFailed.self) { try await Self.start(supervisor) }
     }
 
+    private static func ownerConfiguration(_ h: ScratchServer) -> HostSupervisor.Configuration {
+        .init(executable: URL(fileURLWithPath: "/usr/bin/false"), arguments: [],
+              socket: h.dir.appendingPathComponent("host.sock").path,
+              lock: h.dir.appendingPathComponent("server.lock").path)
+    }
+
+    @Test func launchOpensWhenTheOwnerListensAfterEightSeconds() async throws {
+        let h = try ScratchServer()
+        defer { h.stop() }
+        let elapsed = Locked(Duration.zero)
+        let bindFailed = Locked(false)
+        var configuration = Self.ownerConfiguration(h)
+        let socket = configuration.socket
+        configuration.sleep = { step in
+            let before = elapsed.current
+            elapsed.withValue { $0 += step }
+            if before < .seconds(8), elapsed.current >= .seconds(8) {
+                do { try h.server.startLocalListener(path: socket) }
+                catch { bindFailed.withValue { $0 = true } }
+            }
+        }
+        let supervisor = HostSupervisor(configuration)
+        defer { supervisor.stop() }
+        let launch = Task { try await Self.start(supervisor) }
+        try await eventually("the slow owner listens at eight seconds") {
+            bindFailed.current || RemoteHostClient.localSocketAnswers(socket)
+        }
+        try #require(!bindFailed.current)
+        try await launch.value
+        #expect(supervisor.childPID == nil)
+    }
+
     @Test func anOwnerIsFollowedAndAChildStartsOnlyOnceItGoes() async throws {
         let fixture = try Fixture()
         let owner = Process()
