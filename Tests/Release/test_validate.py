@@ -359,7 +359,8 @@ class ValidateTests(unittest.TestCase):
                 "seeded-thread-rename": "ThreadRenameTests/seededThreadRenameSurvivesHostRestart",
                 "c-state": "StateStoreTests/historicalFilesLoadAndRewriteAsRecorded",
                 "c-auth": "RefusalCorpusTests/refusalCorpusMatchesGolden",
-                "c-settings": "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden"}[case]
+                "c-settings": "SettingsWritePathTests/everySettingsWritePathMatchesTheGolden",
+                "c-launch": "HostLaunchTests"}[case]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             source = {"revision": "test-revision", "dirty_paths": []}
@@ -487,6 +488,24 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(result["status"], "passed")
         self.assertIn("PASS mac/seeded-thread-rename", output)
+
+    def test_launch_gate_requires_every_host_step_and_fails_on_a_failed_one(self):
+        summary = "the host answered and held its descriptors with 150 synced spaces"
+        names = ["socket-answers", "descriptors", "still-answering", "legacy-state-socket-answers",
+                 "legacy-state-descriptors", "legacy-state-still-answering"]
+        steps = [{"step": name, "status": "passed", "expected": name, "actual": name, "evidence": []} for name in names]
+        complete = {"step": "complete", "status": "passed", "expected": summary, "actual": summary, "evidence": []}
+        code, _, result = self.run_case(steps[1:] + [complete], case="c-launch")
+        self.assertEqual((code, result["status"]), (1, "incomplete"))
+        self.assertEqual(result["missing_steps"], [["socket-answers", None]])
+        failed = [{**steps[1], "status": "failed", "actual": "peak 10240"}, *steps[:1], *steps[2:], complete]
+        code, output, result = self.run_case(failed, swift_exit=1, case="c-launch")
+        self.assertEqual((code, result["status"]), (1, "assertion_failed"))
+        self.assertIn("FAIL mac/c-launch/descriptors [real host]", output)
+        self.assertIn("Look first: Tests/ShepherdAppIntegrationTests/HostLaunchTests.swift.", output)
+        code, output, _ = self.run_case(steps + [complete], case="c-launch")
+        self.assertEqual(code, 0)
+        self.assertIn("PASS mac/c-launch [real host]", output)
 
     def test_refusal_corpus_requires_the_golden_comparison_and_completion(self):
         matched = "refusal corpus matched the golden"

@@ -43,6 +43,17 @@ Filtering narrows execution, not the package build graph; a cold build can still
 Use [Xcode](build-and-run.md) when the change needs app-level validation, not as a test prerequisite.
 Docs-only changes need the applicable docs guards, not Swift builds or tests.
 
+The five rebuild gates each run one filtered suite and save evidence under `.build/validation/`; "all gates"
+means all five, and each exits non-zero on a failure:
+
+| Case | What it holds |
+| --- | --- |
+| `c-state` | the `state.json` shapes earlier builds wrote still load and rewrite as recorded |
+| `c-auth` | the host sockets' refusal corpus |
+| `c-settings` | every settings write path |
+| `c-wire` | the codec and the request sequences of a scratch host |
+| `c-launch` | a real host process, started with launchd's 256-descriptor limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, runs Fleet's content indexes within a descriptor budget (256 at the peak, 2 per space once running) and still answers after their first scan; once more from the oldest `state.json` shape in the state golden |
+
 An unfiltered `swift test -j 4` now finishes in about an hour. It currently reports roughly 900 to
 1,000 failures; most of those tests pass when run alone. For PR work, use filtered runs and the
 applicable `scripts/validate.py --case` gates. Expand to a whole tier (`--filter UnitTests` or
