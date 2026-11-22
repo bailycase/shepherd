@@ -2,9 +2,9 @@ import CoreServices
 import Darwin
 import Foundation
 
-/// One FSEvents stream over a checkout (slice 4b): file level events with their ids, replayed from a saved
-/// id after a restart, and every flag that says events were lost or the root moved handed to the index to act
-/// on. The index owns what the events mean; this only delivers them.
+/// One FSEvents stream over a checkout: delivers file events and their IDs, including replay after restart.
+/// Instead of asking FSEvents to watch the root's ancestors, checks the root's device and inode and reports
+/// a root change to the index when the checkout moves, disappears or is replaced.
 ///
 /// `handler` runs on `queue`. FSEvents reports real paths (`/private/var/...` for a `/var/...` folder), so the
 /// root given is resolved first and `root` is what events are relative to.

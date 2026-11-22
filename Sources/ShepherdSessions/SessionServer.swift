@@ -1736,109 +1736,111 @@ public final class SessionServer: @unchecked Sendable {
     /// the pairing of Macs and devices and the fleet requests. There is no off state. It opens no port by itself: it says when it
     /// needs the listener (`onFleetListenerNeed`). `name` is what other Macs call this one (the Mac's own name unless a test names it).
     public func startFleet() {
-        queue.async { [self] in
-            guard fleet == nil else { return }
-            do {
-                let clock = fleetClock ?? Date.init
-                let facts = fleetLocalFacts
-                let providers = FleetCheckProviders(pi: pi, support: supportDirectory)
-                let pressure = fleetPressureMaker?(queue, facts)
-                    ?? FleetPressure(queue: queue, clock: clock, localFacts: facts, check: .system(providers: { await providers.answers() }))
-                // iCloud is where a Mac that Bonjour can't reach is found; a build without the entitlement gets a store that says
-                // unavailable, so everything else works as it does without it.
-                let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
-                let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
-                                               name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: fleetOptions.advertises, clock: clock, pressure: pressure,
-                                               network: storedFleetLinkOptions.network ?? .system,
-                                               rendezvous: rendezvous.map { FleetRendezvous(store: $0) })
-                if let dialer = storedFleetLinkOptions.dialer { service.dialer = dialer }
-                if let grace = storedFleetLinkOptions.drainGrace { service.drainGrace = grace }
-                if let interval = storedFleetLinkOptions.recheckInterval { service.recheckInterval = interval }
-                if let settle = storedFleetLinkOptions.networkSettle { service.networkSettle = settle }
-                service.predatesLinks = storedFleetLinkOptions.predatesLinks
-                if let setup = fleetRendezvousSetup {
-                    if let routes = setup.routes { service.routes = routes }
-                    if let lifetime = setup.joinLifetime { service.joinLifetime = lifetime }
-                    if let interval = setup.lookupInterval { service.presenceLookupInterval = interval }
-                } else {
-                    service.watchesNetwork = fleetOptions.advertises
-                }
-                service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
-                service.onViewChange = { [weak self] in self?.pushFleetViewChanged() }
-                // A Mac that can't be dialed sends its requests over the connection it opened (`fleet.link.v1`).
-                service.onPeerCall = { [weak self] connection, id, request in
-                    guard let self, let client = self.clients[connection], client.fleetPeerID != nil else { return }
-                    self.send(.fleetPeerCall(id: id, request: request), to: client)
-                }
-                // A Mac of the fleet asks this one to update itself, over a connection either opened; so may this host's own job and its app.
-                service.onHostUpdate = { [weak self] request, peer, alive, reply in
-                    self?.serveHostUpdate(request, requester: .peer(peer), alive: alive, reply: reply)
-                }
-                service.localHostUpdate = { [weak self] request in
-                    guard let self else { return nil }
-                    return await withCheckedContinuation { continuation in
-                        self.queue.async {
-                            let refusal = self.serveHostUpdate(request, requester: .job, alive: { true }) { continuation.resume(returning: $0) }
-                            if refusal != nil { continuation.resume(returning: nil) }
-                        }
+        queue.async { self.startFleetOnQueue() }
+    }
+
+    private func startFleetOnQueue() {
+        guard fleet == nil else { return }
+        do {
+            let clock = fleetClock ?? Date.init
+            let facts = fleetLocalFacts
+            let providers = FleetCheckProviders(pi: pi, support: supportDirectory)
+            let pressure = fleetPressureMaker?(queue, facts)
+                ?? FleetPressure(queue: queue, clock: clock, localFacts: facts, check: .system(providers: { await providers.answers() }))
+            // iCloud is where a Mac that Bonjour can't reach is found; a build without the entitlement gets a store that says
+            // unavailable, so everything else works as it does without it.
+            let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
+            let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
+                                           name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                                           build: hostBuild, advertises: fleetOptions.advertises, clock: clock, pressure: pressure,
+                                           network: storedFleetLinkOptions.network ?? .system,
+                                           rendezvous: rendezvous.map { FleetRendezvous(store: $0) })
+            if let dialer = storedFleetLinkOptions.dialer { service.dialer = dialer }
+            if let grace = storedFleetLinkOptions.drainGrace { service.drainGrace = grace }
+            if let interval = storedFleetLinkOptions.recheckInterval { service.recheckInterval = interval }
+            if let settle = storedFleetLinkOptions.networkSettle { service.networkSettle = settle }
+            service.predatesLinks = storedFleetLinkOptions.predatesLinks
+            if let setup = fleetRendezvousSetup {
+                if let routes = setup.routes { service.routes = routes }
+                if let lifetime = setup.joinLifetime { service.joinLifetime = lifetime }
+                if let interval = setup.lookupInterval { service.presenceLookupInterval = interval }
+            } else {
+                service.watchesNetwork = fleetOptions.advertises
+            }
+            service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
+            service.onViewChange = { [weak self] in self?.pushFleetViewChanged() }
+            // A Mac that can't be dialed sends its requests over the connection it opened (`fleet.link.v1`).
+            service.onPeerCall = { [weak self] connection, id, request in
+                guard let self, let client = self.clients[connection], client.fleetPeerID != nil else { return }
+                self.send(.fleetPeerCall(id: id, request: request), to: client)
+            }
+            // A Mac of the fleet asks this one to update itself, over a connection either opened; so may this host's own job and its app.
+            service.onHostUpdate = { [weak self] request, peer, alive, reply in
+                self?.serveHostUpdate(request, requester: .peer(peer), alive: alive, reply: reply)
+            }
+            service.localHostUpdate = { [weak self] request in
+                guard let self else { return nil }
+                return await withCheckedContinuation { continuation in
+                    self.queue.async {
+                        let refusal = self.serveHostUpdate(request, requester: .job, alive: { true }) { continuation.resume(returning: $0) }
+                        if refusal != nil { continuation.resume(returning: nil) }
                     }
                 }
-                service.appName = ShepherdEdition.current.displayName
-                service.onCloseConnection = { [weak self] connection, reason in
-                    guard let self, let client = self.clients[connection] else { return }
-                    self.disconnect(client, reason: reason)
-                }
-                pressure.onChange = { [weak self] in self?.pushSettingsChanged(.fleetPressure) }
-                service.onPeerRemoved = { [weak self] hostID in
-                    guard let self else { return }
-                    for client in Array(self.clients.values) where client.fleetPeerID == hostID { self.disconnect(client, reason: "removed from the fleet") }
-                }
-                service.onDeviceRevoked = { [weak self] deviceID in
-                    guard let self else { return }
-                    self.pushNotifications.pruneRevokedDevices()
-                    for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
-                    Task { await self.projects.cancelMCP(owner: deviceID) }
-                }
-                fleet = service
-                fleetRepoFinder.value = service.dispatch.finder
-                if fleetDeveloperFolderSet { service.dispatch.developerFolder = fleetDeveloperFolder }
-                wireFleetDispatch(service)
-                // What syncs: the root instructions, pi's own preferences, and (once the app reports
-                // them) the host settings. Each is read and written through the code that owns it.
-                instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
-                service.syncEngine.add(FleetInstructionsSource(instructions) { [weak self] in
-                    guard let self else { return }
-                    self.announceInstructions(self.instructions.snapshot())
-                })
-                service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
-                if let source = fleetHostSettings { service.syncEngine.add(source) }
-                addFleetContentSources(to: service)
-                // Skills and extensions: content, a file at a time, through the stores that own them.
-                service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
-                service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
-                // Sign-ins: pi's `auth.json` and `mcp-auth.json`, a provider or a server at a time, under pi's lock.
-                let kept = supportDirectory.appendingPathComponent("fleet/credentials-excluded.json")
-                for (file, kind) in [("auth.json", FleetCredentialsSource.Kind.providers), ("mcp-auth.json", .mcpServers)] {
-                    service.syncEngine.add(FleetCredentialsSource(file: pi.files.directory.appendingPathComponent(file), kind: kind, exclusions: kept))
-                }
-                service.listenerChanged(remoteListenPort)
-                // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
-                service.index.host = FleetIndexService.Host(
-                    spaces: { [weak self] in self?.store.state.spaces ?? [] },
-                    overrides: { [weak self] space in
-                        let excludes = self?.fleetSettings?.fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: space.rawValue)] ?? FleetSnapshotExcludes()
-                        return FleetExclusions.Overrides(excluded: excludes.excluded, included: excludes.included)
-                    },
-                    worktrees: { [weak self] in self?.store.state.agents.compactMap { agent in agent.worktreePath.map { (agent.spaceID, $0) } } ?? [] })
-                service.onActive = { [weak self] in self?.fleetSpacesChanged() }
-                service.onListenerNeed = { [weak self] need in self?.fleetListenerNeed?(need) }
-                service.start()
-                service.index.logStartup()
-                announceFleetCapabilities()
-            } catch {
-                ShepherdLog.error("fleet could not start: \(error)")
             }
+            service.appName = ShepherdEdition.current.displayName
+            service.onCloseConnection = { [weak self] connection, reason in
+                guard let self, let client = self.clients[connection] else { return }
+                self.disconnect(client, reason: reason)
+            }
+            pressure.onChange = { [weak self] in self?.pushSettingsChanged(.fleetPressure) }
+            service.onPeerRemoved = { [weak self] hostID in
+                guard let self else { return }
+                for client in Array(self.clients.values) where client.fleetPeerID == hostID { self.disconnect(client, reason: "removed from the fleet") }
+            }
+            service.onDeviceRevoked = { [weak self] deviceID in
+                guard let self else { return }
+                self.pushNotifications.pruneRevokedDevices()
+                for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
+                Task { await self.projects.cancelMCP(owner: deviceID) }
+            }
+            fleet = service
+            fleetRepoFinder.value = service.dispatch.finder
+            if fleetDeveloperFolderSet { service.dispatch.developerFolder = fleetDeveloperFolder }
+            wireFleetDispatch(service)
+            // What syncs: the root instructions, pi's own preferences, and (once the app reports
+            // them) the host settings. Each is read and written through the code that owns it.
+            instructions.onChange = { [weak self] _ in self?.queue.async { self?.fleet?.syncEngine.localChanged() } }
+            service.syncEngine.add(FleetInstructionsSource(instructions) { [weak self] in
+                guard let self else { return }
+                self.announceInstructions(self.instructions.snapshot())
+            })
+            service.syncEngine.add(FleetPiSettingsSource(settings: pi.files.settings))
+            if let source = fleetHostSettings { service.syncEngine.add(source) }
+            addFleetContentSources(to: service)
+            // Skills and extensions: content, a file at a time, through the stores that own them.
+            service.syncEngine.add(FleetSkillsSource(skills) { [weak self] in self?.skillsSyncWrote() })
+            service.syncEngine.add(FleetExtensionsSource(pi.importedState()))
+            // Sign-ins: pi's `auth.json` and `mcp-auth.json`, a provider or a server at a time, under pi's lock.
+            let kept = supportDirectory.appendingPathComponent("fleet/credentials-excluded.json")
+            for (file, kind) in [("auth.json", FleetCredentialsSource.Kind.providers), ("mcp-auth.json", .mcpServers)] {
+                service.syncEngine.add(FleetCredentialsSource(file: pi.files.directory.appendingPathComponent(file), kind: kind, exclusions: kept))
+            }
+            service.listenerChanged(remoteListenPort)
+            // Which checkouts the content index reads: the spaces' (`fleet.snapshot.v1`).
+            service.index.host = FleetIndexService.Host(
+                spaces: { [weak self] in self?.store.state.spaces ?? [] },
+                overrides: { [weak self] space in
+                    let excludes = self?.fleetSettings?.fleetSnapshotExcludes[FleetSnapshotExcludes.settingKey(spaceID: space.rawValue)] ?? FleetSnapshotExcludes()
+                    return FleetExclusions.Overrides(excluded: excludes.excluded, included: excludes.included)
+                },
+                worktrees: { [weak self] in self?.store.state.agents.compactMap { agent in agent.worktreePath.map { (agent.spaceID, $0) } } ?? [] })
+            service.onActive = { [weak self] in self?.fleetSpacesChanged() }
+            service.onListenerNeed = { [weak self] need in self?.fleetListenerNeed?(need) }
+            service.start()
+            service.index.logStartup()
+            announceFleetCapabilities()
+        } catch {
+            ShepherdLog.error("fleet could not start: \(error)")
         }
     }
 
@@ -3313,10 +3315,16 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// `startLocalListener` that suspends instead of waiting: the host's start-up runs on the main actor, and the server
-    /// queue may still hold the remote listener's bind.
-    public func listenLocal(path: String) async throws {
+    /// queue may still hold the remote listener's bind. Start Fleet in the same queue turn when requested, so the
+    /// first local hello sees its capabilities and host ID.
+    public func listenLocal(path: String, startFleet: Bool = false) async throws {
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
-            queue.async { done.resume(with: Result { try self.startLocalListenerOnQueue(path: path) }) }
+            queue.async {
+                done.resume(with: Result {
+                    try self.startLocalListenerOnQueue(path: path)
+                    if startFleet { self.startFleetOnQueue() }
+                })
+            }
         }
     }
 
@@ -3337,7 +3345,7 @@ public final class SessionServer: @unchecked Sendable {
         guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
             let err = errno
             close(fd)
-            unlink(path)
+            if bound == 0 { unlink(path) }
             throw SessionServerError.system(call: "bind", errno: err)
         }
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
@@ -3522,6 +3530,10 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Checks a `hello`'s token and opens the connection to its requests.
     private func authenticate(id: Int, token: String, clientName: String, capabilities: [String]?, client: ExtensionConnection) {
+        if !client.isLocal, fleet == nil {
+            sendFinal(.error(id: id, code: FleetProtocol.Code.off, message: "This Mac's fleet isn't running yet."), to: client)
+            return
+        }
         // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
         // device's own; the last two never on the local socket. There is no token shared by every client: one
         // that isn't either is an old client's shared token, or a revoked device's.
