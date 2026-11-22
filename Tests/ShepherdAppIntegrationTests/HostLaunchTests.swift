@@ -19,7 +19,7 @@ import Testing
 ///
 /// The host is in a process of its own that guards itself before the host starts: it exits if this process dies, at a hard deadline,
 /// and on a `stop` file this process writes (no signal by PID, so a recycled PID is never hit). It also reports on itself (its peak
-/// descriptors from a timer source started before the host, an open() probe that records any EMFILE, its TCP listeners, the soft limit
+/// sampled descriptors from a timer source started before the host, sampled open() failures, its TCP listeners, the soft limit
 /// it read back) to `child-report`, so this process needs no PID. The host is `SessionHost.run` as `ShepherdHost.main` calls it, with
 /// two differences, both so the test touches nothing outside its scratch: Fleet does not advertise (no Bonjour, no iCloud:
 /// `configureFleet(advertises: false)`), and the port Fleet asks to listen on is one the child holds bound, so the bind fails and
@@ -28,7 +28,8 @@ import Testing
 /// Once #879 (`fix/host-fd-exhaustion`) has merged, `main` tells `SessionHost.run` to start Fleet (`startFleet: true`): pass it in
 /// `launch` too. Until then, and if it is forgotten, the test fails on "the index never reached every checkout", so a host that
 /// never started Fleet cannot pass.
-@Suite("Host launch on a large workspace", .serialized, .integrationTimeLimit)
+@Suite("Host launch on a large workspace", .serialized, .integrationTimeLimit,
+       .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_LAUNCH_SMOKE"] == "1", "run validate.py --case c-launch"))
 struct HostLaunchTests {
     /// Spaces Fleet syncs; every fifth also has a worktree a thread works in, which Fleet indexes too.
     static let spaceCount = 150
@@ -38,9 +39,9 @@ struct HostLaunchTests {
     /// launchd's soft limit for a job that sets none.
     static let launchdDescriptorLimit: rlim_t = 256
     /// `host.sock` answers a real request within this long of the host starting.
-    static let socketBound: Duration = .seconds(20)
+    static let socketBound = 20
     /// Fleet's indexes have each made their first scan within this long.
-    static let scanBound: Duration = .seconds(30)
+    static let scanBound = 30
     /// The host's descriptors once Fleet is running and once every index has scanned: under launchd's limit.
     static let descriptorBudget = 256
     /// What each space may add to those, beyond the ones the host started with (the sync engine watches each checkout's
@@ -50,23 +51,18 @@ struct HostLaunchTests {
     /// reopen-before-close spike of a healthy watcher is about 190.
     static let exhaustionMargin = 32
     /// One call to the host (a request, a connect) gets this long, so a hung one cannot hold a wait that `eventually` cannot interrupt.
-    static let callBound: Duration = .seconds(5)
-    /// The child exits by itself this long after it starts, whatever this process is doing. The observer's waits add up to at most
-    /// 30 (the child's first report) + 20 (socket) + 30 (indexes) + 30 (scan) and the test's own limit is two minutes, so a
-    /// passing or ordinarily failing run is over long before this.
+    static let callBound = 5
+    /// Independent backstop if the observer cannot stop the child.
     static let childDeadlineSeconds = 110
     /// How long a host gets to stop on SIGTERM before the child ends itself.
     static let stopGraceSeconds = 20
 
     @Test func aHostStartsAndAnswersWithManySyncedSpaces() async throws {
         let workspace = try Workspace.make(label: "current")
-        defer { workspace.remove() }
+        defer { Self.removeScratch(workspace.dir) }
         let state = ShepherdState(spaces: workspace.spaces, tabs: workspace.tabs, agents: workspace.agents)
         try JSONEncoder().encode(state).write(to: workspace.dir.appendingPathComponent("state.json"))
         try await Self.launch(workspace, expectedRoots: Self.spaceCount + Self.worktreeCount, steps: Self.currentSteps)
-        // Pass, fail or timeout, the scratch folder goes: the host is gone by now, so nothing holds it.
-        workspace.remove()
-        #expect(!FileManager.default.fileExists(atPath: workspace.dir.path), "the scratch folder was deleted")
     }
 
     /// The same start, from the oldest `state.json` the state golden holds (`Tests/Fixtures/c-state.json`), grown to the same
@@ -74,7 +70,7 @@ struct HostLaunchTests {
     /// folder in the scratch workspace (an existing `/tmp/acme` would change what the host indexes).
     @Test func aHostStartsFromAWorkspaceSavedByAnEarlierShape() async throws {
         let workspace = try Workspace.make(label: "legacy", worktrees: false)
-        defer { workspace.remove() }
+        defer { Self.removeScratch(workspace.dir) }
         let golden = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Fixtures/c-state.json")
         let files = try #require((try JSONSerialization.jsonObject(with: Data(contentsOf: golden)) as? [String: Any])
@@ -90,8 +86,110 @@ struct HostLaunchTests {
         try #require(Self.paths(in: saved).allSatisfy { $0.hasPrefix(workspace.dir.path + "/") }, "every path in the state is in the scratch folder")
         try JSONSerialization.data(withJSONObject: saved).write(to: workspace.dir.appendingPathComponent("state.json"))
         try await Self.launch(workspace, expectedRoots: Self.spaceCount, steps: Self.legacySteps)
-        workspace.remove()
-        #expect(!FileManager.default.fileExists(atPath: workspace.dir.path), "the scratch folder was deleted")
+    }
+
+    enum EarlyStop: String, CaseIterable, Sendable {
+        case timeout, parentDeath, deadline
+    }
+
+    @Test(arguments: EarlyStop.allCases)
+    func earlyStopDeletesBothScratchPaths(_ reason: EarlyStop) async throws {
+        var workspace = try makeScratchDirectory("stop")
+        defer { Self.removeScratch(workspace) } // fallback after checking the child's cleanup
+        let witness = try makeScratchDirectory("witness")
+        defer { Self.removeScratch(witness) }
+        let receipt = witness.appendingPathComponent("child-root")
+
+        let parentWorkspace = workspace
+        switch reason {
+        case .timeout:
+            let observer = Task {
+                do {
+                    try await eventually("the guardian to arm", timeout: .seconds(5)) { FileManager.default.fileExists(atPath: receipt.path) }
+                    #expect(await Self.waitForHost(parentWorkspace, timeout: .milliseconds(100)) == nil)
+                    Self.requestStop(parentWorkspace)
+                } catch { Issue.record(error) }
+            }
+            await Self.guardControl(workspace: workspace.path, receipt: receipt.path, deadline: 10, status: 76)
+            await observer.value
+        case .deadline:
+            await Self.guardControl(workspace: workspace.path, receipt: receipt.path, deadline: 2, status: 72)
+        case .parentDeath:
+            try await Self.runDyingParent(receipt: receipt)
+        }
+        let paths = try String(contentsOf: receipt, encoding: .utf8).split(separator: "\n").map(String.init)
+        try #require(paths.count == 2)
+        let childRoot = URL(fileURLWithPath: paths[1], isDirectory: true)
+        if reason == .parentDeath {
+            let ownedPrefix = TestProcess.root.path + "/shepherd-tests-"
+            try #require(paths[0].hasPrefix(ownedPrefix) && paths[1].hasPrefix(ownedPrefix))
+            Self.removeScratch(workspace)
+            workspace = URL(fileURLWithPath: paths[0], isDirectory: true)
+            // Verify before deleting the disposable parent's own isolation root, not this test's root.
+            let disposedParentRoot = workspace.deletingLastPathComponent()
+            defer { Self.removeScratch(disposedParentRoot) }
+            try await Self.expectClean(workspace, childRoot, reason: reason, receipt: receipt)
+            return
+        }
+        try #require(paths[0] == workspace.path)
+        try await Self.expectClean(workspace, childRoot, reason: reason, receipt: receipt)
+    }
+
+    private static func expectClean(_ workspace: URL, _ childRoot: URL, reason: EarlyStop, receipt: URL) async throws {
+        try await eventually("both exact scratch paths to disappear after \(reason.rawValue)", timeout: .seconds(5)) {
+            Self.scratchIsGone(workspace) && Self.scratchIsGone(childRoot)
+        }
+        #expect(FileManager.default.fileExists(atPath: receipt.path), "the guardian must not remove unrelated scratch")
+        print("launch cleanup \(reason.rawValue): absent \(workspace.path) and \(childRoot.path)")
+    }
+
+    /// Swift Testing cannot nest exit tests. Re-run just the driver in a fresh SwiftPM test runner.
+    private static func runDyingParent(receipt: URL) async throws {
+        let args = CommandLine.arguments
+        let index = try #require(args.firstIndex(of: "--test-bundle-path"), "run this diagnostic with SwiftPM")
+        try #require(index + 1 < args.count)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: args[0])
+        let bundle = args[index + 1]
+        process.arguments = ["--test-bundle-path", bundle, "--filter", "HostLaunchTests/dyingParentDriver", bundle, "--testing-library", "swift-testing"]
+        var env = ProcessInfo.processInfo.environment
+        env["TMPDIR"] = TestProcess.root.path
+        env["SHEPHERD_LAUNCH_DEATH_RECEIPT"] = receipt.path
+        process.environment = env
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        defer { if process.isRunning { process.terminate() } }
+        try await eventually("the disposable parent to exit", timeout: .seconds(15)) { !process.isRunning }
+        try #require(process.terminationReason == .exit && process.terminationStatus == 80)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_LAUNCH_DEATH_RECEIPT"] != nil))
+    func dyingParentDriver() async throws {
+        let receipt = try #require(ProcessInfo.processInfo.environment["SHEPHERD_LAUNCH_DEATH_RECEIPT"])
+        let workspace = try makeScratchDirectory("parent-death")
+        let parent = Task {
+            do {
+                try await eventually("the guardian to arm", timeout: .seconds(5)) { FileManager.default.fileExists(atPath: receipt) }
+                // No atexit cleanup: the guardian must remove the workspace, not the parent.
+                _exit(80)
+            } catch { exit(81) }
+        }
+        await Self.guardControl(workspace: workspace.path, receipt: receipt, deadline: 10, status: 71)
+        parent.cancel()
+        Issue.record("the guardian exited before its parent")
+    }
+
+    private static func guardControl(workspace: String, receipt: String, deadline: Int, status: Int32) async {
+        await #expect(processExitsWith: .exitCode(status)) { [workspace, receipt, deadline, parent = getpid() as Int32] in
+            let directory = URL(fileURLWithPath: workspace, isDirectory: true)
+            let guardian = ChildGuard(directory: directory)
+            guardian.arm(parent: parent, deadline: deadline, grace: 1)
+            do { try "\(workspace)\n\(TestProcess.root.path)".write(toFile: receipt, atomically: true, encoding: .utf8) }
+            catch { guardian.die("cannot publish cleanup witness", 83) }
+            // No host, no network, and no pid signals in the controls. Only the armed guard can end this child.
+            while true { pause() }
+        }
     }
 
     /// `value` with each string that is `old` (or starts with it and a slash) moved under `new`.
@@ -139,6 +237,7 @@ struct HostLaunchTests {
         let observed = await monitor.value
         let stderr = result.map { String(decoding: $0.standardErrorContent, as: UTF8.self) } ?? ""
         let final = ChildReport.read(workspace.dir)
+        if let final { #expect(scratchIsGone(URL(fileURLWithPath: final.isolationRoot)), "child isolation root was deleted") }
         observed.report.note("scratch folder: \(Self.size(of: workspace.dir))")
         try observed.finish(steps: steps, expectedRoots: expectedRoots, final: final, hostLog: stderr)
     }
@@ -153,10 +252,10 @@ struct HostLaunchTests {
 
         // As launchd starts a job: a soft limit of 256 descriptors. The test process raises its own (ShepherdTestIsolation).
         var limit = rlimit()
-        getrlimit(RLIMIT_NOFILE, &limit)
+        guard getrlimit(RLIMIT_NOFILE, &limit) == 0 else { guardian.die("getrlimit before setting failed (errno \(errno))", 73) }
         limit.rlim_cur = min(launchdDescriptorLimit, limit.rlim_max)
-        setrlimit(RLIMIT_NOFILE, &limit)
-        getrlimit(RLIMIT_NOFILE, &limit)
+        guard setrlimit(RLIMIT_NOFILE, &limit) == 0 else { guardian.die("setrlimit failed (errno \(errno))", 73) }
+        guard getrlimit(RLIMIT_NOFILE, &limit) == 0 else { guardian.die("getrlimit readback failed (errno \(errno))", 73) }
         guard limit.rlim_cur == launchdDescriptorLimit else {
             guardian.die("the soft descriptor limit reads back \(limit.rlim_cur), not \(launchdDescriptorLimit)", 73)
         }
@@ -179,7 +278,9 @@ struct HostLaunchTests {
         }
         reporter.markHostStarting()
         SessionHost.run(server, respawn: host.respawn, configure: host.configure, threads: host.threads, automations: host.automations,
-                        pullRequests: host.pullRequests, banners: host.banners)
+                        pullRequests: host.pullRequests, banners: host.banners, ready: {
+            guardian.onStop.withValue { $0 = { reporter.stopHost() } }
+        })
     }
 
     /// What `ShepherdHost.main` hands `SessionHost.run`, made on the main actor and used off it, as the exit test must.
@@ -210,13 +311,16 @@ struct HostLaunchTests {
         static let fileName = "child-report"
         static let size = 8192
         var pid: Int32 = 0
+        var isolationRoot = ""
         /// The soft descriptor limit the child read back after setting it.
         var limit: UInt64 = 0
         /// The soft limit now: a host may raise its own.
         var limitNow: UInt64 = 0
         /// Descriptors held just before the host started.
-        var baseline = 0
-        var current = 0
+        var baseline: Int?
+        var current: Int?
+        var sampledAt: UInt64?
+        var samplingFailure: String?
         var peak = 0
         /// Descriptors by kind at the peak (1 vnode, 2 socket, 3 pshm, 5 pipe, 6 kqueue).
         var peakTypes: [String: Int] = [:]
@@ -230,7 +334,7 @@ struct HostLaunchTests {
         /// runaway watcher opens).
         var top: [String] = []
         var ticks = 0
-        var hostStarted = false
+        var hostStartedAt: UInt64?
         var stopping = false
 
         static func read(_ directory: URL) -> ChildReport? {
@@ -247,15 +351,19 @@ struct HostLaunchTests {
         private var sources: [any DispatchSourceProtocol] = []
         private var blocker: Int32 = -1
         private let stopping = Locked(false)
-        /// Called, once, as the child stops: the report's last write.
-        var onStop: () -> Void = {}
+        /// Installed only once SessionHost handles SIGTERM. Before then the guard cleans up itself.
+        let onStop = Locked<(@Sendable () -> Void)?>(nil)
 
         init(directory: URL) { self.directory = directory }
 
-        /// Ends the child at once, saying why on stderr (which the test reads), and removes this process's own scratch root.
+        /// The workspace belongs to this launch, not to any other test. Never remove the parent's isolation root.
         func die(_ message: String, _ code: Int32) -> Never {
             FileHandle.standardError.write(Data("launch child: \(message)\n".utf8))
-            try? FileManager.default.removeItem(at: TestProcess.root)
+            for path in [directory, TestProcess.root] { try? FileManager.default.removeItem(at: path) }
+            guard HostLaunchTests.scratchIsGone(directory), HostLaunchTests.scratchIsGone(TestProcess.root) else {
+                FileHandle.standardError.write(Data("launch child: scratch cleanup failed\n".utf8))
+                _exit(79)
+            }
             _exit(code)
         }
 
@@ -279,9 +387,9 @@ struct HostLaunchTests {
             let watch = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: queue)
             watch.setEventHandler { [self] in
                 guard access(stopFile, F_OK) == 0, stopping.withValue({ let first = !$0; $0 = true; return first }) else { return }
-                onStop()
-                kill(getpid(), SIGTERM)
+                guard let onStop = onStop.current else { die("stopped before the host was ready", 76) }
                 queue.asyncAfter(deadline: .now() + .seconds(grace)) { [self] in die("the host did not stop within \(grace) s", 75) }
+                onStop()
             }
             watch.setCancelHandler { close(fd) }
             watch.activate()
@@ -309,11 +417,11 @@ struct HostLaunchTests {
         }
     }
 
-    /// Samples this process's descriptors from a timer source from before the host starts, so a spike between two polls from outside
-    /// cannot be missed, and writes the result where the test process reads it.
+    /// Samples in the child from before host start. A spike between ticks can still be missed.
     private final class ChildReporter: @unchecked Sendable {
         private let report = Locked(ChildReport())
         private let fd: Int32
+        private let guardian: ChildGuard
         private let queue = DispatchQueue(label: "launch.child.sampler")
         private var timer: DispatchSourceTimer?
         private var lastNamed = 0
@@ -321,14 +429,11 @@ struct HostLaunchTests {
 
         /// Opens the report (and writes the pid into it) or ends the child: a host nobody can find is not started.
         init(directory: URL, guardian: ChildGuard) {
+            self.guardian = guardian
             fd = open(directory.appendingPathComponent(ChildReport.fileName).path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
             guard fd >= 0 else { guardian.die("cannot open its report: \(String(cString: strerror(errno)))", 78) }
-            report.withValue { $0.pid = getpid() }
-            guard write() else { guardian.die("cannot write its report: \(String(cString: strerror(errno)))", 78) }
-            guardian.onStop = { [self] in
-                report.withValue { $0.stopping = true }
-                _ = write()
-            }
+            report.withValue { $0.pid = getpid(); $0.isolationRoot = TestProcess.root.path }
+            write()
         }
 
         func start(limit: UInt64) {
@@ -341,17 +446,40 @@ struct HostLaunchTests {
         }
 
         func markHostStarting() {
-            let held = HostLaunchTests.descriptors(of: getpid()) ?? -1
-            report.withValue { $0.baseline = held; $0.hostStarted = true }
-            _ = write()
+            queue.sync {
+                guard let baseline = HostLaunchTests.fdList(of: getpid())?.count else {
+                    guardian.die("cannot sample the baseline descriptor count", 78)
+                }
+                report.withValue { $0.baseline = baseline; $0.hostStartedAt = HostLaunchTests.now }
+                write()
+            }
+        }
+
+        func stopHost() {
+            queue.async { [self] in
+                timer?.cancel()
+                report.withValue { $0.stopping = true }
+                write()
+                kill(getpid(), SIGTERM)
+            }
+        }
+
+        private func sampleFailed(_ reason: String) {
+            report.withValue { $0.samplingFailure = $0.samplingFailure ?? reason }
+            write()
         }
 
         private func tick() {
-            guard let list = HostLaunchTests.fdList(of: getpid()) else { return }
-            // The probe: a descriptor the host could not get is a descriptor this cannot get either.
+            let sampledAt = HostLaunchTests.now
             let probe = open("/dev/null", O_RDONLY | O_CLOEXEC)
-            let exhausted = probe < 0 && (errno == EMFILE || errno == ENFILE)
+            let probeError = probe < 0 ? errno : 0
             if probe >= 0 { close(probe) }
+            let exhausted = probeError == EMFILE || probeError == ENFILE
+            if exhausted { report.withValue { $0.exhausted += 1 } }
+            guard probeError == 0 || exhausted else { sampleFailed("open probe failed with errno \(probeError)"); return }
+            guard let list = HostLaunchTests.fdList(of: getpid()) else { sampleFailed("descriptor list unavailable"); return }
+            var now = rlimit()
+            guard getrlimit(RLIMIT_NOFILE, &now) == 0 else { sampleFailed("sample getrlimit failed (errno \(errno))"); return }
             var ports: [Int] = []
             for entry in list where entry.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
                 var info = socket_fdinfo()
@@ -370,19 +498,17 @@ struct HostLaunchTests {
                     names?[path, default: 0] += 1
                 }
             }
-            var now = rlimit()
-            getrlimit(RLIMIT_NOFILE, &now)
             let changed = report.withValue { report -> Bool in
                 report.ticks += 1
                 report.current = list.count
-                var changed = false
+                report.sampledAt = sampledAt
+                var changed = exhausted
                 if now.rlim_cur != report.limitNow { report.limitNow = now.rlim_cur; changed = true }
                 if list.count > report.peak {
                     report.peak = list.count
                     report.peakTypes = Dictionary(list.map { (String($0.proc_fdtype), 1) }, uniquingKeysWith: +)
                     changed = true
                 }
-                if exhausted { report.exhausted += 1; changed = true }
                 if ports.count != report.listening || ports.count > report.mostListening { changed = true }
                 report.listening = ports.count
                 report.mostListening = max(report.mostListening, ports.count)
@@ -391,18 +517,19 @@ struct HostLaunchTests {
                 return changed
             }
             // Written when it matters, and otherwise about every 100 ms.
-            if changed || lastWrite.duration(to: .now) > .milliseconds(100) { _ = write(); lastWrite = .now }
+            if changed || lastWrite.duration(to: .now) > .milliseconds(100) { write(); lastWrite = .now }
         }
 
         /// The whole report at one fixed size, in one write.
-        @discardableResult
-        private func write() -> Bool {
+        private func write() {
             var snapshot = report.current
-            var data = (try? JSONEncoder().encode(snapshot)) ?? Data()
-            if data.count > ChildReport.size { snapshot.top = []; data = (try? JSONEncoder().encode(snapshot)) ?? Data() }
-            guard data.count <= ChildReport.size else { return false }
+            var encoded = try? JSONEncoder().encode(snapshot)
+            if (encoded?.count ?? 0) > ChildReport.size { snapshot.top = []; encoded = try? JSONEncoder().encode(snapshot) }
+            guard var data = encoded, data.count <= ChildReport.size else { guardian.die("cannot encode the child report", 78) }
             data.append(Data(repeating: 0, count: ChildReport.size - data.count))
-            return data.withUnsafeBytes { pwrite(fd, $0.baseAddress, data.count, 0) } == data.count
+            guard data.withUnsafeBytes({ pwrite(fd, $0.baseAddress, data.count, 0) }) == data.count else {
+                guardian.die("cannot write the child report (errno \(errno))", 78)
+            }
         }
     }
 
@@ -414,31 +541,37 @@ struct HostLaunchTests {
         var running: Int?
         var afterStart: Int?
         var afterScan: Int?
-        var reported: ChildReport?
 
         func finish(steps: Steps, expectedRoots: Int, final: ChildReport?, hostLog: String) throws {
             if let final {
-                let growth = Double(max(afterStart ?? 0, afterScan ?? 0) - final.baseline) / Double(expectedRoots)
+                let growth = if let baseline = final.baseline, let afterStart, let afterScan {
+                    Double(max(afterStart, afterScan) - baseline) / Double(HostLaunchTests.spaceCount)
+                } else { nil as Double? }
                 let types = final.peakTypes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
-                let measured = "peak \(final.peak) of \(final.limit), \(final.baseline) before Fleet, \(afterStart.map(String.init) ?? "?") with "
+                let measured = "sampled peak \(final.peak) of \(final.limit), \(final.baseline.map(String.init) ?? "?") before Fleet, \(afterStart.map(String.init) ?? "?") with "
                     + "\(running.map(String.init) ?? "no") indexes running, \(afterScan.map(String.init) ?? "?") after the first scan "
-                    + "(\(String(format: "%.2f", growth)) per checkout), \(final.exhausted) failed opens"
+                    + "(\(growth.map { String(format: "%.2f", $0) } ?? "?") per space), \(final.exhausted) sampled EMFILE/ENFILE probes"
                 report.note(measured)
                 if final.limitNow != final.limit { report.note("the host raised its own soft limit from \(final.limit) to \(final.limitNow)") }
                 report.note("peak by type: \(types) (1 vnode, 2 socket, 3 pshm, 5 pipe, 6 kqueue); sampled \(final.ticks) times")
                 for line in final.top { report.note("  \(line)") }
                 var problems: [String] = []
                 if running != expectedRoots { problems.append("the index never reached every checkout (\(running.map(String.init) ?? "no index"))") }
-                if final.exhausted > 0 { problems.append("the host ran out of descriptors (\(final.exhausted) failed opens)") }
+                if final.baseline == nil { problems.append("missing baseline descriptor sample") }
+                if !final.stopping { problems.append("missing final sampler report") }
+                if let failure = final.samplingFailure { problems.append(failure) }
+                if afterStart == nil { problems.append("missing fresh running descriptor sample") }
+                if afterScan == nil { problems.append("missing fresh post-scan descriptor sample") }
+                if final.exhausted > 0 { problems.append("the host ran out of descriptors (\(final.exhausted) sampled EMFILE/ENFILE probes)") }
                 if final.peak >= Int(final.limit) - HostLaunchTests.exhaustionMargin {
-                    problems.append("the peak \(final.peak) is within \(HostLaunchTests.exhaustionMargin) of the limit \(final.limit)")
+                    problems.append("the sampled peak \(final.peak) is within \(HostLaunchTests.exhaustionMargin) of the limit \(final.limit)")
                 }
-                if ![afterStart, afterScan].allSatisfy({ $0.map { $0 < HostLaunchTests.descriptorBudget } ?? false }) {
+                if [afterStart, afterScan].compactMap({ $0 }).contains(where: { $0 >= HostLaunchTests.descriptorBudget }) {
                     problems.append("descriptors once running are not under \(HostLaunchTests.descriptorBudget)")
                 }
-                if growth > HostLaunchTests.descriptorsPerSpace { problems.append("more than \(HostLaunchTests.descriptorsPerSpace) descriptors per checkout") }
-                let expected = "no failed open, a peak at least \(HostLaunchTests.exhaustionMargin) under the \(HostLaunchTests.launchdDescriptorLimit) limit, under \(HostLaunchTests.descriptorBudget) once running, "
-                    + "at most \(HostLaunchTests.descriptorsPerSpace) more per checkout, with all \(expectedRoots) indexes running"
+                if let growth, growth > HostLaunchTests.descriptorsPerSpace { problems.append("more than \(HostLaunchTests.descriptorsPerSpace) descriptors per space") }
+                let expected = "zero sampled EMFILE/ENFILE probes, a sampled peak more than \(HostLaunchTests.exhaustionMargin) under the \(HostLaunchTests.launchdDescriptorLimit) limit, under \(HostLaunchTests.descriptorBudget) once running, "
+                    + "at most \(HostLaunchTests.descriptorsPerSpace) more per space, with all \(expectedRoots) indexes running"
                 if problems.isEmpty { report.pass(steps.descriptors, expected: expected, actual: measured) }
                 else { report.fail(steps.descriptors, expected: expected, actual: problems.joined(separator: "; ") + ": " + measured) }
 
@@ -454,83 +587,144 @@ struct HostLaunchTests {
         }
     }
 
-    /// `operation`'s answer, or nil if it has not come within `limit`. `eventually` cannot interrupt a predicate, so each call a
-    /// predicate makes gets its own deadline; a call that never answers is left behind (its client is disconnected at the end).
-    private static func within<T: Sendable>(_ limit: Duration, _ operation: @escaping @Sendable () async -> T?) async -> T? {
-        await withCheckedContinuation { continuation in
-            let answered = Locked(false)
-            let finish: @Sendable (T?) -> Void = { value in
-                if answered.withValue({ let first = !$0; $0 = true; return first }) { continuation.resume(returning: value) }
-            }
-            let clock = Task { try? await Task.sleep(for: limit); finish(nil) }
-            Task { finish(await operation()); clock.cancel() }
+    // Darwin's system-wide uptime clock, comparable across the child and the observer.
+    private static var now: UInt64 { DispatchTime.now().uptimeNanoseconds }
+
+    private static func remaining(until deadline: UInt64) -> Duration? {
+        let instant = now
+        return instant < deadline ? .nanoseconds(deadline - instant) : nil
+    }
+
+    /// An uncooperative call cannot keep the observer waiting. Check time on both sides of delivery
+    /// so a late reply cannot win just because the timeout task was scheduled late too.
+    private static func within<T: Sendable>(until deadline: UInt64, _ operation: @escaping @Sendable () async -> T?) async -> T? {
+        let deadline = min(deadline, (DispatchTime.now() + .seconds(callBound)).uptimeNanoseconds)
+        let (stream, reply) = AsyncStream<T?>.makeStream()
+        let call = Task {
+            guard !Task.isCancelled, now < deadline else { reply.finish(); return }
+            let value = await operation()
+            if now < deadline { reply.yield(value) }
+            reply.finish()
         }
+        let timer = Task {
+            if let left = remaining(until: deadline) { try? await Task.sleep(for: left) }
+            reply.finish()
+        }
+        defer { call.cancel(); timer.cancel() }
+        for await value in stream { return now < deadline ? value : nil }
+        return nil
+    }
+
+    private static func poll(until deadline: UInt64, _ condition: () async -> Bool) async -> Bool {
+        guard let left = remaining(until: deadline) else { return false }
+        do {
+            try await eventually("host readiness", timeout: left, poll: .milliseconds(50)) {
+                guard now < deadline else { return false }
+                let ready = await condition()
+                return ready && now < deadline
+            }
+            return true
+        } catch { return false }
+    }
+
+    private static func waitForHost(_ directory: URL, timeout: Duration) async -> ChildReport? {
+        var started: ChildReport?
+        try? await eventually("the host process to report", timeout: timeout) {
+            started = ChildReport.read(directory)
+            return started?.hostStartedAt != nil
+        }
+        return started
+    }
+
+    private static func requestStop(_ directory: URL) {
+        let path = directory.appendingPathComponent("stop").path
+        if !scratchIsGone(directory) {
+            #expect(FileManager.default.createFile(atPath: path, contents: nil) || scratchIsGone(directory), "could not request child stop")
+        }
+    }
+
+    private static func freshDescriptorCount(in directory: URL, after checkpoint: UInt64, until deadline: UInt64) async -> Int? {
+        var count: Int?
+        let ready = await poll(until: deadline) {
+            guard let sample = ChildReport.read(directory) else { return false }
+            if sample.samplingFailure != nil || sample.stopping { return true } // no later report can repair this
+            let instant = now
+            guard let sampledAt = sample.sampledAt, sampledAt >= checkpoint, sampledAt <= instant, sampledAt < deadline,
+                  instant - sampledAt < 500_000_000 else { return false }
+            count = sample.current
+            return count != nil
+        }
+        return ready ? count : nil
     }
 
     private static func observe(_ workspace: Workspace, socket: String, expectedRoots: Int, steps: Steps) async -> Observed {
         let observed = Observed()
         let report = observed.report
         // However this ends, the child is told to stop: it ends itself if it cannot, by its own deadline.
-        defer { FileManager.default.createFile(atPath: workspace.dir.appendingPathComponent("stop").path, contents: nil) }
-        var started: ChildReport?
-        try? await eventually("the host process to report", timeout: .seconds(30)) {
-            started = ChildReport.read(workspace.dir)
-            return started?.hostStarted == true
-        }
-        guard let started, started.hostStarted else {
+        defer { requestStop(workspace.dir) }
+        let started = await waitForHost(workspace.dir, timeout: .seconds(30))
+        guard let started, let hostStart = started.hostStartedAt, let baseline = started.baseline else {
             report.fail(steps.socket, expected: "the host process starts", actual: started == nil ? "it never wrote \(ChildReport.fileName)" : "it never got as far as starting the host")
             return observed
         }
-        let started0 = ContinuousClock.now
-        report.note("host pid \(started.pid), \(started.baseline) descriptors before Fleet, soft limit \(started.limit)")
-        func held() -> Int? { ChildReport.read(workspace.dir)?.current }
+        let socketDeadline = (DispatchTime(uptimeNanoseconds: hostStart) + .seconds(socketBound)).uptimeNanoseconds
+        let scanDeadline = (DispatchTime(uptimeNanoseconds: hostStart) + .seconds(scanBound)).uptimeNanoseconds
+        report.note("host pid \(started.pid), \(baseline) descriptors before Fleet, soft limit \(started.limit)")
 
         // 1. The local socket answers a real request. One client asks for the rest: a client per poll fills the log.
         var snapshot: FleetSnapshot?
         let client = RemoteHostClient(localSocket: socket)
         defer { client.disconnect() }
-        func read() async -> FleetSnapshot? { await within(callBound) { try? await client.fleetRead().snapshot } }
-        do {
-            try await eventually("host.sock to answer a request", timeout: socketBound, poll: .milliseconds(50)) {
-                guard await within(callBound, { RemoteHostClient.localSocketAnswers(socket) }) == true else { return false }
-                _ = await within(callBound) { (try? await client.connect(host: "", port: 0, token: "", clientName: "launch-gate", fetchesState: false)) != nil }
-                snapshot = await read()
-                return snapshot != nil
+        func read(until deadline: UInt64) async -> FleetSnapshot? { await within(until: deadline) { try? await client.fleetRead().snapshot } }
+        var connected = false
+        var answeredAt = hostStart
+        let answered = await poll(until: socketDeadline) {
+            if !connected {
+                guard await within(until: socketDeadline, { RemoteHostClient.localSocketAnswers(socket) }) == true else { return false }
+                connected = await within(until: socketDeadline) {
+                    try? await client.connect(host: "", port: 0, token: "", clientName: "launch-gate", fetchesState: false)
+                } != nil
             }
-            report.pass(steps.socket, expected: "host.sock answers a request within \(socketBound)",
-                        actual: "answered after \(started0.duration(to: .now)), \(held().map(String.init) ?? "?") descriptors")
-        } catch {
-            report.fail(steps.socket, expected: "host.sock answers a request within \(socketBound)",
-                        actual: "no answer: the host holds \(held().map(String.init) ?? "no") descriptors (limit \(started.limit))")
+            guard connected, await read(until: socketDeadline) != nil else { return false }
+            answeredAt = now
+            return true
+        }
+        let expectedSocket = "host.sock answers a request within \(socketBound) s of host start"
+        if answered {
+            report.pass(steps.socket, expected: expectedSocket, actual: "answered after \(Duration.nanoseconds(answeredAt - hostStart))")
+        } else {
+            report.fail(steps.socket, expected: expectedSocket, actual: "no timely answer (soft limit \(started.limit))")
         }
 
-        // 2. Every checkout's index is running. A host that never answered has none to read: the waits are not spent on it.
-        if snapshot != nil {
-            try? await eventually("Fleet's indexes to start", timeout: scanBound, poll: .milliseconds(100)) {
-                snapshot = await read()
-                observed.running = snapshot?.index?.repos.count
-                return observed.running == expectedRoots
-            }
+        // Both index checkpoints, the second socket probe and the final request share one scan deadline.
+        var runningAt = hostStart
+        let running = answered ? await poll(until: scanDeadline) {
+            observed.running = await read(until: scanDeadline)?.index?.repos.count
+            runningAt = now
+            return observed.running == expectedRoots
+        } : false
+        if running {
+            observed.afterStart = await freshDescriptorCount(in: workspace.dir, after: runningAt, until: scanDeadline)
+        } else if observed.running == expectedRoots {
+            observed.running = nil // the matching reply came too late
         }
-        observed.afterStart = held()
-        // 3. The first scan finishes, and the host still answers.
-        var scanned = false
-        // Indexes that never started are not waited for twice.
-        if observed.running == expectedRoots {
-            try? await eventually("every index's first scan", timeout: scanBound, poll: .milliseconds(100)) {
-                snapshot = await read()
-                scanned = snapshot?.index.map { !$0.indexing && $0.repos.count == expectedRoots && $0.repos.allSatisfy(\.ready) } ?? false
-                return scanned
-            }
-        }
-        observed.afterScan = held()
-        let expectedScan = "the host answers after all \(expectedRoots) indexes finished their first scan"
-        let answers = scanned ? await within(callBound, { RemoteHostClient.localSocketAnswers(socket) }) == true : false
-        if scanned, answers, await read() != nil {
-            report.pass(steps.scan, expected: expectedScan, actual: "answered, \(snapshot?.index?.repos.map(\.files).reduce(0, +) ?? 0) files indexed")
+
+        var scannedAt = hostStart
+        let scanned = running ? await poll(until: scanDeadline) {
+            guard let index = await read(until: scanDeadline)?.index,
+                  !index.indexing, index.repos.count == expectedRoots, index.repos.allSatisfy(\.ready),
+                  await within(until: scanDeadline, { RemoteHostClient.localSocketAnswers(socket) }) == true else { return false }
+            snapshot = await read(until: scanDeadline)
+            scannedAt = now
+            return snapshot != nil
+        } : false
+        let expectedScan = "the host answers after all \(expectedRoots) indexes finish their first scan, within \(scanBound) s of host start"
+        if scanned {
+            observed.afterScan = await freshDescriptorCount(in: workspace.dir, after: scannedAt, until: scanDeadline)
+            report.pass(steps.scan, expected: expectedScan,
+                        actual: "answered after \(Duration.nanoseconds(scannedAt - hostStart)), \(snapshot?.index?.repos.map(\.files).reduce(0, +) ?? 0) files indexed")
         } else {
-            report.fail(steps.scan, expected: expectedScan, actual: scanned ? "the socket stopped answering"
-                        : observed.running == expectedRoots ? "the first scan did not finish within \(scanBound)" : "the indexes never started, so there was no scan to wait for")
+            report.fail(steps.scan, expected: expectedScan, actual: running ? "no timely post-scan answer" : "the indexes never reached every checkout in time")
         }
         return observed
     }
@@ -553,11 +747,21 @@ struct HostLaunchTests {
         let size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
         guard size > 0 else { return nil }
         var list = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(size) / MemoryLayout<proc_fdinfo>.stride + 32)
-        let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &list, Int32(list.count * MemoryLayout<proc_fdinfo>.stride))
-        return bytes > 0 ? Array(list.prefix(Int(bytes) / MemoryLayout<proc_fdinfo>.stride)) : nil
+        let capacity = Int32(list.count * MemoryLayout<proc_fdinfo>.stride)
+        let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &list, capacity)
+        guard bytes > 0, bytes < capacity, Int(bytes).isMultiple(of: MemoryLayout<proc_fdinfo>.stride) else { return nil }
+        return Array(list.prefix(Int(bytes) / MemoryLayout<proc_fdinfo>.stride))
     }
 
-    static func descriptors(of pid: pid_t) -> Int? { fdList(of: pid)?.count }
+    private static func scratchIsGone(_ path: URL) -> Bool {
+        var info = stat()
+        return lstat(path.path, &info) == -1 && errno == ENOENT
+    }
+
+    private static func removeScratch(_ path: URL) {
+        try? FileManager.default.removeItem(at: path)
+        #expect(scratchIsGone(path), "scratch not deleted: \(path.path)")
+    }
 
     // MARK: Evidence
 
@@ -613,7 +817,7 @@ struct HostLaunchTests {
         static func make(label: String, worktrees: Bool = true) throws -> Workspace {
             let dir = try makeScratchDirectory(String(label.prefix(1)))
             do { return try build(in: dir, worktrees: worktrees) } catch {
-                try? FileManager.default.removeItem(at: dir)
+                HostLaunchTests.removeScratch(dir)
                 throw error
             }
         }
@@ -675,7 +879,5 @@ struct HostLaunchTests {
             return Workspace(dir: dir, spaces: spaces, tabs: tabs, agents: agents)
         }
 
-        /// Only the folder this workspace made.
-        func remove() { try? FileManager.default.removeItem(at: dir) }
     }
 }

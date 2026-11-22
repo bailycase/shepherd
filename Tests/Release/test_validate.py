@@ -370,6 +370,9 @@ class ValidateTests(unittest.TestCase):
                 self.assertEqual(command, ([wrapper] if wrapper else []) + ["swift", "test", "-j", "4", "--filter", test])
                 self.assertEqual(cwd, root)
                 self.assertNotIn("SHEPHERD_LIVE_MODEL", env)
+                if case == "c-launch":
+                    self.assertEqual(env.get("SHEPHERD_LAUNCH_SMOKE"), "1")
+                    self.assertNotIn("SHEPHERD_LAUNCH_DEATH_RECEIPT", env)
                 self.assertEqual(stderr, subprocess.STDOUT)
                 mac = Path(env["SHEPHERD_VALIDATION_DIR"])
                 self.assertEqual(mac.parent.parent, root / ".build/validation")
@@ -388,6 +391,7 @@ class ValidateTests(unittest.TestCase):
                   patch.object(validate.subprocess, "check_output", return_value=b"Swift version fixture"),
                   patch.object(validate.subprocess, "run", side_effect=swift_test) as swift,
                   patch.dict(os.environ, {"SHEPHERD_LIVE_MODEL": "must-not-reach-swift",
+                                          "SHEPHERD_LAUNCH_DEATH_RECEIPT": "must-not-reach-c-launch",
                                           **({"SHEPHERD_BUILD_WRAPPER": wrapper} if wrapper else {})}),
                   contextlib.redirect_stdout(output)):
                 code = validate.main(["--case", case])

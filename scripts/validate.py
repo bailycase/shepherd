@@ -717,6 +717,9 @@ def run_case(name, anchor_off=None, ios_frames=None):
               "log": LOG, "source": None, "toolchain": None, "exit_status": None, "build_test_seconds": None}
     env = {**os.environ, "SHEPHERD_VALIDATION_DIR": str(mac)}
     env.pop("SHEPHERD_LIVE_MODEL", None)
+    if name == "c-launch":
+        env.pop("SHEPHERD_LAUNCH_DEATH_RECEIPT", None)
+        env["SHEPHERD_LAUNCH_SMOKE"] = "1"
     if name == SCROLL_OWNER_CASE:
         env["SHEPHERD_SCROLL_OWNER_FULL"] = "1"
     setup_error = None

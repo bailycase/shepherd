@@ -43,8 +43,8 @@ Filtering narrows execution, not the package build graph; a cold build can still
 Use [Xcode](build-and-run.md) when the change needs app-level validation, not as a test prerequisite.
 Docs-only changes need the applicable docs guards, not Swift builds or tests.
 
-The five rebuild gates each run one filtered suite and save evidence under `.build/validation/`; "all gates"
-means all five, and each exits non-zero on a failure:
+The five rebuild checks each run one filtered suite and save evidence under `.build/validation/`. Each exits
+non-zero on failure. `c-launch` is an optional diagnostic, not a required gate.
 
 | Case | What it holds |
 | --- | --- |
@@ -52,18 +52,21 @@ means all five, and each exits non-zero on a failure:
 | `c-auth` | the host sockets' refusal corpus |
 | `c-settings` | every settings write path |
 | `c-wire` | the codec and the request sequences of a scratch host |
-| `c-launch` | a real host process, started with launchd's 256-descriptor soft limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, opens no TCP listener and no Bonjour or iCloud lookup, runs Fleet's content indexes with no failed `open()`, a peak at least 32 under the limit, under 256 once running and at most 2 per space, and still answers after their first scan; once more from the oldest `state.json` shape in the state golden, rebased into the scratch folder |
+| `c-launch` | a scratch host starts under launchd's 256-descriptor soft limit with 150 synced checkouts (30 with a worktree). From host start it answers `host.sock` within 20 s and answers again after Fleet's first scan within 30 s. It checks TCP isolation and descriptor samples, then repeats startup from the oldest `state.json` shape, rebased into scratch. |
 
-There are five gates, not four. `c-launch` was red on `nightly` until the Fleet watcher fix (#884) and the index watcher fix (#880)
-merged: with Fleet's file watcher opening a descriptor per watched file for every file it adds (quadratic in the number of spaces),
-a host with 150 synced checkouts ran out of descriptors under launchd's 256 and indexed none of them. It is green on `nightly`
-now, and goes red again on a failed `open()`, a peak within 32 of the limit, or a TCP listener. #879 (start Fleet after `host.sock`
+`c-launch` was red on `nightly` until the Fleet watcher fix (#884) and the index watcher fix (#880)
+merged. Fleet's file watcher opened a descriptor per watched file for every file it added, so a host with 150 synced checkouts
+ran out of descriptors and indexed none of them. #879 (start Fleet after `host.sock`
 binds) is not merged: once it is, `HostLaunchTests` must pass `startFleet: true` to `SessionHost.run`, as `ShepherdHost.main` will;
 without it the test fails on "the index never reached every checkout".
 
-The host in `c-launch` is a child process that guards itself: it exits when the test process does, at a hard deadline, and when the
-test writes its `stop` file, and it reports its own descriptor peak (a timer source from before the host starts, plus an `open()`
-probe that records any EMFILE) and its TCP listeners to `child-report`. The test never signals it by PID.
+`c-launch` requires a baseline and fresh samples at index readiness and after the first scan. Both counts must stay below 256,
+with growth of at most two descriptors per synced space. It fails on a sampled peak within 32 of the limit, a sampled
+`open()` probe reporting `EMFILE` or `ENFILE`, or evidence of a TCP listener. Samples can miss spikes between ticks. The host
+keeps Bonjour and iCloud lookup off. Run `python3 scripts/validate.py --case c-launch` to opt in.
+
+The child stops when the test process exits, its own deadline expires, or the test writes its `stop` file. Bounded controls
+check that both the workspace and child isolation root are gone after each early stop. The test never signals the host by PID.
 
 An unfiltered `swift test -j 4` now finishes in about an hour. It currently reports roughly 900 to
 1,000 failures; most of those tests pass when run alone. For PR work, use filtered runs and the
