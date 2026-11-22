@@ -1553,7 +1553,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
-            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability, RemoteProtocol.fleetDispatchCloseCapability,
+            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability, RemoteProtocol.fleetDispatchCloseCapability, RemoteProtocol.fleetDispatchRenameCapability,
             RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability, RemoteProtocol.fleetUpdateCapability,
             // Offered to every client, a device included.
             RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability, RemoteProtocol.fleetUpdateViewCapability,

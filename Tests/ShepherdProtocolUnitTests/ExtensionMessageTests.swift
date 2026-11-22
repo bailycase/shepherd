@@ -28,7 +28,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 72
+    static let caseCount = 73
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
