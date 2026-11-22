@@ -146,6 +146,7 @@ final class FleetContentIndex: @unchecked Sendable {
     /// Loads what was saved (or scans), then follows events from where the saved index left off.
     func start() {
         guard events == nil, !stopped else { return }
+        let stream = FleetFSEvents(root: root, queue: queue, latency: latency) { [weak self] in self?.ingest($0, classifyingInBackground: true) }
         if !load() {
             state = .scanning
             onState?()
@@ -158,7 +159,6 @@ final class FleetContentIndex: @unchecked Sendable {
         }
         guard state == .ready else { return }
         persist(force: true)
-        let stream = FleetFSEvents(root: root, queue: queue, latency: latency) { [weak self] in self?.ingest($0, classifyingInBackground: true) }
         events = stream
         if !stream.start(since: eventID) {
             // Without events the index would drift unseen: the periodic check rescans instead.
@@ -168,6 +168,7 @@ final class FleetContentIndex: @unchecked Sendable {
         // it: what the index holds is compared with the disk (size and time), and so is every directory (a file made or removed in one
         // moves its time). An index saved before directory times were kept has none to compare, so the root is walked once.
         if loadedFromDisk { if dirStamps.isEmpty { rescan() } else { catchUp() } }
+        stream.checkRoot()
     }
 
     /// Asks a scan in progress to end. Safe from any thread; `stop()` then runs on the queue.
@@ -190,6 +191,8 @@ final class FleetContentIndex: @unchecked Sendable {
 
     /// Tests: the stream (to make it drop events).
     var eventStream: FleetFSEvents? { events }
+
+    func checkRoot() { events?.checkRoot() }
 
     /// Changes the rules: what is left out changes with them, so the root is walked again.
     func setExclusions(_ new: FleetExclusions) {
