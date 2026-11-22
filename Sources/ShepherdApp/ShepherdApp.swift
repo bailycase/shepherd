@@ -275,7 +275,7 @@ extension ShepherdHost {
     /// closes the TCP listener with its switch, as the app did; `listener` hears each outcome (its
     /// port, or why it didn't open) and the app's Settings ▸ Remote reads it again. The
     /// listener opens off the main actor, so `listener` hears the start's outcome a moment after this returns.
-    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer,
+    @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer, startFleet: Bool = true,
                                          listener: ((UInt16?, Error?) -> Void)? = nil) {
         settings.adoptHostPreferences(HostSettingsStore(file: server.supportDirectory.appendingPathComponent("host-preferences.json")))
         settings.followOtherProcesses()
@@ -329,7 +329,7 @@ extension ShepherdHost {
                 if (settings.remoteListenerEnabled || need) != listening.wanted { relisten() }
             }
         }
-        server.startFleet()
+        if startFleet { server.startFleet() }
         // Fleet sync: the host settings that are the same on every Mac are read from these settings and
         // applied to them as the Settings pages would (`FleetHostSetting`).
         server.setFleetHostSettings { change in
@@ -387,7 +387,7 @@ public enum ShepherdHost {
             Self.services = services
             SessionHost.run(supervised: CommandLine.arguments.contains(supervisedArgument), respawn: services.respawn,
                             configure: services.configure, threads: services.threads, automations: services.automations,
-                            pullRequests: services.pullRequests, banners: services.banners)
+                            pullRequests: services.pullRequests, banners: services.banners, startFleet: true)
         }
     }
 
@@ -425,7 +425,7 @@ public enum ShepherdHost {
         @discardableResult
         func serve(_ server: SessionServer, socket: String, recovering: Bool = true) async -> ThreadBanners? {
             await SessionHost.serve(server, socket: socket, recovering: recovering, respawn: respawn, configure: configure,
-                                    threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
+                                    threads: threads, automations: automations, pullRequests: pullRequests, banners: banners, startFleet: true)
         }
 
         var respawn: @MainActor (Agent) -> AgentSpawn {
@@ -441,7 +441,7 @@ public enum ShepherdHost {
                 HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
                     self?.listener ?? (nil, nil)
                 }
-                serveSettings(settings, on: server) { [weak self, settings] port, error in
+                serveSettings(settings, on: server, startFleet: false) { [weak self, settings] port, error in
                     self?.listener = (port, error.map { RemoteListenerFailure($0, port: UInt16(clamping: settings.remoteListenerPort)) })
                 }
                 // Settings ▸ MCP, Subagents and Sign-in, with the MCP store agents launch with.

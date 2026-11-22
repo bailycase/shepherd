@@ -231,6 +231,17 @@ final class FleetIndexService: @unchecked Sendable {
         schedulePush()
     }
 
+    /// Counts descriptors once the roots scheduled by Fleet startup have opened their streams.
+    func logStartup() {
+        let count = roots.count
+        let started = DispatchGroup()
+        for root in roots.values { root.index.queue.async(group: started) {} }
+        started.notify(queue: .global(qos: .utility)) {
+            let descriptors = (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count).map(String.init) ?? "unavailable"
+            ShepherdLog.info("host Fleet startup: \(count) index roots, \(descriptors) open descriptors")
+        }
+    }
+
     private func verifyAll() {
         if let spaces = host?.spaces() { onSpaces?(spaces.filter(FleetSpacesSource.syncs)) }
         for root in roots.values { root.index.queue.async { [index = root.index] in index.verify(reclassifying: true) } }

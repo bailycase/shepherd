@@ -1834,6 +1834,7 @@ public final class SessionServer: @unchecked Sendable {
                 service.onActive = { [weak self] in self?.fleetSpacesChanged() }
                 service.onListenerNeed = { [weak self] need in self?.fleetListenerNeed?(need) }
                 service.start()
+                service.index.logStartup()
                 announceFleetCapabilities()
             } catch {
                 ShepherdLog.error("fleet could not start: \(error)")

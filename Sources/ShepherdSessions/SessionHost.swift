@@ -43,9 +43,9 @@ public enum SessionHost {
                            automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                            pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
                            banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
-                           ready: () -> Void = {}) -> Never {
+                           startFleet: Bool = false, ready: () -> Void = {}) -> Never {
         run(server, bundle: Bundle.main.bundleURL, supervised: supervised, respawn: respawn, configure: configure,
-            threads: threads, automations: automations, pullRequests: pullRequests, banners: banners, ready: ready)
+            threads: threads, automations: automations, pullRequests: pullRequests, banners: banners, startFleet: startFleet, ready: ready)
     }
 
     static func run(_ server: SessionServer, bundle: URL, supervised: Bool = false, respawn: @escaping @MainActor (Agent) -> AgentSpawn,
@@ -54,7 +54,8 @@ public enum SessionHost {
                     automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                     pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
                     banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
-                    ready: () -> Void = {}) -> Never {
+                    startFleet: Bool = false, ready: () -> Void = {}) -> Never {
+        let descriptorLimit = raiseDescriptorLimit()
         do {
             try EmbeddedExtensions.preload()
         } catch {
@@ -116,6 +117,7 @@ public enum SessionHost {
         if !supervised, Bundle.main.bundleURL.pathExtension == "app" {
             ShepherdLog.persistHostLog(in: server.supportDirectory)
         }
+        ShepherdLog.info(descriptorLimit)
         ShepherdLog.info("host serving (build \(server.hostBuild ?? "?"), pid \(getpid()))")
         // A hung queue never recovers by itself and every client request to it just times out:
         // exit, and launchd (KeepAlive) starts a host that respawns the agents with unfinished
@@ -140,7 +142,7 @@ public enum SessionHost {
             server.holdStartsForFirstCopy()
             await serve(server, socket: support.appendingPathComponent("host.sock").path,
                         respawn: respawn, configure: configure,
-                        threads: threads, automations: automations, pullRequests: pullRequests, banners: banners)
+                        threads: threads, automations: automations, pullRequests: pullRequests, banners: banners, startFleet: startFleet)
         }
         ready()
         signalSources = sources
@@ -150,8 +152,21 @@ public enum SessionHost {
         while true { pause() }
     }
 
+    private static func raiseDescriptorLimit() -> String {
+        var limit = rlimit()
+        guard getrlimit(RLIMIT_NOFILE, &limit) == 0 else { return "host RLIMIT_NOFILE unavailable: errno \(errno)" }
+        let before = limit.rlim_cur
+        let target = min(limit.rlim_max, 10_240)
+        guard before < target else { return "host RLIMIT_NOFILE soft \(before) -> \(before), hard \(limit.rlim_max)" }
+        limit.rlim_cur = target
+        if setrlimit(RLIMIT_NOFILE, &limit) != 0 {
+            return "host RLIMIT_NOFILE soft \(before) -> \(before), hard \(limit.rlim_max); setrlimit failed: errno \(errno)"
+        }
+        return "host RLIMIT_NOFILE soft \(before) -> \(limit.rlim_cur), hard \(limit.rlim_max)"
+    }
+
     /// What `run` serves once its server is up, in order: `configure`, threads, the app's socket
-    /// (`socket`), banners, automations, the respawn of unfinished work, pull request links and
+    /// (`socket`), Fleet (if requested), banners, automations, the respawn of unfinished work, pull request links and
     /// enabled automations. App tests serve their in-process host through it, as the host does;
     /// `recovering` false leaves unfinished work for a test that only draws it.
     /// Returns the banners' observer (also `banners`, the process's last), when `banners` was given.
@@ -161,15 +176,24 @@ public enum SessionHost {
                              threads: (@MainActor (SessionServer) -> ThreadHosting)? = nil,
                              automations: (@MainActor (SessionServer) -> AutomationHosting)? = nil,
                              pullRequests: (@MainActor (SessionServer) -> PullRequestLinkHosting)? = nil,
-                             banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil) async -> ThreadBanners? {
+                             banners: (@MainActor (SessionServer) -> ThreadBanners.Sink)? = nil,
+                             startFleet: Bool = false) async -> ThreadBanners? {
         configure?(server)
         if let threads { server.serveThreads(threads(server)) }
-        // The app's way in (`host.sock`), once its threads are served.
-        do {
-            try await server.listenLocal(path: socket)
-        } catch {
-            ShepherdLog.error("host has no local socket: \(error)")
+        // Reserve the app's way in before Fleet opens its indexes.
+        var retryDelay = Duration.milliseconds(100)
+        while !Task.isCancelled {
+            do {
+                try await server.listenLocal(path: socket)
+                break
+            } catch {
+                ShepherdLog.error("host has no local socket: \(error); retrying in \(retryDelay)")
+                do { try await Task.sleep(for: retryDelay) } catch { return nil }
+                retryDelay = min(retryDelay * 2, .seconds(5))
+            }
         }
+        guard !Task.isCancelled else { return nil }
+        if startFleet { server.startFleet() }
         var observer: ThreadBanners?
         if let banners {
             let made = ThreadBanners(server: server, state: { server.state }, sink: banners(server))
