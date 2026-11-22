@@ -121,9 +121,10 @@ final class PushNotifications: @unchecked Sendable {
     func unregister(_ rawID: String, deviceID: UUID? = nil, matching expired: Registration? = nil) throws {
         guard let id = UUID(uuidString: rawID)?.uuidString else { throw Failure.invalid }
         let original = try refreshRegistrations()
-        guard let current = registrations[id], expired == nil || current == expired else { return }
-        if let deviceID, let owner = current.deviceID, deviceID != owner { return }
-        try remove([id], replacing: original)
+        guard expired == nil || registrations[id] == expired else { return }
+        // An unknown ID still goes through the normal write, including normalization of legacy rows.
+        let foreign = deviceID != nil && registrations[id]?.deviceID != nil && registrations[id]?.deviceID != deviceID
+        try remove(foreign ? [] : [id], replacing: original)
     }
 
     func revokeDevice(_ deviceID: UUID) {
