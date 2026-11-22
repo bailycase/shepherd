@@ -491,14 +491,14 @@ class ValidateTests(unittest.TestCase):
 
     def test_launch_gate_requires_every_host_step_and_fails_on_a_failed_one(self):
         summary = "the host answered and held its descriptors with 150 synced spaces"
-        names = ["socket-answers", "descriptors", "still-answering", "legacy-state-socket-answers",
-                 "legacy-state-descriptors", "legacy-state-still-answering"]
+        names = ["socket-answers", "host-isolated", "descriptors", "still-answering", "legacy-state-socket-answers",
+                 "legacy-state-host-isolated", "legacy-state-descriptors", "legacy-state-still-answering"]
         steps = [{"step": name, "status": "passed", "expected": name, "actual": name, "evidence": []} for name in names]
         complete = {"step": "complete", "status": "passed", "expected": summary, "actual": summary, "evidence": []}
         code, _, result = self.run_case(steps[1:] + [complete], case="c-launch")
         self.assertEqual((code, result["status"]), (1, "incomplete"))
         self.assertEqual(result["missing_steps"], [["socket-answers", None]])
-        failed = [{**steps[1], "status": "failed", "actual": "peak 10240"}, *steps[:1], *steps[2:], complete]
+        failed = [{**steps[2], "status": "failed", "actual": "peak 10240"}, *steps[:2], *steps[3:], complete]
         code, output, result = self.run_case(failed, swift_exit=1, case="c-launch")
         self.assertEqual((code, result["status"]), (1, "assertion_failed"))
         self.assertIn("FAIL mac/c-launch/descriptors [real host]", output)

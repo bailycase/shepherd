@@ -52,7 +52,17 @@ means all five, and each exits non-zero on a failure:
 | `c-auth` | the host sockets' refusal corpus |
 | `c-settings` | every settings write path |
 | `c-wire` | the codec and the request sequences of a scratch host |
-| `c-launch` | a real host process, started with launchd's 256-descriptor limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, runs Fleet's content indexes within a descriptor budget (under 256 once running, at most 2 per space, a peak of at most 3 per space) and still answers after their first scan; once more from the oldest `state.json` shape in the state golden |
+| `c-launch` | a real host process, started with launchd's 256-descriptor soft limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, opens no TCP listener and no Bonjour or iCloud lookup, runs Fleet's content indexes with no failed `open()`, a peak at least 32 under the limit, under 256 once running and at most 2 per space, and still answers after their first scan; once more from the oldest `state.json` shape in the state golden, rebased into the scratch folder |
+
+There are five gates, not four. `c-launch` currently fails on `nightly`: Fleet's file watcher opens a descriptor per watched file
+for every file it adds (quadratic in the number of spaces), so a host with 150 synced checkouts runs out of descriptors, never
+indexes them, and can leave `host.sock` unopened (#879 fixes that part). It stays red until the watcher fix (`fix/fleet-watcher-descriptors`) is merged,
+so it cannot be a required check before then. Once #879 merges, `HostLaunchTests` must pass `startFleet: true` to `SessionHost.run`,
+as `ShepherdHost.main` does; without it the test fails on "the index never reached every checkout".
+
+The host in `c-launch` is a child process that guards itself: it exits when the test process does, at a hard deadline, and when the
+test writes its `stop` file, and it reports its own descriptor peak (a timer source from before the host starts, plus an `open()`
+probe that records any EMFILE) and its TCP listeners to `child-report`. The test never signals it by PID.
 
 An unfiltered `swift test -j 4` now finishes in about an hour. It currently reports roughly 900 to
 1,000 failures; most of those tests pass when run alone. For PR work, use filtered runs and the

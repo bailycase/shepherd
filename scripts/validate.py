@@ -109,8 +109,9 @@ CASES = {
     ),
     "c-launch": Case(
         "HostLaunchTests",
-        {(step, None) for step in ("socket-answers", "descriptors", "still-answering", "legacy-state-socket-answers",
-                                    "legacy-state-descriptors", "legacy-state-still-answering")},
+        {(step, None) for step in ("socket-answers", "host-isolated", "descriptors", "still-answering",
+                                    "legacy-state-socket-answers", "legacy-state-host-isolated", "legacy-state-descriptors",
+                                    "legacy-state-still-answering")},
         "the host answered and held its descriptors with 150 synced spaces", "real host",
         scenario="Tests/ShepherdAppIntegrationTests/HostLaunchTests.swift",
     ),
