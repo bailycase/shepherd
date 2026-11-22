@@ -26,7 +26,9 @@ struct PadOverview: View {
                 let empty = VStack(spacing: 0) {
                     if !model.offlineHosts.isEmpty { HostNotices(cards: model.offlineHosts).padding(MobileLayout.gutter) }
                     SHEmptyState(Text("No thread selected"), message: "Pick a thread in the sidebar, or start a new one.") {
-                        Button("New thread") { NewThreadHooks.open(navigator: navigator) }.buttonStyle(.sh(.primary))
+                        Button("New thread") { NewThreadHooks.open(navigator: navigator) }
+                            .buttonStyle(.sh(.primary))
+                            .accessibilityIdentifier("overview-content-new-thread")
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -85,6 +87,7 @@ struct PadOverview: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
                 Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
+                    .accessibilityIdentifier("overview-toolbar-new-thread")
                     .disabled(model.hosts.isEmpty)
                 StopAllWorkingMenu()
             }

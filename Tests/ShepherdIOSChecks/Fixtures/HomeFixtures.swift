@@ -21,7 +21,11 @@ extension FixtureCatalog {
             // iPad: the overview with nothing in its columns and Macs that cannot be reached: one (as the closed screen
             // shows it), then more than a screen holds, which scrolls so New thread stays reachable.
             FixtureScreen(name: "overview-offline-one", hosts: HomeFixtureData.offline(1), prepare: { app in
-                await OverviewOpenCheck.hideSidebar(app)
+                SidebarAutomationsCheck.enableAccessibility()
+                if app.navigator.layout == .pad { await OverviewOpenCheck.waitForOverview(app) }
+                await FixtureCheck.wait("the build-01 notice to be drawn", seconds: 10) {
+                    SidebarAutomationsCheck.all.contains { $0.accessibilityLabel == "build-01" && !$0.accessibilityFrame.isEmpty }
+                }
             }),
             FixtureScreen(name: "overview-offline-many", hosts: HomeFixtureData.offline(24, refusing: true), prepare: { app in
                 await OverviewScrollCheck.run(app)
@@ -160,6 +164,22 @@ extension FixtureCatalog {
         try? await Task.sleep(for: .seconds(1))
     }
 
+    /// Wait for the overview to be drawn, not just for the split-view binding to change.
+    static func waitForOverview(_ app: MobileApp) async {
+        await FixtureCheck.wait("the Overview to be drawn with the sidebar out", seconds: 10) {
+            if app.navigator.padColumns != .detailOnly {
+                app.navigator.padColumns = .detailOnly
+                return false
+            }
+            guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow) else { return false }
+            let screen = UIAccessibility.convertToScreenCoordinates(window.bounds, in: window)
+            let visible = SidebarAutomationsCheck.all.filter { $0.accessibilityFrame.intersects(screen) }
+            return visible.contains { $0.accessibilityLabel?.hasPrefix("Overview") == true && $0.accessibilityTraits.contains(.header) }
+                && !visible.contains { $0.accessibilityLabel == "Projects" }
+        }
+    }
+
     static func run(_ app: MobileApp) async {
         func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
         SidebarAutomationsCheck.enableAccessibility()
@@ -192,9 +212,11 @@ extension FixtureCatalog {
 @MainActor enum HostNoticeCheck {
     static func run(_ app: MobileApp, label: String, pressed effect: (MobileApp) -> Bool) async {
         func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
-        if app.navigator.layout == .pad { await OverviewOpenCheck.hideSidebar(app) }
         SidebarAutomationsCheck.enableAccessibility()
-        func notice() -> NSObject? { SidebarAutomationsCheck.all.first { $0.accessibilityLabel == label } }
+        if app.navigator.layout == .pad { await OverviewOpenCheck.waitForOverview(app) }
+        func notice() -> NSObject? {
+            SidebarAutomationsCheck.all.first { $0.accessibilityLabel == label && !$0.accessibilityFrame.isEmpty }
+        }
         // The tree fills in once SwiftUI has an assistive client; a notice that never draws fails here, not on a missing button.
         await FixtureCheck.wait("the host notice's button (\(label))", seconds: 10) { notice() != nil }
         guard let button = notice() else { return check(false, "the host notice's button is drawn (\(label))") }
@@ -210,34 +232,56 @@ extension FixtureCatalog {
     static func run(_ app: MobileApp) async {
         func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
         guard app.navigator.layout == .pad else { return }
-        await OverviewOpenCheck.hideSidebar(app)
         SidebarAutomationsCheck.enableAccessibility()
-        // The toolbar has a New thread too; the one in the content is the lower of the two.
-        func newThread() -> NSObject? {
-            SidebarAutomationsCheck.all.filter { $0.accessibilityLabel == "New thread" }.max { $0.accessibilityFrame.maxY < $1.accessibilityFrame.maxY }
+        await OverviewOpenCheck.waitForOverview(app)
+        await FixtureCheck.wait("the first offline Mac's notice to be drawn", seconds: 10) {
+            SidebarAutomationsCheck.all.contains { $0.accessibilityLabel == "Add build-01 again with a code" && !$0.accessibilityFrame.isEmpty }
         }
-        await FixtureCheck.wait("New thread to be drawn", seconds: 10) { newThread() != nil && newThread()?.accessibilityFrame.isEmpty == false }
-        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) else {
-            return check(false, "a key window")
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow),
+              let scroll = largestScrollView(in: window) else {
+            return check(false, "a scroll view holds the overflowing overview content")
         }
-        let bottom = window.bounds.inset(by: window.safeAreaInsets).maxY
-        let before = newThread()?.accessibilityFrame.maxY ?? 0
-        check(before > bottom, "the fixture overflows the screen (New thread ends at \(Int(before)), the screen at \(Int(bottom)))")
-        guard let scroll = largestScrollView(in: window) else { return check(false, "a scroll view holds the overview's content") }
-        // The cards are lazy, so the content's height is an estimate until its rows are built, and it moves as they are:
-        // keep going to the end until the end has held still for ten polls in a row.
+        func viewport() -> CGRect {
+            let safe = UIAccessibility.convertToScreenCoordinates(window.bounds.inset(by: window.safeAreaInsets), in: window)
+            let bounds = UIAccessibility.convertToScreenCoordinates(scroll.bounds.inset(by: scroll.safeAreaInsets), in: scroll)
+            return bounds.intersection(safe)
+        }
+        let contentID = "overview-content-new-thread"
+        let identifier = #selector(getter: UIAccessibilityIdentification.accessibilityIdentifier)
+        func hasID(_ element: NSObject, _ id: String) -> Bool {
+            // SwiftUI's AX node implements the getter without declaring protocol conformance.
+            element.responds(to: identifier) && element.value(forKey: NSStringFromSelector(identifier)) as? String == id
+        }
+        func newThreadIsVisible(_ elements: [NSObject], in viewport: CGRect) -> Bool {
+            elements.contains { element in
+                let frame = element.accessibilityFrame
+                return element.accessibilityLabel == "New thread" && hasID(element, contentID)
+                    && !frame.isEmpty && viewport.contains(frame)
+            }
+        }
+        check(!newThreadIsVisible(SidebarAutomationsCheck.all, in: viewport()), "the overflowing fixture starts with the content New thread out of view")
+        // The cards are lazy, so their height estimate moves as the rows are built. Poll until the
+        // end and a fully visible content button hold still together.
         var held = 0, height = scroll.contentSize.height
-        func atEnd() -> Bool {
+        await FixtureCheck.wait("the content New thread to fit in the visible scroll viewport", seconds: 15) {
             let end = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height
             let still = abs(scroll.contentOffset.y - end) < 1 && scroll.contentSize.height == height
-                && (newThread()?.accessibilityFrame.maxY ?? .infinity) <= bottom + 0.5
+                && newThreadIsVisible(SidebarAutomationsCheck.all, in: viewport())
             held = still ? held + 1 : 0
             height = scroll.contentSize.height
-            scroll.setContentOffset(CGPoint(x: 0, y: end), animated: false)
-            return held >= 10
+            if held >= 10 { return true }
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: end), animated: false)
+            return false
         }
-        await FixtureCheck.wait("New thread to scroll into view", seconds: 15, until: atEnd)
-        check(true, "scrolled to the end, New thread is inside the screen")
+        let visible = viewport()
+        let elements = SidebarAutomationsCheck.all
+        // Duo puts the toolbar in a side rail; do not infer which button it is from its position.
+        let toolbarOnly = elements.filter {
+            $0.accessibilityLabel == "New thread" && hasID($0, "overview-toolbar-new-thread") && !$0.accessibilityFrame.isEmpty
+        }
+        check(!toolbarOnly.isEmpty, "the toolbar's New thread is drawn")
+        check(!newThreadIsVisible(toolbarOnly, in: visible), "the toolbar action alone cannot satisfy the content visibility assertion")
+        check(newThreadIsVisible(elements, in: visible), "scrolled to the end, the content New thread fits in the visible scroll viewport")
     }
 
     private static func largestScrollView(in view: UIView) -> UIScrollView? {
