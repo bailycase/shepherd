@@ -51,8 +51,9 @@ struct HostLaunchTests {
     static let exhaustionMargin = 32
     /// One call to the host (a request, a connect) gets this long, so a hung one cannot hold a wait that `eventually` cannot interrupt.
     static let callBound: Duration = .seconds(5)
-    /// The child exits by itself this long after it starts, whatever this process is doing (the longest the observer can take is
-    /// the sum of its waits, about 90 s).
+    /// The child exits by itself this long after it starts, whatever this process is doing. The observer's waits add up to at most
+    /// 30 (the child's first report) + 20 (socket) + 30 (indexes) + 30 (scan) and the test's own limit is two minutes, so a
+    /// passing or ordinarily failing run is over long before this.
     static let childDeadlineSeconds = 110
     /// How long a host gets to stop on SIGTERM before the child ends itself.
     static let stopGraceSeconds = 20
@@ -225,7 +226,8 @@ struct HostLaunchTests {
         var listening = 0
         var mostListening = 0
         var listenPorts: [Int] = []
-        /// The vnode paths held most at the first count over 1000 and each 1000 more (what a runaway watcher opens).
+        /// The vnode paths held most when the count first came within the margin of the limit, and each time it doubled after that (what a
+        /// runaway watcher opens).
         var top: [String] = []
         var ticks = 0
         var hostStarted = false
@@ -358,7 +360,7 @@ struct HostLaunchTests {
                 ports.append(Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: info.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport))))
             }
             var names: [String: Int]?
-            if list.count > 1000, list.count > lastNamed + 1000 {
+            if list.count >= Int(HostLaunchTests.launchdDescriptorLimit) - HostLaunchTests.exhaustionMargin, list.count > lastNamed * 2 {
                 lastNamed = list.count
                 names = [:]
                 for entry in list where entry.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) {
@@ -475,8 +477,8 @@ struct HostLaunchTests {
             started = ChildReport.read(workspace.dir)
             return started?.hostStarted == true
         }
-        guard let started else {
-            report.fail(steps.socket, expected: "the host process starts", actual: "it never wrote \(ChildReport.fileName)")
+        guard let started, started.hostStarted else {
+            report.fail(steps.socket, expected: "the host process starts", actual: started == nil ? "it never wrote \(ChildReport.fileName)" : "it never got as far as starting the host")
             return observed
         }
         let started0 = ContinuousClock.now
@@ -502,11 +504,13 @@ struct HostLaunchTests {
                         actual: "no answer: the host holds \(held().map(String.init) ?? "no") descriptors (limit \(started.limit))")
         }
 
-        // 2. Every checkout's index is running.
-        try? await eventually("Fleet's indexes to start", timeout: scanBound, poll: .milliseconds(100)) {
-            snapshot = await read()
-            observed.running = snapshot?.index?.repos.count
-            return observed.running == expectedRoots
+        // 2. Every checkout's index is running. A host that never answered has none to read: the waits are not spent on it.
+        if snapshot != nil {
+            try? await eventually("Fleet's indexes to start", timeout: scanBound, poll: .milliseconds(100)) {
+                snapshot = await read()
+                observed.running = snapshot?.index?.repos.count
+                return observed.running == expectedRoots
+            }
         }
         observed.afterStart = held()
         // 3. The first scan finishes, and the host still answers.
