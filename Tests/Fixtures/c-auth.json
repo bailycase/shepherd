@@ -3466,8 +3466,8 @@
           "AGENTS.md"
         ],
         "reply.snapshot.settings.sources": [
-          "thread",
-          "automation"
+          "automation",
+          "thread"
         ],
         "reply.snapshot.waiting": [],
         "reply.type": "suggestions",

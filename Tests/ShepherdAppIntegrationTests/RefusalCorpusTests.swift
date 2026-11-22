@@ -495,6 +495,11 @@ private final class Corpus {
     }
 
     private func record(_ step: String, _ fields: [String: Any]) {
+        var fields = fields
+        // reply.snapshot.settings.sources is a Set on both clients, so its wire order does not matter.
+        if step == "suggestions/fetch", let sources = fields["reply.snapshot.settings.sources"] as? [String] {
+            fields["reply.snapshot.settings.sources"] = sources.sorted()
+        }
         observations.append((step, fields))
     }
 
