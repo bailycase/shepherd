@@ -232,6 +232,68 @@ struct PushNotificationsTests {
         }
     }
 
+    private func withReadOnlyRegistrations(_ rows: [PushNotifications.Registration],
+                                           test: (PushNotifications, Locked<Date>, Locked<[String]>) -> Void) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let saved = try JSONEncoder().encode(rows)
+        try saved.write(to: file)
+        let attributes = try FileManager.default.attributesOfItem(atPath: dir.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: attributes[.posixPermissions]!], ofItemAtPath: dir.path) }
+        let queue = DispatchQueue(label: "push.expiry-read-only")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let posted = Locked<[String]>([])
+        queue.sync {
+            pushes.transport = { request, _ in
+                posted.withValue { $0.append(request.url!.deletingLastPathComponent().lastPathComponent) }
+                return {}
+            }
+            test(pushes, clock, posted)
+        }
+        #expect(try Data(contentsOf: file) == saved, "the expiry update could not be saved")
+    }
+
+    @Test func ownedRowsStillSendWhenAnOwnerlessStampCannotBeSaved() throws {
+        let owned = registration(), legacy = registration()
+        try withReadOnlyRegistrations([
+            .init(id: owned.id, sendToken: owned.sendToken, preferences: nil, deviceID: UUID()),
+            .init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: nil),
+        ]) { pushes, _, posted in
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current.contains(owned.id))
+        }
+    }
+
+    @Test func expiredOwnerlessRowsAreDroppedEvenWhenRemovalCannotBeSaved() throws {
+        let owned = registration(), expired = registration()
+        try withReadOnlyRegistrations([
+            .init(id: owned.id, sendToken: owned.sendToken, preferences: nil, deviceID: UUID()),
+            .init(id: expired.id, sendToken: expired.sendToken, preferences: nil, deviceID: nil,
+                  ownerlessFirstSeen: Self.firstSeen - Self.week),
+        ]) { pushes, _, posted in
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current == [owned.id])
+            #expect(pushes.registrations[expired.id] == nil)
+        }
+    }
+
+    @Test func anUnsavedStampStillEndsOwnerlessDeliveryAtItsDeadline() throws {
+        let legacy = registration()
+        try withReadOnlyRegistrations([
+            .init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: nil),
+        ]) { pushes, clock, posted in
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current == [legacy.id])
+            clock.withValue { $0 = Self.firstSeen + Self.week + 1 }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current == [legacy.id])
+            #expect(pushes.registrations[legacy.id] == nil)
+        }
+    }
+
     @Test func anOwnerlessRowCannotSendARelayFallbackAfterTheDeadline() throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -257,6 +319,32 @@ struct PushNotificationsTests {
         }
     }
 
+    @Test func aFutureStampUsesTheTimeItWasReadAndWaitsForTheNextSave() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration(), owned = registration()
+        let saved = try JSONEncoder().encode([
+            PushNotifications.Registration(id: legacy.id, sendToken: legacy.sendToken, preferences: nil,
+                                           deviceID: nil, ownerlessFirstSeen: Self.firstSeen + 2 * Self.week),
+        ])
+        try saved.write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-future")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        try queue.sync { () throws -> Void in
+            pushes.load()
+            #expect(try Data(contentsOf: file) == saved, "clamping alone must not write the file")
+            clock.withValue { $0 = Self.firstSeen + 1 }
+            try pushes.register(owned, deviceID: UUID())
+            let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+            #expect(rows.first { $0.id == legacy.id }?.ownerlessFirstSeen == Self.firstSeen)
+            clock.withValue { $0 = Self.firstSeen + Self.week }
+            pushes.load()
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [owned])
+        }
+    }
+
     @Test func anIdleHostStartsTheClockAndThePreviousReaderCanStillLoadTheRows() throws {
         struct PreviousRegistration: Decodable, Equatable {
             var id: String
@@ -270,10 +358,17 @@ struct PushNotificationsTests {
         let legacy = registration()
         let saved = try JSONEncoder().encode([legacy])
         try saved.write(to: file)
-        let host = try ScratchServer(dir: dir)
-        defer { host.stop(keepFiles: true) }
+        let server = SessionServer(socketPath: dir.appendingPathComponent("s.sock").path,
+                                   stateURL: dir.appendingPathComponent("state.json"),
+                                   modelCatalog: { ScratchServer.standInModels }, piSkills: .off,
+                                   triggerSource: ScratchServer.noGitHub, forgeRunner: ScratchServer.noForge)
+        server.queue.sync { server.pushNotifications.now = { Self.firstSeen } }
+        try server.start()
+        defer { server.stop() }
         let stamped = try Data(contentsOf: file)
-        #expect(stamped != saved, "the host starts the clock before any phone or alert touches the file")
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: stamped)
+        #expect(rows.first?.ownerlessFirstSeen == Self.firstSeen,
+                "the host starts the clock before any phone or alert touches the file")
         guard case .loaded(let previous) = PersistedFile<[PreviousRegistration]>.decode(stamped) else {
             Issue.record("The previous reader could not load a stamped row")
             return

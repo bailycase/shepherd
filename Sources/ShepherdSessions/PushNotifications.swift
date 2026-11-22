@@ -97,9 +97,7 @@ final class PushNotifications: @unchecked Sendable {
     }
 
     func load() {
-        do { try refreshAndExpire() }
-        catch Failure.damaged { } // The reader already reported the damage.
-        catch { ShepherdLog.warning("Could not update ownerless push registrations: \(error.localizedDescription)") }
+        try? refreshAndExpire() // Read and save failures are logged at their source.
     }
 
     private static func validToken(_ token: String) -> Bool {
@@ -162,11 +160,25 @@ final class PushNotifications: @unchecked Sendable {
         try persist(registrations, replacing: original)
     }
 
-    /// Only run expiry after a healthy read. If the save fails, the caller does not send.
+    /// Only run expiry after a healthy read. Keep expiry in memory even if the save fails.
     private func refreshAndExpire() throws {
         let original = try refreshRegistrations()
-        let next = expiringOwnerless(at: now())
-        if next != registrations { try saveWithExpiry(next, replacing: original) }
+        let now = now()
+        let next = expiringOwnerless(at: now)
+        guard next != registrations else { return }
+        cancelExpired(keeping: next)
+        registrations = next
+        do { try persist(next, replacing: original) }
+        catch {
+            guard !storageDamaged else { throw error } // The reader already reported the damage.
+            ShepherdLog.warning("Could not update ownerless push registrations: \(error.localizedDescription)")
+            // If the save's re-read found a replacement file, expire its rows instead of restoring the old ones.
+            if diskBytes != original {
+                let current = expiringOwnerless(at: now)
+                cancelExpired(keeping: current)
+                registrations = current
+            }
+        }
     }
 
     private func expiringOwnerless(at now: Date) -> [String: Registration] {
@@ -185,9 +197,13 @@ final class PushNotifications: @unchecked Sendable {
     }
 
     private func saveWithExpiry(_ next: [String: Registration], replacing original: Data?) throws {
-        for id in registrations.keys where next[id] == nil { cancel(id) }
+        cancelExpired(keeping: next)
         try persist(next, replacing: original)
         registrations = next
+    }
+
+    private func cancelExpired(keeping next: [String: Registration]) {
+        for id in registrations.keys where next[id] == nil { cancel(id) }
     }
 
     private func refreshRegistrations() throws -> Data? {
@@ -231,10 +247,14 @@ final class PushNotifications: @unchecked Sendable {
             }) {
             case .loaded(let saved):
                 var next: [String: Registration] = [:]
+                let now = now()
                 for var registration in saved {
                     registration.id = UUID(uuidString: registration.id)!.uuidString
                     // A rewrite must never silently drop a row with a colliding ID.
                     guard next[registration.id] == nil else { throw Failure.invalid }
+                    if registration.deviceID == nil, let firstSeen = registration.ownerlessFirstSeen, firstSeen > now {
+                        registration.ownerlessFirstSeen = now
+                    }
                     next[registration.id] = registration
                 }
                 for (id, old) in registrations where next[id] != old { cancel(id) }
