@@ -17,8 +17,9 @@ import Testing
 /// launchd, so the test builds the same `Services` on scratch settings. This process opens the host's socket with a real request
 /// and counts the host's descriptors with `proc_pidinfo`.
 ///
-/// After #879 (`startFleet`) `SessionHost.run` is told to start Fleet, as `main` tells it: pass `startFleet: true` below. Until then
-/// the test fails on "the index never reached every checkout", so a host that never started Fleet cannot pass.
+/// Once #879 (`fix/host-fd-exhaustion`) has merged, `main` tells `SessionHost.run` to start Fleet (`startFleet: true`): pass it in
+/// `launch` too. Until then, and if it is forgotten, the test fails on "the index never reached every checkout", so a host that
+/// never started Fleet cannot pass.
 @Suite("Host launch on a large workspace", .serialized, .integrationTimeLimit)
 struct HostLaunchTests {
     /// Spaces Fleet syncs; every fifth also has a worktree a thread works in, which Fleet indexes too.
@@ -31,11 +32,13 @@ struct HostLaunchTests {
     /// `host.sock` answers a real request within this long of the host starting.
     static let socketBound: Duration = .seconds(20)
     /// Fleet's indexes have each made their first scan within this long.
-    static let scanBound: Duration = .seconds(60)
-    /// The host's descriptors, with every index running: under launchd's limit with room for sockets, pipes and pi to come.
-    static let descriptorBudget = 200
-    /// What each space may add to the host's descriptors, beyond the ones the host started with.
-    static let descriptorsPerSpace = 0.5
+    static let scanBound: Duration = .seconds(30)
+    /// The host's descriptors, at their peak and once every index has scanned: under launchd's limit, so a host that is not given
+    /// a higher one still starts.
+    static let descriptorBudget = 256
+    /// What each space may add to the host's descriptors once Fleet is running, beyond the ones the host started with (the
+    /// sync engine watches each checkout's `.git/config`: one).
+    static let descriptorsPerSpace = 2.0
 
     @Test func aHostStartsAndAnswersWithManySyncedSpaces() async throws {
         let workspace = try Workspace.make(label: "current")
@@ -140,6 +143,30 @@ struct HostLaunchTests {
             return report
         }
         defer { stop(host.pid) }
+        // The peak is what a limit meets: a count taken after the host has given descriptors back can be low.
+        let peak = Locked<(count: Int, types: [UInt32: Int])>((0, [:]))
+        let top = Locked<[String]>([])
+        let sampler = Task.detached {
+            var lastNamed = 0
+            while !Task.isCancelled {
+                if let list = Self.fdList(of: host.pid), list.count > peak.current.count {
+                    peak.withValue { $0 = (list.count, Dictionary(list.map { ($0.proc_fdtype, 1) }, uniquingKeysWith: +)) }
+                    if list.count > 1000 && list.count > lastNamed + 1000 {
+                        lastNamed = list.count
+                        var names: [String: Int] = [:]
+                        for entry in list where entry.proc_fdtype == 1 {
+                            var info = vnode_fdinfowithpath()
+                            guard proc_pidfdinfo(host.pid, entry.proc_fd, PROC_PIDFDVNODEPATHINFO, &info, Int32(MemoryLayout<vnode_fdinfowithpath>.size)) > 0 else { continue }
+                            let path = withUnsafePointer(to: &info.pvip.vip_path) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) } }
+                            names[path, default: 0] += 1
+                        }
+                        top.withValue { $0 = names.sorted { $0.value > $1.value }.prefix(12).map { "\($0.value) x \($0.key)" } }
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        defer { sampler.cancel() }
         let started = ContinuousClock.now
         report.note("host pid \(host.pid), \(host.baseline) descriptors before Fleet, soft limit \(host.limit)")
 
@@ -173,18 +200,23 @@ struct HostLaunchTests {
         let afterStart = descriptors(of: host.pid)
         // 3. The first scan finishes, and the host still answers.
         var scanned = false
-        try? await eventually("every index's first scan", timeout: scanBound, poll: .milliseconds(100)) {
-            snapshot = await read()
-            scanned = snapshot?.index.map { !$0.indexing && $0.repos.count == expectedRoots && $0.repos.allSatisfy(\.ready) } ?? false
-            return scanned
+        // Indexes that never started are not waited for twice.
+        if running == expectedRoots {
+            try? await eventually("every index's first scan", timeout: scanBound, poll: .milliseconds(100)) {
+                snapshot = await read()
+                scanned = snapshot?.index.map { !$0.indexing && $0.repos.count == expectedRoots && $0.repos.allSatisfy(\.ready) } ?? false
+                return scanned
+            }
         }
         let afterScan = descriptors(of: host.pid)
         let growth = Double(max(afterStart ?? 0, afterScan ?? 0) - host.baseline) / Double(expectedRoots)
-        let measured = "\(host.baseline) before, \(afterStart.map(String.init) ?? "?") with \(running.map(String.init) ?? "no") indexes running, "
+        let measured = "peak \(peak.current.count), \(host.baseline) before, \(afterStart.map(String.init) ?? "?") with \(running.map(String.init) ?? "no") indexes running, "
             + "\(afterScan.map(String.init) ?? "?") after the first scan (\(String(format: "%.2f", growth)) per checkout)"
         report.note(measured)
-        let within = [afterStart, afterScan].allSatisfy { $0.map { $0 < descriptorBudget } ?? false } && growth <= descriptorsPerSpace
-        let expectedDescriptors = "under \(descriptorBudget) descriptors and at most \(descriptorsPerSpace) more per checkout, with all \(expectedRoots) indexes running"
+        report.note("peak \(peak.current.count) descriptors (by type: \(peak.current.types.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")); 1 vnode, 2 socket, 3 pshm, 5 pipe, 6 kqueue)")
+        for line in top.current { report.note("  \(line)") }
+        let within = [afterStart, afterScan, peak.current.count].allSatisfy { $0.map { $0 < descriptorBudget } ?? false } && growth <= descriptorsPerSpace
+        let expectedDescriptors = "under \(descriptorBudget) descriptors at every sample and at most \(descriptorsPerSpace) more per checkout, with all \(expectedRoots) indexes running"
         if running == expectedRoots, within {
             report.pass(steps.descriptors, expected: expectedDescriptors, actual: measured)
         } else {
@@ -208,14 +240,16 @@ struct HostLaunchTests {
         }
     }
 
-    /// The process's open descriptors, as `lsof` counts them.
-    static func descriptors(of pid: pid_t) -> Int? {
+    /// The process's open descriptors, as `lsof` lists them.
+    static func fdList(of pid: pid_t) -> [proc_fdinfo]? {
         let size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
         guard size > 0 else { return nil }
         var list = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(size) / MemoryLayout<proc_fdinfo>.stride + 32)
         let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &list, Int32(list.count * MemoryLayout<proc_fdinfo>.stride))
-        return bytes > 0 ? Int(bytes) / MemoryLayout<proc_fdinfo>.stride : nil
+        return bytes > 0 ? Array(list.prefix(Int(bytes) / MemoryLayout<proc_fdinfo>.stride)) : nil
     }
+
+    static func descriptors(of pid: pid_t) -> Int? { fdList(of: pid)?.count }
 
     // MARK: Evidence
 
