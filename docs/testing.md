@@ -52,7 +52,7 @@ means all five, and each exits non-zero on a failure:
 | `c-auth` | the host sockets' refusal corpus |
 | `c-settings` | every settings write path |
 | `c-wire` | the codec and the request sequences of a scratch host |
-| `c-launch` | a real host process, started with launchd's 256-descriptor limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, runs Fleet's content indexes within a descriptor budget (256 at the peak, 2 per space once running) and still answers after their first scan; once more from the oldest `state.json` shape in the state golden |
+| `c-launch` | a real host process, started with launchd's 256-descriptor limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, runs Fleet's content indexes within a descriptor budget (under 256 once running, at most 2 per space, a peak of at most 3 per space) and still answers after their first scan; once more from the oldest `state.json` shape in the state golden |
 
 An unfiltered `swift test -j 4` now finishes in about an hour. It currently reports roughly 900 to
 1,000 failures; most of those tests pass when run alone. For PR work, use filtered runs and the
