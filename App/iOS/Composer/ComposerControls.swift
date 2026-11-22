@@ -162,12 +162,13 @@ struct SpeedChip: View {
 /// "/ commands": puts a slash in an empty field, which opens the command list.
 struct CommandsChip: View {
     let open: () -> Void
+    @Environment(\.shComposerSize) private var size
 
     var body: some View {
         Button(action: open) {
             HStack(spacing: SH.Space.s) {
                 Text("/").font(.sh(.mono))
-                Text("commands")
+                if size.showsChipWords() { Text("commands") }
             }
         }
         .accessibilityLabel("Slash commands")

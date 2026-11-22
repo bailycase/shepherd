@@ -60,6 +60,7 @@ struct NewThreadScreen: View {
 private struct NewThreadForm: View {
     @Bindable var model: NewThreadModel
     let pad: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicType
     @FocusState private var promptFocused: Bool
     /// Popovers widen with the text size, so a host's name still fits at accessibility sizes.
     @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
@@ -160,8 +161,12 @@ private struct NewThreadForm: View {
             // room (Where it runs still shows it), then the names truncate.
             ViewThatFits(in: .horizontal) {
                 phoneChips(host: true)
+                    .fixedSize(horizontal: !dynamicType.isAccessibilitySize, vertical: false)
                 phoneChips(host: false)
+                    .fixedSize(horizontal: !dynamicType.isAccessibilitySize, vertical: false)
+                if !dynamicType.isAccessibilitySize { phoneChips(host: false) }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             // "claude-…· Medium" keeps both ends of a name that doesn't fit.
             .truncationMode(.middle)
             .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
@@ -179,7 +184,6 @@ private struct NewThreadForm: View {
             }
             modelAndThinkingChip
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// "claude-opus · Medium": opens the sheet that chooses both.

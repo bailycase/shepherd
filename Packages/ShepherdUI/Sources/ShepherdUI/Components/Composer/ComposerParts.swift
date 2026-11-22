@@ -169,21 +169,28 @@ extension SHComposer where Top == EmptyView {
 /// `textSecondary`, radius 6; hover and active fill `bgHover`.
 public struct SHComposerChipStyle: ButtonStyle {
     let active: Bool
+    let touchWidth: Bool
 
-    public init(active: Bool = false) { self.active = active }
+    public init(active: Bool = false, touchWidth: Bool = false) {
+        self.active = active
+        self.touchWidth = touchWidth
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
-        SHComposerChip(configuration: configuration, active: active)
+        SHComposerChip(configuration: configuration, active: active, touchWidth: touchWidth)
     }
 }
 
 extension ButtonStyle where Self == SHComposerChipStyle {
-    public static func shComposerChip(active: Bool = false) -> SHComposerChipStyle { SHComposerChipStyle(active: active) }
+    public static func shComposerChip(active: Bool = false, touchWidth: Bool = false) -> SHComposerChipStyle {
+        SHComposerChipStyle(active: active, touchWidth: touchWidth)
+    }
 }
 
 private struct SHComposerChip: View {
     let configuration: ButtonStyleConfiguration
     let active: Bool
+    let touchWidth: Bool
     @Environment(\.isEnabled) private var enabled
     @State private var hovering = false
 
@@ -194,6 +201,7 @@ private struct SHComposerChip: View {
             .foregroundStyle(.sh.textSecondary)
             .lineLimit(1)
             .padding(.horizontal, SH.Space.m)
+            .frame(minWidth: touchWidth ? SH.Height.touch : nil)
             .frame(height: SHComposerMetrics.chipHeight)
             .background {
                 RoundedRectangle(cornerRadius: SH.Radius.s).fill(filled ? Color.sh.bgHover : .clear)

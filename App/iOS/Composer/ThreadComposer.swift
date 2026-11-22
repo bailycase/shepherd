@@ -21,6 +21,8 @@ import ShepherdRemote
 /// details as a sheet.
 struct ThreadComposer: View {
     let ref: AgentRef
+    var verticalBars = false
+    @Environment(\.dynamicTypeSize) private var dynamicType
     @Environment(ThreadStores.self) private var threads
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -38,6 +40,7 @@ struct ThreadComposer: View {
     @State private var dropTargeted = false
 
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
+    private var fitsBesideRail: Bool { verticalBars && !dynamicType.isAccessibilitySize }
 
     var body: some View {
         let _ = SHRenderProbe.tick("composer.body")
@@ -160,7 +163,7 @@ struct ThreadComposer: View {
                     }
                     .shTransition(.content)
                 }
-                if wide || designChat {
+                if wide || designChat || fitsBesideRail {
                     card(store: store, state: state, host: host, live: live)
                 } else {
                     phone(store: store, state: state, host: host, live: live)
@@ -292,15 +295,21 @@ struct ThreadComposer: View {
                   : store.commands.contains(where: { $0.source == "skill" }) ? "Follow up, / for commands, $ for skills…"
                   : "Follow up, or / for commands…", command: state.matches != nil)
         } controls: {
-            // Where the row outgrows the card (a narrow column, as beside iPhone Duo's fold, or
-            // the accessibility sizes) it scrolls rather than truncating every chip, and Send
-            // stays put.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
-                ScrollView(.horizontal) {
-                    HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
+                if fitsBesideRail {
+                    // The system already reserves the rail and hinge. Fit the controls to the
+                    // remaining column, abbreviating before taking a second line.
+                    HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live, compact: true) }
+                        .shComposerSize(.compact)
+                    SHFlowLayout(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live, compact: true) }
+                        .shComposerSize(.compact)
+                } else {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
+                    }
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.trailing, SH.Space.m)
@@ -312,9 +321,10 @@ struct ThreadComposer: View {
         }
     }
 
-    @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
-        if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
-        chips(store: store, state: state, live: live).buttonStyle(.shComposerChip())
+    @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool, compact: Bool = false) -> some View {
+        if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: !fitsBesideRail) }
+        chips(store: store, state: state, live: live, compact: compact)
+            .buttonStyle(.shComposerChip(touchWidth: fitsBesideRail))
     }
 
     // MARK: Parts
@@ -327,7 +337,7 @@ struct ThreadComposer: View {
                                 label: "Message to agent", pasteImages: paste)
     }
 
-    @ViewBuilder private func chips(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
+    @ViewBuilder private func chips(store: NativeThreadStore, state: ComposerState, live: Bool, compact: Bool = false) -> some View {
         if !store.commands.isEmpty, !designChat {
             CommandsChip {
                 if store.draft.isEmpty { store.draft = "/" }
@@ -335,7 +345,7 @@ struct ThreadComposer: View {
             }
         }
         if store.model != nil || store.supportedActions.contains("setModel") {
-            ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel"), short: designChat) {
+            ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel"), short: designChat || compact) {
                 presentation.choosingModel = true
             }
         }

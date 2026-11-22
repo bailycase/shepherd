@@ -88,13 +88,13 @@ struct ThreadScreen: View {
                         transcript
                     }
                 } composer: {
-                    if agent != nil { composer }
+                    if agent != nil { composer(verticalBars: verticalBars) }
                 }
             } else {
                 transcript
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         if agent != nil {
-                            composer
+                            composer(verticalBars: verticalBars)
                                 // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
                                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
                                 .frame(maxWidth: .infinity)
@@ -205,8 +205,8 @@ struct ThreadScreen: View {
     }
 
     /// The thread's composer, its height capped at a share of the thread.
-    private var composer: some View {
-        ThreadComposer(ref: ref)
+    private func composer(verticalBars: Bool) -> some View {
+        ThreadComposer(ref: ref, verticalBars: verticalBars)
             .composerTextDrop(ref)
             .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
     }
