@@ -26,6 +26,43 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored weak var guardrail: ThreadTailGuard?
     @ObservationIgnored weak var paging: ThreadHistoryAnchor?
     @ObservationIgnored private var prependedAt: CGRect?
+    @ObservationIgnored private var scrollIntent = ScrollIntent()
+    @ObservationIgnored private var scrollerTracking: Task<Void, Never>?
+    @ObservationIgnored private var heldPrepend: (rows: ArraySlice<NativeThreadRow>, spacing: CGFloat, settings: Settings)?
+
+    var physicalScrollerHeld: Bool { scrollIntent.physicalScrollerHeld }
+
+    func holdScroller() { scrollIntent.scrollerGrab(physical: true) }
+
+    func releaseScroller() {
+        guard physicalScrollerHeld else { return }
+        scrollIntent.scrollerRelease()
+        if let heldPrepend {
+            self.heldPrepend = nil
+            update(heldPrepend.rows, spacing: heldPrepend.spacing, settings: heldPrepend.settings)
+            // The cached column has the same inputs. Invalidate the mounted window after the
+            // deferred table replacement even when its endpoint IDs have not changed.
+            windowRevision &+= 1
+        }
+        _ = tryPrepend(in: stack?.enclosingScrollView, pass: "scroller release")
+    }
+
+    func observeScroller(_ event: NSEvent, in scroll: NSScrollView) {
+        if event.type == .leftMouseUp { releaseScroller(); return }
+        guard event.window === scroll.window, let knob = scroll.verticalScroller,
+              knob.isEnabled, !knob.isHiddenOrHasHiddenAncestor, knob.testPart(event.locationInWindow) == .knob else { return }
+        holdScroller()
+        scrollerTracking?.cancel()
+        // NSScroller's tracking loop can consume the up event. Check again once tracking ends.
+        scrollerTracking = Task { @MainActor [weak self] in
+            while !Task.isCancelled, self?.physicalScrollerHeld == true {
+                if NSEvent.pressedMouseButtons & 1 == 0 { self?.releaseScroller(); return }
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+
+    private var windowRevision = 0
 
     struct Settings: Equatable {
         let session: String?
@@ -42,6 +79,11 @@ final class ThreadMeasuredHistory {
         }
         guard self.rows != rows || table.spacing != spacing else { return }
         let oldFirst = self.rows.first?.id
+        if physicalScrollerHeld, let oldFirst, oldFirst == paging?.rowID,
+           rows.first?.id != oldFirst, rows.contains(where: { $0.id == oldFirst }) {
+            heldPrepend = (rows, spacing, settings)
+            return
+        }
         self.rows = rows
         table.replace(rows.map { .init(id: $0.id, estimate: CGFloat(NativeRowHeight.row($0))) }, spacing: spacing)
         if let oldFirst, let index = table.index(for: oldFirst), index > 0 {
@@ -59,9 +101,13 @@ final class ThreadMeasuredHistory {
         builtBounds = nil
         prependedAt = nil
         lastDocumentHeight = nil
+        heldPrepend = nil
+        scrollerTracking?.cancel()
+        scrollIntent.scrollerRelease()
     }
 
     func window() -> (rows: ArraySlice<NativeThreadRow>, leading: CGFloat, trailing: CGFloat) {
+        _ = windowRevision
         guard let bounds = builtBounds, let first = table.index(for: bounds.first),
               let last = table.index(for: bounds.last), first <= last else {
             return (rows.prefix(0), table.height, 0)
@@ -185,7 +231,7 @@ final class ThreadMeasuredHistory {
         // At an explicit landing there is no previous reader position to preserve. Keep
         // the measurements, and let the next layout anchor to the landed clip instead.
         guard !landingJump, paging?.hasPrepend != true, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
-              MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
+              !physicalScrollerHeld else { return }
         ThreadHistoryAnchor.correct(delta, in: scroll, rowID: anchor < table.rows.count ? table.rows[anchor].id : nil,
                                     actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height)")
     }

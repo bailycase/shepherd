@@ -24,7 +24,7 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var generation = 0
 
     #if DEBUG
-    @ObservationIgnored var measured = false
+    @ObservationIgnored weak var measuredHistory: ThreadMeasuredHistory?
     @ObservationIgnored private var prepend: (delta: CGFloat, oldDocumentHeight: CGFloat)?
     @ObservationIgnored private(set) var correctingPrepend = false
     var hasPrepend: Bool { prepend != nil || correctingPrepend }
@@ -35,7 +35,7 @@ final class ThreadHistoryAnchor {
     }
 
     func correctPrepend(in scroll: NSScrollView?, pass: String) -> Bool {
-        guard let prepend, let scroll, self.scroll === scroll else { return false }
+        guard measuredHistory?.physicalScrollerHeld != true, let prepend, let scroll, self.scroll === scroll else { return false }
         let clip = scroll.contentView
         let height = clip.documentRect.height
         let origin = clip.bounds.minY
@@ -45,7 +45,6 @@ final class ThreadHistoryAnchor {
         // A stack callback can arrive before the scroll view can accommodate the new origin.
         guard height > prepend.oldDocumentHeight, abs(clip.constrainBoundsRect(target).minY - target.minY) <= 1 else { return false }
         self.prepend = nil
-        guard MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return false }
         correctingPrepend = true
         defer { correctingPrepend = false }
         Self.correct(prepend.delta, in: scroll, rowID: rowID)
@@ -92,7 +91,7 @@ final class ThreadHistoryAnchor {
             return
         }
         #if DEBUG
-        if measured {
+        if measuredHistory != nil {
             waiting = false
             return
         }
@@ -109,7 +108,7 @@ final class ThreadHistoryAnchor {
     func prepended(firstID: String?, session: String?, active: Bool, materialize: @escaping (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
         #if DEBUG
-        if measured { return }
+        if measuredHistory != nil { return }
         #endif
         guard !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
         if waiting {

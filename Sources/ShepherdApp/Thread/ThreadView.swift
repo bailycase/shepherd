@@ -1153,6 +1153,20 @@ struct ThreadView: View {
         // handler holds only what it moves.
         let hovering = $hovering
         let wheel = wheelIntent()
+        #if DEBUG
+        if let measuredHistory {
+            wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown, .leftMouseUp]) {
+                [weak measuredHistory, weak guardian = tailGuard] event in
+                if event.type == .scrollWheel {
+                    if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
+                } else if let scroll = guardian?.scrollView() {
+                    measuredHistory?.observeScroller(event, in: scroll)
+                }
+                return event
+            }
+            return
+        }
+        #endif
         wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
             return event

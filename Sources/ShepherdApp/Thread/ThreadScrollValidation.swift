@@ -307,7 +307,7 @@ public enum ThreadScrollValidation {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         Task { @MainActor in
-            let fixtures = [ScrollFixture(), ScrollFixture(), ScrollFixture()]
+            let fixtures = (0..<(measuredHistory ? 4 : 3)).map { _ in ScrollFixture() }
             @MainActor func frames() -> [String: [MacScrollValidationTrace.Frame]] {
                 fixtures.reduce(into: [:]) { $0.merge($1.trace.frames, uniquingKeysWith: { _, new in new }) }
             }
@@ -321,6 +321,7 @@ public enum ThreadScrollValidation {
                 if !pagingOnly && wheelTurns == nil {
                     try await fixtures[1].run(crossing: .slow)
                     try await fixtures[2].run(crossing: .flick)
+                    if measuredHistory { try await fixtures[3].run(pagingOnly: true, heldScroller: true) }
                 }
                 try encoder.encode(frames()).write(to: url, options: .atomic)
                 exit(0)
@@ -400,7 +401,7 @@ private final class ScrollFixture {
 
     enum Crossing { case slow, flick }
 
-    func run(crossing: Crossing? = nil, pagingOnly: Bool = false, wheelTurns: Int? = nil) async throws {
+    func run(crossing: Crossing? = nil, pagingOnly: Bool = false, wheelTurns: Int? = nil, heldScroller: Bool = false) async throws {
         guard let screen = NSScreen.main else { throw ValidationError("display link requires a WindowServer screen") }
         MacScrollValidationTrace.current = trace
         SHRenderProbe.scrollEvents = { [weak trace] event, source in trace?.record(event, source: source) }
@@ -459,7 +460,7 @@ private final class ScrollFixture {
             try await wheelWalkToTop(in: scrollView(), timeLimit: .seconds(45))
             return
         }
-        if crossing == nil { trace.scenario = "slow-scroll-streaming" }
+        if crossing == nil && !heldScroller { trace.scenario = "slow-scroll-streaming" }
         await trace.advance()
         try await trace.waitFor("the reader inside the sticky band") {
             self.trace.latest.map { $0.following && $0.distance <= ThreadTailGuard.band } == true
@@ -497,7 +498,7 @@ private final class ScrollFixture {
             try await crossBand(crossing)
             return
         }
-        trace.scenario = "flick-and-stop"
+        if !heldScroller { trace.scenario = "flick-and-stop" }
         await trace.advance()
         // Drive the production phase handler without posting events or relying on device inertia.
         try phase(from: .idle, to: .interacting)
@@ -516,7 +517,7 @@ private final class ScrollFixture {
         await trace.settle()
         try requireIntent(.idle)
 
-        trace.scenario = "mid-history-new-turn"
+        if !heldScroller { trace.scenario = "mid-history-new-turn" }
         await trace.advance()
         let destination = try scrollView().contentView.documentRect.height / 2
         if let measuredHistory = trace.measuredHistory {
@@ -540,7 +541,7 @@ private final class ScrollFixture {
         }
         await trace.settle()
 
-        trace.scenario = "page-older-history"
+        trace.scenario = heldScroller ? "page-while-scroller-held" : "page-older-history"
         await trace.advance()
         try scroll(to: -.greatestFiniteMagnitude)
         try await trace.waitFor("the original page's first row") { self.trace.latest?.first == "user-60" }
@@ -556,11 +557,21 @@ private final class ScrollFixture {
         }
         try await trace.waitFor("the older page request") { self.pageReply != nil }
         await trace.advance()
+        let scrollerHistory = heldScroller ? trace.measuredHistory : nil
+        if heldScroller {
+            guard let scrollerHistory else { throw ValidationError("missing measured history for held paging") }
+            scrollerHistory.holdScroller()
+        }
         trace.mark("fixture.pageReply")
         pageReply?.resume(returning: .snapshot(value: Self.snapshot(messages: Array(history.prefix(while: { $0.entryID != "user-60" })))))
         pageReply = nil
         try await trace.waitFor("the older page to prepend") { self.store.messages.first?.entryID == "user-0" }
         await trace.settle()
+        if let scrollerHistory {
+            trace.mark("fixture.scrollerRelease")
+            scrollerHistory.releaseScroller()
+            await trace.settle()
+        }
         if pagingOnly { return }
 
         trace.scenario = "window-resize"

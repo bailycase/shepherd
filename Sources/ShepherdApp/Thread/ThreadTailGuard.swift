@@ -404,7 +404,7 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
         #if DEBUG
         view.measuredHistory = measuredHistory
-        historyAnchor?.measured = true
+        historyAnchor?.measuredHistory = measuredHistory
         measuredHistory?.paging = historyAnchor
         measuredHistory?.guardrail = guardian
         #endif

@@ -513,8 +513,23 @@ def far_turn_evidence(frames, target, caller):
                 missing or drift or jumps or gaps["frames_blank_over_8_pt"])}
 
 
+HELD_PAGING = "page-while-scroller-held"
+
+
+def held_paging_evidence(frames):
+    motion = measure_scroll(frames)
+    releases = [i for i, frame in enumerate(frames) if any(e["caller"] == "fixture.scrollerRelease" for e in frame["events"])]
+    writes = [i for i, frame in enumerate(frames) for e in frame["events"] if e["caller"] == "thread.write.M6"]
+    gaps = band_evidence(frames)
+    return {"frames": len(frames), "release_frames": releases, "M6_frames": writes,
+            "jumps": len(motion["jumps"]), "drift": len(motion["drift"]), "anchor_losses": len(motion["anchor_losses"]),
+            "frames_blank_over_8_pt": gaps["frames_blank_over_8_pt"],
+            "passed": len(releases) == len(writes) == 1 and releases[0] <= writes[0] and not (
+                motion["jumps"] or motion["drift"] or motion["anchor_losses"] or gaps["frames_blank_over_8_pt"])}
+
+
 def scroll_evidence(scenarios, measured_history=False):
-    extra = FAR_TURN_JUMPS if measured_history else ()
+    extra = (*FAR_TURN_JUMPS, HELD_PAGING) if measured_history else ()
     if set(scenarios) != set((*SCROLL_SCENARIOS, *SCROLL_EXTRA_SCENARIOS, *extra)):
         raise ValueError("expected all nine scroll motion scenarios and all three capture scenarios, plus far-turn jumps with measured history")
     summaries = {}
@@ -543,6 +558,7 @@ def scroll_evidence(scenarios, measured_history=False):
     if measured_history:
         for name, (target, caller) in FAR_TURN_JUMPS.items():
             summaries[name] = far_turn_evidence(scenarios[name], target, caller)
+        summaries[HELD_PAGING] = held_paging_evidence(scenarios[HELD_PAGING])
     return summaries
 
 
@@ -659,6 +675,9 @@ def run_scroll_case(mac, command, wrapper, log, anchor_off=None, ios_frames=None
             print(f"{name}: {actual}")
             record(name, "passed" if summary["passed"] else "failed",
                    "one M11 write, target within 2 pt of reading top, 0 jumps above 2 pt, no blank above 8 pt", actual)
+        held = summaries[HELD_PAGING]
+        print(f"{HELD_PAGING}: {json.dumps(held)}")
+        record(HELD_PAGING, "passed" if held["passed"] else "failed", "0 pt movement and one M6 write after release", json.dumps(held))
     for name in ("key-paging", "scroller-drag"):
         record(name, "passed", "Dev fixture observed movement and matching intent", "Dev fixture verified both")
     record("released-thread", "passed", "hidden transcript released", "Dev fixture observed release")
@@ -726,7 +745,7 @@ def run_case(name, anchor_off=None, ios_frames=None):
 
     required_steps = case.steps | {("complete", None)}
     if scroll and os.environ.get("SHEPHERD_SCROLL_MEASURED_HISTORY") == "1":
-        required_steps |= {(name, None) for name in FAR_TURN_JUMPS}
+        required_steps |= {(name, None) for name in (*FAR_TURN_JUMPS, HELD_PAGING)}
     records, problems = read_steps(run, required_steps)
     failed = [step for step in records.values() if step["status"] == "failed"]
     for step in failed:
