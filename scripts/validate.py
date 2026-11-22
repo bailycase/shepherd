@@ -107,6 +107,13 @@ CASES = {
         {("codec-golden", None), ("compare-golden", None)}, "scratch-host request sequences matched the golden", "wire",
         golden="Tests/Fixtures/c-wire.json",
     ),
+    "c-launch": Case(
+        "HostLaunchTests",
+        {(step, None) for step in ("socket-answers", "descriptors", "still-answering", "legacy-state-socket-answers",
+                                    "legacy-state-descriptors", "legacy-state-still-answering")},
+        "the host answered and held its descriptors with 150 synced spaces", "real host",
+        scenario="Tests/ShepherdAppIntegrationTests/HostLaunchTests.swift",
+    ),
 }
 
 
