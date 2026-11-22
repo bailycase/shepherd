@@ -539,7 +539,7 @@ struct HookEditScreen: View {
             if !editor.readOnly {
                 Button("+ Add another command") { editor.addHandler() }
                     .font(.sh(.ui))
-                    .foregroundStyle(AgentState.running.textColor)
+                    .foregroundStyle(Color.sh.lantern)
                     .padding(.horizontal, SH.Space.xs)
                     .frame(minHeight: SH.Height.touch)
             }
