@@ -38,6 +38,8 @@ enum SidebarActivityItem: Identifiable, Equatable {
     case project(SidebarLogicalProject)
     /// A pull request or issue pinned from Issues & PRs, in Pinned (PRSidebarPinned).
     case forgePin(SidebarForgePin)
+    /// Why Pinned can't show its pull requests and issues (their file on the host is damaged).
+    case forgePinsProblem(String)
 
     var id: AnyHashable {
         switch self {
@@ -46,6 +48,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
         case .automation(let automation, _): AnyHashable(automation.key)
         case .project(let project): AnyHashable(project.ref)
         case .forgePin(let pin): AnyHashable(pin.ref)
+        case .forgePinsProblem: AnyHashable("forgePinsProblem")
         }
     }
 }
@@ -73,7 +76,7 @@ extension SidebarLists {
     /// `selectedAutomation`: the automation the Automations page shows, marked on its row.
     func items(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = [], projects: [SidebarLogicalProject] = [],
                showsProjects: Bool = true,
-               selectedAutomation: AutomationKey? = nil, forgePins: [SidebarForgePin] = []) -> [SidebarActivityItem] {
+               selectedAutomation: AutomationKey? = nil, forgePins: [SidebarForgePin] = [], forgePinsProblem: String? = nil) -> [SidebarActivityItem] {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
@@ -86,11 +89,14 @@ extension SidebarLists {
                 items += automationBlock(collapsed: collapsed, openRunGroups: openRunGroups, selected: selectedAutomation)
                 continue
             }
-            // Pinned threads, then pinned pull requests and issues, under one header.
-            if section == .pinned, !forgePins.isEmpty {
+            // Pinned threads, then pinned pull requests and issues (or why they can't show), under one header.
+            if section == .pinned, !forgePins.isEmpty || forgePinsProblem != nil {
                 let folded = collapsed.contains(.pinned)
                 items.append(.header(.pinned, count: rows.count + forgePins.count, collapsed: folded))
-                if !folded { items += rows.map(SidebarActivityItem.row) + forgePins.map(SidebarActivityItem.forgePin) }
+                if !folded {
+                    items += rows.map(SidebarActivityItem.row) + forgePins.map(SidebarActivityItem.forgePin)
+                    items += forgePinsProblem.map { [SidebarActivityItem.forgePinsProblem($0)] } ?? []
+                }
                 continue
             }
             items += block(section, rows)
@@ -180,7 +186,7 @@ extension ShepherdViewModel {
         presentedSidebarLists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
                                     projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
                                     selectedAutomation: shownDestination == .automations ? automationsPageSelection : nil,
-                                    forgePins: sidebarForgePins)
+                                    forgePins: sidebarForgePins, forgePinsProblem: forgeStore.sidebar?.pinsProblem)
     }
 
     /// Issues & PRs' pins as Pinned draws them, newest first.

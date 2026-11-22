@@ -1381,6 +1381,8 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
+    // MARK: - Model catalog
+
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> ModelListing
@@ -1394,6 +1396,28 @@ public final class SessionServer: @unchecked Sendable {
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
     /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
     public func modelListing() -> ModelListing { modelCatalog() }
+
+    private func remoteListModels(_ input: RouteInput) {
+        switch input.request {
+        case .listModels(let id):
+            let send = input.send
+            // Asking pi shells out (~0.5s cold); never block the server
+            // queue. Reply from the queue once the catalog returns.
+            let catalog = modelCatalog
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let listing = catalog()
+                self?.queue.async {
+                    send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages))
+                }
+            }
+        default:
+            preconditionFailure("Mismatched listModels route")
+        }
+    }
+
+    // MARK: - Initialization
 
     /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
     /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
@@ -1842,8 +1866,12 @@ public final class SessionServer: @unchecked Sendable {
             threadFacts: { [weak self] agentID in
                 guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
                 let thread = self.rpcThread(forAgent: agentID)
+                let sessionID = thread?.session.id ?? agent.paneID.flatMap { pane in
+                    self.store.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: pane)?.sessionID
+                }
                 return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastThreadEventAt: thread?.lastTurnEventAt,
-                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure)
+                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure,
+                                        stopProblem: sessionID.flatMap { self.keptStarts[$0]?.problem })
             },
             threadResult: { [weak self] agentID in
                 guard let thread = self?.rpcThread(forAgent: agentID) else { return nil }
@@ -1867,7 +1895,8 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int, agentID: AgentID
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
-             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _):
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _),
+             .fleetListDispatches(let value, let agent):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -1888,6 +1917,9 @@ public final class SessionServer: @unchecked Sendable {
         switch message {
         case .fleetListHosts:
             reply(.fleetHosts(id: id, hosts: fleet.dispatch.hosts(for: agentID)), to: client)
+        case .fleetListDispatches:
+            let list = fleet.dispatch.listRows(for: agentID)
+            reply(.fleetDispatches(id: id, dispatches: list.rows, omitted: list.omitted), to: client)
         case .fleetDispatch(_, _, let key, let task, let title, let host, let model, let thinking):
             fleet.dispatch.dispatch(from: agentID, key: key, task: task, title: title, host: host, model: model, thinking: thinking, reply: answer)
         case .fleetDispatchStatus(_, _, let key):
@@ -3455,8 +3487,67 @@ public final class SessionServer: @unchecked Sendable {
         ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
     }
 
+    // MARK: - Routed requests (server queue)
+
+    struct RouteInput {
+        let request: RemoteRequest
+        let line: Data
+        let fd: Int32
+
+        // Call on the server queue. The send path checks that the original connection is still current.
+        let send: (RemoteReply) -> Void
+        let offeredCapabilities: () -> [String]
+        let remoteInstructions: (_ id: Int, _ request: RemoteInstructionsRequest) -> Void
+
+        fileprivate init(request: RemoteRequest, line: Data, fd: Int32, send: @escaping (RemoteReply) -> Void,
+                         offeredCapabilities: @escaping () -> [String],
+                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void) {
+            self.request = request
+            self.line = line
+            self.fd = fd
+            self.send = send
+            self.offeredCapabilities = offeredCapabilities
+            self.remoteInstructions = remoteInstructions
+        }
+    }
+
+    typealias Route = @Sendable (SessionServer, RouteInput) -> Void
+
+    // Group by family, one kind per line. Add kinds only under their family anchor here and in the switch.
+    // A duplicate kind traps on first use. Put each family handler beside its code; switch on input.request.
+    // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
+    static let remoteRoutes: [RemoteRequest.Kind: Route] = [
+        // Host settings
+        // Model catalog
+        .listModels: { $0.remoteListModels($1) },
+        // Push registration
+        // Settings catalogs
+        // Add new families above this line.
+    ]
+
     private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
+        #if DEBUG
+        dispatchPrecondition(condition: .onQueue(queue))
+        #endif
+        if let handler = Self.remoteRoutes[request.kind] {
+            let input = RouteInput(request: request, line: line, fd: client.fd,
+                                   send: { [weak self] in self?.send($0, to: client) },
+                                   offeredCapabilities: { [weak self] in self?.offeredCapabilities(to: client) ?? [] },
+                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) })
+            handler(self, input)
+            return
+        }
+        func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
+        // Route-table kinds share this case. Use leading commas for kinds after .listModels.
+        case
+            // Host settings
+            // Model catalog
+            .listModels
+            // Push registration
+            // Settings catalogs
+            // Add new families above this line.
+            : missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
@@ -3894,7 +3985,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 if watch { client.watchedExecutions.insert(key) } else { client.watchedExecutions.remove(key) }
             }
-            projectExecutionOnQueue(request) { result in
+            projectExecutionOnQueue(request, replyID: id) { result in
                 guard self.clients[client.fd] === client else { return }
                 switch result {
                 case .success(let value): self.send(.projectExecution(id: id, result: value), to: client)
@@ -4118,19 +4209,6 @@ public final class SessionServer: @unchecked Sendable {
                 queue.async {
                     guard let client, self.clients[client.fd] === client else { return }
                     self.send(refusal.map { .error(id: id, code: "refused", message: $0) } ?? .ok(id: id), to: client)
-                }
-            }
-        case .listModels(let id):
-            // Asking pi shells out (~0.5s cold); never block the server
-            // queue. Reply from the queue once the catalog returns.
-            let catalog = modelCatalog
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let listing = catalog()
-                self?.queue.async {
-                    guard let self, self.clients[client.fd] === client else { return }
-                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
                 }
             }
         case .addSpace(let id, let path):
@@ -5764,7 +5842,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -5974,9 +6052,9 @@ public final class SessionServer: @unchecked Sendable {
         case .prepareProjectConfiguration(let id, _, _):
             // Spaces need no approval any more; agents started by an older build still ask first.
             reply(.ok(id: id), to: client)
-        case .listAgents(let id, let agentID):
+        case .listAgents(let id, let agentID, let details):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
+            routeAgentPeerRequest(.list(agentID: agentID, details: details), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
@@ -6022,7 +6100,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -7175,8 +7253,8 @@ public final class SessionServer: @unchecked Sendable {
              .paneContent(let id, _, _),
              .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
-             .agents(let id, _),
-             .fleetHosts(let id, _), .fleetDispatch(let id, _),
+             .agents(let id, _, _),
+             .fleetHosts(let id, _), .fleetDispatch(let id, _), .fleetDispatches(let id, _, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _), .agentRenamed(let id, _, _),
@@ -10706,7 +10784,7 @@ public final class SessionServer: @unchecked Sendable {
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
         // removes it from state before its pi is killed, so a deletion still retires. A pi no
-        // pane is bound to keeps its agent only for the exits `keepsUnboundAgent` names.
+        // pane is bound to keeps its agent for the exits `keepsUnboundAgent` names.
         if let record = startRecords.removeValue(forKey: sessionID), agent != nil || record.keepsUnboundAgent {
             let thread = sessions[sessionID]?.thread
             let problem = record.problem(exitCode: code, signal: thread?.session.exitSignal)
@@ -10720,8 +10798,7 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
             if let problem, let agent {
-                let diskFull = problem.lines.contains { $0.contains("ENOSPC:") || $0.localizedCaseInsensitiveContains("no space left on device") }
-                fleet?.dispatch.agentStopped(agent, message: diskFull ? "No space left on device (ENOSPC)." : problem.title)
+                fleet?.dispatch.agentStopped(agent, problem: problem)
                 recordAgentFailure(agentID: agent, problem.title)
                 sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
             }

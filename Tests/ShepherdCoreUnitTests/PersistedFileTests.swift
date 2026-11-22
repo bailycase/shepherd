@@ -51,4 +51,50 @@ struct PersistedFileTests {
         #expect(throws: (any Error).self) { try PersistedFile<Settings>.jsonObject(in: Data(#"{"value":{"spaces":[]}}"#.utf8)) }
         #expect(throws: (any Error).self) { try PersistedFile<Settings>.jsonObject(in: Data(#"{"version":2,"value":{},"extra":1}"#.utf8)) }
     }
+
+    private func load(bytes: Data) throws -> PersistedFile<Settings> {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("persisted-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("file.json")
+        try bytes.write(to: url)
+        return PersistedFile<Settings>.load(from: url)
+    }
+
+    // These pin Foundation's decoder, which PersistedFile relies on. If one starts loading as healthy,
+    // Foundation changed and PersistedFile needs its own byte check.
+    @Test func bytesFoundationRejectsAreDamagedAndKeptIntact() throws {
+        let json = #"{"version":1,"off":["h"]}"#
+        let invalid = Data(#"{"version":1,"off":["h"#.utf8) + Data([0xFF, 0xFE]) + Data(#""]}"#.utf8)
+        let cases: [(String, Data)] = [
+            ("UTF-32", json.data(using: .utf32)!),
+            ("invalid UTF-8 inside a string", invalid),
+            ("a literal NUL after the document", Data(json.utf8) + Data([0])),
+        ]
+        for (name, bytes) in cases {
+            guard case .damaged(let original, _) = try load(bytes: bytes) else { Issue.record("\(name) loaded as healthy"); continue }
+            #expect(original == bytes, "\(name)")
+        }
+    }
+
+    // UTF-16 is accepted on purpose: it decodes to the same value, and the next save rewrites it as UTF-8.
+    @Test func utf16LoadsWithTheSameValueAsUTF8() throws {
+        let json = #"{"version":1,"off":["h","é😀"]}"#
+        let expected = try #require(try off(json))
+        for (name, bytes) in [
+            ("UTF-16 with a BOM", json.data(using: .utf16)!),
+            ("UTF-16LE without a BOM", json.data(using: .utf16LittleEndian)!),
+            ("UTF-16BE without a BOM", json.data(using: .utf16BigEndian)!),
+        ] {
+            guard case .loaded(let value) = try load(bytes: bytes) else { Issue.record("\(name) was not loaded"); continue }
+            #expect(value.off == expected, "\(name)")
+        }
+    }
+
+    @Test func validUTF8LoadsIncludingEscapedNULAndABOM() throws {
+        #expect(try off(#"{"version":1,"off":["h\u0000é\u00e9😀"]}"#) == ["h\u{0}éé😀"])
+        let bom = Data([0xEF, 0xBB, 0xBF]) + Data(#"{"version":1,"off":["h"]}"#.utf8)
+        guard case .loaded(let value) = try load(bytes: bom) else { Issue.record("a UTF-8 BOM did not load"); return }
+        #expect(value.off == ["h"])
+    }
 }

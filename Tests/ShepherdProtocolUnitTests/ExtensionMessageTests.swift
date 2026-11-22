@@ -24,11 +24,11 @@ struct ExtensionMessageTests {
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject,
-             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 71
+    static let caseCount = 72
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -70,6 +70,7 @@ struct ExtensionMessageTests {
         .app(id: 10, agentID: agent, action: .list, name: nil, lines: nil),
         .app(id: 11, agentID: agent, action: .logs, name: "Web app", lines: 40),
         .listAgents(id: 16, agentID: agent),
+        .listAgents(id: 17, agentID: agent, details: true),
         .peerMessageReceived(agentID: agent, deliveryID: 42),
         .prepareProjectConfiguration(id: 116, agentID: agent, cwd: "/project"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
@@ -88,6 +89,7 @@ struct ExtensionMessageTests {
         .fleetDispatchMessage(id: 135, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Thanks.", delivery: .followUp),
         .fleetDispatchCancel(id: 136, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
         .fleetDispatchClose(id: 137, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetListDispatches(id: 138, agentID: agent),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
         .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",
@@ -439,14 +441,14 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .parentInput, .stopManagedBash, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
-             .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .agentRenamed, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
+             .agents, .fleetHosts, .fleetDispatch, .fleetDispatches, .message, .agentRequest, .agentResult, .agentRenamed, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
              .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 45
+    static let caseCount = 46
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -501,6 +503,13 @@ struct ExtensionReplyTests {
             AgentPeerInfo(id: AgentID(rawValue: "worker"), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
             AgentPeerInfo(id: AgentID(rawValue: "me"), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
+        .agents(id: 2, agents: [
+            AgentPeerInfo(id: AgentID(rawValue: "far"), name: "far", status: "blocked", cwd: "/docs", isSelf: false, space: "acme-docs", lastActiveAt: 1_700_000_000_000, asking: true),
+        ], omitted: 3),
+        .fleetDispatches(id: 145, dispatches: [
+            FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test", branch: "fleet/flaky-test", mine: true),
+            FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c12", state: "done", closed: true),
+        ], omitted: 4),
         .fleetHosts(id: 140, hosts: [FleetHostInfo(name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: ["muse"], hasRepo: true, weight: "Prefer"),
                                      FleetHostInfo(name: "MacBook Pro", isThisMac: true, room: "no room", connected: true, without: ["bearcli"], weight: "Normal")]),
         .fleetDispatch(id: 141, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test")),
@@ -831,6 +840,14 @@ struct ChildRunTests {
         let question = try Wire.decode(ChildQuestion.self, #"{"text":"Rename or replace?"}"#)
         #expect(question == ChildQuestion(text: "Rename or replace?"))
         #expect(try Wire.object(question).keys.sorted() == ["text"])
+    }
+
+    /// An older host sends agent_list rows without the space, last activity and asking fields; a newer one's rows add them, and an older
+    /// extension ignores them.
+    @Test func anAgentListRowFromAnOlderHostDecodesWithoutTheNewFields() throws {
+        let old = try Wire.decode(AgentPeerInfo.self, #"{"id":"a1","name":"api","status":"idle","cwd":"/work","isSelf":false}"#)
+        #expect(old == AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false))
+        #expect(try Wire.object(old).keys.sorted() == ["cwd", "id", "isSelf", "name", "status"])
     }
 
     @Test func absentCardFieldsNeverAppearOnTheWire() throws {

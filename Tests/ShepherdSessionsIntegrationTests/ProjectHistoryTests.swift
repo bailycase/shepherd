@@ -369,6 +369,39 @@ struct ProjectHistoryTests {
         #expect(restarted.resultPage == page && rig.agents.current[task.workerAgentID]?.stdin("prompt").count == beforePrompts)
     }
 
+    @Test func smallRemoteWorkerSnapshotKeepsItsWireBytesAndRefusesChangedIdentity() async throws {
+        let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
+        let assignment = try await rig.assignment()
+        let client = try await rig.remote.typed(); defer { client.disconnect() }
+        _ = try await client.projectExecution(.execute(assignment))
+        try await eventually("remote settled") { rig.receipt(assignment)?.phase == .settled }
+        let worker = try await rig.pi(assignment)
+        try await worker.historySettled()
+        let snapshot = try await worker.snapshot()
+        let receipt = try #require(rig.receipt(assignment))
+        let scope = try await rig.host.server.enqueue { try #require(rig.host.server.projectChildScope(receipt)) }
+        for takenOver in [false, true] {
+            if takenOver {
+                try await rig.host.server.enqueue { _ = rig.host.server.projectChildTakenOver.insert(scope) }
+            }
+            // Nightly's .worker and the unchanged .snapshot use the same snapshot reply.
+            let nightly = try await client.projectExecution(.snapshot(key: assignment.key, watch: false))
+            try #require(nightly.thread != nil && nightly.workerTakenOver == takenOver)
+            let expectedFrame = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: nightly))
+            try #require(expectedFrame.count < NDJSON.maxPayloadBytes)
+            let reply = try await client.projectExecution(.worker(key: assignment.key))
+            #expect(try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: reply)) == expectedFrame)
+        }
+        try await worker.thread { thread in
+            #expect(thread.session.send(.newSession))
+        }
+        _ = try await worker.snapshot("worker replaced its native session") {
+            !$0.piSessionID.isEmpty && $0.piSessionID != snapshot.piSessionID && $0.generation != snapshot.generation
+        }
+        let stale = try await client.projectExecution(.worker(key: assignment.key))
+        #expect(stale.receipt == receipt && stale.thread == nil)
+    }
+
     @Test func remoteExactResultSurvivesBothRestartsAndRevokedBindingNeverFallsBack() async throws {
         let rig = try ProjectExecutionTests.Rig(); defer { rig.stop() }
         var assignment = try await rig.assignment("tools:0 long:14000")
@@ -409,13 +442,32 @@ struct ProjectHistoryTests {
         #expect(routedWorker.tasks.count == 1 && routedWorker.tasks[0].workerAgentID == exact.reservedWorkerID)
         #expect(routedWorker.tasks[0].destination == binding)
         let nativeSource = try await client.projectExecution(.worker(key: exact.key))
-        #expect(nativeSource.receipt.key == exact.key && nativeSource.thread?.piSessionID == nativeSource.receipt.sessionID)
+        let proof = try #require(nativeSource.thread)
+        #expect(nativeSource.receipt.key == exact.key && proof.piSessionID == nativeSource.receipt.sessionID && proof.generation == nativeSource.receipt.generation)
+        #expect(proof.clipped && proof.clips?.history == true && proof.messages.isEmpty && proof.provisional.isEmpty)
+        let worker = try await rig.pi(exact)
+        let full = try await worker.snapshot()
+        var unclipped = nativeSource
+        unclipped.thread = full
+        let fullBytes = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: unclipped)).count - 1
+        let proofBytes = try NDJSON.encode(RemoteReply.projectExecution(id: 1, result: nativeSource)).count - 1
+        #expect(fullBytes > NDJSON.maxPayloadBytes && proofBytes <= NDJSON.maxPayloadBytes)
+
+        try await rig.host.server.enqueue {
+            let scope = try #require(rig.host.server.projectChildScope(nativeSource.receipt))
+            _ = rig.host.server.projectChildTakenOver.insert(scope)
+        }
+        let takenOver = try await client.projectExecution(.worker(key: exact.key))
+        #expect(takenOver.workerTakenOver == true && takenOver.receipt == nativeSource.receipt)
+        let takenOverProof = try #require(takenOver.thread)
+        #expect(takenOverProof.piSessionID == proof.piSessionID && takenOverProof.generation == proof.generation)
+        #expect(takenOverProof.clipped && takenOverProof.clips?.history == true && takenOverProof.messages.isEmpty && takenOverProof.provisional.isEmpty)
         let ownerRead = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: read)
         let page = try #require(ownerRead.resultPage), identity = try #require(page.identity)
         #expect(page.availability == .complete)
         var content = page.data
         var cursor = page.nextOffset
-        #expect((page.totalBytes ?? 0) > NDJSON.maxPayloadBytes)
+        #expect(page.totalBytes > NDJSON.maxPayloadBytes)
         while let offset = cursor {
             let nextRead = ProjectRuntimeRequest.result(taskID: exact.taskID, operationID: exact.key.operationID, offset: offset, sha256: page.sha256)
             let next = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: nextRead)
@@ -440,9 +492,11 @@ struct ProjectHistoryTests {
         rig.owner.server.setProjectExecutionSpaces([binding: rig.host.server.state.spaces])
         client.disconnect(); rig.host.server.stop(); try rig.host.server.start()
         rig.owner.server.stop(); try rig.owner.server.start()
-        let port = try rig.host.server.startRemoteListener(port: 0, tokenURL: rig.host.dir.appendingPathComponent("remote-token"))
+        // The fixture's device token is in memory and does not survive host restart.
+        let token = rig.host.server.clientTokenForTests()
+        let port = try rig.host.server.startRemoteListener(port: 0)
         let reconnect = RemoteHostClient(); defer { reconnect.disconnect() }
-        _ = try await reconnect.connect(host: "127.0.0.1", port: port, token: rig.remote.token, clientName: "result restart fixture")
+        _ = try await reconnect.connect(host: "127.0.0.1", port: port, token: token, clientName: "result restart fixture")
         rig.owner.server.onProjectPlacement = { host, request, done in
             #expect(host == binding)
             Task { do { done(.success(try await reconnect.projectExecution(request))) } catch { done(.failure(error)) } }

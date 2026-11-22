@@ -272,6 +272,8 @@ extension FleetDispatch {
             entry.record.state = .running
             if let facts = host.threadFacts(agent) {
                 entry.worktree = facts.worktree
+                // Creating a thread doesn't wait for pi to serve. Its exit can precede this callback.
+                if let problem = facts.stopProblem { return failStoppedRun(id, entry, problem: problem) }
                 entry.record.activity = Self.activity(facts)
                 // Opening pi can report a turn before createThread returns its agent ID.
                 entry.startedWorking = facts.status != .idle
@@ -378,11 +380,18 @@ extension FleetDispatch {
                     entry.record.resultBranchFacts = nil
                     entry.record.updatedAt = self.now
                     entry.unsent = true
+                    let settled = current?.completedAt != nil && current?.completedAt != before.completedAt
+                    if let problem = current?.stopProblem, !settled {
+                        self.failStoppedRun(id, entry, problem: problem)
+                        // A running acknowledgement reopens the sender's old result. Its existing
+                        // status read then picks up the failure, even if the push arrived first.
+                        return reply(.success(entry.record))
+                    }
                     self.inbound[id] = entry
                     self.save()
                     reply(.success(entry.record))
                     self.pushPending()
-                    if let current, current.status == .done, current.completedAt != before.completedAt {
+                    if let current, settled && (current.status == .done || current.stopProblem != nil) {
                         self.finishRun(id, entry, facts: current)
                     }
                 }
@@ -477,19 +486,9 @@ extension FleetDispatch {
 
     /// The thread settled: read its last message and its branch, keep them on the record, and push them.
     private func finishRun(_ id: UUID, _ found: Inbound, facts: FleetThreadFacts?) {
+        if let failure = facts?.failure { return failRun(id, found, message: failure.message) }
         var entry = found
         entry.expectsResult = false
-        if let failure = facts?.failure {
-            entry.record.state = .failed
-            entry.record.failure = FleetDispatchCode.turnFailed
-            entry.record.failureDetail = failure.message.map { String($0.prefix(300)) }
-            entry.record.activity = nil
-            entry.record.updatedAt = now
-            entry.unsent = true
-            inbound[id] = entry
-            save()
-            return pushPending()
-        }
         let token = UUID()
         entry.finishingRun = token
         inbound[id] = entry
@@ -519,13 +518,29 @@ extension FleetDispatch {
     }
 
     /// Unexpected exit is not idle work: the retained thread needs attention on its receiving Mac.
-    func agentStopped(_ agent: AgentID, message: String) {
+    func agentStopped(_ agent: AgentID, problem: NativeStartProblem) {
         guard let (id, found) = inbound.first(where: { $0.value.record.remoteAgentID == agent && $0.value.record.state == .running && $0.value.expectsResult }) else { return }
+        failStoppedRun(id, found, problem: problem)
+    }
+
+    private func failStoppedRun(_ id: UUID, _ entry: Inbound, problem: NativeStartProblem) {
+        let message: String
+        if let model = entry.record.model, problem.kind == .notSignedIn {
+            message = "The model \(model) is not available on \(hostName())."
+        } else if problem.lines.contains(where: { $0.contains("ENOSPC:") || $0.localizedCaseInsensitiveContains("no space left on device") }) {
+            message = "No space left on device (ENOSPC)."
+        } else {
+            message = problem.title
+        }
+        failRun(id, entry, message: message.split(whereSeparator: \.isNewline).joined(separator: " "))
+    }
+
+    private func failRun(_ id: UUID, _ found: Inbound, message: String?) {
         var entry = found
         entry.expectsResult = false
         entry.record.state = .failed
         entry.record.failure = FleetDispatchCode.turnFailed
-        entry.record.failureDetail = String(message.prefix(300))
+        entry.record.failureDetail = message.map { String($0.prefix(300)) }
         entry.record.activity = nil
         entry.record.updatedAt = now
         entry.unsent = true
