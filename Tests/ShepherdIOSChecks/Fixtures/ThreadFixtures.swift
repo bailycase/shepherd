@@ -343,28 +343,31 @@ enum ThreadFixtures {
         ]))
     }
 
-    /// Checks only this fixture's native table viewport; programmatic offsets do not test gestures.
     @MainActor static func checkComposerControls() async {
         SidebarAutomationsCheck.enableAccessibility()
-        let labels = ["Attach images", "Slash commands", "Model, ", "Thinking, "]
+        let labels = ["Attach images", "Slash commands", "Model, ", "Thinking, ", "Stop agent"]
         func controls() -> [CGRect] {
             let elements = SidebarAutomationsCheck.all
             return labels.compactMap { label in
-                elements.first { $0.accessibilityLabel?.hasPrefix(label) == true }?.accessibilityFrame
+                // Stop is also in the iPad-style thread header. The composer is lower down.
+                elements.filter { $0.accessibilityLabel?.hasPrefix(label) == true }
+                    .map(\.accessibilityFrame).max { $0.midY < $1.midY }
             }
         }
         await FixtureCheck.wait("composer controls", seconds: 8) { controls().count == labels.count }
         let frames = controls()
-        let stop = SidebarAutomationsCheck.all.filter { $0.accessibilityLabel == "Stop agent" }
-            .map(\.accessibilityFrame).max { $0.midY < $1.midY } ?? .zero
-        let sizes = zip(labels + ["Stop agent"], frames + [stop]).map { label, frame in
+        guard frames.count == labels.count, let stop = frames.last else {
+            return FixtureCheck.report("FIXTURE CHECK FAILED: found \(frames.count) of \(labels.count) composer controls")
+        }
+        let sizes = zip(labels, frames).map { label, frame in
             "\(label) \(Int(frame.width.rounded()))x\(Int(frame.height.rounded()))"
         }.joined(separator: ", ")
-        let fits = (frames + [stop]).allSatisfy { $0.width >= SH.Height.touch - 0.5 && $0.height >= SH.Height.touch - 0.5 }
-            && frames.allSatisfy { $0.minX >= frames[0].minX - 0.5 && $0.maxX <= stop.minX + 0.5 }
+        let fits = frames.allSatisfy { $0.width >= SH.Height.touch - 0.5 && $0.height >= SH.Height.touch - 0.5 }
+            && frames.dropLast().allSatisfy { $0.maxX <= stop.minX + 0.5 }
         FixtureCheck.report("FIXTURE CHECK \(fits ? "ok" : "FAILED"): composer controls before Stop, at least 44pt: \(sizes)")
     }
 
+    /// Checks only this fixture's native table viewport; programmatic offsets do not test gestures.
     @MainActor static func checkWideTable() async {
         guard let window = FixtureWindows.shared.primary?.windows.first(where: { !$0.isHidden && $0.windowLevel == .normal }) else {
             return FixtureCheck.report("FIXTURE CHECK FAILED: no primary window for the wide table")

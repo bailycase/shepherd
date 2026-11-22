@@ -159,14 +159,21 @@ private struct NewThreadForm: View {
             if !model.attachments.isEmpty { NewThreadAttachmentStrip(model: model) }
             // Every chip in one row that never scrolls: the host's chip goes first when there's no
             // room (Where it runs still shows it), then the names truncate.
-            ViewThatFits(in: .horizontal) {
-                phoneChips(host: true)
-                    .fixedSize(horizontal: !dynamicType.isAccessibilitySize, vertical: false)
-                phoneChips(host: false)
-                    .fixedSize(horizontal: !dynamicType.isAccessibilitySize, vertical: false)
-                if !dynamicType.isAccessibilitySize { phoneChips(host: false) }
+            Group {
+                if dynamicType.isAccessibilitySize {
+                    ViewThatFits(in: .horizontal) {
+                        phoneChips(host: true).frame(maxWidth: .infinity, alignment: .leading)
+                        phoneChips(host: false).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        phoneChips(host: true).fixedSize(horizontal: true, vertical: false)
+                        phoneChips(host: false).fixedSize(horizontal: true, vertical: false)
+                        phoneChips(host: false)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             // "claude-…· Medium" keeps both ends of a name that doesn't fit.
             .truncationMode(.middle)
             .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
