@@ -172,8 +172,8 @@ export const argumentStub = (chars: number) => `[${chars} characters removed fro
 // What sessions from before the reword hold, and what a model may have written out.
 const legacyArgumentStub = (chars: number) => `[${chars} characters removed from context]`;
 
-// True when `spelled` is exactly what `kilo` writes for some token count.
-const isKilo = (spelled: string) => /^\d+(\.\d)?k?$/.test(spelled) && kilo(parseFloat(spelled) * (spelled.endsWith("k") ? 1000 : 1)) === spelled;
+// True when `spelled` is exactly what `kilo` writes for some token count: a whole number, or a count of thousands with `k`.
+const isKilo = (spelled: string) => /^(\d+|\d+(\.\d)?k)$/.test(spelled) && kilo(parseFloat(spelled) * (spelled.endsWith("k") ? 1000 : 1)) === spelled;
 
 // True when the whole string, give or take whitespace, is one of the stubs above. One anchored check and one backward
 // search for the marker, so a large string costs a single pass at most.
