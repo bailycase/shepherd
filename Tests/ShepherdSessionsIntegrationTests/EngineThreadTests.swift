@@ -278,6 +278,126 @@ struct EngineThreadTests {
         #expect(try await ThreadImagesTests.fetch(ref.id, from: pi.agent, session: ready.piSessionID).data == png)
     }
 
+    @Test(arguments: ["Final name", "Hand-set name", "Design name", "Coordinator name"])
+    func anUnmatchedPiNameEventDoesNotRenameAnAgent(name: String) async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine))
+        defer { pi.stop() }
+        let server = pi.host.server
+        _ = try await pi.ready()
+        let id = pi.agent.agent.id
+        var workspace = server.state
+        let index = try #require(workspace.agents.firstIndex { $0.id == id })
+        if name == "Hand-set name" {
+            try await server.renameAgent(id, to: name)
+        } else {
+            workspace.agents[index].name = name
+            switch name {
+            case "Final name": workspace.agents[index].nameIsFinal = true
+            case "Design name":
+                let design = Design(id: DesignID(), name: name, agentID: id, createdAt: 1_000)
+                workspace.agents[index].designID = design.id
+                workspace.designs.append(design)
+            case "Coordinator name":
+                workspace.agents[index].coordinatorFor = ProjectID()
+                workspace.spaces[0].hidden = true
+                workspace.spaces[0].holdsProjects = true
+            default: break
+            }
+            try await pi.host.seed(workspace)
+        }
+
+        // Pi emits the event before answering this RPC. Send it without registering a host rename.
+        let (response, eventTimeAdvanced) = try await withCheckedThrowingContinuation { continuation in
+            server.queue.async {
+                guard let thread = server.rpcThread(forAgent: id) else {
+                    continuation.resume(throwing: WireError("Missing Pi thread"))
+                    return
+                }
+                let before = thread.lastEventAt
+                thread.session.request(.setSessionName("Unsolicited Pi title")) { result in
+                    continuation.resume(with: result.map { ($0, thread.lastEventAt > before) })
+                }
+            }
+        } as (RPCResponse, Bool)
+        try #require(response.success)
+        #expect(eventTimeAdvanced)
+        try await eventually("the host to finish processing the event") {
+            try await server.enqueue { server.stateWritesInFlight == 0 }
+        }
+        #expect(server.state.agents.first { $0.id == id }?.name == name)
+    }
+
+    @Test func localRenamesUsePiAndReachAnAlreadyConnectedDevice() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let caller = try await RealPi.launch(engine: engine, on: remote.host)
+        defer { caller.stop() }
+        let target = try await RealPi.launch(engine: engine, status: true, on: remote.host)
+        defer { target.stop() }
+        _ = try await caller.ready()
+        _ = try await target.ready()
+        let targetID = target.agent.agent.id
+        let callerID = caller.agent.agent.id
+        let extensionSocket = try ExtensionClient(path: remote.host.socketPath)
+        let phone = try await remote.typed()
+        defer { phone.disconnect() }
+        let pushes = Locked([ShepherdState]())
+        phone.onStateChanged = { state in pushes.withValue { $0.append(state) } }
+
+        func rename(_ id: Int, _ name: String, target: AgentID? = nil) async throws -> ExtensionReply {
+            try extensionSocket.send(.renameAgent(id: id, agentID: callerID, targetAgentID: target, name: name))
+            return try await extensionSocket.reply()
+        }
+
+        let england = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"
+        let joinedText = "👨‍👩‍👧‍👦 \(england) می\u{200C}روم क्\u{200D}ष"
+        let callerName = "/Caller role \(joinedText)"
+        #expect(try await rename(101, "  /Caller\r\nro\u{1B}\u{80}\u{202E}\u{200B}\u{E0067}le \(joinedText)  ")
+                == .agentRenamed(id: 101, oldName: "rpc", newName: callerName))
+        let blank = try await rename(102, " \n\u{7}\u{200B} ", target: targetID)
+        #expect(blank == .error(id: 102, code: "rename_refused", message: "Session name cannot be empty"))
+        #expect(try await rename(108, "\u{200D}\u{200C}")
+                == .error(id: 108, code: "rename_refused", message: "Session name cannot be empty"))
+        guard case .error(103, "no_such_agent", _) = try await rename(103, "Missing", target: AgentID()) else {
+            Issue.record("Expected a missing local thread refusal"); return
+        }
+
+        try await remote.server.renameAgent(targetID, to: "Hand named")
+        let title = String(repeating: "X", count: 60)
+        #expect(try await rename(104, title + "overflow", target: targetID) == .agentRenamed(id: 104, oldName: "Hand named", newName: title))
+
+        _ = try await target.send("slow please", from: try await target.ready())
+        _ = try await target.snapshot("the target to be mid-turn") { $0.running }
+        #expect(try await rename(105, "During turn", target: targetID) == .agentRenamed(id: 105, oldName: title, newName: "During turn"))
+        #expect(try await target.request(.snapshot()).snapshotValue?.running == true)
+        try extensionSocket.send(.setAgentName(agentID: targetID, name: "Automatic title", sessionID: target.sessionID))
+        _ = try await target.settled("the target's first turn to finish") { !$0.messages.isEmpty }
+        try await eventually("the target to be done") {
+            remote.server.state.agents.first { $0.id == targetID }?.completedAt != nil
+        }
+        #expect(remote.server.state.agents.first { $0.id == targetID }?.name == "During turn")
+        #expect(try await rename(106, "After turn", target: targetID) == .agentRenamed(id: 106, oldName: "During turn", newName: "After turn"))
+
+        try await eventually("a live state push to the paired-device client, without reconnecting or fetching") {
+            pushes.current.contains { state in
+                state.agents.first { $0.id == targetID }?.name == "After turn"
+                    && state.agents.first { $0.id == callerID }?.name == callerName
+            }
+        }
+        #expect(try remote.host.persisted().agents.first { $0.id == targetID }?.nameIsFinal == true)
+        let savedSession = try String(contentsOf: target.sessionFile, encoding: .utf8)
+        #expect(savedSession.contains("\"type\":\"session_info\""))
+        #expect(savedSession.contains("\"name\":\"After turn\""))
+
+        remote.server.killSession(target.agent.sessionID)
+        try await remote.host.waitForExit(target.agent.sessionID)
+        guard case .error(107, "not_running", _) = try await rename(107, "Offline", target: targetID) else {
+            Issue.record("Expected a stopped Pi refusal"); return
+        }
+        #expect(remote.server.state.agents.first { $0.id == targetID }?.name == "After turn")
+    }
+
     /// Stop on a streaming turn and a message queued behind it: the partial reply is kept as
     /// stopped, the host keeps the queue, and the thread takes the next turn.
     @Test func stoppingAStreamingTurnKeepsItsPartialReplyAndTheQueue() async throws {

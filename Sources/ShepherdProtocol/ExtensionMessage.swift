@@ -110,6 +110,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                     place: SpawnPlace? = nil, branch: String? = nil)
     /// Move an inactive ordinary thread to a registered space on this host.
     case moveAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
+    case renameAgent(id: Int, agentID: AgentID, targetAgentID: AgentID?, name: String)
     /// Receipt of a tokenized peer task; the host transfers it into its tracked native queue.
     case peerMessageReceived(agentID: AgentID, deliveryID: Int)
 
@@ -285,7 +286,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
-        case listAgents, sendToAgent, spawnAgent, moveAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
+        case listAgents, sendToAgent, spawnAgent, moveAgent, renameAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
         case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel, fleetDispatchClose, fleetListDispatches
         case suggestInstruction
         case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
@@ -457,6 +458,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             )
         case .peerMessageReceived:
             self = .peerMessageReceived(agentID: try c.decode(AgentID.self, forKey: .agentID), deliveryID: try c.decode(Int.self, forKey: .deliveryID))
+        case .renameAgent:
+            self = .renameAgent(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                targetAgentID: try c.decodeIfPresent(AgentID.self, forKey: .targetAgentID), name: try c.decode(String.self, forKey: .name))
         case .moveAgent:
             self = .moveAgent(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                              targetAgentID: try c.decode(AgentID.self, forKey: .targetAgentID), spaceID: try c.decode(SpaceID.self, forKey: .spaceID))
@@ -865,6 +869,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.peerMessageReceived, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(deliveryID, forKey: .deliveryID)
+        case .renameAgent(let id, let agentID, let targetAgentID, let name):
+            try c.encode(Kind.renameAgent, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(targetAgentID, forKey: .targetAgentID)
+            try c.encode(name, forKey: .name)
         case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
             try c.encode(Kind.moveAgent, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1483,6 +1493,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// The outcome of a `coordinateAgent`, correlated by the caller's `id`. A `code` means it
     /// failed.
     case agentResult(id: Int, result: AgentCoordinationResult)
+    case agentRenamed(id: Int, oldName: String, newName: String)
 
     /// A `designRead` without a path: the design's index, revision and board hashes.
     case design(id: Int, snapshot: DesignSnapshot)
@@ -1539,11 +1550,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case listing, system
         case proposals
         case answer, note, project, spaces, models
-        case image, images, hosts, info, dispatches, omitted
+        case image, images, hosts, info, oldName, newName, dispatches, omitted
     }
 
     private enum Kind: String, Codable {
-        case parentInput, stopManagedBash, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult
+        case parentInput, stopManagedBash, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult, agentRenamed
         case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, appResult, automations, agents, message
         case suggestion
@@ -1583,6 +1594,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 targetAgentID: try c.decode(AgentID.self, forKey: .targetAgentID),
                 request: try c.decode(AgentCoordinationRequest.self, forKey: .request)
             )
+        case .agentRenamed:
+            self = .agentRenamed(id: try c.decode(Int.self, forKey: .id), oldName: try c.decode(String.self, forKey: .oldName),
+                                 newName: try c.decode(String.self, forKey: .newName))
         case .agentResult:
             self = .agentResult(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1794,6 +1808,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(requestID, forKey: .requestID)
             try c.encode(targetAgentID, forKey: .targetAgentID)
             try c.encode(request, forKey: .request)
+        case .agentRenamed(let id, let oldName, let newName):
+            try c.encode(Kind.agentRenamed, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(oldName, forKey: .oldName)
+            try c.encode(newName, forKey: .newName)
         case .agentResult(let id, let result):
             try c.encode(Kind.agentResult, forKey: .type)
             try c.encode(id, forKey: .id)

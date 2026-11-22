@@ -1,6 +1,9 @@
 {
   "codec": {
     "extension-reply": {
+      "agentRenamed": [
+        "{\"id\":119,\"newName\":\"After\",\"oldName\":\"Before\",\"type\":\"agentRenamed\"}\n"
+      ],
       "agentRequest": [
         "{\"id\":0,\"request\":{\"operation\":\"steer\",\"text\":\"[from: worker] change course\"},\"requestID\":\"server-token\",\"targetAgentID\":\"a2\",\"type\":\"agentRequest\"}\n"
       ],
@@ -359,6 +362,10 @@
       ],
       "registerProject": [
         "{\"agentID\":\"a1\",\"id\":70,\"name\":\"Project\",\"path\":\"/tmp/project\",\"type\":\"registerProject\"}\n"
+      ],
+      "renameAgent": [
+        "{\"agentID\":\"a1\",\"id\":119,\"name\":\"Peer title\",\"targetAgentID\":\"a2\",\"type\":\"renameAgent\"}\n",
+        "{\"agentID\":\"a1\",\"id\":120,\"name\":\"Own title\",\"type\":\"renameAgent\"}\n"
       ],
       "requestReview": [
         "{\"agentID\":\"a1\",\"cwd\":\"/tmp/repo\",\"id\":9,\"reference\":\"master..HEAD\",\"type\":\"requestReview\"}\n"

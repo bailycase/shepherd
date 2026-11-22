@@ -52,6 +52,7 @@ struct RPCWireTests {
         (.setThinkingLevel(level: "xhigh"), nil, #"{"type":"set_thinking_level","level":"xhigh"}"#),
         (.getAvailableThinkingLevels, nil, #"{"type":"get_available_thinking_levels"}"#),
         (.newSession, "n", #"{"id":"n","type":"new_session"}"#),
+        (.setSessionName("Release notes"), "rename", #"{"id":"rename","type":"set_session_name","name":"Release notes"}"#),
         (.extensionUIResponse(id: "uuid-1", value: "Allow"), nil, #"{"type":"extension_ui_response","id":"uuid-1","value":"Allow"}"#),
         (.extensionUIResponse(id: "uuid-2", confirmed: true), nil, #"{"type":"extension_ui_response","id":"uuid-2","confirmed":true}"#),
         (.extensionUIResponse(id: "uuid-3", cancelled: true), nil, #"{"type":"extension_ui_response","id":"uuid-3","cancelled":true}"#),
@@ -253,6 +254,8 @@ struct RPCWireTests {
     static let simpleEvents: [(String, RPCEvent)] = [
         (#"{"type":"agent_start"}"#, .agentStart),
         (#"{"type":"agent_settled"}"#, .agentSettled),
+        (#"{"type":"session_info_changed","name":"Release notes"}"#, .sessionInfoChanged(name: "Release notes")),
+        (#"{"type":"session_info_changed"}"#, .sessionInfoChanged(name: nil)),
         (#"{"type":"skills_changed"}"#, .skillsChanged),
         (#"{"type":"skills_watch_error","error":"fixture failure"}"#, .skillsWatchError("fixture failure")),
         (#"{"type":"turn_start"}"#, .turnStart),
