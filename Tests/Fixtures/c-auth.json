@@ -3142,9 +3142,51 @@
         "stateFetch.changed": []
       },
       "step": "space-lifecycle/capability-not-offered"
+    },
+    {
+      "fields": {
+        "connection.after": "state",
+        "files.events": [],
+        "process.started": false,
+        "reply.line": "{\"contexts\":{\"stub/model-a\":\"128k\"},\"defaultModel\":\"stub/model-a\",\"id\":2,\"models\":[\"stub/model-a\",\"stub/model-b\"],\"serviceTiers\":{\"stub/model-a\":[\"fast\"]},\"thinkingLevels\":{\"stub/model-a\":[\"low\",\"high\"]},\"type\":\"models\",\"withoutImages\":[\"stub/model-a\"],\"withoutThinking\":[\"stub/model-b\"]}\n",
+        "request.line": "{\"id\":2,\"type\":\"listModels\"}\n",
+        "state.json.bytesUnchanged": true,
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "listModels/authenticated"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.events": [],
+        "process.started": false,
+        "reply.line": "{\"code\":\"unauthenticated\",\"id\":0,\"message\":\"hello required\",\"type\":\"error\"}\n",
+        "request.line": "{\"id\":1,\"type\":\"listModels\"}\n",
+        "state.json.bytesUnchanged": true,
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "listModels/before-hello"
+    },
+    {
+      "fields": {
+        "connection.after": "closed",
+        "files.events": [],
+        "process.started": false,
+        "reply.line": "{\"code\":\"unauthenticated\",\"id\":0,\"message\":\"hello required\",\"type\":\"error\"}\n",
+        "request.line": "{\"id\":1,\"type\":\"listModels\"}\n",
+        "state.json.bytesUnchanged": true,
+        "state.json.changed": [],
+        "stateFetch.changed": []
+      },
+      "step": "listModels/before-hello-local"
     }
   ],
-  "referenceRevision": "641435ce286e0095e5abfd471085012b2a0c91a2",
+  "referenceRevisions": {
+    "default": "641435ce286e0095e5abfd471085012b2a0c91a2",
+    "listModels": "3fbe3dc90686f5fc46965a2331af4b02fe857a90"
+  },
   "seed": {
     "automation": "acme watcher",
     "coordinator": "acme coordinator",
