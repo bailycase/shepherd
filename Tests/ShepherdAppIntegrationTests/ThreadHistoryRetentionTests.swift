@@ -46,7 +46,8 @@ struct ThreadHistoryRetentionTests {
             thread.visibility.liveResizing = true
         } else {
             try await thread.show(false)
-            thread.store.releaseTranscript(bytes: 1)
+            thread.store.releaseTranscript(keepingLastScreen: true)
+            #expect(thread.store.transcriptReleased)
         }
         try await eventuallyOnMain("the measured history to release its rows") { history.retainedRowCount == 0 }
     }
