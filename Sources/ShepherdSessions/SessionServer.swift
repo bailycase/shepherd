@@ -3877,7 +3877,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 if watch { client.watchedExecutions.insert(key) } else { client.watchedExecutions.remove(key) }
             }
-            projectExecutionOnQueue(request) { result in
+            projectExecutionOnQueue(request, replyID: id) { result in
                 guard self.clients[client.fd] === client else { return }
                 switch result {
                 case .success(let value): self.send(.projectExecution(id: id, result: value), to: client)
