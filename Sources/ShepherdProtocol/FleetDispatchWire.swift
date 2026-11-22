@@ -326,6 +326,31 @@ public struct FleetHostInfo: Codable, Hashable, Sendable {
     }
 }
 
+/// One line of `fleet_read`'s list of the dispatches this Mac sent: enough to pick one, none of the task or result.
+public struct FleetDispatchListRow: Codable, Hashable, Sendable {
+    public var dispatchID: String
+    /// A `FleetDispatchState` raw value.
+    public var state: String
+    /// The Mac it went to, once chosen.
+    public var host: String?
+    public var title: String
+    public var branch: String?
+    /// The thread asking sent it (only that thread's `fleet_read`, `fleet_send`, `fleet_cancel` and `fleet_close` reach it).
+    public var mine: Bool
+    /// Its thread was closed; the record stays until it ages out.
+    public var closed: Bool
+
+    public init(dispatchID: String, state: String, host: String? = nil, title: String = "", branch: String? = nil, mine: Bool = false, closed: Bool = false) {
+        self.dispatchID = dispatchID
+        self.state = state
+        self.host = host
+        self.title = title
+        self.branch = branch
+        self.mine = mine
+        self.closed = closed
+    }
+}
+
 /// A dispatch as a thread's `fleet_*` tools see it. Data, never instructions: `resultText` is what the
 /// dispatched thread said.
 public struct FleetDispatchInfo: Codable, Hashable, Sendable {

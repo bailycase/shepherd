@@ -156,12 +156,12 @@ struct ThreadHostingTests {
         try caller.send(.helloAgent(agentID: lead.id))
 
         try caller.send(.listAgents(id: 1, agentID: lead.id))
-        guard case .agents(1, let peers) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        guard case .agents(1, let peers, _) = try await caller.reply() else { Issue.record("agent_list not served"); return }
         #expect(Set(peers.map(\.id)) == [lead.id, worker.id] && peers.first { $0.isSelf }?.id == lead.id)
 
         try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build",
                                     model: "claude-fable-5-1", thinking: "low"))
-        guard case .agents(2, let spawned) = try await caller.reply(), let id = spawned.first?.id else {
+        guard case .agents(2, let spawned, _) = try await caller.reply(), let id = spawned.first?.id else {
             Issue.record("agent_spawn not served"); return
         }
         let created = h.server.state.agents.first { $0.id == id }
@@ -175,6 +175,61 @@ struct ThreadHostingTests {
         try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
         guard case .agentResult(3, let result) = try await caller.reply(), result.code == nil else { Issue.record("agent_delete not served"); return }
         #expect(!h.server.state.agents.contains { $0.id == worker.id })
+    }
+
+    /// agent_list names the space of every thread, in every space, with its last activity and whether it is asking. Listing a thread in another
+    /// space widens nothing: agent_read, agent_send and agent_delete reach a thread by id, in any space, exactly as before (the host checks the
+    /// caller's identity and that the target is an ordinary thread, never its space). Pinned so a change to either shows.
+    @Test func agentListNamesEverySpaceAndAThreadInAnotherSpaceIsReachedExactlyAsBefore() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        h.server.setAgentMessagePolicy(.always)
+        let (web, docs) = (Space(name: "acme-web", path: h.dir.path), Space(name: "acme-docs", path: h.dir.appendingPathComponent("docs").path))
+        try await h.server.addSpace(web)
+        try await h.server.addSpace(docs)
+        func thread(_ name: String, in space: Space, lastActiveAt: Double? = nil, waitingOn: String? = nil) async throws -> Agent {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true, lastActiveAt: lastActiveAt, waitingOn: waitingOn)
+            try await h.server.addAgent(agent, withTab: tab)
+            return agent
+        }
+        let lead = try await thread("lead", in: web, lastActiveAt: 2_000)
+        let far = try await thread("far", in: docs, lastActiveAt: 1_000, waitingOn: "Which branch?")
+        let caller = try ExtensionClient(path: h.socketPath), target = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+        try target.send(.helloAgent(agentID: far.id))
+        // The target's registration landed once a request addressed to it is answered by the barrier below.
+        try target.send(.coordinateAgent(id: 0, agentID: far.id, targetAgentID: far.id, request: .init(operation: .status)))
+        guard case .error(0, "self_control", _) = try await target.reply() else { Issue.record("no registration barrier"); return }
+
+        try caller.send(.listAgents(id: 1, agentID: lead.id))
+        guard case .agents(1, let peers, _) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        let byName = Dictionary(uniqueKeysWithValues: peers.map { ($0.name, $0) })
+        #expect(byName["lead"]?.space == "acme-web" && byName["lead"]?.lastActiveAt == 2_000 && byName["lead"]?.asking == false && byName["lead"]?.isSelf == true)
+        #expect(byName["far"]?.space == "acme-docs" && byName["far"]?.lastActiveAt == 1_000 && byName["far"]?.asking == true && byName["far"]?.isSelf == false)
+
+        // The detailed list, over the wire: newest first, and the plain one above stays in the order of the state.
+        try caller.send(.listAgents(id: 5, agentID: lead.id, details: true))
+        guard case .agents(5, let detailed, let omitted) = try await caller.reply() else { Issue.record("detailed agent_list not served"); return }
+        #expect(detailed.map(\.name) == ["lead", "far"] && omitted == 0)
+
+        // agent_read: relayed to the other space's thread.
+        try caller.send(.coordinateAgent(id: 2, agentID: lead.id, targetAgentID: far.id, request: .init(operation: .read)))
+        guard case .agentRequest(0, let token, far.id, let relayed) = try await target.reply() else { Issue.record("a read of a thread in another space was refused"); return }
+        #expect(relayed.operation == .read)
+        try target.send(.agentResponse(agentID: far.id, requestID: token, result: .init(text: "no messages")))
+        #expect(try await caller.reply() == .agentResult(id: 2, result: .init(text: "no messages")))
+        // agent_send: delivered to it.
+        try caller.send(.sendToAgent(id: 3, agentID: lead.id, targetAgentID: far.id, text: "ping", delivery: .report))
+        guard case .message(_, let delivered, .report) = try await target.reply() else { Issue.record("a message to a thread in another space was not delivered"); return }
+        #expect(delivered.contains("ping"))
+        #expect(try await caller.reply() == .ok(id: 3))
+        // agent_delete: deletes it.
+        try caller.send(.coordinateAgent(id: 4, agentID: lead.id, targetAgentID: far.id, request: .init(operation: .delete)))
+        guard case .agentResult(4, let deleted) = try await caller.reply(), deleted.code == nil else { Issue.record("agent_delete of a thread in another space was refused"); return }
+        #expect(!h.server.state.agents.contains { $0.id == far.id })
     }
 
     /// agent_spawn with place worktree: a new branch from the starter's commit, in the same folder of the repository. A thread three deep
@@ -201,7 +256,7 @@ struct ThreadHostingTests {
         try caller.send(.spawnAgent(id: 9, agentID: lead.id, cwd: web, prompt: "x", place: .checkout, branch: "agent/x"))
         guard case .error(9, "invalid", _) = try await caller.reply() else { Issue.record("a branch with place checkout was accepted"); return }
         try caller.send(.spawnAgent(id: 1, agentID: lead.id, cwd: web, prompt: "Shard the UI tests", place: .worktree, branch: "agent/shard-ui"))
-        guard case .agents(1, let spawned) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
+        guard case .agents(1, let spawned, _) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
         let child = try #require(h.server.state.agents.first { $0.id == id })
         #expect(child.worktreeBranch == "agent/shard-ui" && child.worktreeBase == head && child.startedBy?.depth == 3)
         let path = try #require(child.worktreePath)
@@ -243,7 +298,7 @@ struct ThreadHostingTests {
         try caller.send(.helloAgent(agentID: lead.id))
         for id in 2...4 {
             try caller.send(.spawnAgent(id: id, agentID: lead.id, cwd: space.path, prompt: "Part \(id)"))
-            guard case .agents(id, _) = try await caller.reply() else { Issue.record("spawn \(id) refused"); return }
+            guard case .agents(id, _, _) = try await caller.reply() else { Issue.record("spawn \(id) refused"); return }
         }
         try caller.send(.spawnAgent(id: 5, agentID: lead.id, cwd: space.path, prompt: "One too many"))
         guard case .error(5, "held_limit", _) = try await caller.reply() else { Issue.record("a fourth thread started while three ran"); return }

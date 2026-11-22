@@ -1878,7 +1878,8 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int, agentID: AgentID
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
-             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _):
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _),
+             .fleetListDispatches(let value, let agent):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -1899,6 +1900,9 @@ public final class SessionServer: @unchecked Sendable {
         switch message {
         case .fleetListHosts:
             reply(.fleetHosts(id: id, hosts: fleet.dispatch.hosts(for: agentID)), to: client)
+        case .fleetListDispatches:
+            let list = fleet.dispatch.listRows(for: agentID)
+            reply(.fleetDispatches(id: id, dispatches: list.rows, omitted: list.omitted), to: client)
         case .fleetDispatch(_, _, let key, let task, let title, let host, let model, let thinking):
             fleet.dispatch.dispatch(from: agentID, key: key, task: task, title: title, host: host, model: model, thinking: thinking, reply: answer)
         case .fleetDispatchStatus(_, _, let key):
@@ -5821,7 +5825,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -6031,9 +6035,9 @@ public final class SessionServer: @unchecked Sendable {
         case .prepareProjectConfiguration(let id, _, _):
             // Spaces need no approval any more; agents started by an older build still ask first.
             reply(.ok(id: id), to: client)
-        case .listAgents(let id, let agentID):
+        case .listAgents(let id, let agentID, let details):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
+            routeAgentPeerRequest(.list(agentID: agentID, details: details), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
@@ -6064,7 +6068,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -7217,8 +7221,8 @@ public final class SessionServer: @unchecked Sendable {
              .paneContent(let id, _, _),
              .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
-             .agents(let id, _),
-             .fleetHosts(let id, _), .fleetDispatch(let id, _),
+             .agents(let id, _, _),
+             .fleetHosts(let id, _), .fleetDispatch(let id, _), .fleetDispatches(let id, _, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),

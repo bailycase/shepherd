@@ -40,7 +40,7 @@ extension FleetDispatch {
         let start = thread.start ?? FleetThreadStart(place: .newWorktree, base: space.worktreeBase?.fleetNonEmpty)
         var record = FleetDispatchRecord(
             id: id, kind: .userThread, parentHostID: hostID, parentHostName: hostName(), requestedHost: requested, state: .placing,
-            title: Self.title(thread.title, task: task), task: task, repoKey: space.repoKey ?? "", model: thread.model?.fleetNonEmpty,
+            title: Self.title(thread.title, task: task), titleGiven: Self.titleGiven(thread.title), task: task, repoKey: space.repoKey ?? "", model: thread.model?.fleetNonEmpty,
             thinking: thread.thinking?.fleetNonEmpty, spaceID: space.id, start: start, fixes: thread.fixes, createdAt: now)
         record.updatedAt = record.createdAt
         outbound[id] = record
