@@ -215,8 +215,10 @@ extension SessionServer {
         let rows = shown.map { agent in
             let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? ""
             let space = state.spaces.first { $0.id == agent.spaceID }?.name
+            // A thread id decodes from any string; a detailed row prints one only if it is a UUID, else this placeholder.
+            let wellFormed = UUID(uuidString: agent.id.rawValue) != nil
             return AgentPeerInfo(
-                id: agent.id,
+                id: details && !wellFormed ? AgentID(rawValue: "(invalid-id)") : agent.id,
                 name: details ? agent.name.listLabel() : agent.name,
                 status: agent.status.rawValue,
                 cwd: details ? cwd.listLabel(limit: 240) : cwd,

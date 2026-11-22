@@ -416,18 +416,21 @@ struct FleetDispatchTests {
         let thread = try await a.parent()
         try thread.hello()
         let nasty = "line one\nline two\t\u{1B}[31mred\u{0}" + String(repeating: "x", count: 10_000)
+        var created: [String] = []  // dispatch ids, oldest first
         a.server.queue.sync {
             for i in 0..<25 {
                 var record = FleetDispatchRecord(parentAgentID: thread.agent.id, parentHostID: UUID(), parentHostName: "Mac", targetHostName: nasty, state: .running,
                                                  title: nasty, titleGiven: true, task: "t", repoKey: "k", branch: nasty, createdAt: Double(1_000 + i))
                 record.updatedAt = record.createdAt
                 a.server.fleet?.dispatch.outbound[record.id] = record
+                created.append(record.id.uuidString.lowercased())
             }
         }
         guard case .fleetDispatches(_, let rows, let omitted) = try await thread.call({ .fleetListDispatches(id: $0, agentID: thread.agent.id) }) else {
             Issue.record("not a list"); return
         }
         #expect(rows.count == FleetDispatch.listRowsMax && omitted == 5)
+        #expect(rows.map(\.dispatchID) == Array(created.suffix(FleetDispatch.listRowsMax).reversed()), "the 20 newest, newest first")
         for row in rows {
             for text in [row.title, row.branch ?? "", row.host ?? ""] {
                 #expect(!text.contains { $0.isNewline || $0 == "\t" || $0 == "\u{1B}" || $0 == "\u{0}" } && text.count <= 120 && text.hasPrefix("line one line two [31mred"))
