@@ -24,22 +24,32 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var generation = 0
 
     #if DEBUG
-    @ObservationIgnored private var prependHeight: CGFloat?
-    @ObservationIgnored private var samePassPending = false
+    @ObservationIgnored private var prepend: (delta: CGFloat, oldDocumentHeight: CGFloat)?
+    @ObservationIgnored private(set) var correctingPrepend = false
+    var hasPrepend: Bool { prepend != nil || correctingPrepend }
 
-    @discardableResult
+    func preparePrepend(before firstID: String, delta: CGFloat) {
+        guard firstID == rowID, prepend == nil, let scroll, delta > 0 else { return }
+        prepend = (delta, scroll.contentView.documentRect.height)
+    }
+
     func correctPrepend(in scroll: NSScrollView?, pass: String) -> Bool {
-        guard samePassPending, let scroll, self.scroll === scroll, let prependHeight else { return false }
-        let height = scroll.contentView.documentRect.height
-        let origin = scroll.contentView.bounds.minY
+        guard let prepend, let scroll, self.scroll === scroll else { return false }
+        let clip = scroll.contentView
+        let height = clip.documentRect.height
+        let origin = clip.bounds.minY
+        let target = clip.bounds.offsetBy(dx: 0, dy: prepend.delta)
         SHRenderProbe.scrollEvent("probe.prepend.pass", "\(pass) document=\(height) clip=\(origin)",
                                   from: scroll, target: rowID, kind: "layout")
-        let delta = height - prependHeight
-        guard delta > 0, MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return false }
-        samePassPending = false
-        Self.correct(delta, in: scroll, rowID: rowID)
+        // A stack callback can arrive before the scroll view can accommodate the new origin.
+        guard height > prepend.oldDocumentHeight, abs(clip.constrainBoundsRect(target).minY - target.minY) <= 1 else { return false }
+        self.prepend = nil
+        guard MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return false }
+        correctingPrepend = true
+        defer { correctingPrepend = false }
+        Self.correct(prepend.delta, in: scroll, rowID: rowID)
         SHRenderProbe.scrollEvent("probe.prepend.result",
-                                  "\(pass) delta=\(delta) clip=\(origin)->\(scroll.contentView.bounds.minY)",
+                                  "\(pass) delta=\(prepend.delta) clip=\(origin)->\(clip.bounds.minY)",
                                   from: scroll, target: rowID, kind: "layout")
         return true
     }
@@ -53,9 +63,6 @@ final class ThreadHistoryAnchor {
         rowID = id
         scroll = measuredScroll ?? marker?.enclosingScrollView
         if marker?.rowID == id { savedTop = marker?.viewportTop }
-        #if DEBUG
-        if ThreadScrollValidation.measuredHistory { prependHeight = scroll?.contentView.documentRect.height }
-        #endif
         return generation
     }
 
@@ -71,8 +78,7 @@ final class ThreadHistoryAnchor {
         waiting = false
         pendingMaterialization = nil
         #if DEBUG
-        samePassPending = false
-        prependHeight = nil
+        prepend = nil
         #endif
         rowID = nil
     }
@@ -86,7 +92,6 @@ final class ThreadHistoryAnchor {
         }
         #if DEBUG
         if ThreadScrollValidation.measuredHistory {
-            samePassPending = true
             waiting = false
             return
         }
@@ -198,11 +203,6 @@ final class ThreadHistoryAnchor {
 
         override func layout() {
             super.layout()
-            #if DEBUG
-            if ThreadScrollValidation.measuredHistory {
-                anchor?.correctPrepend(in: enclosingScrollView, pass: "boundary marker layout")
-            }
-            #endif
             if let anchor, anchor.isEngaged { anchor.moved() }
         }
     }

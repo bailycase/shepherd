@@ -394,8 +394,8 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
     func updateNSView(_ view: Finder, context: Context) {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
         #if DEBUG
-        view.historyAnchor = historyAnchor
         view.measuredHistory = measuredHistory
+        measuredHistory?.paging = historyAnchor
         measuredHistory?.guardrail = guardian
         #endif
     }
@@ -404,18 +404,13 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         #if DEBUG
-        weak var historyAnchor: ThreadHistoryAnchor?
         weak var measuredHistory: ThreadMeasuredHistory?
 
         override func setFrameSize(_ newSize: NSSize) {
             if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.finderFrameSize") }
             let changed = newSize.height != frame.height
             super.setFrameSize(newSize)
-            if changed {
-                let scroll = enclosingScrollView
-                let prepended = historyAnchor?.correctPrepend(in: scroll, pass: "column finder frame change") ?? false
-                measuredHistory?.columnLaidOut(in: scroll, prepended: prepended)
-            }
+            if changed { measuredHistory?.columnLaidOut(in: enclosingScrollView) }
         }
         #endif
     }

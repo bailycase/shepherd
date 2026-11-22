@@ -23,6 +23,8 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored private var stackSize: CGSize = .zero
     @ObservationIgnored private var settings: Settings?
     @ObservationIgnored weak var guardrail: ThreadTailGuard?
+    @ObservationIgnored weak var paging: ThreadHistoryAnchor?
+    @ObservationIgnored private var prependedAt: CGRect?
 
     struct Settings: Equatable {
         let session: String?
@@ -34,12 +36,17 @@ final class ThreadMeasuredHistory {
         if self.settings != settings {
             table.resetMeasurements()
             pending.removeAll()
+            prependedAt = nil
             self.settings = settings
         }
         guard self.rows != rows || table.spacing != spacing else { return }
+        let oldFirst = self.rows.first?.id
         self.rows = rows
         table.replace(rows.map { .init(id: $0.id, estimate: CGFloat(NativeRowHeight.row($0))) }, spacing: spacing)
-        queueWindow()
+        if let oldFirst, let index = table.index(for: oldFirst), index > 0 {
+            paging?.preparePrepend(before: oldFirst, delta: table.offset(at: index))
+        }
+        if paging?.hasPrepend != true { queueWindow() }
     }
 
     func window() -> (rows: ArraySlice<NativeThreadRow>, leading: CGFloat, trailing: CGFloat) {
@@ -72,8 +79,13 @@ final class ThreadMeasuredHistory {
 
     private func publishWindow(synchronous: Bool = false) {
         if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.publishWindow") }
-        guard let stack, let scroll = stack.enclosingScrollView, guardrail?.active == true else { return }
+        // Preserve the mounted rows across the prepend. Its compensating clip move is not input.
+        guard paging?.hasPrepend != true, let stack, let scroll = stack.enclosingScrollView,
+              guardrail?.active == true else { return }
         let clip = scroll.contentView
+        // Keep the compensated window until the reader moves or the viewport resizes.
+        guard clip.bounds != prependedAt else { return }
+        prependedAt = nil
         let top = stack.convert(stack.bounds, to: clip).minY
         let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
         let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
@@ -94,12 +106,19 @@ final class ThreadMeasuredHistory {
         commit(in: scroll, pass: "row marker layout")
     }
 
-    func columnLaidOut(in scroll: NSScrollView?, prepended: Bool) {
-        commit(in: scroll, pass: "column finder frame change", prepended: prepended)
+    func columnLaidOut(in scroll: NSScrollView?) {
+        guard !tryPrepend(in: scroll, pass: "column finder frame change") else { return }
+        commit(in: scroll, pass: "column finder frame change")
         queueWindow()
     }
 
-    private func commit(in scroll: NSScrollView?, pass: String, prepended: Bool = false) {
+    private func tryPrepend(in scroll: NSScrollView?, pass: String) -> Bool {
+        guard let paging, paging.hasPrepend else { return false }
+        if paging.correctPrepend(in: scroll, pass: pass) { prependedAt = scroll?.contentView.bounds }
+        return true
+    }
+
+    private func commit(in scroll: NSScrollView?, pass: String) {
         if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.commit") }
         guard let scroll, let stack, stack.enclosingScrollView === scroll else { return }
         let clip = scroll.contentView
@@ -122,7 +141,7 @@ final class ThreadMeasuredHistory {
         pending.removeAll(keepingCapacity: true)
         // At an explicit landing there is no previous reader position to preserve. Keep
         // the measurements, and let the next layout anchor to the landed clip instead.
-        guard !landingJump, !prepended, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
+        guard !landingJump, paging?.hasPrepend != true, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
               MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
         ThreadHistoryAnchor.correct(delta, in: scroll, rowID: anchor < table.rows.count ? table.rows[anchor].id : nil,
                                     actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height)")
@@ -167,8 +186,11 @@ final class ThreadMeasuredHistory {
         }
         override func setFrameSize(_ newSize: NSSize) {
             super.setFrameSize(newSize)
-            history?.stackSize = newSize
-            history?.queueWindow()
+            guard let history, history.stack === self else { return }
+            history.stackSize = newSize
+            if !history.tryPrepend(in: enclosingScrollView, pass: "stack frame change") {
+                history.queueWindow()
+            }
         }
     }
 }
