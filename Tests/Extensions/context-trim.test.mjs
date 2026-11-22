@@ -228,6 +228,15 @@ test("a stub sitting where a value belongs is found, wherever it is; text that o
   for (const fine of [{ command: '[ -n "removed from context" ]' }, { command: "[ -n 'a' ] && [ -z \"x output removed from context: about 2k tokens\" ]" }, { command: "rg 'removed from context' Sources" }, { content: `notes: ${argumentStub(5)} and more` }, { content: "[ -f a ] && echo removed from context" }, { n: 3, flag: true, none: null }, "[abc]", undefined, null]) assert.equal(placeholderIn(fine), undefined, JSON.stringify(fine));
 });
 
+test("only a token count the stub writer can produce makes a stub: whole numbers and the 1k form", () => {
+  const sentence = (spelled) => resultStub("read", "", 1000).replace("about 1k", `about ${spelled}`);
+  for (const spelled of ["0.5", "1.5", "0.0", "12.34k", "0.5k", "1.05k", "1e3", "k", ".5", "5.", "1,000"]) assert.equal(placeholderIn({ command: sentence(spelled) }), undefined, `${spelled} tokens is never written`);
+  for (const tokens of [0, 1, 99, 100, 999, 1000, 1049, 1050, 1500, 12345, 200000, 1234567]) {
+    assert.equal(placeholderIn({ command: resultStub("read", "a.swift", tokens) }), "arguments.command", `result stub, ${tokens}`);
+    assert.equal(placeholderIn({ command: customStub("note", tokens) }), "arguments.command", `custom stub, ${tokens}`);
+  }
+});
+
 test("a stub is found at any depth, and a large bracket-led string is checked in linear time", () => {
   let nested = { task: argumentStub(900) };
   for (let i = 0; i < 20_000; i++) nested = i % 2 ? { next: nested } : [nested];
