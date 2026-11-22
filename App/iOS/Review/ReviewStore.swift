@@ -228,7 +228,10 @@ final class ReviewStore {
     private(set) var cancelledFiles: Set<String> = []
     /// The branch list's request, and whether its last one was cancelled (`branchesIdle`).
     @ObservationIgnored private var branchesRequest: UUID?
-    private(set) var branchesCancelled = false
+    private var branchesCancelMark = false
+    private var branchesOutstanding = 0
+    /// A cancelled branch list with no other request still running: idle, offers Try again.
+    var branchesCancelled: Bool { branchesCancelMark && branchesOutstanding == 0 }
     @ObservationIgnored private var textLoads: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     @ObservationIgnored private var wantedFiles: Set<String> = []
     @ObservationIgnored private var listOptions: ChangesOptions?
@@ -512,13 +515,16 @@ final class ReviewStore {
         guard usesChanges, branches == nil else { return }
         let id = UUID()
         branchesRequest = id
-        branchesCancelled = false
+        branchesCancelMark = false
+        branchesOutstanding += 1
+        defer { branchesOutstanding -= 1 }
         do {
             guard case .changesBranches(let branches) = try await query(.changesBranches()) else { throw RemoteReviewError.unexpectedReply }
             self.branches = branches
             branchesError = nil
+            branchesCancelMark = false
         } catch is CancellationError {
-            if branchesRequest == id { branchesCancelled = true }
+            if branchesRequest == id { branchesCancelMark = true }
         } catch {
             branchesError = reviewErrorText(error)
         }

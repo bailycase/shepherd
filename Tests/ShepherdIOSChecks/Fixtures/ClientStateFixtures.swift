@@ -720,6 +720,28 @@ extension ClientStateChecks {
         failure = RemoteHostClientError.rejected(code: "fixture", message: "The host refused.")
         await store.load(hosts: app.hosts)
         check(store.loadError == "The host refused.", "a refused load still shows its message")
+
+
+        // Branch request A is pending, B starts and is cancelled: the picker is still loading, not idle.
+        var heldBranches: CheckedContinuation<Void, Never>?
+        let second = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            switch query {
+            case .changesList: return .changesList(list)
+            case .changesBranches:
+                if heldBranches != nil { throw CancellationError() }
+                await withCheckedContinuation { heldBranches = $0 }
+                return .changesBranches(ChangesBranches(defaultBase: "main", branches: []))
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        await second.load(hosts: app.hosts)
+        let requestA = Task { await second.loadBranches() }
+        while heldBranches == nil { await Task.yield() }
+        await second.loadBranches()
+        check(!second.branchesCancelled && second.branches == nil, "a cancelled branch request with another still pending is loading, not idle")
+        heldBranches?.resume()
+        await requestA.value
+        check(second.branches != nil && !second.branchesCancelled, "the pending branch request's reply fills the list")
     }
 }
 
