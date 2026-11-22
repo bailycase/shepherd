@@ -1825,8 +1825,12 @@ public final class SessionServer: @unchecked Sendable {
             threadFacts: { [weak self] agentID in
                 guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
                 let thread = self.rpcThread(forAgent: agentID)
+                let sessionID = thread?.session.id ?? agent.paneID.flatMap { pane in
+                    self.store.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: pane)?.sessionID
+                }
                 return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastThreadEventAt: thread?.lastTurnEventAt,
-                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure)
+                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure,
+                                        stopProblem: sessionID.flatMap { self.keptStarts[$0]?.problem })
             },
             threadResult: { [weak self] agentID in
                 guard let thread = self?.rpcThread(forAgent: agentID) else { return nil }
@@ -10585,7 +10589,7 @@ public final class SessionServer: @unchecked Sendable {
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
         // removes it from state before its pi is killed, so a deletion still retires. A pi no
-        // pane is bound to keeps its agent only for the exits `keepsUnboundAgent` names.
+        // pane is bound to keeps its agent for the exits `keepsUnboundAgent` names.
         if let record = startRecords.removeValue(forKey: sessionID), agent != nil || record.keepsUnboundAgent {
             let thread = sessions[sessionID]?.thread
             let problem = record.problem(exitCode: code, signal: thread?.session.exitSignal)
@@ -10599,8 +10603,7 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
             if let problem, let agent {
-                let diskFull = problem.lines.contains { $0.contains("ENOSPC:") || $0.localizedCaseInsensitiveContains("no space left on device") }
-                fleet?.dispatch.agentStopped(agent, message: diskFull ? "No space left on device (ENOSPC)." : problem.title)
+                fleet?.dispatch.agentStopped(agent, problem: problem)
                 recordAgentFailure(agentID: agent, problem.title)
                 sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
             }

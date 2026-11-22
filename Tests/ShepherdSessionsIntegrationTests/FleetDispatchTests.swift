@@ -236,8 +236,8 @@ struct FleetDispatchTests {
         }
 
         @discardableResult
-        func dispatch(_ task: String = "Fix the flaky payment test.", key: String? = nil, title: String? = nil, host: String? = nil) async throws -> ExtensionReply {
-            try await call { .fleetDispatch(id: $0, agentID: agent.id, dispatchID: key, task: task, title: title, host: host, model: nil, thinking: nil) }
+        func dispatch(_ task: String = "Fix the flaky payment test.", key: String? = nil, title: String? = nil, host: String? = nil, model: String? = nil) async throws -> ExtensionReply {
+            try await call { .fleetDispatch(id: $0, agentID: agent.id, dispatchID: key, task: task, title: title, host: host, model: model, thinking: nil) }
         }
 
         func info(_ reply: ExtensionReply) throws -> FleetDispatchInfo {
@@ -605,6 +605,88 @@ struct FleetDispatchTests {
         #expect(read.state == "failed" && read.failure == "turn_failed")
         #expect(read.detail?.contains("stopped unexpectedly") == true)
         #expect(read.resultText == nil && read.activity != "working")
+    }
+
+    @Test func anUnavailableModelFailsEvenWhenPiExitsBeforeDispatchRegistration() async throws {
+        let model = "missing-provider/model-a"
+        let (a, b, _) = try await Self.pair(originExtra: [
+            "stub-pi-startup.json": #"{"exit":1,"stderr":"Error: Model \"\#(model)\" not found. Use --list-models"}"#,
+        ])
+        let registration = Gate()
+        defer { registration.open(); a.stop(); b.stop() }
+        await b.server.enqueueValue { @Sendable in
+            guard let dispatch = b.server.fleet?.dispatch else { return }
+            let create = dispatch.host.createThread
+            dispatch.host.createThread = { request in
+                let result = await create(request)
+                await registration.wait()
+                return result
+            }
+        }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini", model: model))
+        try await eventuallyOnMain("the receiver to record the launch failure on the thread") { b.dispatched.first?.lastFailure != nil }
+        registration.open()
+        do {
+            try await eventuallyOnMain("the launch failure to reach the sender", timeout: .seconds(8)) { a.sent().first?.state == .failed }
+        } catch {
+            let read = try await parent.status(info)
+            Issue.record("fleet_read after the launch failure: \(read.state), activity: \(read.activity ?? "none")")
+            throw error
+        }
+        let read = try await parent.status(info)
+        #expect(read.state == "failed" && read.detail == "The model \(model) is not available on Mac mini.")
+        #expect(read.resultText == nil)
+    }
+
+    @Test func aFollowUpWhosePiExitsBeforeAcknowledgementFailsTheDispatch() async throws {
+        let (a, b, _) = try await Self.pair()
+        let acknowledgement = Gate()
+        defer { acknowledgement.open(); a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch(host: "Mac mini"))
+        let thread = try await b.runningThread()
+        try await eventuallyOnMain("pi to finish its opening turn") {
+            b.server.queue.sync { b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        try b.report(thread.id, .working)
+        try await eventuallyOnMain("the first run to work") { b.taken().first?.activity == "working" }
+        try b.report(thread.id, .done)
+        _ = try #require(await parent.nextMessage())
+        try await eventuallyOnMain("the first result to settle") { a.sent().first?.state == .done && b.taken().first?.state == .done }
+
+        let followUp = "flaky-hold"
+        let accepted = Locked(false)
+        await b.server.enqueueValue { @Sendable in
+            guard let dispatch = b.server.fleet?.dispatch else { return }
+            let send = dispatch.host.messageThread
+            dispatch.host.messageThread = { agent, text, delivery in
+                let result = await send(agent, text, delivery)
+                if case .accepted = result { accepted.withValue { $0 = true } }
+                await acknowledgement.wait()
+                return result
+            }
+        }
+        let sending = Task { @MainActor in
+            try await parent.call {
+                .fleetDispatchMessage(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, text: followUp, delivery: .followUp)
+            }
+        }
+        try await eventuallyOnMain("pi to accept the held follow-up") { accepted.current }
+        let signalled = await b.server.enqueueValue { @Sendable in
+            guard let pid = b.server.rpcThread(forAgent: thread.id)?.session.processIdentifier, pid > 0 else { return false }
+            return kill(pid, SIGKILL) == 0
+        }
+        try #require(signalled)
+        try await eventuallyOnMain("the receiver to record the exit on the thread") { b.dispatched.first?.lastFailure != nil }
+        acknowledgement.open()
+        _ = try parent.info(try await sending.value)
+        let read = try await parent.status(info)
+        #expect(b.taken().first?.state == .failed)
+        #expect(read.state == "failed" && read.detail?.contains("stopped unexpectedly") == true)
+        #expect(read.resultText == nil && read.activity == nil)
     }
 
     @Test func readingARunningDispatchGetsActivityFromTheReceiverEvenWhenTheSenderMissedIt() async throws {
