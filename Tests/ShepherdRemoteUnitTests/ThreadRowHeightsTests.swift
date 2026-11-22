@@ -25,6 +25,19 @@ import Testing
         #expect(table.range(for: clip.offsetBy(dx: 0, dy: 200), viewports: 2).isEmpty)
     }
 
+    @Test func duplicateIDsKeepBothSlotsAcrossAReplacement() {
+        var table = ThreadRowHeights()
+        let row = ThreadRowHeights.Row(id: "a", estimate: 20)
+        table.replace([row, row], spacing: 5)
+        #expect(table.index(for: "a") == 0)
+        #expect(table.height == 45)
+        table.measure(["a": 24], width: 400, above: 0)
+        table.replace([.init(id: "older", estimate: 30), row, row], spacing: 5)
+        #expect(table.index(for: "a") == 1)
+        #expect(table.offset(at: 2) == 64)
+        #expect(table.height == 88)
+    }
+
     @Test func prependsKeepExistingMeasurementsAndChangedEstimatesInvalidateThem() {
         var table = ThreadRowHeights()
         table.replace([.init(id: "a", estimate: 20), .init(id: "b", estimate: 30)], spacing: 5)

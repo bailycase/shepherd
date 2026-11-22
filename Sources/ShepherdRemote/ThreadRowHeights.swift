@@ -23,14 +23,16 @@ public struct ThreadRowHeights: Sendable {
 
     public mutating func replace(_ rows: [Row], spacing: CGFloat) {
         guard self.rows != rows || self.spacing != spacing else { return }
-        let oldEstimates = Dictionary(uniqueKeysWithValues: self.rows.map { ($0.id, $0.estimate) })
-        heights = Dictionary(uniqueKeysWithValues: rows.compactMap { row in
-            guard oldEstimates[row.id] == row.estimate, let height = heights[row.id] else { return nil }
-            return (row.id, height)
-        })
+        // Keep every slot. For an ambiguous ID the first slot owns the lookup and estimate.
+        let previous = self.rows
+        let oldIndices = indices
+        indices = Dictionary(rows.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        heights = heights.filter { id, _ in
+            guard let old = oldIndices[id], let new = indices[id] else { return false }
+            return previous[old].estimate == rows[new].estimate
+        }
         self.rows = rows
         self.spacing = spacing
-        indices = Dictionary(uniqueKeysWithValues: rows.enumerated().map { ($0.element.id, $0.offset) })
         rebuildOffsets()
     }
 
