@@ -21,12 +21,18 @@ struct PadOverview: View {
             if hosts.hosts.isEmpty {
                 NoHostsState().frame(maxHeight: .infinity)
             } else if model.overviewIsEmpty {
-                VStack(spacing: 0) {
+                // Fills the screen with the empty state centred under the notices; with many Macs or large text it
+                // scrolls instead, so New thread is never out of reach.
+                let empty = VStack(spacing: 0) {
                     if !model.offlineHosts.isEmpty { HostNotices(cards: model.offlineHosts).padding(MobileLayout.gutter) }
                     SHEmptyState(Text("No thread selected"), message: "Pick a thread in the sidebar, or start a new one.") {
                         Button("New thread") { NewThreadHooks.open(navigator: navigator) }.buttonStyle(.sh(.primary))
                     }
                     .frame(maxHeight: .infinity)
+                }
+                ViewThatFits(in: .vertical) {
+                    empty
+                    ScrollView { empty }
                 }
             } else {
                 ScrollView {

@@ -195,9 +195,7 @@ struct HostNotices: View {
 
     var body: some View {
         if !cards.isEmpty {
-            SHListCard {
-                ForEach(cards) { card in HostNotice(card: card).equatable() }
-            }
+            SHLazyListCard(cards) { card in HostNotice(card: card).equatable() }
         }
     }
 }

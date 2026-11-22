@@ -18,6 +18,14 @@ extension FixtureCatalog {
                 await HostNoticeCheck.run(app, label: "Retry MacBook Air") { app in app.hosts.host(FixtureData.laptop)?.phase == .connecting }
             }),
             FixtureScreen(name: "home-empty", hosts: []),
+            // iPad: the overview with nothing in its columns and Macs that cannot be reached: one (as the closed screen
+            // shows it), then more than a screen holds, which scrolls so New thread stays reachable.
+            FixtureScreen(name: "overview-offline-one", hosts: HomeFixtureData.offline(1), prepare: { app in
+                await OverviewOpenCheck.hideSidebar(app)
+            }),
+            FixtureScreen(name: "overview-offline-many", hosts: HomeFixtureData.offline(24, refusing: true), prepare: { app in
+                await OverviewScrollCheck.run(app)
+            }),
             // iPad: hosts with no threads, so the overview is its empty state.
             FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
                           prepare: settle),
@@ -186,14 +194,61 @@ extension FixtureCatalog {
         func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
         if app.navigator.layout == .pad { await OverviewOpenCheck.hideSidebar(app) }
         SidebarAutomationsCheck.enableAccessibility()
-        try? await Task.sleep(for: .seconds(1))
-        guard let button = SidebarAutomationsCheck.all.first(where: { $0.accessibilityLabel == label }) else {
-            return check(false, "the host notice's button is drawn (\(label))")
-        }
+        func notice() -> NSObject? { SidebarAutomationsCheck.all.first { $0.accessibilityLabel == label } }
+        // The tree fills in once SwiftUI has an assistive client; a notice that never draws fails here, not on a missing button.
+        await FixtureCheck.wait("the host notice's button (\(label))", seconds: 10) { notice() != nil }
+        guard let button = notice() else { return check(false, "the host notice's button is drawn (\(label))") }
         check(button.accessibilityActivate() && effect(app), "pressing \(label) does what it says")
-        // The shot shows the notice, not the sheet Add a Mac opened.
+        // The shot shows the notice, not the sheet Add a Mac opened; the runner lets the dismissal settle before it.
         app.navigator.dismissPresented()
-        try? await Task.sleep(for: .seconds(1))
+    }
+}
+
+/// With nothing in the overview's columns, the notices and New thread scroll when they outgrow the screen: scrolled to the end,
+/// the last control is inside the window. (Without a scroll view they run off the bottom with no way to reach them.)
+@MainActor enum OverviewScrollCheck {
+    static func run(_ app: MobileApp) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        guard app.navigator.layout == .pad else { return }
+        await OverviewOpenCheck.hideSidebar(app)
+        SidebarAutomationsCheck.enableAccessibility()
+        // The toolbar has a New thread too; the one in the content is the lower of the two.
+        func newThread() -> NSObject? {
+            SidebarAutomationsCheck.all.filter { $0.accessibilityLabel == "New thread" }.max { $0.accessibilityFrame.maxY < $1.accessibilityFrame.maxY }
+        }
+        await FixtureCheck.wait("New thread to be drawn", seconds: 10) { newThread() != nil && newThread()?.accessibilityFrame.isEmpty == false }
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) else {
+            return check(false, "a key window")
+        }
+        let bottom = window.bounds.inset(by: window.safeAreaInsets).maxY
+        let before = newThread()?.accessibilityFrame.maxY ?? 0
+        check(before > bottom, "the fixture overflows the screen (New thread ends at \(Int(before)), the screen at \(Int(bottom)))")
+        guard let scroll = largestScrollView(in: window) else { return check(false, "a scroll view holds the overview's content") }
+        // The cards are lazy, so the content's height is an estimate until its rows are built, and it moves as they are:
+        // keep going to the end until the end has held still for ten polls in a row.
+        var held = 0, height = scroll.contentSize.height
+        func atEnd() -> Bool {
+            let end = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height
+            let still = abs(scroll.contentOffset.y - end) < 1 && scroll.contentSize.height == height
+                && (newThread()?.accessibilityFrame.maxY ?? .infinity) <= bottom + 0.5
+            held = still ? held + 1 : 0
+            height = scroll.contentSize.height
+            scroll.setContentOffset(CGPoint(x: 0, y: end), animated: false)
+            return held >= 10
+        }
+        await FixtureCheck.wait("New thread to scroll into view", seconds: 15, until: atEnd)
+        check(true, "scrolled to the end, New thread is inside the screen")
+    }
+
+    private static func largestScrollView(in view: UIView) -> UIScrollView? {
+        var found: [UIScrollView] = []
+        func walk(_ view: UIView) {
+            if let scroll = view as? UIScrollView, !(scroll is UICollectionView), !(scroll is UITextView),
+               scroll.contentSize.height > scroll.bounds.height { found.append(scroll) }
+            view.subviews.forEach(walk)
+        }
+        walk(view)
+        return found.max { $0.contentSize.height < $1.contentSize.height }
     }
 }
 
@@ -202,17 +257,17 @@ extension FixtureCatalog {
 @MainActor enum OverviewFitCheck {
     static func run(_ app: MobileApp) async {
         func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
-        try? await Task.sleep(for: .seconds(3))
         SidebarAutomationsCheck.enableAccessibility()
-        try? await Task.sleep(for: .seconds(1))
+        let titles = ["Review queue"] + HomeFeed.of(app.hosts).model.needsYou.map { "Open \($0.thread)" }
+        func drawn() -> [NSObject] { SidebarAutomationsCheck.all.filter { element in titles.contains { element.accessibilityLabel?.hasPrefix($0) == true } } }
+        await FixtureCheck.wait("the overview's rows to be drawn", seconds: 10) { drawn().count == titles.count }
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) else {
             return check(false, "a key window")
         }
         let safe = window.bounds.inset(by: window.safeAreaInsets)
         // A sidebar that slides over the overview (portrait) covers it by design; only a docked one takes room.
         let left = app.navigator.padColumns == .detailOnly || app.navigator.padSidebarOverlays ? safe.minX : MobileLayout.sidebarWidth
-        let titles = ["Review queue"] + HomeFeed.of(app.hosts).model.needsYou.map { "Open \($0.thread)" }
-        let placed = SidebarAutomationsCheck.all.filter { element in titles.contains { element.accessibilityLabel?.hasPrefix($0) == true } }
+        let placed = drawn()
         check(placed.count == titles.count, "the overview's rows are drawn (\(placed.count) of \(titles.count))")
         check(placed.allSatisfy { $0.accessibilityFrame.minX >= left - 0.5 && $0.accessibilityFrame.maxX <= safe.maxX + 0.5 },
               "no overview row runs under the sidebar (to \(left)) or the rail (from \(safe.maxX))")
@@ -327,6 +382,14 @@ enum HomeFixtureData {
             hosts[0].state.agents[4].name = "Merge the release pull request after every required check on every platform has finished"
         }
         return hosts
+    }
+
+    /// `count` Macs with a notice and no thread. Unreachable ones keep retrying, so their notices flip between Retry and
+    /// Connecting; `refusing` ones are up and refuse the token, which holds still.
+    static func offline(_ count: Int, refusing: Bool = false) -> [FixtureHostData] {
+        (1...count).map {
+            FixtureHostData(id: UUID(), name: String(format: "build-%02d", $0), state: ShepherdState(), online: refusing, refusesToken: refusing)
+        }
     }
 
     /// Two hosts with threads and nothing waiting on the user.
