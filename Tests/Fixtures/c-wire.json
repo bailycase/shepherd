@@ -1,6 +1,9 @@
 {
   "codec": {
     "extension-reply": {
+      "agentRenamed": [
+        "{\"id\":119,\"newName\":\"After\",\"oldName\":\"Before\",\"type\":\"agentRenamed\"}\n"
+      ],
       "agentRequest": [
         "{\"id\":0,\"request\":{\"operation\":\"steer\",\"text\":\"[from: worker] change course\"},\"requestID\":\"server-token\",\"targetAgentID\":\"a2\",\"type\":\"agentRequest\"}\n"
       ],
@@ -8,7 +11,8 @@
         "{\"id\":19,\"result\":{\"code\":\"cancelled\",\"text\":\"request cancelled\"},\"type\":\"agentResult\"}\n"
       ],
       "agents": [
-        "{\"agents\":[{\"cwd\":\"/tmp\",\"id\":\"worker\",\"isSelf\":false,\"name\":\"worker\",\"status\":\"working\"},{\"cwd\":\"/tmp\",\"id\":\"me\",\"isSelf\":true,\"name\":\"me\",\"status\":\"idle\"}],\"id\":1,\"type\":\"agents\"}\n"
+        "{\"agents\":[{\"cwd\":\"/tmp\",\"id\":\"worker\",\"isSelf\":false,\"name\":\"worker\",\"status\":\"working\"},{\"cwd\":\"/tmp\",\"id\":\"me\",\"isSelf\":true,\"name\":\"me\",\"status\":\"idle\"}],\"id\":1,\"type\":\"agents\"}\n",
+        "{\"agents\":[{\"asking\":true,\"cwd\":\"/docs\",\"id\":\"far\",\"isSelf\":false,\"lastActiveAt\":1700000000000,\"name\":\"far\",\"space\":\"acme-docs\",\"status\":\"blocked\"}],\"id\":2,\"omitted\":3,\"type\":\"agents\"}\n"
       ],
       "appResult": [
         "{\"id\":8,\"text\":\"Apps in payments:\\n- Web app: running · port 3000\",\"type\":\"appResult\"}\n"
@@ -98,6 +102,9 @@
         "{\"id\":144,\"info\":{\"dispatchID\":\"5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11\",\"host\":\"Mac mini\",\"state\":\"preparing\",\"title\":\"\",\"without\":[\"bearcli\"]},\"type\":\"fleetDispatch\"}\n",
         "{\"id\":142,\"info\":{\"detail\":\"Mac mini\",\"dispatchID\":\"5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11\",\"failure\":\"repo_missing\",\"state\":\"failed\",\"title\":\"\"},\"type\":\"fleetDispatch\"}\n",
         "{\"id\":143,\"info\":{\"activity\":\"idle\",\"branch\":\"fleet/flaky-test\",\"branchFacts\":{\"ahead\":1,\"branch\":\"fleet/flaky-test\",\"deletions\":1,\"filesChanged\":1,\"head\":\"abc\",\"insertions\":2,\"pushed\":true,\"uncommittedModified\":2,\"uncommittedUntracked\":1},\"dispatchID\":\"5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11\",\"host\":\"Mac mini\",\"resultText\":\"Fixed.\",\"state\":\"delivering\",\"title\":\"Flaky test\"},\"type\":\"fleetDispatch\"}\n"
+      ],
+      "fleetDispatches": [
+        "{\"dispatches\":[{\"branch\":\"fleet/flaky-test\",\"closed\":false,\"dispatchID\":\"5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11\",\"host\":\"Mac mini\",\"mine\":true,\"state\":\"running\",\"title\":\"Flaky test\"},{\"closed\":true,\"dispatchID\":\"5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c12\",\"mine\":false,\"state\":\"done\",\"title\":\"\"}],\"id\":145,\"omitted\":4,\"type\":\"fleetDispatches\"}\n"
       ],
       "fleetHosts": [
         "{\"hosts\":[{\"connected\":true,\"hasRepo\":true,\"isThisMac\":false,\"name\":\"Mac mini\",\"problems\":[\"muse\"],\"room\":\"most room\",\"weight\":\"Prefer\"},{\"connected\":true,\"isThisMac\":true,\"name\":\"MacBook Pro\",\"problems\":[],\"room\":\"no room\",\"weight\":\"Normal\",\"without\":[\"bearcli\"]}],\"id\":140,\"type\":\"fleetHosts\"}\n"
@@ -294,6 +301,9 @@
       "fleetDispatchStatus": [
         "{\"agentID\":\"a1\",\"dispatchID\":\"5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11\",\"id\":133,\"type\":\"fleetDispatchStatus\"}\n"
       ],
+      "fleetListDispatches": [
+        "{\"agentID\":\"a1\",\"id\":138,\"type\":\"fleetListDispatches\"}\n"
+      ],
       "fleetListHosts": [
         "{\"agentID\":\"a1\",\"id\":130,\"type\":\"fleetListHosts\"}\n"
       ],
@@ -310,7 +320,8 @@
         "{\"agentID\":\"a1\",\"projectScopes\":true,\"type\":\"helloChildren\"}\n"
       ],
       "listAgents": [
-        "{\"agentID\":\"a1\",\"id\":16,\"type\":\"listAgents\"}\n"
+        "{\"agentID\":\"a1\",\"id\":16,\"type\":\"listAgents\"}\n",
+        "{\"agentID\":\"a1\",\"details\":true,\"id\":17,\"type\":\"listAgents\"}\n"
       ],
       "listAutomations": [
         "{\"id\":10,\"type\":\"listAutomations\"}\n"
@@ -351,6 +362,10 @@
       ],
       "registerProject": [
         "{\"agentID\":\"a1\",\"id\":70,\"name\":\"Project\",\"path\":\"/tmp/project\",\"type\":\"registerProject\"}\n"
+      ],
+      "renameAgent": [
+        "{\"agentID\":\"a1\",\"id\":119,\"name\":\"Peer title\",\"targetAgentID\":\"a2\",\"type\":\"renameAgent\"}\n",
+        "{\"agentID\":\"a1\",\"id\":120,\"name\":\"Own title\",\"type\":\"renameAgent\"}\n"
       ],
       "requestReview": [
         "{\"agentID\":\"a1\",\"cwd\":\"/tmp/repo\",\"id\":9,\"reference\":\"master..HEAD\",\"type\":\"requestReview\"}\n"

@@ -864,6 +864,8 @@ public final class SessionServer: @unchecked Sendable {
     lazy var pushNotifications: PushNotifications = {
         let pushes = PushNotifications(file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
         pushes.muted = { [weak self] id in self?.store.state.agents.first { $0.id == id }?.pushMuted == true }
+        pushes.canDeliverToDevice = { [weak self] id in self?.fleet?.isDeviceActive(id) == true }
+        pushes.isDeviceRevoked = { [weak self] id in self?.fleet?.isDeviceRevoked(id) == true }
         return pushes
     }()
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
@@ -1091,6 +1093,23 @@ public final class SessionServer: @unchecked Sendable {
     public var onAgentPeerCancellation: ((String) -> Void)?
 
     private var agentMessagePolicy: AgentMessagePolicy = .default
+
+    private final class LiveRename {
+        let session: SessionID
+        let generation: String
+        let name: String
+        let finish: (Result<(oldName: String, newName: String), ProjectFileError>) -> Void
+        var observed = false
+
+        init(session: SessionID, generation: String, name: String,
+             finish: @escaping (Result<(oldName: String, newName: String), ProjectFileError>) -> Void) {
+            self.session = session
+            self.generation = generation
+            self.name = name
+            self.finish = finish
+        }
+    }
+    private var liveRenames: [AgentID: LiveRename] = [:]
     /// Retained for existing consumers; agent calls no longer request UI approval.
     public var onAgentApprovalRequest: ((AgentApprovalPrompt) -> Void)?
 
@@ -1317,6 +1336,7 @@ public final class SessionServer: @unchecked Sendable {
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
             .filter { client.fleetDeviceID == nil || FleetAccess.device.isOffered($0) }
+            .filter { $0 != RemoteProtocol.pushNotificationsCapability || client.isLocal || client.fleetDeviceID != nil }
             + (client.isLocal ? [RemoteProtocol.localCapability, RemoteProtocol.changesWritesCapability] : [])
             + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
@@ -1364,6 +1384,8 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
+    // MARK: - Model catalog
+
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> ModelListing
@@ -1377,6 +1399,28 @@ public final class SessionServer: @unchecked Sendable {
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
     /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
     public func modelListing() -> ModelListing { modelCatalog() }
+
+    private func remoteListModels(_ input: RouteInput) {
+        switch input.request {
+        case .listModels(let id):
+            let send = input.send
+            // Asking pi shells out (~0.5s cold); never block the server
+            // queue. Reply from the queue once the catalog returns.
+            let catalog = modelCatalog
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let listing = catalog()
+                self?.queue.async {
+                    send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages))
+                }
+            }
+        default:
+            preconditionFailure("Mismatched listModels route")
+        }
+    }
+
+    // MARK: - Initialization
 
     /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
     /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
@@ -1684,6 +1728,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
+                    self.pushNotifications.pruneRevokedDevices()
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
                     Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
@@ -1854,7 +1899,8 @@ public final class SessionServer: @unchecked Sendable {
         let id: Int, agentID: AgentID
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
-             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _):
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _),
+             .fleetListDispatches(let value, let agent):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -1875,6 +1921,9 @@ public final class SessionServer: @unchecked Sendable {
         switch message {
         case .fleetListHosts:
             reply(.fleetHosts(id: id, hosts: fleet.dispatch.hosts(for: agentID)), to: client)
+        case .fleetListDispatches:
+            let list = fleet.dispatch.listRows(for: agentID)
+            reply(.fleetDispatches(id: id, dispatches: list.rows, omitted: list.omitted), to: client)
         case .fleetDispatch(_, _, let key, let task, let title, let host, let model, let thinking):
             fleet.dispatch.dispatch(from: agentID, key: key, task: task, title: title, host: host, model: model, thinking: thinking, reply: answer)
         case .fleetDispatchStatus(_, _, let key):
@@ -3444,50 +3493,65 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Routed requests (server queue)
 
-    private struct RouteInput {
+    struct RouteInput {
         let request: RemoteRequest
         let line: Data
-        let client: ExtensionConnection
-        var fd: Int32 { client.fd }
-    }
+        let fd: Int32
 
-    private typealias Route = @Sendable (SessionServer, RouteInput) -> Void
+        // Call on the server queue. The send path checks that the original connection is still current.
+        let send: (RemoteReply) -> Void
+        let offeredCapabilities: () -> [String]
+        let remoteInstructions: (_ id: Int, _ request: RemoteInstructionsRequest) -> Void
 
-    // A duplicate kind in this literal intentionally traps when the table is first used.
-    private static let remoteRoutes: [RemoteRequest.Kind: Route] = [
-        .listModels: { $0.remoteListModels($1) },
-    ]
-
-    private func remoteListModels(_ input: RouteInput) {
-        guard case .listModels(let id) = input.request else { preconditionFailure("Mismatched listModels route") }
-        let client = input.client
-        let fd = input.fd
-        // Asking pi shells out (~0.5s cold); never block the server
-        // queue. Reply from the queue once the catalog returns.
-        let catalog = modelCatalog
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let listing = catalog()
-            self?.queue.async {
-                guard let self, self.clients[fd] === client else { return }
-                self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
-            }
+        fileprivate init(request: RemoteRequest, line: Data, fd: Int32, send: @escaping (RemoteReply) -> Void,
+                         offeredCapabilities: @escaping () -> [String],
+                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void) {
+            self.request = request
+            self.line = line
+            self.fd = fd
+            self.send = send
+            self.offeredCapabilities = offeredCapabilities
+            self.remoteInstructions = remoteInstructions
         }
     }
+
+    typealias Route = @Sendable (SessionServer, RouteInput) -> Void
+
+    // Group by family, one kind per line. Add kinds only under their family anchor here and in the switch.
+    // A duplicate kind traps on first use. Put each family handler beside its code; switch on input.request.
+    // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
+    static let remoteRoutes: [RemoteRequest.Kind: Route] = [
+        // Host settings
+        // Model catalog
+        .listModels: { $0.remoteListModels($1) },
+        // Push registration
+        // Settings catalogs
+        // Add new families above this line.
+    ]
 
     private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
         #if DEBUG
         dispatchPrecondition(condition: .onQueue(queue))
         #endif
         if let handler = Self.remoteRoutes[request.kind] {
-            handler(self, RouteInput(request: request, line: line, client: client))
+            let input = RouteInput(request: request, line: line, fd: client.fd,
+                                   send: { [weak self] in self?.send($0, to: client) },
+                                   offeredCapabilities: { [weak self] in self?.offeredCapabilities(to: client) ?? [] },
+                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) })
+            handler(self, input)
             return
         }
+        func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
-        // Kinds moved to the route table share this case; a body here is dead.
-        case .listModels:
-            preconditionFailure("Missing route for \(request.kind)")
+        // Route-table kinds share this case. Use leading commas for kinds after .listModels.
+        case
+            // Host settings
+            // Model catalog
+            .listModels
+            // Push registration
+            // Settings catalogs
+            // Add new families above this line.
+            : missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
@@ -3498,7 +3562,7 @@ public final class SessionServer: @unchecked Sendable {
             fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
             do {
-                try pushNotifications.register(registration)
+                try pushNotifications.register(registration, deviceID: client.fleetDeviceID)
                 send(.ok(id: id), to: client)
             } catch {
                 send(.error(id: id, code: "push_registration",
@@ -3506,7 +3570,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .pushUnregister(let id, let registrationID):
             do {
-                try pushNotifications.unregister(registrationID)
+                try pushNotifications.unregister(registrationID, deviceID: client.fleetDeviceID)
                 send(.ok(id: id), to: client)
             } catch {
                 send(.error(id: id, code: "push_registration",
@@ -5782,7 +5846,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -5805,7 +5869,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+            case .childScope, .spawnAgent, .moveAgent, .renameAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
                  .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
@@ -5992,9 +6056,9 @@ public final class SessionServer: @unchecked Sendable {
         case .prepareProjectConfiguration(let id, _, _):
             // Spaces need no approval any more; agents started by an older build still ask first.
             reply(.ok(id: id), to: client)
-        case .listAgents(let id, let agentID):
+        case .listAgents(let id, let agentID, let details):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
+            routeAgentPeerRequest(.list(agentID: agentID, details: details), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
@@ -6013,6 +6077,21 @@ public final class SessionServer: @unchecked Sendable {
                 peerDeliveries[deliveryID] = pending
                 dispatchPeerTask(deliveryID)
             }
+        case .renameAgent(let id, let agentID, let targetAgentID, let name):
+            guard !Self.unattendedAgentIDs(in: store.state).contains(agentID) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Automation runs cannot rename threads."), to: client)
+                return
+            }
+            let target = targetAgentID ?? agentID
+            guard !refusesDesignPeer(id: id, sender: agentID, target: target, client: client),
+                  target == agentID || agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
+            renameLiveThread(target, to: name) { [weak self, weak client] result in
+                guard let self, let client else { return }
+                switch result {
+                case .success(let names): self.reply(.agentRenamed(id: id, oldName: names.oldName, newName: names.newName), to: client)
+                case .failure(let error): self.reply(.error(id: id, code: error.code, message: error.description), to: client)
+                }
+            }
         case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
             guard agentID != targetAgentID else {
                 reply(.error(id: id, code: "self_control", message: "An active agent cannot move itself. Ask another thread or move it manually after it finishes."), to: client)
@@ -6025,7 +6104,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
             break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -7178,11 +7257,11 @@ public final class SessionServer: @unchecked Sendable {
              .paneContent(let id, _, _),
              .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
-             .agents(let id, _),
-             .fleetHosts(let id, _), .fleetDispatch(let id, _),
+             .agents(let id, _, _),
+             .fleetHosts(let id, _), .fleetDispatch(let id, _), .fleetDispatches(let id, _, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
-             .agentResult(let id, _),
+             .agentResult(let id, _), .agentRenamed(let id, _, _),
              .suggestion(let id, _),
              .designList(let id, _),
              .design(let id, _),
@@ -7460,6 +7539,90 @@ public final class SessionServer: @unchecked Sendable {
             state.agents[index].piSessionID = trimmed
             state.agents[index].nameIsFinal = false
         })
+    }
+
+    /// Same display limit as the namer's /name reports. Line breaks become spaces. Keep joiners
+    /// and emoji flag tags, but drop other control and format characters. Pi validates and saves the name.
+    private static func cleanSessionName(_ name: String) -> String {
+        let singleLine = name.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: .newlines).joined(separator: " ")
+        var inFlag = false
+        let printable = String(singleLine.unicodeScalars.filter {
+            if inFlag, (0xE0020...0xE007F).contains($0.value) {
+                inFlag = $0.value != 0xE007F
+                return true
+            }
+            inFlag = $0.value == 0x1F3F4
+            let category = $0.properties.generalCategory
+            return $0.value == 0x200C || $0.value == 0x200D || (category != .control && category != .format)
+        })
+        let trimmed = printable.trimmingCharacters(in: .whitespacesAndNewlines)
+        var units = 0
+        let capped = String(trimmed.prefix { character in
+            units += character.utf16.count
+            return units <= 60
+        }).trimmingCharacters(in: .whitespacesAndNewlines)
+        return capped.unicodeScalars.contains {
+            $0.properties.generalCategory != .format && !$0.properties.isWhitespace
+        } ? capped : ""
+    }
+
+    /// Server queue. A Fleet receiver can use this once it resolves a dispatch to a local thread.
+    func renameLiveThread(_ agentID: AgentID, to name: String,
+                          completion: @escaping (Result<(oldName: String, newName: String), ProjectFileError>) -> Void) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            if let fleet, fleet.dispatch.outbound.values.contains(where: {
+                $0.targetHostID != nil && $0.targetHostID != fleet.hostID && ($0.remoteAgentID == agentID || UUID(uuidString: agentID.rawValue) == $0.id)
+            }) {
+                return completion(.failure(ProjectFileError("other_host", "That thread is on another Mac. agent_rename only works on this Mac.")))
+            }
+            return completion(.failure(ProjectFileError("no_such_agent", "No thread with that ID exists on this Mac. Only local agent_list IDs are supported.")))
+        }
+        guard store.state.isOrdinaryThread(agent) else {
+            return completion(.failure(ProjectFileError("not_a_thread", "That agent is not an ordinary thread.")))
+        }
+        guard let thread = rpcThread(forAgent: agentID), thread.session.isAlive, thread.isServable else {
+            return completion(.failure(ProjectFileError("not_running", "The thread has no ready Pi process. Start or reconnect it before renaming.")))
+        }
+        guard liveRenames[agentID] == nil else {
+            return completion(.failure(ProjectFileError("rename_pending", "A rename is already in progress for this thread.")))
+        }
+        let pending = LiveRename(session: thread.session.id, generation: thread.generation, name: Self.cleanSessionName(name), finish: completion)
+        liveRenames[agentID] = pending
+        thread.session.request(.setSessionName(pending.name)) { [weak self] result in
+            guard let self, self.liveRenames[agentID] === pending, !pending.observed else { return }
+            self.liveRenames[agentID] = nil
+            if case .success(let response) = result, !response.success, let error = response.error {
+                pending.finish(.failure(ProjectFileError("rename_refused", error)))
+            } else {
+                pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi did not confirm the rename. Check the current thread name before retrying.")))
+            }
+        }
+    }
+
+    /// Only a pending tool rename can override a title here. The namer still reports other
+    /// Pi name changes through setAgentName, which can only replace a provisional title.
+    private func sessionNameChanged(_ name: String, agentID: AgentID, owner: RPCThreadState) {
+        guard !name.isEmpty, let pending = liveRenames[agentID], !pending.observed,
+              pending.session == owner.session.id, pending.generation == owner.generation, pending.name == name,
+              let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        pending.observed = true
+        let generation = owner.generation
+        scheduleStateMutation({ state in
+            guard self.rpcThread(forAgent: agentID) === owner, owner.generation == generation,
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  state.isOrdinaryThread(state.agents[index]) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            state.agents[index].name = name
+            state.agents[index].nameIsFinal = true
+        }) { result in
+            self.liveRenames[agentID] = nil
+            switch result {
+            case .success: pending.finish(.success((agent.name, name)))
+            case .failure: pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi set the name, but Shepherd could not save it.")))
+            }
+        }
     }
 
     /// Apply a namer-proposed title. Provisional names only: a user rename (or
@@ -10136,6 +10299,11 @@ public final class SessionServer: @unchecked Sendable {
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread, weak serverWeak] event in
+                if case .sessionInfoChanged(let name) = event {
+                    if let name, let thread, let server = serverWeak, let agentID = server.agentID(forSession: sid) {
+                        server.sessionNameChanged(name, agentID: agentID, owner: thread)
+                    }
+                }
                 thread?.handle(event)
                 if case .messageEnd(let message) = event, message.role == "assistant", message.stopReason == "error",
                    let provider = message.provider, let error = message.errorMessage, let server = serverWeak,

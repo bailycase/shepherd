@@ -111,7 +111,8 @@
         "agent_wait",
         "agent_delete",
         "agent_spawn",
-        "agent_move"
+        "agent_move",
+        "agent_rename"
       ],
       "group": "agent",
       "extension": "shepherd-panes.ts",

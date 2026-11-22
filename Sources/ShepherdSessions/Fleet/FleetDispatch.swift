@@ -578,7 +578,7 @@ final class FleetDispatch: @unchecked Sendable {
                     var record = FleetDispatchRecord(
                         id: id, parentAgentID: agentID, parentHostID: self.hostID, parentHostName: self.hostName(), parentTitle: agent.name,
                         requestedHost: FleetPlacement.isAuto(named) ? nil : named?.trimmingCharacters(in: .whitespacesAndNewlines),
-                        state: .placing, title: Self.title(title, task: trimmedTask), task: trimmedTask, repoKey: repoKey,
+                        state: .placing, title: Self.title(title, task: trimmedTask), titleGiven: Self.titleGiven(title), task: trimmedTask, repoKey: repoKey,
                         commitSHA: pin.sha, subdir: pin.subdir, model: model?.fleetNonEmpty, thinking: thinking?.fleetNonEmpty,
                         spaceID: spaceID, origin: origin, createdAt: self.now)
                     record.updatedAt = record.createdAt
@@ -614,6 +614,9 @@ final class FleetDispatch: @unchecked Sendable {
         let flat = source.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return flat.count <= titleLimit ? flat : String(flat.prefix(titleLimit - 1)) + "…"
     }
+
+    /// Whether the sender named the dispatch, as opposed to `title` taking the task's first line.
+    static func titleGiven(_ given: String?) -> Bool { given?.fleetNonEmpty != nil }
 
     /// Room under the thread's cap for one more dispatch.
     func canStart(_ record: FleetDispatchRecord) -> Bool {

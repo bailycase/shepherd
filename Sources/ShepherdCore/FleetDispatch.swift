@@ -320,6 +320,9 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var failure: String?
     public var failureDetail: String?
     public var title: String
+    /// The sender gave `title` (else it is the task's first line, so a thread other than the sender must not be shown it). False from an older
+    /// build, whose titles are all treated as the task's.
+    public var titleGiven: Bool
     /// What the thread was asked to do. Data: nothing reads it as an instruction but the thread it was sent to.
     public var task: String
     public var repoKey: String
@@ -381,7 +384,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
 
     public init(id: UUID = UUID(), kind: Kind = .agentDispatch, parentAgentID: AgentID? = nil, parentHostID: UUID, parentHostName: String,
                 parentTitle: String = "", targetHostID: UUID? = nil, targetHostName: String? = nil, requestedHost: String? = nil,
-                state: FleetDispatchState = .placing, failure: String? = nil, failureDetail: String? = nil, title: String, task: String,
+                state: FleetDispatchState = .placing, failure: String? = nil, failureDetail: String? = nil, title: String, titleGiven: Bool = false, task: String,
                 repoKey: String, commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil,
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], without: [String] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
@@ -405,6 +408,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         self.failure = failure
         self.failureDetail = failureDetail
         self.title = title
+        self.titleGiven = titleGiven
         self.task = task
         self.repoKey = repoKey
         self.commitSHA = commitSHA
@@ -432,7 +436,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentAgentID, parentHostID, parentHostName, parentTitle, targetHostID, targetHostName, requestedHost, state
-        case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
+        case failure, failureDetail, title, titleGiven, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, lastThreadEventAt, resultText, resultBranchFacts, createdAt, updatedAt, hostRunningDispatches, closeReport, comparisonBranch
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
         case spaceID, origin, clone, start, fixes, move, movedOn, limitProvider, parentDepth
@@ -455,6 +459,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         failure = try c.decodeIfPresent(String.self, forKey: .failure)
         failureDetail = try c.decodeIfPresent(String.self, forKey: .failureDetail)
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        titleGiven = try c.decodeIfPresent(Bool.self, forKey: .titleGiven) ?? false
         task = try c.decodeIfPresent(String.self, forKey: .task) ?? ""
         repoKey = try c.decodeIfPresent(String.self, forKey: .repoKey) ?? ""
         commitSHA = try c.decodeIfPresent(String.self, forKey: .commitSHA)
@@ -505,6 +510,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(failure, forKey: .failure)
         try c.encodeIfPresent(failureDetail, forKey: .failureDetail)
         try c.encode(title, forKey: .title)
+        if titleGiven { try c.encode(titleGiven, forKey: .titleGiven) }
         try c.encode(task, forKey: .task)
         try c.encode(repoKey, forKey: .repoKey)
         try c.encodeIfPresent(commitSHA, forKey: .commitSHA)

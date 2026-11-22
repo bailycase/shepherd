@@ -1079,7 +1079,7 @@ final class RPCThreadState {
             beginDiagnostic("model.response", operation: "model.response")
         case .entryAppended(let entry):
             entryAppended(entry)
-        case .turnEnd, .unknown:
+        case .turnEnd, .sessionInfoChanged, .unknown:
             break
         }
         runDueFold()

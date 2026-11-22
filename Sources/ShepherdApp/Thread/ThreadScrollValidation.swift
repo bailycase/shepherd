@@ -87,6 +87,7 @@ final class MacScrollValidationTrace: NSObject {
     var wheel: ((CGFloat) -> Void)?
     var phase: ((ScrollPhase, ScrollPhase, CGFloat) -> Void)?
     var historyVisibility: ((Bool) -> Void)?
+    weak var measuredHistory: ThreadMeasuredHistory?
     var deckPage: ((AgentLayoutModel) -> AnyView)?
     var streamingRowID: String?
     var historyBoundary: (() -> (lazy: String, eager: String)?)?
@@ -99,7 +100,10 @@ final class MacScrollValidationTrace: NSObject {
     private var phaseState = ScrollPhase.idle
     var wheelUntil = ContinuousClock.now
     private var scriptedWrite = false
+    fileprivate var wheelLayoutRunning = false
+    fileprivate var wheelTraceTimes: (inLayout: UInt64, outside: UInt64) = (0, 0)
     private var intent = ScrollIntent()
+    var physicalScrollerHeld: Bool { intent.physicalScrollerHeld }
 
     func phaseChanged(to phase: ScrollPhase) {
         intent.phaseChanged(from: phaseState.intentPhase, to: phase.intentPhase, now: .now)
@@ -253,6 +257,15 @@ final class MacScrollValidationTrace: NSObject {
     }
 
     @objc private func boundsChanged(_ notification: Notification) {
+        let start = ThreadScrollValidation.timingWheel ? clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) : nil
+        let inLayout = wheelLayoutRunning
+        defer {
+            if let start {
+                let elapsed = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
+                if inLayout { wheelTraceTimes.inLayout += elapsed }
+                else { wheelTraceTimes.outside += elapsed }
+            }
+        }
         guard let from = offset, let to = clip?.bounds.minY, from != to else { return }
         offset = to
         events.append(Event(caller: "NSClipView.bounds", from: from, to: to, stack: Thread.callStackSymbols,
@@ -273,6 +286,9 @@ private struct IntentMismatch: Error, CustomStringConvertible {
 /// Runs before SwiftUI's app/host startup. The offscreen window only mounts fixture-backed ThreadViews.
 @MainActor
 public enum ThreadScrollValidation {
+    private(set) static var measuredHistory = false
+    fileprivate(set) static var timingWheel = false
+
     public static func main() -> Never {
         let env = ProcessInfo.processInfo.environment
         guard Bundle.main.bundleIdentifier == "com.bailycase.shepherd.dev",
@@ -285,6 +301,7 @@ public enum ThreadScrollValidation {
             print("error: scroll validation requires the Dev bundle and an isolated scratch directory")
             exit(2)
         }
+        measuredHistory = env["SHEPHERD_SCROLL_MEASURED_HISTORY"] == "1"
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         Task { @MainActor in
@@ -296,9 +313,13 @@ public enum ThreadScrollValidation {
             encoder.outputFormatting = [.sortedKeys]
             let url = URL(fileURLWithPath: path)
             do {
-                try await fixtures[0].run()
-                try await fixtures[1].run(crossing: .slow)
-                try await fixtures[2].run(crossing: .flick)
+                let pagingOnly = env["SHEPHERD_SCROLL_PAGING_ONLY"] == "1"
+                let wheelTurns = env["SHEPHERD_SCROLL_WHEEL_TURNS"].flatMap(Int.init)
+                try await fixtures[0].run(pagingOnly: pagingOnly, wheelTurns: wheelTurns)
+                if !pagingOnly && wheelTurns == nil {
+                    try await fixtures[1].run(crossing: .slow)
+                    try await fixtures[2].run(crossing: .flick)
+                }
                 try encoder.encode(frames()).write(to: url, options: .atomic)
                 exit(0)
             } catch {
@@ -358,6 +379,7 @@ private final class ScrollFixture {
     private var pageReply: CheckedContinuation<NativeThreadResult, Never>?
     private let history = (0..<360).flatMap { ScrollFixture.turn($0) }
     private var thread = ScrollFixture.snapshot(messages: [])
+    private var wheelLayoutTimes: (window: UInt64, subtree: UInt64) = (0, 0)
 
     private func request(_ value: NativeThreadRequest) async -> NativeThreadResult {
         guard case let .snapshot(_, before, revision) = value else {
@@ -376,7 +398,7 @@ private final class ScrollFixture {
 
     enum Crossing { case slow, flick }
 
-    func run(crossing: Crossing? = nil) async throws {
+    func run(crossing: Crossing? = nil, pagingOnly: Bool = false, wheelTurns: Int? = nil) async throws {
         guard let screen = NSScreen.main else { throw ValidationError("display link requires a WindowServer screen") }
         MacScrollValidationTrace.current = trace
         SHRenderProbe.scrollEvents = { [weak trace] event, source in trace?.record(event, source: source) }
@@ -399,7 +421,12 @@ private final class ScrollFixture {
             SHRenderProbe.disabledScrollAnchor = nil
         }
 
-        thread = Self.snapshot(messages: Array(history.drop(while: { $0.entryID != "user-60" })), older: "user-60")
+        if let wheelTurns {
+            guard (1...360).contains(wheelTurns) else { throw ValidationError("wheel turns must be in 1...360") }
+            thread = Self.snapshot(messages: Array(history.drop(while: { $0.entryID != "user-\(360 - wheelTurns)" })))
+        } else {
+            thread = Self.snapshot(messages: Array(history.drop(while: { $0.entryID != "user-60" })), older: "user-60")
+        }
         thread.running = true
         thread.messages.append(Self.message("stream-user", "user", "Review the remaining cases."))
         thread.provisional = [Self.message("provisional:assistant:1", "assistant", "## Working notes\n\n", status: "streaming")]
@@ -411,9 +438,11 @@ private final class ScrollFixture {
             }
             return AnyView(Color.clear)
         }
+        let mountStart = CACurrentMediaTime()
         window.contentView = NSHostingView(rootView: Root(fixture: self))
         window.orderBack(nil)
         try await trace.waitFor("the streaming tail to mount") { self.store.liveRow != nil && self.trace.latest?.first != nil }
+        if crossing == nil { recordMount(since: mountStart) }
         trace.streamingRowID = store.liveRow?.id
         trace.historyBoundary = { [weak store] in
             guard let store, let eager = store.drawnEagerRows, eager > 0, eager < store.rows.count else { return nil }
@@ -424,6 +453,10 @@ private final class ScrollFixture {
         // The first live layout replaces the stack's initial height estimate. Warm it before measuring.
         try await streamChunk(0, marker: "fixture.warmupChunk")
         await trace.settle()
+        if wheelTurns != nil {
+            try await wheelWalkToTop(in: scrollView(), timeLimit: .seconds(45))
+            return
+        }
         if crossing == nil { trace.scenario = "slow-scroll-streaming" }
         await trace.advance()
         try await trace.waitFor("the reader inside the sticky band") {
@@ -483,7 +516,12 @@ private final class ScrollFixture {
 
         trace.scenario = "mid-history-new-turn"
         await trace.advance()
-        try scroll(to: try scrollView().contentView.documentRect.height / 2)
+        let destination = try scrollView().contentView.documentRect.height / 2
+        if let measuredHistory = trace.measuredHistory {
+            try measuredHistory.landJump { try scroll(to: destination) }
+        } else {
+            try scroll(to: destination)
+        }
         await trace.settle()
         let oldHeight = trace.latest?.documentHeight
         trace.mark("fixture.newTurn")
@@ -521,6 +559,7 @@ private final class ScrollFixture {
         pageReply = nil
         try await trace.waitFor("the older page to prepend") { self.store.messages.first?.entryID == "user-0" }
         await trace.settle()
+        if pagingOnly { return }
 
         trace.scenario = "window-resize"
         await trace.advance()
@@ -557,6 +596,21 @@ private final class ScrollFixture {
         store.releaseTranscript(keepingLastScreen: true)
         guard store.transcriptReleased else { throw ValidationError("fixture did not release its hidden rows") }
         await trace.settle()
+    }
+
+    private func recordMount(since start: Double) {
+        let milliseconds = (CACurrentMediaTime() - start) * 1_000
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        let footprint = result == KERN_SUCCESS ? String(info.phys_footprint) : "unavailable"
+        let historyRows = store.rows.count - (store.drawnEagerRows ?? 0)
+        let mounted = trace.latest?.rows.count ?? 0
+        print("mount: \(milliseconds) ms, \(footprint) footprint bytes, \(historyRows) history rows, \(mounted) row markers")
     }
 
     private func requireIntent(_ expected: ScrollIntent.State) throws {
@@ -629,12 +683,25 @@ private final class ScrollFixture {
         try requireIntent(.idle)
     }
 
-    private func wheelWalkToTop(in scroll: NSScrollView) async throws {
+    private func wheelWalkToTop(in scroll: NSScrollView, timeLimit: Duration = .seconds(8)) async throws {
         trace.scenario = "wheel-walk-to-top"
         await trace.advance()
         let clip = scroll.contentView
         let step = (clip.bounds.height - scroll.contentInsets.top - scroll.contentInsets.bottom) / 2
-        let deadline = ContinuousClock.now + .seconds(8)
+        let counters = ["thread.rowBuilder", "thread.wheel.publishWindow", "thread.wheel.windowMove",
+                        "thread.wheel.commit", "thread.wheel.rowMarkerLayout", "thread.wheel.finderFrameSize"]
+        FileHandle.standardError.write(Data("wheel timing: \(store.rows.count - (store.drawnEagerRows ?? 0)) history rows\n".utf8))
+        SHRenderProbe.start()
+        ThreadScrollValidation.timingWheel = true
+        var costs: [String] = []
+        defer {
+            ThreadScrollValidation.timingWheel = false
+            SHRenderProbe.stop()
+            let header = (["wheel-step", "cpu-ms", "window-layout-ms", "subtree-layout-ms",
+                           "trace-in-layout-ms", "trace-outside-ms"] + counters).joined(separator: ",")
+            FileHandle.standardError.write(Data((header + "\n" + costs.joined(separator: "\n") + "\n").utf8))
+        }
+        let deadline = ContinuousClock.now + timeLimit
         while true {
             let bounds = clip.bounds
             let next = clip.constrainBoundsRect(bounds.offsetBy(dx: 0, dy: -step)).minY
@@ -643,7 +710,15 @@ private final class ScrollFixture {
                 break
             }
             guard ContinuousClock.now < deadline else { break }
+            let before = counters.map(SHRenderProbe.count)
+            trace.wheelTraceTimes = (0, 0)
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             try self.scroll(up: step)
+            let elapsed = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
+            let times = [elapsed, wheelLayoutTimes.window, wheelLayoutTimes.subtree,
+                         trace.wheelTraceTimes.inLayout, trace.wheelTraceTimes.outside].map { String(Double($0) / 1_000_000) }
+            let counts = zip(counters.map(SHRenderProbe.count), before).map { String($0 - $1) }
+            costs.append(([String(costs.count + 1)] + times + counts).joined(separator: ","))
             await trace.advance()
         }
         await trace.settle()
@@ -773,8 +848,18 @@ private final class ScrollFixture {
             try phase(from: .interacting, to: .idle, distance: distance)
         }
         scroll.reflectScrolledClipView(clip)
-        window.layoutIfNeeded()
-        window.contentView?.layoutSubtreeIfNeeded()
+        if ThreadScrollValidation.timingWheel {
+            trace.wheelLayoutRunning = true
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            window.layoutIfNeeded()
+            let second = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            window.contentView?.layoutSubtreeIfNeeded()
+            wheelLayoutTimes = (second - start, clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - second)
+            trace.wheelLayoutRunning = false
+        } else {
+            window.layoutIfNeeded()
+            window.contentView?.layoutSubtreeIfNeeded()
+        }
     }
 
     private static func snapshot(messages: [NativeThreadMessage], older: String? = nil) -> NativeThreadSnapshot {

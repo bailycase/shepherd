@@ -44,13 +44,22 @@ final class PushNotifications: @unchecked Sendable {
         let registrationID: String
         let cancel: () -> Void
     }
+    /// Disk-only metadata. Keep the old keys flat, and decode a missing owner as nil.
+    struct Registration: Codable, Equatable {
+        var id: String
+        let sendToken: String
+        let preferences: RemotePushPreferences?
+        let deviceID: UUID?
+    }
     private static let fileLimit = 32_768
+    private static let registrationLimit = 16
+    private static let deviceLimit = 2
     private let file: URL
     private let queue: DispatchQueue
-    /// Keep the last readable bytes separate from in-memory revocations that haven't reached disk.
+    /// Keep the last readable bytes separate from in-memory unregisters that haven't reached disk.
     private var diskBytes: Data?
     private var storageDamaged = false
-    private(set) var registrations: [String: RemotePushRegistration] = [:]
+    private(set) var registrations: [String: Registration] = [:]
     private var deliveries: [UUID: Delivery] = [:]
     private var window = Date.distantPast
     private var eventCount = 0
@@ -62,6 +71,9 @@ final class PushNotifications: @unchecked Sendable {
     var focused: AgentID?
     /// Whether the person muted this thread's pushes (`Agent.pushMuted`); set by the server.
     var muted: (AgentID) -> Bool = { _ in false }
+    /// Consult pairing state even after restart or when an older copy of the file is restored.
+    var canDeliverToDevice: (UUID) -> Bool = { _ in true }
+    var isDeviceRevoked: (UUID) -> Bool = { _ in false }
     var now: () -> Date = Date.init
     /// Seconds since the person last touched this Mac, for away-only phones.
     var idleSeconds: () -> TimeInterval = {
@@ -81,30 +93,62 @@ final class PushNotifications: @unchecked Sendable {
         _ = try? refreshRegistrations()
     }
 
-    static func valid(_ registration: RemotePushRegistration) -> Bool {
-        UUID(uuidString: registration.id) != nil && registration.sendToken.utf8.count == 64
-            && registration.sendToken.utf8.allSatisfy { (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }
+    private static func validToken(_ token: String) -> Bool {
+        token.utf8.count == 64
+            && token.utf8.allSatisfy { (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }
     }
 
-    func register(_ registration: RemotePushRegistration) throws {
-        guard Self.valid(registration) else { throw Failure.invalid }
-        let original = try refreshRegistrations()
-        let id = UUID(uuidString: registration.id)!.uuidString
-        guard registrations[id] != nil || registrations.count < 16 else { throw Failure.full }
+    // A nil caller is the local owner. A paired device can adopt an unowned legacy row.
+    func register(_ registration: RemotePushRegistration, deviceID: UUID? = nil) throws {
+        guard let id = UUID(uuidString: registration.id)?.uuidString,
+              Self.validToken(registration.sendToken) else { throw Failure.invalid }
+        try pruneRevoked(replacing: refreshRegistrations())
+        let original = diskBytes
+        let current = registrations[id]
+        let foreign = deviceID != nil && current?.deviceID != nil && current?.deviceID != deviceID
+        guard (current != nil && !foreign) || registrations.count < Self.registrationLimit else { throw Failure.full }
+        if let deviceID, current?.deviceID != deviceID {
+            guard registrations.values.filter({ $0.deviceID == deviceID }).count < Self.deviceLimit else { throw Failure.full }
+        }
+        // A foreign ID gets the reply for a new ID at the same capacity, without changing the row.
+        guard !foreign else { return }
         var next = registrations
-        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken, preferences: registration.preferences)
+        next[id] = Registration(id: id, sendToken: registration.sendToken, preferences: registration.preferences,
+                                deviceID: deviceID ?? current?.deviceID)
         try persist(next, replacing: original)
         cancel(id)
         registrations = next
     }
 
-    func unregister(_ rawID: String, matching expired: RemotePushRegistration? = nil) throws {
+    func unregister(_ rawID: String, deviceID: UUID? = nil, matching expired: Registration? = nil) throws {
         guard let id = UUID(uuidString: rawID)?.uuidString else { throw Failure.invalid }
         let original = try refreshRegistrations()
         guard expired == nil || registrations[id] == expired else { return }
+        // An unknown ID still goes through the normal write, including normalization of legacy rows.
+        let foreign = deviceID != nil && registrations[id]?.deviceID != nil && registrations[id]?.deviceID != deviceID
+        try remove(foreign ? [] : [id], replacing: original)
+    }
+
+    func pruneRevokedDevices() {
+        do { try pruneRevoked(replacing: refreshRegistrations()) }
+        catch { ShepherdLog.warning("Could not remove push registrations for a revoked device: \(error.localizedDescription)") }
+    }
+
+    private func pruneRevoked(replacing original: Data?) throws {
+        let next = registrations.filter { $0.value.deviceID.map(isDeviceRevoked) != true }
+        guard next.count != registrations.count else { return }
+        for id in registrations.keys where next[id] == nil { cancel(id) }
+        // Delivery already checks pairing. Keep the rows visible to pruning until the save succeeds.
+        try persist(next, replacing: original)
+        registrations = next
+    }
+
+    private func remove(_ ids: [String], replacing original: Data?) throws {
         // After a healthy read, revoke in memory even if the save fails.
-        cancel(id)
-        registrations.removeValue(forKey: id)
+        for id in ids {
+            cancel(id)
+            registrations.removeValue(forKey: id)
+        }
         try persist(registrations, replacing: original)
     }
 
@@ -143,15 +187,15 @@ final class PushNotifications: @unchecked Sendable {
         let data = try handle.read(upToCount: Self.fileLimit + 1) ?? Data()
         guard data.count <= Self.fileLimit else { throw CocoaError(.fileReadCorruptFile) }
         if data != diskBytes || storageDamaged {
-            switch PersistedFile<[RemotePushRegistration]>.decode(data, validate: { saved in
-                guard saved.count <= 16, saved.allSatisfy(Self.valid) else { throw Failure.invalid }
+            switch PersistedFile<[Registration]>.decode(data, validate: { saved in
+                guard saved.count <= Self.registrationLimit,
+                      saved.allSatisfy({ UUID(uuidString: $0.id) != nil && Self.validToken($0.sendToken) }) else { throw Failure.invalid }
             }) {
             case .loaded(let saved):
-                var next: [String: RemotePushRegistration] = [:]
-                for registration in saved {
-                    let id = UUID(uuidString: registration.id)!.uuidString
-                    next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken,
-                                                      preferences: registration.preferences)
+                var next: [String: Registration] = [:]
+                for var registration in saved {
+                    registration.id = UUID(uuidString: registration.id)!.uuidString
+                    next[registration.id] = registration
                 }
                 for (id, old) in registrations where next[id] != old { cancel(id) }
                 registrations = next
@@ -163,7 +207,7 @@ final class PushNotifications: @unchecked Sendable {
         if info.st_mode & 0o7777 != 0o600 { _ = fchmod(fd, 0o600) }
     }
 
-    private func persist(_ next: [String: RemotePushRegistration], replacing original: Data?) throws {
+    private func persist(_ next: [String: Registration], replacing original: Data?) throws {
         let directory = file.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let staged = directory.appendingPathComponent(".push-registrations-\(UUID().uuidString)")
@@ -238,6 +282,10 @@ final class PushNotifications: @unchecked Sendable {
         }
     }
 
+    private func canDeliver(to registration: Registration) -> Bool {
+        registration.deviceID.map(canDeliverToDevice) ?? true
+    }
+
     /// `group` stacks the alert with its thread's others; `subtitle` names the kind.
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
               group: String? = nil, subtitle: String? = nil,
@@ -247,9 +295,11 @@ final class PushNotifications: @unchecked Sendable {
         do { _ = try refreshRegistrations() }
         catch { return skip("push registrations unavailable") }
         guard !registrations.isEmpty else { return skip("no phone registered") }
+        let eligible = registrations.values.filter { canDeliver(to: $0) }
+        guard !eligible.isEmpty else { return skip("all registrations skipped because their devices are not paired") }
         let idle = idleSeconds()
         let away = idle >= RemotePushPreferences.awayAfter
-        let wanted = registrations.values.filter { registration in
+        let wanted = eligible.filter { registration in
             guard let preferences = registration.preferences else { return true }
             return (away || !preferences.awayOnly) && preferences.allows(topic)
         }
@@ -291,7 +341,7 @@ final class PushNotifications: @unchecked Sendable {
 
     /// One delivery of `bodies.first`; the rest are the same event in older relays' shapes, each sent once
     /// if the one before is refused.
-    private func post(_ bodies: ArraySlice<(Relay, Data)>, to registration: RemotePushRegistration) {
+    private func post(_ bodies: ArraySlice<(Relay, Data)>, to registration: Registration) {
         guard let body = bodies.first?.1 else { return }
         let id = UUID()
         var request = URLRequest(url: URL(string: "https://api.useshepherd.app/api/push/registrations/\(registration.id)/events")!)
@@ -309,7 +359,7 @@ final class PushNotifications: @unchecked Sendable {
                 if status == 400, let older = bodies.dropFirst().first {
                     do { _ = try self.refreshRegistrations() }
                     catch { return }
-                    guard self.registrations[registration.id] == registration else { return }
+                    guard self.registrations[registration.id] == registration, self.canDeliver(to: registration) else { return }
                     self.relay = max(self.relay, older.0)
                     self.post(bodies.dropFirst(), to: registration)
                     return

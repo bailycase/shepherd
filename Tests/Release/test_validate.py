@@ -107,6 +107,11 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual((jump["row"], jump["measured"], jump["delta_pt"]), ("tail", "row", 38995))
         self.assertFalse(summary["offscreen_input_shifts"])
 
+        after["rows"]["tail"] = 5
+        [jump] = validate.measure_scroll([before, after])["jumps"]
+        self.assertEqual((jump["measured"], jump["delta_pt"]),
+                         ("mounted row during unexplained input eviction", 0))
+
         before["rows"]["history"] = -5
         before["visibleRows"].append("history")
         self.assertFalse(validate.measure_scroll([before, after])["jumps"])  # The shared visible row wins.
