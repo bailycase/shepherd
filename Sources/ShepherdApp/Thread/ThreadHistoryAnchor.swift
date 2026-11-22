@@ -24,6 +24,7 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var generation = 0
 
     #if DEBUG
+    @ObservationIgnored var measured = false
     @ObservationIgnored private var prepend: (delta: CGFloat, oldDocumentHeight: CGFloat)?
     @ObservationIgnored private(set) var correctingPrepend = false
     var hasPrepend: Bool { prepend != nil || correctingPrepend }
@@ -91,7 +92,7 @@ final class ThreadHistoryAnchor {
             return
         }
         #if DEBUG
-        if ThreadScrollValidation.measuredHistory {
+        if measured {
             waiting = false
             return
         }
@@ -108,7 +109,7 @@ final class ThreadHistoryAnchor {
     func prepended(firstID: String?, session: String?, active: Bool, materialize: @escaping (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
         #if DEBUG
-        if ThreadScrollValidation.measuredHistory { return }
+        if measured { return }
         #endif
         guard !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
         if waiting {

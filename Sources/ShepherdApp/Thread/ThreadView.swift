@@ -110,7 +110,10 @@ struct ThreadView: View {
     @State private var historyPaging = NativeHistoryPaging()
     @State private var historyAnchor = ThreadHistoryAnchor()
     #if DEBUG
-    @State private var measuredHistory = ThreadMeasuredHistory()
+    @State private var fixtureMeasuredHistory = ThreadMeasuredHistory()
+    private var measuredHistory: ThreadMeasuredHistory? {
+        tailGuard.measuredHistoryForTests ?? (ThreadScrollValidation.measuredHistory ? fixtureMeasuredHistory : nil)
+    }
     @Environment(\.shDensity) private var historyDensity
     #endif
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
@@ -274,8 +277,8 @@ struct ThreadView: View {
                     .background {
                         #if DEBUG
                         ThreadScrollViewFinder(guardian: tailGuard,
-                                               historyAnchor: ThreadScrollValidation.measuredHistory ? historyAnchor : nil,
-                                               measuredHistory: ThreadScrollValidation.measuredHistory ? measuredHistory : nil)
+                                               historyAnchor: measuredHistory != nil ? historyAnchor : nil,
+                                               measuredHistory: measuredHistory)
                         #else
                         ThreadScrollViewFinder(guardian: tailGuard)
                         #endif
@@ -299,6 +302,9 @@ struct ThreadView: View {
                     }
                 }
                 #if DEBUG
+                .onChange(of: measuredHistory != nil && (parksHistory || history.isEmpty)) { _, release in
+                    if release { measuredHistory?.release() }
+                }
                 .onChange(of: fleetThread?.move != nil) { _, _ in
                     SHRenderProbe.scrollEvent("thread.write.L13", "fleet.notice", from: tailGuard, kind: "layout")
                 }
@@ -629,7 +635,7 @@ struct ThreadView: View {
             let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
                                  detached: !follower.sticky)
             #if DEBUG
-            if ThreadScrollValidation.measuredHistory {
+            if let measuredHistory {
                 let settings = ThreadMeasuredHistory.Settings(session: store.sessionKey, textScale: ThemeStore.shared.textScale,
                                                               density: historyDensity)
                 var measuredKey = key
@@ -1003,7 +1009,7 @@ struct ThreadView: View {
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
         #if DEBUG
-        let measuredScroll = ThreadScrollValidation.measuredHistory ? tailGuard.scrollView() : nil
+        let measuredScroll = measuredHistory != nil ? tailGuard.scrollView() : nil
         #else
         let measuredScroll: NSScrollView? = nil
         #endif
@@ -1077,7 +1083,7 @@ struct ThreadView: View {
 
     private func jump(to id: String, caller: String, proxy: ScrollViewProxy) {
         #if DEBUG
-        if ThreadScrollValidation.measuredHistory {
+        if let measuredHistory {
             DispatchQueue.main.async {
                 guard tailGuard.active else { return }
                 if let scroll = tailGuard.scrollView(), measuredHistory.jump(to: id, caller: caller, in: scroll) { return }

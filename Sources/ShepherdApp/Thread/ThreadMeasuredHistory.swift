@@ -50,6 +50,17 @@ final class ThreadMeasuredHistory {
         if paging?.hasPrepend != true { queueWindow() }
     }
 
+    var retainedRowCount: Int { rows.count }
+
+    func release() {
+        rows = []
+        table = ThreadRowHeights()
+        pending.removeAll()
+        builtBounds = nil
+        prependedAt = nil
+        lastDocumentHeight = nil
+    }
+
     func window() -> (rows: ArraySlice<NativeThreadRow>, leading: CGFloat, trailing: CGFloat) {
         guard let bounds = builtBounds, let first = table.index(for: bounds.first),
               let last = table.index(for: bounds.last), first <= last else {

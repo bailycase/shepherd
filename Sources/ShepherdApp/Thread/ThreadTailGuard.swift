@@ -326,6 +326,8 @@ final class ThreadTailGuard {
     }
 
     #if DEBUG
+    var measuredHistoryForTests: ThreadMeasuredHistory?
+
     func rowTop(_ id: String, in scroll: NSScrollView) -> CGFloat? {
         guard let marker = rowMarkers.object(forKey: id as NSString), marker.enclosingScrollView === scroll,
               marker.window != nil, !marker.isHiddenOrHasHiddenAncestor, !marker.bounds.isEmpty else { return nil }
@@ -402,6 +404,7 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
         #if DEBUG
         view.measuredHistory = measuredHistory
+        historyAnchor?.measured = true
         measuredHistory?.paging = historyAnchor
         measuredHistory?.guardrail = guardian
         #endif
