@@ -241,6 +241,7 @@ for screen in "${screens[@]}"; do
         "${simctl[@]}" ui "$device" appearance "$scheme"
         SIMCTL_CHILD_FIXTURE_SCREEN="$screen" SIMCTL_CHILD_FIXTURE_SCHEME="$scheme" \
         SIMCTL_CHILD_FIXTURE_ORIENTATION="$fixture_orientation" SIMCTL_CHILD_FIXTURE_SIDEBAR="$sidebar" \
+        SIMCTL_CHILD_FIXTURE_FOLD_POSTURE="$pose" \
         SIMCTL_CHILD_FIXTURE_SCROLL_LEDGER="${FIXTURE_SCROLL_LEDGER:-}" \
         SIMCTL_CHILD_FIXTURE_SCROLL_PAGING="${FIXTURE_SCROLL_PAGING:-}" \
         SIMCTL_CHILD_FIXTURE_SCROLL_ANCHOR_OFF="${FIXTURE_SCROLL_ANCHOR_OFF:-}" \

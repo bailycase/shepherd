@@ -71,7 +71,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
             FixtureScreen(name: "duo-composer-controls", hosts: ThreadFixtures.hosts(), routes: [.thread(running)],
                           prepare: { app in
-                              if app.navigator.hingeClosed != nil { await ThreadFixtures.checkComposerControls() }
+                              guard ProcessInfo.processInfo.environment["FIXTURE_FOLD_POSTURE"]?.isEmpty == false else { return }
+                              await FixtureCheck.wait("Duo hinge", seconds: 8) { app.navigator.hingeClosed != nil }
+                              await ThreadFixtures.checkComposerControls()
                           }),
             // MobileGoal: the goal card above the composer while the agent works toward it.
             FixtureScreen(name: "goal", hosts: ThreadFixtures.hosts(running: ThreadFixtures.goalWorking()), routes: [.thread(running)]),

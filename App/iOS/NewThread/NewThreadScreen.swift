@@ -167,9 +167,10 @@ private struct NewThreadForm: View {
                     }
                 } else {
                     ViewThatFits(in: .horizontal) {
-                        phoneChips(host: true).fixedSize(horizontal: true, vertical: false)
-                        phoneChips(host: false).fixedSize(horizontal: true, vertical: false)
-                        phoneChips(host: false)
+                        phoneChips(host: true, ideal: true)
+                        phoneChips(host: false, ideal: true)
+                        phoneChips(host: false, ideal: true, compact: true)
+                        phoneChips(host: false, compact: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -182,24 +183,28 @@ private struct NewThreadForm: View {
         }
     }
 
-    private func phoneChips(host: Bool) -> some View {
+    private func phoneChips(host: Bool, ideal: Bool = false, compact: Bool = false) -> some View {
         HStack(spacing: SHSelectorChipMetrics.spacing) {
-            chip(model.repoName ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
+            chip(model.repoName ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace,
+                 active: .workspace, compact: compact)
+                .fixedSize(horizontal: ideal, vertical: false)
             // With one host there's nothing to choose (DuoClosedNewThread).
             if host && model.hostRows.count > 1 {
                 chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
+                    .fixedSize(horizontal: ideal, vertical: false)
             }
-            modelAndThinkingChip
+            modelAndThinkingChip(compact: compact)
+                .fixedSize(horizontal: ideal, vertical: false)
         }
     }
 
     /// "claude-opus · Medium": opens the sheet that chooses both.
-    private var modelAndThinkingChip: some View {
+    private func modelAndThinkingChip(compact: Bool) -> some View {
         let shortModel = NewThreadRules.shortModel(model.defaults.model)
         let label = model.offersThinking ? "\(shortModel) · \(model.thinking.title)" : shortModel
         return Button { model.panel = .model } label: {
             SHSelectorChip(label, systemImage: "sparkle", active: model.panel == .model,
-                           accessibilityName: model.offersThinking ? "Model and thinking" : "Model")
+                           accessibilityName: model.offersThinking ? "Model and thinking" : "Model", compact: compact)
         }
     }
 
@@ -254,12 +259,14 @@ private struct NewThreadForm: View {
         .disabled(model.starting)
     }
 
-    private func chip(_ label: String, systemImage: String, name: String, panel: NewThreadModel.Panel, active: NewThreadModel.Panel?) -> some View {
+    private func chip(_ label: String, systemImage: String, name: String, panel: NewThreadModel.Panel,
+                      active: NewThreadModel.Panel?, compact: Bool = false) -> some View {
         Button {
             model.workspaceAnchor = nil
             model.panel = panel
         } label: {
-            SHSelectorChip(label, systemImage: systemImage, active: active != nil && model.panel == active, accessibilityName: name)
+            SHSelectorChip(label, systemImage: systemImage, active: active != nil && model.panel == active,
+                           accessibilityName: name, compact: compact)
         }
     }
 

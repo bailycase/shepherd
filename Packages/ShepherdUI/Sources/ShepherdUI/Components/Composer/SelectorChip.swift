@@ -18,14 +18,17 @@ public struct SHSelectorChip: View {
     let mono: Bool
     let active: Bool
     let accessibilityName: String
+    let compact: Bool
 
     /// `accessibilityName` says what the chip chooses ("Repo"); VoiceOver reads it with the value.
-    public init(_ label: String, systemImage: String, mono: Bool = true, active: Bool = false, accessibilityName: String) {
+    public init(_ label: String, systemImage: String, mono: Bool = true, active: Bool = false,
+                accessibilityName: String, compact: Bool = false) {
         self.label = label
         self.systemImage = systemImage
         self.mono = mono
         self.active = active
         self.accessibilityName = accessibilityName
+        self.compact = compact
     }
 
     public var body: some View {
@@ -41,7 +44,7 @@ public struct SHSelectorChip: View {
                 .lineLimit(1)
             SHChipChevron()
         }
-        .padding(.horizontal, SH.Space.l)
+        .padding(.horizontal, compact ? SH.Space.m : SH.Space.l)
         .frame(minHeight: SHSelectorChipMetrics.height)
         .background(sh.bgRaised, in: Capsule())
         .shBorder(active ? sh.lantern : sh.lineStrong, in: Capsule())
