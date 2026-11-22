@@ -273,7 +273,9 @@
     (`DiffFile`, cut to `ChangesLimits`), an issue, a failing job's log tail, and the sidebar
     (pins and the Needs you count). Changes: comment, review, merge, delete a merged branch,
     draft or ready, close or reopen, title, re-run failed jobs, pin. Reads are reused for 60 s and
-    nothing polls; every command is bounded to 15 s. Pins are the host's (`forge-pins.json`).
+    nothing polls; every command is bounded to 15 s. Pins are the host's (`forge-pins.json`). A file the host can't read is never read as no pins:
+    the sidebar has no pins and carries an optional `pinsProblem` (with the file's path), and `setPinned` fails
+    with `gh_failed` until the file is repaired, moved or deleted.
     Everything from GitHub is untrusted text; `ForgeBriefs` fences it for the agent prompts.
     With `issuesAndPRs.browse.v1` a list's repository may be `ForgeList.allRepos` (`""`: GitHub's
     search for what involves the viewer), and the host also serves `browse` (a `ForgeFilter` as

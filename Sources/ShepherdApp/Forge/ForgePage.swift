@@ -167,7 +167,7 @@ struct ForgeBanners: View {
     var body: some View {
         VStack(spacing: SH.Space.s) {
             if let error = store.actionError {
-                SHBanner(.failed, title: ForgeEmptyPage.title(error), message: error.message) {
+                SHBanner(.failed, title: store.actionTitle ?? ForgeEmptyPage.title(error), message: error.message) {
                     Button("Dismiss") { store.actionError = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
             }

@@ -60,6 +60,7 @@ enum ForgeSamples {
         .people(ForgeRepoPeople(labels: [ForgeLabel(name: "bug", color: "d73a4a")], assignable: ["mara"])), .created(issue),
         .list(ForgeList(kind: .issue, repo: "", sections: [ForgeSection(id: .results)], next: "Y3Vy")),
         .sidebar(ForgeSidebar(pins: [ForgePinnedItem(pin: ForgePin(ref: pull, title: "t", pinnedAt: at), pullRequest: summary)], needsYou: 3)),
+        .sidebar(ForgeSidebar(pins: [], needsYou: 3, pinsProblem: "Pinned items can't be read.")),
     ]
 }
 
@@ -93,6 +94,17 @@ struct ForgeWireTests {
     @Test func olderListsAndPagesStillDecode() throws {
         let list = try JSONDecoder().decode(ForgeList.self, from: Data(#"{"kind":"issue","repo":"a/b","sections":[]}"#.utf8))
         #expect(list.next == nil)
+    }
+
+    /// A host before the pins note sends no `pinsProblem`; a client before it ignores one.
+    @Test func theSidebarsPinsNoteIsOptionalBothWays() throws {
+        let old = try JSONDecoder().decode(ForgeSidebar.self, from: Data(#"{"pins":[],"needsYou":2}"#.utf8))
+        #expect(old.pinsProblem == nil && old.needsYou == 2)
+        // Without a note the sidebar encodes as it did before, for an older client.
+        #expect(try Set((JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any] ?? [:]).keys) == ["pins", "needsYou"])
+        let noted = ForgeSidebar(pins: [], needsYou: 2, pinsProblem: "x")
+        struct Before: Decodable { var pins: [ForgePinnedItem]; var needsYou: Int }
+        #expect(try JSONDecoder().decode(Before.self, from: JSONEncoder().encode(noted)).needsYou == 2)
     }
 
     @Test func theHostOffersIssuesAndPRs() {
