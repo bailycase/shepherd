@@ -1383,24 +1383,24 @@ public final class SessionServer: @unchecked Sendable {
     private func remoteListModels(_ input: RouteInput) {
         switch input.request {
         case .listModels(let id):
-            let connection = input.connection
-            let fd = input.fd
+            let send = input.send
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.
             let catalog = modelCatalog
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let listing = catalog()
                 self?.queue.async {
-                    guard let self, let client = self.clients[fd], client === connection else { return }
-                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
+                    send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages))
                 }
             }
         default:
             preconditionFailure("Mismatched listModels route")
         }
     }
+
+    // MARK: - Initialization
 
     /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
     /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
@@ -3472,17 +3472,36 @@ public final class SessionServer: @unchecked Sendable {
         let request: RemoteRequest
         let line: Data
         let fd: Int32
-        // Retain the connection for identity checks without exposing its private type.
-        fileprivate let connection: AnyObject
+
+        // Call on the server queue. The send path checks that the original connection is still current.
+        let send: (RemoteReply) -> Void
+        let offeredCapabilities: () -> [String]
+        let remoteInstructions: (_ id: Int, _ request: RemoteInstructionsRequest) -> Void
+
+        fileprivate init(request: RemoteRequest, line: Data, fd: Int32, send: @escaping (RemoteReply) -> Void,
+                         offeredCapabilities: @escaping () -> [String],
+                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void) {
+            self.request = request
+            self.line = line
+            self.fd = fd
+            self.send = send
+            self.offeredCapabilities = offeredCapabilities
+            self.remoteInstructions = remoteInstructions
+        }
     }
 
     typealias Route = @Sendable (SessionServer, RouteInput) -> Void
 
-    // Keep one kind per line in kind-name order. A duplicate kind traps on first use.
-    // Put each family handler beside its code; take RouteInput and switch on input.request.
+    // Group by family, one kind per line. Add kinds only under their family anchor here and in the switch.
+    // A duplicate kind traps on first use. Put each family handler beside its code; switch on input.request.
     // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
     static let remoteRoutes: [RemoteRequest.Kind: Route] = [
+        // Host settings
+        // Model catalog
         .listModels: { $0.remoteListModels($1) },
+        // Push registration
+        // Settings catalogs
+        // Add new families above this line.
     ]
 
     private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
@@ -3490,13 +3509,24 @@ public final class SessionServer: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(queue))
         #endif
         if let handler = Self.remoteRoutes[request.kind] {
-            handler(self, RouteInput(request: request, line: line, fd: client.fd, connection: client))
+            let input = RouteInput(request: request, line: line, fd: client.fd,
+                                   send: { [weak self] in self?.send($0, to: client) },
+                                   offeredCapabilities: { [weak self] in self?.offeredCapabilities(to: client) ?? [] },
+                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) })
+            handler(self, input)
             return
         }
         func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
-        // Keep the kinds moved to the route table in kind-name order.
-        case .listModels: missingRoute()
+        // Route-table kinds share this case. Use leading commas for kinds after .listModels.
+        case
+            // Host settings
+            // Model catalog
+            .listModels
+            // Push registration
+            // Settings catalogs
+            // Add new families above this line.
+            : missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
