@@ -875,7 +875,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         timing = try? c.decodeIfPresent(NativeResponseTiming.self, forKey: .timing)
         argumentBytes = try? c.decodeIfPresent(Int.self, forKey: .argumentBytes)
         typedCommand = try? c.decodeIfPresent(String.self, forKey: .typedCommand)
-        fleetResultID = try c.decodeIfPresent(UUID.self, forKey: .fleetResultID)
+        fleetResultID = try? c.decodeIfPresent(UUID.self, forKey: .fleetResultID)
         hook = try? c.decodeIfPresent(NativeHookRecord.self, forKey: .hook)
         designBoard = try? c.decodeIfPresent(UUID.self, forKey: .designBoard)
     }

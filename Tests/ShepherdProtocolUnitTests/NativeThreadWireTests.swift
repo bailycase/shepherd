@@ -24,6 +24,12 @@ struct NativeThreadWireTests {
         #expect(fields["fleetResultID"] as? String == Self.op.uuidString)
     }
 
+    @Test func aMalformedFleetResultIDDoesNotDropTheMessage() throws {
+        let json = Data(#"{"entryID":"u","role":"user","blocks":[{"kind":"text","text":"Result"}],"truncated":false,"fleetResultID":"not-a-uuid"}"#.utf8)
+        let row = try JSONDecoder().decode(NativeThreadMessage.self, from: json)
+        #expect(row.fleetResultID == nil && row.blocks.first?.text == "Result")
+    }
+
     /// `Tests/Extensions/native-thread-wire.json` is shared with the JS children tests: every
     /// frame must decode and re-encode to exactly the same JSON.
     @Test func goldenFramesRoundTripExactly() throws {
