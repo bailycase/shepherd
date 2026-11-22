@@ -349,6 +349,8 @@ final class ReviewStore {
             loadedKey = LoadKey(session: host.session, pullRequest: pullRequest)
             // A whole diff that lands after its screen left counts against the budget at once.
             grew()
+        } catch is CancellationError {
+            // The screen left or a newer load took over: not a failure, and the files on hand stay.
         } catch {
             guard loadID == id else { return }
             loadError = reviewErrorText(error)
@@ -367,6 +369,8 @@ final class ReviewStore {
             guard loadID == id else { return }
             apply(list, options: options)
             loadedKey = LoadKey(session: host.session, pullRequest: pullRequest)
+        } catch is CancellationError {
+            // The screen left or a newer load took over: not a failure, and the files on hand stay.
         } catch {
             guard loadID == id else { return }
             loadError = reviewErrorText(error)
@@ -491,6 +495,7 @@ final class ReviewStore {
             guard case .changesBranches(let branches) = try await query(.changesBranches()) else { throw RemoteReviewError.unexpectedReply }
             self.branches = branches
             branchesError = nil
+        } catch is CancellationError {
         } catch {
             branchesError = reviewErrorText(error)
         }
@@ -535,6 +540,8 @@ final class ReviewStore {
             let patch = try await patch()
             UIPasteboard.general.string = command ? "git apply <<'PATCH'\n\(patch)\(patch.hasSuffix("\n") ? "" : "\n")PATCH\n" : patch
             copyNotice = command ? "Command copied" : "Patch copied"
+        } catch is CancellationError {
+            copyNotice = nil
         } catch {
             copyNotice = reviewErrorText(error)
             failedCopyCommand = command
@@ -647,6 +654,7 @@ final class ReviewStore {
             diffCache.insert(diff, cost: Self.cost(diff), for: key)
             guard isCurrent() else { return }
             setDiff(diff, for: file.id)
+        } catch is CancellationError {
         } catch {
             guard isCurrent() else { return }
             fileErrors[file.id] = reviewErrorText(error)

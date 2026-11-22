@@ -48,6 +48,7 @@ enum ClientStateChecks {
         await creation(app)
         await review(app)
         await reviewColors(app)
+        await reviewCancellation(app)
     }
 
     static func keyboardCommands(_ app: MobileApp) async {
@@ -654,6 +655,46 @@ extension ClientStateChecks {
             store.setWordDiffs(split)
             check(changed.raised, "cached \(split ? "split" : "unified") diff rows update when their colors change")
         }
+    }
+}
+
+extension ClientStateChecks {
+    /// A cancelled read (the screen left, or a newer load took over) is not a failure: no error
+    /// text, the files already shown stay, and a never-loaded review goes on loading. A refusal still shows.
+    static func reviewCancellation(_ app: MobileApp) async {
+        let path = "file.swift"
+        let list = ChangesList(scope: .uncommitted, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
+                               comparison: ChangesComparison(head: "working", base: "HEAD"),
+                               files: [ChangesFile(path: path, status: .modified, added: 1, removed: 0)])
+        var failure: Error = CancellationError()
+        var listed = false
+        let store = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            switch query {
+            case .changesList:
+                if listed { throw failure }
+                return .changesList(list)
+            case .changesBranches, .changesFile: throw failure
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        listed = true
+        await store.load(hosts: app.hosts)
+        check(store.loadError == nil && !store.loaded && !store.loading, "a cancelled first load shows no error and stays unloaded")
+        listed = false
+        await store.load(hosts: app.hosts)
+        listed = true
+        check(store.loaded && store.entries.map(\.id) == [path], "a load after a cancelled one fills the review")
+        await store.load(hosts: app.hosts)
+        check(store.loadError == nil && store.loaded && store.entries.map(\.id) == [path], "a cancelled reload keeps the files on hand")
+        await store.loadBranches()
+        check(store.branchesError == nil, "a cancelled branch list shows no error")
+        let fetch = store.ensure(path)
+        check(fetch != nil, "the review asks for the file's hunks")
+        await fetch?.value
+        check(store.fileErrors[path] == nil, "a cancelled file fetch shows no error")
+        failure = RemoteHostClientError.rejected(code: "fixture", message: "The host refused.")
+        await store.load(hosts: app.hosts)
+        check(store.loadError == "The host refused.", "a refused load still shows its message")
     }
 }
 
