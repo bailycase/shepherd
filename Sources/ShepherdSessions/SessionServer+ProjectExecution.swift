@@ -35,6 +35,7 @@ extension SessionServer {
 
     func projectExecutionOnQueue(_ request: ProjectExecutionRequest,
                                 history: ProjectHistoryStore.ExecutionHistory? = nil,
+                                replyID: Int = 0,
                                 completion: @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) {
         let requiresEnabled: Bool
         switch request {
@@ -49,7 +50,7 @@ extension SessionServer {
         } catch { completion(.failure(error)); return }
         if history == nil {
             if store.state.projectExecutions.contains(where: { $0.key == request.key }) {
-                projectExecutionOnQueue(request, history: .init(), completion: completion)
+                projectExecutionOnQueue(request, history: .init(), replyID: replyID, completion: completion)
             } else {
                 let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrants = executionSpaceGrants()
                 projectHistoryReads.async {
@@ -65,7 +66,7 @@ extension SessionServer {
                             if requiresEnabled, let spaceID, self.executionSpaceGrants()[spaceID] != spaceGrants[spaceID] {
                                 completion(.failure(LogicalProjectsError("project_scope", "Executor Space permission was revoked."))); return
                             }
-                            self.projectExecutionOnQueue(request, history: value, completion: completion)
+                            self.projectExecutionOnQueue(request, history: value, replyID: replyID, completion: completion)
                         case .failure(let error): completion(.failure(error))
                         }
                     }
@@ -110,13 +111,36 @@ extension SessionServer {
             case .worker:
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
                 let spaceGrants = executionSpaceGrants(), epoch = logicalProjectEpoch
-                self.executionSnapshot(existing) { result in
-                    self.queue.async {
-                        guard self.projectsEnabled, self.projectsGeneration == generation, self.logicalProjectEpoch == epoch,
-                              existing.assignment.map({ self.executionSpaceIsCurrent($0.executorSpaceID, grants: spaceGrants) }) ?? false else {
-                            completion(.failure(LogicalProjectsError("project_scope", "Executor worker permission was revoked."))); return
+                executionSnapshot(existing, measure: false) { result in
+                    self.projectHistoryReads.async {
+                        let fitted = result.flatMap { response in Result {
+                            func fits(_ value: ProjectExecutionResult) throws -> Bool {
+                                try NDJSON.encode(RemoteReply.projectExecution(id: replyID, result: value)).count - 1 <= NDJSON.maxPayloadBytes
+                            }
+                            if try fits(response) { return response }
+                            if let source = response.thread {
+                                // The owner uses this snapshot only to verify the live source.
+                                var clipped = response
+                                clipped.thread = NativeThreadSnapshot(piSessionID: source.piSessionID, generation: source.generation,
+                                    revision: source.revision, running: source.running, supportedActions: [], dialogsSupported: false,
+                                    dialogs: [], messages: [], provisional: [], clipped: true, clips: .init(history: true))
+                                if try fits(clipped) { return clipped }
+                            }
+                            throw LogicalProjectsError("too_large", "The exact worker proof exceeds the remote frame limit.")
+                        } }
+                        self.queue.async {
+                            guard self.projectsEnabled, self.projectsGeneration == generation, self.logicalProjectEpoch == epoch,
+                                  let assignment = existing.assignment, self.executionSpaceIsCurrent(assignment.executorSpaceID, grants: spaceGrants) else {
+                                completion(.failure(LogicalProjectsError("project_scope", "Executor worker permission was revoked."))); return
+                            }
+                            if case .success(let value) = fitted, let snapshot = value.thread {
+                                guard let thread = self.rpcThread(forAgent: assignment.reservedWorkerID), thread.isServable,
+                                      thread.piSessionID == snapshot.piSessionID, thread.generation == snapshot.generation else {
+                                    completion(.failure(LogicalProjectsError("stale_execution", "The original executor cannot provide the exact native worker source."))); return
+                                }
+                            }
+                            completion(fitted)
                         }
-                        completion(result)
                     }
                 }
             case .snapshot:
@@ -584,7 +608,7 @@ extension SessionServer {
         store.state.projectExecutions.first { $0.assignment?.reservedWorkerID == worker && $0.phase.active && $0.sessionID == session && $0.generation == generation }
     }
 
-    private func executionSnapshot(_ receipt: ProjectExecutionReceipt,
+    private func executionSnapshot(_ receipt: ProjectExecutionReceipt, measure: Bool = true,
                                    completion: @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) {
         guard let worker = receipt.assignment?.reservedWorkerID, let thread = rpcThread(forAgent: worker),
               thread.isServable, receipt.sessionID == thread.piSessionID, receipt.generation == thread.generation else {
@@ -595,7 +619,7 @@ extension SessionServer {
                 workerTakenOver: self.projectScopeWasTakenOver(self.projectChildScope(receipt)))
             if case .snapshot(let snapshot) = result { response.thread = snapshot }
             // Native snapshot uses almost the entire frame; receipt is extra. Omit rather than disconnect.
-            if (try? NDJSON.encode(RemoteReply.projectExecution(id: 0, result: response)).count) ?? Int.max > NDJSON.maxPayloadBytes {
+            if measure, (try? NDJSON.encode(RemoteReply.projectExecution(id: 0, result: response)).count) ?? Int.max > NDJSON.maxPayloadBytes {
                 response.thread = nil
             }
             completion(.success(response))

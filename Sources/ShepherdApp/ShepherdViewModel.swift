@@ -302,8 +302,11 @@ final class ShepherdViewModel {
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
     var hostWorktreeInfo: [AgentID: RemoteWorktreeInfo] = [:]
-    /// What this app last told its background host of the paired Macs it reaches, on which connection.
-    @ObservationIgnored var sentProjectHosts: (ObjectIdentifier, [ProjectHostOption])?
+    /// What this app last told its background host of the paired Macs it reaches, and the client it told it through. The client is
+    /// weak and compared by identity: a restarted host's new client is often allocated at the freed one's address, so an
+    /// `ObjectIdentifier` would match and the new host would never be told, and a strong reference would keep the dead client alive.
+    @ObservationIgnored weak var sentProjectHostsClient: RemoteHostClient?
+    @ObservationIgnored var sentProjectHosts: [ProjectHostOption]?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// A review pane's Commit… sheet by review session, kept while its commit runs.

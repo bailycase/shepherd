@@ -275,8 +275,12 @@ public final class ForgeService: @unchecked Sendable {
         case .sidebar:
             return .success(.sidebar(await sidebar(context: context)))
         case .setPinned(let ref, let title, let pinned):
-            return .success(.sidebar(ForgeSidebar(pins: setPinned(ref, title: title, pinned: pinned).map { ForgePinnedItem(pin: $0) },
-                                                  needsYou: lastNeedsYou.withValue { $0 })))
+            do {
+                return .success(.sidebar(ForgeSidebar(pins: try setPinned(ref, title: title, pinned: pinned).map { ForgePinnedItem(pin: $0) },
+                                                      needsYou: lastNeedsYou.withValue { $0 })))
+            } catch {
+                return .failure(ForgeError(.failed, error.message))
+            }
         }
     }
 
@@ -692,7 +696,10 @@ public final class ForgeService: @unchecked Sendable {
     // MARK: Sidebar
 
     func sidebar(context: ForgeContext) async -> ForgeSidebar {
-        let pins = loadPins()
+        // Damaged pins show as none, with the reason; the rest of the sidebar still reads.
+        var pins: [ForgePin] = []
+        var pinsProblem: String?
+        do { pins = try loadPins() } catch { pinsProblem = error.message }
         async let needs = needsYou(context: context)
         async let viewerLogin = viewer()
         async let linked = links(context)
@@ -724,7 +731,7 @@ public final class ForgeService: @unchecked Sendable {
             for await item in group { items.append(item) }
             return items.sorted { $0.0 < $1.0 }.map(\.1)
         }
-        return ForgeSidebar(pins: items, needsYou: await needs)
+        return ForgeSidebar(pins: items, needsYou: await needs, pinsProblem: pinsProblem)
     }
 
     /// Pull requests waiting on your review, yours with changes requested or failing checks, and
@@ -756,33 +763,57 @@ public final class ForgeService: @unchecked Sendable {
 
     // MARK: Pins
 
+    /// `forge-pins.json` exists but can't be read as pins. It is never read as "no pins": every change
+    /// to pins is refused until the file is repaired, moved or deleted. Pins are a convenience, so
+    /// nothing else here depends on them.
+    public struct PinsDamaged: Error {
+        public let url: URL
+
+        /// For the person's own screens, which are allowed the path.
+        public var message: String {
+            "Pinned items can't be read. The file is on the host at:\n\(url.path)\nRepair access or restore a copy, or move or delete it to start with no pins. No restart needed."
+        }
+    }
+
     private struct PinsFile: Codable {
         var pins: [ForgePin]
         init(pins: [ForgePin]) { self.pins = pins }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            pins = try c.decodeIfPresent([ForgePin].self, forKey: .pins) ?? []
+            pins = try c.decode([ForgePin].self, forKey: .pins)
         }
     }
 
     /// The pins as stored, newest first.
-    public func loadPins() -> [ForgePin] {
+    public func loadPins() throws(PinsDamaged) -> [ForgePin] {
         pinsLock.lock()
         defer { pinsLock.unlock() }
-        return Self.readPins(pinsURL)
+        return try Self.readPins(pinsURL)
     }
 
-    private static func readPins(_ url: URL) -> [ForgePin] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder().decode(PinsFile.self, from: data))?.pins ?? []
+    private static func readPins(_ url: URL) throws(PinsDamaged) -> [ForgePin] {
+        switch PersistedFile<PinsFile>.load(from: url, validateBytes: requireUTF8) {
+        case .loaded(let file): return file.pins
+        case .missing: return []
+        case .damaged: throw PinsDamaged(url: url)
+        }
     }
 
-    /// Pins (newest first, at most `ForgeLimits.pins`) or unpins `ref`, and saves.
+    /// Foundation's JSON decoder also reads UTF-16, so a file in it would load as healthy and the next
+    /// pin would write over it. Only UTF-8 text without NUL bytes reads (as `SkillsStore` requires).
+    private static func requireUTF8(_ data: Data) throws {
+        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "The file isn't UTF-8 text."))
+        }
+    }
+
+    /// Pins (newest first, at most `ForgeLimits.pins`) or unpins `ref`, and saves. Refused while the
+    /// file is damaged.
     @discardableResult
-    public func setPinned(_ ref: ForgeItemRef, title: String, pinned: Bool) -> [ForgePin] {
+    public func setPinned(_ ref: ForgeItemRef, title: String, pinned: Bool) throws(PinsDamaged) -> [ForgePin] {
         pinsLock.lock()
         defer { pinsLock.unlock() }
-        var pins = Self.readPins(pinsURL).filter { $0.ref != ref }
+        var pins = try Self.readPins(pinsURL).filter { $0.ref != ref }
         if pinned { pins.insert(ForgePin(ref: ref, title: String(title.prefix(256)), pinnedAt: now()), at: 0) }
         pins = Array(pins.prefix(ForgeLimits.pins))
         do {

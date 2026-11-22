@@ -268,7 +268,12 @@ private final class Corpus {
 
     init(seed: [String: String]) async throws {
         let directory = try makeScratchDirectory("refusals")
-        app = try AppHarness(directory: directory, pi: WaitingMCP.setup(in: directory))
+        app = try AppHarness(directory: directory, pi: WaitingMCP.setup(in: directory), modelCatalog: {
+            ModelListing(models: ["stub/model-a", "stub/model-b"], defaultModel: "stub/model-a",
+                         withoutThinking: ["stub/model-b"], thinkingLevels: ["stub/model-a": ["low", "high"]],
+                         serviceTiers: ["stub/model-a": ["fast"]], contexts: ["stub/model-a": "128k"],
+                         withoutImages: ["stub/model-a"])
+        })
         space = Fixture.space(seed["space"]!, path: app.dir.path)
         thread = Fixture.agent(seed["thread"]!, in: space)
         // A Project's coordinator lives in the Space the host keeps for Projects, out of every client's list.
@@ -286,7 +291,14 @@ private final class Corpus {
         otherHost = try ScratchServer()
         otherHostSpace = Fixture.space("acme-billing", path: otherHost.dir.path)
         try await otherHost.server.putState(ShepherdState(spaces: [otherHostSpace]))
-        try await app.start(with: seeded)
+        // Both host store reads use an isolated, disabled MCP entry. No process or network is needed.
+        let mcpURL = directory.appendingPathComponent("corpus-mcp.json")
+        try Data(#"{"mcpServers":{"acme":{"type":"http","url":"https://example.invalid/mcp","shepherd":{"enabled":false}}}}"#.utf8)
+            .write(to: mcpURL)
+        var mcp = MCPStore.Dependencies.app(pi: app.server.pi, openURL: { _ in }, copy: { _ in })
+        mcp.file = MCPConfigFile(url: mcpURL)
+        mcp.now = { Date(timeIntervalSince1970: 100) }
+        try await app.start(with: seeded, mcp: MCPStore(dependencies: mcp))
         fileEvents = FileEvents(root: app.dir, barrierDirectory: try makeScratchDirectory("barrier"))
         forks = try ForkWatch()
         // The corpus owns this ephemeral listener, even when Fleet opens or spends a join code.
@@ -330,6 +342,7 @@ private final class Corpus {
     /// Generated IDs and temp roots become labels, numbered by first appearance, so a capture replays.
     private func normalize(_ text: String) -> String {
         var text = text
+        text = text.replacingOccurrences(of: app.server.hooks.home, with: "<hooks home>")
         for root in [app.dir.path, app.dir.resolvingSymlinksInPath().path, "/private" + app.dir.path] {
             text = text.replacingOccurrences(of: root, with: "<scratch>")
         }
@@ -407,12 +420,15 @@ private final class Corpus {
         return (sent, try await awaitReply(wire))
     }
 
-    private func awaitReply(_ wire: Wire) async throws -> Reply {
+    private func awaitReply(_ wire: Wire, recordingBytes: ((Data) -> Void)? = nil) async throws -> Reply {
         while true {
             switch await wire.next() {
             case .line(let data):
                 let object = try json(data)
-                if object["id"] != nil { return .object(object) }
+                if object["id"] != nil {
+                    recordingBytes?(data)
+                    return .object(object)
+                }
             case .closed: return .closed
             case .timeout: return .timeout
             }
@@ -479,6 +495,11 @@ private final class Corpus {
     }
 
     private func record(_ step: String, _ fields: [String: Any]) {
+        var fields = fields
+        // reply.snapshot.settings.sources is a Set on both clients, so its wire order does not matter.
+        if step == "suggestions/fetch", let sources = fields["reply.snapshot.settings.sources"] as? [String] {
+            fields["reply.snapshot.settings.sources"] = sources.sorted()
+        }
         observations.append((step, fields))
     }
 
@@ -532,8 +553,101 @@ private final class Corpus {
         try await fleetPeerAnswers()
         try await extensionSocket()
         try await spaceMCP()
-        // Last, so the ids it names are numbered after every earlier step's.
+        // Keep this after the earlier ID-bearing steps so their numbering stays stable.
         try await spaceLifecycle()
+        try await modelCatalog()
+        try await pushRegistrations()
+        try await hostStores()
+        try await settingsCatalogs()
+    }
+
+    private func modelCatalog() async throws {
+        let authenticated = try await connect(capabilities: Self.bare)
+        let cases = [("listModels/authenticated", authenticated),
+                     ("listModels/before-hello", try unauthenticated()),
+                     ("listModels/before-hello-local", try Wire(unixPath: app.hostSocket))]
+        for (step, wire) in cases {
+            try await recordWireLines(step, on: wire) { .listModels(id: $0) }
+        }
+    }
+
+    /// Record the actual encoded frames, plus the same state and side-effect checks as `refuse`.
+    private func recordWireLines(_ step: String, on wire: Wire, _ make: (Int) -> RemoteRequest) async throws {
+        let before = try await snapshot()
+        let stored = try Data(contentsOf: app.scratch.stateURL)
+        let request = try NDJSON.encode(make(wire.nextID()))
+        try wire.send(request)
+        var line: Data?
+        _ = try await awaitReply(wire, recordingBytes: { line = $0 })
+        let reply = try #require(line, "\(step) must receive a reply")
+        // Wire reads through the LF delimiter and returns its payload unchanged.
+        var result = ["request.line": String(decoding: request, as: UTF8.self),
+                      "reply.line": String(decoding: reply + Data([0x0a]), as: UTF8.self),
+                      "connection.after": try await probe(wire)] as [String: Any]
+        result.merge(try await aftermath(before)) { $1 }
+        result["state.json.bytesUnchanged"] = try Data(contentsOf: app.scratch.stateURL) == stored
+        record(step, result)
+    }
+
+    private func pushRegistrations() async throws {
+        let capability = RemoteProtocol.pushNotificationsCapability
+        let client = try await connect(capabilities: [capability])
+        try #require(client.offered.contains(capability), "The corpus host must offer push notifications to this device")
+        let registrationID = "00000000-0000-4000-8000-000000000001"
+        let token = String(repeating: "a", count: 64)
+        let valid = RemotePushRegistration(id: registrationID, sendToken: token)
+        let invalid = RemotePushRegistration(id: "not-a-uuid", sendToken: token)
+        let file = app.dir.appendingPathComponent("push-registrations.json")
+        let registrations = {
+            let saved = try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file))
+            return ["stored.registrationCount": saved.count, "stored.matchesRegistration": saved.contains(valid)] as [String: Any]
+        }
+        try await refuse("pushRegistration/register", on: client, extra: registrations) { .pushRegistration(id: $0, registration: valid) }
+        try await recordWireLines("pushRegistration/invalid-id", on: client) { .pushRegistration(id: $0, registration: invalid) }
+        try await recordWireLines("pushUnregister/invalid-id", on: client) { .pushUnregister(id: $0, registrationID: invalid.id) }
+        try await recordWireLines("pushUnregister/before-hello", on: unauthenticated()) { .pushUnregister(id: $0, registrationID: registrationID) }
+        try await refuse("pushUnregister/unregister", on: client, extra: registrations) { .pushUnregister(id: $0, registrationID: registrationID) }
+
+        let full = (16..<32).map { RemotePushRegistration(id: "00000000-0000-4000-8000-0000000000\($0)", sendToken: token) }
+        try JSONEncoder().encode(full).write(to: file)
+        try await recordWireLines("pushRegistration/full", on: client) { .pushRegistration(id: $0, registration: valid) }
+        try Data("damaged registrations".utf8).write(to: file)
+        try await refuse("pushRegistration/damaged", on: client) { .pushRegistration(id: $0, registration: valid) }
+        try await refuse("pushUnregister/damaged", on: client) { .pushUnregister(id: $0, registrationID: registrationID) }
+    }
+
+    private func hostStores() async throws {
+        let client = try await connect(capabilities: Self.bare)
+        try await refuse("hostInventory/mcp", on: client) { .hostInventory(id: $0, request: .mcp) }
+        try await recordWireLines("hostInventory/invalid-file", on: client) { .hostInventory(id: $0, request: .subagent(file: "not-markdown")) }
+        try await recordWireLines("hostInventory/before-hello", on: unauthenticated()) { .hostInventory(id: $0, request: .subagents) }
+
+        try await recordWireLines("hostConfig/mcp-entry", on: client) { .hostConfig(id: $0, request: .mcpEntry(name: "acme")) }
+        try await recordWireLines("hostConfig/missing-entry", on: client) { .hostConfig(id: $0, request: .mcpEntry(name: "missing")) }
+        try await recordWireLines("hostConfig/before-hello", on: unauthenticated()) { .hostConfig(id: $0, request: .mcpEntry(name: "acme")) }
+    }
+
+    private func settingsCatalogs() async throws {
+        let client = try await connect(capabilities: Self.current)
+        let missing = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000002"))
+        let cases: [(String, (Int) -> RemoteRequest, (Int) -> RemoteRequest)] = [
+            ("instructions", { .instructions(id: $0, request: .fetch) },
+             { .instructions(id: $0, request: .restore(revisionID: missing, origin: "acme-phone")) }),
+            ("suggestions", { .suggestions(id: $0, request: .fetch) },
+             { .suggestions(id: $0, request: .dismiss(id: missing)) }),
+            ("skills", { .skills(id: $0, request: .fetch) },
+             { .skills(id: $0, request: .setOn(name: "missing", on: true)) }),
+            ("hooks", { .hooks(id: $0, request: .fetch) },
+             { .hooks(id: $0, request: .save(drafts: [], file: "missing.json", replacing: nil, kept: nil)) }),
+            // Only reads: neither listing apps nor rejecting an unknown space should start a process.
+            ("apps", { .apps(id: $0, request: .list(spaceID: self.space.id)) },
+             { .apps(id: $0, request: .list(spaceID: self.unknownSpace)) }),
+        ]
+        for (kind, fetch, rejected) in cases {
+            try await refuse("\(kind)/fetch", on: client, fetch)
+            try await refuse("\(kind)/refused", on: client, rejected)
+            try await refuse("\(kind)/before-hello", on: unauthenticated(), fetch)
+        }
     }
 
     private func recordSeed() async throws {

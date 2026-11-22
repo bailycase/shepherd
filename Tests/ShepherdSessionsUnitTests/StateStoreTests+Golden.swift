@@ -21,6 +21,7 @@ extension StateStoreTests {
         "skill-records-damaged",
         "suggestions-bad-element", "suggestions-damaged",
         "push-drops-invalid-registrations", "push-registrations-bad-element", "push-registrations-damaged",
+        "forge-pins-bad-element", "forge-pins-damaged",
     ]
 
     @Test func historicalFilesLoadAndRewriteAsRecorded() async throws {
@@ -122,7 +123,7 @@ extension StateStoreTests {
         case "forge-pins.json":
             let store = ForgeService(pinsURL: url, now: { now })
             loaded = try json(store.loadPins())
-            store.setPinned(ForgeItemRef(kind: .issue, repo: "acme/web", number: 99), title: "", pinned: false)
+            try store.setPinned(ForgeItemRef(kind: .issue, repo: "acme/web", number: 99), title: "", pinned: false)
         case "push-registrations.json":
             let store = PushNotifications(file: url, queue: DispatchQueue(label: "validation.push-registrations"))
             loaded = try json(store.registrations.values.sorted { $0.id < $1.id })

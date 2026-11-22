@@ -159,6 +159,11 @@ private struct SidebarItemView: View, Equatable {
                 LogicalProjectSidebarRow(vm: vm, project: project)
             case .forgePin(let pin):
                 SidebarForgePinRow(vm: vm, pin: pin)
+            case .forgePinsProblem(let message):
+                SHBanner(.failed, title: "Pins unavailable", message: message, stacked: true) {
+                    Button("Refresh") { Task { await vm.forgeStore.loadSidebar() } }.buttonStyle(.sh(.secondary, size: .s))
+                }
+                .padding(.horizontal, SH.Space.s)
             case .automation(let automation, let expanded):
                 SidebarAutomationRow(vm: vm, automation: automation, expanded: expanded)
             case .row(let row):

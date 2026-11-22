@@ -17,11 +17,11 @@ struct ForgeRowsCheck {
         // Lists: open items count, Closed doesn't; an on-demand section not read is listed unloaded.
         let pulls = ForgeList(kind: .pullRequest, repo: "acme/payments", sections: [
             ForgeSection(id: .authored, pullRequests: [
-                PullRequestSummary(ref: ref(.pullRequest, 31), title: "Refunds", author: "baily", updatedAt: now - 2 * hour, state: .open,
+                PullRequestSummary(ref: ref(.pullRequest, 31), title: "Refunds", author: "avery", updatedAt: now - 2 * hour, state: .open,
                                    checks: .failing, reviewDecision: .changesRequested, headRef: "h", baseRef: "main"),
             ]),
             ForgeSection(id: .openedByAgents, pullRequests: [
-                PullRequestSummary(ref: ref(.pullRequest, 26), title: "Pay button", author: "baily", updatedAt: now - 20 * 60, state: .draft,
+                PullRequestSummary(ref: ref(.pullRequest, 26), title: "Pay button", author: "avery", updatedAt: now - 20 * 60, state: .draft,
                                    headRef: "h", baseRef: "main", thread: thread),
             ]),
             ForgeSection(id: .closed, pullRequests: [
@@ -33,19 +33,19 @@ struct ForgeRowsCheck {
         check(model.sections.map(\.id) == ForgeSectionID.all(for: .pullRequest), "every section in order")
         check(model.sections.first { $0.id == .teamReview }?.loaded == false, "team review waits to be opened")
         let refunds = model.sections[0].rows[0]
-        check(refunds.byline == "#31 · baily · 2h" && refunds.word == "Changes" && refunds.tone == .failed, "a pull request row: \(refunds)")
+        check(refunds.byline == "#31 · avery · 2h" && refunds.word == "Changes" && refunds.tone == .failed, "a pull request row: \(refunds)")
         let agentRow = model.sections.first { $0.id == .openedByAgents }!.rows[0]
         check(agentRow.byline == "#26 · build-01 · 20m" && agentRow.word == "Draft", "an agent's pull request names its host: \(agentRow.byline)")
 
         // Issues: New in lantern, a linked pull request and a thread in running blue (MobileIssueList).
         let new = IssueSummary(ref: ref(.issue, 34), title: "Rounding", author: "mara", updatedAt: now - hour, state: .open,
                                labels: [ForgeLabel(name: "bug", color: "d73a4a")], assignedToViewer: true)
-        let linked = IssueSummary(ref: ref(.issue, 28), title: "Outbox", author: "baily", updatedAt: now - 72 * hour, state: .open, linkedPullRequests: [31])
+        let linked = IssueSummary(ref: ref(.issue, 28), title: "Outbox", author: "avery", updatedAt: now - 72 * hour, state: .open, linkedPullRequests: [31])
         let watched = IssueSummary(ref: ref(.issue, 33), title: "FX", author: "sentry-bot", updatedAt: now - 6 * hour, state: .open, thread: thread,
                                    automationName: "Triage Sentry")
         let rows = [new, linked, watched].map { ForgeRows.issueRow($0, host: host, now: now) }
         check(rows[0].byline == "#34 · mara · 1h · bug" && rows[0].word == "New" && rows[0].tone == .attention, "a new issue: \(rows[0])")
-        check(rows[1].byline == "#28 · baily · 3d · linked #31" && rows[1].word == "In PR" && rows[1].tone == .running, "a linked issue: \(rows[1])")
+        check(rows[1].byline == "#28 · avery · 3d · linked #31" && rows[1].word == "In PR" && rows[1].tone == .running, "a linked issue: \(rows[1])")
         check(rows[2].byline == "#33 · Triage Sentry · 6h" && rows[2].word == "Thread" && rows[2].tone == .running, "an automation's issue: \(rows[2])")
 
         // Labels take the nearest status role; grays stay neutral.
@@ -58,12 +58,12 @@ struct ForgeRowsCheck {
 
         // A pull request page: the reviewer who blocks it, then the checks with the failing job's short name.
         let detail = PullRequestDetail(
-            summary: PullRequestSummary(ref: ref(.pullRequest, 31), title: "Refunds", author: "baily", updatedAt: now - 2 * hour, state: .open,
+            summary: PullRequestSummary(ref: ref(.pullRequest, 31), title: "Refunds", author: "avery", updatedAt: now - 2 * hour, state: .open,
                                         checks: .failing, reviewDecision: .changesRequested, headRef: "h", baseRef: "main"),
             createdAt: now - 3 * hour, body: "Body",
             reviewers: [ForgeReviewer(login: "mara", state: .changesRequested)],
             checks: [ForgeCheck(name: "build", state: .passed), ForgeCheck(name: "test (arm64)", state: .failing), ForgeCheck(name: "docs", state: .skipped)],
-            events: [ForgeEvent(id: "o", actor: "baily", at: now - 3 * hour, kind: .opened),
+            events: [ForgeEvent(id: "o", actor: "avery", at: now - 3 * hour, kind: .opened),
                      ForgeEvent(id: "r", actor: "mara", at: now - 40 * 60, kind: .reviewed(state: .changesRequested, body: "", comments: [
                          ForgeLineComment(id: 1, author: "mara", path: "ledger/outbox.go", line: 103, diffHunk: "", body: "Wrap it", createdAt: now - 40 * 60),
                      ]))])
