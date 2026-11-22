@@ -54,12 +54,8 @@ struct FleetThreadSurface: Equatable {
     /// The card of the dispatch a result message belongs to.
     func card(for result: FleetResultMessage) -> FleetDispatchCard? {
         if let id = result.dispatchID { return cards.first { $0.id == id && $0.layout == .row } }
-        // Older saved results have no ID. Use the branch after a rename only when it identifies one card.
-        let onHost = cards.filter { $0.host == result.host && $0.layout == .row }
-        if let exact = onHost.filter({ $0.title == result.title }).max(by: { $0.createdAt < $1.createdAt }) { return exact }
-        guard let branch = result.branch else { return nil }
-        let matches = onHost.filter { $0.branch == branch }
-        return matches.count == 1 ? matches.first : nil
+        // A branch can outlive its dispatch card. Older results keep the title match, never a branch guess.
+        return cards.filter { $0.title == result.title && $0.host == result.host && $0.layout == .row }.max { $0.createdAt < $1.createdAt }
     }
 }
 

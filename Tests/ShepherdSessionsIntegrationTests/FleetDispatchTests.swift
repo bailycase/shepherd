@@ -911,9 +911,14 @@ struct FleetDispatchTests {
     }
 
     @Test func theDispatchOwnerCanRenameTheRunningThreadByDispatchID() async throws {
-        let (a, b, _) = try await Self.pair()
+        let (a, b, _) = try await Self.pair(isolatedPi: true)
         defer { a.stop(); b.stop() }
-        let parent = try await a.parent()
+        let parentID = try await a.local.startThread(.init(spaceID: a.space.id, name: "Ship checkout"))
+        let agent = try #require(a.server.state.agents.first { $0.id == parentID })
+        let parent = Parent(agent: agent, extension: try ExtensionClient(path: a.host.socketPath), mac: a)
+        try await eventually("the parent's Pi to be ready") { @Sendable in
+            await a.server.enqueueValue { @Sendable in a.server.rpcThread(forAgent: parentID)?.isServable == true }
+        }
         try parent.hello()
         let info = try parent.info(try await parent.dispatch("tools:1 hold-settle", title: "Original title", host: "Mac mini"))
         let id = try #require(UUID(uuidString: info.dispatchID))
@@ -921,16 +926,6 @@ struct FleetDispatchTests {
         try await eventually("the dispatched pi to run the held turn") { @Sendable in
             await b.server.enqueueValue { b.server.rpcThread(forAgent: thread.id)?.running == true }
         }
-        let (phone, atSender) = try await FleetDeviceViewTests.phone(port: a.port, local: a.local)
-        let atReceiver = RemoteHostClient()
-        defer { phone.stop(); atReceiver.disconnect() }
-        _ = try await atReceiver.connect(host: "127.0.0.1", port: b.port, token: phone.token, clientName: "iPhone")
-        let mobile = ClientFleet(hostSettings: ClientHostSettings())
-        let hosts = [SettingsHost(id: try await b.hostID(), name: b.name, client: atReceiver, capabilities: atReceiver.capabilities),
-                     SettingsHost(id: try await a.hostID(), name: a.name, client: atSender, capabilities: atSender.capabilities)]
-        await mobile.refresh(hosts, watching: true)
-        #expect(mobile.sourceName == b.name)
-        #expect(mobile.page.dispatches.first { $0.id == id }?.title == "Original title")
 
         func rename(_ name: String, from sender: Parent) async throws -> ExtensionReply {
             try await sender.call { .fleetDispatchRename(id: $0, agentID: sender.agent.id, dispatchID: info.dispatchID, name: name) }
@@ -955,8 +950,41 @@ struct FleetDispatchTests {
         try await eventually("the held turn to stop streaming") { @Sendable in
             await b.server.enqueueValue { b.server.rpcThread(forAgent: thread.id)?.running == false }
         }
+        let sender = try await a.hostID()
+        let peer = try #require(await b.server.enqueueValue { @Sendable in b.server.fleet?.dispatch.client(sender) })
+        var remote = try #require(b.taken().first)
+        remote.title = "Payment\n" + String(repeating: "x", count: 300)
+        remote.titleRevision = 2
+        try await peer.fleetDispatchChanged(remote)
+        let clean = "Payment " + String(repeating: "x", count: 52)
+        #expect(a.sent().first?.title == clean)
+        remote.title = "Stale title"
+        remote.titleRevision = 1
+        try await peer.fleetDispatchChanged(remote)
+        #expect(a.sent().first?.title == clean && a.sent().first?.titleRevision == 2)
+        // Keep the real receiver's next rename revision ahead of the injected update.
+        await b.server.enqueueValue { @Sendable in
+            b.server.fleet?.dispatch.inbound[id]?.record.titleRevision = 2
+        }
         try b.report(thread.id, .done)
-        _ = try #require(await parent.nextMessage())
+        guard case .message(let deliveryID, let resultText, .task) = try await parent.read() else {
+            throw WireError("expected the result task")
+        }
+        #expect(!resultText.contains("\nDispatch ID:"))
+        #expect(resultText.hasPrefix("[from: \(clean) on \(b.name),"))
+        // The stub echoes the task into its result, including the hold-settle marker.
+        try Data().write(to: a.folder.appendingPathComponent("settle"))
+        try parent.extension.send(.peerMessageReceived(agentID: parentID, deliveryID: deliveryID))
+        var received: NativeThreadMessage?
+        try await Self.wait("the result to reach the parent's Pi", timeout: .seconds(10)) {
+            let snapshot = try #require(try await a.local.nativeThread(agentID: parentID, request: .snapshot()).snapshotValue)
+            received = (snapshot.messages + snapshot.provisional).first {
+                $0.role == "user" && $0.status != "pending" && $0.blocks.first?.text.hasPrefix("[from: \(clean) on \(b.name),") == true
+            }
+            return received != nil
+        }
+        #expect(received?.fleetResultID == id)
+        #expect(received?.blocks.first?.text == resultText)
         try await eventuallyOnMain("both dispatch records to be done") { a.sent().first?.state == .done && b.taken().first?.state == .done }
         let done = try parent.info(try await rename("Payment test complete", from: parent))
         #expect(done.title == "Payment test complete" && done.state == "done")
@@ -966,10 +994,6 @@ struct FleetDispatchTests {
         #expect(rows.first?.title == done.title)
         let snapshot = try await a.local.fleetRead().snapshot
         #expect(FleetDispatchPresentation.cards(snapshot.dispatches, in: FleetCardContext(snapshot: snapshot, cap: 3)).first?.title == done.title)
-        await mobile.refresh(hosts, watching: true)
-        #expect(mobile.page.dispatches.first { $0.id == id }?.title == done.title)
-        let deviceRecord = try #require(try await atSender.fleetRead().snapshot.dispatches.first { $0.id == id })
-        #expect(deviceRecord.task.isEmpty && deviceRecord.resultText == nil && deviceRecord.branch == nil)
 
         let session = await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.session.id }
         let sessionID = try #require(session)
@@ -980,6 +1004,80 @@ struct FleetDispatchTests {
         }
         #expect(reason.contains("no ready Pi process"))
         #expect(a.sent().first?.title == done.title)
+
+        let close = try await parent.call { .fleetDispatchClose(id: $0, agentID: parentID, dispatchID: info.dispatchID) }
+        #expect(try parent.info(close).closeReport != nil)
+        guard case .error(_, "not_running", "That dispatch has no thread to rename.") = try await rename("Closed", from: parent) else {
+            throw WireError("expected a closed-dispatch refusal")
+        }
+    }
+
+    @Test func aDispatchRenameWithNoEngineAnswerKeepsTheSameFleetLink() async throws {
+        let (a, b, _) = try await Self.pair()
+        defer { a.stop(); b.stop() }
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("hold-settle", title: "Original title", host: b.name))
+        let id = try #require(UUID(uuidString: info.dispatchID))
+        let thread = try await b.runningThread(dispatch: id)
+        let worktree = URL(fileURLWithPath: try #require(thread.worktreePath))
+        try Data().write(to: worktree.appendingPathComponent("hold-session-rename"))
+        try await eventually("the receiver's Pi to be ready") { @Sendable in
+            await b.server.enqueueValue { @Sendable in b.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        let receiver = try await b.hostID()
+        let link = try #require(await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.client(receiver) })
+
+        let reply = try await parent.call(timeout: .seconds(20)) {
+            .fleetDispatchRename(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, name: "Renamed")
+        }
+        if case .error(_, let code, let message) = reply {
+            #expect(code == "rename_unconfirmed")
+            #expect(message.contains("Pi did not confirm the rename"))
+        } else {
+            Issue.record("expected an unconfirmed rename, got \(reply)")
+        }
+        // fleet_read with a dispatch ID asks for status. Read on the retained client as well,
+        // so a fast reconnect or the tool's last-known fallback cannot hide a dropped link.
+        #expect(try await link.fleetDispatchStatus(id).title == "Original title")
+        #expect(try await parent.status(info).title == "Original title")
+        #expect(await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.client(receiver) === link })
+    }
+
+    @Test func aNonParentMacCannotRenameAndAnOfflineMacGetsNoRequest() async throws {
+        let (a, b, origin) = try await Self.pair()
+        var receiverStopped = false
+        defer { a.stop(); if !receiverStopped { b.stop() } }
+        let c = try await Mac("Studio Mac", origin: origin, busy: 20)
+        defer { c.stop() }
+        try await c.pair(with: b)
+        let parent = try await a.parent()
+        try parent.hello()
+        let info = try parent.info(try await parent.dispatch("hold-settle", title: "Original title", host: b.name))
+        let id = try #require(UUID(uuidString: info.dispatchID))
+        _ = try await b.runningThread(dispatch: id)
+        let stranger = try await b.connectAsPeer(c)
+        defer { stranger.disconnect() }
+        do {
+            _ = try await stranger.fleetDispatchControl(id, .rename(name: "Not from the parent"))
+            Issue.record("the receiver let another Mac rename the dispatch")
+        } catch RemoteHostClientError.rejected(let code, _) {
+            #expect(code == FleetDispatchProtocol.Code.unknownDispatch)
+        }
+        #expect(b.taken().first?.title == "Original title")
+        let receiver = try await b.hostID()
+        b.stop()
+        receiverStopped = true
+        try await eventually("the receiver's link to go offline") { @Sendable in
+            await a.server.enqueueValue { @Sendable in a.server.fleet?.dispatch.client(receiver) == nil }
+        }
+        let reply = try await parent.call {
+            .fleetDispatchRename(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, name: "Offline rename")
+        }
+        guard case .error(_, "unreachable", "That Mac isn't reachable right now. No rename was sent.") = reply else {
+            throw WireError("expected an offline refusal, got \(reply)")
+        }
+        #expect(a.sent().first?.title == "Original title")
     }
 
     @Test func aDispatchRenameSaysToUpdateAnOldReceiver() async throws {
@@ -1030,6 +1128,8 @@ struct FleetDispatchTests {
             try await eventually("the receiver to reach thread creation") { @Sendable in await preparation.waiting == 1 }
             let held = try await send("Refused by sender.")
             guard case .error(_, "starting", preparing) = held else { throw WireError("expected sender startup refusal, got \(held)") }
+            let rename = try await parent.call { .fleetDispatchRename(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, name: "Too soon") }
+            guard case .error(_, "starting", preparing) = rename else { throw WireError("expected rename startup refusal, got \(rename)") }
             do {
                 _ = try await peer.fleetDispatchControl(id, .message(text: "Refused by receiver.", delivery: .followUp))
                 Issue.record("receiver accepted a message before it created the thread")

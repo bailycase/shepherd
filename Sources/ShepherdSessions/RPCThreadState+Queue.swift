@@ -59,6 +59,7 @@ extension RPCThreadState {
         /// Sent straight to interrupt pi (`NativeThreadDelivery.interrupt`): it never sat in Up
         /// next by choice, so it starts the next turn as an ordinary message, not "From the queue".
         var direct = false
+        var fleetResultID: UUID?
 
         /// What pi is handed for it: the fenced record, then the message.
         var promptText: String { RPCThreadState.prompt(entry.text, context: context) }
@@ -83,6 +84,7 @@ extension RPCThreadState {
         /// references fence as chips only when the fence names these (never ids from its text).
         var designPayloads: [UUID] = []
         var delivery: RPCStreamingBehavior = .followUp
+        var fleetResultID: UUID?
     }
 
     var effectiveMode: NativeQueueMode { modeOverride ?? defaultQueueMode }
@@ -152,7 +154,7 @@ extension RPCThreadState {
     /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
               context: String? = nil, designPayloads: [UUID] = [], elements: [BrowserElement] = [],
-              authorization: @escaping () -> Bool = { true }, preparedItem: QueueItem? = nil,
+              fleetResultID: UUID? = nil, authorization: @escaping () -> Bool = { true }, preparedItem: QueueItem? = nil,
               completion: @escaping (NativeThreadResult) -> Void) {
         guard workAdmission(), authorization() else {
             completion(.failure(code: "host_updating", message: "Host update in progress."))
@@ -194,13 +196,13 @@ extension RPCThreadState {
             paused = false
             queueNotice = nil
             dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], designPayloads: designPayloads,
-                     authorization: authorization, completion: completion)
+                     fleetResultID: fleetResultID, authorization: authorization, completion: completion)
             return
         }
         var item = preparedItem ?? QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000, elements: elements),
-            images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
+            images: images, goesAlone: alone, context: context, designPayloads: designPayloads, fleetResultID: fleetResultID)
         item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
         if preparedItem == nil {
@@ -213,7 +215,7 @@ extension RPCThreadState {
                 guard let self else { return }
                 guard saved else { completion(Self.recoverySaveFailure); return }
                 self.send(id: id, text: text, delivery: delivery, images: images, alone: alone, context: context,
-                          designPayloads: designPayloads, elements: elements, authorization: authorization, preparedItem: item,
+                          designPayloads: designPayloads, elements: elements, fleetResultID: fleetResultID, authorization: authorization, preparedItem: item,
                           completion: completion)
             }
             return
@@ -341,10 +343,12 @@ extension RPCThreadState {
             var candidate = items
             guard NativeQueueRules.edit(id, text: text, in: &candidate) else { completion(missing); return }
             guard admitsQueue(candidate) else { completion(queueFull); return }
-            if let index = candidate.firstIndex(where: { $0.entry.id == id }) { candidate[index].holdUntil = nil }
+            if let index = candidate.firstIndex(where: { $0.entry.id == id }) {
+                candidate[index].holdUntil = nil
+                if item.entry.text != text { candidate[index].fleetResultID = nil }
+            }
             if stage(candidate) { return }
             items = candidate
-            if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].holdUntil = nil }
             completion(accepted)
             drainIfReady()
         case .delete(let id):
@@ -580,7 +584,7 @@ extension RPCThreadState {
         let context = batch.last { $0.context != nil }?.context
         let generation = generation
         dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), context: context, images: batch.flatMap(\.images),
-                 parts: parts, items: batch, delivery: delivery, expiresAt: expiresAt) { [weak self] result in
+                 parts: parts, items: batch, delivery: delivery, expiresAt: expiresAt, fleetResultID: batch.count == 1 ? batch[0].fleetResultID : nil) { [weak self] result in
             defer { completion() }
             // pi refused the delivery: the items return to the head, and the queue waits.
             guard let self, self.generation == generation, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
@@ -599,7 +603,7 @@ extension RPCThreadState {
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   designPayloads: [UUID] = [], delivery: RPCStreamingBehavior = .followUp, expiresAt: Double? = nil,
-                  authorization: @escaping () -> Bool = { true }, preparedAt: Double? = nil,
+                  fleetResultID: UUID? = nil, authorization: @escaping () -> Bool = { true }, preparedAt: Double? = nil,
                   completion: @escaping (NativeThreadResult) -> Void) {
         let boundaryExpired = NativeThreadResult.failure(code: "boundary_expired", message: "Queue delivery timed out before the next turn. Resume the queue to try again.")
         guard expiresAt.map({ $0.isFinite && $0 > Date().timeIntervalSince1970 * 1000 }) ?? true else {
@@ -622,7 +626,7 @@ extension RPCThreadState {
         if expectsMessage, preparedAt == nil {
             let item = QueueItem(entry: NativeQueuedMessage(id: id, text: prompt,
                                 images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) }, sentAt: sentAt),
-                                 images: images, designPayloads: designPayloads + batch.flatMap(\.designPayloads))
+                                 images: images, designPayloads: designPayloads + batch.flatMap(\.designPayloads), fleetResultID: fleetResultID)
             var candidate = checkpointForInput(item, pending: true)
             candidate.items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
             prepareRecovery(candidate, operation: id, expiresAt: expiresAt, authorization: authorization) { [weak self] saved in
@@ -633,14 +637,14 @@ extension RPCThreadState {
                 }
                 self.dispatch(id: id, text: text, context: context, images: images, parts: parts, items: batch,
                               designPayloads: designPayloads, delivery: delivery, expiresAt: expiresAt,
-                              authorization: authorization, preparedAt: sentAt, completion: completion)
+                              fleetResultID: fleetResultID, authorization: authorization, preparedAt: sentAt, completion: completion)
             }
             return
         }
         items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
         dispatches.append(Dispatch(id: id, text: prompt, images: images, sentAt: sentAt,
                                    parts: parts, items: batch, expectsMessage: expectsMessage,
-                                   designPayloads: designPayloads + batch.flatMap(\.designPayloads), delivery: delivery))
+                                   designPayloads: designPayloads + batch.flatMap(\.designPayloads), delivery: delivery, fleetResultID: fleetResultID))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
@@ -1238,6 +1242,7 @@ extension RPCThreadState {
         var operationID: UUID?
         var kept: [UUID] = []
         var typed: String?
+        var fleetResultID: UUID?
         let dispatchIndex = boundDispatch(for: text)
         // Boundary admission requires pi's steering queue to be empty, so this batch precedes
         // any explicit steer subsequently added, even when their text is identical.
@@ -1248,6 +1253,7 @@ extension RPCThreadState {
             origin = .steered
             operationID = item.entry.id
             kept = item.designPayloads
+            fleetResultID = item.fleetResultID
         } else if let index = dispatchIndex {
             let dispatch = dispatches[index]
             dropDispatch(dispatch.id)
@@ -1255,6 +1261,7 @@ extension RPCThreadState {
             operationID = dispatch.id
             kept = dispatch.designPayloads
             typed = Self.typedCommand(dispatch.text, expandedTo: text)
+            fleetResultID = dispatch.fleetResultID
         }
         let id = liveEntryID(for: message)
         let sentReferences = Self.sentReferences(in: text, kept: kept)
@@ -1264,9 +1271,11 @@ extension RPCThreadState {
         value.origin = value.origin ?? origin
         value.operationID = operationID
         value.typedCommand = typed
+        value.fleetResultID = fleetResultID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
         if let sentReferences { recordReferences(sentReferences, entryID: id) }
         if let typed { recordCommand(typed, entryID: id) }
+        if let fleetResultID { keepOriginChange(.origin(id: id) { $0.fleetResultID = fleetResultID }) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
         onUserMessageConsumed?(operationID, id)

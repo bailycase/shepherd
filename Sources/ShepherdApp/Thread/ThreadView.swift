@@ -787,7 +787,7 @@ struct ThreadView: View {
         let bubbles = row.turn.bubbles
         guard bubbles.count == 1, let bubble = bubbles.first else { return nil }
         let time = bubble.sentAt.map { nativeClockText($0, meridiem: false) }
-        if let result = FleetResultMessage.parse(bubble.text) {
+        if let result = FleetResultMessage.parse(bubble.text, dispatchID: row.turn.messages.first?.fleetResultID) {
             return FleetMessageRow(kind: .result(result, fleet.card(for: result)), time: time, actions: fleet.actions)
         }
         // The first message of a thread another thread sent: the From box, over the words that were sent.

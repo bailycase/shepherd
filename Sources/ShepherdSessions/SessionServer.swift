@@ -1824,7 +1824,9 @@ public final class SessionServer: @unchecked Sendable {
         service.dispatch.host = FleetDispatchHost(
             state: { [weak self] in self?.store.state ?? ShepherdState() },
             settings: { [weak self] in self?.fleetSettings },
-            wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            wakeParent: { [weak self] agentID, text, dispatchID in
+                await self?.pushMessage(toAgent: agentID, text: text, delivery: .task, fleetResultID: dispatchID) ?? false
+            },
             defaultModel: { [home = pi.home] in PiConfig.defaultModel(in: home) },
             createThread: { [weak self] request in
                 await withCheckedContinuation { continuation in
@@ -6828,7 +6830,7 @@ public final class SessionServer: @unchecked Sendable {
         pending.dispatched = true
         peerDeliveries[id] = pending
         thread.lastInputFromPerson = false
-        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true) { [weak self] result in
+        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true, fleetResultID: pending.fleetResultID) { [weak self] result in
             // Refusal stays fenced until exit; successful dispatch or queueing is now tracked.
             if case .accepted = result { self?.peerDeliveries.removeValue(forKey: id) }
         }
@@ -6838,7 +6840,7 @@ public final class SessionServer: @unchecked Sendable {
     /// connection. Returns false when the agent has no live registered
     /// connection (extension not loaded or not yet connected), or dispatch fails.
     /// Success means queued on the socket, not accepted or consumed by pi.
-    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) async -> Bool {
+    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task, fleetResultID: UUID? = nil) async -> Bool {
         await enqueueValue { [self] in
             guard !movingThreads.contains(agentID), peerDeliveries.count < 4096,
                   peerDeliveries.values.filter({ $0.agentID == agentID }).count < 64,
@@ -6854,7 +6856,7 @@ public final class SessionServer: @unchecked Sendable {
             }?.key ?? store.state.agents.first(where: { $0.id == agentID }).flatMap { agent in
                 store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
             }
-            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery)
+            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery, fleetResultID: fleetResultID)
             enqueuePayload(payload, to: client)
             return clients[client.fd] === client
         }
@@ -7551,7 +7553,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Same display limit as the namer's /name reports. Line breaks become spaces. Keep joiners
     /// and emoji flag tags, but drop other control and format characters. Pi validates and saves the name.
-    private static func cleanSessionName(_ name: String) -> String {
+    static func cleanSessionName(_ name: String) -> String {
         let singleLine = name.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: .newlines).joined(separator: " ")
         var inFlag = false
@@ -9925,6 +9927,7 @@ public final class SessionServer: @unchecked Sendable {
         let sessionID: SessionID?
         let text: String
         let delivery: AgentMessageDelivery
+        let fleetResultID: UUID?
         var received = false
         var dispatched = false
     }

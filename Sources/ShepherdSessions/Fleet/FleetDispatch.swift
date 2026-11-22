@@ -69,7 +69,7 @@ struct FleetDispatchHost: @unchecked Sendable {
     /// The fleet policy settings the app last reported (`fleetThreadsCanSend`, `fleetThreadCap`, the weights).
     var settings: @Sendable () -> HostSettings? = { nil }
     /// Delivers `text` to a thread as a task (`pushMessage`): false when its pi isn't connected.
-    var wakeParent: @Sendable (AgentID, String) async -> Bool = { _, _ in false }
+    var wakeParent: @Sendable (AgentID, String, UUID) async -> Bool = { _, _, _ in false }
     /// The model a thread takes when it names none ("anthropic/claude-x"), for the provider whose limit holds it; nil when pi has none set.
     var defaultModel: @Sendable () -> String? = { nil }
     /// Starts a thread the way a remote client's create does (`onRemoteCreateAgent`).
@@ -947,7 +947,9 @@ final class FleetDispatch: @unchecked Sendable {
 
     private func mergeTitle(_ theirs: FleetDispatchRecord, into record: inout FleetDispatchRecord) {
         guard let revision = theirs.titleRevision, revision > (record.titleRevision ?? 0) else { return }
-        record.title = theirs.title
+        let title = SessionServer.cleanSessionName(theirs.title)
+        guard !title.isEmpty else { return }
+        record.title = title
         record.titleRevision = revision
         record.updatedAt = now
     }
@@ -1067,7 +1069,7 @@ final class FleetDispatch: @unchecked Sendable {
         let text = Self.resultMessage(record)
         let wake = host.wakeParent
         Task.detached { [weak self] in
-            let delivered = await wake(parent, text)
+            let delivered = await wake(parent, text, id)
             self?.queue.async {
                 guard let self else { return }
                 self.delivering.remove(id)
@@ -1088,7 +1090,7 @@ final class FleetDispatch: @unchecked Sendable {
     /// the facts of its branch.
     static func resultMessage(_ record: FleetDispatchRecord) -> String {
         let place = record.targetHostName ?? "another Mac"
-        var body = "Result from \(record.title) on \(place):\nDispatch ID: \(record.id.uuidString.lowercased())\n\(record.resultText ?? "")"
+        var body = "Result from \(record.title) on \(place):\n\(record.resultText ?? "")"
         if let facts = record.resultBranchFacts, facts.head != nil {
             let commits = facts.ahead == 1 ? "1 commit" : "\(facts.ahead) commits"
             let files = facts.filesChanged == 1 ? "1 file" : "\(facts.filesChanged) files"
@@ -1228,19 +1230,22 @@ final class FleetDispatch: @unchecked Sendable {
         guard record.kind == .agentDispatch, record.closeReport == nil, let target = record.targetHostID else {
             return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to rename.")))
         }
-        let unknown = FleetDispatchRefusal(code: "unreachable", message: "That Mac didn't confirm the rename. The outcome is unknown; check the current name before retrying.")
+        let offline = FleetDispatchRefusal(code: "unreachable", message: "That Mac isn't reachable right now. No rename was sent.")
+        let unknown = FleetDispatchRefusal(code: "rename_unconfirmed", message: "That Mac didn't confirm the rename. The outcome is unknown; check the current name before retrying.")
         let finish: (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void = { [weak self] result in
             if case .success(let renamed) = result {
                 guard let self, var current = self.outbound[record.id], current.targetHostID == target,
-                      renamed.id == record.id, renamed.titleRevision != nil else { return reply(.failure(unknown)) }
+                      renamed.id == record.id, let revision = renamed.titleRevision else { return reply(.failure(unknown)) }
                 self.mergeTitle(renamed, into: &current)
+                guard let confirmed = current.titleRevision, confirmed >= revision else { return reply(.failure(unknown)) }
                 self.outbound[record.id] = current
                 self.save()
+                return reply(.success(current))
             }
             reply(result)
         }
         if target == hostID { return control(record.id, command, from: hostID, reply: finish) }
-        guard let link = client(target) else { return reply(.failure(unknown)) }
+        guard let link = client(target) else { return reply(.failure(offline)) }
         guard capabilities(of: target)?.contains(RemoteProtocol.fleetDispatchRenameCapability) == true else {
             return reply(.failure(.init(code: "unsupported", message: "Update Shepherd on that Mac to rename dispatched threads.")))
         }
@@ -1248,6 +1253,8 @@ final class FleetDispatch: @unchecked Sendable {
             let result: Result<FleetDispatchRecord, FleetDispatchRefusal>
             do {
                 result = .success(try await link.fleetDispatchControl(record.id, command))
+            } catch RemoteHostClientError.rejected("not_sent", _) {
+                result = .failure(offline)
             } catch RemoteHostClientError.rejected(let code, let message) where !Self.transportCodes.contains(code) {
                 result = .failure(.init(code: code, message: message))
             } catch {

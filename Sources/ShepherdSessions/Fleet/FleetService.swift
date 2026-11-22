@@ -627,8 +627,8 @@ final class FleetService: @unchecked Sendable {
             if caller.isLocal {
                 reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot())))
             } else if caller.authenticated, caller.access.mayViewFleet {
-                // A phone or iPad reads the fleet's status and read-only Recent Work rows.
-                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves, withDispatches: true))))
+                // A phone or an iPad reads the Macs, their load and their readiness, and nothing of how they are reached.
+                reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             } else {
                 reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app reads its fleet."))
             }
@@ -636,12 +636,12 @@ final class FleetService: @unchecked Sendable {
             // A client that looks at the Fleet page may ask the host to sample while it does; it changes nothing else.
             if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .watching(let on) = action {
                 pressure.watch(on, connection: caller.connection)
-                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves, withDispatches: true))))
+                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             }
             // So may it ask a Mac of the fleet to update itself: an action on that Mac, like starting a thread there.
             if !caller.isLocal, caller.authenticated, caller.access.mayViewFleet, case .update(let hostID, let command) = action {
                 if let refusal = update(hostID, command) { return reply(Self.refusal(id, refusal.code, refusal.message)) }
-                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves, withDispatches: true))))
+                return reply(.fleetResult(id: id, result: FleetResult(snapshot: snapshot().clientView(withMoves: caller.readsMoves))))
             }
             guard caller.isLocal else { return reply(Self.refusal(id, FleetProtocol.Code.forbidden, "Only this Mac's app changes its fleet.")) }
             perform(action, id: id, caller: caller, reply: reply)

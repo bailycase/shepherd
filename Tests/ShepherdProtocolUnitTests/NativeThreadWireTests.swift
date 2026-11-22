@@ -15,6 +15,15 @@ struct NativeThreadWireTests {
         return try JSONDecoder().decode(NativeThreadSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
+    @Test func aFleetResultIDRoundTripsOutsideTheMessageText() throws {
+        let json = Data(#"{"entryID":"u","role":"user","blocks":[{"kind":"text","text":"Result"}],"truncated":false,"fleetResultID":"\#(Self.op.uuidString)"}"#.utf8)
+        let row = try JSONDecoder().decode(NativeThreadMessage.self, from: json)
+        #expect(row.fleetResultID == Self.op && row.blocks.first?.text == "Result")
+        let encoded = try JSONEncoder().encode(row)
+        let fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(fields["fleetResultID"] as? String == Self.op.uuidString)
+    }
+
     /// `Tests/Extensions/native-thread-wire.json` is shared with the JS children tests: every
     /// frame must decode and re-encode to exactly the same JSON.
     @Test func goldenFramesRoundTripExactly() throws {

@@ -62,13 +62,17 @@ struct FleetDispatchPreviewTests {
     @Test func dispatchCardsInTheParentThread() async throws {
         let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
         for (name, state, done) in [("fleet4d-dispatch-working", FleetDispatchState.running, false), ("fleet4d-dispatch-result", .done, true)] {
-            let fixture = ThreadFixture(Self.parentSnapshot(done: done))
+            var snapshot = Self.parentSnapshot(done: done)
+            if done { snapshot.messages[snapshot.messages.count - 1].fleetResultID = id }
+            let fixture = ThreadFixture(snapshot)
             defer { fixture.store.stop() }
             let record = Self.record(state, title: done ? "Payment test complete" : "Fix flaky payment test", id: id,
                                      at: Date().timeIntervalSince1970 * 1000 - 120_000)
             let surface = Self.surface([record])
             if done {
-                let result = try #require(Self.parentSnapshot(done: true).messages.last?.blocks.first.flatMap { FleetResultMessage.parse($0.text) })
+                let message = try #require(snapshot.messages.last)
+                let text = try #require(message.blocks.first?.text)
+                let result = try #require(FleetResultMessage.parse(text, dispatchID: message.fleetResultID))
                 #expect(surface.card(for: result)?.title == "Payment test complete")
             }
             try await Preview.renderMatrix(name, size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {

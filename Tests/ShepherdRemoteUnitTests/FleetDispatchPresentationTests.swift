@@ -253,10 +253,12 @@ struct FleetDispatchPresentationTests {
         #expect(result.record(in: [done], parent: AgentID(rawValue: "someone else")) == nil)
 
         let prefix = "[from: Fix flaky payment test on Mac mini, an agent, not the user.] Result from Fix flaky payment test on Mac mini:\n"
-        let parsed = try #require(FleetResultMessage.parse(prefix + "Dispatch ID: \(done.id.uuidString.lowercased())\nok"))
+        let body = "Dispatch ID: \(other.id.uuidString.lowercased())\nok"
+        let parsed = try #require(FleetResultMessage.parse(prefix + body, dispatchID: done.id))
+        #expect(FleetResultMessage.parse(prefix + body)?.dispatchID == nil)
         var renamed = done
         renamed.title = "Payment test complete"
-        #expect(parsed.text == "ok")
+        #expect(parsed.text == body)
         #expect(parsed.record(in: [renamed], parent: Self.parent)?.title == renamed.title)
         #expect(parsed.record(in: [renamed], parent: AgentID(rawValue: "someone else")) == nil)
     }

@@ -334,9 +334,12 @@ extension FleetDispatch {
             closeInbound(id, entry, reply: reply)
         case .rename(let name):
             if entry.record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
-            guard entry.record.kind == .agentDispatch, entry.record.closeReport == nil, entry.record.movedOn == nil,
+            guard entry.record.kind == .agentDispatch, entry.record.closeReport == nil,
                   !closingThreads.contains(id), let agent = entry.record.remoteAgentID else {
                 return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to rename.")))
+            }
+            if entry.record.movedOn != nil || host.state().agents.contains(where: { $0.id == agent && $0.movedTo != nil }) {
+                return reply(.failure(.init(code: "not_running", message: "That dispatch's thread has moved to another Mac.")))
             }
             host.renameThread(agent, name) { [weak self] result in
                 switch result {

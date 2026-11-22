@@ -399,8 +399,7 @@ struct FleetMoveTests {
 
     // MARK: A thread that was sent work
 
-    @Test(arguments: [false, true])
-    func aDispatchFollowsItsThreadWhenItMoves(finishedBeforeMove: Bool) async throws {
+    @Test func aDispatchedThreadMovesAndItsResultStillReturnsToItsSender() async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
         let c = try await Mac("Mac Studio", origin: origin, isolatedPi: true)
@@ -411,18 +410,10 @@ struct FleetMoveTests {
         try await FleetDispatchTests.waitForReports(b, c)
         let parent = try await a.parent("Ship checkout")
         try parent.hello()
-        let dispatch = try parent.info(try await parent.dispatch("Fix the flaky payment test.", key: "move-1", title: "Fix flaky payment test", host: "Mac mini"))
+        _ = try parent.info(try await parent.dispatch("Fix the flaky payment test.", key: "move-1", title: "Fix flaky payment test", host: "Mac mini"))
         try await FleetDispatchTests.wait("the Mac mini to run the dispatched thread") { !b.dispatched.isEmpty }
         let thread = try #require(b.dispatched.first)
         try await FleetDispatchTests.wait("the sender to follow it") { a.sent().first?.state == .running && a.sent().first?.remoteAgentID == thread.id }
-
-        if finishedBeforeMove {
-            try b.report(thread.id, .working)
-            try await eventuallyOnMain("the Mac mini to see it working") { b.taken().first?.activity == "working" }
-            try b.report(thread.id, .done)
-            _ = try #require(await parent.nextMessage())
-            try await eventuallyOnMain("the dispatch to finish before the move") { a.sent().first?.state == .done && b.taken().first?.state == .done }
-        }
 
         // The Mac mini moves it to the Mac Studio.
         let started = try await Self.move(thread.id, from: b, to: "Mac Studio")
@@ -431,16 +422,6 @@ struct FleetMoveTests {
         #expect(moved.dispatchedFrom?.agentID == parent.agent.id && moved.dispatchedFrom?.hostName == "MacBook Pro", "it still says who sent it, so it nests under its sender")
         // The sender follows it there.
         try await FleetDispatchTests.wait("the sender to follow the thread to the Mac Studio") { a.sent().first?.targetHostName == "Mac Studio" }
-        if finishedBeforeMove {
-            try await eventually("the moved pi to be ready") { @Sendable in
-                await c.server.enqueueValue { c.server.rpcThread(forAgent: thread.id)?.isServable == true }
-            }
-            let reply = try await parent.call { .fleetDispatchRename(id: $0, agentID: parent.agent.id, dispatchID: dispatch.dispatchID, name: "Moved payment test") }
-            let renamed = try parent.info(reply)
-            #expect(renamed.title == "Moved payment test" && renamed.state == "done")
-            #expect(Self.copy(of: thread.id, on: c)?.name == renamed.title && a.sent().first?.title == renamed.title)
-            return
-        }
         // It works there and settles: its result goes to the parent that sent it, from the Mac Studio.
         try c.report(thread.id, .working)
         try await FleetDispatchTests.wait("the Mac Studio to see it working") { c.server.queue.sync { c.server.fleet?.dispatch.inbound.values.first { $0.record.remoteAgentID == thread.id && $0.record.kind != .move }?.startedWorking } == true }

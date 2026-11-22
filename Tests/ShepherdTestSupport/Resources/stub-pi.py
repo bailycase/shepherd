@@ -1690,6 +1690,8 @@ for raw in sys.stdin.buffer:
             stale_history = None
     elif t == "set_session_name":
         name = cmd["name"].strip()
+        if os.path.exists("hold-session-rename"):
+            continue  # No reply or event, but keep serving other RPCs.
         if not name:
             respond(cmd, t, success=False, error="Session name cannot be empty")
         else:

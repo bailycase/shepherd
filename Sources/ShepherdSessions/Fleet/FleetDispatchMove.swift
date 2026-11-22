@@ -91,9 +91,9 @@ extension FleetDispatch {
         capabilityOverride?(peer) ?? client(peer)?.capabilities
     }
 
-    /// Work this Mac owns for the sender, including a finished thread that can still be renamed.
-    private func inboundDispatch(of agent: AgentID) -> Inbound? {
-        inbound.values.first { $0.record.remoteAgentID == agent && $0.record.movedOn == nil && $0.record.kind != .move }
+    /// The sender's record of work this Mac runs in `agent`, while it hasn't returned its result.
+    func liveInboundDispatch(of agent: AgentID) -> Inbound? {
+        inbound.values.first { $0.record.remoteAgentID == agent && $0.record.state.isLive && $0.record.kind != .move }
     }
 
     // MARK: Waiting for the turn, stopping it
@@ -270,7 +270,7 @@ extension FleetDispatch {
         return FleetMoveHandoff(
             agentID: agent.id, sessionID: info.sessionID, name: agent.name, nameIsFinal: agent.nameIsFinal, model: agent.model,
             thinking: agent.thinkingLevel?.rawValue, serviceTier: agent.serviceTier == .standard ? nil : agent.serviceTier.rawValue,
-            pushMuted: agent.pushMuted, dispatchedFrom: agent.dispatchedFrom, startedBy: agent.startedBy, dispatch: inboundDispatch(of: agent.id)?.record,
+            pushMuted: agent.pushMuted, dispatchedFrom: agent.dispatchedFrom, startedBy: agent.startedBy, dispatch: liveInboundDispatch(of: agent.id)?.record,
             branch: record.branch, worktreeBase: agent.worktreeBase, lastActiveAt: agent.lastActiveAt, movedAt: now, messages: info.messages ?? 0,
             uncommittedFiles: info.uncommittedFiles ?? 0, unpushedCommits: info.unpushedCommits ?? 0)
     }
@@ -349,8 +349,7 @@ extension FleetDispatch {
     /// The thread moved on: the Mac that sent it work hears where it runs now, so its result still comes back to the sender.
     private func handOffInbound(of agent: AgentID, to target: UUID?, name: String) {
         guard let target else { return }
-        if let entry = inboundDispatch(of: agent) {
-            let key = entry.record.id
+        for (key, entry) in inbound where entry.record.remoteAgentID == agent && entry.record.state.isLive && entry.record.kind != .move {
             var moved = entry
             moved.record.movedOn = FleetMovedOn(hostID: target, hostName: name)
             moved.expectsResult = false

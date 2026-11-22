@@ -17,9 +17,9 @@ struct FleetDispatchResultTests {
     @Test func theCheckoutNoticeIsSeparateFromCommittedWork() {
         let branch = "fleet/checkout-notes"
         let committed = "Branch fleet/checkout-notes: 1 commit ahead of the start, pushed to origin, 1 file changed (+2 -1)."
+        let prefix = "[from: Checkout notes on Build Mac, an agent, not the user. Reply with agent_send only if this asks for a reply.] Result from Checkout notes on Build Mac:\nUpdated the notes.\n\n"
         var record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "Studio Mac", targetHostName: "Build Mac", title: "Checkout notes",
                                          task: "Update the notes.", repoKey: "github.com/acme/web", branch: branch, resultText: "Updated the notes.", createdAt: 1)
-        let prefix = "[from: Checkout notes on Build Mac, an agent, not the user. Reply with agent_send only if this asks for a reply.] Result from Checkout notes on Build Mac:\nDispatch ID: \(record.id.uuidString.lowercased())\nUpdated the notes.\n\n"
         let cases: [(Int?, Int?, Bool?, String)] = [
             (nil, nil, nil, ""), // Older receiver.
             (0, 0, nil, ""),
