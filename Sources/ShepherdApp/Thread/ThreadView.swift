@@ -634,18 +634,12 @@ struct ThreadView: View {
                                                               density: historyDensity)
                 var measuredKey = key
                 let _ = measuredKey?.heightSettings = settings
-                ThreadHistoryColumn(key: measuredKey, measuredHistory: measuredHistory) { built in
+                ThreadHistoryColumn(key: measuredKey) {
                     measuredHistory.update(history, spacing: spacing, settings: settings)
-                    return AnyView(VStack(alignment: .leading, spacing: spacing) {
-                        ForEach(history) { row in
-                            ThreadRowSlot(id: row.id, height: measuredHistory.height(of: row.id) ?? 0, built: built.contains(row.id)) {
-                                rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
-                                        historyRowID: historyRowID, slotOwnsID: true)
-                            }
-                        }
+                    return AnyView(ThreadMeasuredColumn(history: measuredHistory, spacing: spacing) { row in
+                        rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
+                                historyRowID: historyRowID, slotOwnsID: true)
                     }
-                    .background { ThreadMeasuredHistory.Probe(history: measuredHistory) }
-                    .scrollTargetLayout()
                     .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
                 }
             } else {
@@ -1374,7 +1368,6 @@ final class ThreadHistoryCache {
         let store: ObjectIdentifier
         let tailGuard: ObjectIdentifier
         #if DEBUG
-        var builtRange: Set<String> = []
         var heightSettings: ThreadMeasuredHistory.Settings?
         #endif
 
@@ -1416,38 +1409,8 @@ private struct ThreadHistoryColumn: View {
     let key: ThreadHistoryCache.Key?
     let make: () -> AnyView
     @State private var cache = ThreadHistoryCache()
-    #if DEBUG
-    private var measuredHistory: ThreadMeasuredHistory?
-    private var makeMeasured: ((Set<String>) -> AnyView)?
-    #endif
-
-    init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
-        self.key = key
-        self.make = make
-    }
-
-    #if DEBUG
-    init(key: ThreadHistoryCache.Key?, measuredHistory: ThreadMeasuredHistory, make: @escaping (Set<String>) -> AnyView) {
-        self.key = key
-        self.make = { make([]) }
-        self.measuredHistory = measuredHistory
-        self.makeMeasured = make
-    }
-    #endif
-
     var body: some View {
-        #if DEBUG
-        if let measuredHistory, let makeMeasured {
-            let built = measuredHistory.builtRange
-            var key = key
-            let _ = key?.builtRange = built
-            cache.view(for: key) { makeMeasured(built) }
-        } else {
-            cache.view(for: key, make: make)
-        }
-        #else
         cache.view(for: key, make: make)
-        #endif
     }
 }
 

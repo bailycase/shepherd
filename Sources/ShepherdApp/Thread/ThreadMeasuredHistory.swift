@@ -6,8 +6,13 @@ import SwiftUI
 
 @MainActor @Observable
 final class ThreadMeasuredHistory {
-    // Keep IDs rather than indices so a prepend does not move the built window onto the new page.
-    private(set) var builtRange: Set<String> = []
+    // Keep the endpoints by ID so a prepend leaves the window over the same rows.
+    private struct Bounds: Equatable {
+        let first: String
+        let last: String
+    }
+
+    private var builtBounds: Bounds?
     @ObservationIgnored private var table = ThreadRowHeights()
     @ObservationIgnored private var rows: ArraySlice<NativeThreadRow> = []
     @ObservationIgnored private var pending: [String: CGFloat] = [:]
@@ -37,7 +42,17 @@ final class ThreadMeasuredHistory {
         queueWindow()
     }
 
-    func height(of id: String) -> CGFloat? { table.height(for: id) }
+    func window() -> (rows: ArraySlice<NativeThreadRow>, leading: CGFloat, trailing: CGFloat) {
+        guard let bounds = builtBounds, let first = table.index(for: bounds.first),
+              let last = table.index(for: bounds.last), first <= last else {
+            return (rows.prefix(0), table.height, 0)
+        }
+        let end = last + 1
+        // VStack contributes the gap between the spacer and the first/last built row.
+        return (rows.dropFirst(first).prefix(end - first),
+                first == 0 ? 0 : table.offset(at: first) - table.spacing,
+                end == rows.count ? 0 : table.height - table.offset(at: end))
+    }
 
     func landJump(_ layout: () throws -> Void) rethrows {
         landingJump = true
@@ -62,10 +77,10 @@ final class ThreadMeasuredHistory {
         let top = stack.convert(stack.bounds, to: clip).minY
         let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
         let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
-        let kept = builtRange.intersection(table.rows.map(\.id))
-        let built = kept.union(table.rows[window].map(\.id))
-        guard built != builtRange else { return }
-        builtRange = built
+        let built = window.isEmpty ? nil : Bounds(first: table.rows[window.lowerBound].id,
+                                                  last: table.rows[window.upperBound - 1].id)
+        guard built != builtBounds else { return }
+        builtBounds = built
         if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.windowMove") }
         if synchronous {
             SHRenderProbe.scrollEvent("probe.heights.window", "clip bounds y=\(clip.bounds.minY) rows=\(window)",
@@ -158,18 +173,37 @@ final class ThreadMeasuredHistory {
     }
 }
 
-struct ThreadRowSlot<Content: View>: View {
-    let id: String
-    let height: CGFloat
-    let built: Bool
-    @ViewBuilder let content: () -> Content
+struct ThreadMeasuredColumn<Content: View>: View {
+    let history: ThreadMeasuredHistory
+    let spacing: CGFloat
+    @ViewBuilder let content: (NativeThreadRow) -> Content
+    // The history cache keeps this value until the inputs captured by content change.
+    private let revision = UUID()
 
     var body: some View {
-        Group {
-            if built { content() }
-            else { Color.clear.frame(height: height).accessibilityHidden(true) }
+        let window = history.window()
+        VStack(alignment: .leading, spacing: spacing) {
+            if window.leading > 0 {
+                Color.clear.frame(height: window.leading).accessibilityHidden(true)
+            }
+            ForEach(window.rows) { row in
+                BuiltRow(row: row, revision: revision, content: content).equatable().id(row.id)
+            }
+            if window.trailing > 0 {
+                Color.clear.frame(height: window.trailing).accessibilityHidden(true)
+            }
         }
-        .id(id)
+        .background { ThreadMeasuredHistory.Probe(history: history) }
+        .scrollTargetLayout()
+    }
+
+    private struct BuiltRow: View, Equatable {
+        let row: NativeThreadRow
+        let revision: UUID
+        let content: (NativeThreadRow) -> Content
+
+        static func == (lhs: Self, rhs: Self) -> Bool { lhs.revision == rhs.revision && lhs.row == rhs.row }
+        var body: some View { content(row) }
     }
 }
 #endif
