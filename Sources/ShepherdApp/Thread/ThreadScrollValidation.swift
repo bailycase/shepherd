@@ -100,6 +100,8 @@ final class MacScrollValidationTrace: NSObject {
     private var phaseState = ScrollPhase.idle
     var wheelUntil = ContinuousClock.now
     private var scriptedWrite = false
+    fileprivate var wheelLayoutRunning = false
+    fileprivate var wheelTraceTimes: (inLayout: UInt64, outside: UInt64) = (0, 0)
     private var intent = ScrollIntent()
     var physicalScrollerHeld: Bool { intent.physicalScrollerHeld }
 
@@ -255,6 +257,15 @@ final class MacScrollValidationTrace: NSObject {
     }
 
     @objc private func boundsChanged(_ notification: Notification) {
+        let start = ThreadScrollValidation.timingWheel ? clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) : nil
+        let inLayout = wheelLayoutRunning
+        defer {
+            if let start {
+                let elapsed = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
+                if inLayout { wheelTraceTimes.inLayout += elapsed }
+                else { wheelTraceTimes.outside += elapsed }
+            }
+        }
         guard let from = offset, let to = clip?.bounds.minY, from != to else { return }
         offset = to
         events.append(Event(caller: "NSClipView.bounds", from: from, to: to, stack: Thread.callStackSymbols,
@@ -686,7 +697,8 @@ private final class ScrollFixture {
         defer {
             ThreadScrollValidation.timingWheel = false
             SHRenderProbe.stop()
-            let header = (["wheel-step", "cpu-ms", "window-layout-ms", "subtree-layout-ms"] + counters).joined(separator: ",")
+            let header = (["wheel-step", "cpu-ms", "window-layout-ms", "subtree-layout-ms",
+                           "trace-in-layout-ms", "trace-outside-ms"] + counters).joined(separator: ",")
             FileHandle.standardError.write(Data((header + "\n" + costs.joined(separator: "\n") + "\n").utf8))
         }
         let deadline = ContinuousClock.now + timeLimit
@@ -699,10 +711,12 @@ private final class ScrollFixture {
             }
             guard ContinuousClock.now < deadline else { break }
             let before = counters.map(SHRenderProbe.count)
+            trace.wheelTraceTimes = (0, 0)
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             try self.scroll(up: step)
             let elapsed = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
-            let times = [elapsed, wheelLayoutTimes.window, wheelLayoutTimes.subtree].map { String(Double($0) / 1_000_000) }
+            let times = [elapsed, wheelLayoutTimes.window, wheelLayoutTimes.subtree,
+                         trace.wheelTraceTimes.inLayout, trace.wheelTraceTimes.outside].map { String(Double($0) / 1_000_000) }
             let counts = zip(counters.map(SHRenderProbe.count), before).map { String($0 - $1) }
             costs.append(([String(costs.count + 1)] + times + counts).joined(separator: ","))
             await trace.advance()
@@ -835,11 +849,13 @@ private final class ScrollFixture {
         }
         scroll.reflectScrolledClipView(clip)
         if ThreadScrollValidation.timingWheel {
+            trace.wheelLayoutRunning = true
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             window.layoutIfNeeded()
             let second = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             window.contentView?.layoutSubtreeIfNeeded()
             wheelLayoutTimes = (second - start, clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - second)
+            trace.wheelLayoutRunning = false
         } else {
             window.layoutIfNeeded()
             window.contentView?.layoutSubtreeIfNeeded()
