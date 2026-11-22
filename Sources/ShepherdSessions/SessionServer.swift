@@ -3570,16 +3570,28 @@ public final class SessionServer: @unchecked Sendable {
         let send: (RemoteReply) -> Void
         let offeredCapabilities: () -> [String]
         let remoteInstructions: (_ id: Int, _ request: RemoteInstructionsRequest) -> Void
+        let remoteSuggestions: (_ id: Int, _ request: RemoteSuggestionsRequest) -> Void
+        let remoteSkills: (_ id: Int, _ request: RemoteSkillsRequest) -> Void
+        let remoteHooks: (_ id: Int, _ request: RemoteHooksRequest) -> Void
+        let remoteApps: (_ id: Int, _ request: RemoteAppsRequest) -> Void
 
         fileprivate init(request: RemoteRequest, line: Data, fd: Int32, send: @escaping (RemoteReply) -> Void,
                          offeredCapabilities: @escaping () -> [String],
-                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void) {
+                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void,
+                         remoteSuggestions: @escaping (Int, RemoteSuggestionsRequest) -> Void,
+                         remoteSkills: @escaping (Int, RemoteSkillsRequest) -> Void,
+                         remoteHooks: @escaping (Int, RemoteHooksRequest) -> Void,
+                         remoteApps: @escaping (Int, RemoteAppsRequest) -> Void) {
             self.request = request
             self.line = line
             self.fd = fd
             self.send = send
             self.offeredCapabilities = offeredCapabilities
             self.remoteInstructions = remoteInstructions
+            self.remoteSuggestions = remoteSuggestions
+            self.remoteSkills = remoteSkills
+            self.remoteHooks = remoteHooks
+            self.remoteApps = remoteApps
         }
     }
 
@@ -3597,6 +3609,11 @@ public final class SessionServer: @unchecked Sendable {
         .listModels: { $0.remoteListModels($1) },
         // Push registration
         // Settings catalogs
+        .instructions: { _, input in switch input.request { case .instructions(let id, let request): input.remoteInstructions(id, request); default: break } },
+        .suggestions: { _, input in switch input.request { case .suggestions(let id, let request): input.remoteSuggestions(id, request); default: break } },
+        .skills: { _, input in switch input.request { case .skills(let id, let request): input.remoteSkills(id, request); default: break } },
+        .hooks: { _, input in switch input.request { case .hooks(let id, let request): input.remoteHooks(id, request); default: break } },
+        .apps: { _, input in switch input.request { case .apps(let id, let request): input.remoteApps(id, request); default: break } },
         // Add new families above this line.
     ]
 
@@ -3608,7 +3625,11 @@ public final class SessionServer: @unchecked Sendable {
             let input = RouteInput(request: request, line: line, fd: client.fd,
                                    send: { [weak self] in self?.send($0, to: client) },
                                    offeredCapabilities: { [weak self] in self?.offeredCapabilities(to: client) ?? [] },
-                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) })
+                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) },
+                                   remoteSuggestions: { [weak self] in self?.remoteSuggestions(id: $0, request: $1, client: client) },
+                                   remoteSkills: { [weak self] in self?.remoteSkills(id: $0, request: $1, client: client) },
+                                   remoteHooks: { [weak self] in self?.remoteHooks(id: $0, request: $1, client: client) },
+                                   remoteApps: { [weak self] in self?.remoteApps(id: $0, request: $1, client: client) })
             handler(self, input)
             return
         }
@@ -3624,6 +3645,11 @@ public final class SessionServer: @unchecked Sendable {
             , .listModels
             // Push registration
             // Settings catalogs
+            , .instructions
+            , .suggestions
+            , .skills
+            , .hooks
+            , .apps
             // Add new families above this line.
             : missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
@@ -3970,16 +3996,6 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .automation(let id, let automationID, let request):
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
-        case .instructions(let id, let request):
-            remoteInstructions(id: id, request: request, client: client)
-        case .suggestions(let id, let request):
-            remoteSuggestions(id: id, request: request, client: client)
-        case .skills(let id, let request):
-            remoteSkills(id: id, request: request, client: client)
-        case .hooks(let id, let request):
-            remoteHooks(id: id, request: request, client: client)
-        case .apps(let id, let request):
-            remoteApps(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .forge(let id, let request):
