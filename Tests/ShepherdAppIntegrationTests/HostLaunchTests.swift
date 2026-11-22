@@ -33,12 +33,16 @@ struct HostLaunchTests {
     static let socketBound: Duration = .seconds(20)
     /// Fleet's indexes have each made their first scan within this long.
     static let scanBound: Duration = .seconds(30)
-    /// The host's descriptors, at their peak and once every index has scanned: under launchd's limit, so a host that is not given
-    /// a higher one still starts.
+    /// The host's descriptors once Fleet is running and once every index has scanned: under launchd's limit, so a host that is not
+    /// given a higher one still holds them.
     static let descriptorBudget = 256
-    /// What each space may add to the host's descriptors once Fleet is running, beyond the ones the host started with (the
-    /// sync engine watches each checkout's `.git/config`: one).
+    /// What each space may add to those, beyond the ones the host started with (the sync engine watches each checkout's
+    /// `.git/config`: one).
     static let descriptorsPerSpace = 2.0
+    /// The peak at any sample: the watcher reopens everything it watches before the old descriptors close, so it may double. It may
+    /// not be quadratic: 150 spaces reached the 10240 the host raises its limit to.
+    static let peakPerSpace = 3.0
+    static let peakSlack = 64
 
     @Test func aHostStartsAndAnswersWithManySyncedSpaces() async throws {
         let workspace = try Workspace.make(label: "current")
@@ -215,8 +219,10 @@ struct HostLaunchTests {
         report.note(measured)
         report.note("peak \(peak.current.count) descriptors (by type: \(peak.current.types.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")); 1 vnode, 2 socket, 3 pshm, 5 pipe, 6 kqueue)")
         for line in top.current { report.note("  \(line)") }
-        let within = [afterStart, afterScan, peak.current.count].allSatisfy { $0.map { $0 < descriptorBudget } ?? false } && growth <= descriptorsPerSpace
-        let expectedDescriptors = "under \(descriptorBudget) descriptors at every sample and at most \(descriptorsPerSpace) more per checkout, with all \(expectedRoots) indexes running"
+        let peakBudget = host.baseline + Int(peakPerSpace * Double(spaceCount)) + peakSlack
+        let within = [afterStart, afterScan].allSatisfy { $0.map { $0 < descriptorBudget } ?? false } && growth <= descriptorsPerSpace
+            && peak.current.count < peakBudget
+        let expectedDescriptors = "under \(descriptorBudget) descriptors once running, at most \(descriptorsPerSpace) more per checkout and a peak under \(peakBudget), with all \(expectedRoots) indexes running"
         if running == expectedRoots, within {
             report.pass(steps.descriptors, expected: expectedDescriptors, actual: measured)
         } else {
