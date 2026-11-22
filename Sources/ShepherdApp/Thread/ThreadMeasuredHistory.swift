@@ -19,6 +19,7 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored private weak var stack: StackMarker?
     @ObservationIgnored private var windowQueued = false
     @ObservationIgnored private var landingJump = false
+    @ObservationIgnored private var buildingJumpWindow = false
     @ObservationIgnored private var lastDocumentHeight: CGFloat?
     @ObservationIgnored private var stackSize: CGSize = .zero
     @ObservationIgnored private var settings: Settings?
@@ -61,10 +62,37 @@ final class ThreadMeasuredHistory {
                 end == rows.count ? 0 : table.height - table.offset(at: end))
     }
 
-    func landJump(_ layout: () throws -> Void) rethrows {
+    func landJump<Result>(_ layout: () throws -> Result) rethrows -> Result {
         landingJump = true
         defer { landingJump = false }
-        try layout()
+        return try layout()
+    }
+
+    /// Lay out the destination rows before moving the clip. The table locates the window;
+    /// the marker accounts for actual heights inside the newly built window.
+    func jump(to id: String, caller: String, in scroll: NSScrollView) -> Bool {
+        guard let host = scroll.window?.contentView else { return false }
+        return landJump {
+            host.layoutSubtreeIfNeeded()
+            guard let index = table.index(for: id), let stack, stack.enclosingScrollView === scroll,
+                  guardrail?.active == true else { return false }
+            let clip = scroll.contentView
+            let previous = builtBounds
+            buildingJumpWindow = true
+            defer { buildingJumpWindow = false }
+            let destination = clip.bounds.offsetBy(dx: 0, dy: table.offset(at: index) - clip.bounds.minY)
+            selectWindow(for: destination)
+            host.layoutSubtreeIfNeeded()
+            guard let top = guardrail?.rowTop(id, in: scroll) else {
+                builtBounds = previous
+                return false
+            }
+            ThreadHistoryAnchor.correct(top - scroll.contentInsets.top, in: scroll, rowID: id,
+                                        actor: "thread.write.M11", caller: caller)
+            host.layoutSubtreeIfNeeded()
+            prependedAt = clip.bounds
+            return true
+        }
     }
 
     private func queueWindow() {
@@ -80,24 +108,28 @@ final class ThreadMeasuredHistory {
     private func publishWindow(synchronous: Bool = false) {
         if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.publishWindow") }
         // Preserve the mounted rows across the prepend. Its compensating clip move is not input.
-        guard paging?.hasPrepend != true, let stack, let scroll = stack.enclosingScrollView,
+        guard !buildingJumpWindow, paging?.hasPrepend != true, let stack, let scroll = stack.enclosingScrollView,
               guardrail?.active == true else { return }
         let clip = scroll.contentView
         // Keep the compensated window until the reader moves or the viewport resizes.
         guard clip.bounds != prependedAt else { return }
         prependedAt = nil
         let top = stack.convert(stack.bounds, to: clip).minY
-        let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
-        let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
-        let built = window.isEmpty ? nil : Bounds(first: table.rows[window.lowerBound].id,
-                                                  last: table.rows[window.upperBound - 1].id)
-        guard built != builtBounds else { return }
-        builtBounds = built
-        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.windowMove") }
-        if synchronous {
+        if let window = selectWindow(for: clip.bounds.offsetBy(dx: 0, dy: -top)), synchronous {
             SHRenderProbe.scrollEvent("probe.heights.window", "clip bounds y=\(clip.bounds.minY) rows=\(window)",
                                       from: scroll, kind: "layout")
         }
+    }
+
+    @discardableResult
+    private func selectWindow(for rect: CGRect) -> Range<Int>? {
+        let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
+        let built = window.isEmpty ? nil : Bounds(first: table.rows[window.lowerBound].id,
+                                                  last: table.rows[window.upperBound - 1].id)
+        guard built != builtBounds else { return nil }
+        builtBounds = built
+        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.windowMove") }
+        return window
     }
 
     func rowLaidOut(_ id: String, height: CGFloat, in scroll: NSScrollView?) {

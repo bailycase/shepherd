@@ -969,7 +969,11 @@ struct ThreadView: View {
             trace.wheel = wheelIntent()
             trace.phase = scrollPhaseChanged
             trace.historyVisibility = historyVisibilityChanged
-            if ThreadScrollValidation.measuredHistory { trace.measuredHistory = measuredHistory }
+            if ThreadScrollValidation.measuredHistory {
+                trace.measuredHistory = measuredHistory
+                trace.find = finder.find
+                trace.selectTurn = { [selection = $jumpedTurn] in selection.wrappedValue = $0 }
+            }
         }
         #endif
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
@@ -1050,8 +1054,7 @@ struct ThreadView: View {
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
-            ThreadScrollTrace.write("thread.write.M11", "turnCommand.target", in: tailGuard.scrollView(), target: userTurns[target])
-            withSHAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
+            jump(to: userTurns[target], caller: "turnCommand.target", proxy: proxy)
         }
     }
 
@@ -1069,8 +1072,26 @@ struct ThreadView: View {
         guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
         jumpedTurn = nil
         follower.beginJump()
-        ThreadScrollTrace.write("thread.write.M11", "find", in: tailGuard.scrollView(), target: row.id)
-        withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
+        jump(to: row.id, caller: "find", proxy: proxy)
+    }
+
+    private func jump(to id: String, caller: String, proxy: ScrollViewProxy) {
+        #if DEBUG
+        if ThreadScrollValidation.measuredHistory {
+            DispatchQueue.main.async {
+                guard tailGuard.active else { return }
+                if let scroll = tailGuard.scrollView(), measuredHistory.jump(to: id, caller: caller, in: scroll) { return }
+                jumpWithProxy(to: id, caller: caller, proxy: proxy)
+            }
+            return
+        }
+        #endif
+        jumpWithProxy(to: id, caller: caller, proxy: proxy)
+    }
+
+    private func jumpWithProxy(to id: String, caller: String, proxy: ScrollViewProxy) {
+        ThreadScrollTrace.write("thread.write.M11", caller, in: tailGuard.scrollView(), target: id)
+        withSHAnimation(.scroll) { proxy.scrollTo(id, anchor: .top) }
     }
 
     /// How far the visible bottom sits above the end of the content (`NativeScrollProbe`): 0 at

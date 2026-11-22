@@ -87,6 +87,8 @@ final class MacScrollValidationTrace: NSObject {
     var wheel: ((CGFloat) -> Void)?
     var phase: ((ScrollPhase, ScrollPhase, CGFloat) -> Void)?
     var historyVisibility: ((Bool) -> Void)?
+    var find: ((String) -> Void)?
+    var selectTurn: ((String) -> Void)?
     weak var measuredHistory: ThreadMeasuredHistory?
     var deckPage: ((AgentLayoutModel) -> AnyView)?
     var streamingRowID: String?
@@ -588,6 +590,7 @@ private final class ScrollFixture {
         await trace.settle()
         try await captureOtherInputs(in: retained)
         try await wheelWalkToTop(in: retained)
+        if ThreadScrollValidation.measuredHistory { try await farTurnJumps() }
 
         // Keep this out of the motion baseline: the original switch retains all of its rows.
         trace.scenario = "released-thread"
@@ -595,6 +598,29 @@ private final class ScrollFixture {
         try await trace.waitFor("the retained transcript to hide") { self.trace.latest?.hidden == true }
         store.releaseTranscript(keepingLastScreen: true)
         guard store.transcriptReleased else { throw ValidationError("fixture did not release its hidden rows") }
+        await trace.settle()
+    }
+
+    private func farTurnJumps() async throws {
+        guard let find = trace.find, let selectTurn = trace.selectTurn else { throw ValidationError("missing turn actions") }
+        // Seed the last selection while the reader is elsewhere, then use the actual command.
+        // An unseeded previous-turn command would choose the last turn in the eager tail.
+        trace.scenario = ""
+        selectTurn("user-345")
+        try scroll(to: -.greatestFiniteMagnitude)
+        try await trace.waitFor("the navigator to start back at the top") { self.trace.latest?.first == "user-0" }
+        await trace.settle()
+        try await checkFarJump("far-turn-navigator", target: "user-344") {
+            commands.send(.previousTurn, to: Self.commandKey)
+        }
+        try await checkFarJump("far-turn-find", target: "user-120/reply") { find("reply-120") }
+    }
+
+    private func checkFarJump(_ name: String, target: String, action: () -> Void) async throws {
+        guard trace.latest?.rows[target] == nil else { throw ValidationError("\(name): target already mounted") }
+        trace.scenario = name
+        await trace.advance()
+        action()
         await trace.settle()
     }
 
