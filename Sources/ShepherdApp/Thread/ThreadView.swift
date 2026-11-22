@@ -110,7 +110,10 @@ struct ThreadView: View {
     @State private var historyPaging = NativeHistoryPaging()
     @State private var historyAnchor = ThreadHistoryAnchor()
     #if DEBUG
-    @State private var measuredHistory = ThreadMeasuredHistory()
+    @State private var fixtureMeasuredHistory = ThreadMeasuredHistory()
+    private var measuredHistory: ThreadMeasuredHistory? {
+        tailGuard.measuredHistoryForTests ?? (ThreadScrollValidation.measuredHistory ? fixtureMeasuredHistory : nil)
+    }
     @Environment(\.shDensity) private var historyDensity
     #endif
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
@@ -261,11 +264,17 @@ struct ThreadView: View {
                     .overlay(alignment: .top) {
                         // With no history the lazy stack is empty and still takes the column's spacing: the first row starts that far below the
                         // column's top, and the sentinel reaches it, or turning to that row leaves it above the scroll view's margin.
-                        Color.clear.frame(height: AppLayout.turnSpacing + (history.isEmpty ? spacing : 0))
-                            .onScrollVisibilityChange { visible in
-                                historyVisibilityChanged(visible)
-                            }
-                            .accessibilityHidden(true)
+                        #if DEBUG
+                        if measuredHistory != nil {
+                            // At the AppKit top, the history starts under the reading inset.
+                            // Put the sentinel inside the reading area rather than behind it.
+                            historySentinel(spacing: history.isEmpty ? spacing : 0).padding(.top, threadTopMargin)
+                        } else {
+                            historySentinel(spacing: history.isEmpty ? spacing : 0)
+                        }
+                        #else
+                        historySentinel(spacing: history.isEmpty ? spacing : 0)
+                        #endif
                     }
                     .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
                     .modifier(ThreadGutterPadding(inset: composerInset, fixedGutter: workerStyle?.gutter))
@@ -274,8 +283,8 @@ struct ThreadView: View {
                     .background {
                         #if DEBUG
                         ThreadScrollViewFinder(guardian: tailGuard,
-                                               historyAnchor: ThreadScrollValidation.measuredHistory ? historyAnchor : nil,
-                                               measuredHistory: ThreadScrollValidation.measuredHistory ? measuredHistory : nil)
+                                               historyAnchor: measuredHistory != nil ? historyAnchor : nil,
+                                               measuredHistory: measuredHistory)
                         #else
                         ThreadScrollViewFinder(guardian: tailGuard)
                         #endif
@@ -299,6 +308,9 @@ struct ThreadView: View {
                     }
                 }
                 #if DEBUG
+                .onChange(of: measuredHistory != nil && (parksHistory || history.isEmpty)) { _, release in
+                    if release { measuredHistory?.release() }
+                }
                 .onChange(of: fleetThread?.move != nil) { _, _ in
                     SHRenderProbe.scrollEvent("thread.write.L13", "fleet.notice", from: tailGuard, kind: "layout")
                 }
@@ -309,7 +321,7 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
                                                present: !composerHidden))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
-                .contentMargins(.top, workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
+                .contentMargins(.top, threadTopMargin, for: .scrollContent)
                 // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
                 // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
@@ -629,7 +641,7 @@ struct ThreadView: View {
             let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
                                  detached: !follower.sticky)
             #if DEBUG
-            if ThreadScrollValidation.measuredHistory {
+            if let measuredHistory {
                 let settings = ThreadMeasuredHistory.Settings(session: store.sessionKey, textScale: ThemeStore.shared.textScale,
                                                               density: historyDensity)
                 var measuredKey = key
@@ -969,7 +981,11 @@ struct ThreadView: View {
             trace.wheel = wheelIntent()
             trace.phase = scrollPhaseChanged
             trace.historyVisibility = historyVisibilityChanged
-            if ThreadScrollValidation.measuredHistory { trace.measuredHistory = measuredHistory }
+            if ThreadScrollValidation.measuredHistory {
+                trace.measuredHistory = measuredHistory
+                trace.find = finder.find
+                trace.selectTurn = { [selection = $jumpedTurn] in selection.wrappedValue = $0 }
+            }
         }
         #endif
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
@@ -991,6 +1007,23 @@ struct ThreadView: View {
     // The rows of a thread still to bring its lazy stack back (`ThreadRestore`) are in memory, drawn or not: nothing to load for them.
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating && !restore.awaitsHistory }
 
+    private var threadTopMargin: CGFloat {
+        workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop
+    }
+
+    private func historySentinel(spacing: CGFloat) -> some View {
+        Color.clear.frame(height: AppLayout.turnSpacing + spacing)
+            .onScrollVisibilityChange { visible in
+                #if DEBUG
+                if visible, let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard {
+                    trace.mark("fixture.nativeHistoryVisibility")
+                }
+                #endif
+                historyVisibilityChanged(visible)
+            }
+            .accessibilityHidden(true)
+    }
+
     private func historyVisibilityChanged(_ visible: Bool) {
         historyPaging.visible = visible
         loadVisibleHistory()
@@ -999,7 +1032,7 @@ struct ThreadView: View {
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
         #if DEBUG
-        let measuredScroll = ThreadScrollValidation.measuredHistory ? tailGuard.scrollView() : nil
+        let measuredScroll = measuredHistory != nil ? tailGuard.scrollView() : nil
         #else
         let measuredScroll: NSScrollView? = nil
         #endif
@@ -1050,8 +1083,7 @@ struct ThreadView: View {
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
-            ThreadScrollTrace.write("thread.write.M11", "turnCommand.target", in: tailGuard.scrollView(), target: userTurns[target])
-            withSHAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
+            jump(to: userTurns[target], caller: "turnCommand.target", proxy: proxy)
         }
     }
 
@@ -1069,8 +1101,26 @@ struct ThreadView: View {
         guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
         jumpedTurn = nil
         follower.beginJump()
-        ThreadScrollTrace.write("thread.write.M11", "find", in: tailGuard.scrollView(), target: row.id)
-        withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
+        jump(to: row.id, caller: "find", proxy: proxy)
+    }
+
+    private func jump(to id: String, caller: String, proxy: ScrollViewProxy) {
+        #if DEBUG
+        if let measuredHistory {
+            DispatchQueue.main.async {
+                guard tailGuard.active else { return }
+                if let scroll = tailGuard.scrollView(), measuredHistory.jump(to: id, caller: caller, in: scroll) { return }
+                jumpWithProxy(to: id, caller: caller, proxy: proxy)
+            }
+            return
+        }
+        #endif
+        jumpWithProxy(to: id, caller: caller, proxy: proxy)
+    }
+
+    private func jumpWithProxy(to id: String, caller: String, proxy: ScrollViewProxy) {
+        ThreadScrollTrace.write("thread.write.M11", caller, in: tailGuard.scrollView(), target: id)
+        withSHAnimation(.scroll) { proxy.scrollTo(id, anchor: .top) }
     }
 
     /// How far the visible bottom sits above the end of the content (`NativeScrollProbe`): 0 at
@@ -1126,6 +1176,20 @@ struct ThreadView: View {
         // handler holds only what it moves.
         let hovering = $hovering
         let wheel = wheelIntent()
+        #if DEBUG
+        if let measuredHistory {
+            wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown, .leftMouseUp]) {
+                [weak measuredHistory, weak guardian = tailGuard] event in
+                if event.type == .scrollWheel {
+                    if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
+                } else if let scroll = guardian?.scrollView() {
+                    measuredHistory?.observeScroller(event, in: scroll)
+                }
+                return event
+            }
+            return
+        }
+        #endif
         wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
             return event

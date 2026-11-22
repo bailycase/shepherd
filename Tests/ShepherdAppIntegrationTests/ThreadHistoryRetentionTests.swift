@@ -22,6 +22,37 @@ struct ThreadHistoryRetentionTests {
         case dormant
     }
 
+    private func makeGuard() -> ThreadTailGuard {
+        let guardrail = ThreadTailGuard()
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["SHEPHERD_TEST_MEASURED_HISTORY"] == "1" {
+            guardrail.measuredHistoryForTests = ThreadMeasuredHistory()
+        }
+        #endif
+        return guardrail
+    }
+
+    #if DEBUG
+    @Test(arguments: [false, true])
+    func measuredHistoryLetsGoWhenParkedOrReleased(park: Bool) async throws {
+        let guardrail = ThreadTailGuard()
+        let history = ThreadMeasuredHistory()
+        guardrail.measuredHistoryForTests = history
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)), tailGuard: guardrail)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the measured history to retain rows") { history.retainedRowCount > 0 }
+        if park {
+            thread.visibility.liveResizing = true
+        } else {
+            try await thread.show(false)
+            thread.store.releaseTranscript(keepingLastScreen: true)
+            #expect(thread.store.transcriptReleased)
+        }
+        try await eventuallyOnMain("the measured history to release its rows") { history.retainedRowCount == 0 }
+    }
+    #endif
+
     private struct Watched {
         weak var store: NativeThreadStore?
         weak var tailGuard: ThreadTailGuard?
@@ -31,7 +62,7 @@ struct ThreadHistoryRetentionTests {
     /// A thread of more rows than the eager tail, so it draws a lazy history stack, loaded and settled.
     private func mount() async throws -> (FakeThread, Watched) {
         let store = NativeThreadStore()
-        let tailGuard = ThreadTailGuard()
+        let tailGuard = makeGuard()
         let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)), store: store, tailGuard: tailGuard)
         try await thread.waitUntilReady()
         #expect(store.rows.count > ThreadView.eagerRows)
@@ -68,7 +99,7 @@ struct ThreadHistoryRetentionTests {
     /// stay in memory for as long as the thread did. A reader at the tail has no use for them: the stack starts again
     /// (`ThreadHistoryBuilt`), and the rows it has built stay within a few turns' worth.
     @Test func aThreadThatGrowsTurnByTurnKeepsOnlyItsTailBuilt() async throws {
-        let thread = FakeThread(ThreadFixture.snapshot([]))
+        let thread = FakeThread(ThreadFixture.snapshot([]), tailGuard: makeGuard())
         try await thread.waitUntilReady()
         var messages: [NativeThreadMessage] = []
         var revision: UInt64 = 1
@@ -105,7 +136,8 @@ struct ThreadHistoryRetentionTests {
         let cycles = ThreadEagerTailTests.cycles
         let first = 40
         var turns = first
-        let thread = FakeThread(ThreadFixture.snapshot(ThreadEagerTailTests.messages(turns: turns, cycles: cycles)), deckHosting: true)
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadEagerTailTests.messages(turns: turns, cycles: cycles)),
+                                deckHosting: true, tailGuard: makeGuard())
         defer { thread.close() }
         try await thread.waitUntilReady()
         await thread.store.waitForProse()
@@ -134,7 +166,7 @@ struct ThreadHistoryRetentionTests {
     /// A reader who has scrolled up through the history keeps the rows they passed: the stack does not start again under them while
     /// the thread grows.
     @Test func aReaderAwayFromTheTailKeepsTheHistoryTheyHaveBuilt() async throws {
-        let thread = FakeThread(ThreadFixture.snapshot([]))
+        let thread = FakeThread(ThreadFixture.snapshot([]), tailGuard: makeGuard())
         try await thread.waitUntilReady()
         var messages: [NativeThreadMessage] = []
         var revision: UInt64 = 1
@@ -173,7 +205,7 @@ struct ThreadHistoryRetentionTests {
         func builtRows(in view: NSView) -> Int {
             (view is ThreadTailGuard.RowMarker ? 1 : 0) + view.subviews.reduce(0) { $0 + builtRows(in: $1) }
         }
-        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)))
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(ThreadView.eagerRows * 3)), tailGuard: makeGuard())
         try await thread.waitUntilReady()
         let scroll = try #require(thread.scrollView)
         let tail = thread.store.eagerRowCount(coveringHeight: AppLayout.eagerCoverHeight(forViewport: scroll.bounds.height), maxRows: ThreadView.eagerRows)
