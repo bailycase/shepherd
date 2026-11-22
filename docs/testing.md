@@ -54,11 +54,12 @@ means all five, and each exits non-zero on a failure:
 | `c-wire` | the codec and the request sequences of a scratch host |
 | `c-launch` | a real host process, started with launchd's 256-descriptor soft limit on a workspace of 150 synced git checkouts (30 with a worktree), binds `host.sock` and answers, opens no TCP listener and no Bonjour or iCloud lookup, runs Fleet's content indexes with no failed `open()`, a peak at least 32 under the limit, under 256 once running and at most 2 per space, and still answers after their first scan; once more from the oldest `state.json` shape in the state golden, rebased into the scratch folder |
 
-There are five gates, not four. `c-launch` currently fails on `nightly`: Fleet's file watcher opens a descriptor per watched file
-for every file it adds (quadratic in the number of spaces), so a host with 150 synced checkouts runs out of descriptors, never
-indexes them, and can leave `host.sock` unopened (#879 fixes that part). It stays red until the watcher fix (`fix/fleet-watcher-descriptors`) is merged,
-so it cannot be a required check before then. Once #879 merges, `HostLaunchTests` must pass `startFleet: true` to `SessionHost.run`,
-as `ShepherdHost.main` does; without it the test fails on "the index never reached every checkout".
+There are five gates, not four. `c-launch` was red on `nightly` until the Fleet watcher fix (#884) and the index watcher fix (#880)
+merged: with Fleet's file watcher opening a descriptor per watched file for every file it adds (quadratic in the number of spaces),
+a host with 150 synced checkouts ran out of descriptors under launchd's 256 and indexed none of them. It is green on `nightly`
+now, and goes red again on a failed `open()`, a peak within 32 of the limit, or a TCP listener. #879 (start Fleet after `host.sock`
+binds) is not merged: once it is, `HostLaunchTests` must pass `startFleet: true` to `SessionHost.run`, as `ShepherdHost.main` will;
+without it the test fails on "the index never reached every checkout".
 
 The host in `c-launch` is a child process that guards itself: it exits when the test process does, at a hard deadline, and when the
 test writes its `stop` file, and it reports its own descriptor peak (a timer source from before the host starts, plus an `open()`
