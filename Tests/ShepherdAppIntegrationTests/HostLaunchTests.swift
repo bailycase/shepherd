@@ -227,7 +227,8 @@ struct HostLaunchTests {
         if scanned, RemoteHostClient.localSocketAnswers(socket), await read() != nil {
             report.pass(steps.scan, expected: expectedScan, actual: "answered, \(snapshot?.index?.repos.map(\.files).reduce(0, +) ?? 0) files indexed")
         } else {
-            report.fail(steps.scan, expected: expectedScan, actual: scanned ? "the socket stopped answering" : "the first scan did not finish within \(scanBound)")
+            report.fail(steps.scan, expected: expectedScan, actual: scanned ? "the socket stopped answering"
+                        : running == expectedRoots ? "the first scan did not finish within \(scanBound)" : "the indexes never started, so there was no scan to wait for")
         }
         return report
     }
