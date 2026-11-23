@@ -867,14 +867,27 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   if (!isAutomationAgent) pi.registerTool({
     name: "agent_rename",
     label: "Rename Agent Thread",
-    description: "Renames a thread, like the user's /name: yours when agentID is omitted. Another thread (id from agent_list) only when the user explicitly asks you to rename it, in this conversation; never on your own initiative. " +
-      "Replies with the old and new name, or why it did not change. " + ACCESS_POLICY,
+    description: "Renames your thread like /name when no id is given. Use agentID from agent_list or dispatchID from your own fleet_dispatch only when the user explicitly asks you to rename it, in this conversation; never on your own initiative. " + ACCESS_POLICY,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({
       name: Type.String({ description: "The new name" }),
-      agentID: Type.Optional(Type.String({ description: "Another thread's id from agent_list; omit for yourself" })),
+      agentID: Type.Optional(Type.String({ description: "Another local thread's id" })),
+      dispatchID: Type.Optional(Type.String({ description: "A dispatch you sent" })),
     }),
     async execute(_id, params, signal) {
+      if (params.dispatchID !== undefined) {
+        if (params.agentID !== undefined || !params.dispatchID.trim()) throw new Error("Give a dispatchID or an agentID, not both. A dispatchID cannot be blank.");
+        try {
+          const reply = await request({ type: "fleetDispatchRename", dispatchID: params.dispatchID, name: params.name }, signal, 20_000);
+          if (reply.type !== "fleetDispatch" || typeof reply.info?.title !== "string") throw new Error("The host did not confirm the dispatch rename.");
+          return text(`renamed dispatch ${reply.info.dispatchID} to "${reply.info.title}"`);
+        } catch (error) {
+          if (error instanceof RequestError && error.code === "timeout") {
+            throw new RequestError("Update Shepherd on this Mac if it doesn't support dispatch renames. Otherwise the outcome is unknown; check the current name before retrying.", error.code);
+          }
+          throw error;
+        }
+      }
       try {
         const reply = await request({ type: "renameAgent", name: params.name,
           ...(params.agentID ? { targetAgentID: params.agentID } : {}) }, signal, 20_000);

@@ -399,7 +399,8 @@ struct FleetMoveTests {
 
     // MARK: A thread that was sent work
 
-    @Test func aDispatchedThreadMovesAndItsResultStillReturnsToItsSender() async throws {
+    @Test(arguments: [false, true])
+    func renamingAMovedDispatchDependsOnWhetherItFinishedBeforeMoving(finishedBeforeMove: Bool) async throws {
         let (a, b, origin) = try await Self.pair()
         defer { a.stop(); b.stop() }
         let c = try await Mac("Mac Studio", origin: origin, isolatedPi: true)
@@ -410,24 +411,47 @@ struct FleetMoveTests {
         try await FleetDispatchTests.waitForReports(b, c)
         let parent = try await a.parent("Ship checkout")
         try parent.hello()
-        _ = try parent.info(try await parent.dispatch("Fix the flaky payment test.", key: "move-1", title: "Fix flaky payment test", host: "Mac mini"))
+        let info = try parent.info(try await parent.dispatch("Fix the flaky payment test.", key: "move-1", title: "Fix flaky payment test", host: "Mac mini"))
         try await FleetDispatchTests.wait("the Mac mini to run the dispatched thread") { !b.dispatched.isEmpty }
         let thread = try #require(b.dispatched.first)
         try await FleetDispatchTests.wait("the sender to follow it") { a.sent().first?.state == .running && a.sent().first?.remoteAgentID == thread.id }
+
+        if finishedBeforeMove {
+            try b.report(thread.id, .working)
+            try await FleetDispatchTests.wait("the Mac mini to see it working") { b.taken().first?.activity == "working" }
+            try b.report(thread.id, .done)
+            _ = try #require(await parent.nextMessage())
+            try await FleetDispatchTests.wait("the dispatch to finish before moving") { a.sent().first?.state == .done && b.taken().first?.state == .done }
+        }
 
         // The Mac mini moves it to the Mac Studio.
         let started = try await Self.move(thread.id, from: b, to: "Mac Studio")
         try await Self.finish(started.id, from: b)
         let moved = try #require(Self.copy(of: thread.id, on: c))
         #expect(moved.dispatchedFrom?.agentID == parent.agent.id && moved.dispatchedFrom?.hostName == "MacBook Pro", "it still says who sent it, so it nests under its sender")
-        // The sender follows it there.
+        let name = "Payment test follow-up"
+        if finishedBeforeMove {
+            let reply = try await parent.call { .fleetDispatchRename(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, name: name) }
+            guard case .error(_, "not_running", let reason) = reply else { throw WireError("expected a moved-thread refusal: \(reply)") }
+            #expect(reason.contains("moved to another Mac"))
+            #expect(Self.copy(of: thread.id, on: c)?.name == moved.name)
+            return
+        }
+
+        // The sender follows it there and can rename it there.
         try await FleetDispatchTests.wait("the sender to follow the thread to the Mac Studio") { a.sent().first?.targetHostName == "Mac Studio" }
+        try await FleetDispatchTests.wait("Pi to serve on the Mac Studio") {
+            await c.server.enqueueValue { @Sendable in c.server.rpcThread(forAgent: thread.id)?.isServable == true }
+        }
+        let renamed = try parent.info(try await parent.call { .fleetDispatchRename(id: $0, agentID: parent.agent.id, dispatchID: info.dispatchID, name: name) })
+        #expect(renamed.title == name && renamed.state == "running")
+        #expect(Self.copy(of: thread.id, on: c)?.name == name)
         // It works there and settles: its result goes to the parent that sent it, from the Mac Studio.
         try c.report(thread.id, .working)
         try await FleetDispatchTests.wait("the Mac Studio to see it working") { c.server.queue.sync { c.server.fleet?.dispatch.inbound.values.first { $0.record.remoteAgentID == thread.id && $0.record.kind != .move }?.startedWorking } == true }
         try c.report(thread.id, .done)
         let result = try #require(await parent.nextMessage())
-        #expect(result.delivery == .task && result.text.hasPrefix("[from: Fix flaky payment test on Mac Studio, an agent, not the user."))
+        #expect(result.delivery == .task && result.text.hasPrefix("[from: \(name) on Mac Studio, an agent, not the user."))
         try await FleetDispatchTests.wait("the sender's record to finish") { a.sent().first?.state == .done }
     }
 

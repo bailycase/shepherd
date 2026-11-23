@@ -316,6 +316,15 @@ struct ExtensionIdentityTests {
             }
             #expect(replyID == id && code == refusal)
         }
+        for (id, sender) in [worker.agent.id, coordinator.agent.id, unattended.agent.id].enumerated() {
+            try client.send(.fleetDispatchRename(id: id, agentID: sender, dispatchID: dispatchID.rawValue, name: "Refuse this name"))
+            let reply = try await client.reply()
+            guard case .error(let replyID, FleetDispatchCode.fleetScope, _) = reply else {
+                Issue.record("Expected fleet_scope for a dispatch rename from \(sender), got \(reply)")
+                continue
+            }
+            #expect(replyID == id)
+        }
         #expect(h.server.state.agents.map(\.name) == workspace.agents.map(\.name))
     }
 

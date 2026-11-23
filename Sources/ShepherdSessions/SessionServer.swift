@@ -1892,7 +1892,9 @@ public final class SessionServer: @unchecked Sendable {
         service.dispatch.host = FleetDispatchHost(
             state: { [weak self] in self?.store.state ?? ShepherdState() },
             settings: { [weak self] in self?.fleetSettings },
-            wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            wakeParent: { [weak self] agentID, text, dispatchID in
+                await self?.pushMessage(toAgent: agentID, text: text, delivery: .task, fleetResultID: dispatchID) ?? false
+            },
             defaultModel: { [home = pi.home] in PiConfig.defaultModel(in: home) },
             createThread: { [weak self] request in
                 await withCheckedContinuation { continuation in
@@ -1935,6 +1937,12 @@ public final class SessionServer: @unchecked Sendable {
                     } ?? continuation.resume(returning: .refused)
                 }
             },
+            renameThread: { [weak self] agentID, name, completion in
+                guard let self else { return completion(.failure(.init(code: "unreachable", message: "The receiving host is shutting down."))) }
+                self.renameLiveThread(agentID, to: name) { result in
+                    completion(result.map(\.newName).mapError { .init(code: $0.code, message: $0.description) })
+                }
+            },
             threadFacts: { [weak self] agentID in
                 guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
                 let thread = self.rpcThread(forAgent: agentID)
@@ -1968,7 +1976,7 @@ public final class SessionServer: @unchecked Sendable {
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
              .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _),
-             .fleetListDispatches(let value, let agent):
+             .fleetDispatchRename(let value, let agent, _, _), .fleetListDispatches(let value, let agent):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -2002,6 +2010,8 @@ public final class SessionServer: @unchecked Sendable {
             fleet.dispatch.agentControl(from: agentID, key: key, .cancel, reply: answer)
         case .fleetDispatchClose(_, _, let key):
             fleet.dispatch.agentControl(from: agentID, key: key, .close, reply: answer)
+        case .fleetDispatchRename(_, _, let key, let name):
+            fleet.dispatch.agentControl(from: agentID, key: key, .rename(name: name), reply: answer)
         default: break
         }
     }
@@ -5880,7 +5890,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename, .fleetListDispatches:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -5904,7 +5914,7 @@ public final class SessionServer: @unchecked Sendable {
         if assignedWorker {
             switch message {
             case .childScope, .spawnAgent, .moveAgent, .renameAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
-                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose:
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -6138,7 +6148,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename, .fleetListDispatches:
             break // Served ahead of the scope lists above (`serveFleetTool`).
         case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -6854,7 +6864,7 @@ public final class SessionServer: @unchecked Sendable {
         pending.dispatched = true
         peerDeliveries[id] = pending
         thread.lastInputFromPerson = false
-        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true) { [weak self] result in
+        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true, fleetResultID: pending.fleetResultID) { [weak self] result in
             // Refusal stays fenced until exit; successful dispatch or queueing is now tracked.
             if case .accepted = result { self?.peerDeliveries.removeValue(forKey: id) }
         }
@@ -6864,7 +6874,7 @@ public final class SessionServer: @unchecked Sendable {
     /// connection. Returns false when the agent has no live registered
     /// connection (extension not loaded or not yet connected), or dispatch fails.
     /// Success means queued on the socket, not accepted or consumed by pi.
-    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) async -> Bool {
+    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task, fleetResultID: UUID? = nil) async -> Bool {
         await enqueueValue { [self] in
             guard !movingThreads.contains(agentID), peerDeliveries.count < 4096,
                   peerDeliveries.values.filter({ $0.agentID == agentID }).count < 64,
@@ -6880,7 +6890,7 @@ public final class SessionServer: @unchecked Sendable {
             }?.key ?? store.state.agents.first(where: { $0.id == agentID }).flatMap { agent in
                 store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
             }
-            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery)
+            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery, fleetResultID: fleetResultID)
             enqueuePayload(payload, to: client)
             return clients[client.fd] === client
         }
@@ -7577,7 +7587,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Same display limit as the namer's /name reports. Line breaks become spaces. Keep joiners
     /// and emoji flag tags, but drop other control and format characters. Pi validates and saves the name.
-    private static func cleanSessionName(_ name: String) -> String {
+    static func cleanSessionName(_ name: String) -> String {
         let singleLine = name.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: .newlines).joined(separator: " ")
         var inFlag = false
@@ -7608,7 +7618,7 @@ public final class SessionServer: @unchecked Sendable {
             if let fleet, fleet.dispatch.outbound.values.contains(where: {
                 $0.targetHostID != nil && $0.targetHostID != fleet.hostID && ($0.remoteAgentID == agentID || UUID(uuidString: agentID.rawValue) == $0.id)
             }) {
-                return completion(.failure(ProjectFileError("other_host", "That thread is on another Mac. agent_rename only works on this Mac.")))
+                return completion(.failure(ProjectFileError("other_host", "That thread is on another Mac. Use dispatchID instead if you dispatched it.")))
             }
             return completion(.failure(ProjectFileError("no_such_agent", "No thread with that ID exists on this Mac. Only local agent_list IDs are supported.")))
         }
@@ -9951,6 +9961,7 @@ public final class SessionServer: @unchecked Sendable {
         let sessionID: SessionID?
         let text: String
         let delivery: AgentMessageDelivery
+        let fleetResultID: UUID?
         var received = false
         var dispatched = false
     }

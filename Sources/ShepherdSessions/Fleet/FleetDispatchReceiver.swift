@@ -332,6 +332,32 @@ extension FleetDispatch {
             commitInbound(id, from: sender, reply: reply)
         case .close:
             closeInbound(id, entry, reply: reply)
+        case .rename(let name):
+            if entry.record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
+            guard entry.record.kind == .agentDispatch, entry.record.closeReport == nil,
+                  !closingThreads.contains(id), let agent = entry.record.remoteAgentID else {
+                return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to rename.")))
+            }
+            if entry.record.movedOn != nil || host.state().agents.contains(where: { $0.id == agent && $0.movedTo != nil }) {
+                return reply(.failure(.init(code: "not_running", message: "That dispatch's thread has moved to another Mac.")))
+            }
+            host.renameThread(agent, name) { [weak self] result in
+                switch result {
+                case .failure(let refusal): reply(.failure(refusal))
+                case .success(let name):
+                    guard let self, var current = self.inbound[id] else {
+                        return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no such dispatch.")))
+                    }
+                    current.record.title = name
+                    current.record.titleRevision = (current.record.titleRevision ?? 0) &+ 1
+                    current.record.updatedAt = self.now
+                    current.unsent = true
+                    self.inbound[id] = current
+                    self.save()
+                    reply(.success(current.record))
+                    self.pushPending()
+                }
+            }
         case .cancel:
             guard entry.record.state.isLive else { return reply(.success(entry.record)) }
             // A move whose thread is starting is the sender's to finish: it handed over, so a cancel can only be a stale one.
@@ -580,7 +606,8 @@ extension FleetDispatch {
                     guard delivered, var current = self.inbound[id] else { return self.scheduleEvaluation() }
                     // An acknowledgment covers the record we sent, not a later update with the same timestamp.
                     if current.record == record {
-                        current.unsent = false
+                        // The result frame carries no title. Follow it with the renamed record.
+                        current.unsent = record.state == .delivering && record.titleRevision != nil
                         if record.state == .delivering { current.record.state = .done }
                     }
                     // A thread that moved on is reported to its sender once, and this Mac has nothing more to follow.

@@ -117,7 +117,26 @@ struct ThreadEventTests {
         let legacy = store.loadSession(sessionID: "session")
         #expect(legacy.entries.map(\.id) == ["user:1"])
         #expect(legacy.entries.first?.record.origin(text: "message") == .steered)
+        #expect(legacy.entries.first?.record.fleetResultID == nil)
         #expect(legacy.questions.isEmpty)
+    }
+
+    @Test func aRestartedThreadRestoresTheFleetResultID() async throws {
+        let dir = try makeScratchDirectory("origins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let id = UUID()
+        let store = ThreadOriginStore(directory: dir)
+        var record = ThreadOriginStore.Record()
+        record.fleetResultID = id
+        store.save(sessionID: "stub-session", records: [("user:1733234567890", record)],
+                   generation: store.loadSession(sessionID: "stub-session").generation)
+        store.flush()
+
+        let reloaded = try Thread(originStore: ThreadOriginStore(directory: dir))
+        defer { reloaded.stop() }
+        let snapshot = try await reloaded.ready()
+        let row = try #require(snapshot.messages.first { $0.entryID == "user:1733234567890" })
+        #expect(row.fleetResultID == id && row.blocks.first?.text == "Hello!")
     }
 
     @Test func metadataOnlyChangeDoesNotRefuseAnOriginsSave() throws {

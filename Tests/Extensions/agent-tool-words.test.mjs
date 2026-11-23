@@ -142,7 +142,7 @@ test("agent_rename renames the caller without a target, another thread only by i
   } });
   try {
     const tool = h.tools.get("agent_rename");
-    assert.match(tool.description, /yours when agentID is omitted/);
+    assert.match(tool.description, /your thread like \/name when no id is given/);
     assert.match(tool.description, /only when the user explicitly asks you to rename it, in this conversation/);
     assert.deepEqual(tool.parameters.required, ["name"], "agentID is optional");
     assert.equal(output(await tool.execute("self", { name: " New " })), 'renamed "Old" to "New"', "the reply's cleaned name, not the one asked for");
@@ -162,21 +162,38 @@ test("agent_rename renames the caller without a target, another thread only by i
   finally { await automation.close(); }
 });
 
-test("agent_rename gives up after 20 seconds when an old host ignores it", async () => {
+test("agent_rename uses a separate request for dispatch ids and reports the observed title", async () => {
+  const h = await harness({ defer: true, onFrame(frame, write) {
+    if (frame.type === "fleetDispatchRename") write({ type: "fleetDispatch", id: frame.id,
+      info: { dispatchID: frame.dispatchID, title: "Payment test" } });
+  } });
+  try {
+    const tool = h.tools.get("agent_rename");
+    assert.equal(output(await tool.execute("fleet", { name: " Payment test ", dispatchID: "job" })), 'renamed dispatch job to "Payment test"');
+    const frame = h.frames.find((f) => f.type === "fleetDispatchRename");
+    assert.equal(frame.agentID, "agent-1");
+    assert.equal(frame.dispatchID, "job");
+    assert.equal(frame.name, " Payment test ");
+    await assert.rejects(tool.execute("both", { name: "New", agentID: "local", dispatchID: "job" }), /not both/);
+    assert.equal(h.frames.some((f) => f.type === "renameAgent"), false, "can't fall back to a local rename");
+  } finally { await h.close(); }
+});
+
+for (const dispatch of [false, true]) test(`agent_rename gives up after 20 seconds when the host ignores ${dispatch ? "a dispatch rename" : "a local rename"}`, async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   const h = await harness();
   try {
     let failure;
-    const rename = h.tools.get("agent_rename").execute("call", { name: "New title" });
+    const rename = h.tools.get("agent_rename").execute("call", { name: "New title", ...(dispatch ? { dispatchID: "job" } : {}) });
     void rename.catch((error) => { failure = error; });
-    await h.waitFor(() => h.frames.some((f) => f.type === "renameAgent"));
+    await h.waitFor(() => h.frames.some((f) => f.type === (dispatch ? "fleetDispatchRename" : "renameAgent")));
     mock.timers.tick(19_999);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(failure, undefined);
     mock.timers.tick(1);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(failure?.code, "timeout");
-    assert.match(failure.message, /host may be too old to rename threads/);
+    assert.match(failure.message, dispatch ? /Update Shepherd on this Mac.*outcome is unknown/ : /host may be too old to rename threads/);
   } finally {
     mock.timers.reset();
     await h.close();

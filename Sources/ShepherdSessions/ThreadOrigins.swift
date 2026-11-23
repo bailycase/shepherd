@@ -84,13 +84,14 @@ final class ThreadOriginStore: @unchecked Sendable {
         /// The `/name args` the user typed for a prompt template pi expanded, which pi's text
         /// no longer names (`NativeThreadMessage.typedCommand`).
         var command: String?
+        var fleetResultID: UUID?
 
         init(references: [String]? = nil, command: String? = nil) {
             self.references = references
             self.command = command
         }
 
-        private enum CodingKeys: String, CodingKey { case steered, parts, references, command }
+        private enum CodingKeys: String, CodingKey { case steered, parts, references, command, fleetResultID }
 
         init(from decoder: Decoder) throws {
             let fields = try decoder.container(keyedBy: CodingKeys.self)
@@ -98,6 +99,7 @@ final class ThreadOriginStore: @unchecked Sendable {
             parts = try fields.decodeWhenPresent(.parts)
             references = try fields.decodeWhenPresent(.references)
             command = try fields.decodeWhenPresent(.command)
+            fleetResultID = try fields.decodeWhenPresent(.fleetResultID)
         }
 
         init?(_ origin: NativeMessageOrigin) {

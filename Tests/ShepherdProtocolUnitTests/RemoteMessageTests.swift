@@ -621,6 +621,7 @@ struct RemoteRequestTests {
         .fleetDispatchControl(id: 133, dispatchID: RemoteSamples.dispatchID, control: .close),
         .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
         .fleetDispatchControl(id: 130, dispatchID: RemoteSamples.dispatchID, control: .commit),
+        .fleetDispatchControl(id: 138, dispatchID: RemoteSamples.dispatchID, control: .rename(name: "Payment test")),
         .fleetDispatchCreate(id: 131, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .move, task: "", title: "Speed up checkout CI", repoKey: "github.com/acme/web",
                                                                   from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
                                                                   snapshot: RemoteSamples.repoOnlyHeader,
@@ -1552,7 +1553,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
-            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability, RemoteProtocol.fleetDispatchCloseCapability,
+            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability, RemoteProtocol.fleetDispatchCloseCapability, RemoteProtocol.fleetDispatchRenameCapability,
             RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability, RemoteProtocol.fleetUpdateCapability,
             // Offered to every client, a device included.
             RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability, RemoteProtocol.fleetUpdateViewCapability,
