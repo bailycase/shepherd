@@ -14,6 +14,7 @@ extension FixtureCatalog {
                 if HomeFeed.of(app.hosts).supervisionQueues.review.first?.agentRef != ref {
                     FixtureCheck.fail("The oldest changed Done thread is not first in the review queue")
                 }
+                if app.navigator.layout == .pad { await OverviewFitCheck.run(app) }
             }),
             FixtureScreen(name: "supervision-inbox", hosts: supervisionHosts(), routes: [.home(.needsYou)], prepare: { app in
                 await HomeFeed.of(app.hosts).refresh()
