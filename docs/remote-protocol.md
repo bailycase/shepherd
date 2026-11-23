@@ -296,9 +296,10 @@
     another device's ID is the same as for an unused ID. A foreign register neither writes a
     registration nor uses a slot. Revoking a paired device removes its registrations and cancels
     pending deliveries. Before registering, the host also prunes any rows whose owner has a
-    revocation tombstone. An older row with no owner stays unbound until a device registers the
-    same ID, and cannot be matched to a revoke before that. The Mac's local owner connection can
-    still manage registrations. The host does not offer the push capability to peer Macs.
+    revocation tombstone. Seven days after the host first sees an unowned row, it stops sending to
+    that row and removes it if it can save the file. A save failure doesn't stop delivery to eligible
+    rows. A device can bind an unowned row by registering the same ID. The Mac's local owner
+    connection can still manage registrations. The host does not offer the push capability to peer Macs.
     If the host's registration file is damaged, both requests return `push_registration` with recovery
     instructions for the host. The host leaves the file alone and suspends delivery once it detects damage.
     Registration carries only its opaque ID and scoped send credential. The APNs device token

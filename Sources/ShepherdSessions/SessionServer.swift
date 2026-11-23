@@ -1385,6 +1385,74 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
+    // MARK: - Host settings
+
+    private func remoteHostSettings(_ input: RouteInput) {
+        let send = input.send
+        // The reply closure holds the server weakly. Keep it alive through each queued reply.
+        switch input.request {
+        case .hostSettings(let id, let request):
+            if case .change(let change) = request, let capability = change.capability,
+               !input.offeredCapabilities().contains(capability) {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."))
+                return
+            }
+            guard let handler = onRemoteHostSettings else {
+                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let settings): send(.hostSettings(id: id, settings: settings))
+                        case .failure(let error): send(.error(id: id, code: "settings_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        case .hostInventory(let id, let request):
+            // Read-only, and only the GUI knows: hops as hostSettings does.
+            guard let handler = onRemoteHostInventory else {
+                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let value): send(.hostInventory(id: id, result: value))
+                        case .failure(let error): send(.error(id: id, code: "inventory_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        case .hostConfig(let id, let request):
+            guard let handler = onRemoteHostConfig else {
+                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let value): send(.hostConfig(id: id, result: value))
+                        case .failure(let error): send(.error(id: id, code: "config_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+
     // MARK: - Model catalog
 
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
@@ -2188,6 +2256,7 @@ public final class SessionServer: @unchecked Sendable {
             if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
+                pushNotifications.load()
                 acceptOnQueue()
                 if !repair && !recovered { recoverCommittedProjectPublications() }
             }
@@ -3508,16 +3577,28 @@ public final class SessionServer: @unchecked Sendable {
         let send: (RemoteReply) -> Void
         let offeredCapabilities: () -> [String]
         let remoteInstructions: (_ id: Int, _ request: RemoteInstructionsRequest) -> Void
+        let remoteSuggestions: (_ id: Int, _ request: RemoteSuggestionsRequest) -> Void
+        let remoteSkills: (_ id: Int, _ request: RemoteSkillsRequest) -> Void
+        let remoteHooks: (_ id: Int, _ request: RemoteHooksRequest) -> Void
+        let remoteApps: (_ id: Int, _ request: RemoteAppsRequest) -> Void
 
         fileprivate init(request: RemoteRequest, line: Data, fd: Int32, send: @escaping (RemoteReply) -> Void,
                          offeredCapabilities: @escaping () -> [String],
-                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void) {
+                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void,
+                         remoteSuggestions: @escaping (Int, RemoteSuggestionsRequest) -> Void,
+                         remoteSkills: @escaping (Int, RemoteSkillsRequest) -> Void,
+                         remoteHooks: @escaping (Int, RemoteHooksRequest) -> Void,
+                         remoteApps: @escaping (Int, RemoteAppsRequest) -> Void) {
             self.request = request
             self.line = line
             self.fd = fd
             self.send = send
             self.offeredCapabilities = offeredCapabilities
             self.remoteInstructions = remoteInstructions
+            self.remoteSuggestions = remoteSuggestions
+            self.remoteSkills = remoteSkills
+            self.remoteHooks = remoteHooks
+            self.remoteApps = remoteApps
         }
     }
 
@@ -3528,10 +3609,18 @@ public final class SessionServer: @unchecked Sendable {
     // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
     static let remoteRoutes: [RemoteRequest.Kind: Route] = [
         // Host settings
+        .hostSettings: { $0.remoteHostSettings($1) },
+        .hostInventory: { $0.remoteHostSettings($1) },
+        .hostConfig: { $0.remoteHostSettings($1) },
         // Model catalog
         .listModels: { $0.remoteListModels($1) },
         // Push registration
         // Settings catalogs
+        .instructions: { _, input in switch input.request { case .instructions(let id, let request): input.remoteInstructions(id, request); default: break } },
+        .suggestions: { _, input in switch input.request { case .suggestions(let id, let request): input.remoteSuggestions(id, request); default: break } },
+        .skills: { _, input in switch input.request { case .skills(let id, let request): input.remoteSkills(id, request); default: break } },
+        .hooks: { _, input in switch input.request { case .hooks(let id, let request): input.remoteHooks(id, request); default: break } },
+        .apps: { _, input in switch input.request { case .apps(let id, let request): input.remoteApps(id, request); default: break } },
         // Add new families above this line.
     ]
 
@@ -3543,19 +3632,31 @@ public final class SessionServer: @unchecked Sendable {
             let input = RouteInput(request: request, line: line, fd: client.fd,
                                    send: { [weak self] in self?.send($0, to: client) },
                                    offeredCapabilities: { [weak self] in self?.offeredCapabilities(to: client) ?? [] },
-                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) })
+                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) },
+                                   remoteSuggestions: { [weak self] in self?.remoteSuggestions(id: $0, request: $1, client: client) },
+                                   remoteSkills: { [weak self] in self?.remoteSkills(id: $0, request: $1, client: client) },
+                                   remoteHooks: { [weak self] in self?.remoteHooks(id: $0, request: $1, client: client) },
+                                   remoteApps: { [weak self] in self?.remoteApps(id: $0, request: $1, client: client) })
             handler(self, input)
             return
         }
         func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
-        // Route-table kinds share this case. Use leading commas for kinds after .listModels.
+        // Route-table kinds share this case. Use leading commas after the first kind.
         case
             // Host settings
+            .hostSettings
+            , .hostInventory
+            , .hostConfig
             // Model catalog
-            .listModels
+            , .listModels
             // Push registration
             // Settings catalogs
+            , .instructions
+            , .suggestions
+            , .skills
+            , .hooks
+            , .apps
             // Add new families above this line.
             : missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
@@ -3902,16 +4003,6 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .automation(let id, let automationID, let request):
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
-        case .instructions(let id, let request):
-            remoteInstructions(id: id, request: request, client: client)
-        case .suggestions(let id, let request):
-            remoteSuggestions(id: id, request: request, client: client)
-        case .skills(let id, let request):
-            remoteSkills(id: id, request: request, client: client)
-        case .hooks(let id, let request):
-            remoteHooks(id: id, request: request, client: client)
-        case .apps(let id, let request):
-            remoteApps(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .forge(let id, let request):
@@ -4094,63 +4185,6 @@ public final class SessionServer: @unchecked Sendable {
                 else { self.send(.error(id: id, code: "timeout", message: "Update handler timed out."), to: client) }
             })
             if let refusal { send(.error(id: id, code: refusal.code, message: refusal.message), to: client) }
-        case .hostSettings(let id, let request):
-            if case .change(let change) = request, let capability = change.capability,
-               !offeredCapabilities(to: client).contains(capability) {
-                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
-                return
-            }
-            guard let handler = onRemoteHostSettings else {
-                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let settings): self.send(.hostSettings(id: id, settings: settings), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "settings_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
-        case .hostInventory(let id, let request):
-            // Read-only, and only the GUI knows: hops as hostSettings does.
-            guard let handler = onRemoteHostInventory else {
-                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let value): self.send(.hostInventory(id: id, result: value), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "inventory_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
-        case .hostConfig(let id, let request):
-            guard let handler = onRemoteHostConfig else {
-                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let value): self.send(.hostConfig(id: id, result: value), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "config_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
         case .stateFetch(let id):
             if store.recoveryError != nil {
                 send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)

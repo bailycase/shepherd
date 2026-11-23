@@ -19,12 +19,50 @@ final class ThreadMeasuredHistory {
     @ObservationIgnored private weak var stack: StackMarker?
     @ObservationIgnored private var windowQueued = false
     @ObservationIgnored private var landingJump = false
+    @ObservationIgnored private var buildingJumpWindow = false
     @ObservationIgnored private var lastDocumentHeight: CGFloat?
     @ObservationIgnored private var stackSize: CGSize = .zero
     @ObservationIgnored private var settings: Settings?
     @ObservationIgnored weak var guardrail: ThreadTailGuard?
     @ObservationIgnored weak var paging: ThreadHistoryAnchor?
     @ObservationIgnored private var prependedAt: CGRect?
+    @ObservationIgnored private var scrollIntent = ScrollIntent()
+    @ObservationIgnored private var scrollerTracking: Task<Void, Never>?
+    @ObservationIgnored private var heldPrepend: (rows: ArraySlice<NativeThreadRow>, spacing: CGFloat, settings: Settings)?
+
+    var physicalScrollerHeld: Bool { scrollIntent.physicalScrollerHeld }
+
+    func holdScroller() { scrollIntent.scrollerGrab(physical: true) }
+
+    func releaseScroller() {
+        guard physicalScrollerHeld else { return }
+        scrollIntent.scrollerRelease()
+        if let heldPrepend {
+            self.heldPrepend = nil
+            update(heldPrepend.rows, spacing: heldPrepend.spacing, settings: heldPrepend.settings)
+            // The cached column has the same inputs. Invalidate the mounted window after the
+            // deferred table replacement even when its endpoint IDs have not changed.
+            windowRevision &+= 1
+        }
+        _ = tryPrepend(in: stack?.enclosingScrollView, pass: "scroller release")
+    }
+
+    func observeScroller(_ event: NSEvent, in scroll: NSScrollView) {
+        if event.type == .leftMouseUp { releaseScroller(); return }
+        guard event.window === scroll.window, let knob = scroll.verticalScroller,
+              knob.isEnabled, !knob.isHiddenOrHasHiddenAncestor, knob.testPart(event.locationInWindow) == .knob else { return }
+        holdScroller()
+        scrollerTracking?.cancel()
+        // NSScroller's tracking loop can consume the up event. Check again once tracking ends.
+        scrollerTracking = Task { @MainActor [weak self] in
+            while !Task.isCancelled, self?.physicalScrollerHeld == true {
+                if NSEvent.pressedMouseButtons & 1 == 0 { self?.releaseScroller(); return }
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+
+    private var windowRevision = 0
 
     struct Settings: Equatable {
         let session: String?
@@ -41,6 +79,11 @@ final class ThreadMeasuredHistory {
         }
         guard self.rows != rows || table.spacing != spacing else { return }
         let oldFirst = self.rows.first?.id
+        if physicalScrollerHeld, let oldFirst, oldFirst == paging?.rowID,
+           rows.first?.id != oldFirst, rows.contains(where: { $0.id == oldFirst }) {
+            heldPrepend = (rows, spacing, settings)
+            return
+        }
         self.rows = rows
         table.replace(rows.map { .init(id: $0.id, estimate: CGFloat(NativeRowHeight.row($0))) }, spacing: spacing)
         if let oldFirst, let index = table.index(for: oldFirst), index > 0 {
@@ -49,7 +92,22 @@ final class ThreadMeasuredHistory {
         if paging?.hasPrepend != true { queueWindow() }
     }
 
+    var retainedRowCount: Int { rows.count }
+
+    func release() {
+        rows = []
+        table = ThreadRowHeights()
+        pending.removeAll()
+        builtBounds = nil
+        prependedAt = nil
+        lastDocumentHeight = nil
+        heldPrepend = nil
+        scrollerTracking?.cancel()
+        scrollIntent.scrollerRelease()
+    }
+
     func window() -> (rows: ArraySlice<NativeThreadRow>, leading: CGFloat, trailing: CGFloat) {
+        _ = windowRevision
         guard let bounds = builtBounds, let first = table.index(for: bounds.first),
               let last = table.index(for: bounds.last), first <= last else {
             return (rows.prefix(0), table.height, 0)
@@ -61,10 +119,37 @@ final class ThreadMeasuredHistory {
                 end == rows.count ? 0 : table.height - table.offset(at: end))
     }
 
-    func landJump(_ layout: () throws -> Void) rethrows {
+    func landJump<Result>(_ layout: () throws -> Result) rethrows -> Result {
         landingJump = true
         defer { landingJump = false }
-        try layout()
+        return try layout()
+    }
+
+    /// Lay out the destination rows before moving the clip. The table locates the window;
+    /// the marker accounts for actual heights inside the newly built window.
+    func jump(to id: String, caller: String, in scroll: NSScrollView) -> Bool {
+        guard let host = scroll.window?.contentView else { return false }
+        return landJump {
+            host.layoutSubtreeIfNeeded()
+            guard let index = table.index(for: id), let stack, stack.enclosingScrollView === scroll,
+                  guardrail?.active == true else { return false }
+            let clip = scroll.contentView
+            let previous = builtBounds
+            buildingJumpWindow = true
+            defer { buildingJumpWindow = false }
+            let destination = clip.bounds.offsetBy(dx: 0, dy: table.offset(at: index) - clip.bounds.minY)
+            selectWindow(for: destination)
+            host.layoutSubtreeIfNeeded()
+            guard let top = guardrail?.rowTop(id, in: scroll) else {
+                builtBounds = previous
+                return false
+            }
+            ThreadHistoryAnchor.correct(top - scroll.contentInsets.top, in: scroll, rowID: id,
+                                        actor: "thread.write.M11", caller: caller)
+            host.layoutSubtreeIfNeeded()
+            prependedAt = clip.bounds
+            return true
+        }
     }
 
     private func queueWindow() {
@@ -80,24 +165,28 @@ final class ThreadMeasuredHistory {
     private func publishWindow(synchronous: Bool = false) {
         if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.publishWindow") }
         // Preserve the mounted rows across the prepend. Its compensating clip move is not input.
-        guard paging?.hasPrepend != true, let stack, let scroll = stack.enclosingScrollView,
+        guard !buildingJumpWindow, paging?.hasPrepend != true, let stack, let scroll = stack.enclosingScrollView,
               guardrail?.active == true else { return }
         let clip = scroll.contentView
         // Keep the compensated window until the reader moves or the viewport resizes.
         guard clip.bounds != prependedAt else { return }
         prependedAt = nil
         let top = stack.convert(stack.bounds, to: clip).minY
-        let rect = clip.bounds.offsetBy(dx: 0, dy: -top)
-        let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
-        let built = window.isEmpty ? nil : Bounds(first: table.rows[window.lowerBound].id,
-                                                  last: table.rows[window.upperBound - 1].id)
-        guard built != builtBounds else { return }
-        builtBounds = built
-        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.windowMove") }
-        if synchronous {
+        if let window = selectWindow(for: clip.bounds.offsetBy(dx: 0, dy: -top)), synchronous {
             SHRenderProbe.scrollEvent("probe.heights.window", "clip bounds y=\(clip.bounds.minY) rows=\(window)",
                                       from: scroll, kind: "layout")
         }
+    }
+
+    @discardableResult
+    private func selectWindow(for rect: CGRect) -> Range<Int>? {
+        let window = table.range(for: rect, viewports: AppLayout.eagerTailViewports)
+        let built = window.isEmpty ? nil : Bounds(first: table.rows[window.lowerBound].id,
+                                                  last: table.rows[window.upperBound - 1].id)
+        guard built != builtBounds else { return nil }
+        builtBounds = built
+        if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.windowMove") }
+        return window
     }
 
     func rowLaidOut(_ id: String, height: CGFloat, in scroll: NSScrollView?) {
@@ -142,7 +231,7 @@ final class ThreadMeasuredHistory {
         // At an explicit landing there is no previous reader position to preserve. Keep
         // the measurements, and let the next layout anchor to the landed clip instead.
         guard !landingJump, paging?.hasPrepend != true, delta != 0, lastDocumentHeight != nil, guardrail?.following == false,
-              MacScrollValidationTrace.current?.physicalScrollerHeld != true else { return }
+              !physicalScrollerHeld else { return }
         ThreadHistoryAnchor.correct(delta, in: scroll, rowID: anchor < table.rows.count ? table.rows[anchor].id : nil,
                                     actor: "thread.write.H1", caller: "\(pass) delta=\(delta) document=\(height)")
     }
