@@ -7,7 +7,7 @@ import Testing
 @testable import ShepherdApp
 
 /// `HostSupervisor` against a stand-in host: a small Python script that takes the workspace lock
-/// (exiting owned when it can't), answers on the socket (not in `silent` mode), and stops at its stdin's end of file.
+/// (exiting owned when it can't), answers on the socket, and stops at its stdin's end of file.
 @Suite("Host supervisor", .integrationTimeLimit)
 struct HostSupervisorIntegrationTests {
     static let standIn = """
@@ -22,9 +22,6 @@ struct HostSupervisorIntegrationTests {
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         sys.exit(\(SessionHost.ownedExitStatus))
-    if mode == "silent":
-        while True:
-            signal.pause()
     try:
         os.unlink(path)
     except FileNotFoundError:
@@ -111,35 +108,33 @@ struct HostSupervisorIntegrationTests {
         await #expect(throws: HostSupervisor.StartFailed.self) { try await Self.start(supervisor) }
     }
 
-    private static func ownerConfiguration(_ h: ScratchServer) -> HostSupervisor.Configuration {
-        .init(executable: URL(fileURLWithPath: "/usr/bin/false"), arguments: [],
-              socket: h.dir.appendingPathComponent("host.sock").path,
-              lock: h.dir.appendingPathComponent("server.lock").path)
-    }
-
     @Test func launchOpensWhenTheOwnerListensAfterEightSeconds() async throws {
         let h = try ScratchServer()
         defer { h.stop() }
+        let socket = h.dir.appendingPathComponent("host.sock").path
+        var configuration = HostSupervisor.Configuration(executable: URL(fileURLWithPath: "/usr/bin/false"), arguments: [],
+            socket: socket, lock: h.dir.appendingPathComponent("server.lock").path)
         let elapsed = Locked(Duration.zero)
-        let bindFailed = Locked(false)
-        var configuration = Self.ownerConfiguration(h)
-        let socket = configuration.socket
+        let bound = Locked<Result<Void, Error>?>(nil)
         configuration.sleep = { step in
             let before = elapsed.current
             elapsed.withValue { $0 += step }
             if before < .seconds(8), elapsed.current >= .seconds(8) {
-                do { try h.server.startLocalListener(path: socket) }
-                catch { bindFailed.withValue { $0 = true } }
+                let result = Result { try h.server.startLocalListener(path: socket) }
+                bound.withValue { $0 = result }
             }
         }
         let supervisor = HostSupervisor(configuration)
         defer { supervisor.stop() }
-        let launch = Task { try await Self.start(supervisor) }
-        try await eventually("the slow owner listens at eight seconds") {
-            bindFailed.current || RemoteHostClient.localSocketAnswers(socket)
+        let launched = Locked<Result<Void, Error>?>(nil)
+        Task.detached {
+            let result = Result { try supervisor.start() }
+            launched.withValue { $0 = result }
         }
-        try #require(!bindFailed.current)
-        try await launch.value
+        try await eventually("the owner attempts to listen at eight seconds") { bound.current != nil }
+        try #require(bound.current).get()
+        try await eventually("the launch wait ends once the socket answers") { launched.current != nil }
+        try #require(launched.current).get()
         #expect(supervisor.childPID == nil)
     }
 

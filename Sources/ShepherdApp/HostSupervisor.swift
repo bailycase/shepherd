@@ -139,6 +139,7 @@ final class HostSupervisor: @unchecked Sendable {
             stopping = true
             return (self.child, childExited)
         }
+        _ = launch(.failure(CancellationError()))
         retried.signal()
         guard let child, let exited, child.isRunning else { return }
         kill(child.processIdentifier, SIGTERM)
@@ -161,7 +162,6 @@ final class HostSupervisor: @unchecked Sendable {
     private var isStopping: Bool { lock.withLock { stopping } }
 
     private func supervise() {
-        defer { _ = launch(.failure(CancellationError())) }
         var policy = RestartPolicy()
         var waitForOwner = configuration.preferOwner()
         while !isStopping {
@@ -282,7 +282,8 @@ final class HostSupervisor: @unchecked Sendable {
     private func launch(_ result: Result<Void, Error>) -> Bool {
         let first = lock.withLock { () -> Bool in
             guard launchResult == nil else { return false }
-            launchResult = result
+            // Quit wins if a socket probe is still in flight.
+            launchResult = stopping ? .failure(CancellationError()) : result
             return true
         }
         if first { launched.signal() }
@@ -304,7 +305,6 @@ extension HostSupervisor.StartFailed {
         if canRetry { alert.addButton(withTitle: "Try Again") }
         alert.addButton(withTitle: "Quit")
         NSApp.activate()
-        let response = alert.runModal()
-        return canRetry && response == .alertFirstButtonReturn
+        return canRetry && alert.runModal() == .alertFirstButtonReturn
     }
 }

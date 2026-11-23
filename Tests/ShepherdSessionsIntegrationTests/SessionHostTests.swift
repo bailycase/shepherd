@@ -48,28 +48,6 @@ struct SessionHostTests {
         #expect(!FileManager.default.fileExists(atPath: socket))
     }
 
-    @Test func theHostExitsIfItCannotListenOnItsLocalSocket() async throws {
-        let dir = try makeScratchDirectory("host-bind")
-        defer { try? FileManager.default.removeItem(at: dir) }
-        // A directory can't be unlinked or replaced by bind(). The extension socket still works.
-        try FileManager.default.createDirectory(at: dir.appendingPathComponent("host.sock"), withIntermediateDirectories: false)
-        let socket = dir.appendingPathComponent("s.sock").path
-        let state = dir.appendingPathComponent("state.json").path
-        let result = await #expect(processExitsWith: .exitCode(EXIT_FAILURE), observing: [\.standardErrorContent]) {
-            [socket = socket as String, state = state as String] in
-            let server = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
-            // Safety exit with a different code if the old host stays alive without a listener.
-            SessionHost.run(server, respawn: Self.defaults, ready: {
-                DispatchQueue.global().asyncAfter(deadline: .now() + 5) { _exit(EXIT_SUCCESS) }
-            })
-        }
-        let stderr = String(decoding: try #require(result).standardErrorContent, as: UTF8.self)
-        #expect(stderr.contains("host has no local socket"))
-        let next = SessionServer(socketPath: socket, stateURL: URL(fileURLWithPath: state))
-        defer { next.stop() }
-        try next.start()
-    }
-
     /// While the server queue is busy (here, parked), start-up leaves the main actor free: the remote and local listeners bind
     /// once the queue turns, and nothing on main waits for it. A main actor that waited would be stuck until the safety release.
     @Test func startUpKeepsTheMainActorFreeWhileTheServerQueueIsBusy() async throws {

@@ -1024,7 +1024,6 @@ public final class SessionServer: @unchecked Sendable {
     private var slashCatalog: [NativeCommand] = []
     private var listenFD: Int32 = -1
     private var ownershipFD: Int32 = -1
-    private var ownershipAcquiredAt = ContinuousClock.now
     private var isStarted = false
     // start/stop also visit independent stores off the server queue.
     private let lifecycleLock = NSLock()
@@ -2232,17 +2231,13 @@ public final class SessionServer: @unchecked Sendable {
     /// Bind the extension socket and clear stale persisted state from the
     /// previous run (sessions died with the app; agent statuses no longer
     /// mean anything until pi reports fresh ones).
-    public func start() throws { try start(persistHostLog: false) }
-
-    func start(persistHostLog: Bool) throws {
+    public func start() throws {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         if queue.sync(execute: { isStarted }) { return }
         do {
             let (repair, recovered) = try queue.sync {
                 try acquireOwnershipOnQueue()
-                if persistHostLog { ShepherdLog.persistHostLog(in: supportDirectory) }
-                ShepherdLog.info("host took the workspace lock (pid \(getpid()))")
                 try bindOnQueue()
                 store.load()
                 let repair = store.recoveryError != nil, recovered = store.didRecover
@@ -2584,7 +2579,6 @@ public final class SessionServer: @unchecked Sendable {
         }
         // Never unlink this file: contenders must lock the same inode across restarts.
         ownershipFD = fd
-        ownershipAcquiredAt = .now
     }
 
     private func bindOnQueue() throws {
@@ -3353,7 +3347,7 @@ public final class SessionServer: @unchecked Sendable {
         localAcceptSource = source
         localSocketPath = path
         source.activate()
-        ShepherdLog.info("local listener on \(path) after \(ownershipAcquiredAt.duration(to: .now)) holding the workspace lock (pid \(getpid()))")
+        ShepherdLog.info("local listener on \(path)")
     }
 
     /// Drops the app's connections over `host.sock` and keeps listening, as a broken link does
