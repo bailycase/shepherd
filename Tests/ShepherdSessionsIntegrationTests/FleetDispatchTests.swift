@@ -115,13 +115,13 @@ struct FleetDispatchTests {
                     ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard, worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
                 }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
             }
+            // Serving threads installs the host's own window relay. Restore the test updater before Fleet can accept requests.
+            await prepare?(server)
             let tokenURL = scratch.appendingPathComponent("remote-token")
             let socket = scratch.appendingPathComponent("h.sock").path
             let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             try server.startLocalListener(path: socket, tokenURL: tokenURL)
-            // Serving threads installs the host's own window relay, which a test's updater stands in for.
-            await prepare?(server)
             let settings = settings
             server.setFleetHostSettings { [weak server] change in
                 let now = settings.withValue { $0.apply(change); return $0 }
