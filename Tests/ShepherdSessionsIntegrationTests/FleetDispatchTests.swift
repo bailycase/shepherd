@@ -73,7 +73,7 @@ struct FleetDispatchTests {
              sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
              uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil,
              mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false, isolatedPi: Bool = false,
-             prepare: (@Sendable (SessionServer) async -> Void)? = nil) async throws {
+             loopbackOnly: Bool = false, prepare: (@Sendable (SessionServer) async -> Void)? = nil) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
             settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
@@ -81,6 +81,11 @@ struct FleetDispatchTests {
             // A Mac of its own pi home: the conversations of two Macs never meet in one folder (a move writes one).
             let host = try ScratchServer(dir: scratch, pi: isolatedPi ? PiSetup(engine: PiSetup.app.engine, home: scratch.appendingPathComponent("pi"), userHome: scratch.path) : .app)
             let server = host.server
+            if loopbackOnly {
+                try await server.useLoopbackNetworkingForTests()
+                // If a scratch host's updater relay is reached, never open an installed app.
+                server.openAppForUpdate = { false }
+            }
             // Before the listener opens: what the host offers is read when a peer says hello.
             await prepare?(server)
             server.configureFleet(name: name, advertises: false)
@@ -268,12 +273,13 @@ struct FleetDispatchTests {
                      originExtra: [String: String] = [:], repoKeyB: String? = repoKey,
                      originOfB: ((Origin) throws -> Origin)? = nil, checkoutB: Bool = true,
                      uncommittedA: FleetUncommittedChanges = .sendThem, mcp: [String: String] = [:], lackingB: Set<String> = [],
-                     noXcodeB: Bool = false, isolatedPi: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
+                     noXcodeB: Bool = false, isolatedPi: Bool = false, loopbackOnly: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
         try StubPi.installAsEngine()
         let origin = try makeOrigin(extra: originExtra)
-        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp, isolatedPi: isolatedPi)
+        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp,
+                              isolatedPi: isolatedPi, loopbackOnly: loopbackOnly)
         let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork, checkout: checkoutB,
-                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB, isolatedPi: isolatedPi)
+                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB, isolatedPi: isolatedPi, loopbackOnly: loopbackOnly)
         try await a.pair(with: b)
         try await waitForReports(a, b)
         return (a, b, origin)
