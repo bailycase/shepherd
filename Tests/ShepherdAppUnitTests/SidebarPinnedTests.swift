@@ -30,7 +30,7 @@ struct SidebarPinnedTests {
     private func derive(_ local: [Agent], remote: [Agent] = [], offline: Bool = false, pins: [PinnedThread]) -> SidebarLists {
         SidebarDerivation.lists(
             SidebarSource(local: ShepherdState(spaces: [space], agents: local),
-                          hosts: remote.isEmpty ? [] : [SidebarSource.Host(id: host, name: "horizon",
+                          hosts: remote.isEmpty ? [] : [SidebarSource.Host(id: host, name: "orbit",
                                                                             state: ShepherdState(spaces: [space], agents: remote),
                                                                             offline: offline)]),
             pins: SidebarPins(pins))
@@ -81,14 +81,24 @@ struct SidebarPinnedTests {
         #expect(answered.pinned.map(\.title) == ["pinned", "other"])
     }
 
-    /// A remote thread pins like a local one, keeps its host's tag and reads "on horizon".
+    @Test func pinnedNeedsYouAndUnseenDoneStayInSupervisionQueues() {
+        let asking = agent("asks", status: .blocked, at: 1, waiting: "Ship it?")
+        var done = agent("done", status: .done, at: 2)
+        done.checkout = AgentCheckout(branch: "main", changedFiles: 2)
+        let lists = derive([asking, done], pins: [local(asking), local(done)])
+        #expect(lists.needsYou.isEmpty && lists.done.isEmpty)
+        #expect(lists.supervisionQueues.needingYou == [.local(asking.id), .local(done.id)])
+        #expect(lists.supervisionQueues.review == [.local(done.id)])
+    }
+
+    /// A remote thread pins like a local one, keeps its host's tag and reads "on orbit".
     @Test func aPinnedRemoteThreadWearsItsHostTag() {
         let remote = agent("remote", status: .working, at: 1)
         let lists = derive([agent("here", at: 2)], remote: [remote], pins: [self.remote(remote)])
         #expect(lists.pinned.map(\.title) == ["remote"])
         #expect(lists.pinned.first?.id == .remote(RemoteAgentRef(hostID: host, agentID: remote.id)))
-        #expect(lists.pinned.first?.accessory == .tag("horizon"))
-        #expect(lists.pinned.first?.accessibilityLabel == "remote, running, on horizon, pinned")
+        #expect(lists.pinned.first?.accessory == .tag("orbit"))
+        #expect(lists.pinned.first?.accessibilityLabel == "remote, running, on orbit, pinned")
         #expect(lists.recents.map(\.title) == ["here"])
     }
 
@@ -132,7 +142,7 @@ struct SidebarPinnedTests {
         var remoteState = ShepherdState(spaces: [space], agents: [remoteRun])
         remoteState.automations = [Automation(name: "Remote run", prompt: "p", cwd: "/tmp", agentID: remoteRun.id)]
         let lists = SidebarDerivation.lists(
-            SidebarSource(local: state, hosts: [SidebarSource.Host(id: host, name: "horizon", state: remoteState)],
+            SidebarSource(local: state, hosts: [SidebarSource.Host(id: host, name: "orbit", state: remoteState)],
                           designs: true),
             pins: SidebarPins([local(run), remote(remoteRun), .local(drawer.id)]))
         #expect(lists.pinned.isEmpty)

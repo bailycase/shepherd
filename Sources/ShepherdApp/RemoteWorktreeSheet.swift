@@ -32,7 +32,6 @@ struct RemoteWorktreeSheet: View {
     @State private var info: RemoteWorktreeInfo?
     @State private var errorText: String?
     @State private var operation: RemoteWorktreeOperation?
-    @State private var submitting = false
     @State private var acknowledgedLoss = false
     /// Delete's "Don't ask again".
     @State private var remember: Bool
@@ -133,18 +132,21 @@ struct RemoteWorktreeSheet: View {
         } else if !operationPending {
             Button("Delete agent only") {
                 vm.settings.rememberWorktreeDelete(remember, removeWorktree: false)
+                guard vm.beginClosingThread(.remote(target)) else { return }
+                vm.remoteWorktreeSheet = nil
                 Task {
-                    do {
-                        _ = try await query(.deleteKeepingWorktree)
-                        vm.remoteWorktreeSheet = nil
-                    } catch { errorText = String(describing: error) }
+                    do { _ = try await query(.deleteKeepingWorktree) }
+                    catch {
+                        vm.closingThreads.remove(.remote(target))
+                        vm.fail("Couldn’t delete the agent", error)
+                    }
                 }
             }
             .buttonStyle(.sh(.secondary))
             if let info {
                 Button("Delete agent and worktree") { start(info) }
                     .buttonStyle(.sh(.dangerFill))
-                    .disabled(submitting || (info.warning != nil && !acknowledgedLoss))
+                    .disabled(info.warning != nil && !acknowledgedLoss)
             }
         }
     }
@@ -161,24 +163,8 @@ struct RemoteWorktreeSheet: View {
 
     private func start(_ info: RemoteWorktreeInfo) {
         vm.settings.rememberWorktreeDelete(remember, removeWorktree: true)
-        submitting = true
-        let id = UUID()
-        vm.remoteWorktreeOperationIDs[target] = id
-        vm.remoteWorktreeOperationEndpoints[target] = endpointID
-        Task {
-            do {
-                if case .worktreeOperation(let status) = try await query(
-                    .deleteWorktree(operationID: id, confirmedWarning: info.warning, fingerprint: info.fingerprint)) {
-                    operation = status
-                }
-            } catch RemoteHostClientError.rejected(_, let message) {
-                vm.remoteWorktreeOperationIDs.removeValue(forKey: target)
-                vm.remoteWorktreeOperationEndpoints.removeValue(forKey: target)
-                errorText = message
-            } catch {
-                errorText = "Request failed: \(error). Check operation status before trying again."
-            }
-            submitting = false
-        }
+        guard let endpointID, let transportID else { errorText = "Reconnect and reopen this action."; return }
+        vm.remoteWorktreeSheet = nil
+        vm.removeHostWorktree(target, confirmed: info, endpoint: endpointID, transport: transportID)
     }
 }

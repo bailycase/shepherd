@@ -97,3 +97,71 @@ public func expectScenarioCompleted(_ result: ExitTest.Result?, sourceLocation: 
     let output = String(decoding: result?.standardOutputContent ?? [], as: UTF8.self)
     #expect(output.contains(scenarioCompleteLine), "the scenario exited before its last statement", sourceLocation: sourceLocation)
 }
+
+/// One-shot event a fake opens and a test awaits: no polls, no fixed sleeps. A `wait` that starts
+/// after `open` returns at once, so a signal is never missed. Cancellation-aware: cancelling a
+/// waiter resumes it at once, so `bounded` throws `GateTimeout` instead of hanging.
+public final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    public init() {}
+
+    public func open() {
+        let resume = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            isOpen = true
+            defer { waiters.removeAll() }
+            return Array(waiters.values)
+        }
+        for waiter in resume { waiter.resume() }
+    }
+
+    public func wait() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock { () -> Bool in
+                    if isOpen { return true }
+                    if Task.isCancelled { return true }
+                    waiters[id] = continuation
+                    return false
+                }
+                if resumeNow { continuation.resume() }
+            }
+        } onCancel: {
+            let resume = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                waiters.removeValue(forKey: id)
+            }
+            resume?.resume()
+        }
+    }
+}
+
+/// What a bounded wait gave up on.
+public struct GateTimeout: Error, CustomStringConvertible {
+    public let what: String
+    public var description: String { "timed out waiting for \(what)" }
+}
+
+/// Runs the event-driven `wait` (which returns the moment its signal arrives), giving up after
+/// `timeout` with a `GateTimeout`. The clock only fires on the failure path; the happy path waits
+/// on events alone, with no sleeps or polls. Only fails if `wait` honors cancellation: a closure
+/// that ignores it keeps the group from returning, so pass a `Gate.wait` or another
+/// cancellation-aware wait.
+public func bounded<T: Sendable>(
+    _ what: String,
+    timeout: Duration = .seconds(10),
+    _ wait: @escaping @Sendable () async -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { await wait() }
+        group.addTask {
+            try await Task.sleep(for: timeout)
+            throw GateTimeout(what: what)
+        }
+        guard let first = try await group.next() else { throw GateTimeout(what: what) }
+        group.cancelAll()
+        return first
+    }
+}

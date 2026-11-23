@@ -69,7 +69,7 @@ struct UserTurn: View, Equatable {
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
                    images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
                    references: bubble.references, elements: bubble.elements, imageRefs: bubble.imageRefs, command: bubble.command)
-        }, fromQueue: turn.fromQueue, hover: hover)
+        }, fromQueue: turn.fromQueue, note: turn.sendingNote, hover: hover)
     }
 
     /// A transcript's turn (the subagent inspector): `caption` under the last message.
@@ -510,12 +510,14 @@ final class TurnShown {
     var appeared = false
 }
 
-/// What a changes card can do (ChangesCard): open the Changes pane on the turn (at a file), and
+/// What a changes card can do (ChangesCard): open the Changes pane on the turn (at a file), open one of its files over the
+/// window (`view`, OutsideFileE: the file, the card's other files a step away; nil where the files can't be read here), and
 /// undo or redo the turn. Undo and Redo answer with why they refused, or nil.
 struct TurnChangesActions {
     var review: (_ turnID: UUID?, _ path: String?) -> Void
     var undo: (UUID) async -> String?
     var redo: (UUID) async -> String?
+    var view: ((_ turnID: UUID?, _ path: String, _ paths: [String]) -> Void)? = nil
 }
 
 /// The "Edited N files" card with its own Undo and Redo state: busy while one runs, and the
@@ -548,6 +550,10 @@ private struct TurnChangesCard: View {
     }
 
     private func openAction(turnID: UUID?) -> ((String) -> Void)? {
+        if let view = actions?.view {
+            let paths = changes.files.map(\.path)
+            return { view(turnID, $0, paths) }
+        }
         if let actions { return { actions.review(turnID, $0) } }
         return review
     }

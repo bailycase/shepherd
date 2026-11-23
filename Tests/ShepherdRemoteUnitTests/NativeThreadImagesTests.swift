@@ -245,7 +245,8 @@ struct NativeThreadImagesTests {
     @Test func aStoreConfiguresItsImagesFromItsSnapshot() async throws {
         let png = Self.png
         let host = Host(["a": png])
-        let store = NativeThreadStore()
+        let (firstPull, pulled) = AsyncStream<Void>.makeStream()
+        let store = manualStore(onPause: { pulled.finish() })
         let snapshot = NativeThreadSnapshot(piSessionID: "session-1", generation: "g", revision: 1, running: false,
                                             supportedActions: ["send", "images"], dialogsSupported: true, dialogs: [],
                                             messages: [NativeThreadMessage(entryID: "user:1", role: "user", blocks: [
@@ -258,12 +259,10 @@ struct NativeThreadImagesTests {
         }) }
         defer { polling.cancel() }
         let ref = try #require(snapshot.messages.first?.blocks.first?.image)
-        var outcome: NativeThreadImages.Outcome?
-        for _ in 0..<100 where outcome == nil {
-            try await Task.sleep(for: .milliseconds(20))
-            if store.ready { outcome = await store.images.image(ref) }
-        }
-        #expect(outcome == .image(png))
+        // The poll loop pauses only after applying the first snapshot.
+        for await _ in firstPull {}
+        try #require(store.ready)
+        #expect(await store.images.image(ref) == .image(png))
         #expect(host.asked.allSatisfy { $0.id == "a" })
     }
 

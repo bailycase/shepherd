@@ -16,7 +16,7 @@ protocol FleetUnitSource: AnyObject {
     /// Whether a unit travels as content by hash (a file) rather than inline (a setting's JSON).
     func storesBlob(_ unit: String) -> Bool
     /// The units that hold a value here now, with it. A unit absent from the answer is unset.
-    func read() -> [String: Data]
+    func read() throws -> [String: Data]
     /// Whether a value is worth seeding the fleet with: not empty, not the default. A Mac that
     /// never chose a setting must not outvote one that did.
     func isSeedable(_ unit: String, _ value: Data) -> Bool
@@ -37,9 +37,9 @@ protocol FleetUnitSource: AnyObject {
     /// What each unit holds here now, as the hash of its content (a unit that is absent is left
     /// out). A source of many or large files answers from a cache of what it already hashed, so
     /// nothing is read again that did not change.
-    func fingerprints() -> [String: String]
-    /// One unit's content now, asked only for a unit whose hash changed.
-    func value(of unit: String) -> Data?
+    func fingerprints() throws -> [String: String]
+    /// One unit's content now, asked only for a unit whose hash changed. Throw to discard the source's pass.
+    func value(of unit: String) throws -> Data?
     /// Called before each scan: a source that mirrors a folder outside the store makes its copy current.
     func prepare()
     /// What the fleet holds for a unit now (nil: unset or its content isn't here yet), for a write
@@ -75,8 +75,8 @@ extension FleetUnitSource {
     var writesAsynchronously: Bool { false }
     func owns(_ unit: String) -> Bool { units.contains(unit) }
     var watchedTrees: [URL] { [] }
-    func fingerprints() -> [String: String] { read().mapValues { FleetSyncProtocol.hash($0) } }
-    func value(of unit: String) -> Data? { read()[unit] }
+    func fingerprints() throws -> [String: String] { try read().mapValues { FleetSyncProtocol.hash($0) } }
+    func value(of unit: String) throws -> Data? { try read()[unit] }
     func prepare() {}
     func attach(fleetValue: @escaping (String) -> Data?) {}
     func attach(fleetWinners: @escaping (String) -> [String: String]) {}
@@ -168,9 +168,16 @@ final class FleetMaterializer {
     func scan(name: String, credentialsOnly: Bool = false) -> [FleetOp] {
         var emitted: [FleetOp] = []
         var changed = false
-        for source in sources where source.isReady && (!credentialsOnly || source.isCredential) {
+        // Kind first: a source that isn't asked about is not read, and `isReady` can be a read of its own files.
+        pass: for source in sources where (!credentialsOnly || source.isCredential) && source.isReady {
             source.prepare()
-            let present = source.fingerprints()
+            guard let present = try? source.fingerprints() else { continue }
+            // A failed read must not publish or observe even the units read before it.
+            var observed = self.observed
+            var pending = self.pending
+            var sourceChanged = false
+            // Buffer values so damage found mid-scan leaves nothing written.
+            var toEmit: [(unit: String, value: Data?, seed: Bool)] = []
             for unit in units(of: source, holding: present) {
                 let hash = present[unit] ?? "-"
                 if let waiting = pending[unit] {
@@ -179,7 +186,7 @@ final class FleetMaterializer {
                     } else if hash == waiting.previous {
                         // Still the old value: the write hasn't landed. Past the deadline it never will (the app
                         // refused it): leave the unit as it was, and the next pass writes again.
-                        if clock() >= waiting.deadline { pending[unit] = nil; observed[unit] = hash; changed = true }
+                        if clock() >= waiting.deadline { pending[unit] = nil; observed[unit] = hash; sourceChanged = true }
                         continue
                     } else {
                         // Neither: a person changed it meanwhile, and that is an edit like any other.
@@ -189,19 +196,24 @@ final class FleetMaterializer {
                 let seen = observed[unit]
                 guard seen != hash else { continue }
                 observed[unit] = hash
-                changed = true
+                sourceChanged = true
                 // What the fleet already holds there needs no op.
                 if let winner = store.winner(of: unit), Self.hash(of: winner.change) == hash { continue }
-                let value = hash == "-" ? nil : source.value(of: unit)
+                let value: Data?
+                do { value = hash == "-" ? nil : try source.value(of: unit) } catch { continue pass }
                 // It changed again between the two reads: the next scan sees it.
                 if hash != "-", value == nil { observed[unit] = seen; continue }
                 if seen == nil {
                     // First sight of this unit on this Mac: only a value worth sharing becomes a seed.
                     guard let value, source.isSeedable(unit, value) else { continue }
-                    if let op = emit(unit, value, source: source, seed: true, name: name) { emitted.append(op) }
-                } else if let op = emit(unit, value, source: source, seed: false, name: name) {
-                    emitted.append(op)
                 }
+                toEmit.append((unit, value, seen == nil))
+            }
+            self.observed = observed
+            self.pending = pending
+            changed = changed || sourceChanged
+            for edit in toEmit {
+                if let op = emit(edit.unit, edit.value, source: source, seed: edit.seed, name: name) { emitted.append(op) }
             }
         }
         if changed { save() }
@@ -234,7 +246,10 @@ final class FleetMaterializer {
         var failed = false
         var changed = false
         for source in sources where source.isReady {
-            var present = source.fingerprints()
+            guard var present = try? source.fingerprints() else { failed = true; continue }
+            var (keptObserved, keptPending, keptChanged) = (observed, pending, changed)
+            let noticeCount = notices.count
+            var damaged = false
             /// Units that must wait for another unit of the same pass (a skill's state, for its files).
             var waiting: [String] = []
             func apply(_ unit: String, retrying: Bool) {
@@ -270,7 +285,16 @@ final class FleetMaterializer {
                 do {
                     try source.write(unit, target, origin: winner.macName.isEmpty ? "another Mac" : winner.macName)
                     changed = true
+                    // A skill file deletion can return before the state write removes the folder.
+                    // Keep content writes only; the scan already absorbs deletions that landed.
+                    if target != nil {
+                        keptObserved[unit] = observed[unit]
+                        keptPending[unit] = pending[unit]
+                        keptChanged = true
+                    }
                     if replacedSeed { notices.append(Notice(unit: unit, from: winner.macName)) }
+                } catch SkillsStore.StoreError.damagedRecords {
+                    damaged = true
                 } catch {
                     observed[unit] = current
                     pending[unit] = nil
@@ -282,10 +306,19 @@ final class FleetMaterializer {
                     if !(error is FleetUnitRefused || error is FleetUnitWaiting) { failed = true }
                 }
             }
-            for unit in units(of: source, holding: present) { apply(unit, retrying: false) }
-            if !waiting.isEmpty {
-                present = source.fingerprints()
-                for unit in waiting { apply(unit, retrying: true) }
+            for unit in units(of: source, holding: present) where !damaged { apply(unit, retrying: false) }
+            if !damaged, !waiting.isEmpty {
+                if let refreshed = try? source.fingerprints() {
+                    present = refreshed
+                    for unit in waiting where !damaged { apply(unit, retrying: true) }
+                } else {
+                    damaged = true
+                }
+            }
+            if damaged {
+                (observed, pending, changed) = (keptObserved, keptPending, keptChanged)
+                notices.removeLast(notices.count - noticeCount)
+                failed = true
             }
         }
         if changed { save() }

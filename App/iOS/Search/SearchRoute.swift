@@ -1,21 +1,6 @@
 import SwiftUI
 import ShepherdUI
-
-/// Search's screens (search track): threads and snippets across every host, the iPad palette,
-/// and the agent actions' sheets.
-enum SearchRoute: Hashable, Codable {
-    /// iPhone (and an iPad window as narrow as one): the search screen, pushed.
-    case search(query: String)
-    /// iPad: the ⌘K palette over search and actions, presented.
-    case palette(query: String)
-    case rename(AgentRef)
-    /// Move to Mac: the Macs of the thread's host's fleet, and what moving costs the turn.
-    case moveToMac(AgentRef)
-    /// Delete, or Delete Worktree Agent for a worktree agent.
-    case delete(AgentRef)
-    /// An action from a menu or the palette failed.
-    case problem(title: String, message: String)
-}
+import ShepherdRemote
 
 /// Where other screens open search (Home's search button, the iPad sidebar, ⌘K): the palette
 /// on iPad, the search screen on iPhone.
@@ -64,7 +49,7 @@ struct SearchCommands: Commands {
             Button("Search Threads…") {
                 if let navigator { SearchHooks.toggle(navigator: navigator) }
             }
-            .keyboardShortcut("k", modifiers: .command)
+            .keyboardShortcut(MobileShortcut.search.shortcut)
             .disabled(navigator == nil)
         }
     }

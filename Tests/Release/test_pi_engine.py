@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s Tests/Release -v
 
 Nothing here reaches the network or a real pi: staging runs against archives built in memory.
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import base64
 import copy
 import errno
@@ -47,6 +48,15 @@ def read(*parts):
 def thin_macho(arch, version=NODE_VERSION):
     cputype = {"arm64": 0x0100000C, "x86_64": 0x01000007}[arch]
     return b"\xcf\xfa\xed\xfe" + struct.pack("<I", cputype) + b"\0" * 24 + f"node v{version}\0".encode()
+
+
+COMPUTER_USE_VERSION = "0.54.0"
+COMPUTER_USE_URL = ("https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.54.0/"
+                    "cua-driver-rs-0.54.0-darwin-universal-binary.tar.gz")
+
+
+def computer_use_macho(version=COMPUTER_USE_VERSION):
+    return b"\xcf\xfa\xed\xfe" + struct.pack("<I", 0x0100000C) + b"\0" * 24 + f"cua-driver {version} \0".encode()
 
 
 def fat_macho(slices):
@@ -138,6 +148,8 @@ class Fixture:
         self.node = tarxz({folder + "bin/node": thin_macho("arm64", node_version),
                            folder + "LICENSE": b"Node.js is licensed for use as follows:",
                            folder + "include/node/node.h": b"header"})
+        self.driver = fat_macho({"x86_64": thin_macho("x86_64"), "arm64": computer_use_macho()})
+        self.computer_use = targz({"cua-driver": self.driver, "cua-cursor-theme": b"theme"}, prefix="")
         self.pin = {
             "node": {"version": node_version, "dist": f"https://nodejs.org/dist/v{node_version}/", "archives": {
                 "arm64": {"file": f"node-v{node_version}-darwin-arm64.tar.xz",
@@ -145,6 +157,8 @@ class Fixture:
             "pi": {"name": "@earendil-works/pi-coding-agent", "version": PI_VERSION,
                    "tarball": f"https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-{PI_VERSION}.tgz",
                    "integrity": sri(self.archives["pi"])},
+            "computerUse": {"version": COMPUTER_USE_VERSION, "url": COMPUTER_USE_URL,
+                            "sha256": hashlib.sha256(self.computer_use).hexdigest()},
             "modules": {},
         }
         versions = {"jiti": "2.7.0", "@silvia-odwyer/photon-node": "0.3.4", "quickjs-wasi": "3.6.2"}
@@ -174,6 +188,7 @@ class Fixture:
         urls = {node["dist"] + "SHASUMS256.txt": shasums.encode()}
         urls[node["dist"] + node["archives"]["arm64"]["file"]] = self.node
         urls[self.pin["pi"]["tarball"]] = self.archives["pi"]
+        urls[COMPUTER_USE_URL] = self.computer_use
         for name, module in self.pin["modules"].items():
             urls[module["tarball"]] = self.archives[name]
         return urls
@@ -191,7 +206,8 @@ class Fixture:
         with open(pin_path, "w") as f:
             json.dump(self.pin, f)
         out = os.path.join(scratch, "staged")
-        pi_engine.stage(os.path.join(scratch, "cache"), out, pin_path=pin_path, opener=self.opener(overrides))
+        # The stand-in driver is no real Mach-O for codesign; the real stage signs the app bundle.
+        pi_engine.stage(os.path.join(scratch, "cache"), out, pin_path=pin_path, opener=self.opener(overrides), sign=False)
         return out
 
 
@@ -457,7 +473,7 @@ class StageTests(unittest.TestCase):
             out = fixture.stage(scratch)
             engine = "Resources/pi-engine/"
             self.assertEqual(listing(out), sorted([
-                "Helpers/node", "inputs.xcfilelist", "outputs.xcfilelist", "pin.json",
+                "Helpers/node", pi_engine.COMPUTER_USE, pi_engine.COMPUTER_USE_INFO, "inputs.xcfilelist", "outputs.xcfilelist", "pin.json",
                 *(engine + f for f in (
                     "package.json", "README.md", "CHANGELOG.md", "docs/rpc.md", "examples/extensions/hello.ts",
                     "dist/bundle/cli.js", "dist/bundle/chunks/a.js", "dist/modes/interactive/theme/dark.json",
@@ -478,15 +494,21 @@ class StageTests(unittest.TestCase):
                   for file in ("package.json", "LICENSE", "dist/index.js")),
             ]))
             self.assertEqual(set(pi_engine.slices(os.path.join(out, "Helpers/node"))), {"arm64"})
+            with open(os.path.join(out, pi_engine.COMPUTER_USE), "rb") as f:
+                self.assertEqual(f.read(), computer_use_macho(), "only the driver's arm64 slice ships")
+            with open(os.path.join(out, pi_engine.COMPUTER_USE_INFO), "rb") as f:
+                info = plistlib.load(f)
+            self.assertEqual((info["CFBundleExecutable"], info["CFBundleName"], info["LSUIElement"]),
+                             ("computer-use", "Shepherd Computer Use", True), "a background app named for Shepherd")
             self.assertEqual(pi_engine.verify(out, fixture.pin), [])
 
-    def test_files_are_plain_and_only_node_is_executable(self):
+    def test_files_are_plain_and_only_the_helpers_are_executable(self):
         fixture = Fixture()
         with tempfile.TemporaryDirectory() as scratch:
             out = fixture.stage(scratch)
             for path in listing(out):
                 mode = os.stat(os.path.join(out, path)).st_mode & 0o777
-                self.assertEqual(mode, 0o755 if path == "Helpers/node" else 0o644, path)
+                self.assertEqual(mode, 0o755 if path in ("Helpers/node", pi_engine.COMPUTER_USE) else 0o644, path)
 
     def test_the_stamp_is_the_pin_it_was_staged_from(self):
         fixture = Fixture()
@@ -514,8 +536,9 @@ class StageTests(unittest.TestCase):
             self.assertIn("Apache License", notices)
             self.assertIn("Copyright (c) quickjs-wasi", notices)
             self.assertIn("@earendil-works/pi-tui 1.0.0  MIT", notices, "what the bundle compiles in is listed too")
+            self.assertIn("Copyright (c) 2025 Cua AI, Inc.", notices, "the computer-use driver's MIT notice")
 
-    def test_the_sandbox_lists_only_node_and_the_stamp_not_thousands_of_sdk_paths(self):
+    def test_the_sandbox_lists_only_the_helpers_and_the_stamp_not_thousands_of_sdk_paths(self):
         fixture = Fixture()
         with tempfile.TemporaryDirectory() as scratch:
             out = fixture.stage(scratch)
@@ -523,9 +546,12 @@ class StageTests(unittest.TestCase):
                 inputs = f.read().splitlines()
             with open(os.path.join(out, "outputs.xcfilelist")) as f:
                 outputs = f.read().splitlines()
-            self.assertEqual(inputs, [f"$(SRCROOT)/.build/pi-engine/{p}" for p in ("pin.json", "Helpers/node")])
+            self.assertEqual(inputs, [f"$(SRCROOT)/.build/pi-engine/{p}" for p in ("pin.json", "Helpers/node", pi_engine.COMPUTER_USE, pi_engine.COMPUTER_USE_INFO)])
             contents = "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/"
-            self.assertEqual(outputs, [contents + "Helpers", contents + "Helpers/node"])
+            app = pi_engine.COMPUTER_USE_APP
+            self.assertEqual(outputs, [contents + p for p in (
+                "Helpers", "Helpers/node", app, f"{app}/Contents", f"{app}/Contents/MacOS", pi_engine.COMPUTER_USE,
+                pi_engine.COMPUTER_USE_INFO, f"{app}/Contents/_CodeSignature", f"{app}/Contents/_CodeSignature/CodeResources")])
 
     def test_restaging_reuses_the_cache(self):
         fixture = Fixture()
@@ -732,6 +758,17 @@ class VerifyTests(unittest.TestCase):
             f.write(fat_macho({"arm64": thin_macho("arm64")}))
         self.assertEqual(pi_engine.verify(self.out, self.fixture.pin), [], "a fat file of one arm64 slice is fine")
 
+    def test_the_computer_use_driver_is_the_pinned_arm64_one(self):
+        driver = os.path.join(self.out, pi_engine.COMPUTER_USE)
+        for data, mentioning in ((self.fixture.driver, "for arm64 only"),
+                                 (computer_use_macho("0.53.0"), "not the pinned driver")):
+            with self.subTest(mentioning):
+                with open(driver, "wb") as f:
+                    f.write(data)
+                self.assertOneProblem(mentioning)
+        os.remove(driver)
+        self.assertOneProblem(f"{pi_engine.COMPUTER_USE} is missing")
+
     def test_the_pinned_pi_and_its_entry_and_licences_must_be_there(self):
         for relative, mentioning in (("dist/cli.js", "cli.js is missing"),
                                      ("NODE-LICENSE", "NODE-LICENSE is missing"),
@@ -818,11 +855,14 @@ class LayoutContractTests(unittest.TestCase):
             for path in (os.path.join(scratch, "scripts", "pi-engine-pin.json"), os.path.join(staged, "pin.json")):
                 with open(path, "w") as f:
                     f.write("same pin")
-            with open(os.path.join(staged, "Helpers", "node"), "w") as f:
-                f.write("scratch node")
+            for helper in ("node", "ShepherdComputerUse.app/Contents/MacOS/computer-use", "ShepherdComputerUse.app/Contents/Info.plist"):
+                os.makedirs(os.path.dirname(os.path.join(staged, "Helpers", helper)), exist_ok=True)
+                with open(os.path.join(staged, "Helpers", helper), "w") as f:
+                    f.write(f"scratch {helper}")
             products = os.path.join(scratch, "products")
             env = {**os.environ, "SRCROOT": scratch, "TARGET_BUILD_DIR": products,
-                   "CONTENTS_FOLDER_PATH": "Test.app/Contents", "CODE_SIGNING_ALLOWED": "NO"}
+                   "CONTENTS_FOLDER_PATH": "Test.app/Contents", "CODE_SIGNING_ALLOWED": "NO",
+                   "TEMP_DIR": os.path.join(scratch, "temp")}
             for config, succeeds in (({"name": "pi", "configDir": ".pi"}, False),
                                      ({"name": "shepherd", "configDir": ".shepherd"}, False),
                                      ({}, False), ({"name": "pi", "configDir": ".shepherd"}, True)):
@@ -845,6 +885,8 @@ class LayoutContractTests(unittest.TestCase):
         swift = read("Sources", "ShepherdSessions", "PiEngine.swift")
         for name, value in (("nodePath", pi_engine.NODE), ("packagePath", pi_engine.ENGINE), ("entryPath", pi_engine.ENTRY)):
             self.assertIn(f'public static let {name} = "{value}"', swift)
+        driver = read("Sources", "ShepherdSessions", "ComputerUseExtension.swift")
+        self.assertIn(f'public static let driverPath = "{pi_engine.COMPUTER_USE}"', driver)
 
 
 class EntitlementsTests(unittest.TestCase):

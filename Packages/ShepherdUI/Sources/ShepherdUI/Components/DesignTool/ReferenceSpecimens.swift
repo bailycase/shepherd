@@ -60,7 +60,7 @@ public struct SHDesignReferenceSpecimens: View {
                     }
                     specimen("host offline") {
                         SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23",
-                                              state: .hostOffline(host: "horizon", words: "offline · uses the copy from Sep 26"),
+                                              state: .hostOffline(host: "orbit", words: "offline · uses the copy from Sep 26"),
                                               thumbnail: picture, remove: {})
                     }
                     specimen("hovered") { SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23", thumbnail: picture, highlighted: true) }
@@ -193,7 +193,7 @@ public struct SHDesignReferenceSpecimens: View {
                          thumbnail: picture),
             SHMentionRow(id: "d3", kind: .design, title: "Pricing page", subtitle: "5 boards · on demo-mac", lead: "acme-web", host: "demo-mac",
                          trailing: .drill, thumbnail: picture),
-            SHMentionRow(id: "d4", kind: .design, title: "Refund flow", subtitle: "horizon is offline · last seen 3h ago", host: "horizon",
+            SHMentionRow(id: "d4", kind: .design, title: "Refund flow", subtitle: "orbit is offline · last seen 3h ago", host: "orbit",
                          hostOffline: true, trailing: .drill, thumbnail: picture),
         ]), SHMentionSection(id: "files", title: "Files", trailing: "dashboard-web", rows: [
             SHMentionRow(id: "f1", kind: .file, title: "templates/checkout/funnel.html", subtitle: "edited in this thread", trailing: .pick),

@@ -1,5 +1,7 @@
+import Foundation
 import Testing
 import ShepherdProtocol
+import ShepherdTestKit
 @testable import ShepherdSessions
 
 /// pi's RPC capabilities and the older aligned table both feed the picker.
@@ -115,5 +117,20 @@ struct ModelListingTests {
         #expect(listing.entries == entries)
         #expect(ModelListing(models: ["a/b"], defaultModel: nil).imageCapableModels == ["a/b"])
         #expect(ModelListing(entries: [PiModelCatalog.Entry(id: "a/b")], defaultModel: nil).withoutImages == nil)
+    }
+
+    /// Settings ▸ Pi's "Checked …" reads when pi last checked pi.dev, nil before it ever did.
+    @Test func lastCheckedIsWhenPiLastWroteTheModelsStore() throws {
+        let dir = try makeScratchDirectory("catalog")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = PiHome(directory: dir, engine: PiEngine(command: ["/scratch/bin/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")))
+        let catalog = PiModelCatalog(home: home, ready: { false })
+        #expect(catalog.lastChecked == nil)
+
+        let store = dir.appendingPathComponent("models-store.json")
+        try Data("{}".utf8).write(to: store)
+        let checked = Date(timeIntervalSince1970: 1_800_000_000)
+        try FileManager.default.setAttributes([.modificationDate: checked], ofItemAtPath: store.path)
+        #expect(catalog.lastChecked == checked)
     }
 }

@@ -66,45 +66,58 @@ enum HostSettingsMapping {
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?,
                          slashCommands: [NativeCommand] = []) -> HostSettings {
-        HostSettings(
+        // The Agents, Worktrees, Fleet and Experiments groups come from the host's store (`AppSettings.hostAgents`, `hostWorktrees`, `hostFleet`, `hostExperiments`); the rest still from `app`.
+        let agents = app.hostAgents, worktrees = app.hostWorktrees, fleet = app.hostFleet, experiments = app.hostExperiments
+        return HostSettings(
             shepherdVersion: shepherdVersion,
             piVersion: piVersion,
-            defaultModel: app.defaultModel.isEmpty ? nil : app.defaultModel,
-            defaultThinking: app.defaultThinking,
-            defaultServiceTier: app.defaultServiceTier,
-            textGenerationModel: app.textGenerationModel.isEmpty ? nil : app.textGenerationModel,
-            visionModel: app.visionModel.isEmpty ? nil : app.visionModel,
-            compactAtPercent: app.compactAtPercent,
-            queueDelivery: app.queueDelivery,
-            goalsEnabled: app.goalsEnabled,
-            projectsEnabled: app.projectsEnabled,
-            worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
-            fetchBeforeCreating: app.worktreeFetchBeforeCreate,
-            generatePRDescriptions: app.worktreeGeneratePRDescription,
-            closeOnMerge: app.worktreeCloseOnMerge,
-            designToolEnabled: app.designToolEnabled,
+            defaultModel: agents.defaultModel.isEmpty ? nil : agents.defaultModel,
+            defaultThinking: agents.defaultThinking,
+            defaultServiceTier: agents.defaultServiceTier,
+            textGenerationModel: agents.textGenerationModel.isEmpty ? nil : agents.textGenerationModel,
+            visionModel: agents.visionModel.isEmpty ? nil : agents.visionModel,
+            compactAtPercent: agents.compactAtPercent,
+            queueDelivery: agents.queueDelivery,
+            goalsEnabled: experiments.goals,
+            projectsEnabled: experiments.projects,
+            worktreeBase: worktrees.baseMode == .head ? .head : .fresh,
+            fetchBeforeCreating: worktrees.fetchBeforeCreate,
+            generatePRDescriptions: worktrees.generatePRDescription,
+            closeOnMerge: worktrees.closeOnMerge,
+            designToolEnabled: experiments.designTool,
+            threadsStartThreads: agents.threadsStartThreads,
+            subThreadPlace: agents.subThreadPlace,
+            computerUseEnabled: experiments.computerUse,
             subagentDefaults: HostSettings.SubagentDefaults(
                 concurrency: app.childConcurrency,
                 model: app.childModel.isEmpty ? nil : app.childModel,
                 thinking: ThinkingLevel(rawValue: app.childThinking),
                 context: HostSettings.SubagentDefaults.Context(rawValue: app.childContext) ?? .fresh),
-            worktreeDeleteAction: HostSettings.WorktreeDeleteAction(rawValue: app.worktreeDeleteAction.rawValue) ?? .ask,
+            worktreeDeleteAction: worktrees.deleteAction,
             skillsInSlashMenu: app.skillsInSlashMenu,
             mcpProjectConfig: app.mcpProjectConfig,
             slashCommands: slashCommands,
             hiddenSlashCommands: app.hiddenSlashCommands.sorted(),
             // Shepherd's pi updates with Shepherd: nothing runs `pi update` any more.
-            bundledExtensions: bundled.map { HostSettings.BundledExtension(id: $0.id, name: $0.name, on: app[keyPath: $0.keyPath]) },
+            bundledExtensions: bundled.map { item in
+                let on = switch item.id {
+                case "context": agents.trimToolOutput
+                case "deferTools": agents.deferTools
+                case "codemode": agents.codemode
+                default: app[keyPath: item.keyPath]
+                }
+                return HostSettings.BundledExtension(id: item.id, name: item.name, on: on)
+            },
             updatePiDaily: false,
             updateExtensionsDaily: false,
-            fleetWeights: app.fleetWeights,
-            fleetThreadsCanSend: app.fleetThreadsCanSend,
-            fleetThreadCap: app.fleetThreadCap,
-            fleetAutoDispatch: app.fleetAutoDispatch,
-            fleetBatteryCountsHalf: app.fleetBatteryCountsHalf,
-            fleetUncommitted: app.fleetUncommitted,
-            fleetSnapshotExcludes: app.fleetSnapshotExcludes,
-            fleetCheckIgnores: app.fleetCheckIgnores
+            fleetWeights: fleet.weights,
+            fleetThreadsCanSend: fleet.threadsCanSend,
+            fleetThreadCap: fleet.threadCap,
+            fleetAutoDispatch: fleet.autoDispatch,
+            fleetBatteryCountsHalf: fleet.batteryCountsHalf,
+            fleetUncommitted: fleet.uncommitted,
+            fleetSnapshotExcludes: fleet.snapshotExcludes,
+            fleetCheckIgnores: fleet.checkIgnores
         )
     }
 
@@ -146,6 +159,9 @@ enum HostSettingsMapping {
             // An older client's switches: Shepherd's pi updates only with Shepherd.
             break
         case .designToolEnabled(let on): app.designToolEnabled = on
+        case .threadsStartThreads(let on): app.threadsStartThreads = on
+        case .subThreadPlace(let place): app.subThreadPlace = place
+        case .computerUseEnabled(let on): app.computerUseEnabled = on
         case .subagentDefaults(let defaults):
             let range = HostSettings.SubagentDefaults.concurrencyRange
             app.childConcurrency = min(range.upperBound, max(range.lowerBound, defaults.concurrency))

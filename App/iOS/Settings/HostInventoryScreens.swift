@@ -4,22 +4,20 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A host's inventory on iPhone and iPad (home track): Settings ▸ MCP, Subagents and Sign-in, the
-// Mac's Settings ▸ MCP, Subagents and Pi ▸ Sign-in as the host reads them (`hostInventory.v1`).
+// A host's inventory on iPhone and iPad (home track): the MCP servers of Settings ▸ Tools, Subagents
+// (a page of Agents) and Sign-in (at the top of Models), as the host reads them (`hostInventory.v1`).
 // A host with `hostConfig.v1` takes changes from here (`ClientHostConfig`): servers added,
 // edited, switched, signed in or removed; profiles edited, deleted or restored; keys saved and
 // accounts signed in. A secret typed here goes to the host in one request and is never kept.
 
-/// Settings ▸ MCP: the host's servers, each with its last known status and sign-in column.
-struct MCPServersScreen: View {
-    @Environment(MobileHosts.self) private var hosts
+/// Settings ▸ Tools, first: the host's MCP servers, each with its last known status and sign-in column.
+struct MCPSections: View {
+    let store: SettingsStore
 
     var body: some View {
-        let store = SettingsStore.of(hosts)
         let config = store.hostConfig
         let editor = store.mcpEditor
-        HostConfigPage(store: store, page: .mcp, configPage: .mcp,
-                       explanation: "The fleet's MCP servers, as the last check found them.") { host in
+        HostConfigBody(store: store, configPage: .mcp, explanation: nil) { host in
             if let inventory = config.mcp[host.id] {
                 let editable = config.canEdit(host)
                 if let problem = inventory.problem {
@@ -37,8 +35,9 @@ struct MCPServersScreen: View {
                     } cancel: { store.mcpEditor = nil }
                 }
                 if inventory.servers.isEmpty {
-                    SettingsFootnote("No MCP servers in the fleet yet.")
+                    SettingsSection("MCP servers") { SettingsFootnote("No MCP servers in the fleet yet.") }
                 } else {
+                    SettingsSection("MCP servers") {
                     SHListCard {
                         ForEach(inventory.servers) { server in
                             HStack(spacing: SH.Space.s) {
@@ -55,6 +54,7 @@ struct MCPServersScreen: View {
                                 }
                             }
                         }
+                    }
                     }
                 }
                 if editable {
@@ -223,7 +223,7 @@ private struct MCPServerLine: View {
     private var tone: AgentState { AgentState(rawValue: HostInventoryPresentation.tone(server.status).rawValue) ?? .idle }
 }
 
-/// Settings ▸ Subagents: the host's profiles, each opening its Markdown.
+/// Settings ▸ Agents ▸ Profiles: the host's profiles, each opening its Markdown.
 struct SubagentProfilesScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -232,7 +232,7 @@ struct SubagentProfilesScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let config = store.hostConfig
-        HostConfigPage(store: store, page: .subagents, configPage: .subagents,
+        HostConfigPage(store: store, title: "Profiles", configPage: .subagents,
                        explanation: "A subagent is a Markdown file: a name, a description and the instructions it runs with. An agent starts one by name. These are the fleet's profiles; live runs show in each thread.") { host in
             if let profiles = config.profiles[host.id] {
                 if profiles.isEmpty {
@@ -269,7 +269,7 @@ struct SubagentProfilesScreen: View {
                         Text("scout, reviewer, planner and worker go back to how Shepherd ships them. Your own profiles stay.")
                     }
                 } else {
-                    SettingsFootnote("Edit, add, delete or restore profiles in Settings ▸ Subagents on a Mac.")
+                    SettingsFootnote("Edit, add, delete or restore profiles in Settings ▸ Agents ▸ Profiles on a Mac.")
                 }
             }
         }
@@ -294,7 +294,7 @@ struct SubagentProfileScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let config = store.hostConfig
-        HostConfigPage(store: store, page: .subagents, configPage: nil, title: isNew ? "New profile" : file, explanation: nil) { host in
+        HostConfigPage(store: store, title: isNew ? "New profile" : file, configPage: nil, explanation: nil) { host in
             let editable = config.canEdit(host)
             if isNew {
                 TextField("File name, like reviewer.md", text: $name)
@@ -347,7 +347,7 @@ struct SubagentProfileScreen: View {
                     .padding(SH.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .shCard(radius: SHListMetrics.cardRadius)
-                SettingsFootnote("Edit it in Settings ▸ Subagents on a Mac.")
+                SettingsFootnote("Edit it in Settings ▸ Agents ▸ Profiles on a Mac.")
             }
             Color.clear.frame(height: 0)
                 .task(id: host.id) {
@@ -362,19 +362,17 @@ struct SubagentProfileScreen: View {
     }
 }
 
-/// Settings ▸ Sign-in: each provider of the host's pi and whether it is signed in; never a value.
-struct ProvidersScreen: View {
-    @Environment(MobileHosts.self) private var hosts
+/// Settings ▸ Models, first: each provider of the host's pi and whether it is signed in; never a value.
+struct ProviderSections: View {
+    let store: SettingsStore
     @State private var keyFor: String?
     /// The key form adds a key beside the saved one (Add key) rather than replacing it.
     @State private var addingKey = false
     @State private var key = ""
 
     var body: some View {
-        let store = SettingsStore.of(hosts)
         let config = store.hostConfig
-        HostConfigPage(store: store, page: .signIn, configPage: .providers,
-                       explanation: "Subscriptions and API keys for agents on a host. They live in the host's own pi.") { host in
+        HostConfigBody(store: store, configPage: .providers, explanation: nil) { host in
             if let providers = config.providers[host.id] {
                 let editable = config.canEdit(host)
                 HostSignInPanel(config: config, host: host, page: .providers,
@@ -647,63 +645,63 @@ private struct HostSignInPanel: View {
 
 // MARK: The page
 
-/// A page of a host's configuration: its explanation, which host when there are several, the
-/// host's last problem, then the page, or why there is none. Read again when the host
-/// reconnects or the page is pulled.
+/// A page of a host's configuration: its bar title, then its sections.
 private struct HostConfigPage<Content: View>: View {
     let store: SettingsStore
-    let page: SettingsPage
+    let title: String
     /// What the page reads on appearing; nil for a page that reads its own.
     let configPage: ClientHostConfig.Page?
-    var title: String?
     let explanation: String?
     @ViewBuilder let content: (SettingsHost) -> Content
-    @Environment(\.settingsColumn) private var inColumn
-    @State private var generation = 0
+
+    var body: some View {
+        SettingsPageScaffold(title, store: store) {
+            HostConfigBody(store: store, configPage: configPage, explanation: explanation, content: content)
+        }
+    }
+}
+
+/// A host's configuration as sections: an explanation, which host when there are several, the
+/// host's last problem, then the sections, or why there are none. Read again when the host
+/// reconnects or the page is pulled.
+struct HostConfigBody<Content: View>: View {
+    let store: SettingsStore
+    let configPage: ClientHostConfig.Page?
+    let explanation: String?
+    @ViewBuilder let content: (SettingsHost) -> Content
 
     var body: some View {
         let host = store.settingsHost
         let config = store.hostConfig
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                if let explanation {
-                    Text(explanation)
-                        .shText(.caption)
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, SH.Space.xs)
-                }
-                if let host {
-                    if let problem = config.problems[host.id] {
-                        SHBanner(.failed, title: problem) {
-                            Button("OK") { config.dismissProblem(on: host) }.buttonStyle(.sh(.secondary))
-                        }
-                    }
-                    if !host.isConnected {
-                        SettingsFootnote("\(host.name) is offline. This shows once it's back.")
-                    } else if !config.canRead(host) {
-                        SettingsFootnote("\(host.name)'s Shepherd is too old to share this. Update it to see it here.")
-                    } else {
-                        content(host)
-                        if !config.canEdit(host) {
-                            SettingsFootnote("Changing this from here needs a newer Shepherd on \(host.name).")
-                        }
-                    }
-                } else {
-                    SettingsFootnote("Add a host in Settings ▸ Fleet to see this.")
-                }
+        VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+            if let explanation {
+                Text(explanation)
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SH.Space.xs)
             }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
+            if let host {
+                if let problem = config.problems[host.id] {
+                    SHBanner(.failed, title: problem) {
+                        Button("OK") { config.dismissProblem(on: host) }.buttonStyle(.sh(.secondary))
+                    }
+                }
+                if !host.isConnected {
+                    SettingsFootnote("\(host.name) is offline. This shows once it's back.")
+                } else if !config.canRead(host) {
+                    SettingsFootnote("\(host.name)'s Shepherd is too old to share this. Update it to see it here.")
+                } else {
+                    content(host)
+                    if !config.canEdit(host) {
+                        SettingsFootnote("Changing this from here needs a newer Shepherd on \(host.name).")
+                    }
+                }
+            } else {
+                SettingsFootnote("Add a host in Settings ▸ Fleet to see this.")
+            }
         }
-        .refreshable { generation += 1 }
-        .background(Color.sh.bgWindow)
-        .navigationTitle(title ?? (inColumn ? page.listTitle : page.title))
-        .navigationBarTitleDisplayMode(inColumn && title == nil ? .inline : title == nil ? .large : .inline)
-        .task(id: Load(host: host?.id, connected: host?.isConnected == true, generation: generation)) {
+        .task(id: Load(host: host?.id, connected: host?.isConnected == true, generation: store.refreshes)) {
             if let host, let configPage { await config.refresh(configPage, on: host) }
         }
     }

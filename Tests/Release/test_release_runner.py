@@ -1,4 +1,5 @@
 """Self-hosted selection against explicit fake API states; no tokens, runner, or network."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import io
 import json
 import os

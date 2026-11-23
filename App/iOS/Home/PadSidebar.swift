@@ -70,10 +70,9 @@ struct PadSidebar: View {
                     }
                 }
                 // Automation runs have their own group, never among Recents; its header opens the Automations screen.
-                // A run waiting on you is in Needs you above, once: it is not counted or drawn here as well.
+                // A run waiting on you is in Needs you above, once: `groups.automationRuns` leaves it out.
                 // A triggered automation's run threads fold under one row each (`FleetRunGroup`).
-                let waiting = Set(model.needsYou.map(\.ref))
-                let runs = model.automations.filter { row in row.run.map { !waiting.contains($0) } ?? false }
+                let runs = groups.automationRuns
                 if !runs.isEmpty || !groups.runs.isEmpty {
                     SidebarHeader(title: "Automations", count: runs.count + groups.runs.count, hint: "Opens Automations") {
                         navigator.open(.home(.automations))
@@ -161,6 +160,7 @@ struct PadSidebar: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
             }
+            ToolbarItem(placement: .topBarTrailing) { StopAllWorkingMenu() }
         }
     }
 

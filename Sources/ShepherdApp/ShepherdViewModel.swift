@@ -49,7 +49,8 @@ final class ShepherdViewModel {
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
-    /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
+    /// The active Changes review opened from the queue in this window.
+    @ObservationIgnored var queuedReview: SidebarRowID?
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
     @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
@@ -251,6 +252,8 @@ final class ShepherdViewModel {
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
     /// Previews and tests: changes the sidebar's inputs before the lists are derived, where a connected host's fleet identity can't be made up.
     @ObservationIgnored var sidebarSourceAdjust: ((SidebarSource) -> SidebarSource)?
+    /// Tests only: answers the terminal panel's open and close requests in the host's place.
+    @ObservationIgnored var terminalRequests: TerminalRequests?
     /// The Fleet corner is minimized to its one line (FleetCornerMin). This Mac app's own choice, never synced.
     var fleetCornerMinimized = false {
         didSet { sidebarDefaults.set(fleetCornerMinimized, forKey: Self.fleetCornerMinimizedKey) }
@@ -298,9 +301,12 @@ final class ShepherdViewModel {
     var remoteWorktreeSheet: RemoteAgentRef?
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
-    var hostWorktreeInfo: RemoteWorktreeInfo?
-    /// What this app last told its background host of the paired Macs it reaches, on which connection.
-    @ObservationIgnored var sentProjectHosts: (ObjectIdentifier, [ProjectHostOption])?
+    var hostWorktreeInfo: [AgentID: RemoteWorktreeInfo] = [:]
+    /// What this app last told its background host of the paired Macs it reaches, and the client it told it through. The client is
+    /// weak and compared by identity: a restarted host's new client is often allocated at the freed one's address, so an
+    /// `ObjectIdentifier` would match and the new host would never be told, and a strong reference would keep the dead client alive.
+    @ObservationIgnored weak var sentProjectHostsClient: RemoteHostClient?
+    @ObservationIgnored var sentProjectHosts: [ProjectHostOption]?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// A review pane's Commit… sheet by review session, kept while its commit runs.
@@ -404,7 +410,12 @@ final class ShepherdViewModel {
     /// newest push (`onLocalAgentNotify`, banners); a view reads `state`.
     var latestState: ShepherdState { adoption.latest(state) }
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
-    @ObservationIgnored var mcpOpenServer: String?
+    /// The MCP server whose detail Tools has open (a search hit, a row).
+    var mcpOpenServer: String?
+    /// The Experiments drill-in open (`waiting`, `apps`), nil for the list.
+    var experimentsPage: ExperimentsPage?
+    /// The skill whose detail Skills has open.
+    var skillsOpenSkill: String?
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
@@ -440,9 +451,6 @@ final class ShepherdViewModel {
         }
         set { spacePickerTarget = newValue.map { .host($0) } }
     }
-    /// Pre-selection for the New Agent sheet (a remote space header's `+`);
-    /// consumed by the sheet's onAppear.
-    var newAgentPreselect: (hostID: UUID, spaceID: SpaceID)?
     /// Each remote automation's runs as its host last sent them, oldest first (read for the sheet).
     var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
     /// Remote automation changes on their way, so their controls wait.
@@ -450,6 +458,9 @@ final class ShepherdViewModel {
     /// This Mac's automations' runs as the run log kept them, oldest first (read for the
     /// Automations page).
     var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// Why a host could not give an automation's runs (its run history file is damaged), by
+    /// automation, This Mac's under `PageHost.localID`. The Automations page shows it.
+    var automationRunProblems: [AutomationKey: String] = [:]
     /// Each triggered automation's trigger state (paused, pending events, next run), and the
     /// host-wide Pause all triggers switch.
     var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]
@@ -472,12 +483,6 @@ final class ShepherdViewModel {
     /// would see no change. Ephemeral.
     var sidebarRevealRequest = 0
 
-    /// A remote space header's `+`: the New Agent sheet opens pointed at
-    /// that host and space.
-    func showNewAgentSheetForRemote(hostID: UUID, spaceID: SpaceID) {
-        newAgentPreselect = (hostID, spaceID)
-        showNewAgentSheet = true
-    }
     /// Space pending removal confirmation (alert in RootView) — removal
     /// kills the space's agents. The user's own removal skips it once "Don't ask again" was
     /// checked (`requestSpaceDelete`); another process's request always confirms.
@@ -499,6 +504,8 @@ final class ShepherdViewModel {
     /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
     /// thread from the sidebar with nothing to bring it back, so it always confirms.
     var agentDeleteTarget: AgentID?
+    /// The threads Stop all working threads waits to stop (sheet in AppDialogs): it names how many, and nothing stops until confirmed.
+    var stopAllConfirm: [StopAllWorking.Target]?
     /// The last `WorkspaceSelection` and its mounted layouts (`resolvedMountedTabs`).
     @ObservationIgnored var mountedTabsCache: (selection: WorkspaceSelection, tabs: [Tab])?
     /// A confirmed deletion runs after its sheet has dismissed (`sheet(item:onDismiss:)`):
@@ -523,7 +530,6 @@ final class ShepherdViewModel {
             }
         }
     }
-    var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
     /// The workspace column's size and window, kept current without redrawing anything.
     @ObservationIgnored let workspaceColumn = LiveResizeColumn()
@@ -533,7 +539,7 @@ final class ShepherdViewModel {
     var showSettings = false
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
-    var settingsSection: SettingsSection = .appearance
+    var settingsSection: SettingsSection = .general
     @ObservationIgnored var madeProjects: ProjectsModel?
     @ObservationIgnored var madeLogicalProjects: LogicalProjectsModel?
     /// The Project whose page or settings the main column shows (ProjectLead boards). Ephemeral.
@@ -586,6 +592,8 @@ final class ShepherdViewModel {
     var showCommandPalette = false
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
+    /// A file an agent edited, open over the window (OutsideFileE); nil when none is.
+    var fileViewer: FileViewerState?
     /// Stable identity in the window environment, independent of shell geometry.
     let diagramPresentation = SHDiagramPresentation()
     /// A Mermaid diagram open full screen (its source); nil when none is.
@@ -669,7 +677,11 @@ final class ShepherdViewModel {
     /// Recently selected agents, most recent last, no duplicates. When the
     /// selected agent goes away (⌘⇧W, process exit) selection returns to the
     /// agent you were on before it — not the space's blank shell.
-    var selectionHistory: [AgentID] = []
+    var selectionHistory: [SidebarRowID] = []
+    /// Presentation only. Keep the host's agent, tab, draft and pins until retirement is confirmed.
+    var closingThreads: Set<SidebarRowID> = []
+    /// Presentation only: renames the person submitted that the host has not shown yet (`renameThread`).
+    var pendingRenames = PendingAgentRenames<SidebarRowID>()
     /// Workspace mutations are optimistic so the UI stays responsive, but the
     /// server remains authoritative. This tail makes their persistence order
     /// explicit and gives failures one reconciliation path.
@@ -734,6 +746,15 @@ final class ShepherdViewModel {
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
+        terminalPanels.onPromotion = { [weak self] key, promotion in
+            guard let self else { return }
+            // The keyboard follows a placeholder to its pane only if it is still on the placeholder.
+            if key.host == nil {
+                if focusedPaneID == promotion.pending { focusedPaneID = promotion.real }
+            } else if remoteFocusedPaneID == promotion.pending {
+                remoteFocusedPaneID = promotion.real
+            }
+        }
 
         // The tree's disclosure keys (collapsed spaces, hosts, This Mac, the Automations
         // footer) stay in older preferences and are no longer read.
@@ -791,17 +812,25 @@ final class ShepherdViewModel {
             self?.refreshProjectHosts()
             guard let self else { return }
             self.syncLocalHostChildren()
+            self.reconcilePendingRenames()
             self.reconcileSidebarCompletions()
             self.notifyRemote()
             let liveRemote = Set(self.remoteHosts.allConnections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             })
+            if !self.closingThreads.isEmpty {
+                self.closingThreads = self.closingThreads.filter { row in
+                    if case .remote(let ref) = row { return liveRemote.contains(ref) }
+                    return true
+                }
+            }
             self.remoteThreadStores.prune(live: liveRemote)
             self.remoteDeckRefs.removeAll { !liveRemote.contains($0) }
             self.browsers.prune(liveRemote: liveRemote, hosts: self.remoteHosts)
             self.syncRemoteBrowserDrive()
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
+            self.reconcileOpenTerminals()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
                 guard let connection = self.remoteHosts.allConnections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,
@@ -1024,13 +1053,23 @@ final class ShepherdViewModel {
     /// capturing so rebinding these chords still works.
     private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
         guard !keybindings.isRecording else { return false }
+        let chord = KeyChord(event: event)
+        let nextNeedingYou = chord == keybindings.chord(for: .nextNeedingYou)
         let action = Self.navigationKeyAction(
             digit: KeyChord.digit(keyCode: event.keyCode),
-            chord: KeyChord(event: event),
+            chord: chord,
             modifiers: event.modifierFlags.intersection([.command, .shift, .option, .control]),
             next: keybindings.chord(for: .nextAgent),
             previous: keybindings.chord(for: .previousAgent)
         )
+        // Vertical document chords belong to multi-line drafts, including the selection
+        // variant (⇧⌘↓). Handle them before the menu can claim the key equivalent.
+        if nextNeedingYou || action == .adjacentAgent(1) || action == .adjacentAgent(-1),
+           let text = NSApp.keyWindow?.firstResponder as? NSTextView,
+           Self.draftTakesVerticalChord(chord, draft: text.string) {
+            text.interpretKeyEvents([event])
+            return true
+        }
         switch action {
         case .agentDigit(let digit):
             // Mirrors the Agent menu's digit rows: live only for an existing row.
@@ -1039,13 +1078,6 @@ final class ShepherdViewModel {
             selectAgentDigit(digit)
             return true
         case .adjacentAgent(let delta):
-            // ⌘↑ and ⌘↓ in a draft of several lines are the text view's own: the caret goes to
-            // the document's start or end, as in every Mac text view, and the agent stays.
-            if let text = NSApp.keyWindow?.firstResponder as? NSTextView,
-               Self.draftTakesVerticalChord(KeyChord(event: event), draft: text.string) {
-                text.interpretKeyEvents([event])
-                return true
-            }
             selectAdjacentAgent(delta)
             return true
         case nil:
@@ -1053,10 +1085,10 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Whether a plain ⌘↑ or ⌘↓ belongs to the text view under the keyboard: only when the
-    /// draft spans more than one line, so a one-line composer still switches agents.
+    /// Document start/end (with or without selection) belongs to a multi-line draft.
     static func draftTakesVerticalChord(_ chord: KeyChord?, draft: String) -> Bool {
-        guard let chord, chord == KeyChord(key: "up", command: true) || chord == KeyChord(key: "down", command: true) else { return false }
+        guard let chord, chord.key == "up" || chord.key == "down",
+              chord.modifierFlags.subtracting(.shift) == .command else { return false }
         return draft.contains(where: \.isNewline)
     }
 
@@ -1100,6 +1132,12 @@ final class ShepherdViewModel {
     /// runs those it finds against the newest push received, which a skipped push may have held back.
     func adopt(_ serverState: ShepherdState, edgesApplied: Bool = false) {
         let newest = latestState
+        if !closingThreads.isEmpty {
+            closingThreads = closingThreads.filter { row in
+                if case .local(let id) = row { return serverState.agents.contains { $0.id == id } }
+                return true
+            }
+        }
         adoption.adoptedDirectly()
         // The host's run log is read on its `automationsChanged` (`loadLocalAutomationRuns`).
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
@@ -1144,6 +1182,7 @@ final class ShepherdViewModel {
         }
         reconcileSidebarCompletions()
         reconcileThreadStores()
+        reconcilePendingRenames()
         browsers.prune(state: state)
         notifyLocalQuestions()
         // A deleted agent waits on no sign-in.
@@ -1169,8 +1208,9 @@ final class ShepherdViewModel {
             openDestination(.designs)
         }
         // The host's push removed the selected agent (deleted here first, then restated by an
-        // earlier push, or deleted elsewhere): nothing points at it.
-        if selectedAgentID != nil, selectedAgent == nil { selectedAgentID = nil }
+        // earlier push, or deleted elsewhere): nothing points at it. Not while Run Now is replacing
+        // it: the new run takes its place, and the fallback below waits for that.
+        if selectedAgentID != nil, selectedAgent == nil, selectedAgentID != replacingRun { selectedAgentID = nil }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }
         // With nothing on screen (the shown agent went away, or the app just launched), the
@@ -1179,10 +1219,14 @@ final class ShepherdViewModel {
         if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil, replacingRun == nil || replacingRun != selectedAgentID {
             // A Project's threads live under the Project: none is shown in its place unless the person opened it before.
             let live = Set(state.agents.filter { $0.coordinatorFor == nil }.map(\.id))
-            if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
+            if let next = selectionHistory.last(where: { row in
+                guard case .local(let id) = row else { return false }
+                return live.contains(id) && !closingThreads.contains(row)
+            })?.agentID ?? launchAgentID,
                let agent = state.agents.first(where: { $0.id == next && $0.coordinatorFor == nil }),
-               !state.isProjectWorker(next) || selectionHistory.contains(next) {
+               !state.isProjectWorker(next) || selectionHistory.contains(.local(next)) {
                 willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(agent.id))
+                rememberThread(.local(agent.id))
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID
             } else if selectedAgentID != nil {
@@ -1190,8 +1234,12 @@ final class ShepherdViewModel {
                 selectedAgentID = nil
             }
         }
+        // A terminal tab that was asked for becomes its pane as the host's layout gets it, with or without a view showing it.
+        reconcileOpenTerminals()
         if let focused = focusedPaneID, activeTab?.layout.contains(focused) == true {
             // Focused pane survived the new snapshot; keep it.
+        } else if let tab = activeTab, terminalPanels.isStarting(focusedPaneID, in: TerminalPanelKey(host: nil, tab: tab.id)) {
+            // A terminal tab still Starting has the keyboard (on no pane): the host's push is not a reason to move it.
         } else {
             syncFocus()
         }
@@ -1366,4 +1414,9 @@ final class ShepherdViewModel {
         if remoteListenerFailure != failure { remoteListenerFailure = failure }
     }
 
+}
+
+/// An Experiments drill-in.
+enum ExperimentsPage: String {
+    case waiting, apps
 }

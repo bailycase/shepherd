@@ -10,9 +10,10 @@ struct KeybindingsTests {
 
     /// The default keyboard table is the contract.
     @Test(arguments: [
-        (ShortcutAction.newAgent, "⌘N"), (.newAgentOptions, "⇧⌘T"), (.newSpace, "⇧⌘N"),
+        (ShortcutAction.newAgent, "⌘N"), (.newSpace, "⇧⌘N"),
         (.renameAgent, "⌘R"), (.deleteAgent, "⇧⌘W"), (.commandPalette, "⌘K"),
         (.nextAgent, "⌘↓"), (.previousAgent, "⌘↑"),
+        (.nextNeedingYou, "⇧⌘↓"), (.reviewNext, "⌥⇧⌘R"),
         (.newTerminal, "⌘D"), (.closeTerminal, "⌘W"),
         (.nextTerminal, "⇧⌘]"), (.previousTerminal, "⇧⌘["),
         (.toggleTerminal, "⌘J"), (.maximizeTerminal, "⇧⌘↩"),
@@ -39,6 +40,14 @@ struct KeybindingsTests {
         }
     }
 
+    @Test(arguments: [ShortcutAction.nextNeedingYou, .reviewNext])
+    func supervisionDefaultDoesNotCollideWithAnyOtherAction(_ action: ShortcutAction) {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(keys.validate(action.defaultChord, for: action) == nil)
+        #expect(action.reachesPastTerminals)
+        #expect(ShortcutAction.allCases.filter { $0.defaultChord == action.defaultChord } == [action])
+    }
+
     /// The canvas's ⌘↩ (Implement in a thread…) and the composer's (send the other way) never
     /// meet: a design's canvas has no composer. Neither may take an app-wide chord, and neither is
     /// unbound in a terminal.
@@ -61,7 +70,7 @@ struct KeybindingsTests {
         #expect(ShortcutAction.selectElement.scope == .browser && ShortcutAction.focusAddressBar.scope == .browser
                 && ShortcutAction.browserNewTab.scope == .browser)
         #expect(ShortcutAction.browserNewTab.reachesPastTerminals, "a focused terminal lets ⌘T through")
-        #expect(keys.validate(ShortcutAction.newAgentOptions.defaultChord, for: .browserNewTab) == .conflict(.newAgentOptions))
+        #expect(keys.validate(ShortcutAction.newSpace.defaultChord, for: .browserNewTab) == .conflict(.newSpace))
         #expect(!ShortcutAction.selectElement.sharesScope(with: .copyDesignReference))
         #expect(ShortcutAction.selectElement.sharesScope(with: .alternateSend))
         #expect(keys.validate(ShortcutAction.alternateSend.defaultChord, for: .focusAddressBar) == .conflict(.alternateSend))
@@ -162,16 +171,6 @@ struct KeybindingsTests {
         #expect(keys.display(.deleteQueued) == "⌫")
         #expect(keys.display(.moveQueued) == "⌥↑ ⌥↓")
         #expect(keys.sendDisplay == "↩")
-    }
-
-    /// Settings ▸ Keyboard's While the agent is working group is the board's Keyboard card, in its
-    /// order: ↩ queues, ⌘↩ steers now, and neither follows a setting.
-    @Test func whileWorkingKeysFollowTheBoard() {
-        #expect(WhileWorkingKey.all.map(\.title) == [
-            "Queue it, the agent takes it when the turn ends", "Send and steer now",
-            "Edit the last queued message", "Move the focused message", "Delete the focused message",
-            "Steer the focused message now", "Stop the agent",
-        ])
     }
 
     @Test func settingsRowsUseSentenceCase() {
@@ -461,6 +460,9 @@ struct NavigationKeyTests {
         let down = KeyChord(key: "down", command: true)
         #expect(ShepherdViewModel.draftTakesVerticalChord(up, draft: "first\nsecond"))
         #expect(ShepherdViewModel.draftTakesVerticalChord(down, draft: "first\nsecond"))
+        let next = ShortcutAction.nextNeedingYou.defaultChord
+        #expect(ShepherdViewModel.draftTakesVerticalChord(next, draft: "first\nsecond"))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(next, draft: "one line"))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: "one line"))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: ""))
         #expect(!ShepherdViewModel.draftTakesVerticalChord(KeyChord(key: "up", command: true, option: true), draft: "a\nb"))

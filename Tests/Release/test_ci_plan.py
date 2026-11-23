@@ -1,4 +1,5 @@
 """Protect selective PR coverage without treating filenames as Swift suite names."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import contextlib
 import io
 import json
@@ -19,6 +20,11 @@ def selected(filters, test_id):
 
 
 class AffectedTestsTests(unittest.TestCase):
+    def test_validator_only_changes_do_not_run_swift(self):
+        paths = ["scripts/validate.py", "Tests/Release/test_validate.py"]
+        self.assertFalse(ci_plan.affects_swift(paths))
+        self.assertTrue(ci_plan.affects_swift(paths + ["Tests/ShepherdAppIntegrationTests/ReviewFlowTests.swift"]))
+
     def test_extension_markdown_runs_packaging_tests_but_regular_docs_do_not(self):
         for path in ("Extensions/design-skill/SKILL.md", "Extensions/design-skill/format.md"):
             with self.subTest(path=path):

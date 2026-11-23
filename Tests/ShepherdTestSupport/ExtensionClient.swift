@@ -100,13 +100,18 @@ public final class ExtensionClient {
     /// Read the next NDJSON `ExtensionReply` line (pane request/reply traffic,
     /// mirroring `Extensions/shepherd-panes.ts`).
     public func readReply(timeout: Duration = .seconds(10)) throws -> ExtensionReply {
+        try NDJSON.decode(ExtensionReply.self, from: readLine(timeout: timeout))
+    }
+
+    /// The raw frame, also usable on the local host's NDJSON socket.
+    public func readLine(timeout: Duration = .seconds(10)) throws -> Data {
         let deadline = ContinuousClock.now + timeout
         var buf = [UInt8](repeating: 0, count: 32 * 1024)
         while ContinuousClock.now < deadline {
             if let nl = readBuffer.firstIndex(of: UInt8(ascii: "\n")) {
                 let line = readBuffer[readBuffer.startIndex..<nl]
                 readBuffer.removeSubrange(readBuffer.startIndex...nl)
-                return try NDJSON.decode(ExtensionReply.self, from: Data(line))
+                return Data(line)
             }
             let n = read(fd, &buf, buf.count)
             if n > 0 {

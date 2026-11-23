@@ -16,6 +16,14 @@ public enum RemoteHostUpdateRequest: Codable, Hashable, Sendable {
     case cancel
 }
 
+extension RemoteHostUpdateRequest {
+    /// How long the host that serves a request waits for its updater, which may have to open the app first, before it answers that it didn't.
+    public static let hostReplyDeadline: TimeInterval = 10
+    /// How long the asker waits: longer than the host does, so the host's own answer comes first. A request on a link to another Mac that
+    /// times out takes the whole link down with it.
+    public static let askerTimeout: TimeInterval = hostReplyDeadline + 5
+}
+
 /// What this Mac's app, whose Sparkle installs an update, asks its background host, which owns
 /// the agents an update restarts (`RemoteRequest.hostUpdateGate`, local clients only). Each is
 /// answered `ok` (yes, or no reason for `blockReason`) or an error whose message is the reason.
@@ -49,17 +57,21 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
     /// An install was asked for once the threads are idle and is waiting for them (`RemoteHostUpdateRequest.installWhenIdle`). The
     /// phase stays `available`, so an older client reads an offer it can't install yet.
     public var waitingForIdle: Bool
+    /// The host sent the updater an install (asked for now, or held for idle threads) and the updater took it: an app that quits now is installing,
+    /// not closed by its person. Reset by the next request that isn't a status, and kept across a restart of the host. Nil from a host that
+    /// predates the field: unknown, which is not the same as "no".
+    public var installHandedOff: Bool?
 
     public init(version: String, build: String, channel: String, phase: Phase,
                 offerID: UUID? = nil, offeredVersion: String? = nil, error: String? = nil, canInstall: Bool = false,
-                busyThreads: Int? = nil, waitingForIdle: Bool = false) {
+                busyThreads: Int? = nil, waitingForIdle: Bool = false, installHandedOff: Bool? = nil) {
         self.version = version; self.build = build; self.channel = channel; self.phase = phase
         self.offerID = offerID; self.offeredVersion = offeredVersion; self.error = error; self.canInstall = canInstall
-        self.busyThreads = busyThreads; self.waitingForIdle = waitingForIdle
+        self.busyThreads = busyThreads; self.waitingForIdle = waitingForIdle; self.installHandedOff = installHandedOff
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, build, channel, phase, offerID, offeredVersion, error, canInstall, busyThreads, waitingForIdle
+        case version, build, channel, phase, offerID, offeredVersion, error, canInstall, busyThreads, waitingForIdle, installHandedOff
     }
 
     public init(from decoder: Decoder) throws {
@@ -74,6 +86,7 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
         canInstall = try c.decode(Bool.self, forKey: .canInstall)
         busyThreads = try c.decodeIfPresent(Int.self, forKey: .busyThreads)
         waitingForIdle = try c.decodeIfPresent(Bool.self, forKey: .waitingForIdle) ?? false
+        installHandedOff = try c.decodeIfPresent(Bool.self, forKey: .installHandedOff)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -88,5 +101,6 @@ public struct HostUpdateStatus: Codable, Hashable, Sendable {
         try c.encode(canInstall, forKey: .canInstall)
         try c.encodeIfPresent(busyThreads, forKey: .busyThreads)
         if waitingForIdle { try c.encode(true, forKey: .waitingForIdle) }
+        try c.encodeIfPresent(installHandedOff, forKey: .installHandedOff)
     }
 }

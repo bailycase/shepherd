@@ -221,7 +221,7 @@ struct SidebarProjectsTests {
 
     // MARK: Hosts
 
-    private func remoteHost(_ name: String = "horizon", spaces: [Space], agents: [Agent], offline: Bool = false,
+    private func remoteHost(_ name: String = "orbit", spaces: [Space], agents: [Agent], offline: Bool = false,
                             id: UUID? = nil) -> SidebarSource.Host {
         SidebarSource.Host(id: id ?? host, name: name, state: ShepherdState(spaces: spaces, agents: agents),
                            offline: offline)
@@ -253,7 +253,7 @@ struct SidebarProjectsTests {
         ])])
         #expect(built.projects.map(\.id) == [.local(shepherd.id), .named("shepherd-daemon")])
         #expect(titles(built.projects.first) == ["theirs", "mine"])
-        #expect(built.projects.first?.rows.first?.accessory == .tag("horizon"))
+        #expect(built.projects.first?.rows.first?.accessory == .tag("orbit"))
         #expect(built.projects.first?.places == [nil: shepherd.id, host: theirs.id])
         #expect(built.projects.last?.rollup == .running)
     }

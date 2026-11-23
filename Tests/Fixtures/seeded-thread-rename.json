@@ -1,0 +1,98 @@
+{
+  "referenceRevision": "0203d5baf078f51d4b4ddc3dfdcbcaf173c144fa",
+  "seed": {
+    "name": "old name",
+    "path": "<scratch>",
+    "renameTo": "New name",
+    "space": "acme-web"
+  },
+  "observations": [
+    {
+      "fields": {
+        "reply.id": 1,
+        "reply.protocolVersion": 1,
+        "reply.type": "helloOk",
+        "request.id": 1,
+        "request.protocolVersion": 1,
+        "request.type": "hello"
+      },
+      "step": "hello"
+    },
+    {
+      "fields": {
+        "reply.id": 2,
+        "reply.state.agents[thread].id": "<thread>",
+        "reply.state.agents[thread].name": "old name",
+        "reply.state.agents[thread].nameIsFinal": false,
+        "reply.type": "state",
+        "request.id": 2,
+        "request.type": "stateFetch"
+      },
+      "step": "seeded"
+    },
+    {
+      "fields": {
+        "reply.id": 3,
+        "reply.type": "ok",
+        "request.action": {
+          "rename": {
+            "name": "New name"
+          }
+        },
+        "request.agentID": "<thread>",
+        "request.id": 3,
+        "request.type": "agentAction"
+      },
+      "step": "rename"
+    },
+    {
+      "fields": {
+        "reply.id": 4,
+        "reply.state.agents[thread].id": "<thread>",
+        "reply.state.agents[thread].name": "New name",
+        "reply.state.agents[thread].nameIsFinal": true,
+        "reply.type": "state",
+        "request.id": 4,
+        "request.type": "stateFetch"
+      },
+      "step": "renamed"
+    },
+    {
+      "fields": {
+        "agents[thread].id": "<thread>",
+        "agents[thread].name": "New name",
+        "agents[thread].nameIsFinal": true
+      },
+      "step": "stored"
+    },
+    {
+      "fields": {
+        "reply.id": 5,
+        "reply.protocolVersion": 1,
+        "reply.type": "helloOk",
+        "request.id": 5,
+        "request.protocolVersion": 1,
+        "request.type": "hello"
+      },
+      "step": "restart-hello"
+    },
+    {
+      "fields": {
+        "reply.id": 6,
+        "reply.state.agents[thread].id": "<thread>",
+        "reply.state.agents[thread].name": "New name",
+        "reply.state.agents[thread].nameIsFinal": true,
+        "reply.type": "state",
+        "request.id": 6,
+        "request.type": "stateFetch"
+      },
+      "step": "reloaded"
+    },
+    {
+      "fields": {
+        "accessibilityLabel": "New name, idle"
+      },
+      "step": "sidebar"
+    }
+  ]
+}

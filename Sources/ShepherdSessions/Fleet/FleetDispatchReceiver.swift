@@ -41,16 +41,26 @@ extension FleetDispatch {
         if create.kind == .agentDispatch, create.commitSHA == nil {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "A dispatch from a thread names the commit it starts from.")))
         }
+        // The sender holds its threads to the depth limit; a second wall here.
+        if create.kind == .agentDispatch, let depth = create.from.depth, depth >= StartedBy.maxDepth {
+            return reply(.failure(.init(code: FleetDispatchCode.tooDeep, message: FleetDispatch.tooDeep)))
+        }
         if let subdir = create.subdir, !FleetDispatchGit.isSafeSubdirectory(subdir) {
             return reply(.failure(.init(code: FleetDispatchCode.invalid, message: "That folder isn't inside the repository.")))
         }
-        let running = inbound.values.filter { [.preparing, .running].contains($0.record.state) }.count
-        guard running < FleetDispatchProtocol.admissionLimit else {
-            // Full: nothing is kept; the sender decides again when anything changes.
+        // Every dispatch worktree (including a move) lives on the local support volume. Admit
+        // only before beginning transfer, clone or creation; named placement can't bypass this.
+        if let free = freeWorktreeBytes(directory.deletingLastPathComponent().path), free < Self.worktreeDiskFloor {
+            return reply(.failure(Self.refusal(FleetDispatchCode.diskLow, nil)))
+        }
+        let occupied = inbound.values.filter { [.preparing, .running].contains($0.record.state) }
+        guard occupied.count < FleetDispatchProtocol.admissionLimit else {
+            // Full: nothing is kept; the sender decides again when anything changes. Preparing
+            // dispatches take admission slots, but only running ones are included in the report.
             var full = FleetDispatchRecord(id: create.dispatchID, kind: create.kind, parentAgentID: create.from.agentID, parentHostID: sender,
-                                           parentHostName: create.from.hostName, state: .waitingRoom, title: create.title, task: "",
-                                           repoKey: create.repoKey, createdAt: now)
-            full.targetHostID = hostID
+                                           parentHostName: create.from.hostName, targetHostID: hostID, targetHostName: hostName(),
+                                           state: .waitingRoom, title: create.title, task: "", repoKey: create.repoKey, createdAt: now)
+            full.hostRunningDispatches = occupied.count { $0.record.state == .running }
             return reply(.success(full))
         }
         // The repo: the spaces here that are this repository, by their origin.
@@ -78,6 +88,8 @@ extension FleetDispatch {
             move: create.move.map { FleetMoveInfo(agentID: $0.agentID, stage: .conversation, sessionID: $0.sessionID, messages: $0.messages,
                                                   uncommittedFiles: $0.uncommittedFiles, unpushedCommits: $0.unpushedCommits) }, createdAt: now)
         record.updatedAt = record.createdAt
+        record.parentDepth = create.from.depth
+        record.comparisonBranch = create.comparisonBranch
         // A name the person gave the branch, or the branch they chose, is the name here; a thread's own dispatch gets `fleet/<title>`.
         let exact = create.start?.branch != nil || create.kind == .move
         // No checkout yet: the Mac gets one first, and says where that stands (the card "Cloning acme-web on Mac mini").
@@ -185,7 +197,14 @@ extension FleetDispatch {
                 self.queue.async { self.staged(id, space: space, worktree: built.path, branch: branch, madeRef: built.madeRef) }
                 return
             }
-            let request = await self.onQueue { self.threadRequest(for: record, branch: branch, space: space, worktree: built?.path, startPoint: startPoint) }
+            let path = built?.path ?? GitWorktree.destination(repo: repo, branch: branch)
+            let candidates = FleetDispatchGit.buildOutputNames.filter {
+                !FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent($0).path)
+            }
+            let request = await self.onQueue {
+                self.inbound[id]?.cleanupCandidates = candidates
+                return self.threadRequest(for: record, branch: branch, space: space, worktree: built?.path, startPoint: startPoint)
+            }
             // Stopped while the worktree was being built: no thread starts, and the worktree goes.
             if let built, await self.onQueue({ self.inbound[id]?.record.state != .preparing }) {
                 FleetSnapshotApply.discard(repo: repo, worktree: built.path, branch: branch, ref: built.madeRef ? id : nil)
@@ -225,23 +244,25 @@ extension FleetDispatch {
         request.name = record.title
         request.subdirectory = record.subdir
         request.dispatchedFrom = DispatchedFrom(hostID: record.parentHostID, hostName: record.parentHostName, agentID: record.parentAgentID,
-                                                agentTitle: record.parentTitle, dispatchID: record.id, at: record.createdAt)
+                                                agentTitle: record.parentTitle, dispatchID: record.id, at: record.createdAt,
+                                                depth: record.parentAgentID == nil ? 0 : (record.parentDepth ?? 0) + 1)
         return request
     }
 
-    /// What the thread is asked: the task, and where its work goes.
+    /// What the thread is asked and where it starts.
     static func prompt(for record: FleetDispatchRecord, branch: String) -> String {
         let sender = record.kind == .userThread || record.parentTitle.isEmpty ? "the person" : record.parentTitle
         let tail = record.kind == .userThread ? "" : " Your last message goes back to whoever sent you."
         return record.task + FleetDispatchProtocol.promptSeparator + "\(sender) on \(record.parentHostName) to do the task above. "
-            + "Your branch is \(branch). Commit your work there and push it with git push -u origin \(branch)." + tail
+            + "You start on \(branch); commit and push (git push -u origin \(branch)) unless the task names another branch." + tail
     }
 
     private func prepared(_ id: UUID, _ outcome: Result<AgentID, RemoteCreateAgentError>) {
         snapshotsIn[id] = nil
+        var settledAgent: AgentID?
         guard var entry = inbound[id], entry.record.state == .preparing else {
             // Cancelled while it was being made: the thread that came out of it is stopped.
-            if case .success(let agent) = outcome { host.stopThread(agent) }
+            if case .success(let agent) = outcome { host.terminateThread(agent) }
             return
         }
         switch outcome {
@@ -249,7 +270,15 @@ extension FleetDispatch {
             entry.record.remoteAgentID = agent
             entry.record.clone = nil
             entry.record.state = .running
-            entry.worktree = host.state().agents.first { $0.id == agent }?.worktreePath
+            if let facts = host.threadFacts(agent) {
+                entry.worktree = facts.worktree
+                // Creating a thread doesn't wait for pi to serve. Its exit can precede this callback.
+                if let problem = facts.stopProblem { return failStoppedRun(id, entry, problem: problem) }
+                entry.record.activity = Self.activity(facts)
+                // Opening pi can report a turn before createThread returns its agent ID.
+                entry.startedWorking = facts.status != .idle
+                if facts.status == .done { settledAgent = agent }
+            }
             entry.acceptedAt = now
         case .failure(let error):
             entry.record.state = .failed
@@ -261,6 +290,7 @@ extension FleetDispatch {
         inbound[id] = entry
         save()
         pushPending()
+        if let settledAgent { agentStatusChanged(settledAgent, .done) }
     }
 
     func failInbound(_ id: UUID, _ code: String, _ detail: String?) {
@@ -290,13 +320,44 @@ extension FleetDispatch {
         guard var entry = inbound[id], entry.record.parentHostID == sender else {
             return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no such dispatch.")))
         }
-        refreshActivity(&entry)
         switch control {
         case .status:
-            inbound[id] = entry
+            // Polling must not write the inbound log or mask the next status push.
+            if entry.record.state == .running, let agent = entry.record.remoteAgentID, let facts = host.threadFacts(agent) {
+                entry.record.activity = Self.activity(facts)
+                entry.record.lastThreadEventAt = facts.lastThreadEventAt
+            }
             reply(.success(entry.record))
         case .commit:
             commitInbound(id, from: sender, reply: reply)
+        case .close:
+            closeInbound(id, entry, reply: reply)
+        case .rename(let name):
+            if entry.record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
+            guard entry.record.kind == .agentDispatch, entry.record.closeReport == nil,
+                  !closingThreads.contains(id), let agent = entry.record.remoteAgentID else {
+                return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to rename.")))
+            }
+            if entry.record.movedOn != nil || host.state().agents.contains(where: { $0.id == agent && $0.movedTo != nil }) {
+                return reply(.failure(.init(code: "not_running", message: "That dispatch's thread has moved to another Mac.")))
+            }
+            host.renameThread(agent, name) { [weak self] result in
+                switch result {
+                case .failure(let refusal): reply(.failure(refusal))
+                case .success(let name):
+                    guard let self, var current = self.inbound[id] else {
+                        return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no such dispatch.")))
+                    }
+                    current.record.title = name
+                    current.record.titleRevision = (current.record.titleRevision ?? 0) &+ 1
+                    current.record.updatedAt = self.now
+                    current.unsent = true
+                    self.inbound[id] = current
+                    self.save()
+                    reply(.success(current.record))
+                    self.pushPending()
+                }
+            }
         case .cancel:
             guard entry.record.state.isLive else { return reply(.success(entry.record)) }
             // A move whose thread is starting is the sender's to finish: it handed over, so a cancel can only be a stale one.
@@ -311,13 +372,15 @@ extension FleetDispatch {
             dropSnapshot(id)
             // A clone that is running ends and takes its folder with it (`cloneEnded`).
             clones[id]?.cancel()
-            if let agent = entry.record.remoteAgentID { host.stopThread(agent) }
+            if let agent = entry.record.remoteAgentID { host.terminateThread(agent) }
             save()
             reply(.success(entry.record))
             pushPending()
         case .message(let text, let delivery):
-            guard let agent = entry.record.remoteAgentID, [.running, .delivering, .done].contains(entry.record.state),
-                  host.threadFacts(agent) != nil else {
+            if entry.record.state == .preparing { return reply(.failure(.init(code: "starting", message: "The dispatch is still being prepared."))) }
+            guard !closingThreads.contains(id), entry.record.closeReport == nil,
+                  let agent = entry.record.remoteAgentID, [.running, .delivering, .done].contains(entry.record.state),
+                  let before = host.threadFacts(agent) else {
                 return reply(.failure(.init(code: "not_running", message: "That dispatch has no thread to message (it is \(entry.record.state.rawValue)).")))
             }
             let message = host.messageThread
@@ -325,30 +388,97 @@ extension FleetDispatch {
                 let sent = await message(agent, text, delivery == .steer ? .steer : .followUp)
                 self?.queue.async {
                     guard let self, var entry = self.inbound[id] else { return }
-                    guard sent else {
+                    guard !self.closingThreads.contains(id), entry.record.state != .cancelled, sent != .refused else {
                         return reply(.failure(.init(code: "not_running", message: "The thread didn't take the message.")))
+                    }
+                    if sent == .starting {
+                        return reply(.failure(.init(code: "starting", message: "The thread is still starting. Send it again in a moment.")))
                     }
                     // A finished dispatch starts a new run on the same thread, and that run's end is a new result.
                     entry.record.state = .running
                     entry.expectsResult = true
-                    entry.startedWorking = false
+                    entry.finishingRun = nil
+                    let current = self.host.threadFacts(agent)
+                    entry.record.activity = current.map(Self.activity)
+                    entry.startedWorking = current?.status == .working || current?.status == .blocked
                     entry.acceptedAt = self.now
                     entry.record.resultText = nil
                     entry.record.resultBranchFacts = nil
                     entry.record.updatedAt = self.now
                     entry.unsent = true
+                    let settled = current?.completedAt != nil && current?.completedAt != before.completedAt
+                    if let problem = current?.stopProblem, !settled {
+                        self.failStoppedRun(id, entry, problem: problem)
+                        // A running acknowledgement reopens the sender's old result. Its existing
+                        // status read then picks up the failure, even if the push arrived first.
+                        return reply(.success(entry.record))
+                    }
                     self.inbound[id] = entry
                     self.save()
                     reply(.success(entry.record))
                     self.pushPending()
+                    if let current, settled && (current.status == .done || current.stopProblem != nil) {
+                        self.finishRun(id, entry, facts: current)
+                    }
                 }
             }
         }
     }
 
-    private func refreshActivity(_ entry: inout Inbound) {
-        guard let agent = entry.record.remoteAgentID, let facts = host.threadFacts(agent) else { return }
-        entry.record.activity = Self.activity(facts)
+    private func closeInbound(_ id: UUID, _ entry: Inbound, reply: @escaping (Result<FleetDispatchRecord, FleetDispatchRefusal>) -> Void) {
+        if entry.record.closeReport != nil { return reply(.success(entry.record)) }
+        guard entry.record.kind == .agentDispatch, !entry.record.state.isLive, entry.record.movedOn == nil,
+              let agent = entry.record.remoteAgentID, host.threadFacts(agent) != nil else {
+            return reply(.failure(.init(code: "not_settled", message: "No settled dispatch thread to close on this Mac.")))
+        }
+        guard closingThreads.insert(id).inserted else {
+            return reply(.failure(.init(code: "closing", message: "Close is already in progress. Try again to check.")))
+        }
+        let path = entry.worktree
+        let branch = entry.record.branch
+        // Older records cannot prove which build folders arrived in a snapshot; close the thread but keep those files.
+        let candidates = entry.cleanupCandidates ?? []
+        let close = host.closeThread
+        Task.detached { [weak self] in
+            let result: Result<String, FleetDispatchRefusal>
+            do {
+                let stopped = try await close(agent, id)
+                let cleaned = stopped.allowsBuildCleanup ? path.flatMap { path in branch.map { FleetDispatchGit.cleanBuildOutput(worktree: path, branch: $0, names: candidates) } } : nil
+                let processes = stopped.summary + (stopped.allowsBuildCleanup ? "" : " Build output kept.")
+                let bytes = cleaned?.bytes ?? 0
+                let detail = cleaned.flatMap { $0.removed.isEmpty ? nil : " Removed \($0.removed.joined(separator: ", "))." } ?? ""
+                let count = path.flatMap { FleetDispatchGit.uncommittedFiles(worktree: $0) }.map { $0.modified + $0.untracked }
+                result = .success("Thread removed. \(processes) \(bytes) allocated bytes freed from build output.\(detail) \(Self.closeCheckoutReport(count))")
+            } catch let refusal as FleetDispatchRefusal {
+                result = .failure(refusal)
+            } catch {
+                result = .failure(.init(code: "close_failed", message: error.localizedDescription))
+            }
+            self?.queue.async {
+                guard let self else { return }
+                self.closingThreads.remove(id)
+                switch result {
+                case .failure(let refusal): reply(.failure(refusal))
+                case .success(let report):
+                    guard var current = self.inbound[id] else {
+                        return reply(.failure(.init(code: FleetDispatchProtocol.Code.unknownDispatch, message: "That Mac has no such dispatch.")))
+                    }
+                    current.record.closeReport = report
+                    current.record.remoteAgentID = nil
+                    self.inbound[id] = current
+                    self.save()
+                    reply(.success(current.record))
+                }
+            }
+        }
+    }
+
+    static func closeCheckoutReport(_ count: Int?) -> String {
+        let kept = "Kept the checkout, branches, and saved conversation"
+        let output = "unverified output was left alone."
+        guard let count else { return "\(kept); \(output) Could not check the checkout for uncommitted work." }
+        guard count > 0 else { return "\(kept); \(output)" }
+        return "\(kept), including \(count) uncommitted \(count == 1 ? "file" : "files") in the checkout; \(output) Counts include any edits sent with the dispatch."
     }
 
     static func activity(_ facts: FleetThreadFacts) -> String {
@@ -365,14 +495,12 @@ extension FleetDispatch {
     /// with nothing queued has a result to send back.
     func agentStatusChanged(_ agentID: AgentID, _ status: AgentStatus) {
         moveAgentStatusChanged(agentID, status)
-        guard let (id, found) = inbound.first(where: { $0.value.record.remoteAgentID == agentID && $0.value.record.state.isLive }) else { return }
+        guard let (id, found) = inbound.first(where: { $0.value.record.remoteAgentID == agentID && $0.value.record.state == .running }) else { return }
         var entry = found
         if status == .done, entry.expectsResult, entry.startedWorking {
-            entry.expectsResult = false
-            inbound[id] = entry
-            return finishRun(id)
+            return finishRun(id, entry, facts: host.threadFacts(agentID))
         }
-        if status == .working { entry.startedWorking = true }
+        if status == .working || status == .blocked { entry.startedWorking = true }
         if let facts = host.threadFacts(agentID) { entry.record.activity = Self.activity(facts) }
         guard entry != found else { return }
         entry.record.updatedAt = now
@@ -383,20 +511,29 @@ extension FleetDispatch {
     }
 
     /// The thread settled: read its last message and its branch, keep them on the record, and push them.
-    private func finishRun(_ id: UUID) {
-        guard let entry = inbound[id], let agent = entry.record.remoteAgentID else { return }
-        let text = host.threadFacts(agent)?.lastText ?? ""
-        let worktree = entry.worktree ?? host.state().agents.first { $0.id == agent }?.worktreePath
-        let branch = entry.record.branch ?? ""
+    private func finishRun(_ id: UUID, _ found: Inbound, facts: FleetThreadFacts?) {
+        if let failure = facts?.failure { return failRun(id, found, message: failure.message) }
+        var entry = found
+        entry.expectsResult = false
+        let token = UUID()
+        entry.finishingRun = token
+        inbound[id] = entry
+        let text = entry.record.remoteAgentID.flatMap(host.threadResult) ?? ""
+        let worktree = facts?.worktree ?? entry.worktree
+        let branch = entry.record.branch
         let start = entry.record.commitSHA
+        let comparison = entry.record.comparisonBranch ?? entry.record.start?.base.flatMap { base in
+            base.hasPrefix("origin/") ? String(base.dropFirst("origin/".count)) : nil
+        }
         Task.detached { [weak self] in
-            let facts = worktree.map { FleetDispatchGit.branchFacts(worktree: $0, branch: branch, start: start) }
+            let summary = branch.map { FleetDispatchGit.branchFacts(worktree: worktree, branch: $0, start: start, comparison: comparison) }
             self?.queue.async {
-                guard let self, var entry = self.inbound[id], entry.record.state.isLive else { return }
+                guard let self, var entry = self.inbound[id], entry.record.state == .running, entry.finishingRun == token else { return }
+                entry.finishingRun = nil
                 entry.record.resultText = String(text.prefix(FleetDispatchProtocol.maxResultBytes))
-                entry.record.resultBranchFacts = facts
+                entry.record.resultBranchFacts = summary
                 entry.record.state = .delivering
-                entry.record.activity = "idle"
+                entry.record.activity = nil
                 entry.record.updatedAt = self.now
                 entry.unsent = true
                 self.inbound[id] = entry
@@ -404,6 +541,38 @@ extension FleetDispatch {
                 self.pushPending()
             }
         }
+    }
+
+    /// Unexpected exit is not idle work: the retained thread needs attention on its receiving Mac.
+    func agentStopped(_ agent: AgentID, problem: NativeStartProblem) {
+        guard let (id, found) = inbound.first(where: { $0.value.record.remoteAgentID == agent && $0.value.record.state == .running && $0.value.expectsResult }) else { return }
+        failStoppedRun(id, found, problem: problem)
+    }
+
+    private func failStoppedRun(_ id: UUID, _ entry: Inbound, problem: NativeStartProblem) {
+        let message: String
+        if let model = entry.record.model, problem.kind == .notSignedIn {
+            message = "The model \(model) is not available on \(hostName())."
+        } else if problem.lines.contains(where: { $0.contains("ENOSPC:") || $0.localizedCaseInsensitiveContains("no space left on device") }) {
+            message = "No space left on device (ENOSPC)."
+        } else {
+            message = problem.title
+        }
+        failRun(id, entry, message: message.split(whereSeparator: \.isNewline).joined(separator: " "))
+    }
+
+    private func failRun(_ id: UUID, _ found: Inbound, message: String?) {
+        var entry = found
+        entry.expectsResult = false
+        entry.record.state = .failed
+        entry.record.failure = FleetDispatchCode.turnFailed
+        entry.record.failureDetail = message.map { String($0.prefix(300)) }
+        entry.record.activity = nil
+        entry.record.updatedAt = now
+        entry.unsent = true
+        inbound[id] = entry
+        save()
+        pushPending()
     }
 
     /// A dispatched thread was deleted here: its dispatch ends.
@@ -435,9 +604,12 @@ extension FleetDispatch {
                     guard let self else { return }
                     self.pushing.remove(id)
                     guard delivered, var current = self.inbound[id] else { return self.scheduleEvaluation() }
-                    // What was sent is what the sender knows now; a change that came meanwhile is still owed.
-                    if current.record.updatedAt == record.updatedAt { current.unsent = false }
-                    if record.state == .delivering, current.record.state == .delivering { current.record.state = .done }
+                    // An acknowledgment covers the record we sent, not a later update with the same timestamp.
+                    if current.record == record {
+                        // The result frame carries no title. Follow it with the renamed record.
+                        current.unsent = record.state == .delivering && record.titleRevision != nil
+                        if record.state == .delivering { current.record.state = .done }
+                    }
                     // A thread that moved on is reported to its sender once, and this Mac has nothing more to follow.
                     if record.movedOn != nil, current.record.movedOn != nil { current.record.state = .done }
                     self.inbound[id] = current

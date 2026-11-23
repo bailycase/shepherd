@@ -192,6 +192,7 @@ extension ShepherdViewModel {
         guard showSettings else { return nil }
         switch settingsSection {
         case .subagents: return ("Save Subagent File", subagentDefinitions.canSave)
+        case .instructions where instructions.editing: return ("Save \(instructions.file.fileName)", instructions.canSave)
         case .projects:
             return ("Save Space File", !projects.showingBrowser && !projects.showingHooks && projects.fileLoaded && !projects.saving && projects.selected?.unavailable == nil)
         default: return nil
@@ -200,11 +201,13 @@ extension ShepherdViewModel {
 
     func saveSettingsFile() async {
         guard showSettings else { return }
-        if settingsSection == .subagents { await subagentDefinitions.save() } else if settingsSection == .projects { await projects.save() }
+        if settingsSection == .subagents { await subagentDefinitions.save() } else if settingsSection == .instructions, instructions.editing { await instructions.save() } else if settingsSection == .projects { await projects.save() }
     }
 
     /// ⌘W: closes the terminal that has the keyboard. The thread is never closed (⌘⇧W deletes
-    /// the agent): closing it would strand a running pi with nothing to come back to.
+    /// the agent): closing it would strand a running pi with nothing to come back to. The tab
+    /// goes at once and the keyboard returns to the thread; a terminal still Starting is closed
+    /// too (`TerminalTabOverlay`).
     func closeFocusedTerminal() {
         if let remote = selectedRemoteAgent {
             if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
@@ -218,27 +221,26 @@ extension ShepherdViewModel {
                 NSSound.beep()
                 return
             }
+            let key = TerminalPanelKey(host: remote.hostID, tab: tab.id)
+            if terminalPanels.isStarting(remoteFocusedPaneID, in: key), let starting = remoteFocusedPaneID {
+                abandonStartingTerminal(starting, key: key)
+                return
+            }
             let focus = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil }
                 ?? agent.paneID ?? tab.layout.firstLeaf.id
             guard tab.layout.leaf(withID: focus)?.agentID == nil else {
                 NSSound.beep()
                 return
             }
-            Task {
-                do {
-                    try await remoteHosts.closePane(
-                        hostID: remote.hostID,
-                        agentID: remote.agentID,
-                        paneID: focus
-                    )
-                    remoteFocusedPaneID = agent.paneID ?? tab.layout.firstLeaf.id
-                } catch {
-                    NSSound.beep()
-                }
-            }
+            closeTerminalPane(focus, key: key, ref: remote, thread: agent.paneID, layout: tab.layout)
             return
         }
         guard let tab = activeTab else { NSSound.beep(); return }
+        let key = TerminalPanelKey(host: nil, tab: tab.id)
+        if terminalPanels.isStarting(focusedPaneID, in: key), let starting = focusedPaneID {
+            abandonStartingTerminal(starting, key: key)
+            return
+        }
         let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
         if tab.layout.leaf(withID: focus)?.agentID != nil {
             NSSound.beep()
@@ -255,20 +257,16 @@ extension ShepherdViewModel {
         guard let tabIndex = state.tabs.firstIndex(where: { $0.layout.contains(paneID) }),
               let pane = state.tabs[tabIndex].layout.leaf(withID: paneID),
               pane.agentID == nil,
-              let newLayout = state.tabs[tabIndex].layout.closing(pane: paneID) else {
+              state.tabs[tabIndex].layout.closing(pane: paneID) != nil else {
             return false
         }
+        let layout = state.tabs[tabIndex].layout
         let tabID = state.tabs[tabIndex].id
         guard let agent = state.agents.first(where: { $0.tabID == tabID }), let ref = localRef(agent.id) else { return false }
-        // The background host closes its terminal; the layout follows its push.
-        Task {
-            do { try await remoteHosts.closePane(hostID: ref.hostID, agentID: ref.agentID, paneID: paneID) }
-            catch { fail("Couldn’t close the terminal", error) }
-        }
         discardReviewSession(paneID)
-        if focusedPaneID == paneID {
-            focusedPaneID = newLayout.firstLeaf.id
-        }
+        // The tab goes and the keyboard returns to the thread now; the background host closes
+        // its terminal and the layout follows its push.
+        closeTerminalPane(paneID, key: TerminalPanelKey(host: nil, tab: tabID), ref: ref, thread: agent.paneID, layout: layout)
         return true
     }
 
@@ -360,56 +358,27 @@ extension ShepherdViewModel {
         case .keepWorktree: deleteAgent(id)
         case .removeWorktree:
             guard let ref = localRef(id) else { worktreeDeleteTarget = id; return }
-            // The host removes the checkout, bound to the loss it reports.
-            Task {
-                let info = try? await localHostWorktreeInfo(ref)
-                if let info, info.warning == nil { deleteLocalHostWorktreeAgent(ref, removing: info) }
-                else { hostWorktreeInfo = info; worktreeDeleteTarget = id }
-            }
+            removeHostWorktree(ref, confirmed: nil)
         }
     }
 
-    /// A hand-typed name is final: pi's namer must never overwrite it.
-    func renameAgent(_ id: AgentID, to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let agent = state.agents.first(where: { $0.id == id }),
-              agent.name != trimmed else { return }
-        let (hosts, ref) = (remoteHosts, localRef(id))
-        enqueuePersistence("agent rename", failureTitle: "Couldn’t rename the agent") {
-            guard let ref else { throw BackgroundHostClient.HostStarting() }
-            try await hosts.agentAction(ref, action: .rename(name: trimmed))
-        }
-    }
+    /// Optimistic; see `renameThread`.
+    func renameAgent(_ id: AgentID, to name: String) { renameThread(.local(id), to: name) }
 
     /// Persist retirement and wait for the actual process exits before removing a checkout.
     func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {
         guard removeWorktree else { deleteAgent(id); return }
         guard let ref = localRef(id) else { return fail("Couldn’t delete the worktree", BackgroundHostClient.HostStarting()) }
         // The checkout the dialog showed, with the loss it warned of.
-        let info = hostWorktreeInfo
-        Task {
-            do {
-                let removing = if let info { info } else { try await localHostWorktreeInfo(ref) }
-                deleteLocalHostWorktreeAgent(ref, removing: removing)
-            }
-            catch { fail("Couldn’t delete the worktree", error) }
-        }
+        removeHostWorktree(ref, confirmed: hostWorktreeInfo[id], askBeforeLoss: false)
     }
 
-    /// `completion` hears the outcome once the deletion is persisted (a peer's `agent_delete`
-    /// waits on it).
-    func deleteAgent(_ id: AgentID, completion: (@MainActor (Error?) -> Void)? = nil) {
-        enqueuePersistence("agent deletion") { [weak self] in
-            guard let self else { return }
-            do {
-                try await self.deleteAgentPersisted(id)
-                await MainActor.run { completion?(nil) }
-            } catch {
-                await MainActor.run {
-                    self.fail("Couldn’t delete the agent", error)
-                    completion?(error)
-                }
+    func deleteAgent(_ id: AgentID) {
+        guard beginClosingThread(.local(id)) else { return }
+        enqueuePersistence("agent deletion", failureTitle: "Couldn’t delete the agent") {
+            do { try await self.deleteAgentPersisted(id) }
+            catch {
+                self.closingThreads.remove(.local(id))
                 throw error
             }
         }
@@ -423,8 +392,7 @@ extension ShepherdViewModel {
         childRuns.clear(agent: id)
         forgetNotifications(of: id)
         forgetPullRequestLink(id)
-        if selectedAgentID == id { selectPreviousAgent(after: id) }
-        else { selectionHistory.removeAll { $0 == id } }
+        selectionHistory.removeAll { $0 == .local(id) }
         if let canonical = localHost?.state { adopt(canonical) }
     }
 
@@ -444,7 +412,7 @@ extension ShepherdViewModel {
     /// sign-in (`/login anthropic`, an agent's Sign in to Anthropic). A provider Shepherd doesn't
     /// know opens the page as it is.
     func openSignIn(_ provider: String? = nil, start: Bool = true, origin: PiSignInSession.Origin = .settings) {
-        settingsSection = .piSignIn
+        settingsSection = .models
         showSettings = true
         guard let provider else { return }
         piAuth.focus = provider

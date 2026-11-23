@@ -4,13 +4,19 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
+public enum RemoteHostClientError: LocalizedError, CustomStringConvertible, Sendable {
     case resolveFailed(host: String)
     case system(call: String, errno: Int32)
     case rejected(code: String, message: String)
     case outcomeUnknown(message: String)
     case disconnected
     case timeout
+
+    public var errorDescription: String? {
+        // Notification settings display localizedDescription, not the debugging description.
+        guard case .rejected("push_registration", let message) = self else { return nil }
+        return message
+    }
 
     public var description: String {
         switch self {
@@ -117,6 +123,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         get { capabilityLock.lock(); defer { capabilityLock.unlock() }; return storedCapabilities }
         set { capabilityLock.lock(); storedCapabilities = newValue; capabilityLock.unlock() }
     }
+    /// Whether the host offers `capability`.
+    public func supports(_ capability: Capability) -> Bool { capabilities.contains(capability.rawValue) }
     private let capabilityLock = NSLock()
     private var storedCapabilities: Set<String> = []
     /// The host's build, as its `helloOk` said (nil from an older host). Behind the same lock.
@@ -341,7 +349,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A fleet link (`FleetService`) passes `expectingHostID`: the host is asked who it is before
     /// the token is sent, and one that answers as another host never receives it
     /// (`RemoteHostClientError.rejected(code: FleetProtocol.Code.wrongHost)`). It passes
-    /// `fetchesState: false` too, having no use for the host's workspace.
+    /// `fetchesState: false` too, having no use for the host's workspace. `shouldDrainLocalHost`
+    /// decides from `helloOk`, before a workspace fetch or normal app traffic can fail.
     public func connect(
         host: String,
         port: UInt16,
@@ -349,7 +358,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         clientName: String,
         capabilities: [String] = RemoteProtocol.clientCapabilities,
         expectingHostID: UUID? = nil,
-        fetchesState: Bool = true
+        fetchesState: Bool = true,
+        shouldDrainLocalHost: (@Sendable (String?, Set<String>) -> Bool)? = nil
     ) async throws -> ShepherdState {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
@@ -422,9 +432,16 @@ public final class RemoteHostClient: @unchecked Sendable {
                     self.hostID = answeredHostID
                     if !fetchesState { established = true }
                 }
+                if isLocal, shouldDrainLocalHost?(build, Set(capabilities)) == true {
+                    do { try await drain(connectionGeneration: attempt) }
+                    catch { ShepherdLog.warning("no drain acknowledgement from local host build \(build ?? "?"): \(error)") }
+                }
                 guard fetchesState else { return ShepherdState() }
                 let stateReply = try await request(timeout: handshake, connectionGeneration: attempt) { id in .stateFetch(id: id) }
                 guard case .state(_, let state) = stateReply else {
+                    if case .error(_, let code, let message) = stateReply {
+                        throw RemoteHostClientError.rejected(code: code, message: message)
+                    }
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
                 }
                 try queue.sync {
@@ -562,8 +579,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     /// Asks this Mac's background host to drain (`hostDrainCapability`): the app is newer.
-    public func drain() async throws {
-        let reply = try await request { id in .drain(id: id) }
+    public func drain() async throws { try await drain(connectionGeneration: nil) }
+
+    private func drain(connectionGeneration: UUID?) async throws {
+        let reply = try await request(connectionGeneration: connectionGeneration) { id in .drain(id: id) }
         guard case .ok = reply else {
             if case .error(_, let code, let message) = reply {
                 throw RemoteHostClientError.rejected(code: code, message: message)
@@ -616,6 +635,20 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Renames, hides, reorders or removes one of the host's spaces (`spaceLifecycle`; a paired device or this Mac's own app).
+    /// A host that does not offer it is `update_required`, before anything is sent.
+    public func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        guard supports(.spaceLifecycle) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage its spaces from here.")
+        }
+        let reply = try await request { id in .spaceLifecycle(id: id, spaceID: spaceID, action: action) }
+        switch reply {
+        case .ok: return
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected spaceLifecycle reply")
+        }
+    }
+
     /// Registers, edits or adds a child to one of the background host's spaces (`projectRequest`;
     /// this Mac's own app only). Returns the space.
     public func projectRequest(_ request: RemoteProjectRequest) async throws -> SpaceID {
@@ -655,17 +688,17 @@ public final class RemoteHostClient: @unchecked Sendable {
         initialImages: [NativeImage] = [],
         serviceTier: ServiceTier? = nil
     ) async throws -> AgentID {
-        if serviceTier != nil, !capabilities.contains(RemoteProtocol.createAgentServiceTierCapability) {
+        if serviceTier != nil, !supports(.createAgentServiceTier) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a new thread's speed.")
         }
         // An older host would drop the images and start the thread without them.
-        if !initialImages.isEmpty, !capabilities.contains(RemoteProtocol.createAgentImagesCapability) {
+        if !initialImages.isEmpty, !supports(.createAgentImages) {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.createAgentImagesRefusal)
         }
-        if worktreeBase != nil || worktreeFetchFirst != nil, !capabilities.contains(RemoteProtocol.creationOptionsCapability) {
+        if worktreeBase != nil || worktreeFetchFirst != nil, !supports(.creationOptions) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose worktree creation options.")
         }
-        if worktreeBranch != nil, !capabilities.contains(RemoteProtocol.worktreeActionsCapability) {
+        if worktreeBranch != nil, !supports(.worktreeActions) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to create worktree agents.")
         }
         let prepared = try await Self.preparingImages(initialImages) { images in
@@ -700,7 +733,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func creationOptions(spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {
-        guard capabilities.contains(RemoteProtocol.creationOptionsCapability) else {
+        guard supports(.creationOptions) else {
             guard cwd == nil, fetchFirst == nil else {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose worktree creation options.")
             }
@@ -715,7 +748,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// A space's branches for a new worktree's base (`creationBranchesCapability`).
     public func creationBranches(spaceID: SpaceID) async throws -> ChangesBranches {
-        guard capabilities.contains(RemoteProtocol.creationBranchesCapability) else {
+        guard supports(.creationBranches) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a base branch.")
         }
         let reply = try await request { .creationBranches(id: $0, spaceID: spaceID) }
@@ -725,7 +758,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func upload(file: URL, sessionID: SessionID) async throws -> String {
-        guard capabilities.contains(RemoteProtocol.uploadCapability) else {
+        guard supports(.upload) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to drop files or images.")
         }
         try queue.sync {
@@ -785,6 +818,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Why a host with `capabilities` cannot take `request` (it predates it), or nil.
     static func missingCapability(_ request: NativeThreadRequest, capabilities: Set<String>) -> String? {
         switch request {
+        case .transcriptSnapshot:
+            capabilities.contains(RemoteProtocol.nativeThreadTranscriptCapability) ? nil : "Update Shepherd on the host to copy the transcript."
         case .setModel, .setThinking:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to change the model or thinking level."
         case .queue(_, _, _, .subagent):
@@ -838,7 +873,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Replaces this connection's watch set. Reconnect starts with no subscriptions.
     public func subscribeNativeThreads(_ agentIDs: [AgentID]) async throws {
-        guard capabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability), agentIDs.count <= 64 else {
+        guard supports(.nativeThreadRevisions), agentIDs.count <= 64 else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "Thread revision hints are unavailable.")
         }
         let reply = try await request { .nativeThreadSubscribe(id: $0, agentIDs: agentIDs) }
@@ -848,7 +883,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func fleetDigest(agentID: AgentID, session: NativeThreadSession? = nil, revision: UInt64? = nil) async throws -> NativeFleetDigestResult {
-        guard capabilities.contains(RemoteProtocol.nativeFleetDigestCapability) else {
+        guard supports(.nativeFleetDigest) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "Fleet digests are unavailable.")
         }
         let reply = try await request(cancellable: true) { .fleetDigest(id: $0, agentID: agentID, session: session, revision: revision) }
@@ -859,7 +894,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     public func nativeThread(agentID: AgentID, request original: NativeThreadRequest) async throws -> NativeThreadResult {
         let outgoing = Self.outgoing(original, capabilities: capabilities)
-        guard capabilities.contains(RemoteProtocol.nativeThreadCapability) else {
+        guard supports(.nativeThread) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to view native threads.")
         }
         if let missing = Self.missingCapability(outgoing, capabilities: capabilities) {
@@ -879,11 +914,13 @@ public final class RemoteHostClient: @unchecked Sendable {
                 .nativeThread(id: $0, agentID: agentID, request: command)
             }
         } catch RemoteHostClientError.timeout {
+            if case .transcriptSnapshot = command { throw RemoteHostClientError.timeout }
             throw RemoteHostClientError.outcomeUnknown(message: "Native request timed out. Refresh before acting; do not automatically retry.")
         } catch RemoteHostClientError.disconnected {
+            if case .transcriptSnapshot = command { throw RemoteHostClientError.disconnected }
             throw RemoteHostClientError.outcomeUnknown(message: "Connection lost. Refresh before acting; do not automatically retry.")
         }
-        let legacy = !capabilities.contains(RemoteProtocol.nativeThreadStartingCapability)
+        let legacy = !supports(.nativeThreadStarting)
         if case .nativeThread(_, let result) = reply {
             if case .failure(let code, let message) = result {
                 return .failure(code: Self.availabilityCode(code, legacyHost: legacy), message: message)
@@ -914,6 +951,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
         case .pullRequest: RemoteProtocol.pullRequestLinkCapability
+        case .branchStatus, .branchUpdate, .branchAbort: RemoteProtocol.branchStatusCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .fileWrite: RemoteProtocol.filesWriteCapability
@@ -935,7 +973,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // A drafted commit message and the Changes reads run a model or git over a large tree.
         let slow: Bool
         switch query {
-        case .commitMessage, .changesOverview, .changesList: slow = true
+        case .commitMessage, .changesOverview, .changesList, .branchUpdate: slow = true
         default: slow = false
         }
         let cancellable: Bool
@@ -956,14 +994,14 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// `cancellable`). Everything with an operation id is a mutation whose outcome must be heard.
     static func isRead(_ request: NativeThreadRequest) -> Bool {
         switch request {
-        case .snapshot, .subagentTranscript, .image: true
+        case .snapshot, .transcriptSnapshot, .subagentTranscript, .image: true
         default: false
         }
     }
 
     /// The dev servers the agent's folder on the host offers (`browserTunnelCapability`).
     public func devServers(agentID: AgentID) async throws -> [DevServer] {
-        guard capabilities.contains(RemoteProtocol.browserTunnelCapability) else {
+        guard supports(.browserTunnel) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.tunnelsRefusal)
         }
         guard case .devServers(let servers) = try await agentQuery(agentID: agentID, query: .devServers) else {
@@ -991,7 +1029,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Saves `text` over a file of the thread's folder on the host only while it still holds `expected`
     /// (`filesWriteCapability`): `.changed` with the host's text when it moved on.
     public func writeFile(agentID: AgentID, path: String, text: String, expected: String) async throws -> ThreadFileSaveResult {
-        guard capabilities.contains(RemoteProtocol.filesWriteCapability) else {
+        guard supports(.filesWrite) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Saving files needs a newer Shepherd on the host.")
         }
         guard case .fileWrite(let result) = try await filesQuery(agentID: agentID, query: .fileWrite(path: path, text: text, expected: expected)) else {
@@ -1001,7 +1039,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     private func filesQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
-        guard capabilities.contains(RemoteProtocol.filesCapability) else {
+        guard supports(.files) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Files needs a newer Shepherd on the host.")
         }
         return try await agentQuery(agentID: agentID, query: query)
@@ -1010,7 +1048,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Runs `command` in a new terminal pane of the agent's layout on the host, in `cwd`
     /// (`browserTunnelCapability`): the Browser's "Start on demo-mac".
     public func openTerminal(agentID: AgentID, cwd: String, command: String) async throws {
-        guard capabilities.contains(RemoteProtocol.browserTunnelCapability) else {
+        guard supports(.browserTunnel) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.tunnelsRefusal)
         }
         try await agentAction(agentID: agentID, action: .openTerminal(cwd: cwd, command: command))
@@ -1046,13 +1084,13 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Gives `agentID`'s browser back to the host. Nothing answers it.
     public func browserRelease(agentID: AgentID) {
-        guard capabilities.contains(RemoteProtocol.browserDriveCapability) else { return }
+        guard supports(.browserDrive) else { return }
         queue.async { self.sendRequest(.browserRelease(agentID: agentID)) }
     }
 
     /// Answers a `BrowserDrivePush.request`. Nothing answers it.
     public func browserAnswer(token: Int, outcome: BrowserOutcome) {
-        guard capabilities.contains(RemoteProtocol.browserDriveCapability) else { return }
+        guard supports(.browserDrive) else { return }
         queue.async { self.sendRequest(.browserAnswer(requestToken: token, outcome: outcome)) }
     }
 
@@ -1070,7 +1108,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     public static let driveRefusal = "Update Shepherd on the host so its agent can use the page shown here."
 
     public func agentAction(agentID: AgentID, action: RemoteAgentAction) async throws {
-        guard capabilities.contains(RemoteProtocol.agentActionsCapability), capabilities.contains(action.capability) else {
+        guard supports(.agentActions), capabilities.contains(action.capability) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to use remote agent actions."
             )
@@ -1083,12 +1121,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// automations read-only: this throws `update_required` before sending anything.
     @discardableResult
     public func automation(_ automationID: AutomationID, request: RemoteAutomationRequest) async throws -> RemoteAutomationResult {
-        guard capabilities.contains(RemoteProtocol.automationsCapability) else {
+        guard supports(.automations) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to manage its automations from here."
             )
         }
-        if request.needsTriggers, !capabilities.contains(RemoteProtocol.automationTriggersCapability) {
+        if request.needsTriggers, !supports(.automationTriggers) {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to use automation triggers from here."
             )
@@ -1128,7 +1166,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// `update_required` before sending anything.
     @discardableResult
     public func instructions(_ request: RemoteInstructionsRequest = .fetch) async throws -> InstructionsSnapshot {
-        guard capabilities.contains(RemoteProtocol.instructionsCapability) else {
+        guard supports(.instructions) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to edit its instructions from here."
             )
@@ -1146,7 +1184,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// experiments: this throws `update_required` before sending anything.
     @discardableResult
     public func suggestions(_ request: RemoteSuggestionsRequest = .fetch) async throws -> SuggestionsSnapshot {
-        guard capabilities.contains(RemoteProtocol.suggestionsCapability) else {
+        guard supports(.suggestions) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to use its experiments from here."
             )
@@ -1160,7 +1198,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func registerPush(_ registration: RemotePushRegistration) async throws {
-        guard capabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+        guard supports(.pushNotifications) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "Update Shepherd on this Mac to enable push notifications.")
         }
         let reply = try await request { .pushRegistration(id: $0, registration: registration) }
@@ -1172,7 +1210,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func unregisterPush(_ registrationID: String) async throws {
-        guard capabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+        guard supports(.pushNotifications) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "This host does not support push notifications.")
         }
         let reply = try await request { .pushUnregister(id: $0, registrationID: registrationID) }
@@ -1185,7 +1223,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Poll after reconnect or while an operation is in flight. Never automatically retry install.
     public func hostUpdate(_ request: RemoteHostUpdateRequest = .status) async throws -> HostUpdateStatus {
-        guard capabilities.contains(RemoteProtocol.hostUpdateCapability) else {
+        guard supports(.hostUpdate) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "This host does not support remote updates.")
         }
         return try await sendHostUpdate(request)
@@ -1194,7 +1232,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The same request of another Mac of the fleet, over the link to it (whichever Mac opened it): a Mac that lacks
     /// `RemoteProtocol.fleetUpdateCapability` is never asked, as an older one would answer `installWhenIdle` with a decoding error.
     public func fleetHostUpdate(_ request: RemoteHostUpdateRequest) async throws -> HostUpdateStatus {
-        guard capabilities.contains(RemoteProtocol.fleetUpdateCapability) else {
+        guard supports(.fleetUpdate) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "That Mac can't be updated from here.")
         }
         return try await sendHostUpdate(request)
@@ -1207,7 +1245,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .status, .check, .cancel: installs = false
         }
         let reply: RemoteReply
-        do { reply = try await self.request { .hostUpdate(id: $0, request: request) } }
+        do { reply = try await self.request(timeout: RemoteHostUpdateRequest.askerTimeout) { .hostUpdate(id: $0, request: request) } }
         catch RemoteHostClientError.timeout {
             if installs {
                 throw RemoteHostClientError.outcomeUnknown(message: "Update outcome unknown. Reconnect and refresh status; do not retry installation automatically.")
@@ -1231,7 +1269,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// shares none: this throws `update_required` before sending anything.
     @discardableResult
     public func hostSettings(_ request: RemoteHostSettingsRequest = .fetch) async throws -> HostSettings {
-        guard capabilities.contains(RemoteProtocol.hostSettingsCapability) else {
+        guard supports(.hostSettings) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to see its settings from here."
             )
@@ -1246,6 +1284,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             case .fleetCheckIgnore: "set aside what Check finds"
             case .fleetAutoDispatch, .fleetBatteryCountsHalf: "change how Fleet picks a Mac"
             case .designToolEnabled: "toggle the Design tool experiment"
+            case .computerUseEnabled: "toggle the Computer use experiment"
+            case .threadsStartThreads, .subThreadPlace: "change what threads a thread starts"
             case .subagentDefaults, .worktreeDeleteAction, .skillsInSlashMenu, .mcpProjectConfig, .slashCommand, .closeOnMerge: "change this setting"
             default: "change this default"
             }
@@ -1265,7 +1305,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// `skillsCapability` has none: this throws `update_required` before sending anything.
     @discardableResult
     public func skills(_ request: RemoteSkillsRequest = .fetch) async throws -> RemoteSkillsResult {
-        guard capabilities.contains(RemoteProtocol.skillsCapability) else {
+        guard supports(.skills) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to manage its skills from here."
             )
@@ -1287,7 +1327,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// host without `hooksCapability` has none: this throws `update_required` before sending anything.
     @discardableResult
     public func hooks(_ request: RemoteHooksRequest = .fetch) async throws -> RemoteHooksResult {
-        guard capabilities.contains(RemoteProtocol.hooksCapability) else {
+        guard supports(.hooks) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage its hooks from here.")
         }
         var timeout = RemoteHostClient.requestTimeout
@@ -1321,10 +1361,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func projectRuntime(_ request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
-        guard !request.requiresResults || capabilities.contains(RemoteProtocol.projectResultCapability) else {
+        guard !request.requiresResults || supports(.projectResult) else {
             throw RemoteHostClientError.rejected(code: "unsupported_result", message: "This owner cannot serve durable Project history/results.")
         }
-        if case .worker = request, !capabilities.contains(RemoteProtocol.projectWorkerCapability) {
+        if case .worker = request, !supports(.projectWorker) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before opening its worker threads.")
         }
         if let native = request.nativeRequest {
@@ -1336,14 +1376,14 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         }
         if case .action(_, _, .assign(_, _, _, _, let host, _, _)) = request, let host, host != .local,
-           !capabilities.contains(RemoteProtocol.projectPlacementCapability) {
+           !supports(.projectPlacement) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before selecting a remote executor.")
         }
-        guard capabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) else {
+        guard supports(.logicalProjectRuntime) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the Project owner to coordinate work.")
         }
         if !request.messageImages.isEmpty {
-            guard capabilities.contains(RemoteProtocol.projectMessageImagesCapability) else {
+            guard supports(.projectMessageImages) else {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before sending images.")
             }
         }
@@ -1367,16 +1407,16 @@ public final class RemoteHostClient: @unchecked Sendable {
     public func projectExecution(_ command: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
         let needsResults: Bool
         switch command { case .result, .worker: needsResults = true; default: needsResults = false }
-        if needsResults, !capabilities.contains(RemoteProtocol.projectResultCapability) {
+        if needsResults, !supports(.projectResult) {
             throw RemoteHostClientError.rejected(code: "unsupported_result", message: "This executor cannot return exact retained results.")
         }
-        guard !command.requiresPublications || capabilities.contains(RemoteProtocol.projectPublicationsCapability) else {
+        guard !command.requiresPublications || supports(.projectPublications) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the executor before publishing Project artifacts.")
         }
-        guard !command.requiresPlacement || capabilities.contains(RemoteProtocol.projectPlacementCapability) else {
+        guard !command.requiresPlacement || supports(.projectPlacement) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the executor before using Project question controls.")
         }
-        guard capabilities.contains(RemoteProtocol.projectExecutionCapability) else {
+        guard supports(.projectExecution) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "This host does not offer Project execution.")
         }
         guard !Self.overFrame(.projectExecution(id: 0, request: command)) else {
@@ -1393,18 +1433,18 @@ public final class RemoteHostClient: @unchecked Sendable {
     public func logicalProjects(_ request: LogicalProjectsRequest) async throws -> LogicalProjectsResult {
         switch request {
         case .linkSpace(_, _, _, let host), .unlinkSpace(_, _, _, let host):
-            if let host, host != .local, !capabilities.contains(RemoteProtocol.projectPlacementCapability) {
+            if let host, host != .local, !supports(.projectPlacement) {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before linking remote Spaces.")
             }
         default: break
         }
-        guard capabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
+        guard supports(.logicalProjects) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage logical projects.")
         }
-        guard !request.requiresProjectAutomations || capabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
+        guard !request.requiresProjectAutomations || supports(.logicalProjectAutomations) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage Project automations.")
         }
-        guard !request.requiresProjectFiles || capabilities.contains(RemoteProtocol.logicalProjectFilesCapability) else {
+        guard !request.requiresProjectFiles || supports(.logicalProjectFiles) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to preview Project artifacts.")
         }
         let reply = try await self.request { .logicalProjects(id: $0, request: request) }
@@ -1417,29 +1457,29 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Project-only configuration. Capability check happens before anything is sent to an old host.
     public func projects(_ request: RemoteProjectsRequest) async throws -> RemoteProjectsResult {
-        guard !request.requiresProjectTrust || capabilities.contains(RemoteProtocol.projectTrustCapability) else {
+        guard !request.requiresProjectTrust || supports(.projectTrust) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to approve space configuration.")
         }
-        guard !request.requiresMCP || capabilities.contains(RemoteProtocol.projectMCPCapability) else {
+        guard !request.requiresMCP || supports(.projectMCP) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to sign in to space MCP servers.")
         }
-        guard capabilities.contains(RemoteProtocol.projectsV2Capability) || capabilities.contains(RemoteProtocol.projectsCapability) else {
+        guard supports(.projectsV2) || supports(.projects) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its spaces from here.")
         }
-        guard !request.requiresDetails || capabilities.contains(RemoteProtocol.projectDetailsCapability) else {
+        guard !request.requiresDetails || supports(.projectDetails) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to read space context and open its editor.")
         }
-        guard !request.requiresResources || capabilities.contains(RemoteProtocol.projectResourcesCapability) else {
+        guard !request.requiresResources || supports(.projectResources) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage space resources.")
         }
-        guard !request.requiresInheritance || capabilities.contains(RemoteProtocol.projectInheritanceCapability) else {
+        guard !request.requiresInheritance || supports(.projectInheritance) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited servers and skills.")
         }
-        guard !request.requiresParent || capabilities.contains(RemoteProtocol.projectParentCapability) else {
+        guard !request.requiresParent || supports(.projectParent) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a parent space.")
         }
         if case .inheritance(_, let excluded) = request, !(excluded.prompts.isEmpty && excluded.extensions.isEmpty),
-           !capabilities.contains(RemoteProtocol.projectInheritedResourcesCapability) {
+           !supports(.projectInheritedResources) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to turn off inherited slash commands and extensions.")
         }
         let reply = try await self.request { .projects(id: $0, request: request) }
@@ -1454,7 +1494,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// tool is on). A host without it throws `update_required` before anything is sent: an older
     /// Shepherd, or the experiment off there.
     public func design(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
-        guard capabilities.contains(RemoteProtocol.designsCapability) else {
+        guard supports(.designs) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.designsRefusal)
         }
         if let needed = request.capability, !capabilities.contains(needed) {
@@ -1499,7 +1539,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     @discardableResult
     public func openPane(agentID: AgentID, relativeTo paneID: PaneID, axis: SplitAxis) async throws -> PaneID {
-        guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
+        guard supports(.paneControl) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in
@@ -1515,7 +1555,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func closePane(agentID: AgentID, paneID: PaneID) async throws {
-        guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
+        guard supports(.paneControl) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in .closePane(id: id, agentID: agentID, paneID: paneID) }
@@ -1523,7 +1563,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func resizePaneSplit(agentID: AgentID, split: PaneNode, ratio: Double) async throws {
-        guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
+        guard supports(.paneControl) else {
             throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in
@@ -1537,7 +1577,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// capabilities, so use their existing raw-input path instead of sending an
     /// unknown request that would make them drop the connection.
     public func paste(sessionID: SessionID, text: String, submit: Bool) async throws {
-        if !capabilities.contains(RemoteProtocol.pasteCapability) {
+        if !supports(.paste) {
             let payload = RemoteProtocol.composedInput(text: text, submit: submit)
             try queue.sync {
                 guard fd >= 0 else { throw RemoteHostClientError.disconnected }
@@ -1584,6 +1624,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         timeout: TimeInterval = RemoteHostClient.requestTimeout,
         connectionGeneration: UUID? = nil,
         cancellable: Bool = false,
+        keepConnectionOnTimeout: Bool = false,
         _ make: @escaping (Int) -> RemoteRequest
     ) async throws -> RemoteReply {
         let ticket = RequestTicket()
@@ -1615,14 +1656,13 @@ public final class RemoteHostClient: @unchecked Sendable {
                         guard let pending = self.pendingReplies.removeValue(forKey: id) else { return }
                         pending.resume(throwing: RemoteHostClientError.timeout)
                         self.notifyIdle()
-                        guard self.isLocal else {
+                        guard self.isLocal || keepConnectionOnTimeout else {
                             self.teardown(reason: "request \(id) timed out after \(timeout) s")
                             return
                         }
-                        // The host on this Mac is busy (a loaded machine, a slow git), not gone: its
-                        // socket would have closed. The late reply is dropped like a cancelled one's.
+                        // The host may just be busy. Drop the late reply like a cancelled one's.
                         self.cancelledReplies.insert(id)
-                        ShepherdLog.connection("local host slow: request \(id) unanswered after \(timeout) s; connection kept")
+                        ShepherdLog.connection("host slow: request \(id) unanswered after \(timeout) s; connection kept")
                     }
                 }
             }
@@ -2123,7 +2163,7 @@ extension RemoteHostClient: BrowserTunnelLink {
 
     public var tunnelBacklogBytes: Int { pendingWriteBytes }
 
-    public var tunnelsAvailable: Bool { fd >= 0 && capabilities.contains(RemoteProtocol.browserTunnelCapability) }
+    public var tunnelsAvailable: Bool { fd >= 0 && supports(.browserTunnel) }
 }
 
 /// The connection of a Mac that opened one to this host, as a client of that Mac sends over it (`RemoteHostClient.init(peerChannel:)`).

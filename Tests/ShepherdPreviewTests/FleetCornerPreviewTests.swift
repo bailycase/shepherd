@@ -117,6 +117,23 @@ struct FleetCornerPreviewTests {
         }
     }
 
+    /// UpdateFooterStates: with an update waiting, `SHUpdateButton` stands where the gear was, in the full and minimized
+    /// corner and in the plain footer Fleet off draws.
+    @Test func theUpdateButtonTakesTheGearsPlace() async throws {
+        let corner = try #require(FleetCorner.make(P.page(Self.threeMacs)))
+        try await Preview.renderMatrix("sidebar-footer-update", size: CGSize(width: Self.size.width, height: 260)) {
+            VStack(spacing: 0) {
+                FleetCornerView(corner: corner, minimized: false, onPage: false, focusedMac: nil, open: { _ in }, setMinimized: { _ in },
+                                settings: {}, updateVersion: "0.2.0")
+                FleetCornerView(corner: corner, minimized: true, onPage: false, focusedMac: nil, open: { _ in }, setMinimized: { _ in },
+                                settings: {}, updateVersion: "0.2.0")
+                SHSidebarFooter(name: "Alex", detail: "This Mac · demo-mac", updateVersion: "0.2.0", settings: {})
+            }
+            .frame(width: Self.size.width)
+            .background(Color.sh.bgBase)
+        }
+    }
+
     // MARK: FleetSubthreads
 
     /// The threads the sidebar scenes draw: This Mac's, the connected mini's, and the dispatch records This Mac keeps.
@@ -270,9 +287,9 @@ struct FleetCornerPreviewTests {
         return hit.map { after + $0.boundingBox.minX * (size.width - after) }
     }
 
-    /// The same inset in every path: in both sidebar styles, a sent thread's title starts 18pt right of its sender's (FleetCornerFull: x57 against x39 at the
-    /// default width), read from the rendered pixels of the board's own sidebar, not from the metrics.
-    @Test func aSentThreadSitsAtTheSameInsetInBothStyles() async throws {
+    /// In Activity a sent thread's title starts 18pt right of its sender's (FleetCornerFull: x57 against x39 at the default width); the Spaces tree nests
+    /// nothing, so there it lines up with its sender. Read from the rendered pixels of the board's own sidebar, not from the metrics.
+    @Test func aSentThreadSitsUnderItsSenderOnlyInActivity() async throws {
         let space = Space(name: "payments-api", path: "/tmp/p")
         let speed = Self.thread("Speed up checkout CI", .working, in: space, at: 1)
         let flaky = UUID()
@@ -290,12 +307,12 @@ struct FleetCornerPreviewTests {
                 var sender: CGFloat?, child: CGFloat?
                 try await eventuallyOnMain("\(name) rows' text to be read", timeout: .seconds(20)) {
                     sender = try Self.textX("Speed up", after: style == .activity ? 31 : 50, in: view, size: size)
-                    child = try Self.textX("Fix flaky", after: style == .activity ? 47 : 68, in: view, size: size)
+                    child = try Self.textX("Fix flaky", after: style == .activity ? 47 : 50, in: view, size: size)
                     return sender != nil && child != nil
                 }
                 let delta = try #require(child) - (try #require(sender))
                 // Vision's boxes are a point loose around a bold selected title, so the Spaces tree's tolerance is wider.
-                #expect(abs(delta - 18) <= (style == .activity ? 1.5 : 3), "\(name), selected \(selected != nil): child at \(child ?? 0), sender at \(sender ?? 0)")
+                #expect(abs(delta - (style == .activity ? 18 : 0)) <= (style == .activity ? 1.5 : 3), "\(name), selected \(selected != nil): child at \(child ?? 0), sender at \(sender ?? 0)")
                 if style == .activity {
                     let (senderX, childX) = (try #require(sender), try #require(child))
                     #expect(abs(senderX - 39) <= 1.5 && abs(childX - 57) <= 1.5, "activity: sender \(senderX), child \(childX)")

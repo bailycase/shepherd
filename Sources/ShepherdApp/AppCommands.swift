@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdCore
+import ShepherdRemote
 import ShepherdUI
 
 /// What the menu bar shows, as narrow cached values. Each menu reads only its own fields, and a
@@ -20,6 +21,10 @@ final class MenuState {
         var sidebarStyle = SHSidebarStyle.activity
         var rightPaneOpen = false
         var hasMachineAgents = false
+        var hasNextNeedingYou = false
+        /// Threads Stop All Working Threads would stop.
+        var workingThreadCount = 0
+        var reviewQueueCount = 0
         /// The focused pane is a terminal (or review) ⌘W can close.
         var canCloseTerminal = false
         /// This Mac's selected thread: what the Agent menu's thread commands act on.
@@ -37,6 +42,10 @@ final class MenuState {
 
     static let unavailable = MenuState()
 
+    static func reviewNextTitle(count: Int) -> String {
+        count > 0 ? "Review Next (\(count))" : ShortcutAction.reviewNext.title
+    }
+
     private(set) var hasVisibleThread = false
     private(set) var hasSelection = false
     private(set) var canActOnSelection = false
@@ -44,6 +53,12 @@ final class MenuState {
     private(set) var sidebarStyle = SHSidebarStyle.activity
     private(set) var rightPaneOpen = false
     private(set) var hasMachineAgents = false
+    private(set) var hasNextNeedingYou = false
+    private(set) var workingThreadCount = 0
+    /// The Agent menu's Stop All Working Threads item.
+    var stopAllTitle: String { StopAllWorking.menuTitle(count: workingThreadCount) }
+    var canStopAll: Bool { workingThreadCount > 0 }
+    private(set) var reviewQueueCount = 0
     private(set) var canCloseTerminal = false
     private(set) var selectedLocalAgent: AgentID?
     private(set) var threadCommands: [ThreadCommand] = []
@@ -62,6 +77,9 @@ final class MenuState {
         if sidebarStyle != snapshot.sidebarStyle { sidebarStyle = snapshot.sidebarStyle }
         if rightPaneOpen != snapshot.rightPaneOpen { rightPaneOpen = snapshot.rightPaneOpen }
         if hasMachineAgents != snapshot.hasMachineAgents { hasMachineAgents = snapshot.hasMachineAgents }
+        if hasNextNeedingYou != snapshot.hasNextNeedingYou { hasNextNeedingYou = snapshot.hasNextNeedingYou }
+        if workingThreadCount != snapshot.workingThreadCount { workingThreadCount = snapshot.workingThreadCount }
+        if reviewQueueCount != snapshot.reviewQueueCount { reviewQueueCount = snapshot.reviewQueueCount }
         if canCloseTerminal != snapshot.canCloseTerminal { canCloseTerminal = snapshot.canCloseTerminal }
         if selectedLocalAgent != snapshot.selectedLocalAgent { selectedLocalAgent = snapshot.selectedLocalAgent }
         if threadCommands != snapshot.threadCommands { threadCommands = snapshot.threadCommands }
@@ -78,6 +96,7 @@ extension MenuState.Snapshot {
         let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
         let local = vm.selectedRemoteAgent == nil ? vm.selectedAgent : nil
         let save = vm.saveMenuItem
+        let queues = vm.supervisionQueues
         self.init(
             hasVisibleThread: vm.visibleThread != nil,
             hasSelection: selected != nil || vm.selectedRemoteAgent != nil,
@@ -86,6 +105,9 @@ extension MenuState.Snapshot {
             sidebarStyle: vm.sidebarStyle,
             rightPaneOpen: vm.isRightPaneOpen,
             hasMachineAgents: !vm.sidebarWalkRows.isEmpty,
+            hasNextNeedingYou: queues.nextNeedingYou(after: vm.selectedSidebarRow) != nil,
+            workingThreadCount: vm.workingThreads.count,
+            reviewQueueCount: queues.review.count,
             canCloseTerminal: vm.canCloseTerminal,
             selectedLocalAgent: local?.id,
             threadCommands: local == nil ? [] : ThreadCommand.allCases,
@@ -176,8 +198,6 @@ struct FileCreationMenuItems: View {
         Group {
             Button("New Thread") { later { vm?.openNewThread() } }
                 .keyboardShortcut(keys.shortcut(.newAgent))
-            Button("New Agent with Options…") { later { vm?.showNewAgentSheet = true } }
-                .keyboardShortcut(keys.shortcut(.newAgentOptions))
             Button("New Space…") { later { vm?.addSpaceFromPanel() } }
                 .keyboardShortcut(keys.shortcut(.newSpace))
             if vm?.designToolEnabled == true {
@@ -190,7 +210,7 @@ struct FileCreationMenuItems: View {
     }
 }
 
-/// File ▸ New Thread, New Agent with Options…, New Space…, Import Claude Design Project… (⇧⌘I,
+/// File ▸ New Thread, New Space…, Import Claude Design Project… (⇧⌘I,
 /// with the Design tool on), and ⌘W as Close Terminal.
 struct FileCommands: Commands {
     let launch: ShepherdLaunch<ShepherdViewModel>
@@ -344,6 +364,8 @@ struct AgentCommands: Commands {
                 Button("Stop") { later { vm?.stopVisibleAgent() } }
                     .keyboardShortcut(keys.shortcut(.stopAgent))
                     .disabled(!menu.hasVisibleThread)
+                Button(menu.stopAllTitle) { later { vm?.requestStopAll() } }
+                    .disabled(!menu.canStopAll)
                 Button("Choose Model…") { later { vm?.sendThreadCommand(.modelPicker) } }
                     .keyboardShortcut(keys.shortcut(.modelPicker))
                     .disabled(!menu.hasVisibleThread)
@@ -363,6 +385,15 @@ struct AgentCommands: Commands {
                 Button("Previous Agent") { later { vm?.selectAdjacentAgent(-1) } }
                     .keyboardShortcut(keys.shortcut(.previousAgent))
                     .disabled(!menu.hasMachineAgents)
+                Divider()
+                Button(ShortcutAction.nextNeedingYou.title) { later { vm?.openNextNeedingYou() } }
+                    .keyboardShortcut(keys.shortcut(.nextNeedingYou))
+                    .disabled(!menu.hasNextNeedingYou)
+                Button(MenuState.reviewNextTitle(count: menu.reviewQueueCount)) {
+                    later { vm?.openReviewNext() }
+                }
+                .keyboardShortcut(keys.shortcut(.reviewNext))
+                .disabled(menu.reviewQueueCount == 0)
                 Divider()
                 // The sidebar row's commands, on the selected local thread (ThreadCommand).
                 if let vm, let agentID = menu.selectedLocalAgent {

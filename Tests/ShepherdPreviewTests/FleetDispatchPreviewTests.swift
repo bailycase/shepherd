@@ -62,12 +62,79 @@ struct FleetDispatchPreviewTests {
     @Test func dispatchCardsInTheParentThread() async throws {
         let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
         for (name, state, done) in [("fleet4d-dispatch-working", FleetDispatchState.running, false), ("fleet4d-dispatch-result", .done, true)] {
-            let fixture = ThreadFixture(Self.parentSnapshot(done: done))
+            var snapshot = Self.parentSnapshot(done: done)
+            if done { snapshot.messages[snapshot.messages.count - 1].fleetResultID = id }
+            let fixture = ThreadFixture(snapshot)
             defer { fixture.store.stop() }
-            let surface = Self.surface([Self.record(state, id: id, at: Date().timeIntervalSince1970 * 1000 - 120_000)])
+            let record = Self.record(state, title: done ? "Payment test complete" : "Fix flaky payment test", id: id,
+                                     at: Date().timeIntervalSince1970 * 1000 - 120_000)
+            let surface = Self.surface([record])
+            if done {
+                let message = try #require(snapshot.messages.last)
+                let text = try #require(message.blocks.first?.text)
+                let result = try #require(FleetResultMessage.parse(text, dispatchID: message.fleetResultID))
+                #expect(surface.card(for: result)?.title == "Payment test complete")
+            }
             try await Preview.renderMatrix(name, size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
                 fixture.thread(title: Self.senderTitle).environment(\.fleetThread, surface)
             }
+        }
+    }
+
+    @Test func checkoutNoticesOnTheResultCard() async throws {
+        let title = "Checkout notes", host = "Build Mac"
+        let prefix = "[from: \(title) on \(host), an agent, not the user. Reply with agent_send only if this asks for a reply.] Result from \(title) on \(host):\nUpdated the checkout notes.\n\n"
+        let branch = "Branch fleet/checkout-notes: 0 commits ahead of origin/main, not on origin, 0 files changed (+0 -0)."
+        let record = Self.record(.done, title: title, host: host)
+        let card = Self.surface([record]).cards.first
+        let notices = [
+            ("mac-uncommitted", "Uncommitted in the checkout on Build Mac: 1 file (1 modified). Counts include any edits sent with the dispatch."),
+            ("mac-could-not-check", "Could not check the checkout for uncommitted work."),
+        ]
+        let size = CGSize(width: 700, height: 184)
+        for (name, notice) in notices {
+            let result = try #require(FleetResultMessage.parse(prefix + branch + " " + notice))
+            try await Preview.render(name, size: size) {
+                FleetResultCard(result: result, time: "10:24", card: card)
+                    .padding(SH.Space.xl)
+                    .frame(width: size.width, height: size.height)
+                    .background(Color.sh.bgWindow)
+            }
+        }
+    }
+
+    @Test func aProviderErrorShowsTheFailedThreadAndItsError() async throws {
+        let id = try #require(FleetDispatchID.forToolCall(Self.toolCall, agent: Self.sender))
+        let fixture = ThreadFixture(Self.parentSnapshot(done: false))
+        defer { fixture.store.stop() }
+        let now = Date().timeIntervalSince1970 * 1000
+        var record = Self.record(.failed, failure: "turn_failed", id: id, at: now - 120_000)
+        record.remoteAgentID = AgentID(rawValue: "mini-1")
+        record.failureDetail = "Request timed out. The provider did not respond before the deadline."
+        record.updatedAt = now
+        let surface = Self.surface([record])
+        let card = try #require(surface.cards.first)
+        #expect(card.pill == "Failed" && card.actions == [.open])
+        #expect(card.detail.contains("Request timed out."))
+        try await Preview.render("fleet-dispatch-provider-error", size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready }) {
+            fixture.thread(title: Self.senderTitle).environment(\.fleetThread, surface)
+        }
+        var snapshot = P.snapshot
+        snapshot.dispatches = [record]
+        let page = FleetPagePresentation.make(snapshot: snapshot, weight: { _ in .normal })
+        #expect(page.dispatches.first?.reason.contains("Request timed out.") == true)
+        try await Preview.render("fleet-dispatch-log-provider-error", size: CGSize(width: 760, height: 260)) {
+            FleetDispatchesCard(rows: page.dispatches)
+                .padding(SH.Space.xxl)
+                .background(Color.sh.bgWindow)
+        }
+        let source = SidebarSource(local: ShepherdState(), localFleetID: P.here, fleet: SidebarFleet(records: [record], macs: snapshot.macNames))
+        let row = try #require(SidebarDerivation.dispatchRows(source, threads: []).first?.row)
+        #expect(row.subtitle?.text == "model request failed")
+        try await Preview.render("fleet-sidebar-provider-error", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 100)) {
+            SHSidebarRow(row.title, leading: row.leading, accessory: row.accessory, subtitle: row.subtitle)
+                .padding(SH.Space.m)
+                .background(Color.sh.bgBase)
         }
     }
 
@@ -104,7 +171,7 @@ struct FleetDispatchPreviewTests {
     }
 
     func remoteThread(_ fixture: ThreadFixture, sentBy: FleetSentBy, online: Bool, offline: FleetOfflineBanner? = nil) -> some View {
-        var surface = FleetThreadSurface(sentBy: sentBy, dispatched: nil, goesBack: sentBy.fromThread, cards: [], parent: nil, actions: FleetThreadActions())
+        var surface = FleetThreadSurface(sentBy: sentBy, goesBack: sentBy.fromThread, cards: [], parent: nil, actions: FleetThreadActions())
         surface.offline = offline != nil
         return VStack(spacing: 0) {
             ThreadHeader(store: fixture.store, project: "payments-api", title: "Fix flaky payment test", sentBy: sentBy, sentByOnline: online, openSender: sentBy.fromThread ? {} : nil)
@@ -119,8 +186,7 @@ struct FleetDispatchPreviewTests {
 
     @Test func theDispatchedThreadOnlineAndOffline() async throws {
         let from = DispatchedFrom(hostID: P.here, hostName: "MacBook Pro", agentID: Self.sender, agentTitle: Self.senderTitle, dispatchID: UUID(), at: 1_758_830_040_000)
-        var sentBy = FleetSentBy(from, host: "Mac mini", viewer: P.mini)
-        sentBy.senderOpens = true
+        let sentBy = FleetSentBy(from, host: "Mac mini", viewer: P.mini)
         let fixture = ThreadFixture(Self.dispatchedSnapshot(sentBy: Self.senderTitle))
         defer { fixture.store.stop() }
         try await Preview.renderMatrix("fleet4d-remote-online", size: CGSize(width: 1000, height: 720), ready: { fixture.store.ready }) {

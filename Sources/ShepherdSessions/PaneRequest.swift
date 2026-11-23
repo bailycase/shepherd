@@ -15,6 +15,8 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var worktreeBase: String?
     public var worktreeFetchFirst: Bool?
     public var worktreeBranch: String?
+    /// `worktreeBranch` exists (local, or "origin/x"): the new worktree checks it out as it is.
+    public var worktreeBranchExists = false
     /// This Mac's own app's thread only (`RemoteRequest.startThread`): its name, the pi session it
     /// resumes, its id, an existing checkout of `worktreeBranch`, and a folder of its own.
     public var name: String?
@@ -25,6 +27,8 @@ public struct RemoteCreateAgentRequest: Sendable {
     /// A thread Fleet started for another Mac's work: where it came from, and the folder of the checkout it works in.
     public var dispatchedFrom: DispatchedFrom?
     public var subdirectory: String?
+    /// A thread another thread on this Mac started (`agent_spawn`).
+    public var startedBy: StartedBy?
     /// A thread another Mac moved here (`FleetMove.swift`): with `agentID`, `piSessionID` and `worktreePath` it is the same thread, its
     /// conversation installed and its pi resumed, never a new one.
     public var moved: Moved?
@@ -202,15 +206,18 @@ public enum AutomationOutcome: Hashable, Sendable {
 /// another thread, or spawn a new one. Forwarded to the GUI like pane
 /// requests — it owns agent lifecycle and pi input.
 public enum AgentPeerRequest: Hashable, Sendable {
-    case list(agentID: AgentID)
+    /// `details`: the detailed list (`agent_list` with `details`): newest first, at most `SessionServer.detailedListMax`, each text one short line.
+    case list(agentID: AgentID, details: Bool = false)
     case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
-    case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil)
+    /// `byPerson`: the turn it was called in is one a person started (`SessionServer.spawnByPerson`).
+    case spawn(agentID: AgentID, cwd: String, prompt: String, model: String? = nil, thinking: ThinkingLevel? = nil,
+               place: SpawnPlace? = nil, branch: String? = nil, byPerson: Bool = true)
     case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
     case move(agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
+        case .list(let agentID, _), .send(let agentID, _, _, _), .spawn(let agentID, _, _, _, _, _, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
             return agentID
         }
     }
@@ -220,7 +227,8 @@ public enum AgentPeerRequest: Hashable, Sendable {
 public enum AgentPeerOutcome: Hashable, Sendable {
     case ok
     case failed(code: String, message: String)
-    case agents([AgentPeerInfo])
+    /// `omitted`: older threads a detailed list left out.
+    case agents([AgentPeerInfo], omitted: Int = 0)
 
     public func withID(_ id: Int) -> ExtensionReply {
         switch self {
@@ -228,8 +236,8 @@ public enum AgentPeerOutcome: Hashable, Sendable {
             return .ok(id: id)
         case .failed(let code, let message):
             return .error(id: id, code: code, message: message)
-        case .agents(let agents):
-            return .agents(id: id, agents: agents)
+        case .agents(let agents, let omitted):
+            return .agents(id: id, agents: agents, omitted: omitted)
         }
     }
 }

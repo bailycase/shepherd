@@ -68,7 +68,7 @@ extension ShepherdViewModel {
     /// The rows ⌘1–9 reach, in the style on screen.
     var sidebarShortcutRows: [SidebarListRow] {
         sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
-            : sidebarLists.shortcutRows(collapsed: collapsedActivitySections)
+            : sidebarLists.shortcutRows(collapsed: collapsedActivitySections, openFolds: collapsedProjects)
     }
 
     // MARK: Disclosure

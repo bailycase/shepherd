@@ -198,6 +198,8 @@ struct ExtensionIdentityTests {
             .sendToAgent(id: 10, agentID: victim, targetAgentID: a.agent.id, text: "do it"),
             .spawnAgent(id: 11, agentID: victim, cwd: "/tmp", prompt: "do it"),
             .moveAgent(id: 118, agentID: victim, targetAgentID: a.agent.id, spaceID: a.agent.spaceID),
+            .renameAgent(id: 119, agentID: victim, targetAgentID: a.agent.id, name: "Forged peer name"),
+            .renameAgent(id: 120, agentID: victim, targetAgentID: nil, name: "Forged self name"),
             .coordinateAgent(id: 12, agentID: victim, targetAgentID: a.agent.id, request: AgentCoordinationRequest(operation: .steer, text: "stop")),
             .coordinateAgent(id: 13, agentID: victim, targetAgentID: a.agent.id, request: AgentCoordinationRequest(operation: .delete)),
             .designRead(id: 14, agentID: victim, designID: design, path: nil),
@@ -228,7 +230,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 52)
+        #expect(Set(try (quiet + requests).map(kind)).count == 53)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }
@@ -259,6 +261,71 @@ struct ExtensionIdentityTests {
             let frame = try await client.reply(timeout: .milliseconds(500))
             Issue.record("a children connection was registered: \(frame)")
         } catch {}
+    }
+
+    @Test func renamesRefuseNonThreadTargetsAndRestrictedSenders() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space(path: h.dir.path)
+        let reserved = Space(name: "Projects", path: h.dir.path, hidden: true, holdsProjects: true)
+        let caller = Fixture.agent(in: space)
+        var drawer = Fixture.agent(in: space, name: "Design")
+        var coordinator = Fixture.agent(in: reserved, name: "Coordinator")
+        var worker = Fixture.agent(in: space, name: "Project worker")
+        var unattended = Fixture.agent(in: space, name: "Automation run")
+        let design = Design(id: DesignID(), name: drawer.agent.name, agentID: drawer.agent.id, createdAt: 1_000)
+        drawer.agent.designID = design.id
+        coordinator.agent.coordinatorFor = ProjectID()
+        unattended.agent.automationOrigin = AutomationOrigin(automationID: AutomationID(), trigger: "Issue opened")
+        var workspace = Fixture.workspace([caller, drawer, coordinator, worker, unattended], space: space)
+        workspace.spaces.append(reserved)
+        workspace.designs = [design]
+        try await h.seed(workspace)
+        h.server.setProjectsEnabled(true)
+        let projectID = ProjectID()
+        _ = try await h.server.logicalProjects(.create(projectID: projectID, name: "Storefront", goal: "Assigned work", linkedSpaceIDs: [space.id]))
+        worker.agent.projectWorkerFor = projectID
+        try await h.server.updateAgent(worker.agent)
+
+        h.server.configureFleet(name: "Local Mac", advertises: false)
+        h.server.startFleet()
+        let remoteAgent = AgentID()
+        let dispatchID = try await h.server.enqueue {
+            let fleet = try #require(h.server.fleet)
+            let record = FleetDispatchRecord(parentHostID: fleet.hostID, parentHostName: "Local Mac", targetHostID: UUID(),
+                                             state: .running, title: "Remote thread", task: "Check the build", repoKey: "acme-web",
+                                             remoteAgentID: remoteAgent, createdAt: 1_000)
+            fleet.dispatch.outbound[record.id] = record
+            return AgentID(rawValue: record.id.uuidString)
+        }
+        let callerID = caller.agent.id
+        let cases: [(AgentID, AgentID?, String)] = [
+            (callerID, drawer.agent.id, "not_a_thread"), (drawer.agent.id, callerID, "not_a_thread"),
+            (callerID, coordinator.agent.id, "not_a_thread"), (coordinator.agent.id, nil, "project_scope"),
+            (worker.agent.id, callerID, "project_scope"), (unattended.agent.id, nil, "not_a_thread"),
+            (unattended.agent.id, callerID, "not_a_thread"),
+            (callerID, remoteAgent, "other_host"), (callerID, dispatchID, "other_host"),
+        ]
+        let client = try ExtensionClient(path: h.socketPath)
+        for (id, (sender, target, refusal)) in cases.enumerated() {
+            try client.send(.renameAgent(id: id, agentID: sender, targetAgentID: target, name: "Refuse this name"))
+            let reply = try await client.reply()
+            guard case .error(let replyID, let code, _) = reply else {
+                Issue.record("Expected rename refusal \(refusal), got \(reply)")
+                continue
+            }
+            #expect(replyID == id && code == refusal)
+        }
+        for (id, sender) in [worker.agent.id, coordinator.agent.id, unattended.agent.id].enumerated() {
+            try client.send(.fleetDispatchRename(id: id, agentID: sender, dispatchID: dispatchID.rawValue, name: "Refuse this name"))
+            let reply = try await client.reply()
+            guard case .error(let replyID, FleetDispatchCode.fleetScope, _) = reply else {
+                Issue.record("Expected fleet_scope for a dispatch rename from \(sender), got \(reply)")
+                continue
+            }
+            #expect(replyID == id)
+        }
+        #expect(h.server.state.agents.map(\.name) == workspace.agents.map(\.name))
     }
 
     /// The pi that was bound to an agent's pane before a restart (Retry) speaks for it no more, and

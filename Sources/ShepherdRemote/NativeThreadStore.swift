@@ -123,6 +123,9 @@ public struct NativeThreadSubmission: Identifiable, Equatable, Sendable {
 @MainActor
 @Observable
 public final class NativeThreadStore {
+    #if DEBUG
+    public static var scrollTraceParsed: ((NativeThreadStore, String) -> Void)?
+    #endif
     nonisolated private static let signposter = OSSignposter(subsystem: "com.shepherd.performance", category: "NativeThread")
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
     /// History from disk to show until pi answers (`preview(_:)`); nil when there is none.
@@ -134,7 +137,7 @@ public final class NativeThreadStore {
     public private(set) var messages: [NativeThreadMessage] = []
     public private(set) var olderCursor: String? { didSet { threadVersion &+= 1 } }
     public private(set) var loadingOlder = false { didSet { threadVersion &+= 1 } }
-    public private(set) var ready = false { didSet { bothVersions() } }
+    public private(set) var ready = false { didSet { if ready { startRestart = nil }; bothVersions() } }
     /// The agent's pi is starting (`native_starting`): not ready, and not an error. The thread
     /// polls quickly, a send waits for it (see `acceptsSend`), and a slow start is said in the
     /// composer (`awaitingPi`). A pi that has not started within `startingLimit` becomes a
@@ -162,8 +165,11 @@ public final class NativeThreadStore {
     /// The agent's pi stopped, before it served or on its own after (`NativeThreadSnapshot.startProblem`), and why: the
     /// host keeps the agent, and the composer says so with Retry. Not ready, not starting, and not an error; the thread keeps what it drew.
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
+    /// A phone's Retry of `startProblem` (`NativeStartRestart.perform`): progress and a refusal live here, not in a view, so they
+    /// outlive the banner and show over a transcript the thread already holds.
+    public private(set) var startRestart: NativeStartRestartState? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
-    public private(set) var loadError: String? { didSet { bothVersions() } }
+    public private(set) var loadError: String? { didSet { if loadError != nil, startRestart == .starting { startRestart = nil }; bothVersions() } }
     public private(set) var notice: String? { didSet { modelUnavailable = false; chromeVersion &+= 1 } }
     public private(set) var modelUnavailable = false { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
@@ -174,8 +180,8 @@ public final class NativeThreadStore {
     /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending").
     /// A host that holds the queue (`NativeQueue`) shows its own pending row under the same id,
     /// so an echo lasts only until the host's next snapshot. From an older host, an echo is
-    /// "queued" when it was sent as a follow-up while a turn ran, and leaves once pi persists a
-    /// user message with the same text, or when the session changes.
+    /// "queued" when it was sent as a follow-up while a turn ran, and leaves once pi persists the
+    /// message it stands for (found by position, never by its words: `landings`), or when the session changes.
     public private(set) var pending: [NativeThreadMessage] = []
     /// The host's queue as this client shows it: the last snapshot's, with this client's own
     /// changes applied at once until the host's next snapshot confirms them. Empty from a host
@@ -203,8 +209,32 @@ public final class NativeThreadStore {
     /// The word the draft starts with once a space ends it (`ComposerLeadingCommand`).
     public private(set) var draftLeadingCommand: String?
     public private(set) var submissions: [NativeThreadSubmission] = [] {
-        didSet { noteRecoveryChange(from: oldValue) }
+        didSet {
+            noteRecoveryChange(from: oldValue)
+            // A send joins the thread as "Sending…" while it waits, and leaves it when it settles.
+            let was = oldValue.filter { $0.state == .sending }.map(\.id)
+            let sending = submissions.filter { $0.state == .sending }.map(\.id)
+            if was != sending {
+                let kept = Set(sending)
+                outgoing = outgoing.filter { kept.contains($0.key) }
+                derive()
+            }
+        }
     }
+    /// The words of each send the store captured and the host has not answered, as the thread draws them
+    /// (`NativeThreadMessage.sendingStatus`), and whether it waits behind the reply still streaming.
+    @ObservationIgnored private var outgoing: [UUID: (message: NativeThreadMessage, queued: Bool)] = [:]
+    /// The capture anchor, user rows already seen (including live rows), and the send's place in line.
+    private struct Capture { var after: String?; var earlier: Set<String>; var live: Set<String>; var idle: Bool; var order: Int }
+    /// Once the host shows a delivered user row with an operation id, do not guess for this session.
+    @ObservationIgnored private var sawTaggedUser = false
+    @ObservationIgnored private var captured: [UUID: Capture] = [:]
+    @ObservationIgnored private var captureCount = 0
+    /// Sends whose message the history showed before the host answered them: their answer adds no echo.
+    @ObservationIgnored private var landedSends: Set<UUID> = []
+    /// The accepted send's turn was already in the thread as "Sending…" when the host took it (a send while a turn runs
+    /// waits in Up next or under the reply instead), so acceptance adds no turn for a reader to land on.
+    @ObservationIgnored public private(set) var lastSendShownEarly = false
     /// Told synchronously whenever the captured records' text changes (a capture, before its words
     /// leave the draft; an acceptance, a discard, a restore), so the app can keep them through a
     /// quit or crash (`NativeRecoveredSubmission`). Text only: never images or attachment payloads.
@@ -255,6 +285,10 @@ public final class NativeThreadStore {
     /// Bumped by `derive` when the rows' IDs or order change, never when only a row's content
     /// or live state does (a streamed chunk): views rebuild ID indexes only then. Not observed.
     @ObservationIgnored public private(set) var rowStructureRevision = 0
+    /// Bumped by `derive` when what a row that is not streaming holds (`NativeMountedCost.row`) changes: a large reply's parse landing, a
+    /// turn ending. Never for the streaming reply's growth, which changes with every chunk. Not observed; the eager tail looks again
+    /// when it moves (`ThreadEagerTail`).
+    @ObservationIgnored public private(set) var rowCostRevision = 0
     /// The streaming reply's row, set in the same `derive` as `rows`. Not observed.
     @ObservationIgnored public private(set) var liveRowID: String?
     /// The file an edit or write in flight touches, as the call names it (relative to the
@@ -382,6 +416,10 @@ public final class NativeThreadStore {
     /// after moves as usual (`CatchUpGate`). Not observed: it changes no pixel itself, so
     /// catching up costs no pass of its own.
     @ObservationIgnored public private(set) var catchUp: CatchUp?
+    /// The first pull since `run` started has ended without catching the thread up and none is on its way: it failed (`loadError`), pi is
+    /// held off (`offline`) or has not started within `startingLimit`. A pi that is merely starting does not set it: its snapshot usually
+    /// lands within seconds. Cleared with `catchUp`, and by the pull that lands. Not observed.
+    @ObservationIgnored public private(set) var catchUpFailed = false
     /// Bumped whenever what the thread's rows show changes (rows, the live "Thinking…", the
     /// notices, readiness), and what the composer and the toolbar show (`chromeVersion`). Not
     /// observed: views read them as they render.
@@ -395,7 +433,14 @@ public final class NativeThreadStore {
 
     /// The first pull since `run` started has landed.
     private func caughtUp() {
+        catchUpFailed = false
         if catchUp == nil { catchUp = CatchUp(thread: threadVersion, chrome: chromeVersion) }
+    }
+
+    /// A pull ended without landing (`catchUpFailed`). A failed page of older history reaches it too (`setLoadError`), harmless since
+    /// nothing asks for older pages before the first pull has landed.
+    private func catchUpMissed() {
+        if catchUp == nil { catchUpFailed = true }
     }
 
     /// How long `starting` may last before it is reported as an error. Polling continues, so
@@ -420,7 +465,10 @@ public final class NativeThreadStore {
     }
 
     @ObservationIgnored private var request: Request? {
-        didSet { publishLive() }
+        didSet {
+            isLive = request != nil
+            publishLive()
+        }
     }
     /// Told when the thread starts or stops wanting revisions (`wantsRevisions`): its poll loop starts or ends,
     /// or rests (`rest`), so the host pushes revisions only for threads on screen that can be seen.
@@ -431,7 +479,7 @@ public final class NativeThreadStore {
     /// (`DesignViewRecord`), sent with it where the host takes one (`designContext`).
     @ObservationIgnored public var designContext: (() -> DesignViewRecord?)?
     /// The poll loop runs: the thread is on screen. A resting loop (`rest`) still runs.
-    public var isLive: Bool { request != nil }
+    public private(set) var isLive = false
     /// The thread is on screen and its loop pulls: it wants the host's pushed revisions. False once the loop ends,
     /// and while it rests.
     public var wantsRevisions: Bool { request != nil && !resting }
@@ -459,7 +507,8 @@ public final class NativeThreadStore {
     /// Sends waiting for pi to start: resumed with true once the thread is ready, false when it
     /// stops or fails first. Nothing has been dispatched for them yet.
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
-    @ObservationIgnored private var settleTask: Task<Void, Never>?
+    @ObservationIgnored var settlePause: Pause = { try await Task.sleep(for: $0) }
+    @ObservationIgnored private(set) var settleTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
     @ObservationIgnored private var connection: AnyHashable?
     /// Which view's loop is running (`run(owner:)`), nil for a caller that names none.
@@ -477,6 +526,8 @@ public final class NativeThreadStore {
     @ObservationIgnored private var aliases: [String: String] = [:]
     /// Snapshot requests started so far. A change of this client's (a queue edit, an echo)
     /// stands until a snapshot requested after the host accepted it arrives.
+    // Only the picked control leads the host. Capabilities and the session snapshot stay authoritative.
+    @ObservationIgnored private var settingPick: (id: UUID, action: NativeThreadRequest, acceptedAfter: Int?)?
     @ObservationIgnored private var pulls = 0
     @ObservationIgnored private var overlays: [QueueOverlay] = []
     /// Queued messages this client holds (an editor open on them). A thread off screen cannot
@@ -484,6 +535,8 @@ public final class NativeThreadStore {
     @ObservationIgnored private var holding: Set<UUID> = []
     /// Echo id → the pull count when its send was accepted (hosts with a queue).
     @ObservationIgnored private var echoAccepted: [String: Int] = [:]
+    /// Delivered rows a settled send took (by position), so a later send never takes the same one.
+    @ObservationIgnored private var claimed: [String: UUID] = [:]
     /// Images this client queued, by queued message id: the host keeps only their names.
     @ObservationIgnored private var sentImages: [UUID: [NativeImage]] = [:]
     /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
@@ -585,8 +638,8 @@ public final class NativeThreadStore {
     }
     /// Test gate for deterministic coverage of a slow parser while snapshots keep arriving.
     @ObservationIgnored var beforeProseParse: (@Sendable () async -> Void)?
-    /// A non-cooperative synchronous parser gate used to verify actual worker reservations.
-    @ObservationIgnored var duringProseParse: (@Sendable () -> Void)?
+    /// An async parser gate that holds a worker reservation until it returns, even after cancellation.
+    @ObservationIgnored var duringProseParse: (@Sendable () async -> Void)?
     /// Parses handed off main (tests).
     @ObservationIgnored private(set) var offMainParses = 0
 
@@ -617,6 +670,9 @@ public final class NativeThreadStore {
             aliases = [:]
             lastPromptAt = nil
             echoAccepted = [:]
+            claimed = [:]
+            captured = [:]
+            sawTaggedUser = false
             overlays = []
             holding = []
             sentImages = [:]
@@ -625,32 +681,93 @@ public final class NativeThreadStore {
         // Everything this client changed before the host answered the pull that brought this
         // snapshot is in it.
         overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
-        guard !pending.isEmpty else { return }
-        if value.queue != nil {
-            // The host shows its own row for the send (same id), or has it in its queue.
-            let settled = echoAccepted.filter { $0.value < pull }.map(\.key)
-            guard !settled.isEmpty else { return }
-            pending.removeAll { settled.contains($0.entryID) }
-            for id in settled { echoAccepted[id] = nil }
-            return
+        guard !pending.isEmpty, value.queue != nil else { return }
+        // The host shows its own row for the send (same id), or has it in its queue. A host without a queue does neither: its
+        // echo leaves with the message it stands for (`settleLandedSends`), found by position, never by words.
+        let settled = echoAccepted.filter { $0.value < pull }.map(\.key)
+        guard !settled.isEmpty else { return }
+        pending.removeAll { settled.contains($0.entryID) }
+        for id in settled { echoAccepted[id] = nil }
+    }
+
+    private static func tagsSend(_ row: NativeThreadMessage) -> Bool {
+        row.role == "user" && row.operationID != nil && !row.entryID.hasPrefix("pending:")
+    }
+
+    /// Once a tagged user row has been seen (`sawTaggedUser`), only a row with a send's operation id lands that send, so an
+    /// untagged row never hides a copy. Before that, by position: each delivered user row after `Capture.after` (less
+    /// `Capture.live` turns that vanished) replaces one copy, oldest send first, `taken` once. Failing that, an idle capture
+    /// on a stopped snapshot is stood in for by an assistant reply that is the first user or assistant row after the anchor
+    /// (later rows may follow). `claimed` keeps a row or reply from a second send. Only a tag settles a send.
+    private func landings() -> [UUID: (named: Bool, row: NativeThreadMessage)] {
+        let live = (snapshot?.provisional ?? []).filter { messageIndex[$0.entryID] == nil }
+        var found: [UUID: (named: Bool, row: NativeThreadMessage)] = [:]
+        if sawTaggedUser {
+            for row in messages + live where Self.tagsSend(row) {
+                if let id = row.operationID, captured[id] != nil, found[id] == nil { found[id] = (true, row) }
+            }
+            return found
         }
-        let persisted = (messages + value.messages + value.provisional).filter { $0.role == "user" }
-        let texts = Set(persisted.map(Self.userText))
-        let landed = pending.filter { texts.contains(Self.userText($0)) }
-        guard !landed.isEmpty else { return }
-        for echo in landed {
-            let text = Self.userText(echo)
-            // The newest saved message with the echo's text is the one it became.
-            if let saved = persisted.last(where: { Self.userText($0) == text && aliases[$0.entryID] == nil }) {
-                aliases[saved.entryID] = echo.entryID
+        let liveIDs = Set(live.map(\.entryID))
+        var taken: Set<String> = []
+        for (id, capture) in captured.sorted(by: { $0.value.order < $1.value.order }) {
+            var tail = ArraySlice(messages)
+            if let after = capture.after {
+                guard let index = messageIndex[after] else { continue } // A renumbered page cannot establish what is new.
+                tail = messages[(index + 1)...]
+            }
+            // Only skip an earlier live turn if its id disappeared. Stable live ids are already excluded by `earlier`.
+            let skip = capture.live.count(where: { messageIndex[$0] == nil && !liveIDs.contains($0) })
+            let delivered = (tail + live).filter {
+                $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") && !capture.earlier.contains($0.entryID)
+            }
+            if let row = delivered.dropFirst(skip).first(where: { !taken.contains($0.entryID) && (claimed[$0.entryID] ?? id) == id }) {
+                found[id] = (false, row)
+                taken.insert(row.entryID)
+            } else if capture.idle, snapshot?.running == false,
+                      let reply = tail.first(where: { $0.role == "user" || $0.role == "assistant" }), reply.role == "assistant",
+                      !taken.contains(reply.entryID), (claimed[reply.entryID] ?? id) == id {
+                // The reply cannot be evidence for a second send if it belongs to a user row already taken at capture.
+                let previous = messages[..<tail.startIndex].last { $0.role == "user" || $0.role == "assistant" }
+                if let previous, previous.role == "user", claimed[previous.entryID] != nil { continue }
+                found[id] = (false, reply)
+                taken.insert(reply.entryID)
+            }
+        }
+        return found
+    }
+
+    /// A send whose message the history already holds replaces its copy, and no copy outlives a settled turn. A message that
+    /// names the send also frees it: its record goes and its composer is free. A guess only hides the copy (and the echo, if the
+    /// host took it); the record stays until the host answers, so a refusal still restores the draft.
+    private func settleLandedSends() {
+        captured = captured.filter { id, _ in inFlight.contains(id) || pending.contains { $0.entryID == "pending:\(id.uuidString)" } }
+        let found = captured.isEmpty ? [:] : landings()
+        // An echo goes when its message is in the history. The delivered row keeps the turn's identity, and no other send takes it.
+        for echo in pending {
+            guard let id = UUID(uuidString: String(echo.entryID.dropFirst("pending:".count))), let landing = found[id] else { continue }
+            pending.removeAll { $0.entryID == echo.entryID }
+            echoAccepted[echo.entryID] = nil
+            captured[id] = nil
+            let row = landing.row
+            claimed[row.entryID] = id
+            // An echo that was drawn hands its turn identity to the user row that replaces it, not to a reply.
+            if row.role == "user", displayedMessages.contains(where: { $0.entryID == echo.entryID }) {
+                aliases[row.entryID] = echo.entryID
                 presentationDirty = 0
             }
         }
-        pending.removeAll { texts.contains(Self.userText($0)) }
-    }
-
-    private static func userText(_ message: NativeThreadMessage) -> String {
-        message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !found.isEmpty else { return }
+        var freed = false
+        for (id, landing) in found {
+            guard landing.named else { outgoing[id] = nil; continue }
+            if let index = submissions.firstIndex(where: { $0.id == id && $0.state == .sending }) {
+                _ = removeSubmission(at: index)
+                landedSends.insert(id)
+                if inFlight.remove(id) != nil { freed = true }
+            }
+        }
+        if freed { busy = !startWaiters.isEmpty || !inFlight.isEmpty }
     }
 
     /// Live subagents keep the fast cadence too: their cards tick counters and activity. A
@@ -711,14 +828,15 @@ public final class NativeThreadStore {
         let provisional = (snapshot?.provisional ?? []).filter {
             messageIndex[$0.entryID] == nil && ($0.toolCallID == nil || toolCounts[$0.toolCallID!] == nil)
         }
+        let sending = sendingTail()
         let tail: [NativeThreadMessage]
         if snapshot?.queue != nil {
             // The host orders the run (user messages where pi read them) and shows its own
             // pending row for a send; an echo stands in only until the host's next snapshot.
             let live = Set(provisional.map(\.entryID))
-            tail = provisional + pending.filter { !live.contains($0.entryID) }
+            tail = provisional + pending.filter { !live.contains($0.entryID) } + sending.now + sending.queued
         } else {
-            tail = pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
+            tail = pending.filter { $0.status != "queued" } + sending.now + provisional + pending.filter { $0.status == "queued" } + sending.queued
         }
         tailPayloadBytes = tail.reduce(0) { $0 + Self.payloadBytes($1) }
         var changed = min(historyDirty, displayedHistoryCount)
@@ -746,7 +864,7 @@ public final class NativeThreadStore {
         }
         let displayed = displayedMessages
         // A steer lands inside the running turn; it does not restart its clock.
-        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.origin != .steered }?.timestamp
+        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.status != NativeThreadMessage.sendingStatus && $0.origin != .steered }?.timestamp
         // Keep the current turn boundary when its opening message falls outside a history page.
         if let promptAt, promptAt > (lastPromptAt ?? -.infinity) { lastPromptAt = promptAt }
         let runs = snapshot?.subagents ?? []
@@ -810,7 +928,7 @@ public final class NativeThreadStore {
         // The streaming reply is the last one, with only queued follow-ups below it.
         let lastReply = turns.lastIndex { !$0.isUser }
         let liveReply = running ? lastReply.flatMap { index in
-            turns[(index + 1)...].allSatisfy { $0.messages.allSatisfy { $0.status == "queued" } } ? index : nil
+            turns[(index + 1)...].allSatisfy { $0.messages.allSatisfy { $0.status == "queued" || $0.status == NativeThreadMessage.sendingStatus } } ? index : nil
         } : nil
         var rows: [NativeThreadRow] = []
         rows.reserveCapacity(turns.count - rowStart)
@@ -901,10 +1019,21 @@ public final class NativeThreadStore {
         Self.foldRepeatedErrors(&rows)
         // Only the rebuilt suffix can change IDs: a stream touches the tail, never the whole thread.
         if !self.rows.dropFirst(rowStart).lazy.map(\.id).elementsEqual(rows.lazy.map(\.id)) { rowStructureRevision &+= 1 }
+        // The rows were replaced from the first one (history that came back, another session): what the view last drew counts rows
+        // that are gone, until it draws these.
+        if rowStart == 0, drawnEagerRows != nil, self.rows.first?.id != rows.first?.id { drawnEagerRows = nil }
         liveRowID = liveReply.map { turns[$0].id }
         if self.rows.count - rowStart != rows.count || self.rows.dropFirst(rowStart) != rows[...] {
             self.rows.replaceSubrange(rowStart..., with: rows)
         }
+        var costChanged = rowCosts.count - rowStart != costs.count
+        if !costChanged {
+            for (offset, cost) in costs.enumerated() where !rows[offset].live && rowCosts[rowStart + offset] != cost {
+                costChanged = true
+                break
+            }
+        }
+        if costChanged { rowCostRevision &+= 1 }
         rowCosts.replaceSubrange(rowStart..., with: costs)
         rowHeights.replaceSubrange(rowStart..., with: heights)
         assert(rowCosts.count == self.rows.count, "rowCosts runs parallel to rows")
@@ -921,6 +1050,33 @@ public final class NativeThreadStore {
             listRows.replaceSubrange(rowStart..., with: list)
         }
         deriveChrome()
+    }
+
+    /// The sends captured and not yet answered, as user messages for the thread's tail: under the id the accepted echo
+    /// takes (`pending:<operation>`), so acceptance and the host's own row for it are the same turn. Left out once the
+    /// host shows the message itself (its pending row or pi's saved message names the operation), so it is never drawn twice.
+    private func sendingTail() -> (now: [NativeThreadMessage], queued: [NativeThreadMessage]) {
+        guard !outgoing.isEmpty else { return ([], []) }
+        let recent = messages.suffix(64)
+        let hosted = Set((snapshot?.provisional ?? []).compactMap(\.operationID) + recent.compactMap(\.operationID))
+        var now: [NativeThreadMessage] = [], queued: [NativeThreadMessage] = []
+        for submission in submissions where submission.state == .sending {
+            guard let item = outgoing[submission.id], !hosted.contains(submission.id),
+                  messageIndex[item.message.entryID] == nil else { continue }
+            if item.queued { queued.append(item.message) } else { now.append(item.message) }
+        }
+        return (now, queued)
+    }
+
+    /// The user message a send stands for before the host reads it: "sending" until it is accepted, then "pending"
+    /// (or "queued" behind a turn still running).
+    private func echo(_ operation: UUID, text: String, status: String, images: Int, steered: Bool,
+                      elements: [NativeAttachedElement]) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: "pending:\(operation.uuidString)", role: "user",
+                            blocks: [NativeThreadBlock(kind: .text, text: text)]
+                                + (0..<images).map { _ in NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]") },
+                            status: status, timestamp: Date().timeIntervalSince1970 * 1000, origin: steered ? .steered : nil,
+                            browserElements: elements.isEmpty ? nil : elements.map(\.element.withoutHTML))
     }
 
     /// Compare only the incoming page, retaining the loaded prefix and its ID indexes. Full
@@ -954,6 +1110,7 @@ public final class NativeThreadStore {
         for index in changed..<messages.count {
             let message = messages[index]
             messageIndex[message.entryID] = index
+            if !sawTaggedUser, Self.tagsSend(message) { sawTaggedUser = true }
             if let id = message.toolCallID {
                 toolCounts[id, default: 0] += 1
                 toolPositions[id, default: []].append(index)
@@ -1054,11 +1211,18 @@ public final class NativeThreadStore {
         if widgets != self.widgets { self.widgets = widgets }
         let commands = value?.commands ?? []
         if commands != self.commands { self.commands = commands }
-        if value?.model != model { model = value?.model }
-        if value?.thinking != thinking { thinking = value?.thinking }
+        var shownModel = value?.model, shownThinking = value?.thinking
+        var tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
+        switch settingPick?.action {
+        case .setModel(_, _, _, let pick): shownModel = pick
+        case .setThinking(_, _, _, let pick): shownThinking = pick
+        case .setServiceTier(_, _, _, let pick): tier = ServiceTier(rawValue: pick) ?? tier
+        default: break
+        }
+        if shownModel != model { model = shownModel }
+        if shownThinking != thinking { thinking = shownThinking }
         let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
         if levels != thinkingLevels { thinkingLevels = levels }
-        let tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
         if tier != serviceTier { serviceTier = tier }
         let tiers = (value?.serviceTiers ?? []).compactMap(ServiceTier.init(rawValue:))
         if tiers != serviceTiers { serviceTiers = tiers }
@@ -1277,8 +1441,8 @@ public final class NativeThreadStore {
                 return
             }
             let interval = Self.signposter.beginInterval("Thread Markdown parse", id: Self.signposter.makeSignpostID())
+            await duringParse?()
             let onMain = Thread.isMainThread
-            duringParse?()
             let value = parse(text)
             Self.signposter.endInterval("Thread Markdown parse", interval)
             await MainActor.run {
@@ -1291,6 +1455,9 @@ public final class NativeThreadStore {
                 // cancelled, is dropped.
                 if self.proseParsing[key] == token || (self.proseRequests[key] != nil && self.proseEpoch == epoch && holdsBase()) {
                     if self.proseParsing[key] == token { self.invalidateParse(key) }
+                    #if DEBUG
+                    Self.scrollTraceParsed?(self, key.turn)
+                    #endif
                     land(value)
                     self.presentationCache[key.turn] = nil
                     self.presentationDirty = self.projection.start(for: key.turn)
@@ -1327,6 +1494,7 @@ public final class NativeThreadStore {
 
     private func resetPresentationSession(_ value: NativeThreadSnapshot) {
         guard snapshot?.piSessionID != value.piSessionID || snapshot?.generation != value.generation else { return }
+        settingPick = nil
         cancelProse()
         presentationCache = [:]
         thinkingCache = [:]
@@ -1420,6 +1588,7 @@ public final class NativeThreadStore {
         resetPresentationSession(value)
         if value != snapshot { snapshot = value }
         replaceHistory(value.messages)
+        keepsOnlyTail = false
         if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
         if !previewing { previewing = true }
         derive()
@@ -1495,6 +1664,7 @@ public final class NativeThreadStore {
         guard resting != was else { return }
         if !resting {
             catchUp = nil
+            catchUpFailed = false
             pollWake.signal()
             restWake.signal()
         }
@@ -1515,6 +1685,9 @@ public final class NativeThreadStore {
             }
         }
         resumeStartWaiters(false)
+        // A Retry's progress needs the host; detached, the thread can't say it is starting.
+        if startRestart == .starting || startRestart == .asking { startRestart = nil }
+        if settingPick != nil { settingPick = nil; deriveChrome() }
         epoch = UUID()
         // A loop resting ends too.
         restWake.signal()
@@ -1524,6 +1697,7 @@ public final class NativeThreadStore {
         // Pieces still being asked for stop; the ones held stay for the next poll.
         images.cancelAll()
         catchUp = nil
+        catchUpFailed = false
         // Visibility does not restart pi or its readiness deadline.
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
@@ -1567,7 +1741,9 @@ public final class NativeThreadStore {
     public func release() {
         guard canReleaseHistory else { return }
         stop()
+        keepsOnlyTail = false
         if transcriptDrawn != nil { transcriptDrawn = nil }
+        drawnEagerRows = nil
         images.releaseHeld()
         if snapshot != nil { snapshot = nil }
         replaceHistory([])
@@ -1577,6 +1753,9 @@ public final class NativeThreadStore {
         aliases = [:]
         lastPromptAt = nil
         echoAccepted = [:]
+        claimed = [:]
+        captured = [:]
+        sawTaggedUser = false
         overlays = []
         presentationCache = [:]
         callCache = [:]
@@ -1592,6 +1771,102 @@ public final class NativeThreadStore {
         contextInputs = (nil, nil, false, true)
         deriveQueue()
         derive()
+    }
+
+    /// The messages a release to the tail keeps at least: the host's newest page (`RPCThreadState.pageSize`), so that the page the
+    /// first pull brings back starts inside what the thread holds, and lands over its end instead of replacing all of it.
+    nonisolated public static let releasedTailMessages = 50
+
+    /// The thread let go of its older history and holds only the end of it (`releaseToTail`), until a pull brings the newest page or
+    /// older history is paged back in. Read by the stores that bound what threads hold; not observed.
+    @ObservationIgnored public private(set) var keepsOnlyTail = false
+
+    /// The thread is far from the screen: lets go of the older history, of what was derived from it and of the images held, and
+    /// keeps the last `rows` rows (and the host's newest page of messages, whichever is more) with what they were derived from, so
+    /// that showing it again draws the last of them in its first frame, with nothing to pull, parse or derive, instead of nothing until
+    /// the pull has come back. The tail starts where a turn does, is cut further while it holds more than `maxBytes` of
+    /// `retainedHistoryBytes` (never past the last question and its answer), and pages older history in from where it starts
+    /// (`olderCursor`). It stays as a thread that is not on screen is, ready and with its snapshot, so the pull that follows catches it up
+    /// (`catchUp`): what arrived meanwhile lands over the end of the tail without moving the reader, and rows keep their identities. What
+    /// it was doing when it left (`settledRunning`) is not shown as live. Its hidden view lets its rows go down to the last screen
+    /// (`releaseTranscript`), as a release of the views alone does. Nothing happens while the thread is on screen or owns unsettled or
+    /// recoverable user work (`canReleaseHistory`), and `release` lets the tail go too.
+    public func releaseToTail(rows: Int, maxBytes: Int) {
+        guard canReleaseHistory else { return }
+        images.releaseHeld()
+        settleTask?.cancel()
+        settleTask = nil
+        if settledRunning { settledRunning = false }
+        cutHistory(to: tailStart(rows: rows, maxBytes: maxBytes))
+        // Set when nothing was cut as well (a thread that held no more than a tail): it leaves the threads that hold their history for
+        // the tail tier, bounded with the other tails, and it comes back as a tail does: the eager tail alone, the lazy stack after the
+        // pull. A thread of a few heavy replies is one, and that is the restore its first frame was measured with.
+        keepsOnlyTail = true
+        // Still more than it may hold: its last question and answer alone.
+        if retainedHistoryBytes > maxBytes, let last = lastHeldQuestion, last > 0 {
+            cutHistory(to: projection.start(for: turns[last].id))
+        }
+        releaseTranscript(bytes: .max, keepingLastScreen: true)
+    }
+
+    /// The last turn that opens with a question the thread holds (not one of the rows its snapshot's live tail adds).
+    private var lastHeldQuestion: Int? {
+        turns.lastIndex { $0.isUser && projection.start(for: $0.id) < messages.count }
+    }
+
+    /// Where in `messages` the tail of the last `rows` rows starts: at a question, at least `releasedTailMessages` back, not past the last
+    /// question, and no further back than `maxBytes` reaches by a cost estimate of what a message holds once derived (the cache and the
+    /// rows built from it take about as much as the text counted in `retainedHistoryBytes`).
+    private func tailStart(rows: Int, maxBytes: Int) -> Int {
+        let pageStart = max(0, messages.count - Self.releasedTailMessages)
+        // No question: one agent turn (`nativeTurns`), the last answer, which the rule keeps whatever it holds. Only what older pages added
+        // above the host's newest one (which the first pull lands over) is cut, and only past the cap.
+        guard let lastQuestion = lastHeldQuestion else { return retainedHistoryBytes > maxBytes ? pageStart : 0 }
+        var first = min(max(0, turns.count - rows), lastQuestion)
+        while first > 0, projection.start(for: turns[first].id) > pageStart { first -= 1 }
+        while first > 0, !turns[first].isUser { first -= 1 }
+        var start = projection.start(for: turns[first].id)
+        var bytes = messageCosts[start...].reduce(0, +) * 8
+        while first < lastQuestion, bytes > maxBytes {
+            var next = first + 1
+            while next < lastQuestion, !turns[next].isUser { next += 1 }
+            let nextStart = projection.start(for: turns[next].id)
+            bytes -= messageCosts[start..<nextStart].reduce(0, +) * 8
+            first = next
+            start = nextStart
+        }
+        return start
+    }
+
+    /// Lets go of the messages before `start` and of what was derived from them, and derives the rows that stay again.
+    private func cutHistory(to start: Int) {
+        if start > 0, start < messages.count {
+            let tail = Array(messages[start...])
+            replaceHistory(tail)
+            olderCursor = tail[0].entryID
+            aliases = aliases.filter { messageIndex[$0.key] != nil }
+        }
+        if var value = snapshot {
+            value.messages = value.messages.filter { messageIndex[$0.entryID] != nil }
+            value.olderCursor = olderCursor
+            if value != snapshot { snapshot = value }
+        }
+        // The caches of the turns that go are dropped by the derive that removes them (`presentationCache`, parses in flight); the
+        // parsed text and calls are kept for the turns that stay.
+        derive()
+        let kept = Set(turns.map(\.id)), held = Set(displayedMessages.map(\.entryID))
+        for key in proseCache.keys where !kept.contains(key.turn) {
+            proseCache[key] = nil
+            cacheBytes -= proseCosts.removeValue(forKey: key) ?? 0
+        }
+        for key in thinkingCache.keys where !kept.contains(key.turn) {
+            thinkingCache[key] = nil
+            cacheBytes -= thinkingCosts.removeValue(forKey: key) ?? 0
+        }
+        for id in callCache.keys where !held.contains(id) {
+            callCache[id] = nil
+            cacheBytes -= callCosts.removeValue(forKey: id) ?? 0
+        }
     }
 
     /// Reloadable history can be evicted only when it owns no unsettled user operation.
@@ -1719,6 +1994,49 @@ public final class NativeThreadStore {
         return taken
     }
 
+    /// How many rows at the end of the thread its view lays out for real (its eager tail) while it is at rest: the last rows
+    /// whose views add up to `costCap` (`NativeMountedCost`), at most `maxRows`, and never fewer than the rows that cover `height`
+    /// points by the low estimate of `NativeRowHeight` (a viewport or two, so that no row the reader can reach by scrolling a little is
+    /// a guess the lazy stack estimates) and the streaming reply, which is always reached while it is within `maxRows`. The last row
+    /// is always one of them, however much it costs (a thread draws something). Rows are costed where `mountedCost` costs them,
+    /// and `hidden` names the ones the view leaves out, which do not count. Cheap rows are all `maxRows`, as ever.
+    public func eagerTailRows(maxRows: Int, costCap: Int, coveringHeight height: Int, skipping hidden: (NativeThreadRow) -> Bool = { _ in false }) -> Int {
+        // The list the view draws, not `rows`: the view reads this in its body, which a streamed chunk must not redraw (it changes `rows`).
+        let list = listRows
+        let count = min(list.count, rowCosts.count, rowHeights.count)
+        var cost = 0, covered = 0, taken = 0, index = count, reachedLive = liveRowID == nil
+        while taken < maxRows, index > 0 {
+            index -= 1
+            let row = list[index]
+            if hidden(row) { continue }
+            let next = rowCosts[index]
+            if taken > 0, reachedLive, covered >= height, cost + next > costCap { break }
+            cost += next
+            covered += rowHeights[index]
+            taken += 1
+            if row.live { reachedLive = true }
+        }
+        return taken
+    }
+
+    /// Whether a reply among the last `count` rows of the list the view draws has a parse out that has not landed: a large reply is parsed
+    /// off the main thread (`offMainProseBytes`), and its row draws as nothing, a few points tall, until it does. A reply that has no
+    /// blocks and no parse out (its text is whitespace or a comment) is not awaited: nothing is coming.
+    public func tailAwaitsParse(lastRows count: Int) -> Bool {
+        guard !proseParsing.isEmpty else { return false }
+        return listRows.suffix(count).contains { row in
+            row.presentation?.items.contains { item in
+                guard case .prose(let id, _, let prose) = item, prose.isEmpty else { return false }
+                return proseParsing[ProseKey(turn: row.id, item: id)] != nil
+            } == true
+        }
+    }
+
+    /// How many rows at the end of the thread its view lays out for real, as it last drew them (`ThreadEagerTail`); nil until it has.
+    /// What `mountedCost` and a pass that lets rows go (`NativeThreadStores`) read, so that they count the rows the view builds and
+    /// not the ones the rule would pick now. Written by the view, never observed.
+    @ObservationIgnored public var drawnEagerRows: Int?
+
     /// An estimate of what the views of this thread hold while it is mounted, in bytes (`NativeMountedCost`): the last
     /// `eagerRows` rows the thread's view draws, which it lays out for real whether or not it is on screen, and for the
     /// last reply the chunk its lazy stack builds first beyond its eager tail (a giant reply's). `hidden` names the rows
@@ -1763,8 +2081,8 @@ public final class NativeThreadStore {
         } else if catchingUp {
             if settledRunning { settledRunning = false }
         } else if settledRunning {
-            settleTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(400))
+            settleTask = Task { [weak self, settlePause] in
+                try? await settlePause(.milliseconds(400))
                 guard !Task.isCancelled, let self, self.snapshot?.running != true else { return }
                 self.settledRunning = false
                 self.derive()
@@ -1822,6 +2140,8 @@ public final class NativeThreadStore {
                 ready = false
                 if loadError != nil { loadError = nil }
                 if value.dialogs.contains(where: { $0.unavailable == nil }) {
+                    // pi waits on the person: the snapshot that catches the thread up is not coming on its own.
+                    catchUpMissed()
                     endStarting()
                     starting = true
                 } else {
@@ -1842,6 +2162,7 @@ public final class NativeThreadStore {
                     Self.signposter.endInterval("Thread history join await", joiningWait)
                     guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
                 }
+                if let accepted = settingPick?.acceptedAfter, accepted < pull { settingPick = nil }
                 settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
@@ -1854,7 +2175,12 @@ public final class NativeThreadStore {
                     historyEpoch = UUID()
                     if loadingOlder { loadingOlder = false }
                 }
+                keepsOnlyTail = false
                 if value != snapshot { snapshot = value }
+                if !sawTaggedUser {
+                    sawTaggedUser = value.provisional.contains(where: Self.tagsSend)
+                        || (!sameSession && messages.contains(where: Self.tagsSend))
+                }
                 images.configure(sessionID: value.piSessionID, fetch: request)
                 if previewing { previewing = false }
                 if !ready { ready = true }
@@ -1862,6 +2188,7 @@ public final class NativeThreadStore {
                 clearStartProblem()
                 if loadError != nil { loadError = nil }
                 deriveQueue()
+                settleLandedSends()
                 derive()
                 caughtUp()
                 if inFlight.isEmpty { resumeStartWaiters(true) }
@@ -1875,11 +2202,22 @@ public final class NativeThreadStore {
                     clearStartProblem()
                     // Nothing changed on the host: whatever this client changed before it asked
                     // is in the snapshot it already has, or was refused.
+                    if let accepted = settingPick?.acceptedAfter, accepted < pull { settingPick = nil; deriveChrome() }
                     let before = overlays.count
                     overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
                     if overlays.count != before { deriveQueue() }
+                    // The snapshot held is the host's current word, so the run state follows it: a release to the tail, or a
+                    // load error, left it as the thread was not (a host that is still mid-turn says nothing new for a while).
+                    // An idle snapshot with the end-of-run hold in flight keeps that hold: restarting it would stretch the
+                    // 400 ms with nothing new from the host.
+                    let was = settledRunning
+                    if snapshot?.running == true || !was || settleTask == nil {
+                        settleRunning(snapshot?.running == true, catchingUp: catchUp == nil)
+                    }
                     if loadError != nil {
                         loadError = nil
+                        derive()
+                    } else if settledRunning != was {
                         derive()
                     }
                     caughtUp()
@@ -1931,6 +2269,7 @@ public final class NativeThreadStore {
 
     /// Any failure but `native_starting`: the thread is not starting, it is in trouble.
     private func setLoadError(_ message: String) {
+        catchUpMissed()
         endStarting()
         clearStartProblem()
         resumeStartWaiters(false)
@@ -1951,12 +2290,13 @@ public final class NativeThreadStore {
             derive()
         }
         // Held off on purpose: nothing is starting and nothing is timed, so no watchdog ever turns it into an error.
-        if offline { endStarting(); return }
+        if offline { catchUpMissed(); endStarting(); return }
         clearStartProblem()
         let now = ContinuousClock.now
         let since = startingSince ?? now
         startingSince = since
         guard now - since < startingLimit else {
+            catchUpMissed()
             if starting {
                 starting = false
                 deriveChrome()
@@ -2006,6 +2346,12 @@ public final class NativeThreadStore {
             derive()
         }
         resumeStartWaiters(false)
+        // pi stopped again after the host took a restart, or the problem is another one than the refusal was for.
+        switch startRestart {
+        case .starting?: startRestart = nil
+        case .failed? where startProblem != problem: startRestart = nil
+        default: break
+        }
         if startProblem != problem { startProblem = problem }
         caughtUp()
     }
@@ -2014,7 +2360,20 @@ public final class NativeThreadStore {
 
     private func clearStartProblem() {
         if startProblem != nil { startProblem = nil }
+        if case .failed? = startRestart { startRestart = nil }
     }
+
+    /// A phone's Retry: the host is being asked. The problem stays; the next snapshot says what became of it.
+    public func restartRequested() { startRestart = .asking }
+
+    /// The host took the restart; pi is starting.
+    public func restartAccepted() {
+        guard startRestart == .asking else { return }
+        startRestart = .starting
+    }
+
+    /// The host refused the restart or couldn't be reached.
+    public func restartRefused(_ why: String) { startRestart = .failed(why) }
 
     /// Retry: the host is starting the agent's pi again. The problem goes at once and the thread is
     /// starting, as the host will say on the next poll.
@@ -2097,6 +2456,7 @@ public final class NativeThreadStore {
             case .snapshot(let page) where page.piSessionID == current.piSessionID && page.generation == current.generation:
                 let ids = Set(messages.map(\.entryID))
                 replaceHistory(page.messages.filter { !ids.contains($0.entryID) } + messages)
+                keepsOnlyTail = false
                 olderCursor = page.olderCursor
                 derive()
             case .failure(let code, let message):
@@ -2123,7 +2483,7 @@ public final class NativeThreadStore {
     /// While pi works, `delivery` says whether the message waits in the queue (`followUp`) or
     /// is steered in; while pi is idle it goes at once either way.
     @discardableResult
-    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async -> Bool {
+    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery, onCapture: (() -> Void)? = nil) async -> Bool {
         guard hasDraft || (!images.isEmpty && supportedActions.contains("sendImages")), await readyToAct() else { return false }
         let typed = draft
         let files = attachedFiles
@@ -2150,7 +2510,7 @@ public final class NativeThreadStore {
                             designReferences: references.isEmpty ? nil : references.map(\.record),
                             browserElements: elements.isEmpty ? nil : elements.map(\.element)),
                       operation: operation, current: current, sentText: text, typed: typed, files: files, references: references,
-                      elements: elements, delivery: delivery, images: attached ?? [])
+                      elements: elements, delivery: delivery, images: attached ?? [], onCapture: onCapture)
     }
 
     /// Whether the draft has something to send: words, attached files, design references, or
@@ -2599,7 +2959,8 @@ public final class NativeThreadStore {
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
                          typed: String? = nil, files: [NativeAttachedFile] = [], references: [NativeAttachedReference] = [],
                          elements: [NativeAttachedElement] = [],
-                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async -> Bool {
+                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = [],
+                         onCapture: (() -> Void)? = nil) async -> Bool {
         guard let request else {
             // A thread shown once and hidden since keeps what it showed (`ready`) but has no host to ask.
             notice = "This thread isn't connected right now, so nothing was done. Open it and try again."
@@ -2637,16 +2998,39 @@ public final class NativeThreadStore {
         busy = true
         notice = nil
         inFlight.insert(operation)
+        switch action {
+        case .setModel, .setThinking, .setServiceTier:
+            settingPick = (operation, action, nil)
+            deriveChrome()
+        default: break
+        }
+        if let sentText {
+            // Every send that can add an echo is captured, composer or not: its copy is read against what the thread held now.
+            let live = (snapshot?.provisional ?? []).filter { $0.role == "user" && messageIndex[$0.entryID] == nil }
+            captureCount += 1
+            captured[operation] = Capture(after: messages.last?.entryID,
+                                          earlier: Set(messages.filter { $0.role == "user" }.map(\.entryID) + live.map(\.entryID)),
+                                          live: Set(live.map(\.entryID)), idle: !current.running, order: captureCount)
+            if submission != nil {
+                // While a turn runs it waits below the reply streaming (whatever its delivery: the host holds it in Up next, or an
+                // older host's echo follows the turn), so the reply's own rows are never moved by it.
+                outgoing[operation] = (echo(operation, text: sentText, status: NativeThreadMessage.sendingStatus, images: images.count,
+                                            steered: false, elements: elements), current.running)
+            }
+        }
         if let submission {
             let interval = Self.signposter.beginInterval("Thread submit capture")
             submissions.append(submission)
             retainedSubmissionBytes += submissionBytes
             clearCapturedDraft(submission.typed, files: files, references: references, elements: elements)
+            onCapture?()
             Self.signposter.endInterval("Thread submit capture", interval)
         }
         defer {
             inFlight.remove(operation)
             reportedUnknown.remove(operation)
+            landedSends.remove(operation)
+            if !pending.contains(where: { $0.entryID == "pending:\(operation.uuidString)" }) { captured[operation] = nil }
             if epoch == run {
                 if ready && inFlight.isEmpty { resumeStartWaiters(true) }
                 busy = !startWaiters.isEmpty || !inFlight.isEmpty
@@ -2681,8 +3065,11 @@ public final class NativeThreadStore {
                 wasAccepted = true
                 if let sentText {
                     lastSendQueued = queued
+                    lastSendShownEarly = submission != nil && !current.running
                     sentCount += 1
-                    if hostQueues && current.running {
+                    if landedSends.contains(operation) {
+                        // The history showed it before the host answered: there is nothing to stand in for.
+                    } else if hostQueues && current.running {
                         // The host queued it (or steered it in): it shows in the queue, not the thread.
                         let item = NativeQueuedMessage(id: operation, text: sentText,
                                                        images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
@@ -2701,13 +3088,11 @@ public final class NativeThreadStore {
                         deriveQueue()
                     } else {
                         let id = "pending:\(operation.uuidString)"
-                        pending.append(NativeThreadMessage(entryID: id, role: "user",
-                                                           blocks: [NativeThreadBlock(kind: .text, text: sentText)],
-                                                           status: queued ? "queued" : "pending",
-                                                           timestamp: Date().timeIntervalSince1970 * 1000,
-                                                           origin: current.running && delivery == .steer ? .steered : nil,
-                                                           browserElements: elements.isEmpty ? nil : elements.map(\.element.withoutHTML)))
+                        pending.append(echo(operation, text: sentText, status: queued ? "queued" : "pending", images: images.count,
+                                            steered: current.running && delivery == .steer, elements: elements))
                         if hostQueues { echoAccepted[id] = pulls }
+                        // The history may already hold it, and a host that answers "unchanged" sends nothing to settle it with.
+                        settleLandedSends()
                     }
                     derive()
                 }
@@ -2739,12 +3124,17 @@ public final class NativeThreadStore {
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
+        if settingPick?.id == operation {
+            if wasAccepted { settingPick?.acceptedAfter = pulls }
+            else { settingPick = nil; deriveChrome() }
+        }
         busy = !startWaiters.isEmpty || inFlight.contains { $0 != operation }
         // inFlight still gates new actions through reconciliation, without marking a known
         // acceptance unknown if visibility changes while its refresh is in flight.
         // Actions retain the ready-to-send contract. A stale-session refusal, startup answer
         // or actual connection loss still takes refresh's full bootstrap path.
         await refresh()
+        if settingPick?.id == operation, !ready || Task.isCancelled { settingPick = nil; deriveChrome() }
         return wasAccepted
     }
 

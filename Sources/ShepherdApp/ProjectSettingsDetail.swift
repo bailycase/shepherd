@@ -8,160 +8,196 @@ struct ProjectSettingsDetail: View {
     let project: ProjectsRow
     @Bindable var cookies: ProjectCookiesModel
     let cookieScope: ProjectCookieScope?
-    /// This Mac's hooks, for a local space's Hooks tab; nil on a remote host's space (no Hooks tab).
+    /// This Mac's hooks, for a local space's Hooks drill-in; nil on a remote host's space (none).
     var hooks: HooksModel? = nil
     var openHooks: () -> Void = {}
-    @State private var hoveredTab: String?
+    /// Rename… and Remove… for a space Shepherd lists (nil for a folder it only found).
+    var rename: (() -> Void)? = nil
+    var remove: (() -> Void)? = nil
 
-    private var categories: [(ProjectFile.Category, String)] {
-        [(.instructions, "Instructions"), (.pi, "Settings"), (.skills, "Resources"), (.mcp, "MCP servers")]
+    /// The drill-ins, in the order the Skills and extensions group lists them.
+    private var drills: [(label: String, hint: String, action: ProjectsModel.Pending)] {
+        var list: [(String, String, ProjectsModel.Pending)] = [
+            ("Resources", count(model.context.resources, "resource"), .category(.skills)),
+            ("MCP servers", count(model.context.mcpServers, "server"), .category(.mcp)),
+            ("Browser", "Cookies and sites this space’s threads can use", .browser),
+        ]
+        if hooks != nil { list.append(("Hooks", "Hooks that run in this space", .hooks)) }
+        return list
     }
 
-    var body: some View {
-        GeometryReader { geometry in
-            let narrow = geometry.size.width - AppLayout.settingsWideSides * 2 < AppLayout.projectColumnsMinimumWidth
-            VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: AppLayout.projectDetailGap) {
-                if model.showingHooks, let hooks {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: SH.Space.xxl) {
-                            header
-                            HooksSpacePage(model: hooks, root: project.project.directory, openSettings: openHooks)
-                        }.padding(.bottom, AppLayout.settingsBottom)
-                    }
-                } else if model.showingBrowser {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: SH.Space.xxl) {
-                            header.disabled(cookies.pending != nil || cookies.clearing).accessibilityHidden(cookies.pending != nil)
-                            ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope)
-                        }.padding(.bottom, AppLayout.settingsBottom)
-                    }
-                } else {
-                    header.frame(maxWidth: .infinity, alignment: .leading).disabled(cookies.clearing)
-                    if model.category == .mcp {
-                        editorColumn
-                    } else if showsResources {
-                        SpaceResourcesView(model: model.resources, project: project,
-                                           openParent: model.inheritanceParent == nil ? nil : { Task { await model.openInheritanceParent() } })
-                    } else if showsForm {
-                        SpaceSettingsFormView(model: model, project: project)
-                    } else if narrow {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
-                                editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
-                                contextColumn
-                            }
-                        }
-                    } else {
-                        HStack(alignment: .top, spacing: AppLayout.projectColumnsGap) {
-                            editorColumn
-                            contextColumn.frame(width: AppLayout.projectSideWidth)
-                        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                    }
-                }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("SettingsPageContent")
-                .padding(.top, AppLayout.projectDetailTop)
-                .padding(.horizontal, AppLayout.settingsWideSides)
-                if showsForm { SpaceSettingsFormFooter(model: model, project: project) }
-                if showsResources { SpaceResourcesFooter(model: model.resources, project: project) }
-            }
+    private func count(_ number: Int, _ noun: String) -> String {
+        number == 0 ? "None" : "\(number) \(noun)\(number == 1 ? "" : "s")"
+    }
+
+    private var drillTitle: String {
+        if model.showingHooks { return "Hooks" }
+        if model.showingBrowser { return "Browser" }
+        switch model.category {
+        case .pi: return "Settings"
+        case .skills: return "Resources"
+        case .mcp: return "MCP servers"
+        default: return "Instructions"
         }
     }
 
-    /// The Settings tab draws pi's settings as a form (ProjectSettings board), not a JSON editor.
-    /// Edit JSON… swaps it for the raw editor over the same draft.
-    private var showsForm: Bool { !model.showingHooks && !model.showingBrowser && model.category == .pi && !model.showingSettingsJSON }
-    /// The Resources tab lists resources by kind (ProjectResources board), not files.
-    private var showsResources: Bool { !model.showingHooks && !model.showingBrowser && model.category == .skills }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: SH.Space.m) {
-                Button { Task { await model.navigate(.close) } } label: {
-                    Text("Spaces").frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
-                }.buttonStyle(.shRow(focusColor: .sh.running)).accessibilityLabel("Back to Spaces").disabled(model.saving || cookies.clearing)
-                SHGlyph.Settings.next.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
-                // A child space's breadcrumb names its parent (ProjectChildSettings), which opens it.
-                if let parent = model.rows.first(where: { $0.host.id == project.host.id && $0.project.directory == project.project.parent }) {
-                    Button { Task { await model.navigate(.close); if model.selected == nil { await model.open(parent) } } } label: {
-                        Text(parent.project.name).frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
-                    }.buttonStyle(.shRow(focusColor: .sh.running)).accessibilityLabel("Open parent space \(parent.project.name)").disabled(model.saving || cookies.clearing)
-                    SHGlyph.Settings.next.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
-                }
-                Text(project.project.name).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-            }.font(.shSans(AppLayout.projectFileSize)).foregroundStyle(Color.sh.textSecondary)
-                .frame(height: AppLayout.projectBreadcrumbHeight)
-            HStack(spacing: SH.Space.l) {
-                SHGlyph.Settings.folder.image.foregroundStyle(Color.sh.textSecondary)
-                    .frame(width: AppLayout.projectFolderSize, height: AppLayout.projectFolderSize)
-                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.m, width: SHSettingsNavMetrics.borderWidth)
-                Text(project.project.name).font(.shSans(AppLayout.projectsTitleSize, .semibold))
-                    .tracking(AppLayout.projectNameTracking * ThemeStore.shared.textScale)
-                    .foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                Spacer(minLength: 0)
-                Text(project.host.name).font(.shMono(AppLayout.projectsPathSize))
-                    .foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-                    .offset(y: AppLayout.projectHostBaseline * ThemeStore.shared.textScale)
-            }.frame(height: AppLayout.projectIdentityHeight)
-            Text(project.project.displayPath).font(.shMono(AppLayout.projectsPathSize))
-                .foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-                .padding(.leading, AppLayout.projectPathInset).frame(height: AppLayout.projectPathHeight)
-                .offset(y: AppLayout.projectPathBaseline * ThemeStore.shared.textScale)
-            Spacer(minLength: 0)
-            ScrollView(.horizontal) {
-                HStack(spacing: SH.Space.xs) {
-                    ForEach(categories, id: \.0) { category, label in
-                        Button { Task { await model.navigate(.category(category)) } } label: {
-                            HStack(spacing: SH.Space.s) {
-                                Text(label).font(.shSans(AppLayout.projectTabSize, !model.showingBrowser && !model.showingHooks && model.category == category ? .medium : .regular))
-                                if category == .skills { tabCount(model.context.resources) }
-                                if category == .mcp { tabCount(model.context.mcpServers) }
-                            }.offset(y: AppLayout.projectTabBaseline * ThemeStore.shared.textScale)
-                                .padding(.horizontal, SH.Space.l).frame(height: AppLayout.projectTabHeight)
-                                .foregroundStyle(!model.showingBrowser && !model.showingHooks && model.category == category || hoveredTab == label ? Color.sh.textPrimary : Color.sh.textSecondary)
-                                .overlay(alignment: .bottom) {
-                                    if !model.showingBrowser && !model.showingHooks && model.category == category { Color.sh.lantern.frame(height: AppLayout.projectTabUnderline) }
-                                }.contentShape(Rectangle())
-                        }.buttonStyle(.shRow(radius: AppLayout.projectTabRadius, focusColor: .sh.running))
-                            .onHover { hoveredTab = $0 ? label : nil }
-                            .accessibilityLabel("Space category \(label)")
-                            .disabled(model.saving || model.fileLoading || cookies.clearing)
-                    }
-                    Button { Task { await model.navigate(.browser) } } label: {
-                        Text("Browser").font(.shSans(AppLayout.projectTabSize, model.showingBrowser ? .medium : .regular))
-                            .offset(y: AppLayout.projectTabBaseline * ThemeStore.shared.textScale)
-                            .foregroundStyle(model.showingBrowser || hoveredTab == "Browser" ? Color.sh.textPrimary : Color.sh.textSecondary)
-                            .padding(.horizontal, SH.Space.l).frame(height: AppLayout.projectTabHeight)
-                            .overlay(alignment: .bottom) {
-                                if model.showingBrowser { Color.sh.lantern.frame(height: AppLayout.projectTabUnderline) }
-                            }.contentShape(Rectangle())
-                    }.buttonStyle(.shRow(radius: AppLayout.projectTabRadius, focusColor: .sh.running))
-                        .onHover { hoveredTab = $0 ? "Browser" : nil }
-                        .accessibilityLabel("Space category Browser").disabled(model.saving || cookies.clearing)
-                    if hooks != nil {
-                        Button { Task { await model.navigate(.hooks) } } label: {
-                            Text("Hooks").font(.shSans(AppLayout.projectTabSize, model.showingHooks ? .medium : .regular))
-                                .offset(y: AppLayout.projectTabBaseline * ThemeStore.shared.textScale)
-                                .foregroundStyle(model.showingHooks || hoveredTab == "Hooks" ? Color.sh.textPrimary : Color.sh.textSecondary)
-                                .padding(.horizontal, SH.Space.l).frame(height: AppLayout.projectTabHeight)
-                                .overlay(alignment: .bottom) {
-                                    if model.showingHooks { Color.sh.lantern.frame(height: AppLayout.projectTabUnderline) }
-                                }.contentShape(Rectangle())
-                        }.buttonStyle(.shRow(radius: AppLayout.projectTabRadius, focusColor: .sh.running))
-                            .onHover { hoveredTab = $0 ? "Hooks" : nil }
-                            .accessibilityLabel("Space category Hooks").disabled(model.saving || cookies.clearing)
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                header
+                if model.overview {
+                    overviewPage
+                } else if model.showingHooks, let hooks {
+                    ScrollView { HooksSpacePage(model: hooks, root: project.project.directory, openSettings: openHooks) }
+                } else if model.showingBrowser {
+                    ScrollView { ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope) }
+                } else if model.category == .mcp {
+                    editorColumn
+                } else if showsResources {
+                    SpaceResourcesView(model: model.resources, project: project,
+                                       openParent: model.inheritanceParent == nil ? nil : { Task { await model.openInheritanceParent() } })
+                } else if showsForm {
+                    SpaceSettingsFormView(model: model, project: project)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
+                            editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
+                            contextColumn
+                        }
                     }
                 }
-            }.scrollIndicators(.hidden).frame(height: AppLayout.projectTabHeight)
-                .background(alignment: .bottom) { Color.sh.lineSubtle.frame(height: SHSettingsNavMetrics.borderWidth) }
-        }.frame(height: AppLayout.projectHeaderHeight)
+                if showsForm && !model.overview { SpaceSettingsFormFooter(model: model, project: project) }
+                if showsResources && !model.overview { SpaceResourcesFooter(model: model.resources, project: project) }
+            }
+            .frame(maxWidth: AppLayout.settingsColumnWidth, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("SettingsPageContent")
+            .padding(.top, AppLayout.settingsTop)
+            .padding(.horizontal, SH.Space.xxxl)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .shControlScale(.settings)
     }
 
-    private func tabCount(_ count: Int) -> some View {
-        Text(count.formatted()).font(.shMono(SHTextStyle.micro.size)).foregroundStyle(Color.sh.textSecondary)
+    /// The Settings form draws pi's settings as a form, not a JSON editor; Edit JSON… swaps it for the raw editor.
+    private var showsForm: Bool { !model.overview && !model.showingHooks && !model.showingBrowser && model.category == .pi && !model.showingSettingsJSON }
+    private var showsResources: Bool { !model.overview && !model.showingHooks && !model.showingBrowser && model.category == .skills }
+
+    // MARK: Header
+
+    /// "‹ Spaces" (or "‹ the space" inside a drill-in), the name in `title` style with the path beside it.
+    private var header: some View {
+        let busy = model.saving || cookies.clearing
+        return VStack(alignment: .leading, spacing: SH.Space.m) {
+            Button {
+                Task { await model.stepBack() }
+            } label: {
+                Text("‹ \(model.overview ? "Spaces" : project.project.name)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
+            .accessibilityLabel(model.overview ? "Back to Spaces" : "Back to \(project.project.name)")
+            .disabled(busy)
+            .padding(.vertical, -SH.Space.xs)
+            if model.overview, let parent = model.rows.first(where: { $0.host.id == project.host.id && $0.project.directory == project.project.parent }) {
+                Button { Task { await model.navigate(.close); if model.selected == nil { await model.open(parent) } } } label: {
+                    Text("Child of \(parent.project.name)").font(.sh(.caption)).foregroundStyle(Color.sh.running)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open parent space \(parent.project.name)")
+                .disabled(busy)
+            }
+            SettingsHeader(title: model.overview ? project.project.name : drillTitle,
+                           subtitle: model.overview ? project.project.displayPath : project.project.name)
+        }
+        .disabled(cookies.clearing)
+    }
+
+    // MARK: Overview
+
+    private var overviewPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                instructionsCard
+                SettingsGroup(title: "Pi settings") {
+                    SettingsDrillRow(title: "Settings", subtitle: ".shepherd/settings.json", mono: true,
+                                     accessibilityName: "Space category Settings") {
+                        Task { await model.navigate(.category(.pi)) }
+                    }
+                }
+                SettingsGroup(title: "Skills and extensions") {
+                    ForEach(drills, id: \.label) { drill in
+                        SettingsDrillRow(title: drill.label, subtitle: drill.hint, accessibilityName: "Space category \(drill.label)") {
+                            Task { await model.navigate(drill.action) }
+                        }
+                    }
+                }
+                if rename != nil || remove != nil {
+                    SettingsGroup(title: "") {
+                        if let rename {
+                            SettingsRow(title: "Rename space") { Button("Rename…", action: rename).buttonStyle(.sh(.secondary, size: .s)) }
+                        }
+                        if let remove {
+                            SettingsRow(title: "Remove space", subtitle: "Files stay on disk") {
+                                Button("Remove…", action: remove).buttonStyle(.sh(.danger, size: .s))
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, SH.Space.xxxl)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    /// The space's instruction files in the editor card: the file's name (a menu when there are several), "● edited",
+    /// Open in editor and Save.
+    private var instructionsCard: some View {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SHSectionHeader("Instructions", style: .settings) {
+                Text(model.tokenText).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+            }
+            .padding(.horizontal, SH.Space.xs)
+            if let error = model.fileError {
+                Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+            }
+            if model.pending != nil, model.category == .instructions {
+                HStack(spacing: SH.Space.m) {
+                    Text("Discard unsaved changes?").font(.sh(.ui))
+                    Spacer()
+                    Button("Keep editing") { model.pending = nil }.buttonStyle(.sh(.secondary, size: .s))
+                    Button("Discard") { Task { await model.discard() } }.buttonStyle(.sh(.danger, size: .s))
+                }
+            }
+            SettingsEditorCard(name: model.selectedFile?.path ?? "AGENTS.md", edited: model.dirty, openIn: $model.draft, fixedHeight: AppLayout.settingsEditorHeight) {
+                if model.selectedFiles.count > 1 {
+                    SHPopupMenu("Files", minWidth: 0) {
+                        ForEach(model.selectedFiles) { file in
+                            Button(file.path) { Task { await model.navigate(.file(file)) } }
+                        }
+                    }
+                    .disabled(model.saving || model.fileLoading)
+                    .accessibilityLabel("Space file")
+                }
+                Button(model.openingEditor ? "Opening…" : "Open in editor") { Task { await model.openInEditor() } }
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil || model.openingEditor)
+                Button(model.saving ? "Saving…" : "Save") { Task { await model.save() } }
+                    .buttonStyle(.sh(.primary, size: .s))
+                    .disabled(model.saving || !model.fileLoaded || project.unavailable != nil || !model.dirty)
+            } content: {
+                if model.fileLoaded {
+                    InstructionsEditor(text: $model.draft, saved: model.saved ?? "", accessibilityLabel: "Space file editor", markdown: true)
+                        .disabled(project.unavailable != nil || model.saving)
+                } else {
+                    SHEmptyState(Text(model.fileLoading ? "Loading file…" : "No space file"),
+                                 message: model.fileLoading ? "Reading from \(project.host.name)." : "Add AGENTS.md in the space folder.") {}
+                }
+            }
+            Text(model.dirty ? "Unsaved changes" : model.savedNotice).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                .padding(.horizontal, SH.Space.xs)
+        }
     }
 
     private var editorColumn: some View {
@@ -216,6 +252,10 @@ struct ProjectSettingsDetail: View {
                 Text(model.category == .instructions ? "Markdown" : model.selectedFile?.path.hasSuffix(".json") == true ? "JSON" : "Text")
                     .font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.textSecondary)
                 Spacer(minLength: 0)
+                if model.fileLoaded {
+                    SettingsOpenIn(text: $model.draft, name: (model.selectedFile?.path as NSString?)?.lastPathComponent ?? "AGENTS.md")
+                        .id(model.selectedFile?.path)
+                }
                 Text(model.tokenText).font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.settingsMuted)
                 Color.sh.lineStrong.frame(width: AppLayout.projectMetadataRule, height: AppLayout.projectDividerHeight)
                 Text(model.editedLabel).font(.shSans(AppLayout.projectFileSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)

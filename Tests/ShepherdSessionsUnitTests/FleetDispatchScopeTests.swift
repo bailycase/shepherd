@@ -22,10 +22,8 @@ struct FleetDispatchScopeTests {
         #expect(FleetDispatch.scopeProblem(for: id, in: state, unattended: []) == nil)
     }
 
-    @Test func aDispatchedThreadACoordinatorADesignAgentAndAnAutomationRunMayNot() throws {
-        let from = DispatchedFrom(hostID: UUID(), hostName: "MacBook Pro", agentTitle: "Ship", dispatchID: UUID(), at: 1)
-        for (what, edit) in [("dispatched", { (agent: inout Agent) in agent.dispatchedFrom = from }),
-                             ("coordinator", { (agent: inout Agent) in agent.coordinatorFor = ProjectID() }),
+    @Test func aCoordinatorADesignAgentAndAnAutomationRunMayNot() throws {
+        for (what, edit) in [("coordinator", { (agent: inout Agent) in agent.coordinatorFor = ProjectID() }),
                              ("design", { (agent: inout Agent) in agent.designID = DesignID() })] as [(String, (inout Agent) -> Void)] {
             var (state, id) = Self.state(edit)
             if what == "design" { state.designs = [Design(id: state.agents[0].designID!, name: "Checkout", agentID: id, createdAt: 1)] }
@@ -35,6 +33,54 @@ struct FleetDispatchScopeTests {
         let (state, id) = Self.state()
         #expect(FleetDispatch.scopeProblem(for: id, in: state, unattended: [id])?.code == FleetDispatchCode.fleetScope, "an automation run")
         #expect(FleetDispatch.scopeProblem(for: AgentID(), in: state, unattended: [])?.code == "no_such_agent")
+    }
+
+    /// A thread the person started is 0; each thread one starts, here or on another Mac, is one deeper, and one 3 deep starts none.
+    @Test func depthLimitsWhatAThreadStartsWhereverItRuns() {
+        let mac = UUID()
+        func dispatched(agent: AgentID?, depth: Int?) -> (inout Agent) -> Void {
+            { $0.dispatchedFrom = DispatchedFrom(hostID: mac, hostName: "MacBook Pro", agentID: agent, agentTitle: "Ship", dispatchID: UUID(), at: 1, depth: depth) }
+        }
+        let cases: [(String, (inout Agent) -> Void, Int)] = [
+            ("the person's", { _ in }, 0),
+            ("sent by the person with Auto", dispatched(agent: nil, depth: nil), 0),
+            ("sent by an older Mac's thread", dispatched(agent: AgentID(), depth: nil), 1),
+            ("sent two deep", dispatched(agent: AgentID(), depth: 2), 2),
+            ("started here three deep", { $0.startedBy = StartedBy(agentID: AgentID(), agentTitle: "Ship", at: 1, depth: 3) }, 3),
+            ("sent three deep", dispatched(agent: AgentID(), depth: 3), 3),
+        ]
+        for (what, edit, depth) in cases {
+            let (state, id) = Self.state(edit)
+            #expect(state.agents[0].threadDepth == depth, "\(what)")
+            // Depth never closes the other fleet tools: only starting one.
+            #expect(FleetDispatch.scopeProblem(for: id, in: state, unattended: []) == nil, "\(what)")
+            #expect((FleetDispatch.depthProblem(for: id, in: state)?.code == FleetDispatchCode.tooDeep) == (depth >= StartedBy.maxDepth), "\(what)")
+        }
+    }
+
+    @Test func legacyInboundDispatchKeepsItsRecordWithoutMoveMetadata() throws {
+        let json = """
+        {"record":{"id":"F94561E6-7623-4BB2-8FB2-217B427A948C","parentHostID":"69EBE0BF-797D-4DE2-9E90-A4287C84186D",
+                   "kind":"agentDispatch","state":"running","title":"Check receipts","repoKey":"github.com/acme/web"},
+         "expectsResult":true,"startedWorking":true,"unsent":false,"worktree":"/tmp/acme-web","acceptedAt":1200}
+        """
+        let entry = try JSONDecoder().decode(FleetDispatch.Inbound.self, from: Data(json.utf8))
+        #expect(entry.record.title == "Check receipts")
+        #expect(entry.record.state == .running)
+        #expect(entry.expectsResult && entry.startedWorking && !entry.unsent)
+        #expect(entry.worktree == "/tmp/acme-web" && entry.acceptedAt == 1200)
+        #expect(!entry.madeRef)
+        #expect(entry.cleanupCandidates == nil)
+    }
+
+    @Test func inboundDispatchKeepsCleanupCandidatesAcrossARoundTrip() throws {
+        let record = FleetDispatchRecord(parentHostID: UUID(), parentHostName: "MacBook Pro", state: .done,
+                                         title: "Check receipts", task: "Run tests", repoKey: "github.com/acme/web", createdAt: 1)
+        let candidates = [".build", "DerivedData"]
+        let entry = FleetDispatch.Inbound(record: record, cleanupCandidates: candidates)
+        let data = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(FleetDispatch.Inbound.self, from: data)
+        #expect(decoded.cleanupCandidates == candidates)
     }
 
     @Test func aToolCallKeyStandsForOneStableIdPerThread() {

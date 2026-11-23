@@ -278,6 +278,25 @@ public struct NativeUserBubble: Equatable, Identifiable, Sendable {
     /// The skill or prompt template it was sent as: `text` is then only the words the user typed
     /// after the command, and the command's own text is behind its line (SentCommandsA).
     public var command: NativeSentCommand?
+    /// The store captured this send and the host has not answered it yet (`NativeThreadMessage.sendingStatus`):
+    /// a client says so under it (`NativeThreadSubmission.sendingNote`). Also `pending`.
+    public var sending = false
+}
+
+extension NativeThreadMessage {
+    /// A send this client captured that the host has not accepted: the thread draws it as "Sending…" in the place its
+    /// accepted echo (`pending:<id>`, "pending" or "queued") then takes over.
+    public static let sendingStatus = "sending"
+}
+
+extension NativeThreadSubmission {
+    /// What stands under a send that is still waiting for the host.
+    public static let sendingNote = "Sending…"
+}
+
+extension NativeTurn {
+    /// The note under a user turn's last bubble: "Sending…" while the host has not accepted it.
+    public var sendingNote: String? { bubbles.last?.sending == true ? NativeThreadSubmission.sendingNote : nil }
 }
 
 /// A skill or prompt template the user sent with `/skill:name` or `/name`, which pi expanded
@@ -346,7 +365,8 @@ public struct NativeSentCommand: Equatable, Sendable {
 }
 
 public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubble] {
-    let pending = message.status == "pending" || message.status == "queued"
+    let sending = message.status == NativeThreadMessage.sendingStatus
+    let pending = message.status == "pending" || message.status == "queued" || sending
     let references = message.designReferences ?? []
     let elements = message.browserElements ?? []
     let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
@@ -367,14 +387,14 @@ public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubb
             if everyOneNamed { refs.removeFirst(min(part.images, refs.count)) }
             return NativeUserBubble(id: "\(message.entryID)/\(index)", text: part.text, sentAt: part.sentAt,
                                     images: part.images, pending: pending, references: index == carrier ? references : [],
-                                    elements: last ? elements : [], imageRefs: mine)
+                                    elements: last ? elements : [], imageRefs: mine, sending: sending)
         }
     }
     let images = message.blocks.count { $0.kind == .unsupportedImage }
     let refs = message.blocks.compactMap(\.image)
     return [NativeUserBubble(id: message.entryID, text: command?.words ?? text, sentAt: message.origin?.parts?.first?.sentAt ?? message.timestamp,
                              images: images, pending: pending, references: references,
-                             elements: elements, imageRefs: refs.count == images ? refs : [], command: command)]
+                             elements: elements, imageRefs: refs.count == images ? refs : [], command: command, sending: sending)]
 }
 
 /// Turns keep their identity while pi persists them: a user turn is its first message (or the
@@ -711,10 +731,12 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// The reader sent a message. One that goes into the thread now re-attaches: stick, and land
     /// on its turn once it is there. A follow-up that waits in Up next (`queued`) is not in the
     /// thread and leaves the reader's place alone; when it goes later, it is output like any other.
-    public mutating func sent(queued: Bool) {
+    /// `turnPresent`: its turn was already in the thread as "Sending…", so no change of the last user turn is coming
+    /// to land on (waiting for one would take the reader to the tail at some later turn instead).
+    public mutating func sent(queued: Bool, turnPresent: Bool = false) {
         guard !queued else { return }
         jumpToLatest()
-        awaitingSentTurn = true
+        awaitingSentTurn = !turnPresent
         followingSentTurn = true
     }
 
@@ -810,7 +832,7 @@ public struct NativeScrollProbe: Equatable, Sendable {
         self.insetTop = insetTop
     }
 
-    fileprivate var offset: Double { content - distance - container - insetTop }
+    public var offset: Double { content - distance - container - insetTop }
 
     public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
         content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop

@@ -17,6 +17,7 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     var beforeInstructions: (@Sendable (RemoteInstructionsRequest) async throws -> Void)?
     var beforeHostSettings: (@Sendable () async -> Void)?
     var beforeSuggestions: (@Sendable () async -> Void)?
+    var suggestionsFailure: RemoteHostClientError?
     /// Saved versions a restore can put back (their entries are in the files' history).
     var revisions: [InstructionRevision] = []
 
@@ -29,6 +30,10 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
 
     var requests: [String] { lock.withLock { log } }
     var saved: InstructionsSnapshot { lock.withLock { files } }
+
+    func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        lock.withLock { log.append("spaceLifecycle.\(action)") }
+    }
 
     /// Settings' pages never ask for skills (ClientSkillsTests has a host that answers them).
     func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult {
@@ -66,8 +71,9 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
 
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot {
         await beforeSuggestions?()
-        return lock.withLock {
+        return try lock.withLock {
             log.append("suggestions.\(String(describing: request).prefix { $0 != "(" })")
+            if let suggestionsFailure { throw suggestionsFailure }
             switch request {
             case .fetch:
                 break
@@ -330,7 +336,7 @@ struct ClientSettingsTests {
 
     @Test func aHostsSettingsSayWhetherTheyCanBeShown() async {
         let model = ClientHostSettings()
-        let offline = Self.host("horizon", nil)
+        let offline = Self.host("orbit", nil)
         let old = Self.host("studio", FakeSettingsClient(), capabilities: [])
         let live = Self.host("demo-mac", FakeSettingsClient(settings: HostSettings(piVersion: "0.87.1")))
         #expect(model.state(of: offline) == .offline)
@@ -375,7 +381,7 @@ struct ClientSettingsTests {
     @Test func theFirstHostThatAnswersIsEditedAndOnlyItIsWritten() async throws {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- old\n", appendSystem: "rule\n", directory: "~/i"))
-        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("orbit", nil)]
         let model = ClientInstructions(origin: "iPhone")
         await model.refresh(hosts)
         #expect(model.edited(in: hosts)?.name == "demo-mac")
@@ -493,7 +499,7 @@ struct ClientSettingsTests {
         let on = SuggestedInstructionsSettings(enabled: true, since: 1)
         let first = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
         let second = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- b", at: 20)]))
-        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("orbit", nil)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         #expect(model.isOn(hosts))
@@ -512,6 +518,57 @@ struct ClientSettingsTests {
         #expect(model.waiting(hosts).isEmpty)
         // Only the host with lines waiting was asked.
         #expect(!second.requests.contains("suggestions.addAll"))
+    }
+
+    @Test func damageOnOneHostDoesNotHideHealthyHostsAndRefreshPicksUpRepair() async {
+        let studio = FakeSettingsClient()
+        let build = FakeSettingsClient()
+        let hosts = [Self.host("acme-studio", studio), Self.host("acme-build", build)]
+        let model = ClientSuggestions()
+        await model.refresh(hosts)
+        let message = "Couldn't read /tmp/acme/instructions/suggestions.json on the host."
+        studio.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        await model.refresh(hosts)
+        #expect(model.unavailable == [hosts[0].id: message])
+        #expect(model.hosts(hosts).map(\.id) == [hosts[1].id])
+        await model.configure(hosts) { $0.enabled = true }
+        #expect(!studio.requests.contains("suggestions.configure"))
+        #expect(build.requests.contains("suggestions.configure"))
+
+        studio.suggestionsFailure = nil
+        await model.refresh(hosts)
+        #expect(model.unavailable.isEmpty)
+        #expect(model.hosts(hosts).map(\.id) == hosts.map(\.id))
+    }
+
+    @Test func mutationDamageIsOnlyReportedAsAHostWarning() async {
+        let client = FakeSettingsClient()
+        let host = Self.host("acme-studio", client)
+        let model = ClientSuggestions()
+        await model.refresh([host])
+
+        let message = "Couldn't read /tmp/acme/instructions/suggestions.json on the host."
+        client.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        await model.configure([host]) { $0.enabled = true }
+        #expect(client.requests.contains("suggestions.configure"))
+        #expect(model.unavailable == [host.id: message])
+        #expect(model.problem == nil)
+    }
+
+    @Test func disconnectClearsOnlyThatHostsSuggestionsWarningWithoutARefresh() async {
+        let studio = FakeSettingsClient(), build = FakeSettingsClient()
+        let message = "Couldn't read suggestions.json on the host."
+        studio.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        build.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        let first = Self.host("acme-studio", studio), second = Self.host("acme-build", build)
+        let model = ClientSuggestions()
+        await model.refresh([first, second])
+        #expect(model.unavailable == [first.id: message, second.id: message])
+
+        model.use([Self.host(first.name, nil, id: first.id), second])
+        #expect(model.unavailable == [second.id: message])
+        model.use([Self.host(first.name, nil, id: first.id), Self.host(second.name, nil, id: second.id)])
+        #expect(model.unavailable.isEmpty)
     }
 
     @Test func theExperimentChangesOnEveryHost() async {

@@ -6,12 +6,15 @@ download against the pin, and writes the tree the app carries:
 
   Helpers/node                      Node's darwin-arm64 binary as published: Shepherd runs on
                                     Apple silicon only
+  Helpers/ShepherdComputerUse.app   the computer-use driver's arm64 slice (Settings > Experiments >
+                                    Computer use), from the pinned release archive, in a background
+                                    app bundle so its service can draw the agent's cursor
   Resources/pi-engine/              Pi's package.json, dist (bundle and modular SDK), assets,
                                     docs, examples and locked SDK dependencies, plus LICENSE,
                                     NODE-LICENSE and THIRD-PARTY-NOTICES
   pin.json                          a copy of the pin it was staged from (the Xcode phase's stamp)
   inputs.xcfilelist, outputs.xcfilelist
-                                    node/stamp paths for the sandboxed signing phase. Xcode copies
+                                    helper/stamp paths for the sandboxed signing phase. Xcode copies
                                     Resources/pi-engine as a native folder resource
 
 No npm and no package scripts: tarballs are unpacked here with tarfile, so nothing in them runs
@@ -37,10 +40,12 @@ import http.client
 import json
 import mmap
 import os
+import plistlib
 import re
 import shutil
 import socket
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -55,6 +60,9 @@ DEFAULT_STAGED = os.path.join(ROOT, ".build", "pi-engine")
 # Paths inside an app's Contents/ (and inside a staged tree). Contents/MacOS is avoided on
 # purpose: release.yml strips everything there, and node must ship unstripped.
 NODE = "Helpers/node"
+COMPUTER_USE_APP = "Helpers/ShepherdComputerUse.app"
+COMPUTER_USE = f"{COMPUTER_USE_APP}/Contents/MacOS/computer-use"
+COMPUTER_USE_INFO = f"{COMPUTER_USE_APP}/Contents/Info.plist"
 ENGINE = "Resources/pi-engine"
 ENTRY = "dist/cli.js"
 STAMP = "pin.json"
@@ -188,6 +196,15 @@ def pin_problems(pin: dict) -> list[str]:
         digest = archive.get("sha256", "")
         if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             problems.append(f"node.archives.{arch}.sha256 is not a SHA-256")
+    computer = pin.get("computerUse", {})
+    if _version(str(computer.get("version", ""))) is None:
+        problems.append(f"computerUse.version {computer.get('version')!r} is not X.Y.Z")
+    expected_url = ("https://github.com/trycua/cua/releases/download/cua-driver-rs-v{0}/"
+                    "cua-driver-rs-{0}-darwin-universal-binary.tar.gz").format(computer.get("version"))
+    if computer.get("url") != expected_url:
+        problems.append(f"computerUse.url {computer.get('url')!r}, expected {expected_url!r}")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(computer.get("sha256", ""))):
+        problems.append("computerUse.sha256 is not a SHA-256")
     if spec := pin.get("patch"):
         if not isinstance(spec, dict) or spec.get("file") != "pi-engine-patches/skills.json" or not re.fullmatch(r"[0-9a-f]{64}", str(spec.get("sha256", ""))):
             problems.append("patch must name pi-engine-patches/skills.json and its SHA-256")
@@ -316,7 +333,7 @@ def _text(path: str) -> str:
 
 
 def download_all(pin: dict, cache: str, offline: bool = False, opener=urllib.request.urlopen) -> dict:
-    """Every pinned download, verified, as {"node": path, "pi": path, "modules": {name: path}}."""
+    """Every pinned download, verified, as {"node": path, "computerUse": path, "pi": path, "modules": {name: path}}."""
     node = pin["node"]
     downloads = os.path.join(cache, "downloads")
     fetch(node["dist"] + "SHASUMS256.txt", os.path.join(downloads, f"node-v{node['version']}-SHASUMS256.txt"),
@@ -325,6 +342,9 @@ def download_all(pin: dict, cache: str, offline: bool = False, opener=urllib.req
     archive = node["archives"][ARCHITECTURE]
     result["node"] = fetch(node["dist"] + archive["file"], os.path.join(downloads, archive["file"]),
                            lambda path: sha256_of(path) == archive["sha256"], offline, opener)
+    computer = pin["computerUse"]
+    result["computerUse"] = fetch(computer["url"], os.path.join(downloads, os.path.basename(computer["url"])),
+                                  lambda path: sha256_of(path) == computer["sha256"], offline, opener)
     packages = [("pi", pin["pi"])] + [(name, module) for name, module in pin["modules"].items()]
     for name, package in packages:
         # Scoped packages can share a tarball basename (e.g. retry and @types/retry).
@@ -399,6 +419,47 @@ def node_files(archive: str, version: str) -> tuple[bytes, bytes]:
     return found["bin/node"], found["LICENSE"]
 
 
+# The driver's MIT notice: its release archive carries no licence file.
+COMPUTER_USE_HOLDER = "2025 Cua AI, Inc."
+
+
+def computer_use_info(version: str) -> bytes:
+    """The bundle's Info.plist. A background app (no Dock icon) of its own, so the driver's service gets a
+    WindowServer connection and can draw the cursor; macOS still gives it Shepherd's permissions (it runs
+    embedded, as Shepherd's child)."""
+    return plistlib.dumps({
+        "CFBundleExecutable": "computer-use",
+        "CFBundleIdentifier": "com.bailycase.shepherd.computer-use",
+        "CFBundleName": "Shepherd Computer Use",
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": version,
+        "CFBundleVersion": version,
+        "LSUIElement": True,
+        "NSHighResolutionCapable": True,
+    })
+
+
+def computer_use_file(archive: str) -> bytes:
+    """The arm64 slice of the driver executable (`cua-driver`) in its universal release archive.
+    The slice is a complete Mach-O on its own; sign-app.sh signs it with Shepherd's identity."""
+    with tarfile.open(archive, "r:*") as tar:
+        member = tar.getmember("cua-driver")
+        if not member.isfile():
+            raise EngineError(f"{os.path.basename(archive)}: cua-driver is not a regular file")
+        data = tar.extractfile(member)
+        assert data is not None
+        binary = data.read()
+    if binary[:4] == b"\xcf\xfa\xed\xfe" and struct.unpack("<I", binary[4:8])[0] == 0x0100000C:
+        return binary
+    if binary[:4] != b"\xca\xfe\xba\xbe":
+        raise EngineError("the computer-use driver is not a Mach-O file")
+    for index in range(struct.unpack(">I", binary[4:8])[0]):
+        cputype, _sub, offset, size, _align = struct.unpack(">iiIII", binary[8 + 20 * index:28 + 20 * index])
+        if cputype & 0xFFFFFFFF == 0x0100000C:
+            return binary[offset:offset + size]
+    raise EngineError(f"the computer-use driver has no {ARCHITECTURE} slice")
+
+
 # Staging
 
 
@@ -422,6 +483,8 @@ def notices(pin: dict, shrinkwrap: dict, module_licences: dict[str, tuple[str, s
     lines.append("")
     for name, (file, text) in sorted(module_licences.items()):
         lines += ["=" * 72, f"{name} ({file})", "=" * 72, "", text.rstrip(), ""]
+    lines += ["=" * 72, f"{COMPUTER_USE_APP}: Cua Driver {pin['computerUse']['version']} (https://github.com/trycua/cua)",
+              "=" * 72, "", MIT.format(holder=COMPUTER_USE_HOLDER).rstrip(), ""]
     return "\n".join(lines) + "\n"
 
 
@@ -580,6 +643,8 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     apply_patch(engine_files, pin)
     tree = {f"{ENGINE}/{path}": data for path, data in engine_files.items()}
     tree[NODE], tree[f"{ENGINE}/NODE-LICENSE"] = node_files(downloads["node"], pin["node"]["version"])
+    tree[COMPUTER_USE] = computer_use_file(downloads["computerUse"])
+    tree[COMPUTER_USE_INFO] = computer_use_info(pin["computerUse"]["version"])
     # pi's tarball carries no LICENSE; package.json says MIT and names the author.
     tree[f"{ENGINE}/LICENSE"] = MIT.format(holder=_author(manifest)).encode()
     tree[f"{ENGINE}/THIRD-PARTY-NOTICES"] = notices(pin, shrinkwrap, licences).encode()
@@ -587,10 +652,14 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
 
 
 def file_lists() -> tuple[str, str]:
-    """Only Node and the stamp belong to the sandboxed phase. Xcode copies the SDK as a
+    """Only the helpers and the stamp belong to the sandboxed phase. Xcode copies the SDK as a
     folder resource, avoiding thousands of sandbox-exec arguments for its individual files."""
-    inputs = [f"{STAGED_IN_XCODE}/{path}" for path in (STAMP, NODE)]
-    outputs = [f"{CONTENTS_IN_XCODE}/{path}" for path in ("Helpers", NODE)]
+    inputs = [f"{STAGED_IN_XCODE}/{path}" for path in (STAMP, NODE, COMPUTER_USE, COMPUTER_USE_INFO)]
+    # The sandbox lets the phase write only these exact paths: every folder and file of the computer-use app,
+    # including the signature codesign writes.
+    computer = (COMPUTER_USE_APP, f"{COMPUTER_USE_APP}/Contents", f"{COMPUTER_USE_APP}/Contents/MacOS", COMPUTER_USE,
+                COMPUTER_USE_INFO, f"{COMPUTER_USE_APP}/Contents/_CodeSignature", f"{COMPUTER_USE_APP}/Contents/_CodeSignature/CodeResources")
+    outputs = [f"{CONTENTS_IN_XCODE}/{path}" for path in ("Helpers", NODE, *computer)]
     return "\n".join(inputs) + "\n", "\n".join(outputs) + "\n"
 
 
@@ -607,7 +676,7 @@ def write_tree(tree: dict[str, bytes], pin_text: str, out: str) -> None:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as f:
                 f.write(data)
-            os.chmod(path, 0o755 if relative == NODE else 0o644)
+            os.chmod(path, 0o755 if relative in (NODE, COMPUTER_USE) else 0o644)
         inputs, outputs = file_lists()
         for name, text in ((INPUTS, inputs), (OUTPUTS, outputs), (STAMP, pin_text)):
             with open(os.path.join(staging, name), "w", encoding="utf-8") as f:
@@ -626,7 +695,7 @@ def write_tree(tree: dict[str, bytes], pin_text: str, out: str) -> None:
 
 
 def stage(cache: str = DEFAULT_CACHE, out: str = DEFAULT_STAGED, offline: bool = False, pin_path: str = PIN,
-          opener=urllib.request.urlopen) -> None:
+          opener=urllib.request.urlopen, sign: bool = sys.platform == "darwin") -> None:
     with open(pin_path, encoding="utf-8") as f:
         pin_text = f.read()
     pin = json.loads(pin_text)
@@ -635,6 +704,11 @@ def stage(cache: str = DEFAULT_CACHE, out: str = DEFAULT_STAGED, offline: bool =
         raise EngineError("the pin is not usable: " + "; ".join(problems))
     downloads = download_all(pin, cache, offline, opener)
     write_tree(build_tree(pin, downloads), pin_text, out)
+    if sign:
+        # The slice still carries its publisher's signature, which seals another Info.plist: macOS would call the
+        # bundle damaged. Ad hoc here, so the staged copy runs; the app's build signs it again with Shepherd's identity.
+        subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", os.path.join(out, COMPUTER_USE_APP)],
+                       check=True, capture_output=True)
     problems = verify(out, pin)
     if problems:
         raise EngineError("the staged engine fails verification: " + "; ".join(problems))
@@ -699,6 +773,17 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
             problems.append(f"{NODE} has an {arch} slice; Shepherd ships for Apple silicon only")
         if not os.access(node, os.X_OK):
             problems.append(f"{NODE} is not executable")
+    driver = os.path.join(root, COMPUTER_USE)
+    if not os.path.isfile(driver):
+        problems.append(f"{COMPUTER_USE} is missing")
+    else:
+        found = slices(driver)
+        if list(found) != [ARCHITECTURE]:
+            problems.append(f"{COMPUTER_USE} is {' '.join(found) or 'not Mach-O'}; Shepherd ships it for {ARCHITECTURE} only")
+        elif not _slice_mentions(driver, *found[ARCHITECTURE], f"cua-driver {pin['computerUse']['version']} ".encode()):
+            problems.append(f"{COMPUTER_USE} is not the pinned driver {pin['computerUse']['version']}")
+        if not os.access(driver, os.X_OK):
+            problems.append(f"{COMPUTER_USE} is not executable")
     engine = os.path.join(root, ENGINE)
     if not os.path.isdir(engine):
         return problems + [f"{ENGINE} is missing"]
@@ -785,7 +870,8 @@ def main(argv: list[str]) -> int:
             return 1
         pin = load_pin()
         seconds = (datetime.datetime.now() - started).total_seconds()
-        print(f"staged node {pin['node']['version']} and pi {pin['pi']['version']} in {options['--out']} ({seconds:.1f}s)")
+        print(f"staged node {pin['node']['version']}, pi {pin['pi']['version']} and computer use "
+              f"{pin['computerUse']['version']} in {options['--out']} ({seconds:.1f}s)")
     elif argv[:1] == ["verify"] and len(argv) == 2:
         problems = verify(argv[1])
         for problem in problems:

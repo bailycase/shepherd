@@ -14,11 +14,13 @@ struct FleetMoveWireTests {
 
     @Test func aHandoffRoundTripsAndAnOldOneDecodesWithDefaults() throws {
         let handoff = FleetMoveHandoff(agentID: AgentID(rawValue: "agent-1"), sessionID: "session-1", name: "Speed up checkout CI", nameIsFinal: true,
-                                       model: "acme/model", pushMuted: true, branch: "perf/checkout-ci", worktreeBase: "main", movedAt: 1_760_000_000_000,
+                                       model: "acme/model", pushMuted: true,
+                                       startedBy: StartedBy(agentID: AgentID(rawValue: "lead"), agentTitle: "Release prep", at: 1, depth: 2),
+                                       branch: "perf/checkout-ci", worktreeBase: "main", movedAt: 1_760_000_000_000,
                                        messages: 412, uncommittedFiles: 3, unpushedCommits: 1)
         #expect(try JSONDecoder().decode(FleetMoveHandoff.self, from: JSONEncoder().encode(handoff)) == handoff)
         let minimal = try JSONDecoder().decode(FleetMoveHandoff.self, from: Data(#"{"agentID":"agent-1"}"#.utf8))
-        #expect(minimal.sessionID == "agent-1" && !minimal.pushMuted && minimal.uncommittedFiles == 0 && minimal.isValid)
+        #expect(minimal.sessionID == "agent-1" && minimal.startedBy == nil && !minimal.pushMuted && minimal.uncommittedFiles == 0 && minimal.isValid)
         #expect(!FleetMoveHandoff(agentID: AgentID(rawValue: "a"), sessionID: "../escape", name: "", nameIsFinal: false, movedAt: 0).isValid)
     }
 

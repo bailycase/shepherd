@@ -332,12 +332,14 @@ public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     /// The host clipped the output: the full text only opens in its own sheet.
     public var truncated: Bool
     public var isExpanded: Bool
+    /// The file the call read or changed, for its Open in button (OpenInD); nil for any other call.
+    public var filePath: String?
     /// "edit, Sources/A.swift, +58 −41"
     public var accessibilityLabel: String
 
     public init(id: String, label: String, detail: String, isPath: Bool = false, stat: String? = nil, failed: Bool = false,
                 output: [String] = [], moreLines: Int = 0, truncated: Bool = false, isExpanded: Bool = false,
-                accessibilityLabel: String? = nil) {
+                filePath: String? = nil, accessibilityLabel: String? = nil) {
         self.id = id
         self.label = label
         self.detail = detail
@@ -348,6 +350,7 @@ public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
         self.moreLines = moreLines
         self.truncated = truncated
         self.isExpanded = isExpanded
+        self.filePath = filePath
         self.accessibilityLabel = accessibilityLabel ?? [label, detail, stat].compactMap { $0 }.joined(separator: ", ")
     }
 }
@@ -417,6 +420,9 @@ private struct SHActivityCallRowView<Menu: View>: View {
     let onSelect: (String) -> Void
     let onShowAll: (String) -> Void
     let menu: (SHActivityCallRow) -> Menu
+    @State private var hovering = false
+    @State private var statWidth: CGFloat = 0
+    @State private var openInWidth: CGFloat = 0
 
     var body: some View {
         let sh = Color.sh
@@ -427,8 +433,10 @@ private struct SHActivityCallRowView<Menu: View>: View {
                     Text(row.detail).foregroundStyle(sh.textSecondary).lineLimit(1)
                         .truncationMode(row.isPath ? .head : .tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
                     if let stat = row.stat {
                         Text(stat).foregroundStyle(row.failed ? sh.failed : sh.textTertiary).lineLimit(1).fixedSize().monospacedDigit()
+                            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { statWidth = $0 }
                     }
                 }
                 .font(.shMono(11))
@@ -436,6 +444,9 @@ private struct SHActivityCallRowView<Menu: View>: View {
                 .frame(minHeight: SHThreadMetrics.callRowHeight)
             }
             .buttonStyle(.shRow(radius: SH.Radius.xs))
+            .shOpenIn(row.filePath, hovering: hovering, trailing: SH.Space.xs + (row.stat == nil ? 0 : statWidth + 10), width: $openInWidth)
+            // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
+            .onHover { hovering = row.filePath != nil && $0 }
             .padding(.horizontal, -SH.Space.xs)
             .contextMenu { menu(row) }
             .help(row.detail)
@@ -640,29 +651,8 @@ public struct SHChangesCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder private func row(_ file: SHChangedFile) -> some View {
-        let sh = Color.sh
-        let content = HStack(spacing: SH.Space.m) {
-            Text("\(Text(file.directory).foregroundStyle(sh.textTertiary))\(Text(file.name).foregroundStyle(sh.textPrimary))")
-                .font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if file.status != .modified {
-                Text(file.status == .added ? "new" : "deleted").font(.shSans(11)).foregroundStyle(sh.textTertiary)
-            }
-            SHDiffStat(added: file.added, removed: file.removed, font: .shMono(11))
-        }
-        .padding(.horizontal, SH.Space.l)
-        .frame(minHeight: SHThreadMetrics.changesRowHeight)
-        .contentShape(Rectangle())
-        let label = "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed"
-        if let onOpen {
-            Button { onOpen(file.path) } label: { content }
-                .buttonStyle(.shRow(radius: 0))
-                .accessibilityLabel(label)
-                .accessibilityHint("Opens the file in the Changes pane")
-        } else {
-            content.accessibilityElement(children: .ignore).accessibilityLabel(label)
-        }
+    private func row(_ file: SHChangedFile) -> some View {
+        SHChangedFileRow(file: file, label: "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed", onOpen: onOpen)
     }
 
     @ViewBuilder private func moreRow(_ count: Int) -> some View {
@@ -686,5 +676,51 @@ public struct SHChangesCard: View {
         case .added: "added"
         case .deleted: "deleted"
         }
+    }
+}
+
+/// A changes card's file row: the path (the folder dims), "new" or "deleted", its stat; while the pointer is over it, Open in
+/// <app> before the stat (OpenInD). A click opens the file in Shepherd.
+private struct SHChangedFileRow: View {
+    let file: SHChangedFile
+    let label: String
+    let onOpen: ((String) -> Void)?
+    @State private var hovering = false
+    @State private var statWidth: CGFloat = 0
+    @State private var openInWidth: CGFloat = 0
+
+    var body: some View {
+        let sh = Color.sh
+        let content = HStack(spacing: SH.Space.m) {
+            Text("\(Text(file.directory).foregroundStyle(sh.textTertiary))\(Text(file.name).foregroundStyle(sh.textPrimary))")
+                .font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
+            HStack(spacing: SH.Space.m) {
+                if file.status != .modified {
+                    Text(file.status == .added ? "new" : "deleted").font(.shSans(11)).foregroundStyle(sh.textTertiary)
+                }
+                SHDiffStat(added: file.added, removed: file.removed, font: .shMono(11))
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { statWidth = $0 }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: SHThreadMetrics.changesRowHeight)
+        .contentShape(Rectangle())
+        Group {
+            if let onOpen {
+                Button { onOpen(file.path) } label: { content }
+                    .buttonStyle(.shRow(radius: 0))
+                    .accessibilityLabel(label)
+                    .accessibilityHint("Opens the file and what changed in it")
+            } else {
+                content.accessibilityElement(children: .ignore).accessibilityLabel(label)
+            }
+        }
+        // A deleted file has nothing to open.
+        .shOpenIn(file.status == .deleted ? nil : file.path, hovering: hovering, trailing: SH.Space.l + statWidth + SH.Space.m,
+                  width: $openInWidth)
+        // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
+        .onHover { hovering = $0 }
     }
 }

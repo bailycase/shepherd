@@ -38,7 +38,9 @@ struct SkillsScreen: View {
                         .padding(.horizontal, SH.Space.xs)
                     SHTouchSearchField("Search skills.sh", text: $query, focus: $searchFocused)
                 }
-                if let problem = model.problem {
+                if let problem = model.recordsProblem(in: skillsHosts) {
+                    SHBanner(.failed, title: problem)
+                } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
                         Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
@@ -51,6 +53,7 @@ struct SkillsScreen: View {
                 if term.isEmpty {
                     InstalledSkills(model: model, hosts: skillsHosts) { name in navigator.open(.settings(.skill(name))) }
                     PiSkillsSections(model: model, hosts: skillsHosts)
+                    SkillsSlashMenuSection(store: store)
                 } else {
                     SkillSearchResults(term: term, results: results, searching: searching, failure: failure, model: model,
                                        hosts: skillsHosts) { skill in
@@ -631,7 +634,9 @@ struct SkillDetailScreen: View {
             }
         }
         .padding(.horizontal, SH.Space.xs)
-        if let problem = model.problem {
+        if let problem = model.recordsProblem(in: hosts) {
+            SHBanner(.failed, title: problem)
+        } else if let problem = model.problem {
             SHBanner(.failed, title: problem) {
                 Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
             }
@@ -658,7 +663,7 @@ struct SkillDetailScreen: View {
             .shCard(radius: SHListMetrics.cardRadius)
         }
         SettingsSection("Version") {
-            SkillVersionCard(row: row) {
+            SkillVersionCard(row: row, sourceUnavailable: model.recordsProblem(in: hosts) != nil) {
                 Task { await model.update(skill.name, in: hosts) }
             }
         }
@@ -684,6 +689,8 @@ struct SkillDetailScreen: View {
 /// with Update and What changed; or Local, for a folder copied in by hand.
 private struct SkillVersionCard: View {
     let row: SkillRow
+    /// The records that say where a skill came from can't be read, so a skill with none isn't known to be Local.
+    let sourceUnavailable: Bool
     let update: () -> Void
     @Environment(\.openURL) private var openURL
 
@@ -721,10 +728,10 @@ private struct SkillVersionCard: View {
                     .padding(.top, SH.Space.xs)
                 }
             } else {
-                Label("Local", systemImage: "folder")
+                Label(SkillsPresentation.source(skill, recordsUnavailable: sourceUnavailable), systemImage: "folder")
                     .font(.sh(.ui))
                     .foregroundStyle(sh.textSecondary)
-                Text("Copied into the skills folder by hand. It never updates.")
+                Text(SkillsPresentation.unmanagedNote(skill, recordsUnavailable: sourceUnavailable))
                     .font(.sh(.caption))
                     .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

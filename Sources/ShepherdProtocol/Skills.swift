@@ -214,18 +214,23 @@ public struct SkillsSnapshot: Codable, Hashable, Sendable {
     /// The skills the host's pi loads from outside `directory` (`RemoteProtocol.piSkillsCapability`);
     /// nil from a host that predates it.
     public var pi: PiSkills?
+    /// Set while the host can't read the file that records where its skills came from: the path, why,
+    /// and how to fix it. Every skill then shows without a source, and the host refuses changes that
+    /// would write that file. Nil from a host that predates it.
+    public var problem: String?
 
     public init(directory: String, skills: [InstalledSkill] = [], checkedAt: Double? = nil, autoUpdate: Bool = false,
-                pi: PiSkills? = nil) {
+                pi: PiSkills? = nil, problem: String? = nil) {
         self.directory = directory
         self.skills = skills
         self.checkedAt = checkedAt
         self.autoUpdate = autoUpdate
         self.pi = pi
+        self.problem = problem
     }
 
     private enum CodingKeys: String, CodingKey {
-        case directory, skills, checkedAt, autoUpdate, pi
+        case directory, skills, checkedAt, autoUpdate, pi, problem
     }
 
     public init(from decoder: Decoder) throws {
@@ -235,6 +240,7 @@ public struct SkillsSnapshot: Codable, Hashable, Sendable {
         checkedAt = try c.decodeIfPresent(Double.self, forKey: .checkedAt)
         autoUpdate = try c.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? false
         pi = try c.decodeIfPresent(PiSkills.self, forKey: .pi)
+        problem = try c.decodeIfPresent(String.self, forKey: .problem)
     }
 
     public func skill(_ name: String) -> InstalledSkill? {

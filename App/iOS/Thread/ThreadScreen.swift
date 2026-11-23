@@ -61,7 +61,14 @@ struct ThreadScreen: View {
         let transcript = ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
         let arranged = navigator.sidePane.arranged == ref
         // The laptop arrangement's bar names the thread alone, beside its capsule (DuoLaptop).
-        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch,
+        // A thread another thread started names it in its title, a link where a host of this device has it (SubThreadPhone, SubThreadPad).
+        let parent: ThreadTitle.Parent? = arranged ? nil : agent?.startedBy.map { started in
+            // A thread keeps its id when it moves to another Mac, so the starter is looked up everywhere.
+            let found = hosts.hosts.lazy.compactMap { host in host.agent(started.agentID).map { (host.id, $0.name) } }.first
+            return ThreadTitle.Parent(name: found?.1 ?? started.agentTitle,
+                                      open: found.map { found in { navigator.open(.thread(AgentRef(host: found.0, agent: started.agentID))) } })
+        }
+        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch, parent: parent,
                                 wide: sizeClass == .regular && !arranged, goalStore: store)
         // Where the bars run down the side on regular width (iPhone Duo open), the title heads the
         // thread's column, level with the side pane's tabs (DuoOpenThread, DuoOpenSidePane); else
@@ -132,8 +139,15 @@ struct ThreadScreen: View {
                         title.frame(maxWidth: titleMaxWidth, alignment: .leading)
                     }
                 }
+                // Keep Next clear of the status bar in the wide iPad toolbar.
+                if agent != nil, sizeClass == .regular, !inlineTitle {
+                    ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton() }
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
+                        if sizeClass != .regular || inlineTitle {
+                            NextNeedingYouButton(compact: sizeClass != .regular)
+                        }
                         if arranged {
                             // What sits above the composer in the laptop pose (DuoLaptop's capsule).
                             ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
@@ -156,7 +170,7 @@ struct ThreadScreen: View {
                 // The system's ••• menu, so it overflows with the bar's items where the bar runs
                 // down the side (iPhone Duo).
                 if agent != nil {
-                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
+                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) { navigator.present(.review(.branch(ref))) } }
                 }
                 // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
                 // horizontal bar leaves it to the sidebar's row.
@@ -210,10 +224,8 @@ struct ThreadScreen: View {
         }
         if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
-        if let error = store.loadError { return error }
-        if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
-        if let notice = store.clipNotice { return notice.text }
-        return nil
+        // A stopped pi's problem is the composer's banner (`StartProblemBanner`), with Retry where the host takes it.
+        return store.loadError
     }
 }
 
@@ -302,6 +314,15 @@ struct ThreadTranscript: View {
                                 .disabled(connecting)
                         }
                     }
+                    // These are transcript notices, independent of host and pane status.
+                    if let problem = store.snapshot?.originsProblem {
+                        Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let notice = store.clipNotice {
+                        Text(notice.text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
                         ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
                     }
@@ -317,7 +338,13 @@ struct ThreadTranscript: View {
                             }
                             .turnTransfer(row, thread: ref)
                             .id(row.id)
-                            .background { TailRowMarker(guardian: tailGuard) }
+                            .background {
+                                #if DEBUG
+                                TailRowMarker(guardian: tailGuard, rowID: row.id)
+                                #else
+                                TailRowMarker(guardian: tailGuard)
+                                #endif
+                            }
                         }
                         if thinking, liveRow == nil { LiveWaitLine(wait: store.liveWait) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
@@ -346,35 +373,67 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
-            .scrollPosition(id: Binding(get: { presentation.position(tail: tail) }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
+            .scrollPosition(id: Binding(get: {
+                let id = presentation.position(tail: tail)
+                tailGuard.noteOfferedPosition(id)
+                return id
+            }, set: { presentation.noteVisibleTurn($0, tail: tail) }), anchor: .top)
+            #if DEBUG
+            .onChange(of: banner) { _, _ in
+                SHRenderProbe.scrollEvent("thread.write.L13", "thread.banner", from: tailGuard, kind: "layout")
+            }
+            #endif
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { old, _ in
                 tailPin.reset()
                 // Another session has other turns, so the one kept is gone; the first key a new store learns is the same thread's.
-                if old != nil { presentation.newSession() }
+                if old != nil {
+                    SHRenderProbe.scrollEvent("thread.write.I7", "position.newSession", from: tailGuard, kind: "binding")
+                    presentation.newSession()
+                }
                 loadVisibleHistory()
             }
             // A reused view (the design pane's chat has no identity of its own) shows another thread, which mounts as a new transcript does.
             .onChange(of: ref) { _, _ in
                 tailPin.reset()
+                SHRenderProbe.scrollEvent("thread.write.I7", "position.mountRef", from: tailGuard, kind: "binding")
                 presentation.mount()
             }
-            .defaultScrollAnchor(nativeTail ? (presentation.restoresTurn ? .top : .bottom) : nil, for: .initialOffset)
-            .defaultScrollAnchor(nativeTail ? (presentation.follows ? .bottom : nil) : (presentation.follows ? nil : .top), for: .sizeChanges)
+            .defaultScrollAnchor(nativeTail && SHRenderProbe.scrollAnchorEnabled("I2.initial") ? (presentation.restoresTurn ? .top : .bottom) : nil,
+                                 for: .initialOffset)
+            .defaultScrollAnchor(nativeTail
+                                 ? (presentation.follows && SHRenderProbe.scrollAnchorEnabled("I2.following") ? .bottom : nil)
+                                 : (!presentation.follows && SHRenderProbe.scrollAnchorEnabled("I2.detached") ? .top : nil), for: .sizeChanges)
             .onScrollGeometryChange(for: TailReading.self, of: Self.reading) { old, new in
                 // Insets and row wrapping can settle separately from scroll offsets. While
                 // following, keep the tail above the composer through every change. This runs
                 // inside the layout pass, so it records and the pin lands after it; only a
                 // mount's first few landings run here, so its first frames are already at the tail.
+                #if DEBUG
+                if SHRenderProbe.scrollEvents != nil {
+                    if old.width != new.width || old.probe.container != new.probe.container {
+                        SHRenderProbe.scrollEvent("thread.write.L12", "viewport.resized", from: tailGuard, kind: "layout")
+                    }
+                    if old.probe.inset != new.probe.inset {
+                        SHRenderProbe.scrollEvent("thread.write.L11", "viewport.bottomInset", from: tailGuard, kind: "layout")
+                        if tailGuard.traceMotion == "touching" {
+                            SHRenderProbe.scrollEvent("thread.write.I8", "bottomInset.whileTouching", from: tailGuard, kind: "layout")
+                        }
+                    }
+                }
+                #endif
                 let wants = follow { $0.observe(from: old.probe, to: new.probe, gesture: $0.userScrolling, nativeAnchor: nativeTail) }
                 tailPin.reading(distance: NativeTailRepin.distance(of: new.probe, belowMarker: tailGap), wants: wants,
                                 resized: new.resized(from: old), land: lander(proxy))
                 tailGuard.suspect(standAside: { [tailPin] in tailPin.standAside($0) }, status: { [store] in
                     .init(following: presentation.scrollFollower.sticky && !presentation.scrollFollower.userScrolling, hasRows: !store.rows.isEmpty,
                           tailGap: tailGap)
-                }, land: { lander(proxy)(true) })
+                }, land: { lander(proxy, actor: "thread.write.I4")(true) })
             }
             .onScrollPhaseChange { old, phase, context in
+                #if DEBUG
+                tailGuard.phase = phase
+                #endif
                 if phase == .interacting { historyPaging.beginScroll() }
                 // Only a finger on the thread is intent; momentum and programmatic scrolls are
                 // not, and a drag that ends near the bottom re-sticks where it lands.
@@ -388,10 +447,12 @@ struct ThreadTranscript: View {
                 tailPin.reader(scrolling: phase != .idle, touching: phase == .tracking || phase == .interacting)
             }
             .onChange(of: store.sentCount) { _, _ in
-                // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
-                // the reader where they are, now and when it goes.
+                // A send that goes in now re-attaches; a follow-up in Up next leaves the reader where they are. The
+                // lander goes with the ask: a screen popped over the thread leaves the pin without one (`stop()`), and the
+                // send supplies its own, so it needn't wait for a scroll reading to set it again.
                 guard !store.lastSendQueued else { return }
-                follow { $0.sent(queued: false); return false }
+                SHRenderProbe.scrollEvent("thread.write.I6", "send.ask", from: tailGuard, target: Self.bottomID, kind: "request")
+                presentation.sent(turnPresent: store.lastSendShownEarly)
                 tailPin.asked(lander(proxy))
             }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
@@ -403,11 +464,13 @@ struct ThreadTranscript: View {
                     await Task.yield()
                     guard !Task.isCancelled, store.isLive, store.sessionKey == session,
                           follow({ $0.userTurnArrived() }) else { return }
+                    SHRenderProbe.scrollEvent("thread.write.I6", "userTurn.ask", from: tailGuard, target: id, kind: "request")
                     tailPin.asked(lander(proxy))
                 }
             }
             // New output at the tail is what "unseen" means, never the content height.
-            .onChange(of: rows.last) { _, _ in
+            .onChange(of: rows.last) { _, row in
+                SHRenderProbe.scrollEvent("thread.write.L7", "thread.tailChanged", from: tailGuard, target: row?.id, kind: "layout")
                 follow { $0.contentArrived(); return false }
                 tailPin.outputArrived()
             }
@@ -419,7 +482,8 @@ struct ThreadTranscript: View {
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
                 SHJumpToLatest(action: NativeScrollFollower.showsJump(sticky: presentation.follows, unseen: presentation.unseen, running: running) ? {
-                    follow { $0.jumpToLatest(); return false }
+                    SHRenderProbe.scrollEvent("thread.write.I6", "jumpToLatest.ask", from: tailGuard, target: Self.bottomID, kind: "request")
+                    presentation.jumpToLatest()
                     tailPin.asked(lander(proxy))
                 } : nil)
             }
@@ -428,12 +492,14 @@ struct ThreadTranscript: View {
                 tailHold.resume()
                 guard !appeared else { return }
                 appeared = true
+                SHRenderProbe.scrollEvent("thread.write.I7", "position.mount", from: tailGuard, kind: "binding")
                 presentation.mount()
             }
             .onDisappear {
                 tailHold.stop()
                 tailPin.stop()
                 tailGuard.stop()
+                SHRenderProbe.scrollEvent("thread.write.I7", "position.leave", from: tailGuard, kind: "binding")
                 presentation.leave()
             }
         }
@@ -449,7 +515,17 @@ struct ThreadTranscript: View {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
         // ScrollViewReader jumps can leave the native position binding nil at the boundary.
         presentation.pinHistoryTurn(store.rows.first?.id)
-        Task { await store.loadOlder() }
+        Task {
+            #if DEBUG
+            let before = SHRenderProbe.scrollEvents != nil ? store.rows.first?.id : nil
+            #endif
+            await store.loadOlder()
+            #if DEBUG
+            if let before, store.rows.first?.id != before {
+                SHRenderProbe.scrollEvent("thread.write.L6", "history.prepended", from: tailGuard, target: store.rows.first?.id, kind: "layout")
+            }
+            #endif
+        }
     }
 
     /// Brings the turn holding `entryID` (a tool result, a compaction) to the top of the thread,
@@ -463,6 +539,7 @@ struct ThreadTranscript: View {
         }
         guard let row = holder() else { return }
         follow { $0.beginJump(); return false }
+        SHRenderProbe.scrollEvent("thread.write.I6", "find", from: tailGuard, target: row.id)
         withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
@@ -483,26 +560,35 @@ struct ThreadTranscript: View {
 
     /// What the pin calls once the layout pass that asked is over. It holds the presentation, not
     /// the view, so a landing asked for before a remount reads the follower it was asked for.
-    private func lander(_ proxy: ScrollViewProxy) -> ThreadTailPin.Land {
+    private func lander(_ proxy: ScrollViewProxy, actor: StaticString = "thread.write.I3") -> ThreadTailPin.Land {
         let presentation = presentation
         let store = store
         let hold = tailHold
-        return { resized in
-            Self.land(proxy, presentation: presentation, resized: resized)
+        return { [weak tailGuard] resized in
+            Self.land(proxy, presentation: presentation, resized: resized, actor: actor, guardRef: tailGuard)
             let tail = store.rows.last?.id
             guard presentation.withholdsMarker(tail: tail) else { return }
-            hold.landed { if store.rows.last?.id == tail { presentation.hold(tail: tail) } }
+            hold.landed {
+                if store.rows.last?.id == tail {
+                    if !presentation.scrollFollower.userScrolling, presentation.withholdsMarker(tail: tail) {
+                        SHRenderProbe.scrollEvent("thread.write.I5", "position.hold", from: tailGuard, target: Self.bottomID)
+                    }
+                    presentation.hold(tail: tail)
+                }
+            }
         }
     }
 
     /// Lands on the tail while the reader still follows it and has not taken hold of the thread.
-    private static func land(_ proxy: ScrollViewProxy, presentation: ComposerPresentation, resized: Bool) {
+    private static func land(_ proxy: ScrollViewProxy, presentation: ComposerPresentation, resized: Bool,
+                             actor: StaticString, guardRef: ThreadTailGuard?) {
         let follower = presentation.scrollFollower
         guard follower.sticky, !follower.userScrolling else { return }
         SHRenderProbe.tick(resized ? "thread.tailLandingResized" : "thread.tailLanding")
         MobileSignposts.tailLanding()
         var transaction = Transaction()
         transaction.disablesAnimations = true
+        SHRenderProbe.scrollEvent(actor, "tail.land", from: guardRef, target: bottomID)
         withTransaction(transaction) { proxy.scrollTo(bottomID, anchor: .bottom) }
     }
 
@@ -564,16 +650,13 @@ struct ThreadTranscript: View {
 }
 
 /// The title and status line (MobileThread, MobileQueue, MobileQuestion, iPadThread boards). On a
-/// phone, the name over "● Idle · ⧉ pi/swiftui-previews": the status word and the worktree's
-/// branch, or "⌂ your checkout" in lantern when pi works in the space's own checkout.
+/// phone, the name over "● Idle": the branch is behind the ••• menu's Branch (GitPhoneD).
 /// On iPad, the name, the branch chip (`SHBranchChip`: the files changed, and the host when there
-/// are several), and a status pill with the running turn's time, on one line.
+/// are several) and any goal, on one line; no status pill, the sidebar's dot says the state.
 struct ThreadTitle: View {
     struct Status: Equatable {
         var state: AgentState
         var label: String
-        /// When the running turn's prompt was sent (ms); nil at rest.
-        var runningSince: Double?
 
         @MainActor init(store: NativeThreadStore, agent: Agent?) {
             if store.loadError != nil { state = .failed; label = "Error" }
@@ -583,69 +666,73 @@ struct ThreadTitle: View {
             else if store.lastTurnFailed { state = .failed; label = AgentState.failed.label }
             else if let agent { state = AgentState(agent.status); label = state.label }
             else { state = .idle; label = AgentState.idle.label }
-            runningSince = store.running && store.dialogs.isEmpty ? store.lastPromptAt : nil
         }
+    }
 
-        func meta(now: Date) -> NativeThreadMeta {
-            NativeThreadMeta(runningSince: runningSince, now: now.timeIntervalSince1970 * 1000)
-        }
+    /// The thread that started this one: its name, and opening it where this device has it.
+    struct Parent {
+        var name: String
+        var open: (() -> Void)?
     }
 
     let name: String
     let status: Status
     var branch: AgentBranchLabel?
-    /// iPad: the name, the chip and a pill on one line.
+    var parent: Parent?
+    /// iPad: the one-line title without the phone's status line.
     var wide = false
     var goalTime: String? = nil
     var goalStore: NativeThreadStore? = nil
 
     var body: some View {
         Group {
-            // Only a running turn's clock ticks, and only the iPad pill shows it.
-            if wide, status.runningSince != nil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in pill(status.meta(now: context.date)) }
-            } else if wide {
-                pill(status.meta(now: .distantPast))
+            if wide {
+                // No pill: VoiceOver still hears the state.
+                row.accessibilityValue(status.label)
             } else {
                 compact
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityActions {
+            if let parent, let open = parent.open { Button("Open \(parent.name)", action: open) }
+        }
+    }
+
+    /// The parent's name: a link when it opens.
+    @ViewBuilder private func parentName(_ parent: Parent) -> some View {
+        let text = Text(parent.name).foregroundStyle(parent.open == nil ? Color.sh.textSecondary : Color.sh.running).lineLimit(1)
+        if let open = parent.open {
+            Button(action: open) { text }.buttonStyle(.plain)
+        } else {
+            text
+        }
     }
 
     private var compact: some View {
         VStack(spacing: SH.Space.xxs) {
             Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-            // The branch truncates in the middle; the status word stays whole.
             HStack(spacing: SH.Space.s) {
                 SHStatusDot(status.state)
                 Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
-                ThreadGoalHeader(store: goalStore, time: goalTime)
-                // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
-                if let branch {
-                    let checkout = branch.kind == .checkout
-                    let tint = checkout ? Color.sh.lanternText : Color.sh.textTertiary
-                    Text("·").foregroundStyle(tint)
-                    Image(systemName: checkout ? "house" : "square.on.square")
-                        .imageScale(.small)
-                        .foregroundStyle(tint)
-                    if checkout {
-                        Text("your checkout").fontWeight(.medium).foregroundStyle(tint)
-                    } else {
-                        Text(branch.branch)
-                            .font(.sh(.mono))
-                            .foregroundStyle(tint)
-                            .truncationMode(.middle)
-                    }
+                // The phone's title has no room for a breadcrumb: the parent leads with the sidebar's sub-thread mark instead.
+                if let parent {
+                    Text("· ↳").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                    parentName(parent).layoutPriority(-1)
                 }
+                ThreadGoalHeader(store: goalStore, time: goalTime)
             }
             .font(.sh(.caption))
             .lineLimit(1)
         }
     }
 
-    private func pill(_ meta: NativeThreadMeta) -> some View {
+    private var row: some View {
         HStack(spacing: SH.Space.m) {
+            if let parent {
+                parentName(parent).font(.sh(.headline, weight: .regular)).layoutPriority(-1)
+                Text("/").font(.sh(.headline, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+            }
             Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let branch {
                 // Narrow (a half-open thread beside its pane), the host goes first, then the whole chip,
@@ -658,8 +745,6 @@ struct ThreadTitle: View {
                 }
                 .layoutPriority(-1)
             }
-            SHStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
-                .fixedSize()
             ThreadGoalHeader(store: goalStore, time: goalTime)
         }
     }
@@ -757,9 +842,19 @@ private struct ThreadOptionsItems: View {
     let store: NativeThreadStore
     let branch: AgentBranchLabel?
     let enabled: Bool
+    /// Opens the branch sheet (GitPhoneD's Branch).
+    let openBranch: () -> Void
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
+        if let branch {
+            Section {
+                Button(action: openBranch) {
+                    Label("Branch", systemImage: SHGlyph.gitBranch.symbolName)
+                    Text(BranchStatusStore.of(ref).menuDetail(branch: branch.branch))
+                }
+            }
+        }
         Section {
             ForEach(PadSidePaneTab.allCases, id: \.self) { tab in
                 Button { navigator.open(.paneScreen(tab, thread: ref)) } label: {

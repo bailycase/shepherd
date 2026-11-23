@@ -52,13 +52,13 @@ extension MobileNavigator {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             pad = try c.decode(Bool.self, forKey: .pad)
             tab = try c.decode(Tab.self, forKey: .tab)
-            homePath = try c.decode([MobileRoute].self, forKey: .homePath)
-            designsPath = try c.decodeIfPresent([MobileRoute].self, forKey: .designsPath) ?? []
-            projectsPath = try c.decodeIfPresent([MobileRoute].self, forKey: .projectsPath) ?? []
-            automationsPath = try c.decodeIfPresent([MobileRoute].self, forKey: .automationsPath) ?? []
-            settingsPath = try c.decode([MobileRoute].self, forKey: .settingsPath)
+            homePath = try c.decodeRoutes(.homePath)
+            designsPath = try c.decodeRoutesIfPresent(.designsPath)
+            projectsPath = try c.decodeRoutesIfPresent(.projectsPath)
+            automationsPath = try c.decodeRoutesIfPresent(.automationsPath)
+            settingsPath = try c.decodeRoutes(.settingsPath)
             padSelection = try c.decodeIfPresent(AgentRef.self, forKey: .padSelection)
-            padPath = try c.decode([MobileRoute].self, forKey: .padPath)
+            padPath = try c.decodeRoutes(.padPath)
             // A tab a later version removed (Artifacts) restores as no tab rather than failing the window.
             sidePane = (try? c.decodeIfPresent(PadSidePaneTab.self, forKey: .sidePane)) ?? nil
         }
@@ -88,5 +88,22 @@ extension MobileNavigator {
         padPath = saved.padPath.filter(known)
         if let tab = saved.sidePane { sidePane.show(tab) }
         if layout == .pad { takePaneScreens() }
+    }
+}
+
+/// One saved route, or nil when a later version removed its screen (Settings ▸ Defaults became Models and Agents):
+/// the stack keeps the rest instead of the window failing to restore.
+private struct SavedRoute: Decodable {
+    let route: MobileRoute?
+    init(from decoder: Decoder) throws { route = try? MobileRoute(from: decoder) }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeRoutes(_ key: Key) throws -> [MobileRoute] {
+        try decode([SavedRoute].self, forKey: key).compactMap(\.route)
+    }
+
+    func decodeRoutesIfPresent(_ key: Key) throws -> [MobileRoute] {
+        try decodeIfPresent([SavedRoute].self, forKey: key)?.compactMap(\.route) ?? []
     }
 }

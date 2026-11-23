@@ -2,6 +2,7 @@ import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdUI
 
 /// The branch card over a thread's top right (BranchCard board), shown while the thread works

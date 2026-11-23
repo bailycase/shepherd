@@ -37,8 +37,7 @@ struct FleetSettings: View {
     static let stopsAtQuit = "The background service is off, so Fleet stops when you quit Shepherd. Turn it on in System Settings ▸ General ▸ Login Items."
 
     var body: some View {
-        SettingsPage(title: "Fleet", explanation: Self.explanation,
-                     status: model.syncLine.map { AnyView(FleetSyncLineView(line: $0)) }) {
+        SettingsPage(title: "Fleet", subtitle: model.syncLine.map { [$0.lead, $0.tail].compactMap { $0 }.joined(separator: " · ") }) {
             if let dispatch { FleetDispatchGroup(controls: dispatch) }
             codeGroup
             macs
@@ -116,15 +115,14 @@ private struct FleetDispatchGroup: View {
 
     var body: some View {
         SettingsGroup(title: "Where threads run") {
-            SettingsRow(title: "Auto", subtitle: "New threads go to the Mac with the most room. You can still pick a Mac in the composer.") {
+            SettingsRow(title: "Auto", subtitle: "New threads go to the Mac with the most room") {
                 SettingsSwitch(label: "Auto", isOn: controls.autoDispatch)
             }
-            SettingsRow(title: "Threads can send work to other Macs",
-                        subtitle: "A thread hands separate work to the Mac with room and wakes up with the result. Threads it sends can’t send more.") {
+            SettingsRow(title: "Threads can send work to other Macs") {
                 SettingsSwitch(label: "Threads can send work to other Macs", isOn: controls.threadsCanSend)
             }
-            SettingsRow(title: "At most per thread", subtitle: "Threads a thread started that run at once, across every Mac.") {
-                SHPopupMenu(Self.capTitle(controls.threadCap.wrappedValue)) {
+            SettingsRow(title: "At most per thread") {
+                SHPopupMenu(Self.capTitle(controls.threadCap.wrappedValue), minWidth: 0) {
                     Picker("At most per thread", selection: controls.threadCap) {
                         ForEach(Array(HostSettings.fleetThreadCapRange), id: \.self) { Text(Self.capTitle($0)).tag($0) }
                     }
@@ -133,8 +131,8 @@ private struct FleetDispatchGroup: View {
                 }
                 .accessibilityLabel("At most per thread")
             }
-            SettingsRow(title: "On battery", subtitle: "How a Mac running on battery counts when Shepherd picks one.") {
-                SHPopupMenu(controls.batteryCountsHalf.wrappedValue ? "Counts half" : "Counts full") {
+            SettingsRow(title: "On battery") {
+                SHPopupMenu(controls.batteryCountsHalf.wrappedValue ? "Counts half" : "Counts full", minWidth: 0) {
                     Picker("On battery", selection: controls.batteryCountsHalf) {
                         Text("Counts half").tag(true)
                         Text("Counts full").tag(false)
@@ -151,7 +149,10 @@ private struct FleetDispatchGroup: View {
 extension FleetSettings {
     /// The Macs of the fleet, the Macs this app used to be a client of, and the two ways to add one.
     @ViewBuilder fileprivate var macs: some View {
-        SettingsGroup(title: "Macs", footnote: serviceKeepsRunning == true ? Self.footnote : Self.footnote + " " + Self.stopsAtQuit) {
+        SettingsGroup(title: "Macs", footnote: serviceKeepsRunning == true ? nil : Self.stopsAtQuit, links: [
+            SettingsLink("Join a fleet") { joining = true },
+            SettingsLink("Add a Mac") { model.openPairing(); adding = true },
+        ]) {
             ForEach(model.rows) { row in
                 FleetMacRowView(row: row) { removing = row }
                     .shTransition(.list)
@@ -162,16 +163,8 @@ extension FleetSettings {
                     .shTransition(.list)
             }
             if let problem = model.problem {
-                SettingsActionRow(leading: { SHInlineProblem(problem) }, actions: { EmptyView() })
+                SettingsRow(title: "", problem: problem) { EmptyView() }
                     .shTransition(.disclosure)
-            }
-            SettingsActionRow {
-                Button("Join a fleet…") { joining = true }
-                    .buttonStyle(.sh(.secondary))
-                    .disabled(!model.loaded)
-                Button("Add a Mac…") { model.openPairing(); adding = true }
-                    .buttonStyle(.sh(.secondary))
-                    .disabled(!model.loaded)
             }
         }
     }
@@ -179,7 +172,7 @@ extension FleetSettings {
     /// This Mac's listener, which a Mac or a device connects to: it opens on its own once one is paired or a code shows, and this keeps it open.
     @ViewBuilder fileprivate var serving: some View {
         if let serve {
-            SettingsGroup(title: "Serve this Mac", footnote: Self.serveFootnote) {
+            SettingsGroup(title: "Serve this Mac", footnote: "Your own network is the transport.") {
                 SettingsRow(title: "Listener", subtitle: serve.status, problem: serve.problem, problemHelp: serve.problemDetail) {
                     SettingsSwitch(label: "Listener", isOn: serve.isOn)
                 }
@@ -187,11 +180,12 @@ extension FleetSettings {
         }
     }
 
-    /// The Devices group: phones, iPads and Mac apps paired as clients.
+    /// Phones and tablets paired as clients.
     @ViewBuilder fileprivate var devices: some View {
-        SettingsGroup(title: "Devices", footnote: Self.devicesFootnote) {
+        SettingsGroup(title: "Phones and tablets", links: model.devicesReady && model.snapshot.port != nil
+                      ? [SettingsLink("Add a device") { addingDevice = true }] : []) {
             if model.deviceRows.isEmpty {
-                SettingsRow(title: "No devices", subtitle: "Add an iPhone or iPad below. It reads and sends on every Mac in the fleet.") { EmptyView() }
+                SettingsRow(title: "No devices", subtitle: "Add an iPhone or iPad. It reads and sends on every Mac in the fleet.") { EmptyView() }
                     .shTransition(.list)
             }
             ForEach(model.deviceRows) { row in
@@ -199,13 +193,8 @@ extension FleetSettings {
                     .shTransition(.list)
             }
             if let problem = model.deviceProblem {
-                SettingsActionRow(leading: { SHInlineProblem(problem) }, actions: { EmptyView() })
+                SettingsRow(title: "", problem: problem) { EmptyView() }
                     .shTransition(.disclosure)
-            }
-            SettingsActionRow {
-                Button("Add a device…") { addingDevice = true }
-                    .buttonStyle(.sh(.secondary))
-                    .disabled(!model.devicesReady || model.snapshot.port == nil)
             }
         }
     }
@@ -225,28 +214,9 @@ struct FleetDeviceRowView: View {
     let revoke: () -> Void
 
     var body: some View {
-        SettingsActionRow {
-            HStack(spacing: SH.Space.l) {
-                if row.connected {
-                    SHStatusDot(.done, size: AppLayout.fleetDotSize)
-                } else {
-                    SHStatusDot(.idle, size: AppLayout.fleetDotSize)
-                }
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text(row.title)
-                        .font(.sh(.body, weight: .medium))
-                        .foregroundStyle(Color.sh.textPrimary)
-                    Text(row.detail)
-                        .font(.sh(.ui))
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        } actions: {
+        SettingsRow(title: row.title, subtitle: row.detail, dot: row.connected ? .on : .off) {
             Button("Revoke", action: revoke)
-                .buttonStyle(.sh(.secondary))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Revoke \(row.title)")
         }
     }
@@ -261,43 +231,29 @@ struct FleetMacRowView: View {
     var dismiss: (() -> Void)?
 
     var body: some View {
-        SettingsActionRow {
-            HStack(spacing: SH.Space.l) {
-                dot
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text(row.title)
-                        .font(.sh(.body, weight: .medium))
-                        .foregroundStyle(Color.sh.textPrimary)
-                    Text(row.detail)
-                        .font(.sh(.ui))
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+        SettingsRow(title: row.title, subtitle: row.detail, dot: dot) {
+            HStack(spacing: SH.Space.s) {
+                if let add, let dismiss {
+                    Button("Add to fleet…", action: add)
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .accessibilityLabel("Add \(row.title) to the fleet")
+                    Button("Dismiss", action: dismiss)
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .accessibilityLabel("Dismiss \(row.title)")
+                } else if row.hostID != nil {
+                    Button("Remove", action: remove)
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .accessibilityLabel("Remove \(row.title)")
                 }
-            }
-            .accessibilityElement(children: .combine)
-        } actions: {
-            if let add, let dismiss {
-                Button("Add to fleet…", action: add)
-                    .buttonStyle(.sh(.secondary))
-                    .accessibilityLabel("Add \(row.title) to the fleet")
-                Button("Dismiss", action: dismiss)
-                    .buttonStyle(.sh(.secondary))
-                    .accessibilityLabel("Dismiss \(row.title)")
-            } else if row.hostID != nil {
-                Button("Remove", action: remove)
-                    .buttonStyle(.sh(.secondary))
-                    .accessibilityLabel("Remove \(row.title)")
             }
         }
     }
 
-    @ViewBuilder private var dot: some View {
+    private var dot: SHRowDot {
         switch row.state {
-        case .thisMac: SHStatusDot(.done, size: AppLayout.fleetDotSize, color: Color.sh.lantern)
-        case .connected: SHStatusDot(.done, size: AppLayout.fleetDotSize)
-        case .connecting: SHStatusDot(.running, size: AppLayout.fleetDotSize)
-        case .offline, .notInFleet: SHStatusDot(.idle, size: AppLayout.fleetDotSize)
+        case .thisMac, .connected: .on
+        case .connecting: .warn
+        case .offline, .notInFleet: .off
         }
     }
 }

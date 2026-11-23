@@ -4,6 +4,7 @@ The counting runs on small synthetic captures (no pi, no Node), so these tests a
 each section is made of. The real capture is Tests/Extensions/context-budget.test.mjs, which runs the
 script's `--check` against a real pi. Run: python3 -m unittest discover -s Tests/Release -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import json
 import os
 import subprocess

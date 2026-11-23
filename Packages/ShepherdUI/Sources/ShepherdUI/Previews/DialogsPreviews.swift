@@ -40,12 +40,12 @@ import SwiftUI
 #Preview("Settings navigation") {
     SHPreviewBoth {
         VStack(spacing: 1) {
-            SHSettingsNavRow("Appearance", systemImage: "circle.lefthalf.filled", selected: true) {}
-            SHSettingsNavRow("Terminal", systemImage: "terminal", selected: false) {}
-            SHSettingsNavRow("Pi", systemImage: "pi", selected: false) {}
+            SHSettingsNavRow("Appearance", selected: true) {}
+            SHSettingsNavRow("Keyboard", selected: false) {}
+            SHSettingsNavRow("Models", selected: false) {}
         }
         .padding(SH.Space.s)
-        .frame(width: 232)
+        .frame(width: SHSettingsNavMetrics.width)
         .background(Color.sh.bgBase)
     }
 }

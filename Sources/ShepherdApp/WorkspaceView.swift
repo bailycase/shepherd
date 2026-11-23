@@ -430,17 +430,21 @@ struct PaneTreeView: View {
         return GeometryReader { geo in
             let _ = SHRenderProbe.tick("layout.paneTreeGeo")
             let appTabs = vm.terminalPanels.appTabs[key] ?? []
-            let selected = TerminalPanel.selected(TerminalPanel.tabs(in: tab.layout, thread: thread.paneID) + appTabs, chosen: panel.chosenTab,
-                                                  focused: model.focusedPaneID)
+            let overlay = vm.terminalPanels.overlay(key)
+            let selected = vm.terminalPanels.selected(key, layout: tab.layout, thread: thread.paneID, chosen: panel.chosenTab,
+                                                      focused: model.focusedPaneID)
             let geometry = terminalPanelGeometry(for: tab.layout, thread: thread.paneID, selected: selected, shown: panel.shown,
                                                  maximized: panel.maximized, height: liveHeight ?? model.terminalHeight,
-                                                 in: geo.size, appTabs: appTabs)
+                                                 in: geo.size, appTabs: appTabs, overlay: overlay)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
                     Group {
                         if let app = vm.terminalPanels.appKey(leaf.pane.id) {
                             // An app's output: a read-only log, never a shell.
                             if leaf.shown { AppLogView(vm: vm, app: app) }
+                        } else if overlay.isPending(leaf.pane.id) {
+                            // Asked for, not made yet: no shell to type into.
+                            StartingTerminalPane()
                         } else {
                             PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, shown: leaf.shown))
                         }
@@ -480,6 +484,9 @@ struct PaneTreeView: View {
         .modifier(TerminalActivityPoll(vm: vm, key: key, agent: thread.agentID, remote: nil,
                                        active: model.isVisible && tab.layout.leaves.count > 1))
         .onChange(of: tab.layout.leaves.map(\.id), initial: true) {
+            vm.terminalPanels.reconcile(key, layout: tab.layout, thread: thread.paneID)
+        }
+        .onChange(of: vm.terminalPanels.overlay(key)) {
             vm.terminalPanels.reconcile(key, layout: tab.layout, thread: thread.paneID)
         }
     }
@@ -585,7 +592,8 @@ struct PaneLeafView: View, Equatable {
                     turnActions: TurnChangesActions(
                         review: { [vm] turnID, path in vm.selectAgent(agentID); vm.openTurnReview(.local(agentID), turnID: turnID, path: path) },
                         undo: { [vm] in await vm.undoTurn(.local(agentID), turnID: $0) },
-                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) }),
+                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) },
+                        view: { [vm] turnID, path, paths in vm.openFileViewer(agentID, turnID: turnID, path: path, paths: paths) }),
                     restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                     authNotice: model.authNotice,
                     authActions: ThreadAuthActions(
@@ -1031,14 +1039,21 @@ private struct RemotePaneTreeView: View {
         let target = ShepherdViewModel.TerminalTarget(key: key, layout: node, thread: thread, remote: model.ref, focused: model.focusedPaneID)
         return GeometryReader { geo in
             let _ = SHRenderProbe.tick("layout.remotePaneTree")
-            let selected = TerminalPanel.selected(TerminalPanel.tabs(in: node, thread: thread), chosen: panel.chosenTab,
-                                                  focused: model.focusedPaneID)
+            let overlay = vm.terminalPanels.overlay(key)
+            let selected = vm.terminalPanels.selected(key, layout: node, thread: thread, chosen: panel.chosenTab,
+                                                      focused: model.focusedPaneID)
             let geometry = terminalPanelGeometry(for: node, thread: thread, selected: selected, shown: panel.shown,
                                                  maximized: panel.maximized, height: liveHeight ?? model.terminalHeight,
-                                                 in: geo.size)
+                                                 in: geo.size, overlay: overlay)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves.filter { ($0.shown && model.isVisible) || $0.pane.id == thread }, id: \.pane.id) { leaf in
-                    RemotePaneLeafView(vm: vm, model: model, leaf: leaf.pane, hasThread: true, shown: leaf.shown)
+                    Group {
+                        if overlay.isPending(leaf.pane.id) {
+                            StartingTerminalPane()
+                        } else {
+                            RemotePaneLeafView(vm: vm, model: model, leaf: leaf.pane, hasThread: true, shown: leaf.shown)
+                        }
+                    }
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)
@@ -1074,6 +1089,9 @@ private struct RemotePaneTreeView: View {
         .modifier(TerminalActivityPoll(vm: vm, key: key, agent: model.ref.agentID, remote: model.ref,
                                        active: model.isVisible && node.leaves.count > 1))
         .onChange(of: node.leaves.map(\.id), initial: true) {
+            vm.terminalPanels.reconcile(key, layout: node, thread: thread)
+        }
+        .onChange(of: vm.terminalPanels.overlay(key)) {
             vm.terminalPanels.reconcile(key, layout: node, thread: thread)
         }
     }
@@ -1329,6 +1347,16 @@ struct HostAwayBanner: View {
         .frame(maxWidth: AppLayout.threadMaxWidth)
         .padding(AppLayout.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// A terminal tab asked of its host that has no shell yet (`TerminalTabOverlay`): a notice, and
+/// nothing that takes input.
+struct StartingTerminalPane: View {
+    var body: some View {
+        PanePlaceholder(text: "starting terminal…")
+            .background(Color.sh.bgWindow)
+            .accessibilityLabel("Starting terminal")
     }
 }
 

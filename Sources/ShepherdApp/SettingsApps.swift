@@ -14,7 +14,7 @@ struct AppsSettings: View {
     static let explanation = "Things you run while you work, such as a dev server, Storybook or the Simulator. Add them to a space and they show up as quick actions in that space’s threads. Their output goes to the terminal panel, and web apps open in the browser pane."
 
     var body: some View {
-        SettingsPage(title: "Apps", explanation: Self.explanation) {
+        SettingsPage(title: "Apps") {
             if let problem = model.problem { SHInlineProblem(problem) }
             ForEach(model.groups) { group in
                 AppsGroupView(group: group, vm: vm, model: model)
@@ -33,41 +33,22 @@ private struct AppsGroupView: View {
     let model: AppsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            HStack(alignment: .center) {
-                Text(group.title).shSettingsLabel().lineLimit(1).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: SH.Space.l)
-                Button { model.add(scope: group.scope) } label: { Label("Add app", systemImage: "plus") }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(group.problem != nil)
-                    .accessibilityLabel("Add app to \(group.title)")
-            }
-            .padding(.horizontal, SH.Space.xs)
+        SettingsGroup(title: group.title, footnote: footnote,
+                      links: group.problem == nil ? [SettingsLink("Add app", label: "Add app to \(group.title)") { model.add(scope: group.scope) }] : []) {
             if let problem = group.problem {
-                SHInlineProblem(problem)
-            } else if !group.apps.isEmpty {
-                SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
-                    ForEach(group.apps) { app in
-                        let key = AppKey(scope: group.scope, name: app.name)
-                        AppRow(app: app, process: model.process(key),
-                               run: { vm.runApp(app, key: key) }, stop: { vm.stopApp(key) }, restart: { vm.restartApp(key) })
-                            .contextMenu {
-                                Button("Edit…") { model.edit(app, scope: group.scope) }
-                                Button("Remove") { model.remove(key) }
-                            }
-                    }
-                }
-            } else {
-                SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
-                    SettingsActionRow {
-                        Text("No apps yet.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
-                    } actions: { EmptyView() }
-                }
+                SettingsRow(title: "", problem: problem) { EmptyView() }
+            } else if group.apps.isEmpty {
+                SettingsRow(title: "No apps yet") { EmptyView() }
+            }
+            ForEach(group.apps) { app in
+                let key = AppKey(scope: group.scope, name: app.name)
+                AppRow(app: app, process: model.process(key),
+                       run: { vm.runApp(app, key: key) }, stop: { vm.stopApp(key) }, restart: { vm.restartApp(key) },
+                       edit: { model.edit(app, scope: group.scope) }, remove: { model.remove(key) })
             }
             if !group.suggestions.isEmpty {
                 AppSuggestionRow(scripts: group.suggestions.map(\.script)) { model.addSuggestions(group) }
             }
-            SettingsNote(text: footnote).padding(.horizontal, SH.Space.xs)
         }
     }
 
@@ -77,59 +58,51 @@ private struct AppsGroupView: View {
     }
 }
 
-/// One app: its kind's glyph in a tile, name (and Quick action), where it opens and what it runs,
-/// then what it is doing (AppStatusLabel) and Run, Stop or Restart.
+/// One app: its name, where it opens and what it runs, then what it is doing and Run, Stop or Restart,
+/// and a ⋯ menu for Edit and Remove.
 private struct AppRow: View {
     let app: AppDefinition
     let process: AppProcessSnapshot?
     let run: () -> Void
     let stop: () -> Void
     let restart: () -> Void
+    let edit: () -> Void
+    let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: SH.Space.l) {
-            Image(systemName: Self.symbol(app.opens))
-                .font(.shSans(AppLayout.appsIconSize))
-                .foregroundStyle(Color.sh.textSecondary)
-                .frame(width: AppLayout.appsIconTile, height: AppLayout.appsIconTile)
-                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(spacing: SH.Space.m) {
-                    Text(app.name).font(.shSans(AppLayout.appsNameSize, .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                    if app.quickAction { AppTag(text: "Quick action") }
+        SettingsRow(title: app.name, subtitle: Self.place(app) + " · " + app.command,
+                    dot: process?.status == .running ? .on : process?.status == .starting ? .warn : nil) {
+            HStack(spacing: SH.Space.s) {
+                if let process { AppStatusLabel(process: process) }
+                switch process?.status {
+                case .starting?, .running?:
+                    Button("Stop", action: stop)
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .disabled(process?.stopping == true)
+                        .accessibilityLabel("Stop \(app.name)")
+                case .exited?:
+                    Button("Restart", action: restart)
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .accessibilityLabel("Restart \(app.name)")
+                default:
+                    Button("Run", action: run)
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .accessibilityLabel("Run \(app.name)")
                 }
-                (Text(Self.place(app) + " · ").font(.sh(.caption)) + Text(app.command).font(.sh(.mono)))
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(app.command)
-            }
-            Spacer(minLength: SH.Space.xl)
-            if let process { AppStatusLabel(process: process) }
-            switch process?.status {
-            case .starting?, .running?:
-                Button(action: stop) { Label("Stop", systemImage: "stop.fill") }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(process?.stopping == true)
-                    .accessibilityLabel("Stop \(app.name)")
-            case .exited?:
-                Button(action: restart) { Label("Restart", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .accessibilityLabel("Restart \(app.name)")
-            default:
-                Button(action: run) { Label("Run", systemImage: "play.fill") }
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .accessibilityLabel("Run \(app.name)")
+                Menu {
+                    Button("Edit…", action: edit)
+                    Button("Remove", role: .destructive, action: remove)
+                } label: {
+                    Text("⋯").font(.sh(.caption))
+                }
+                .menuStyle(.button).buttonStyle(.sh(.secondary, size: .s)).menuIndicator(.hidden).fixedSize()
+                .accessibilityLabel("More for \(app.name)")
             }
         }
-        .padding(.horizontal, SH.Space.xl)
-        .padding(.vertical, SH.Space.m)
-        .frame(minHeight: AppLayout.appsRowHeight)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(process.map { "\(app.name), \(AppStatusLabel.words($0))" } ?? app.name)
+        .contextMenu {
+            Button("Edit…", action: edit)
+            Button("Remove", action: remove)
+        }
     }
 
     static func symbol(_ opens: AppDefinition.Opens) -> String {

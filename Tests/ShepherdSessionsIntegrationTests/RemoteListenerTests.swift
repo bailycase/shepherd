@@ -16,18 +16,20 @@ struct RemoteListenerTests {
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
-        // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
-        // on, and it starts off.
-        // Fleet is offered only by a host whose fleet has started (`SessionServer.startFleet`); a bare server has none.
-        // Nor an updater, so the host updates no Mac of its fleet (`fleet.update.v1`).
-        // A bare server also has no owner Project launcher/controller installed, and Files goes
-        // only to a client that lists it (this one lists nothing).
-        let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.fleetCapability && $0 != RemoteProtocol.fleetLinkCapability && $0 != RemoteProtocol.fleetPressureCapability && $0 != RemoteProtocol.fleetCheckCapability && $0 != RemoteProtocol.fleetDevicesCapability && $0 != RemoteProtocol.fleetSyncCapability && $0 != RemoteProtocol.fleetSnapshotCapability && $0 != RemoteProtocol.fleetDispatchCapability && $0 != RemoteProtocol.fleetMoveCapability && $0 != RemoteProtocol.fleetRendezvousCapability && $0 != RemoteProtocol.fleetPairLinkCapability && $0 != RemoteProtocol.hostUpdateCapability && $0 != RemoteProtocol.fleetUpdateCapability && $0 != RemoteProtocol.fleetUpdateViewCapability && $0 != RemoteProtocol.filesCapability && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
-        }
-        // This host's fleet runs (a test's client is one of its devices), so it says who it is.
+        // The Design tool starts off. The test token authenticates a device, not a Fleet member.
+        let unavailable = RemoteProtocol.designCapabilities.union(RemoteProtocol.fleetMemberCapabilities).union([
+            // No updater, no Files opt-in, and no Project launcher or controller.
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.fleetUpdateViewCapability,
+            RemoteProtocol.filesCapability,
+            RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability,
+            RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectExecutionCapability,
+            RemoteProtocol.projectPlacementCapability, RemoteProtocol.projectPublicationsCapability,
+            RemoteProtocol.projectResultCapability,
+        ])
+        let offered = RemoteProtocol.capabilities.filter { !unavailable.contains($0) }
         guard case .helloOk(7, RemoteProtocol.version, let capabilities, _, let hostID) = try await client.next() else { Issue.record("expected helloOk"); return }
-        #expect(capabilities == offered && hostID != nil)
+        #expect(capabilities.sorted() == offered.sorted())
+        #expect(hostID != nil)
     }
 
     @Test(arguments: ["127.0.0.1", "localhost"])
@@ -231,6 +233,47 @@ struct RemoteListenerTests {
         try await eventually("both non-preview reads demand pi on main") { demanded.current == [idle.agent.id, idle.agent.id] }
     }
 
+    @MainActor
+    @Test func copiesEveryPageOfAnIdleCompactedBranchWithoutStartingPi() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let demanded = Locked<[AgentID]>([])
+        r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }
+        let space = Fixture.space(path: r.host.dir.appendingPathComponent("work").path)
+        try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true)
+        let idle = Fixture.agent(in: space, name: "idle", sessionID: SessionID())
+        try await r.host.seed(Fixture.workspace([idle], space: space))
+        let sessionID = idle.agent.effectivePiSessionID
+        let folder = r.server.pi.sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: space.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl")
+        var lines = [#"{"type":"session","version":3,"id":"\#(sessionID)"}"#]
+        for index in 0..<120 {
+            if index == 60 {
+                lines.append(#"{"type":"message","id":"fork","parentId":"e0","message":{"role":"user","content":"other branch"}}"#)
+                lines.append(#"{"type":"compaction","id":"compact","parentId":"e59","firstKeptEntryId":"e55","summary":"omitted earlier context"}"#)
+            }
+            let parent = index == 0 ? "null" : index == 60 ? #""compact""# : #""e\#(index - 1)""#
+            lines.append(#"{"type":"message","id":"e\#(index)","parentId":\#(parent),"message":{"role":"user","content":"message \#(index)"}}"#)
+        }
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
+
+        let client = try await r.typed(capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability])
+        defer { client.disconnect() }
+        var pages: [[String]] = []
+        var copies: [String] = []
+        let copied = try await ThreadTranscript.copy(fetch: { request in
+            let result = try await client.nativeThread(agentID: idle.agent.id, request: request)
+            if case .snapshot(let page) = result { pages.append(page.messages.map(\.entryID)) }
+            return result
+        }, to: { copies.append($0) })
+        #expect(copied)
+        #expect(pages.map(\.count) == [50, 50, 20])
+        #expect(Set(pages.joined()).count == 120, "Pages must not repeat any entries")
+        #expect(copies == [(0..<120).map { "user: message \($0)" }.joined(separator: "\n\n")])
+        #expect(demanded.current.isEmpty, "Copying must not start pi")
+    }
+
     /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and
     /// pushed state carries each agent's level clamped to those; a current client's keeps them.
     @Test func anOlderClientGetsTheWorkspaceWithLevelsItCanDecode() async throws {
@@ -327,6 +370,95 @@ struct RemoteListenerTests {
             if (try? await client.hello(token: r.token)) != nil { authenticated += 1 }
         }
         #expect(authenticated == connections)
+    }
+
+    /// Changes asked while the server queue is busy (a start-up, a switch toggled twice) run in the order asked: the last one
+    /// is what stays, in what the callbacks report and on the real socket. The listener starts open, so each change waits for
+    /// its port to close before the next.
+    @Test(arguments: [[true, false], [true, false, true], [false, true, false]])
+    func listenerChangesAskedWhileTheQueueIsBusyEndInTheLastOne(asked: [Bool]) async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let release = DispatchSemaphore(value: 0)
+        await host.server.holdQueue(until: release)
+        defer { release.signal() }
+        let outcomes = Locked<[UInt16?]>([])
+        for on in asked {
+            host.server.setRemoteListener(port: on ? 0 : nil) { result in
+                outcomes.withValue { $0.append((try? result.get()) ?? nil) }
+            }
+        }
+        release.signal()
+        try await eventually("every change to be answered") { outcomes.current.count == asked.count }
+
+        #expect(outcomes.current.map { $0 != nil } == asked, "each change is answered in the order asked")
+        let final = outcomes.current.last ?? nil
+        for port in Set(outcomes.current.compactMap { $0 } + [host.port]) where port != final {
+            #expect((try? RawRemote(port: port)) == nil, "port \(port) is closed")
+        }
+        if let final {
+            let client = try RawRemote(port: final)
+            client.closeConnection()
+        }
+    }
+
+    /// Stops that overlap each finish only once the port is closed, not just the first: the descriptor closes on the queue
+    /// after the stop's own turn, so within that turn no waiter, the second included, may be told it is closed.
+    @Test func everyStopThatOverlapsWaitsForThePortToClose() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let server = r.server
+        let told = Locked<[String]>([])
+        server.queue.sync {
+            server.stopRemoteListenerOnQueue()
+            for name in ["first", "second"] {
+                server.whenRemoteListenerClosedOnQueue { told.withValue { $0.append(name) } }
+            }
+            #expect(told.current.isEmpty, "a waiter was told the port is closed before its descriptor closed")
+        }
+        try await eventually("both waiters to be told") { told.current.count == 2 }
+        #expect((try? RawRemote(port: r.port)) == nil)
+    }
+
+    /// A stop returns only once the port is closed, however long that takes: the exit deadline belongs to `stop` alone, and
+    /// passing it does not count as closed. A descriptor that closes late is a stopped listener whose record stays open here.
+    @Test func stopRemoteListenerWaitsForTheCloseBeyondTheExitDeadline() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let server = r.server
+        await blocking { server.stopRemoteListener() }
+        let late = Locked(SessionServer.ListenerClose())
+        await server.queue.testHop { server.remoteListenerClosing = late.current }
+        defer {
+            // Release the blocking caller even if the test fails before it simulates the close.
+            server.queue.async {
+                guard server.remoteListenerClosing === late.current else { return }
+                server.remoteListenerClosing = nil
+                late.current.markClosed()
+            }
+        }
+
+        // The stop is under way once its waiter is registered; only then does the deadline start to matter.
+        server.remoteListenerExitDeadline = .milliseconds(200)
+        let closed = Locked(false)
+        let returnedAfterClose = Locked<Bool?>(nil)
+        let stopping = Task {
+            await blocking {
+                server.stopRemoteListener()
+                returnedAfterClose.withValue { $0 = closed.current }
+            }
+        }
+        try await eventually("the stop to wait for the close") { await server.queue.testHop { late.current.waiters.count } == 1 }
+
+        // This waiter registers after the stop's and gives up later than any deadline the stop could have started, so
+        // by the time it does, a stop that honoured the deadline has already returned.
+        let closedWithinDeadline = await blocking { server.awaitRemoteListenerClosed(within: .milliseconds(400)) }
+        #expect(!closedWithinDeadline, "the exit deadline passes without a close")
+        #expect(returnedAfterClose.current == nil, "the stop returned before the port closed")
+
+        await server.queue.testHop { server.remoteListenerClosing = nil; closed.withValue { $0 = true }; late.current.markClosed() }
+        await stopping.value
+        #expect(returnedAfterClose.current == true, "the stop returned only after the port closed")
     }
 
     /// A non-blocking connect to the listener on the loopback address.

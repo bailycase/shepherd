@@ -14,9 +14,11 @@ Choose only what the change needs; these are alternatives, not a checklist. Repl
 ```bash
 swift test --filter '<affected suite or test>' # builds before running; no separate swift build
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<affected preview>'
-PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test 'Tests/Extensions/<affected>.test.mjs'
+PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test 'Tests/Extensions/<affected>.test.mjs'
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py' # docs guards
 ```
+
+On Mac, `python3 scripts/validate.py --case <changes-review|seeded-thread-rename|scroll-stability>` saves evidence under `.build/validation/`. Bare invocation does not select checks yet.
 
 App builds and engine staging: [docs/build-and-run.md](docs/build-and-run.md). Run the Mac app from
 `Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs only for PRs targeting `master`.
@@ -43,6 +45,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Branch from `nightly` (`feat/…`, `fix/…`), open the PR into `nightly`. Conventional commits
   (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). No AI attribution in commits or PR bodies.
+- Platform parity: a user-facing change ships on the Mac app and the iPhone and iPad client (`App/iOS`)
+  in the same PR, unless the user scopes it to one. Say in the PR what each platform got.
 - Start an authorized change without a separate issue or plan. Read the affected code and relevant
   doc sections; ask only when scope or a consent boundary below is unresolved.
 - Reuse tests that protect the affected behavior; add or extend coverage for new behavior or a

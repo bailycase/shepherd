@@ -4,8 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// A thread another thread started on any Mac is a thread like any other (FleetSubthreads): the same dot, second line and menu as one that is here, tagged
-// with the Mac that has it. The one relationship a row shows is that it nests under the thread that started it while it works. Work that has no
+// A thread another thread started, here (`agent_spawn`) or on any Mac, is a thread like any other (FleetSubthreads): the same dot, second line and menu as
+// one that is here, tagged with the Mac that has it. The one relationship a row shows is that it nests under the thread that started it while it works. Work that has no
 // thread yet is a row in a starting state ("starting on mini") that becomes the real thread when it starts. Plain values derived with the lists,
 // never in a view's body.
 
@@ -39,10 +39,23 @@ extension SHSidebarRow.Subtitle.Tone {
 }
 
 extension SidebarDerivation {
-    /// The tree facts of a thread another Mac or thread started; nil for any other.
-    static func sentInfo(of agent: Agent, _ source: SidebarSource) -> SidebarSentInfo? {
+    /// The tree facts of a thread another Mac or thread started; nil for any other. `host` is the connected host it runs on, nil for This Mac.
+    static func sentInfo(of agent: Agent, host: UUID? = nil, _ source: SidebarSource) -> SidebarSentInfo? {
+        if let started = agent.startedBy {
+            return SidebarSentInfo(sender: startedByRow(started.agentID, near: host, source), at: started.at)
+        }
         guard let from = agent.dispatchedFrom else { return nil }
         return SidebarSentInfo(sender: fleetSender(of: agent, source), at: from.at)
+    }
+
+    /// The row of the thread that started one with `agent_spawn`: on the same host, else wherever it is now (either may have moved to another
+    /// Mac since; a thread keeps its id when it moves). Nil when no host this Mac sees has it.
+    static func startedByRow(_ id: AgentID, near host: UUID?, _ source: SidebarSource) -> SidebarRowID? {
+        if let host, source.hosts.first(where: { $0.id == host })?.state.agents.contains(where: { $0.id == id }) == true {
+            return .remote(RemoteAgentRef(hostID: host, agentID: id))
+        }
+        if source.local.agents.contains(where: { $0.id == id }) { return .local(id) }
+        return source.hosts.first { $0.state.agents.contains { $0.id == id } }.map { .remote(RemoteAgentRef(hostID: $0.id, agentID: id)) }
     }
 
     /// The threads this Mac started on other Macs that don't exist yet, and the ones that failed before they did: their own rows, with their facts. A
@@ -91,8 +104,8 @@ enum SidebarSent {
 
     /// Places every thread another thread started among `lists` (the rows of one or more groups, in order): under the thread that started it while it
     /// works or asks, and in its own group, as the thread it is, once it is finished or when that thread isn't among the rows. One that asks you stays
-    /// in Needs you as well (`keepsNeedsYou`: the Spaces tree has no Needs you).
-    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo], keepsNeedsYou: Bool = true) {
+    /// in Needs you as well. Activity only: the Spaces tree keeps every thread in its own space.
+    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo]) {
         guard !infos.isEmpty else { return }
         let present = Set(lists.flatMap { $0.map(\.id) })
         // The top of each chain of threads that started one another that this Mac can see.
@@ -118,7 +131,7 @@ enum SidebarSent {
             for var row in lists[list] {
                 let id = row.id
                 // Still in its own group only where it waits on you.
-                if infos[id] != nil, nests(row), !(keepsNeedsYou && row.section == .needsYou) { continue }
+                if infos[id] != nil, nests(row), row.section != .needsYou { continue }
                 if let kids = children[id]?.sorted(by: { $0.at < $1.at }) {
                     if kids.count > foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
                     out.append(row)

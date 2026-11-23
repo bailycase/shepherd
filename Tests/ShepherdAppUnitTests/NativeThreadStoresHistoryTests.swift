@@ -53,17 +53,123 @@ struct NativeThreadStoresHistoryTests {
         // One of two readers leaves: the other's place is still kept.
         pins.unpin(reader, owner: deck)
         stores.enforceHistoryBounds()
-        #expect(!stores.store(for: "a").holdsHistory)
-        #expect(reader.holdsHistory)
+        #expect(stores.store(for: "a").keepsOnlyTail, "a thread past the bounds keeps only its tail")
+        #expect(reader.holdsHistory && !reader.keepsOnlyTail)
         #expect(stores.store(for: "selected").holdsHistory)
         #expect(stores.store(for: "newest").holdsHistory, "the thread just shown is never released")
         for key in ["a", "read", "selected", "newest"] { #expect(stores.store(for: key).draft == "draft \(key)") }
 
         pins.unpin(reader, owner: second)
         stores.enforceHistoryBounds()
-        #expect(!reader.holdsHistory)
+        #expect(reader.keepsOnlyTail)
         #expect(reader.draft == "draft read")
         #expect(stores.existing(for: "read") === reader, "the store and its identity stay")
+    }
+
+    /// A thread past the bounds lets its older history go and keeps its tail: what it draws first when it is shown again.
+    @Test func aThreadPastTheBoundsKeepsItsTailRows() {
+        let stores = NativeThreadStores<String>()
+        stores.retainedHistories = 0
+        stores.protected = { ["newest"] }
+        let old = stores.store(for: "old")
+        old.preview(snapshot("old", turns: 100))
+        stores.store(for: "newest").preview(snapshot("newest"))
+        stores.noteShown("old")
+        stores.noteShown("newest")
+        let rows = old.rows, messages = old.messages
+        #expect(rows.count == 200)
+
+        stores.enforceHistoryBounds()
+        #expect(!old.rows.isEmpty && old.rows.count < rows.count, "older rows go, the tail stays: \(old.rows.count) of \(rows.count)")
+        #expect(old.rows.suffix(30) == rows.suffix(30), "the tail is the rows it had, with the same identities")
+        #expect(old.messages.last == messages.last && old.messages.count < messages.count)
+        #expect(old.olderCursor == old.messages.first?.entryID, "older history pages in from where the tail starts")
+        #expect(old.draft == "" && stores.existing(for: "old") === old)
+    }
+
+    /// More threads than the budget of tails holds: the ones shown longest ago go whole, and what is kept stays within the budget.
+    @Test func tailsPastTheirBudgetGoWholeOldestFirst() {
+        let stores = NativeThreadStores<String>()
+        stores.retainedHistories = 0
+        let keys = ["a", "b", "c", "d", "e", "f"]
+        for key in keys {
+            stores.store(for: key).preview(snapshot(key, turns: 100))
+            stores.noteShown(key)
+        }
+        stores.enforceHistoryBounds()
+        let hidden = keys.dropLast().map { stores.store(for: $0) }
+        #expect(hidden.allSatisfy { $0.keepsOnlyTail && !$0.rows.isEmpty }, "the default budget holds them all")
+        #expect(!stores.store(for: "f").keepsOnlyTail && stores.store(for: "f").rows.count == 200, "the thread shown last is whole")
+
+        let one = hidden[0].retainedHistoryBytes
+        stores.tailBudget = one * 3 + one / 2
+        stores.enforceHistoryBounds()
+        for key in ["a", "b"] {
+            let store = stores.store(for: key)
+            #expect(!store.holdsHistory && store.rows.isEmpty && !store.keepsOnlyTail, "\(key) was shown longest ago: it goes whole")
+        }
+        let kept = ["c", "d", "e"].map { stores.store(for: $0) }
+        #expect(kept.allSatisfy { $0.keepsOnlyTail && !$0.rows.isEmpty })
+        #expect(kept.reduce(0) { $0 + $1.retainedHistoryBytes } <= stores.tailBudget, "what the tails hold is within the budget")
+        #expect(stores.store(for: "a").draft == "" && stores.existing(for: "a") != nil)
+    }
+
+    /// One tail holds no more than its cap, but always the last question and its answer.
+    @Test func aTailKeepsWithinItsCapAndAlwaysTheLastTurn() {
+        let stores = NativeThreadStores<String>()
+        stores.retainedHistories = 0
+        let words = String(repeating: "word ", count: 2_000)
+        let messages = (0..<60).flatMap { i in
+            [NativeThreadMessage(entryID: "u\(i)", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Question \(i)")]),
+             NativeThreadMessage(entryID: "a\(i)", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "\(words) \(i)")])]
+        }
+        var value = snapshot("big")
+        value.messages = messages
+        let big = stores.store(for: "big")
+        big.preview(value)
+        stores.store(for: "newest").preview(snapshot("newest"))
+        stores.noteShown("big")
+        stores.noteShown("newest")
+        let before = big.retainedHistoryBytes
+
+        stores.tailCap = before / 20
+        stores.enforceHistoryBounds()
+        #expect(big.keepsOnlyTail && big.retainedHistoryBytes <= stores.tailCap, "\(big.retainedHistoryBytes) of \(stores.tailCap)")
+        #expect(big.rows.last?.id == "u59/reply" && big.messages.first?.role == "user" && big.rows.count >= 2, "the end of the thread stays")
+
+        stores.tailCap = 1
+        big.preview(value)
+        stores.noteShown("big")
+        stores.noteShown("newest")
+        stores.enforceHistoryBounds()
+        #expect(big.rows.count == 2 && big.rows.last?.id == "u59/reply", "under any cap, the last question and its answer: \(big.rows.count) rows")
+    }
+
+    /// A thread that holds no question (a page that starts inside one long reply) holds one agent turn, the last answer, which the rule
+    /// keeps whatever it holds: past the bounds only what older pages added above the host's newest page is cut, and only over the cap.
+    @Test func aThreadWithNoQuestionKeepsItsNewestPageWhateverTheCap() {
+        let stores = NativeThreadStores<String>()
+        stores.retainedHistories = 0
+        let words = String(repeating: "word ", count: 2_000)
+        func notes(_ count: Int, _ text: String) -> NativeThreadSnapshot {
+            var value = snapshot("notes")
+            value.messages = (0..<count).map { NativeThreadMessage(entryID: "a\($0)", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "\(text) \($0)")]) }
+            return value
+        }
+        let paged = stores.store(for: "paged"), page = stores.store(for: "page"), within = stores.store(for: "within")
+        paged.preview(notes(120, words))
+        page.preview(notes(30, words + words + words + words))
+        within.preview(notes(120, "Note"))
+        stores.store(for: "newest").preview(snapshot("newest"))
+        for key in ["paged", "page", "within", "newest"] { stores.noteShown(key) }
+        let before = paged.retainedHistoryBytes, rows = within.rows
+
+        stores.tailCap = before / 2
+        stores.enforceHistoryBounds()
+        #expect(paged.keepsOnlyTail && paged.messages.count == NativeThreadStore.releasedTailMessages && paged.retainedHistoryBytes <= stores.tailCap,
+                "\(paged.retainedHistoryBytes) of \(stores.tailCap): the page the host sends")
+        #expect(page.keepsOnlyTail && page.messages.count == 30 && page.retainedHistoryBytes > stores.tailCap, "one page is not cut, whatever it holds")
+        #expect(within.keepsOnlyTail && within.rows == rows, "what fits the cap stays")
     }
 
     // MARK: Hidden threads' row views

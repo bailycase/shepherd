@@ -1,5 +1,6 @@
 // Live coordination against a local Shepherd socket; report/task semantics also run in real
 // pi against a gated local fake provider, with an isolated home and no external services.
+import "./hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as net from "node:net";

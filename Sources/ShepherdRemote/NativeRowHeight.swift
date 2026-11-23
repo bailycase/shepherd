@@ -38,7 +38,7 @@ public enum NativeRowHeight {
 
     static func item(_ item: NativeTurnPresentation.Item) -> Int {
         switch item {
-        case .prose(_, _, let prose): prose.height
+        case .prose(_, let text, let prose): item.awaitsParse ? textHeight(text) : prose.height
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
         case .note(_, let text), .goalRecord(_, let text): textHeight(text)

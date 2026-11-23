@@ -11,7 +11,7 @@ struct AutomationRow: View, Equatable {
 
     var body: some View {
         SHListRow(row.name, subtitle: "\(row.stateWord) · \(row.place)", subtitleTone: tone,
-                  leading: row.run == nil ? .symbol("bolt") : .state(state), trailing: row.hostTag.map { .host($0) } ?? .none,
+                  leading: row.run == nil ? .symbol("bolt") : .state(state),
                   chevron: row.run != nil, selected: selected, dimmed: row.offline || !row.enabled)
             .accessibilityHint(row.run == nil ? "" : "Opens its run")
     }

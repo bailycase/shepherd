@@ -48,6 +48,16 @@ extension FixtureCatalog {
             // added to the draft.
             FixtureScreen(name: "browser-pad-pick", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.checkout), routes: routes,
                           prepare: { app in await BrowserFixture.pick(app, ref: ref) }),
+            FixtureScreen(name: "browser-tabs", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .two) }),
+            FixtureScreen(name: "browser-tabs-popup", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .popup) }),
+            FixtureScreen(name: "browser-tabs-full", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .full) }),
+            FixtureScreen(name: "browser-tabs-full-menu", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .fullMenu) }),
+            FixtureScreen(name: "browser-tabs-close", hosts: BrowserFixture.hosts(running: true, html: BrowserFixture.payments), routes: routes,
+                          prepare: { app in await BrowserFixture.tabs(app, ref: ref, state: .close) }),
         ]
     }
 }
@@ -55,6 +65,7 @@ extension FixtureCatalog {
 enum BrowserFixture {
     /// The dev server's port on the host, and the one forwarded on the device.
     static let port = 41_731
+    static let popupPort = 41_732
     static let title = "Widget gallery"
 
     static func hosts(running: Bool, capable: Bool = true, html: String = BrowserFixture.html) -> [FixtureHostData] {
@@ -65,9 +76,9 @@ enum BrowserFixture {
             return hosts
         }
         let servers = [
-            DevServer(script: "dev", command: "pnpm dev", packageName: "widget-gallery", directory: "/Users/dev/Shepherd",
+            DevServer(script: "dev", command: "pnpm dev", packageName: "widget-gallery", directory: "/Users/dev/acme-web",
                       manifest: "package.json", port: port),
-            DevServer(script: "storybook", command: "pnpm storybook", packageName: "widget-gallery", directory: "/Users/dev/Shepherd",
+            DevServer(script: "storybook", command: "pnpm storybook", packageName: "widget-gallery", directory: "/Users/dev/acme-web",
                       manifest: "package.json", port: 6006),
         ]
         hosts[index].reply = { request in
@@ -95,7 +106,9 @@ enum BrowserFixture {
         func answer(_ frame: BrowserTunnelFrame) -> [BrowserTunnelFrame] {
             switch frame {
             case .open(let tunnel, _, let port):
-                guard running, port == BrowserFixture.port else { return [.close(tunnel: tunnel, code: BrowserTunnelCode.refused)] }
+                guard running, port == BrowserFixture.port || port == BrowserFixture.popupPort else {
+                    return [.close(tunnel: tunnel, code: BrowserTunnelCode.refused)]
+                }
                 return [.opened(tunnel: tunnel)]
             case .data(let tunnel, let bytes):
                 let request: Data = lock.withLock {
@@ -212,6 +225,131 @@ enum BrowserFixture {
         let chips = app.threads.store(for: ref).attachedElements.map(\.element.label)
         let ok = picked?.label == "button.pay" && picked?.sourceShort == "Checkout.tsx:88" && picked?.width == 240 && chips == ["button.pay"]
         FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): button.pay picked (\(picked?.label ?? "nil") \(picked?.sourceShort ?? "nil")), chips \(chips)")
+    }
+
+    static let payments = """
+    <!doctype html>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Refund overview</title>
+    <style>
+    body{margin:0;font:15px -apple-system,sans-serif;color:light-dark(#24282e,#e5e7eb);background:light-dark(#fbfbfa,#181b1c)}
+    header,main{padding:20px 24px}header{border-bottom:1px solid light-dark(#e0e2e4,#333638);font-weight:600}
+    h1{font-size:26px;margin:0 0 8px}p,small{color:light-dark(#5c626a,#a4aab2)}
+    section{border:1px solid light-dark(#e0e2e4,#333638);border-radius:8px;padding:16px;margin:24px 0}
+    strong{display:block;font-size:26px;margin:8px 0 12px}a{display:inline-block;border-radius:6px;background:#3570c1;color:white;padding:8px 12px;text-decoration:none}
+    </style>
+    <header>Acme payments</header>
+    <main><h1></h1><p></p><section><small></small><strong></strong><a target="_blank" href="/?view=checkout">Open checkout</a></section></main>
+    <script>
+    const view = new URLSearchParams(location.search).get('view');
+    const checkout = view === 'checkout';
+    document.title = checkout ? 'Checkout' : view || 'Refund overview';
+    document.querySelector('h1').textContent = document.title;
+    document.querySelector('p').textContent = checkout ? 'Team plan · 5 seats · billed monthly.' : 'Track refunds and their ledger events.';
+    document.querySelector('small').textContent = checkout ? 'Due today' : 'Refunded this month';
+    document.querySelector('strong').textContent = checkout ? '$148.00' : '$12,480.00';
+    setTimeout(() => {
+        console.log('[dev] connected.');
+        console.log(checkout ? 'GET /api/checkout 200' : 'GET /api/refunds 200');
+        console.warn(checkout ? 'Checkout: test mode is on.' : 'Refund list: one transaction is pending.');
+        console.log('GET /api/events 200');
+    }, 100);
+    </script>
+    """
+
+    enum TabState { case two, popup, full, fullMenu, close }
+
+    @MainActor static func tabs(_ app: MobileApp, ref: AgentRef, state: TabState) async {
+        app.navigator.padColumns = .detailOnly
+        await FixtureCheck.wait("browser pane and real console output", seconds: 25) {
+            guard let page = MobileBrowsers.shared.existing(ref) else { return false }
+            return app.navigator.layout == .pad && page.allowsPopupTabs && page.title == "Refund overview"
+                && page.console.warnings == 1 && page.console.network > 0
+        }
+        guard let tabs = MobileBrowsers.shared.existingTabs(ref), let root = tabs.selectedPage, let web = root.webView else {
+            FixtureCheck.fail("no browser tab")
+        }
+        if state == .close {
+            _ = try? await web.evaluateJavaScript("document.querySelector('a').port = '\(popupPort)'")
+        }
+        _ = try? await web.evaluateJavaScript("document.querySelector('a').click()")
+        await FixtureCheck.wait("the popup opened in a separate tab with its own console", seconds: 15) {
+            tabs.selection.ids.count == 2 && tabs.notice == .popup && tabs.selectedPage?.title == "Checkout"
+                && tabs.selectedPage?.console.lines.contains { $0.text == "GET /api/checkout 200" } == true
+        }
+        guard let popup = tabs.selectedPage, popup.source == .link,
+              root.console.lines.contains(where: { $0.text == "GET /api/refunds 200" }),
+              !root.console.lines.contains(where: { $0.text == "GET /api/checkout 200" }) else {
+            FixtureCheck.fail("the popup reused the opener's console")
+        }
+        switch state {
+        case .two:
+            tabs.select(root.id)
+            guard tabs.notice == nil else { FixtureCheck.fail("popup note survived a tab switch") }
+        case .popup:
+            break
+        case .close:
+            await checkClosingTabs(tabs, root: root, popup: popup)
+        case .full, .fullMenu:
+            let otherTitles = ["Payouts", "Ledger", "Invoices", "Support", "Test transactions", "Staging refunds"]
+            for title in otherTitles {
+                guard let tab = tabs.add(), let url = URL(string: "http://localhost:\(port)/?view=" + title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!) else {
+                    FixtureCheck.fail("could not fill browser tabs")
+                }
+                tab.open(url)
+            }
+            tabs.select(root.id)
+            await FixtureCheck.wait("opener web view is visible again", seconds: 10) { web.window != nil }
+            _ = try? await web.evaluateJavaScript("document.querySelector('a').click()")
+            await FixtureCheck.wait("a full strip redirects the popup into the selected tab", seconds: 15) {
+                tabs.selection.ids.count == 8 && tabs.notice == .cap && tabs.selectedPage === root
+                    && root.title == "Checkout" && root.console.warnings == 1
+            }
+            await FixtureCheck.wait("every tab has its WebKit title", seconds: 15) {
+                tabs.items.suffix(otherTitles.count).map(\.title) == otherTitles
+            }
+        }
+        tabs.selectedPage?.consoleOpen = true
+        await FixtureCheck.wait("browser pane without its sidebar", seconds: 10) {
+            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
+            return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
+        }
+        tabs.fixtureListOpen = state == .fullMenu
+        FixtureCheck.report("FIXTURE CHECK ok browser tabs \(state), \(tabs.items.count) tabs")
+    }
+
+    @MainActor private static func checkClosingTabs(_ tabs: MobileBrowserTabs, root: BrowserPage, popup: BrowserPage) async {
+        guard popup.url?.port == popupPort, tabs.ports.ports == [port, popupPort], let web = popup.webView else {
+            FixtureCheck.fail("popup did not claim its own port")
+        }
+        tabs.close(root.id)
+        guard tabs.items.map(\.id) == [popup.id], tabs.selectedPage === popup, root.webView == nil,
+              tabs.ports.ports == [popupPort] else {
+            FixtureCheck.fail("closing the opener did not keep only the popup and its port")
+        }
+        let ok = try? await web.callAsyncJavaScript("return (await fetch('/?after=close', { cache: 'no-store' })).ok",
+                                                    arguments: [:], in: nil, contentWorld: .page) as? Bool
+        guard ok == true else { FixtureCheck.fail("the popup's tunnel stopped serving after the opener closed") }
+
+        await tabs.ports.forwarder.waitForClose(of: port)
+        guard let sibling = tabs.add(), tabs.notice == nil,
+              sibling.open(URL(string: "http://localhost:\(port)/")!) else {
+            FixtureCheck.fail("could not open a sibling or clear the popup note on a new tab")
+        }
+        tabs.select(popup.id)
+        tabs.closeOthers()
+        guard tabs.items.map(\.id) == [popup.id], tabs.selectedPage === popup, popup.webView === web,
+              sibling.webView == nil, tabs.ports.ports == [popupPort] else {
+            FixtureCheck.fail("close others did not retain the selected page and release its sibling's port")
+        }
+
+        tabs.close(popup.id)
+        guard let blank = tabs.selectedPage, blank.id != popup.id, blank.url == nil, tabs.items.map(\.id) == [blank.id],
+              popup.webView == nil, tabs.ports.ports.isEmpty else {
+            FixtureCheck.fail("closing the last tab did not leave a blank tab with no claims")
+        }
+        FixtureCheck.report("FIXTURE CHECK ok second-port popup survived opener close; closeOthers and last-tab close released their claims")
     }
 
     @MainActor static func splitView() -> UISplitViewController? {

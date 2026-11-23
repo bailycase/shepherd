@@ -49,6 +49,12 @@ struct PadDesignScreen: View {
                                     showPage: canvas.showPage,
                                     // Nothing to export on a page with no boards.
                                     export: canvas.canPresent && !canvas.boards.isEmpty && !exportBusy ? { choosingExport = true } : nil)
+                    if let warning = canvas.snapshot?.threadNotesWarning {
+                        SHBanner(.failed, title: "Thread notes unavailable", message: warning, stacked: true) {
+                            Button("Refresh") { Task { await canvas.refresh() } }.buttonStyle(.sh(.secondary))
+                        }
+                        .padding(.horizontal, MobileDesignLayout.gutter)
+                    }
                     PadDesignCanvasView(canvas: canvas, reply: wide ? nil : agent,
                                         markupAvailable: hosts.host(ref.host)?.supports(RemoteProtocol.designMarkupCapability) == true)
                         .onChange(of: wide, initial: true) { _, wide in canvas.column = !wide }

@@ -135,6 +135,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     /// Empties pi's steering and follow-up queues and answers with their text.
     case clearQueue
     case getState
+    case setSessionName(String)
     /// The saved history, with each image named by `RPCImageRef` instead of carrying its bytes (Shepherd's pinned engine).
     case getMessages
     /// One saved image's bytes, by the SHA-256 `getMessages` named it with (Shepherd's pinned engine).
@@ -166,6 +167,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .abortRetry: return "abort_retry"
         case .clearQueue: return "clear_queue"
         case .getState: return "get_state"
+        case .setSessionName: return "set_session_name"
         case .getMessages: return "get_messages"
         case .getImage: return "get_image"
         case .getRestartRecovery: return "get_restart_recovery"
@@ -185,7 +187,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions, history, token, operationID, sha256
+        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions, history, token, operationID, sha256, name
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -196,6 +198,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encode(message, forKey: .message)
             if !images.isEmpty { try c.encode(images, forKey: .images) }
             try c.encodeIfPresent(streamingBehavior, forKey: .streamingBehavior)
+        case .setSessionName(let name):
+            try c.encode(name, forKey: .name)
         case .setModel(let provider, let modelId):
             try c.encode(provider, forKey: .provider)
             try c.encode(modelId, forKey: .modelId)
@@ -822,6 +826,7 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     case agentStart
     case agentEnd(messages: [RPCMessage], willRetry: Bool)
     case agentSettled
+    case sessionInfoChanged(name: String?)
     /// The engine's native skill-file watchers invalidated the cached catalog.
     case skillsChanged
     case skillsWatchError(String)
@@ -858,7 +863,7 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
         case type, messages, willRetry, message, toolResults, assistantMessageEvent
         case toolCallId, parentToolCallId, toolName, args, partialResult, result, isError, steering, followUp
         case extensionPath, event, error, reason, aborted, errorMessage
-        case attempt, maxAttempts, delayMs, success, entry
+        case attempt, maxAttempts, delayMs, success, entry, name
     }
 
     /// A nested call's parent id. A value that is not a non-empty string is no parent: a malformed
@@ -881,6 +886,8 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
             )
         case "agent_settled":
             self = .agentSettled
+        case "session_info_changed":
+            self = .sessionInfoChanged(name: try c.decodeIfPresent(String.self, forKey: .name))
         case "skills_changed":
             self = .skillsChanged
         case "skills_watch_error":

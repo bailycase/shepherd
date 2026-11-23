@@ -124,6 +124,7 @@ struct FleetDevices: Codable, Equatable, Sendable {
                 devices.append(FleetDeviceRecord(deviceID: entry.deviceID, name: entry.name, kind: entry.kind,
                                                  tokenHash: entry.revokedAt == nil ? entry.tokenHash : nil,
                                                  pairedAt: entry.pairedAt, revokedAt: entry.revokedAt))
+                if entry.revokedAt != nil { revoked.append(entry.deviceID) }
                 changed = true
                 continue
             }

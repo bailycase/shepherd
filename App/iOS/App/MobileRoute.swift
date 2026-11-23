@@ -1,51 +1,7 @@
 import SwiftUI
+import ShepherdRemote
 
-/// Every screen the app can show, iPhone and iPad alike. The shell knows only the top level: a
-/// thread, and one case per track that wraps the track's own route enum (defined in its
-/// folder, with its own destination view). A track adds screens by adding cases to its own
-/// enum; it never edits this file or the shell.
-///
-/// Codable so the screenshot fixtures can name a screen in JSON.
-enum MobileRoute: Hashable, Codable {
-    case thread(AgentRef)
-    case home(HomeRoute)
-    case newThread(NewThreadRoute)
-    case subagents(SubagentsRoute)
-    case review(ReviewRoute)
-    case search(SearchRoute)
-    case settings(SettingsRoute)
-    case terminal(TerminalRoute)
-    case automations(AutomationsRoute)
-    case designs(DesignsRoute)
-    case padDesign(PadDesignRoute)
-    case projects(ProjectsRoute)
-    /// A side-pane tab's own screen on a phone (Files, Browser; SidePaneState.swift).
-    case sidePane(SidePaneRoute)
-    case browser(BrowserRoute)
-    /// Issues & PRs (Forge/ForgeRoute.swift).
-    case forge(ForgeRoute)
-
-    /// Coarse screen kind only: associated values may contain private thread or file data.
-    var diagnosticScreen: String {
-        switch self {
-        case .thread: "thread"
-        case .home: "home"
-        case .newThread: "newThread"
-        case .subagents: "subagents"
-        case .review: "review"
-        case .search: "search"
-        case .settings: "settings"
-        case .terminal: "terminal"
-        case .automations: "automations"
-        case .designs: "designs"
-        case .padDesign: "padDesign"
-        case .projects: "projects"
-        case .sidePane: "sidePane"
-        case .browser: "browser"
-        case .forge: "forge"
-        }
-    }
-
+extension MobileRoute {
     @MainActor @ViewBuilder
     var destination: some View {
         switch self {
@@ -64,37 +20,6 @@ enum MobileRoute: Hashable, Codable {
         case .sidePane(let route): SidePaneDestination(route: route)
         case .browser(let route): BrowserDestination(route: route)
         case .forge(let route): ForgeDestination(route: route)
-        }
-    }
-
-    /// The thread a pushed screen belongs to (its runs, its review); nil for a thread itself
-    /// and for screens of no one thread.
-    var thread: AgentRef? {
-        switch self {
-        case .subagents(let route): route.thread
-        case .review(let route): route.thread
-        case .terminal(let route): route.thread
-        case .sidePane(let route): route.thread
-        case .browser(let route): route.thread
-        case .thread, .home, .newThread, .search, .settings, .automations, .designs, .padDesign, .projects, .forge: nil
-        }
-    }
-
-    /// The host a route belongs to, so forgetting a host closes its screens.
-    var host: UUID? {
-        switch self {
-        case .thread(let ref): ref.host
-        case .subagents(let route): route.thread.host
-        case .review(let route): route.thread.host
-        case .terminal(let route): route.thread.host
-        case .sidePane(let route): route.thread.host
-        case .browser(let route): route.thread.host
-        case .automations(let route): route.host
-        case .designs(let route): route.host
-        case .padDesign(let route): route.host
-        case .projects(let route): route.host
-        case .forge(let route): route.host
-        case .home, .newThread, .search, .settings: nil
         }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// One screen the harness can render: `FIXTURE_SCREEN=<name>`. The hosts it serves, and where
 /// the app goes once they are connected. Each track lists its screens in its own file
@@ -18,6 +19,21 @@ struct FixtureScreen {
     var prepare: (@MainActor (MobileApp) async -> Void)? = nil
     /// Runs before the routes open: seams a screen reads as it appears (the Macs Add a Mac finds).
     var setup: (@MainActor () -> Void)? = nil
+    /// Checks the rendered screen after the runner has let layout settle.
+    var verify: (@MainActor (MobileApp) -> Void)? = nil
+    /// iPad: the app runs in a window this many points wide, centred on the screen (a Stage Manager window's width, which a
+    /// headless simulator cannot drag). Everything the window shows, sheets included, is laid out at that width.
+    var frameWidth: CGFloat? = nil
+}
+
+extension NativeThreadSnapshot {
+    func withDamagedOrigins() -> Self {
+        var snapshot = self
+        snapshot.originsProblem = "Saved questions and message details could not be read at /tmp/shepherd/thread-origins/acme-web.json. Invalid thread history JSON. Fix access or restore a known-good backup on the host, then refresh the thread. New details won't be saved until then."
+        snapshot.clips = NativeThreadClips(history: true)
+        snapshot.clipped = true
+        return snapshot
+    }
 }
 
 /// A host the harness serves: its state, each agent's thread, and answers for anything else.
@@ -89,8 +105,8 @@ enum FixtureData {
     static let buildBox = UUID(uuidString: "5E0A0000-0000-4000-8000-000000000002")!
     static let laptop = UUID(uuidString: "5E0A0000-0000-4000-8000-000000000003")!
 
-    static let shepherdSpace = Space(id: SpaceID(rawValue: "space-shepherd"), name: "Shepherd", path: "/Users/dev/Shepherd")
-    static let horizonSpace = Space(id: SpaceID(rawValue: "space-horizon"), name: "horizon", path: "/Users/dev/horizon")
+    static let shepherdSpace = Space(id: SpaceID(rawValue: "space-acme"), name: "acme-web", path: "/Users/dev/acme-web")
+    static let orbitSpace = Space(id: SpaceID(rawValue: "space-acme-api"), name: "acme-api", path: "/Users/dev/acme-api")
 
     static let preview = AgentID(rawValue: "agent-preview")
     static let extensions = AgentID(rawValue: "agent-extensions")
@@ -104,12 +120,12 @@ enum FixtureData {
     /// Two hosts online (this Mac and a build box) and one laptop offline.
     static func hosts() -> [FixtureHostData] {
         [
-            FixtureHostData(id: studio, name: "Studio", state: ShepherdState(spaces: [shepherdSpace, horizonSpace], agents: [
+            FixtureHostData(id: studio, name: "Studio", state: ShepherdState(spaces: [shepherdSpace, orbitSpace], agents: [
                 agent(preview, "Investigate SwiftUI live preview", .idle, worktree: "pi/swiftui-previews", changed: 3),
                 agent(extensions, "Plan shepherd extensions", .working, worktree: "pi/shepherd-extensions", changed: 1),
                 agent(dock, "Dock review pane", .blocked, checkout: "chore/remove-homarr", changed: 11),
-                agent(deletion, "Fix remote subagent deletion", .done, space: horizonSpace),
-            ], automations: [Automation(name: "Merge PR #24 after CI", prompt: "watch CI", cwd: "/Users/dev/Shepherd", enabled: false)]),
+                agent(deletion, "Fix remote subagent deletion", .done, space: orbitSpace),
+            ], automations: [Automation(name: "Merge PR #24 after CI", prompt: "watch CI", cwd: "/Users/dev/acme-web", enabled: false)]),
             threads: [preview: thread(), extensions: runningThread(), dock: questionThread()]),
             FixtureHostData(id: buildBox, name: "build-01", state: ShepherdState(spaces: [shepherdSpace], agents: [
                 agent(buffer, "Fix terminal output buffer", .idle, worktree: "pi/refund-events"),
@@ -210,8 +226,8 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens
-            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + hooks + apps + automations + automationFlow + windows + terminal + clientState + duo + fleetScreens + checkoutNotice
+            + designs + designPad + designPadMarkup + designPages + browser + files + ProjectFixtures.screens + hostConfig + spaceConfiguration + spaceLifecycle + freshness + forge + tailFrames + tail + tailFollowUps + newTurn + historyRead + composerField + subThreads + supervision + startProblems + composerImages + spaceMCPSignIn + resize
     }
 
     static func screen(named name: String) -> FixtureScreen? {

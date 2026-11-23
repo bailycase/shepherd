@@ -20,6 +20,8 @@ public protocol SettingsClient: SkillsClient {
     func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult
     /// The host's model catalog, for its model menus.
     func listModels() async throws -> ModelListing
+    /// Renames, hides, reorders or removes one of the host's spaces (`spaces.lifecycle.v1`).
+    func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws
 }
 
 extension SettingsClient {
@@ -33,6 +35,10 @@ extension SettingsClient {
     }
 
     public func listModels() async throws -> ModelListing { ModelListing(models: [], defaultModel: nil) }
+
+    public func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        throw RemoteHostClientError.rejected(code: "update_required", message: "This host's spaces can't be changed from here.")
+    }
 }
 
 extension RemoteHostClient: SettingsClient {}
@@ -53,6 +59,14 @@ public struct SettingsHost: Identifiable, Sendable {
     }
 
     public var isConnected: Bool { client != nil }
+
+    /// The host Models, Agents, Tools, Git and Organize show: the first that serves its settings, else the first.
+    public static func shown(in hosts: [SettingsHost]) -> SettingsHost? {
+        hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
+    }
+
+    /// Whether the host offers `capability`, connected or not.
+    public func supports(_ capability: Capability) -> Bool { capabilities.contains(capability.rawValue) }
 
     /// Connected, and serving `capability`.
     public func serves(_ capability: String) -> Bool {
@@ -126,7 +140,7 @@ public final class ClientHostSettings {
 
     public func state(of host: SettingsHost) -> State {
         guard !forgotten.contains(host.id), host.isConnected else { return .offline }
-        guard host.capabilities.contains(RemoteProtocol.hostSettingsCapability) else { return .unsupported }
+        guard host.supports(.hostSettings) else { return .unsupported }
         return loaded[host.id] ?? .loading
     }
 
@@ -137,7 +151,7 @@ public final class ClientHostSettings {
 
     /// Reads a host's settings afresh.
     public func refresh(_ host: SettingsHost) async {
-        guard !forgotten.contains(host.id), let client = host.client, host.capabilities.contains(RemoteProtocol.hostSettingsCapability) else { return }
+        guard !forgotten.contains(host.id), let client = host.client, host.supports(.hostSettings) else { return }
         if loaded[host.id] == nil { loaded[host.id] = .loading }
         do {
             let settings = try await client.hostSettings(.fetch)
@@ -229,13 +243,17 @@ public final class ClientInstructions {
 
     public func files(of host: SettingsHost) -> InstructionsHostFiles {
         guard !forgotten.contains(host.id), host.isConnected else { return .offline }
-        guard host.capabilities.contains(RemoteProtocol.instructionsCapability) else { return .unsupported }
+        guard host.supports(.instructions) else { return .unsupported }
         return files[host.id] ?? .checking
     }
 
     /// The host whose files the page edits: the first whose files are read.
     public func edited(in hosts: [SettingsHost]) -> SettingsHost? {
         hosts.first { files(of: $0).snapshot != nil }
+    }
+
+    public func historyProblem(in hosts: [SettingsHost]) -> String? {
+        edited(in: hosts).flatMap { files(of: $0).snapshot?.historyProblem }
     }
 
     /// Reads every connected host's files.
@@ -354,11 +372,14 @@ public final class ClientSuggestions {
     }
 
     private var snapshots: [UUID: SuggestionsSnapshot] = [:]
+    public private(set) var unavailable: [UUID: String] = [:]
     @ObservationIgnored private var forgotten: Set<UUID> = []
+    @ObservationIgnored private var disconnected: Set<UUID> = []
 
     public func forget(host: UUID) {
         forgotten.insert(host)
         snapshots[host] = nil
+        unavailable[host] = nil
     }
     public private(set) var busy = false
     /// The last change a host refused, in words.
@@ -366,20 +387,35 @@ public final class ClientSuggestions {
 
     public init() {}
 
+    /// Connection changes clear warnings even when no refresh is triggered.
+    public func use(_ hosts: [SettingsHost]) {
+        disconnected = Set(hosts.lazy.filter { !$0.isConnected }.map(\.id))
+        for id in disconnected { unavailable[id] = nil }
+    }
+
     /// Reads every connected host's suggestions.
     public func refresh(_ hosts: [SettingsHost]) async {
         for host in hosts where !forgotten.contains(host.id) {
-            guard let client = host.client, host.capabilities.contains(RemoteProtocol.suggestionsCapability) else {
+            guard let client = host.client, host.supports(.suggestions) else {
                 snapshots[host.id] = nil
+                unavailable[host.id] = nil
                 continue
             }
-            if let snapshot = try? await client.suggestions(.fetch), !forgotten.contains(host.id) { snapshots[host.id] = snapshot }
+            do {
+                let snapshot = try await client.suggestions(.fetch)
+                guard !forgotten.contains(host.id) else { continue }
+                snapshots[host.id] = snapshot
+                unavailable[host.id] = nil
+            } catch RemoteHostClientError.rejected("suggestions_unavailable", let message) {
+                guard !forgotten.contains(host.id), !disconnected.contains(host.id) else { continue }
+                unavailable[host.id] = message
+            } catch { continue }
         }
     }
 
     /// The hosts that serve suggestions now.
     public func hosts(_ hosts: [SettingsHost]) -> [SettingsHost] {
-        hosts.filter { $0.serves(RemoteProtocol.suggestionsCapability) && snapshots[$0.id] != nil }
+        hosts.filter { $0.serves(RemoteProtocol.suggestionsCapability) && snapshots[$0.id] != nil && unavailable[$0.id] == nil }
     }
 
     /// The experiment's settings as the page draws them: the first such host's.
@@ -401,7 +437,13 @@ public final class ClientSuggestions {
     }
 
     public func waiting(_ id: UUID, in hosts: [SettingsHost]) -> Waiting? {
-        waiting(hosts).first { $0.id == id }
+        // Keep an already-open detail identifiable if its host's next fetch fails.
+        for host in hosts where host.serves(RemoteProtocol.suggestionsCapability) {
+            if let suggestion = snapshots[host.id]?.waiting.first(where: { $0.id == id }) {
+                return Waiting(host: host.id, hostName: host.name, suggestion: suggestion)
+            }
+        }
+        return nil
     }
 
     /// Changes the experiment on every host that serves it, showing it at once.
@@ -465,9 +507,14 @@ public final class ClientSuggestions {
                 let snapshot = try await client.suggestions(request)
                 guard !forgotten.contains(host.id) else { continue }
                 snapshots[host.id] = snapshot
+                unavailable[host.id] = nil
             } catch {
                 guard !forgotten.contains(host.id) else { continue }
-                problem = settingsProblem(error)
+                if case RemoteHostClientError.rejected("suggestions_unavailable", let message) = error {
+                    if !disconnected.contains(host.id) { unavailable[host.id] = message }
+                } else {
+                    problem = settingsProblem(error)
+                }
             }
         }
     }

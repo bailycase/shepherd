@@ -35,6 +35,9 @@ public struct FleetSidebarGroups: Equatable, Sendable {
     public var recents: [FleetThreadRow] = []
     /// Triggered automations' unpinned run threads, one group per automation, the group with the newest run first.
     public var runs: [FleetRunGroup] = []
+    /// Automations with a run of their own on screen, in `FleetModel.automations` order. One whose run waits on you is in
+    /// Needs you, once, so it is left out here.
+    public var automationRuns: [FleetAutomationRow] = []
 
     public init() {}
 }
@@ -200,6 +203,29 @@ public struct FleetSidebarState: Equatable, Sendable {
         return seen[ref] != record.generation
     }
 
+    /// The same eligible threads regardless of whether they are shown under Pinned.
+    public func supervisionQueues(_ model: FleetModel) -> SupervisionQueues<FleetRef> {
+        let groups = groups(model)
+        let connected = Set(model.hosts.filter(\.phase.isConnected).map(\.id))
+        let pinnedAttention = groups.pinned.compactMap { row -> FleetAttention? in
+            if case .attention(let item) = row { return item }
+            return nil
+        }
+        let pinnedDone = groups.pinned.compactMap { row -> FleetThreadRow? in
+            guard case .thread(let thread) = row, !thread.offline, thread.status == .done,
+                  unseenCompletion(thread.ref) else { return nil }
+            return thread
+        }
+        return SupervisionQueues(
+            blocked: (groups.needsYou + pinnedAttention).compactMap {
+                guard $0.origin != .project, connected.contains($0.ref.host) else { return nil }
+                return .init($0.ref, since: $0.since)
+            },
+            unseenDone: (groups.done + pinnedDone).map {
+                .init($0.ref, since: $0.completedAt ?? $0.lastMoved, changedFiles: $0.checkoutChangedFiles)
+            })
+    }
+
     /// Every thread in one group. Automation runs stay with the automations (`FleetModel` never makes them thread rows), a
     /// design is never pinned, and a thread on a host that is offline is never Working or Done. A triggered automation's
     /// run threads (`FleetModel.runOrigins`) fold into its run group unless pinned; `unread` are the runs whose thread
@@ -216,6 +242,8 @@ public struct FleetSidebarState: Equatable, Sendable {
             }
         }
         let running = Set(model.running.map(\.ref))
+        let asking = Set(model.needsYou.map(\.ref))
+        groups.automationRuns = model.automations.filter { row in row.run.map { !asking.contains($0) } ?? false }
         var runRows: [AutomationKey: [FleetThreadRow]] = [:]
         var runOrder: [AutomationKey] = []
         for row in model.recents {

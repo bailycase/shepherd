@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 import ShepherdTestKit
+import ShepherdTestSupport
 @testable import ShepherdApp
 
 /// pi's `mcp` subcommands, scripted: records what Settings ran and with which environment, and answers
@@ -21,17 +22,27 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
     private var recorded: [Call] = []
     var reply: @Sendable ([String]) -> (lines: [String], result: MCPCLIResult) = { _ in ([], MCPCLIResult(status: 0, stdout: "", stderr: "")) }
     var blocksLogin = false
+    /// Where the fake reports: every call, and the login's lifecycle while it blocks.
+    var state = MCPHarnessState()
 
     var calls: [Call] { lock.withLock { recorded } }
 
     func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
         lock.withLock { recorded.append(Call(arguments: arguments, environment: environment, timeout: timeout)) }
+        state.noteCall()
         let answer = reply(arguments)
         for line in answer.lines { onLine?(line) }
         if blocksLogin, arguments.first == "login" {
-            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
-            return MCPCLIResult(status: 143, stdout: answer.result.stdout, stderr: "")
+            // Simulated pi waiting for a browser: suspends with no sleep until the flow's
+            // task is cancelled, then answers a late success. The flow has already been
+            // cancelled by then, so the test proves it discards a success arriving after
+            // cancel; if cancellation never reached the fake, the wait would never return
+            // and the test would time out waiting for cancellation.
+            state.loginEntered.open()
+            await state.loginGate.wait()
+            state.loginCancelled.open()
+            return MCPCLIResult(status: 0, stdout: "Signed in to MCP server \"notion\" (3 tools).\n", stderr: "")
         }
         return answer.result
     }
@@ -69,6 +80,19 @@ final class MCPHarnessState: @unchecked Sendable {
     var opened: [URL] { lock.withLock { _opened } }
     func write(_ data: Data) { lock.withLock { _written.append(data) } }
     func open(_ url: URL) { lock.withLock { _opened.append(url) } }
+
+    /// The fake login's lifecycle while it blocks: entered, then cancelled.
+    let loginEntered = Gate()
+    let loginCancelled = Gate()
+    /// The fake's own suspension while it models pi waiting for a browser.
+    let loginGate = Gate()
+    /// Every fake call, in order; the stream never drops, so a test that starts late still sees all.
+    private static func makeCallNotes() -> (AsyncStream<Void>, AsyncStream<Void>.Continuation) {
+        AsyncStream<Void>.makeStream()
+    }
+    private let callNotes = makeCallNotes()
+    var callNotifications: AsyncStream<Void> { callNotes.0 }
+    func noteCall() { callNotes.1.yield() }
 }
 
 @MainActor
@@ -85,6 +109,7 @@ final class MCPStoreHarness {
         self.cli = cli
         self.secrets = secrets
         let state = state
+        cli.state = state
         state.prepareProblem = prepareProblem
         var dependencies = MCPStore.Dependencies(
             file: MCPConfigFile(url: url), secrets: secrets, http: URLSessionHTTP(), cli: cli,
@@ -358,7 +383,8 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        while !flow.succeeded { try await Task.sleep(for: .milliseconds(5)) }
+        await flow.completion()
+        #expect(flow.succeeded)
         #expect(cli.calls.first?.arguments == ["login", "notion", "--timeout", "300"])
         #expect(flow.model.phase == .done)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .done])
@@ -377,7 +403,7 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        while flow.model.phase == .waiting { try await Task.sleep(for: .milliseconds(5)) }
+        await flow.completion()
         #expect(flow.model.phase == .failed)
         #expect(flow.model.steps.map(\.state) == [.done, .done, .failed])
         #expect(flow.model.steps.last?.title == "Signing in didn’t finish")
@@ -393,11 +419,14 @@ struct MCPStoreTests {
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.beginSignIn("notion")
         let flow = try #require(harness.store.signIn)
-        while flow.authorizationURL == nil { try await Task.sleep(for: .milliseconds(5)) }
+        let state = harness.state
+        try await bounded("the fake login to block") { await state.loginEntered.wait() }
         harness.store.closeSignIn()
         harness.store.closeSignIn()
         #expect(harness.store.signIn == nil)
-        try await Task.sleep(for: .milliseconds(50))
+        try await bounded("cancellation to reach the fake login") { await state.loginCancelled.wait() }
+        await flow.completion()
+        #expect(flow.authorizationURL?.absoluteString == "https://mcp.notion.com/authorize")
         #expect(!flow.succeeded, "a cancelled login never reads as signed in")
     }
 
@@ -406,7 +435,13 @@ struct MCPStoreTests {
         cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "needs-auth", tools: [], error: nil)])) }
         let harness = try MCPFixtures.harness(cli: cli)
         harness.store.signOut("linear")
-        while cli.calls.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        let state = harness.state
+        try await bounded("sign-out to run logout, then list again") {
+            if cli.calls.count >= 2 { return }
+            for await _ in state.callNotifications {
+                if cli.calls.count >= 2 { return }
+            }
+        }
         await harness.store.settle()
         #expect(cli.calls.map(\.arguments).prefix(2) == [["logout", "linear"], ["list", "--json"]])
         #expect(try row(harness.store, "linear").signIn == .signIn)
@@ -450,7 +485,14 @@ struct MCPStoreTests {
         harness.store.remove("postgres")
         #expect(harness.store.entry("postgres") == nil)
         #expect(secrets.accounts(withPrefix: "") == ["secret/grafana/T"])
-        while !harness.cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { try await Task.sleep(for: .milliseconds(5)) }
+        let state = harness.state
+        let cli = harness.cli
+        try await bounded("pi's logout to run for the removed server") {
+            if cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { return }
+            for await _ in state.callNotifications {
+                if cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { return }
+            }
+        }
     }
 
     @Test func settingsEditsReachTheFile() throws {
@@ -504,18 +546,7 @@ struct MCPStoreTests {
         #expect(MCPBudgetEstimate.rounded(tokens) == rounded)
     }
 
-    @Test func searchedServersShareOneToolSearchAndDirectOnesDeclareEachTool() {
-        typealias Server = MCPBudgetEstimate.Server
-        #expect(MCPBudgetEstimate.estimate([]).tokens == 0)
-        let one = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40)])
-        #expect(one.tokens == MCPBudgetEstimate.searchBaseTokens + MCPBudgetEstimate.searchServerTokens)
-        let two = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40), Server(name: "b", direct: false, toolCount: 9)])
-        #expect(two.tokens == one.tokens + MCPBudgetEstimate.searchServerTokens, "the declaration is paid once")
-        let mixed = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40), Server(name: "b", direct: true, toolCount: 9)])
-        #expect(mixed.tokens == one.tokens + 9 * MCPBudgetEstimate.directToolTokens)
-        #expect(mixed.note == "b is set to Direct, which declares 9 tools in every prompt. The rest are searched.")
-        let direct = MCPBudgetEstimate.estimate([Server(name: "b", direct: true, toolCount: 1)])
-        #expect(direct.tokens == MCPBudgetEstimate.directToolTokens, "no tool_search is declared when nothing is searched")
+    @Test func shortLabelRounds() {
         #expect(MCPBudgetEstimate.shortLabel(3_870) == "~3,900 tok")
     }
 

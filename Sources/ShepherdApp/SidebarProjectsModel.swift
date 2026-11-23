@@ -179,7 +179,7 @@ struct SidebarTreeSection: Identifiable, Equatable {
             var parent = project
             parent.ancestorIDs = ancestors
             let nested = (siblings[parent.id] ?? []).flatMap { ordered($0, ancestors: ancestors + [parent.id]) }
-            parent.childThreadCount = nested.reduce(0) { $0 + $1.rows.count { !$0.fleetNested } }
+            parent.childThreadCount = nested.reduce(0) { $0 + $1.rows.count }
             let rollups = [parent.rollup] + nested.map(\.rollup)
             parent.rollup = rollups.contains(.waiting) ? .waiting : rollups.contains(.running) ? .running : .quiet
             return [parent] + nested
@@ -200,7 +200,7 @@ struct SidebarTree: Equatable {
         sections.flatMap { section in
             section.projects.flatMap { project in
                 collapsed.contains(project.id.key) || project.ancestorIDs.contains { collapsed.contains($0.key) } ? []
-                    : project.rows.foldingSent(open: collapsed).filter { row in
+                    : project.rows.filter { row in
                         row.runGroup.map { collapsed.contains(SidebarRunGroupRow.key(project: project.id, automation: $0)) } ?? true
                     }
             }
@@ -231,13 +231,13 @@ struct SidebarTree: Equatable {
                 let expanded = !collapsed.contains(project.id.key)
                 let place = project.newThreadPlace(connected: connected)
                 items.append(.project(SidebarProjectRow(
-                    id: project.id, name: project.name, path: project.path, count: project.rows.count { !$0.fleetNested } + project.childThreadCount, expanded: expanded,
+                    id: project.id, name: project.name, path: project.path, count: project.rows.count + project.childThreadCount, expanded: expanded,
                     rollup: project.rollup, dimmed: project.dimmed, newThreadHost: place?.host, newThreadSpace: place?.space,
                     movable: !project.pinned && project.space != nil, parentID: project.parentID, depth: project.ancestorIDs.count,
                     missing: project.missing, pinned: project.pinned)))
                 guard expanded else { continue }
                 var group: AutomationID?
-                for var row in project.rows.foldingSent(open: collapsed) {
+                for var row in project.rows {
                     row.projectDepth = project.ancestorIDs.count
                     if let automation = row.runGroup, let summary = project.runGroups[automation] {
                         let open = collapsed.contains(SidebarRunGroupRow.key(project: project.id, automation: automation))
@@ -390,8 +390,7 @@ private struct TreeBuilder {
     var runGroupNames: [AutomationID: String] = [:]
     var unreadRuns: Set<AgentID> = []
     var pausedGroups: Set<AutomationID> = []
-    /// Each sent thread's place: where it came from and where it is (`SidebarSent.arrange`), and the dispatches a thread is drawn for.
-    var sent: [SidebarRowID: SidebarSentInfo] = [:]
+    /// The dispatches a thread is drawn for. The Spaces tree nests no thread under the one that started it: each sits in its own space.
     var sentThreads: Set<UUID> = []
 
     init(options: SidebarTreeOptions) { self.options = options }
@@ -459,10 +458,7 @@ private struct TreeBuilder {
                                                  notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
             if let pull = source.pullRequests[agent.id] { row.attach(pull) }
-            if let info = SidebarDerivation.sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
-                sent[row.id] = info
-                sentThreads.insert(dispatch)
-            }
+            if let dispatch = agent.dispatchedFrom?.dispatchID { sentThreads.insert(dispatch) }
             if let origin, automation == nil {
                 row.runGroup = origin.id
                 runGroupNames[origin.id] = origin.name
@@ -513,10 +509,7 @@ private struct TreeBuilder {
             guard let project else { continue }
             let waiting = !host.offline && agent.status == .blocked
             let row = SidebarDerivation.remoteRow(agent, host: host, automation: automation != nil, needsYou: waiting)
-            if let info = SidebarDerivation.sentInfo(of: agent, source), let dispatch = agent.dispatchedFrom?.dispatchID {
-                sent[row.id] = info
-                sentThreads.insert(dispatch)
-            }
+            if let dispatch = agent.dispatchedFrom?.dispatchID { sentThreads.insert(dispatch) }
             add(Entry(row: row, waiting: waiting, running: !host.offline && agent.status == .working, key: agent.lastActiveAt ?? -1,
                       host: hostIndex, index: index), to: project)
         }
@@ -528,7 +521,6 @@ private struct TreeBuilder {
             let home = pending.info.sender.flatMap { sender in entries.first { $0.value.contains { $0.row.id == sender } }?.key }
                 ?? pending.space.flatMap { space -> SidebarProjectID? in projects[.local(space)] == nil ? nil : .local(space) }
             guard let home else { continue }
-            sent[pending.row.id] = pending.info
             add(Entry(row: pending.row, waiting: false, running: false, key: pending.key, host: 0, index: source.local.agents.count + offset), to: home)
         }
     }
@@ -564,9 +556,7 @@ private struct TreeBuilder {
                 if entry.waiting { group.rollup = .waiting } else if entry.running, group.rollup == .quiet { group.rollup = .running }
                 project.runGroups[automation] = group
             }
-            var arranged = [rows.map(\.row)]
-            SidebarSent.arrange(&arranged, by: sent, keepsNeedsYou: false)
-            project.rows = arranged[0]
+            project.rows = rows.map(\.row)
             project.rollup = rows.contains(where: \.waiting) ? .waiting : rows.contains(where: \.running) ? .running : .quiet
             if case .local = id {} else { project.dimmed = onlineHosts[id] == false }
             built[id] = project

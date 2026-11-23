@@ -3,7 +3,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 
 /// A page's ports on a viewer that holds them only while it can use them (the iOS client): the
 /// decisions that bind nothing. Claims that listen are in `BrowserPortForwarderTests`.
@@ -39,6 +39,30 @@ struct BrowserPagePortsTests {
         #expect(ports.ports.isEmpty)
         ports.suspend()
         #expect(ports.resume().isEmpty)
+    }
+
+    @Test func closingATabReleasesItsExclusivePortAndKeepsASharedPortUntilTheLastClose() {
+        let first = UUID(), second = UUID()
+        var claims = BrowserTabPortClaims()
+        claims.open(first)
+        claims.open(second)
+        claims.record(5173, tab: first)
+        claims.record(6006, tab: first)
+        claims.record(6006, tab: second)
+        #expect(claims.close(first) == [5173])
+        claims.record(5173, tab: first) // A late callback can't register a closed tab.
+        #expect(claims.ports == [6006])
+        #expect(claims.close(second) == [6006])
+        #expect(claims.ports.isEmpty)
+    }
+
+    @Test func aClosedTabCannotForwardWhenTheThreadResumes() throws {
+        let (ports, _) = make()
+        let tab = ports.firstTab
+        ports.closeTab(tab)
+        ports.resume()
+        #expect(ports.forward(try #require(URL(string: "http://localhost:5173/")), tab: tab) == .failed(port: 5173, errno: ENOTCONN))
+        #expect(ports.ports.isEmpty)
     }
 
     @Test func aRefusalNamesTheDeviceThePageIsOn() {

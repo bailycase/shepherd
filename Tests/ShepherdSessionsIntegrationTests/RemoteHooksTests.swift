@@ -71,11 +71,11 @@ struct RemoteHooksTests {
         let now = try #require(edited.entries.first { $0.file == entry.file })
         #expect(now.handler.command == "exit 0" && now.handler.raw["keep"] == .number(1) && now.on == false)
 
-        // The old hash is gone: a client still holding it is told to reload, and nothing is written.
+        // The old hash no longer names a hook, though the off-list still holds it.
         #expect(await Self.refusal { try await client.hooks(.delete(HookRef(entry))) } == "hook_changed")
         let deleted = try Self.snapshot(try await client.hooks(.delete(HookRef(now))))
         #expect(!deleted.entries.contains { $0.file == entry.file })
-        #expect(deleted.settings.off.isEmpty)
+        #expect(deleted.settings.off == [entry.hash, now.hash])
 
         try await eventually("the GUI to hear all five changes") { heard.current == 5 }
     }

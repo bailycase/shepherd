@@ -35,7 +35,7 @@ struct SubagentSettingsControlTests {
         #expect(model.definitions.count == 7)
         #expect(model.problem == nil)
         window.layout()
-        let finder = try window.press("Show in Finder")
+        let finder = try window.press("Reveal")
         #expect(revealed == files.directory)
         #expect(ControlPress.undersized([finder], minimum: .desktop).isEmpty)
         let invalid = try window.press("Open reviewer-strict")
@@ -65,10 +65,10 @@ struct SubagentSettingsControlTests {
         try await eventuallyOnMain("repaired file saved") { !model.busy && !model.dirty }
         #expect(try files.open("reviewer-strict.md").text == model.draft)
         window.layout()
-        try window.press("Back to Subagents")
+        try window.press("Back to Profiles")
         try await eventuallyOnMain("list reloaded after Back") { !model.editing && !model.busy }
         window.layout()
-        try window.press("New subagent")
+        try window.press("New profile")
         #expect(model.original == nil && model.dirty)
         try setField("Subagent filename", to: "check.md", under: window.host)
         try setField("Subagent name", to: "check", under: window.host)
@@ -83,7 +83,7 @@ struct SubagentSettingsControlTests {
         #expect(model.form.scalar("name") == "check" && model.form.scalar("description") == "Real created profile")
         #expect(model.form.list("tools") == ["read"] && model.form.bool("disabled") == nil && model.form.body == "Inspect the assigned code.\n")
         window.layout()
-        try window.press("Back to Subagents")
+        try window.press("Back to Profiles")
         let discardSheet = try await sheet(window)
         try ControlPress.press("Cancel", under: discardSheet)
         try await eventuallyOnMain("cancelled dirty navigation") { window.window.attachedSheet == nil }
@@ -93,13 +93,13 @@ struct SubagentSettingsControlTests {
         try await eventuallyOnMain("created file saved") { !model.busy && !model.dirty }
         #expect(try files.open("check.md").text.contains("name: check"))
         window.layout()
-        try window.press("Delete")
+        try window.press("Delete…")
         let deleteSheet = try await sheet(window)
         try ControlPress.press("Cancel", under: deleteSheet)
         try await eventuallyOnMain("cancelled deletion") { window.window.attachedSheet == nil }
         #expect(FileManager.default.fileExists(atPath: files.directory.appendingPathComponent("check.md").path))
         window.layout()
-        try window.press("Delete")
+        try window.press("Delete…")
         let confirmedDelete = try await sheet(window)
         let delete = try ControlPress.press("Delete subagent", under: confirmedDelete)
         #expect(ControlPress.undersized([delete], minimum: .desktop).isEmpty)
@@ -134,7 +134,7 @@ struct SubagentSettingsControlTests {
         #expect(model.visible.isEmpty)
         try setField("Filter subagents", to: "", under: window.host)
         window.layout()
-        try window.press("New subagent")
+        try window.press("New profile")
         window.layout()
         try window.press("Appearance")
         let navigationSheet = try await sheet(window)
@@ -149,15 +149,24 @@ struct SubagentSettingsControlTests {
         try await eventuallyOnMain("dirty navigation discarded") { vm.settingsSection == .appearance && window.window.attachedSheet == nil }
         #expect(!model.editing && !FileManager.default.fileExists(atPath: files.directory.appendingPathComponent("new-subagent.md").path))
         window.layout()
-        try window.press("Subagents")
+        try window.press("Agents")
+        window.layout()
+        try window.press("Profiles")
         try await eventuallyOnMain("subagents reopened") { !model.busy }
         window.layout()
-        try window.press("New subagent")
+        try window.press("New profile")
         window.layout()
         try window.press("Back to Shepherd")
         let backSheet = try await sheet(window)
         try ControlPress.press("Discard", under: backSheet)
-        try await eventuallyOnMain("dirty settings exit discarded") { !vm.showSettings && window.window.attachedSheet == nil }
+        // Esc steps up one level, through the same unsaved-changes guard: the editor closes to the Profiles list, Settings stays open.
+        try await eventuallyOnMain("dirty editor discarded") { !model.editing && vm.showSettings && window.window.attachedSheet == nil }
+        window.layout()
+        try window.press("Back to Shepherd")
+        try await eventuallyOnMain("up to Agents") { vm.settingsSection == .agents && vm.showSettings }
+        window.layout()
+        try window.press("Back to Shepherd")
+        try await eventuallyOnMain("Settings closed from Agents") { !vm.showSettings }
         #expect(!model.editing)
     }
     private static func sheet(_ window: OffscreenWindow) async throws -> NSView {

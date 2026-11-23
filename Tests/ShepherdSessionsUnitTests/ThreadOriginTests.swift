@@ -16,7 +16,8 @@ struct ThreadOriginTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = ThreadOriginStore(directory: dir.appendingPathComponent("thread-origins"))
         let queue = try #require(Record(.queue(parts: Self.parts))), steered = try #require(Record(.steered))
-        store.save(sessionID: "s1", records: [("user:1", queue), ("user:2", steered)])
+        store.save(sessionID: "s1", records: [("user:1", queue), ("user:2", steered)],
+                   generation: store.loadSession(sessionID: "s1").generation)
         store.flush()
         let loaded = store.load(sessionID: "s1")
         #expect(loaded.map(\.id) == ["user:1", "user:2"] && loaded.map(\.record) == [queue, steered])
@@ -50,7 +51,8 @@ struct ThreadOriginTests {
         var queued = try #require(Record(.queue(parts: Self.parts)))
         queued.references = ["7c9e6679-7425-40de-944b-e07fc1f90ae7"]
         let alone = Record(references: ["00000000-0000-0000-0000-00000000000a"])
-        store.save(sessionID: "s", records: [("user:1", queued), ("user:2", alone)])
+        store.save(sessionID: "s", records: [("user:1", queued), ("user:2", alone)],
+                   generation: store.loadSession(sessionID: "s").generation)
         store.flush()
         let loaded = store.load(sessionID: "s")
         #expect(loaded.map(\.record) == [queued, alone])
@@ -104,7 +106,8 @@ struct ThreadOriginTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = ThreadOriginStore(directory: dir)
         let steered = try #require(Record(.steered))
-        store.save(sessionID: "s", records: (0..<(ThreadOriginStore.limit + 3)).map { ("user:\($0)", steered) })
+        store.save(sessionID: "s", records: (0..<(ThreadOriginStore.limit + 3)).map { ("user:\($0)", steered) },
+                   generation: store.loadSession(sessionID: "s").generation)
         store.flush()
         let loaded = store.load(sessionID: "s")
         #expect(loaded.count == ThreadOriginStore.limit)
@@ -116,18 +119,138 @@ struct ThreadOriginTests {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = ThreadOriginStore(directory: dir.appendingPathComponent("origins"))
-        store.save(sessionID: sessionID, records: [("user:1", try #require(Record(.steered)))])
+        store.save(sessionID: sessionID, records: [("user:1", try #require(Record(.steered)))],
+                   generation: store.loadSession(sessionID: sessionID).generation)
         store.flush()
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.appendingPathComponent("origins").path)
         #expect(files.count == 1 && !files[0].contains("/"))
         #expect(store.load(sessionID: sessionID).map(\.id) == ["user:1"])
     }
 
-    @Test func anUnreadableFileIsNoOrigins() throws {
+    static let good = #"{"version":1,"entries":[{"id":"old","record":{"command":"/old"}}]}"#
+    static let restored = #"{"version":1,"value":{"version":1,"entries":[{"id":"restored","record":{"command":"/restored"}}]}}"#
+    static let badFiles = [
+        "", "{", "null", "[]", "{}",
+        #"{"version":null,"entries":[]}"#, #"{"version":"1","entries":[]}"#,
+        #"{"version":2,"entries":[]}"#, #"{"version":1}"#,
+        #"{"version":1,"entries":null}"#, #"{"version":1,"entries":{}}"#,
+        #"{"version":1,"entries":[{}]}"#,
+        #"{"version":1,"entries":[],"questions":null}"#,
+        #"{"version":1,"entries":[],"questions":[null]}"#,
+        #"{"version":1,"entries":[],"questions":[{"id":"q","endedAt":2,"record":{"kind":false,"question":"Proceed?","outcome":"answered","askedAt":1}}]}"#,
+        #"{"version":1,"entries":[],"questions":[{"id":"q","endedAt":2,"record":{"kind":"confirm","question":"Proceed?","confirmed":null,"outcome":"answered","askedAt":1}}]}"#,
+        #"{"version":1,"entries":[{"id":"a","record":{"command":null}}]}"#,
+        #"{"version":1,"entries":[{"id":"a","record":{"references":{}}}]}"#,
+        #"{"version":1,"entries":[{"id":"a","record":{"parts":[{"id":null,"bytes":1,"sentAt":0,"images":0}]}}]}"#,
+        #"{"value":{"version":1,"entries":[]}}"#,
+        #"{"version":null,"value":{"version":1,"entries":[]}}"#,
+        #"{"version":2,"value":{"version":1,"entries":[]}}"#,
+        #"{"version":1,"value":null}"#,
+        #"{"version":1,"value":{"version":1,"entries":[]},"extra":true}"#,
+    ]
+
+    @Test(.timeLimit(.minutes(1)), arguments: badFiles)
+    func damageKeepsLastGoodAndRefusesReplacement(_ input: String) throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
-        try Data("not json".utf8).write(to: dir.appendingPathComponent("s.json"))
-        #expect(ThreadOriginStore(directory: dir).load(sessionID: "s").isEmpty)
+        let url = dir.appendingPathComponent("s.json")
+        try Data(Self.good.utf8).write(to: url)
+        let store = ThreadOriginStore(directory: dir)
+        #expect(store.load(sessionID: "s").map(\.id) == ["old"])
+        let damaged = Data(input.utf8)
+        try damaged.write(to: url, options: .atomic)
+        let blocked = store.loadSession(sessionID: "s")
+        #expect(blocked.entries.map(\.id) == ["old"])
+        #expect(blocked.problem?.contains(url.path) == true)
+        store.save(sessionID: "s", records: [("new", Record(command: "/new"))], generation: blocked.generation)
+        store.flush()
+        #expect(try Data(contentsOf: url) == damaged)
+        try Data(Self.restored.utf8).write(to: url, options: .atomic)
+        let repaired = store.loadSession(sessionID: "s")
+        #expect(repaired.entries.map(\.id) == ["restored"] && repaired.problem == nil)
+        store.save(sessionID: "s", records: [("new", Record(command: "/new"))], generation: repaired.generation)
+        store.flush()
+        let written = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect(Set(written.keys) == ["version", "entries"])
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func unreadablePathIsNeverReplaced(danglingLink: Bool) throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("s.json")
+        let target = dir.appendingPathComponent("absent")
+        let store = ThreadOriginStore(directory: dir)
+        try Data(Self.good.utf8).write(to: url)
+        #expect(store.load(sessionID: "s").map(\.id) == ["old"])
+        try FileManager.default.removeItem(at: url)
+        if danglingLink {
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+        } else {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+        }
+        let blocked = store.loadSession(sessionID: "s")
+        #expect(blocked.entries.map(\.id) == ["old"] && blocked.problem != nil)
+        store.save(sessionID: "s", records: [("new", Record(command: "/new"))], generation: blocked.generation)
+        store.flush()
+        if danglingLink {
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+        } else {
+            #expect(try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true)
+        }
+        try FileManager.default.removeItem(at: url)
+        let repaired = store.loadSession(sessionID: "s")
+        #expect(repaired.entries.map(\.id) == ["old"] && repaired.problem == nil)
+        store.save(sessionID: "s", records: [("new", Record(command: "/new"))], generation: repaired.generation)
+        store.flush()
+        #expect(store.load(sessionID: "s").map(\.id) == ["new"])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func deletionRepairsDamageWithoutDiscardingLastGood() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("s.json")
+        let store = ThreadOriginStore(directory: dir)
+        try Data(Self.good.utf8).write(to: url)
+        #expect(store.load(sessionID: "s").map(\.id) == ["old"])
+        try Data("{".utf8).write(to: url, options: .atomic)
+        #expect(store.load(sessionID: "s").map(\.id) == ["old"])
+        try FileManager.default.removeItem(at: url)
+        let repaired = store.loadSession(sessionID: "s")
+        #expect(repaired.entries.map(\.id) == ["old"] && repaired.problem == nil)
+        store.save(sessionID: "s", records: repaired.entries + [("new", Record(command: "/new"))], generation: repaired.generation)
+        store.flush()
+        #expect(ThreadOriginStore(directory: dir).load(sessionID: "s").map(\.id) == ["old", "new"])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func queuedWritesCannotReplaceARecoveredBackup() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("s.json")
+        let store = ThreadOriginStore(directory: dir)
+        let backup = Data(Self.restored.utf8)
+        try Data(Self.good.utf8).write(to: url)
+        let original = store.loadSession(sessionID: "s")
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+        store.io.suspend()
+        store.save(sessionID: "s", records: original.entries, generation: original.generation) { snapshot in
+            #expect(snapshot.problem?.contains(url.path) == true)
+            #expect((try? Data(contentsOf: url)) == damaged)
+            #expect(throws: Never.self) { try backup.write(to: url, options: .atomic) }
+        }
+        store.save(sessionID: "s", records: [("stale", Record(command: "/stale"))], generation: original.generation)
+        store.io.resume()
+        store.flush()
+        #expect(try Data(contentsOf: url) == backup)
+        let recovered = store.loadSession(sessionID: "s")
+        #expect(recovered.problem == nil)
+        #expect(recovered.entries.map(\.id) == ["restored"])
+        store.save(sessionID: "s", records: recovered.entries + [("new", Record(command: "/new"))], generation: recovered.generation)
+        store.flush()
+        #expect(ThreadOriginStore(directory: dir).load(sessionID: "s").map(\.id) == ["restored", "new"])
     }
 
     @Test func aLongDeliveryKeepsEveryPartsText() throws {

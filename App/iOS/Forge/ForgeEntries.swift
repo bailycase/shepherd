@@ -47,11 +47,18 @@ struct ForgePinnedSection: View {
     var body: some View {
         let store = ForgeStore.of(hosts)
         let pins = store.pins
-        if !pins.isEmpty {
+        let problems = store.pinsProblems
+        if !pins.isEmpty || !problems.isEmpty {
             SHListHeader("Pinned", count: pins.count, style: .sidebar)
                 .padding(.horizontal, SH.Space.m)
                 .padding(.bottom, SH.Space.xs)
                 .frame(minHeight: SH.Height.touch, alignment: .bottom)
+            ForEach(problems, id: \.host) { problem in
+                SHBanner(.failed, title: "Pins unavailable on \(store.hostName(problem.host))", message: problem.message, stacked: true) {
+                    Button("Refresh") { Task { await store.loadSidebars() } }.buttonStyle(.sh(.secondary))
+                }
+                .padding(.horizontal, SH.Space.s)
+            }
             ForEach(pins) { pin in
                 let selected = navigator.padPath.last == .forge(.list) && store.chosen == pin.key
                 Button { ForgeHooks.open(pin.key, store: store, navigator: navigator) } label: {

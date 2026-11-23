@@ -17,7 +17,8 @@ struct RunGroupSection: View {
     var body: some View {
         VStack(spacing: 0) {
             let toggle = { SidebarThreads.of(hosts).toggleRunGroup(group.key) }
-            SHAutomationGroupRow(group.hostTag.map { "\(group.name) · \($0)" } ?? group.name, count: group.count,
+            // The sidebar names the automation alone; the host would crowd it out.
+            SHAutomationGroupRow(compact ? group.name : group.hostTag.map { "\(group.name) · \($0)" } ?? group.name, count: group.count,
                                  unread: group.unread, expanded: group.expanded, rollup: Self.rollup(group.rollup),
                                  paused: group.paused, toggle: toggle)
                 // The Mac's row is 28pt; a touch needs 44 (the row's own tap covers its middle).

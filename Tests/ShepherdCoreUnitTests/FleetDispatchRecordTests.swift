@@ -16,15 +16,29 @@ struct FleetDispatchRecordTests {
     @Test func aRecordRoundTripsWithEveryField() throws {
         var record = Self.record(.delivering)
         record.resultText = "Done."
-        record.resultBranchFacts = FleetBranchFacts(branch: "fleet/fix-flaky-test", head: "abc", ahead: 2, pushed: true, filesChanged: 3, insertions: 10, deletions: 2)
+        record.titleRevision = 4
+        record.resultBranchFacts = FleetBranchFacts(branch: "fleet/fix-flaky-test", head: "abc", ahead: 2, filesChanged: 3, insertions: 10, deletions: 2)
+        record.resultBranchFacts?.originCheckFailed = true
+        record.resultBranchFacts?.comparedTo = "nightly"
+        record.comparisonBranch = "nightly"
+        record.closeReport = "Kept the checkout."
         record.failure = FleetDispatchCode.refused
         record.failureDetail = "newer_build"
         record.activity = "working"
+        record.lastThreadEventAt = 1_300
+        record.hostRunningDispatches = 8
         record.subdir = "apps/web"
         record.start = FleetThreadStart(place: .existingBranch, base: "origin/main", branch: "feat/orders")
         record.without = ["bearcli"]
         let decoded = try JSONDecoder().decode(FleetDispatchRecord.self, from: JSONEncoder().encode(record))
         #expect(decoded == record)
+        #expect(decoded.titleRevision == 4)
+    }
+
+    @Test func legacyBranchFactsDecodeWithoutAnOriginError() throws {
+        let data = Data(#"{"branch":"fleet/check-payments","ahead":2,"pushed":true,"filesChanged":1,"insertions":2,"deletions":0}"#.utf8)
+        let facts = try JSONDecoder().decode(FleetBranchFacts.self, from: data)
+        #expect(facts.pushed && facts.originCheckFailed == nil)
     }
 
     @Test func aThreadStartDecodesWithDefaultsAndIsWrittenOnlyWhenSet() throws {
@@ -43,6 +57,8 @@ struct FleetDispatchRecordTests {
         let record = try JSONDecoder().decode(FleetDispatchRecord.self, from: Data(json.utf8))
         #expect(record.id == id && record.kind == .agentDispatch && record.reasonCodes.isEmpty && record.title.isEmpty)
         #expect(record.state == .failed, "a state this build doesn't know is never resumed")
+        #expect(record.lastThreadEventAt == nil && record.hostRunningDispatches == nil)
+        #expect(record.comparisonBranch == nil && record.closeReport == nil && record.titleRevision == nil)
         #expect(record.without.isEmpty, "a record from before a Mac could start a thread without an MCP server names none")
         #expect(!String(decoding: try JSONEncoder().encode(Self.record()), as: UTF8.self).contains("\"without\""), "written only when set")
     }
@@ -67,5 +83,15 @@ struct FleetDispatchRecordTests {
         let from = DispatchedFrom(hostID: UUID(), hostName: "MacBook Pro", agentID: AgentID(), agentTitle: "Ship it", dispatchID: UUID(), at: 5)
         agent.dispatchedFrom = from
         #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(agent)).dispatchedFrom == from)
+    }
+
+    @Test func startedByIsWrittenOnlyWhenSetAndDecodesWithoutIt() throws {
+        var agent = Agent(name: "Split slow UI tests", spaceID: SpaceID(), tabID: TabID())
+        let plain = String(decoding: try JSONEncoder().encode(agent), as: UTF8.self)
+        #expect(!plain.contains("startedBy"))
+        #expect(try JSONDecoder().decode(Agent.self, from: Data(plain.utf8)).startedBy == nil)
+        let started = StartedBy(agentID: AgentID(), agentTitle: "Speed up checkout CI", at: 5, depth: 2)
+        agent.startedBy = started
+        #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(agent)).startedBy == started)
     }
 }

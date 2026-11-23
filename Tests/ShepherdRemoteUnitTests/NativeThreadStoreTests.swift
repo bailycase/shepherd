@@ -11,6 +11,8 @@ final class FakeHost {
     var snapshot: NativeThreadSnapshot
     /// While true, snapshot requests answer that the agent's pi is still starting.
     var starting = false
+    /// While true, a snapshot request that names the revision it holds answers that nothing changed, as a host does.
+    var answersUnchanged = false
     var next: [Result<NativeThreadResult, Error>] = []
     var action: (NativeThreadRequest) throws -> NativeThreadResult = { _ in .failure(code: "x", message: "unscripted") }
     private(set) var requests: [NativeThreadRequest] = []
@@ -24,9 +26,12 @@ final class FakeHost {
         requests.append(request)
         onRequest?(request)
         if !next.isEmpty { return try next.removeFirst().get() }
-        guard case .snapshot = request else { return try action(request) }
+        guard case .snapshot(let session, _, let after) = request else { return try action(request) }
         defer { onServed?(); onServed = nil }
         if starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
+        if answersUnchanged, after == snapshot.revision, session == snapshot.piSessionID {
+            return .unchanged(piSessionID: snapshot.piSessionID, generation: snapshot.generation, revision: snapshot.revision)
+        }
         return .snapshot(value: snapshot)
     }
 
@@ -51,10 +56,15 @@ final class FakeHost {
 
 /// Suspends until `condition` holds, woken by the store's observation rather than polling.
 @MainActor
-func until(_ condition: @escaping @MainActor () -> Bool) async {
+func until(sourceLocation: SourceLocation = #_sourceLocation, _ condition: @escaping @MainActor () -> Bool) async {
     while !condition() {
-        await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
-            withObservationTracking { _ = condition() } onChange: { changed.resume() }
+        let (changes, change) = AsyncStream<Void>.makeStream()
+        withObservationTracking { _ = condition() } onChange: { change.finish() }
+        var iterator = changes.makeAsyncIterator()
+        _ = await iterator.next()
+        if Task.isCancelled {
+            Issue.record("Cancelled while waiting for a store change", sourceLocation: sourceLocation)
+            return
         }
     }
 }
@@ -71,8 +81,9 @@ final class FirstPullGate {
 /// cancelled. Every refresh is the test's, so no poll lands between a test's steps however
 /// slowly the machine runs it.
 @MainActor
-func manualStore(startingLimit: Duration = .seconds(60)) -> NativeThreadStore {
+func manualStore(startingLimit: Duration = .seconds(60), onPause: (@Sendable () -> Void)? = nil) -> NativeThreadStore {
     NativeThreadStore(startingLimit: startingLimit) { _ in
+        onPause?()
         let (cancelled, continuation) = AsyncStream<Void>.makeStream()
         for await _ in cancelled {}
         continuation.finish()
@@ -83,11 +94,11 @@ func manualStore(startingLimit: Duration = .seconds(60)) -> NativeThreadStore {
 /// Starts the store's run loop and returns once the first answer (a snapshot, or pi still
 /// starting) has been applied.
 @MainActor
-func start(_ store: NativeThreadStore, _ host: FakeHost) async -> Task<Void, Never> {
+func start(_ store: NativeThreadStore, _ host: FakeHost, connection: AnyHashable? = nil) async -> Task<Void, Never> {
     var task: Task<Void, Never>?
     await withCheckedContinuation { (served: CheckedContinuation<Void, Never>) in
         host.onServed = { served.resume() }
-        task = Task { await store.run { try host.handle($0) } }
+        task = Task { await store.run(request: { try host.handle($0) }, connection: connection) }
     }
     return task!
 }
@@ -521,6 +532,7 @@ struct NativeThreadStoreTests {
         host.snapshot = stopped
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
         #expect(!store.busy && store.draft == "hello" && host.actions.isEmpty)
     }
@@ -701,6 +713,7 @@ struct NativeThreadStoreTests {
 
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
 
         guard case .send(let session, _, _, let text, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
@@ -722,6 +735,7 @@ struct NativeThreadStoreTests {
 
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
 
         let texts = host.actions.compactMap { action -> String? in
@@ -751,6 +765,7 @@ struct NativeThreadStoreTests {
         await until { store.busy }
         host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent exited (code 127)."))]
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
         #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
         #expect(!store.starting && store.loadError == "native_unavailable: The agent exited (code 127).")
@@ -1063,18 +1078,20 @@ struct NativeThreadStoreTests {
         #expect(store.displayedMessages.map(\.entryID) == ["a", echo.entryID, "live"], "history, then the echo, then the live reply")
     }
 
-    @Test func aLegacyHostsEchoLeavesOnlyWhenPiPersistsTheSameText() async {
-        let (store, host, task) = await started()
+    /// A host that never names the send leaves the echo standing until a message the thread did not hold arrives after it: by
+    /// position, whatever its words (pi may save a command expanded), never by a match against older history.
+    @Test func aLegacyHostsEchoLeavesWithTheNextMessageAfterItNotByItsWords() async {
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("do the thing", id: "old"), hi]))
         defer { task.cancel() }
         host.acceptAll()
         store.draft = "do the thing"
         await store.send()
-        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("something else")])
+        host.snapshot = F.snapshot(revision: 2, messages: [F.user("do the thing", id: "old"), hi])
         await store.refresh()
-        #expect(store.pending.count == 1)
-        host.snapshot = F.snapshot(revision: 3, messages: [hi, F.user("do the thing\n", id: "u")])
+        #expect(store.pending.count == 1, "the earlier message with the same words is not it")
+        host.snapshot = F.snapshot(revision: 3, messages: [F.user("do the thing", id: "old"), hi, F.user("Do the thing, carefully", id: "u")])
         await store.refresh()
-        #expect(store.pending.isEmpty && store.displayedMessages.map(\.entryID) == ["a", "u"])
+        #expect(store.pending.isEmpty && store.displayedMessages.map(\.entryID) == ["old", "a", "u"] && store.rows.last?.id.hasPrefix("pending:") == true, "one copy, under the echo's identity")
     }
 
     @Test func aSessionChangeDiscardsEchoes() async {
@@ -1203,6 +1220,50 @@ struct NativeThreadStoreTests {
         guard host.actions.count == 2, case .setModel(_, _, _, let model) = host.actions[0],
               case .setThinking(_, _, _, let level) = host.actions[1] else { Issue.record("\(host.actions)"); return }
         #expect(model == "p/other" && level == "high")
+    }
+
+    /// A poll already on its way must not undo a pick. Only the host's answer (including its
+    /// clamped level or refusal) settles it. Other composer controls need no guessed values.
+    @Test(arguments: ["setModel", "setThinking", "setServiceTier"])
+    func composerShowsThePickBeforeTheHostAnswers(_ action: String) async {
+        let host = FakeHost(F.snapshot(actions: [action], model: "p/current", serviceTier: "standard", serviceTiers: ["standard", "fast"]))
+        host.snapshot.thinking = "low"
+        let store = manualStore()
+        let gate = FirstPullGate()
+        let (opened, open) = AsyncStream<Void>.makeStream()
+        let loop = Task {
+            await store.run { request in
+                if case .snapshot = request { return try host.handle(request) }
+                gate.asked = true
+                for await _ in opened { break }
+                return try host.handle(request)
+            }
+        }
+        defer { loop.cancel(); open.finish() }
+        await until { store.ready }
+        let pick = Task {
+            switch action {
+            case "setModel": await store.setModel("p/new")
+            case "setThinking": await store.setThinking("max")
+            default: await store.setServiceTier(.fast)
+            }
+        }
+        await until { gate.asked }
+        host.snapshot.revision += 1
+        await store.refresh()
+        #expect(store.model == (action == "setModel" ? "p/new" : "p/current"))
+        #expect(store.thinking == (action == "setThinking" ? "max" : "low"))
+        #expect(store.serviceTier == (action == "setServiceTier" ? .fast : .standard))
+        host.acceptAll()
+        if action == "setModel" { host.action = { _ in .failure(code: "unavailable", message: "No such model") } }
+        if action == "setThinking" { host.snapshot.thinking = "high" }
+        if action == "setServiceTier" { host.snapshot.serviceTier = "fast" }
+        host.snapshot.revision += 1
+        open.yield()
+        await pick.value
+        #expect(store.model == "p/current" && store.thinking == host.snapshot.thinking)
+        #expect(store.serviceTier.rawValue == host.snapshot.serviceTier)
+        #expect(store.notice == (action == "setModel" ? "No such model" : nil))
     }
 
     // MARK: Speed
@@ -2046,7 +2107,7 @@ struct NativeThreadStoreTests {
     /// A streamed chunk changes `liveRow` and leaves `listRows` as it was: the streaming reply
     /// sits in the list as a content-less shell, so the transcript that iterates the list is not
     /// invalidated per chunk. The turn ending puts the full row into the list.
-    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async {
+    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async throws {
         let prompt = F.user("go", id: "u")
         let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt],
                                                            provisional: [F.assistant("Wri", status: "streaming", id: "p")]))
@@ -2061,10 +2122,15 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(store.listRows == list, "the chunk is the live row's alone")
         #expect(store.liveRow != nil && store.liveRow?.presentation != store.rows.first?.presentation)
+        let (hold, release) = AsyncStream<Void>.makeStream()
+        store.settlePause = { _ in for await _ in hold {} }
+        defer { release.finish() }
         host.snapshot = F.snapshot(revision: 3, messages: [prompt, F.assistant("Writing more.", id: "p")])
         await store.refresh()
-        // The end of a run settles after a short hold (`settleRunning`).
-        for _ in 0..<50 where store.liveRow != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        #expect(store.settledRunning, "the reply stays live during the end-of-run hold")
+        let settling = try #require(store.settleTask)
+        release.finish()
+        await settling.value
         #expect(store.liveRow == nil)
         #expect(store.listRows == store.rows, "settled, the list holds every row's content")
         #expect(store.listRows.last?.live == false && store.listRows.last?.presentation != nil)

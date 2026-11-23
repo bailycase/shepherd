@@ -87,6 +87,8 @@ final class ReviewStore {
     enum FileState: Equatable {
         case loading
         case failed(String)
+        /// A fetch was cancelled and nothing took over: not loading, not failed.
+        case idle
         case binary
         case noLines(renamed: Bool)
         case lines
@@ -122,6 +124,11 @@ final class ReviewStore {
     private(set) var loading = false
     private(set) var loaded = false
     private(set) var loadError: String?
+    /// The last load was cancelled and no newer one took over.
+    private var loadCancelled = false
+    /// Nothing loaded, nothing in flight, no error: a cancelled load left the review empty. The
+    /// screen offers Try again rather than a spinner.
+    var loadIdle: Bool { loadCancelled && !loading && !loaded && loadError == nil }
     private(set) var copyingPatch = false
     var copyNotice: String?
     private(set) var failedCopyCommand: Bool?
@@ -217,6 +224,14 @@ final class ReviewStore {
     /// scope whose trees did not move costs no request.
     @ObservationIgnored private var diffCache = ReviewCostCache<FileKey, ChangesFileDiff>(budget: ReviewStore.diffCacheBudget)
     @ObservationIgnored private var fileLoads: [String: UUID] = [:]
+    /// Files whose last fetch was cancelled with no newer one: `state(of:)` is `.idle`.
+    private(set) var cancelledFiles: Set<String> = []
+    /// The branch list's request, and whether its last one was cancelled (`branchesIdle`).
+    @ObservationIgnored private var branchesRequest: UUID?
+    private var branchesCancelMark = false
+    private var branchesOutstanding = 0
+    /// A cancelled branch list with no other request still running: idle, offers Try again.
+    var branchesCancelled: Bool { branchesCancelMark && branchesOutstanding == 0 }
     @ObservationIgnored private var textLoads: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     @ObservationIgnored private var wantedFiles: Set<String> = []
     @ObservationIgnored private var listOptions: ChangesOptions?
@@ -289,6 +304,7 @@ final class ReviewStore {
         fileErrors = [:]
         truncated = []
         fileLoads = [:]
+        cancelledFiles = []
         cancelTextLoads()
         wantedFiles = []
         unifiedCache = [:]
@@ -321,6 +337,7 @@ final class ReviewStore {
         loadID = id
         loading = true
         loadError = nil
+        loadCancelled = false
         defer { if loadID == id { loading = false } }
         if usesChanges {
             await loadChanges(id: id, host: host)
@@ -349,6 +366,9 @@ final class ReviewStore {
             loadedKey = LoadKey(session: host.session, pullRequest: pullRequest)
             // A whole diff that lands after its screen left counts against the budget at once.
             grew()
+        } catch is CancellationError {
+            // The screen left or a newer load took over: not a failure, and the files on hand stay.
+            if loadID == id { loadCancelled = true }
         } catch {
             guard loadID == id else { return }
             loadError = reviewErrorText(error)
@@ -367,6 +387,9 @@ final class ReviewStore {
             guard loadID == id else { return }
             apply(list, options: options)
             loadedKey = LoadKey(session: host.session, pullRequest: pullRequest)
+        } catch is CancellationError {
+            // The screen left or a newer load took over: not a failure, and the files on hand stay.
+            if loadID == id { loadCancelled = true }
         } catch {
             guard loadID == id else { return }
             loadError = reviewErrorText(error)
@@ -413,6 +436,7 @@ final class ReviewStore {
         fileErrors = [:]
         truncated = []
         fileLoads = [:]
+        cancelledFiles = []
         cancelTextLoads()
         wholeFiles = []
         expandedRuns = [:]
@@ -423,9 +447,10 @@ final class ReviewStore {
     }
 
     /// Asks the host for the scope's files again (Refresh).
-    func refresh() {
-        guard let hosts else { return }
-        Task { await load(hosts: hosts) }
+    @discardableResult
+    func refresh() -> Task<Void, Never>? {
+        guard let hosts else { return nil }
+        return Task { await load(hosts: hosts) }
     }
 
     // MARK: Scope
@@ -478,6 +503,7 @@ final class ReviewStore {
         let id = UUID()
         loadID = id
         loading = true
+        loadCancelled = false
         Task {
             defer { if loadID == id { loading = false } }
             await loadChanges(id: id, host: host)
@@ -487,10 +513,18 @@ final class ReviewStore {
     /// The base picker's branches, once per review.
     func loadBranches() async {
         guard usesChanges, branches == nil else { return }
+        let id = UUID()
+        branchesRequest = id
+        branchesCancelMark = false
+        branchesOutstanding += 1
+        defer { branchesOutstanding -= 1 }
         do {
             guard case .changesBranches(let branches) = try await query(.changesBranches()) else { throw RemoteReviewError.unexpectedReply }
             self.branches = branches
             branchesError = nil
+            branchesCancelMark = false
+        } catch is CancellationError {
+            if branchesRequest == id { branchesCancelMark = true }
         } catch {
             branchesError = reviewErrorText(error)
         }
@@ -535,6 +569,8 @@ final class ReviewStore {
             let patch = try await patch()
             UIPasteboard.general.string = command ? "git apply <<'PATCH'\n\(patch)\(patch.hasSuffix("\n") ? "" : "\n")PATCH\n" : patch
             copyNotice = command ? "Command copied" : "Patch copied"
+        } catch is CancellationError {
+            copyNotice = nil
         } catch {
             copyNotice = reviewErrorText(error)
             failedCopyCommand = command
@@ -581,6 +617,7 @@ final class ReviewStore {
         }
         if let error = fileErrors[id] { return .failed(error) }
         if entry(id)?.isBinary == true, usesChanges { return .binary }
+        if cancelledFiles.contains(id), fileLoads[id] == nil { return .idle }
         return .loading
     }
 
@@ -640,6 +677,7 @@ final class ReviewStore {
             return fileKey(current, list: list) == key
         }
         guard owned() else { return }
+        cancelledFiles.remove(file.id)
         do {
             let reply = try await query(.changesFile(revision: key.revision, path: file.path, oldPath: file.oldPath, options: key.options))
             guard case .changesFile(let diff) = reply else { throw RemoteReviewError.unexpectedReply }
@@ -647,6 +685,8 @@ final class ReviewStore {
             diffCache.insert(diff, cost: Self.cost(diff), for: key)
             guard isCurrent() else { return }
             setDiff(diff, for: file.id)
+        } catch is CancellationError {
+            if owned() { cancelledFiles.insert(file.id) }
         } catch {
             guard isCurrent() else { return }
             fileErrors[file.id] = reviewErrorText(error)
@@ -671,6 +711,7 @@ final class ReviewStore {
         splitCache[id] = nil
         if diff.truncated { truncated.insert(id) } else { truncated.remove(id) }
         fileErrors[id] = nil
+        cancelledFiles.remove(id)
         texts[id] = nil
         textLoads.removeValue(forKey: id)?.task.cancel()
         fileVersions[id, default: 0] &+= 1

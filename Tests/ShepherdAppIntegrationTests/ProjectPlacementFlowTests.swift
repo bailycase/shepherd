@@ -250,7 +250,7 @@ struct ProjectPlacementFlowTests {
             return scope
         }
         try await r.perform(.pause)
-        guard case .projectChildren(_, scope, .stop) = try await controller.read() else { Issue.record("Owner Pause did not reach helper controller"); return }
+        guard case .projectChildren(_, scope, .stop, _) = try await controller.read() else { Issue.record("Owner Pause did not reach helper controller"); return }
         controller.client.closeConnection()
         try await eventuallyOnMain("owner retains failed remote helper Stop") {
             r.project.interruptPending && r.project.tasks.first?.executionReceipt?.ownerPaused == true
@@ -269,7 +269,7 @@ struct ProjectPlacementFlowTests {
             userTimestamp: (snapshot.messages + snapshot.provisional).last { $0.role == "user" }?.timestamp))
         guard case .error(911, "project_scope", _) = try await reconnected.read() else { Issue.record("Failed Stop reopened helper authority"); return }
         try await r.perform(.pause)
-        guard case .projectChildren(let id, scope, .stop) = try await reconnected.read() else { Issue.record("Owner skipped the unacknowledged helper Stop retry"); return }
+        guard case .projectChildren(let id, scope, .stop, _) = try await reconnected.read() else { Issue.record("Owner skipped the unacknowledged helper Stop retry"); return }
         try reconnected.client.send(.childCommandResult(id: id, error: nil))
         try await eventuallyOnMain("owner acknowledges the retried remote helper Stop") {
             !r.project.interruptPending && r.project.tasks.first?.executionReceipt?.helpersStopped == true
@@ -416,6 +416,33 @@ struct ProjectPlacementFlowTests {
         try await r.perform(.resume)
         try await eventuallyOnMain("only an explicit action dispatches queued work") { r.project.tasks.last?.phase == .settled }
         #expect(r.executor.server.state.projectExecutions.count == 4)
+    }
+
+    /// The cause of `ownerRestartReconcilesOfflineResultsWithoutDispatchingTheFourthTask` timing out about half the time:
+    /// `refreshProjectHosts` remembered what it sent as `ObjectIdentifier(client)`, and a reconnect's new client is often
+    /// allocated at the freed old client's address, so nothing was sent and the new host never learned which Macs the app
+    /// reaches. The host forgets them when the app's link drops; every reconnect must tell it again.
+    @Test func appResendsReachableHostsToAHostThatForgotThemAfterEveryReconnect() async throws {
+        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let server = r.owner.server
+        let local = try #require(r.owner.vm.localHost)
+        for _ in 0..<10 {
+            try await server.enqueue { @Sendable in server.applyProjectExecutors(.hosts([])) }
+            r.owner.remoteHosts.reconnect(id: local.id)
+            try await r.owner.hostReaches(r.host)
+        }
+    }
+
+    /// The dedupe's purpose: the same client with the same hosts is not told again.
+    @Test func appDoesNotResendReachableHostsOnAnUnchangedConnection() async throws {
+        let r = try Rig(); defer { r.stop() }; try await r.start()
+        let server = r.owner.server
+        try await server.enqueue { @Sendable in server.applyProjectExecutors(.hosts([])) }
+        // Deterministic: an unchanged refresh must decide not to send, so it returns no send task.
+        #expect(r.owner.vm.refreshProjectHosts() == nil)
+        let client = try #require(r.owner.vm.localHost?.browserClient)
+        try await client.projectExecutors(.changed(host: .local, key: nil))
+        #expect(await server.appProjectExecutors().isEmpty)
     }
 
     @Test func remoteViewerUsesOwnersIdentityAndLostExecuteReplyReconcilesTheSameReservation() async throws {

@@ -1,4 +1,5 @@
 // The actual namer with gated in-memory model completions and a scratch socket. No provider calls.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

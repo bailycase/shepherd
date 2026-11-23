@@ -23,6 +23,12 @@ extension ShepherdViewModel {
         items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
                                  title: "New thread", subtitle: newThreadPlaceName.map(Self.newThreadContext),
                                  shortcut: keys.display(.newAgent), icon: "plus"))
+        items += supervisionPaletteItems(keys: keys)
+        let working = workingThreads.count
+        if working > 0 {
+            items.append(PaletteItem(id: "action.stopAll", kind: .action("stopAll"), section: .commands,
+                                     title: "Stop all working threads…", subtitle: "\(working) working", icon: "stop.circle"))
+        }
         // The New thread page's project: what the sidebar's space rows offered.
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
@@ -31,9 +37,6 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.removeSpace", kind: .action("removeSpace"), section: .commands,
                                      title: "Remove space…", subtitle: space.name, icon: "trash"))
         }
-        items.append(PaletteItem(id: "action.newAgentOptions", kind: .action("newAgentOptions"), section: .commands,
-                                 title: "New agent with options…", shortcut: keys.display(.newAgentOptions),
-                                 icon: "slider.horizontal.3"))
         items.append(PaletteItem(id: "action.newSpace", kind: .action("newSpace"), section: .commands,
                                  title: "New space…", shortcut: keys.display(.newSpace), icon: "square.stack"))
         for connection in remoteHosts.connections where connection.phase == .connected {
@@ -361,7 +364,6 @@ extension ShepherdViewModel {
             case "newAgent": openNewThread()
             case "renameSpace": spaceRenameTarget = newThread.place?.space
             case "removeSpace": requestSpaceDelete(newThread.place?.space)
-            case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()
             case "togglePin": if let target = pinTarget { togglePin(target) }
@@ -372,14 +374,18 @@ extension ShepherdViewModel {
             case "openFleet": openDestination(.fleet)
             case "openDesignSystems": openDesignSystems()
             case "openExtensions":
-                settingsSection = .extensions
+                mcpOpenServer = nil
+                settingsSection = .tools
                 showSettings = true
+            case "nextNeedingYou": openNextNeedingYou()
+            case "reviewNext": openReviewNext()
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
             case "toggleTerminal": toggleTerminalPanel()
             case "newTerminal": newTerminalTab()
             case "maximizeTerminal": toggleTerminalMaximized()
             case "stop": stopVisibleAgent()
+            case "stopAll": requestStopAll()
             case "openAutomations": openDestination(.automations)
             case "openForge": openForge()
             case "openDesigns": openDestination(.designs)

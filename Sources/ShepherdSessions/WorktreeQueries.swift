@@ -315,6 +315,8 @@ extension SessionServer {
             return try await queries.commit(agentID, query: query)
         case .pullRequest:
             return .pullRequest(await pullRequestLinks?.refresh(agentID))
+        case .branchStatus, .branchUpdate, .branchAbort:
+            return try await branch(query, agentID: agentID)
         case .children:
             // Swept on read rather than on a timer: a publisher that went quiet keeps only its
             // finished transcripts.
@@ -338,6 +340,51 @@ extension SessionServer {
             }.value
         default:
             throw RemoteCreateAgentError("Open Shepherd on the host for this.")
+        }
+    }
+}
+
+extension SessionServer {
+    /// A device's branch sheet (`RemoteAgentQuery.branchStatus`, `.branchUpdate`, `.branchAbort`): the Mac's
+    /// branch card's reads and its Update, in the thread's own checkout, each change on the person's tap.
+    @MainActor
+    func branch(_ query: RemoteAgentQuery, agentID: AgentID) async throws -> RemoteAgentResult {
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { throw RemoteCreateAgentError("Agent no longer exists") }
+        let layout = state.tabs.first { $0.id == agent.tabID }?.layout
+        guard let cwd = layout?.leaves.first(where: { $0.agentID == agentID })?.cwd ?? agent.worktreePath ?? layout?.firstLeaf.cwd else {
+            throw RemoteCreateAgentError("This thread has no checkout.")
+        }
+        func conflict(_ found: BranchGit.Conflict?) -> RemoteBranchConflict? {
+            found.map { RemoteBranchConflict(rebase: $0.kind == .rebase, files: $0.files) }
+        }
+        switch query {
+        case .branchStatus:
+            let base = agent.worktreeBase
+            let branch = agent.checkout?.branch ?? agent.worktreeBranch
+            let forge = forge
+            async let read = Task.detached { (BranchCardGitReader.read(cwd: cwd, base: base), BranchGit.conflict(cwd: cwd)) }.value
+            async let pull: PullRequestSummary? = if let branch { await forge.pullRequest(directory: (cwd as NSString).expandingTildeInPath, branch: branch) } else { nil }
+            let (git, stopped) = await read
+            // The base branch itself has no pull request of its own.
+            return .branchStatus(RemoteBranchStatus(base: git.base, behind: git.behind, additions: git.additions, deletions: git.deletions,
+                                                    pull: git.base == branch ? nil : await pull, conflict: conflict(stopped)))
+        case .branchUpdate(let base, let rebase):
+            // Update rewrites the tree for the person: no turn running meanwhile takes it for the agent's.
+            let span = UUID()
+            try? changes.personWriteBegan(span, agentID: agentID, paths: nil)
+            defer { changes.endWrite(span); onThreadFocused?(agentID) }
+            let outcome = try await Task.detached { try BranchGit.update(cwd: cwd, base: base, rebase: rebase) }.value
+            if case .conflict(let stopped) = outcome { return .branchUpdate(conflict(stopped)) }
+            return .branchUpdate(nil)
+        case .branchAbort:
+            guard let stopped = await Task.detached(operation: { BranchGit.conflict(cwd: cwd) }).value else { return .ok }
+            let span = UUID()
+            try? changes.personWriteBegan(span, agentID: agentID, paths: nil)
+            defer { changes.endWrite(span); onThreadFocused?(agentID) }
+            try await Task.detached { try BranchGit.abort(cwd: cwd, stopped.kind) }.value
+            return .ok
+        default:
+            throw RemoteCreateAgentError("Not a branch request.")
         }
     }
 }

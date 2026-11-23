@@ -34,7 +34,12 @@ Sparkle's installer are keyed by bundle id: on a shipped id, every Dev launch wo
 installed app's collapsed spaces and clear its notifications, and a setting changed in Dev
 would change it there. `ShepherdEdition` reads the Dev id as Shepherd, and Debug builds have no
 updater. `Tests/Release` holds the Debug id apart from both shipped apps'. `Shepherd iOS` builds
-the iPhone and iPad client from `App/iOS`.
+the iPhone and iPad client from `App/iOS`. Simulator renders
+(`Tests/ShepherdIOSChecks/run-simulator.sh`, also see [testing](testing.md)) install per
+platform: iPhone 18 Pro and iPad Pro 13-inch on the iOS 27.0 runtime, iPhone Duo on
+iOS 27.1. Duo poses (`-f`) need Xcode 27.1 or newer (SwiftUI 8.0.85+ for the fold code), so
+prefix the render with `DEVELOPER_DIR` set to an Xcode 27.1 or later toolchain; a pose
+run under an older SwiftUI exits non-zero.
 
 **Shepherd Nightly** is the same code built as a second app, so it installs and runs beside
 Shepherd. The `Nightly` configuration is Release plus its identity: bundle id
@@ -55,6 +60,8 @@ owns the workspace first, and the scheme follows it instead. To debug that proce
 Process and pick the second `Shepherd` (or attach by its pid, which `log show --predicate
 'subsystem == "com.shepherd.app"'` prints in "host child started"). Its stderr shows in the
 app's console. Stopping the app in Xcode closes the child's stdin, so the child stops too.
+The background host also keeps its timestamped diagnostics in `host.log` in its support directory,
+with one rotated copy (`host.log.1`) and a 256 KiB cap per file.
 
 **The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
 Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](pi-engine.md)). Stage it

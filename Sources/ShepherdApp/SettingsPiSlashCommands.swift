@@ -6,38 +6,37 @@ import ShepherdUI
 /// every client: it leaves the `/` menu, and typing it is refused. The groups come from the model
 /// (derived once per change); the rows are lazy, so a long list builds what is on screen.
 struct SlashCommandsSettings: View {
+    enum Filter: Hashable { case all, on, off }
+
     let model: SlashCommandsModel
     @Bindable var settings: AppSettings
+    @State private var filter: Filter = .all
 
     var body: some View {
         let presentation = model.presentation
-        SettingsPage(title: "Slash commands",
-                     explanation: "Commands supplied by extensions, prompt templates and skills. Turn one off to disable it entirely, including when typed directly.") {
-            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                HStack(spacing: SH.Space.xl) {
-                    SHSearchField("Search commands", text: Binding(get: { model.query }, set: { model.query = $0 }))
-                        .frame(width: AppLayout.slashSearchWidth)
-                    Spacer(minLength: SH.Space.l)
-                    Text(presentation.summary)
-                        .font(.sh(.caption))
-                        .foregroundStyle(Color.sh.textTertiary)
-                        .lineLimit(1)
-                        .accessibilityLabel("Commands: \(presentation.summary)")
+        let all = presentation.groups.flatMap(\.rows)
+        SettingsPage(title: "Slash commands") {
+            SettingsGroup(title: "") {
+                SettingsFilterRow(label: "Show", selection: $filter, options: [
+                    (.all, "All \(presentation.total)"),
+                    (.on, "On \(presentation.total - presentation.hidden)"),
+                    (.off, "Off \(presentation.hidden)"),
+                ])
+            }
+            if all.isEmpty {
+                SettingsGroup(title: "Commands") {
+                    SettingsRow(title: "No commands yet", subtitle: "pi lists its commands when an agent starts, so they appear once one is running.") { EmptyView() }
                 }
-                if presentation.groups.isEmpty {
-                    emptyState(presentation)
-                } else {
-                    ForEach(presentation.groups) { group in
-                        SettingsGroup(title: group.title) {
-                            // One lazy list in the group's card: its rows are built as they scroll in.
-                            LazyVStack(spacing: 0) {
-                                ForEach(group.rows) { row in
-                                    SlashCommandListRow(row: row, first: row.id == group.rows.first?.id) {
-                                        settings.setSlashCommand(row.name, on: $0)
-                                    }
-                                    .equatable()
-                                }
-                            }
+            }
+            ForEach(presentation.groups) { group in
+                let rows = group.rows.filter { filter == .all || (filter == .on) == $0.isOn }
+                if !rows.isEmpty {
+                    SettingsGroup(title: group.title,
+                                  footnote: group.id == presentation.groups.last?.id ? "Off removes a command from the / menu and refuses it if typed." : nil,
+                                  lazy: true) {
+                        ForEach(rows) { row in
+                            SlashCommandListRow(row: row) { settings.setSlashCommand(row.name, on: $0) }
+                                .equatable()
                         }
                     }
                 }
@@ -45,70 +44,21 @@ struct SlashCommandsSettings: View {
         }
         .onChange(of: settings.hiddenSlashCommands, initial: true) { _, names in model.setHidden(names) }
     }
-
-    /// No commands to draw: pi has listed none yet, or the search leaves none.
-    @ViewBuilder private func emptyState(_ presentation: SlashCommandsPresentation) -> some View {
-        SettingsGroup(title: "Commands") {
-            SettingsActionRow(leading: {
-                Text(presentation.total == 0
-                     ? "No commands yet. pi reports its commands when an agent starts, so they list here once one is running."
-                     : "No command matches “\(model.query.trimmingCharacters(in: .whitespacesAndNewlines))”.")
-                    .font(.sh(.body))
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }, actions: { EmptyView() })
-        }
-    }
 }
 
-/// One command: its name in mono with what it takes after it, its description under, and its
-/// switch. Compares by what it draws, so a switch redraws its own row and no other.
+/// One command: compares by what it draws, so a switch redraws its own row and no other.
 private struct SlashCommandListRow: View, Equatable {
     let row: SlashCommandRow
-    let first: Bool
     let set: (Bool) -> Void
 
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.first == b.first }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.row == b.row }
 
     var body: some View {
         let _ = SHRenderProbe.tick("slashCommands.row")
-        let sh = Color.sh
-        HStack(alignment: .center, spacing: SH.Space.xxl) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(spacing: SH.Space.m) {
-                    Text("/" + row.name)
-                        .font(.shMono(AppLayout.skillsNameSize, .semibold))
-                        .foregroundStyle(row.isOn ? sh.textPrimary : sh.textSecondary)
-                        .lineLimit(1)
-                    if let arguments = row.arguments {
-                        Text(arguments)
-                            .font(.shMono(AppLayout.skillsMetaSize))
-                            .foregroundStyle(sh.textTertiary)
-                            .lineLimit(1)
-                    }
-                }
-                if let line = detail {
-                    Text(line)
-                        .font(.shSans(AppLayout.skillsSummarySize))
-                        .foregroundStyle(row.isOn ? sh.textSecondary : sh.textTertiary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        SettingsRow(title: "/" + row.name, subtitle: row.description ?? row.arguments, mono: true) {
             SettingsSwitch(label: "/" + row.name, isOn: Binding(get: { row.isOn }, set: set))
         }
-        .padding(.vertical, SH.Space.m)
-        .padding(.horizontal, SH.Space.xl)
-        .frame(minHeight: AppLayout.slashRowMinHeight)
-        .overlay(alignment: .top) { if !first { SHHairline() } }
         .help(SlashCommandWords.help(row.name, isOn: row.isOn))
-        .accessibilityElement(children: .contain)
-    }
-
-    /// Its description; once off, what off means, since the description would not say.
-    private var detail: String? {
-        row.isOn ? row.description : SlashCommandWords.disabled
     }
 }
 

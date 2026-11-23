@@ -58,12 +58,6 @@ final class MCPStore {
 
     enum Filter: Hashable { case all, connected, needsYou }
 
-    struct Budget: Equatable {
-        var tokens: String
-        var fraction: Double
-        var note: String
-    }
-
     /// Where the last `pi mcp list` stands.
     enum Listing: Equatable {
         case never
@@ -91,7 +85,6 @@ final class MCPStore {
     private(set) var invalidLine: Int?
     private(set) var rows: [MCPServerRowModel] = []
     private(set) var details: [String: MCPServerDetailModel] = [:]
-    private(set) var budget = Budget(tokens: "~0 tokens", fraction: 0, note: "")
     private(set) var connectedCount = 0
     private(set) var listing = Listing.never
     var problem: String?
@@ -276,36 +269,22 @@ final class MCPStore {
 
     // MARK: Rows
 
-    /// Derives every row, detail and the budget once per change.
+    /// Derives every row and detail once per change.
     func rebuild() {
         let entries = document.servers
         var rows: [MCPServerRowModel] = []
         var details: [String: MCPServerDetailModel] = [:]
-        var budgetInput: [MCPBudgetEstimate.Server] = []
         for entry in entries {
             let state = state(of: entry)
             let missing = missingSecrets(entry)
             let names = toolNames(of: entry)
-            let settings = entry.settings
             rows.append(row(entry, state: state, missing: missing, tools: names))
             details[entry.name] = detail(entry, state: state, missing: missing, tools: names)
-            if settings.enabled, !isCannotRun(state) {
-                budgetInput.append(MCPBudgetEstimate.Server(name: entry.name, direct: settings.exposure == .direct,
-                                                           toolCount: MCPBudgetEstimate.visible(names ?? [], chosen: settings.tools).count))
-            }
         }
-        let estimate = MCPBudgetEstimate.estimate(budgetInput)
-        let budget = Budget(tokens: MCPBudgetEstimate.longLabel(estimate.tokens), fraction: Double(estimate.tokens) / 8000, note: estimate.note)
         let connected = rows.filter { $0.status == .connected }.count
         if self.rows != rows { self.rows = rows }
         if self.details != details { self.details = details }
-        if self.budget != budget { self.budget = budget }
         if connectedCount != connected { connectedCount = connected }
-    }
-
-    private func isCannotRun(_ state: State) -> Bool {
-        if case .cannotRun = state { return true }
-        return false
     }
 
     private static func dot(_ state: State, missing: Bool) -> MCPDotState {

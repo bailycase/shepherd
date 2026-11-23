@@ -150,7 +150,10 @@ final class FleetIndexService: @unchecked Sendable {
                 guard !root.removing else { continue }
                 root.name = entry.space.name
                 if root.repo != entry.repo, !root.moving { move(root, to: entry.repo) }
-                root.index.queue.async { [index = root.index] in index.setExclusions(rules) }
+                root.index.queue.async { [index = root.index] in
+                    index.checkRoot()
+                    index.setExclusions(rules)
+                }
             } else {
                 add(path: path, space: entry.space, repo: entry.repo, rules: rules)
             }

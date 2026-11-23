@@ -62,8 +62,8 @@ import SwiftUI
 #Preview("Settings rows") {
     SHPreviewBoth {
         VStack(alignment: .leading, spacing: SH.Space.m) {
-            SHSectionHeader("New agents")
-            SHGroupCard(fill: Color.sh.bgWindow) {
+            SHSectionHeader("New agents", style: .settings)
+            SHGroupCard(radius: SHCardRowMetrics.settingsCardRadius) {
                 SHCardRow("Default model", description: "“Use the agent’s default” passes no `--model` at all.", style: .settings) {
                     SHTag("Use the agent’s default")
                 }
@@ -73,8 +73,8 @@ import SwiftUI
                     Toggle("Listener", isOn: .constant(true)).toggleStyle(.shSwitch).labelsHidden()
                 }
             }
-            SHSettingsNavRow("Appearance", systemImage: "circle.lefthalf.filled", selected: true) {}
-            SHSettingsNavRow("Remote", systemImage: SHGlyph.remoteConnection.symbolName, selected: false) {}
+            SHSettingsNavRow("Appearance", selected: true) {}
+            SHSettingsNavRow("Fleet", selected: false) {}
         }
         .frame(width: 560)
         .padding(SH.Space.xl)

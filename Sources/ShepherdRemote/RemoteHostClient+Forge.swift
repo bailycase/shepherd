@@ -3,7 +3,7 @@ import ShepherdProtocol
 
 extension RemoteHostClient {
     /// The host serves Issues & PRs (`RemoteProtocol.forgeCapability`).
-    public var servesForge: Bool { capabilities.contains(RemoteProtocol.forgeCapability) }
+    public var servesForge: Bool { supports(.forge) }
 
     /// One Issues & PRs request to the host, answered as `SessionServer.forge` answers the Mac:
     /// the same result, or a `ForgeError` in words (gh's own, `unsupported` from an older host,

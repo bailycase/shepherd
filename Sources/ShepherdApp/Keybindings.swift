@@ -8,8 +8,8 @@ import ShepherdUI
 /// hold-⌘ badges, ⌘, Settings, ⏎/⎋ in sheets) are deliberately not here:
 /// they are structural conventions, not preferences.
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
-    case newAgent, newAgentOptions, newSpace, renameAgent
-    case commandPalette, nextAgent, previousAgent
+    case newAgent, newSpace, renameAgent
+    case commandPalette, nextAgent, previousAgent, nextNeedingYou, reviewNext
     case deleteAgent
     /// The terminal's chords keep the names they were stored under (a saved chord survives):
     /// New Terminal was Split Vertically, Close Terminal was Close Pane, and Next and Previous
@@ -37,7 +37,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// Scoped to a thread's Browser tab while it shows (PaneStates › Keyboard): the address field
     /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
     /// so ⇧⌘C here never meets the canvas's Copy reference. ⌘T opens a new Browser tab
-    /// (BrowserTabs boards); ⇧⌘T is New Agent with Options, so the two never meet.
+    /// (BrowserTabs boards).
     case focusAddressBar, selectElement, browserNewTab
     case saveProjectFile
     /// Shepherd ▸ Quit and Stop Agents, while the background service runs them (C6): turns the
@@ -49,12 +49,13 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var title: String {
         switch self {
         case .newAgent: return "New Thread"
-        case .newAgentOptions: return "New Agent with Options…"
         case .newSpace: return "New Space…"
         case .renameAgent: return "Rename Agent…"
         case .commandPalette: return "Command Palette"
         case .nextAgent: return "Next Agent"
         case .previousAgent: return "Previous Agent"
+        case .nextNeedingYou: return "Next Needing You"
+        case .reviewNext: return "Review Next"
         case .newTerminal: return "New Terminal"
         case .closeTerminal: return "Close Terminal"
         case .deleteAgent: return "Delete Agent"
@@ -120,12 +121,13 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var defaultChord: KeyChord {
         switch self {
         case .newAgent: return KeyChord(key: "n", command: true)
-        case .newAgentOptions: return KeyChord(key: "t", command: true, shift: true)
         case .newSpace: return KeyChord(key: "n", command: true, shift: true)
         case .renameAgent: return KeyChord(key: "r", command: true)
         case .commandPalette: return KeyChord(key: "k", command: true)
         case .nextAgent: return KeyChord(key: "down", command: true)
         case .previousAgent: return KeyChord(key: "up", command: true)
+        case .nextNeedingYou: return KeyChord(key: "down", command: true, shift: true)
+        case .reviewNext: return KeyChord(key: "r", command: true, shift: true, option: true)
         case .newTerminal: return KeyChord(key: "d", command: true)
         case .closeTerminal: return KeyChord(key: "w", command: true)
         case .deleteAgent: return KeyChord(key: "w", command: true, shift: true)
@@ -162,36 +164,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-/// Settings ▸ Keyboard's "While the agent is working" rows, in the order of the Queue & steer boards'
-/// Keyboard card: the send keys, then the queue's own. ↩ queues the message for the turn's end;
-/// the alternate send steers now.
-enum WhileWorkingKey: Hashable, Identifiable {
-    /// ↩ (fixed).
-    case send
-    /// ⌘↩ (`ShortcutAction.alternateSend`, rebindable).
-    case alternateSend
-    case fixed(FixedChord)
-    /// The alternate send on a focused queued message.
-    case steerFocused
-
-    static let all: [WhileWorkingKey] = [.send, .alternateSend, .fixed(.editLastQueued), .fixed(.moveQueued),
-                                         .fixed(.deleteQueued), .steerFocused, .fixed(.stopFromComposer)]
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .send: "Queue it, the agent takes it when the turn ends"
-        case .alternateSend: "Send and steer now"
-        case .fixed(let chord): chord.title
-        case .steerFocused: "Steer the focused message now"
-        }
-    }
-}
-
-/// Keys the queue answers that cannot be rebound (Queue & steer boards, "Keyboard"). Settings ▸
-/// Keyboard lists them under While pi is working (`WhileWorkingKey`), and tooltips read them
-/// here rather than spelling a key.
+/// Keys the queue answers that cannot be rebound (Queue & steer boards, "Keyboard"). Tooltips read
+/// them here rather than spelling a key.
 enum FixedChord: String, CaseIterable, Identifiable {
     /// ↑ in an empty composer.
     case editLastQueued

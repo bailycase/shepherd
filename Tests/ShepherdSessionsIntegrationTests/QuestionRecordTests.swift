@@ -34,7 +34,8 @@ struct QuestionRecordTests {
                 guard !reading, captured.withValue({ $0 == nil }), let thread else { return }
                 reading = true
                 defer { reading = false }
-                thread.handle(.snapshot()) { result in
+                // Read this revision in the same queue turn, without a full snapshot's disk recheck.
+                thread.handle(.snapshot(afterRevision: thread.revision &- 1)) { result in
                     guard let snapshot = result.snapshotValue, predicate(snapshot) else { return }
                     captured.withValue { if $0 == nil { $0 = snapshot } }
                 }
@@ -85,7 +86,7 @@ struct QuestionRecordTests {
         #expect(row.entryID == "q:\(dialog.id)")
         #expect(row.blocks.isEmpty, "older clients have nothing to draw")
         let record = try #require(row.question)
-        #expect(record == NativeQuestionRecord(kind: .select, question: "How should I handle Horizon's uncommitted edits?",
+        #expect(record == NativeQuestionRecord(kind: .select, question: "How should I handle Orbit's uncommitted edits?",
                                                answer: option, outcome: .answered, askedAt: record.askedAt))
         let answeredAt = try #require(row.timestamp)
         #expect(record.askedAt > 0 && record.askedAt <= answeredAt)
@@ -185,7 +186,7 @@ struct QuestionRecordTests {
         let s = try #require(try await client.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue)
         let row = try #require(s.messages.first { $0.question != nil })
         #expect(row == local.messages.first { $0.question != nil })
-        #expect(row.question?.answer == "Leave Horizon alone")
+        #expect(row.question?.answer == "Leave Orbit alone")
     }
 
     /// pi's session keeps no UI dialogs; the host keeps its records per pi session beside the

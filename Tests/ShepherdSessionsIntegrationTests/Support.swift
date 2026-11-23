@@ -133,17 +133,6 @@ struct Unchecked<Value>: @unchecked Sendable {
     let value: Value
 }
 
-/// Run a blocking socket read on its own thread. Not the cooperative pool (tests would stall
-/// each other) and not a GCD global queue: with a few hundred tests waiting at once, blocked
-/// reads exhaust GCD's worker limit and starve the very server queues that must answer them.
-func blocking<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
-    try await withCheckedThrowingContinuation { continuation in
-        let thread = Thread { continuation.resume(with: Result(catching: body)) }
-        thread.stackSize = 256 * 1024
-        thread.start()
-    }
-}
-
 extension ExtensionClient {
     /// The next reply, read off the cooperative pool.
     func reply(timeout: Duration = .seconds(10)) async throws -> ExtensionReply {

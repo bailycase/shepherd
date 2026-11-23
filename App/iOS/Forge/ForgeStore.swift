@@ -177,6 +177,11 @@ final class ForgeStore {
         .sorted { $0.pinnedAt > $1.pinnedAt }
     }
 
+    /// Hosts whose pins can't be read (the file there is damaged), with why.
+    var pinsProblems: [(host: UUID, message: String)] {
+        servingHosts.compactMap { host in sidebars[host.id]?.pinsProblem.map { (host.id, $0) } }
+    }
+
     func isPinned(_ key: ForgeItemKey) -> Bool { sidebars[key.host]?.pins.contains { $0.pin.ref == key.ref } == true }
 
     func hostName(_ id: UUID) -> String { hosts.host(id)?.name ?? "the host" }

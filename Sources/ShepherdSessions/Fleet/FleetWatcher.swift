@@ -13,9 +13,9 @@ final class FleetWatcher {
 
     private let queue: DispatchQueue
     private let onChange: () -> Void
-    private var paths: [URL] = []
-    private var fileOnly: [URL] = []
-    private var sources: [DispatchSourceFileSystemObject] = []
+    private var targets: Set<URL> = []
+    private var sources: [URL: DispatchSourceFileSystemObject] = [:]
+    private let closing = DispatchGroup()
     private var trees: [URL] = []
     private var stream: FSEventStreamRef?
     private var pendingFire: DispatchWorkItem?
@@ -30,13 +30,15 @@ final class FleetWatcher {
     /// alone (one that exists and is replaced by rename, like a git config: the old file's end is the
     /// event), for a folder too busy to be worth an event per write.
     func watch(file: URL, folder: Bool = true) {
+        guard !stopped else { return }
         if folder {
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            paths.append(file)
-        } else {
-            fileOnly.append(file)
+            let parent = file.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            targets.insert(parent)
+            arm(parent)
         }
-        arm()
+        targets.insert(file)
+        arm(file)
     }
 
     /// Watches every folder in `folders` and everything under it, replacing the folders watched before.
@@ -72,33 +74,50 @@ final class FleetWatcher {
     func stop() {
         stopped = true
         pendingFire?.cancel()
-        sources.forEach { $0.cancel() }
-        sources = []
+        sources.values.forEach(cancel)
+        sources = [:]
         stopStream()
         trees = []
     }
 
     deinit { stopStream() }
 
-    /// (Re)opens a source on every watched file and folder: a replaced file is a new inode.
-    private func arm() {
-        sources.forEach { $0.cancel() }
-        sources = []
-        guard !stopped else { return }
-        var targets: [URL] = []
-        for path in paths {
-            let folder = path.deletingLastPathComponent()
-            for url in [folder, path] where !targets.contains(url) { targets.append(url) }
+    private func arm(_ url: URL) {
+        guard sources[url] == nil else { return }
+        let fd = open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename, .attrib, .link], queue: queue)
+        source.setEventHandler { [weak self] in self?.fired() }
+        source.setCancelHandler { [weak self, closing] in
+            close(fd)
+            if let self, !self.stopped {
+                self.sources[url] = nil
+                self.arm(url)
+            }
+            closing.leave()
         }
-        for url in fileOnly where !targets.contains(url) { targets.append(url) }
+        sources[url] = source
+        source.activate()
+    }
+
+    private func cancel(_ source: DispatchSourceFileSystemObject) {
+        guard !source.isCancelled else { return }
+        closing.enter()
+        source.cancel()
+    }
+
+    private func refreshSources() {
         for url in targets {
-            let fd = open(url.path, O_EVTONLY)
-            guard fd >= 0 else { continue }
-            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename, .attrib, .link], queue: queue)
-            source.setEventHandler { [weak self] in self?.fired() }
-            source.setCancelHandler { close(fd) }
-            source.activate()
-            sources.append(source)
+            guard let source = sources[url] else {
+                arm(url) // A folder event can be the first sign of a file that did not exist.
+                continue
+            }
+            // An atomic save or a replaced parent can leave the source watching an old inode.
+            var current = stat(), watched = stat()
+            if stat(url.path, &current) != 0 || fstat(source.handle, &watched) != 0
+                || current.st_dev != watched.st_dev || current.st_ino != watched.st_ino {
+                cancel(source) // The cancel handler closes the descriptor before reopening the path.
+            }
         }
     }
 
@@ -107,10 +126,9 @@ final class FleetWatcher {
         pendingFire?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.stopped else { return }
-            self.arm()
-            // A source registers with the kernel after this block ends: scanning from the next block means a
-            // write made after the scan is one the new sources see, not one that falls between the two.
-            self.queue.async { [weak self] in
+            self.refreshSources()
+            // Wait for replacements to open, then scan in a later queue turn so the sources can register first.
+            self.closing.notify(queue: self.queue) { [weak self] in
                 guard let self, !self.stopped else { return }
                 self.onChange()
             }

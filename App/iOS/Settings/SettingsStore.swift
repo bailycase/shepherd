@@ -22,12 +22,19 @@ final class SettingsStore {
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
     let hostConfig = ClientHostConfig()
+    /// Settings › Apps: every connected host's apps and runs, read while that page or an app shows.
+    let apps = ClientApps()
     /// Settings › Hooks: the fleet's hooks through one host, read when the page shows.
     let hooks = ClientHooks()
     /// Settings › Hooks' Add or Edit sheet while it is open.
     var hookEditor: ClientHookEditor?
-    /// Settings ▸ MCP's server editor while it is open: the server it edits and its JSON.
+    /// Settings ▸ Tools' server editor while it is open: the server it edits and its JSON.
     var mcpEditor: MCPEditor?
+    /// Settings ▸ Spaces ▸ Organize's Rename and Remove Space… dialogs, each bound to the host that opened it.
+    let spaceDialogs = SpaceLifecycleDialogs()
+
+    /// How many times Settings has read every host: a page of a host's configuration reads its own again each time.
+    private(set) var refreshes = 0
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []
@@ -75,25 +82,28 @@ final class SettingsStore {
         store.skills.forget(host: host)
         store.hostConfig.forget(host: host)
         store.hooks.forget(host: host)
+        store.apps.forget(host: host)
         store.inputs.removeAll { $0.id == host }
         store.hosts.removeAll { $0.id == host }
+        // track() sees no change after this, so a confirmation opened on the forgotten host ends here.
+        store.spaceDialogs.keep(shownIn: store.hosts)
     }
 
     // MARK: Reading
 
-    /// The host Defaults, Worktrees and Extensions show: the first that serves its settings, else the
+    /// The host Models, Agents, Tools and Git show: the first that serves its settings, else the
     /// first. A fleet keeps these the same on every Mac, so which one is only which the phone asks.
     var settingsHost: SettingsHost? {
-        hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
+        SettingsHost.shown(in: hosts)
     }
 
     /// The settings host's settings, once read.
     var settings: HostSettings? { settingsHost.flatMap { hostSettings.settings(of: $0) } }
 
-    /// Defaults' value on the list: the model without its provider ("claude-opus").
+    /// Models' value on the list: the model without its provider ("claude-opus").
     var defaultsValue: String? { settings.map(HostSettingsPresentation.defaultsValue) }
 
-    /// Extensions' value: how many load ("6").
+    /// Tools' value: how many extensions load ("6").
     var extensionsValue: String? { settings.map(HostSettingsPresentation.extensionsValue) }
 
     /// Instructions' value: the files that hold anything ("AGENTS.md, APPEND").
@@ -103,7 +113,7 @@ final class SettingsStore {
 
     /// The capabilities of the experiments a client switches per host.
     static let hostExperiments = [RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
-                                  RemoteProtocol.designToolExperimentCapability]
+                                  RemoteProtocol.designToolExperimentCapability, RemoteProtocol.computerUseExperimentCapability]
 
     /// The hosts with any experiment a client switches.
     var experimentHosts: [SettingsHost] {
@@ -115,6 +125,7 @@ final class SettingsStore {
         let on: [(String, (HostSettings) -> Bool)] = [
             (RemoteProtocol.goalExperimentCapability, \.goalsEnabled), (RemoteProtocol.projectsExperimentCapability, \.projectsEnabled),
             (RemoteProtocol.designToolExperimentCapability, \.designToolEnabled),
+            (RemoteProtocol.computerUseExperimentCapability, \.computerUseEnabled),
         ]
         let hostCount = on.filter { capability, isOn in
             hosts.contains { $0.serves(capability) && hostSettings.settings(of: $0).map(isOn) == true }
@@ -164,19 +175,41 @@ final class SettingsStore {
     /// About's agent: "agent 0.87.1", from the settings host.
     var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
 
-    /// The iPad list's foot names the program beside the Pi page ("pi 0.87.1"), as the Mac's does.
+    /// The iPad list's foot names the program beside Models ("pi 0.87.1"), where the Mac keeps Shepherd's pi.
     func listFootVersion(page: SettingsPage) -> String? {
-        HostSettingsPresentation.agentVersion(settings, namingPi: page == .pi)
+        HostSettingsPresentation.agentVersion(settings, namingPi: page == .models)
     }
 
     /// The app's host (its thread lists, its models), for a Settings host.
     func mobileHost(_ id: UUID) -> MobileHost? { mobileHosts.host(id) }
+
+    // MARK: Apps
+
+    /// What decides when Apps reads its hosts: which are connected and serve `apps.v2`.
+    var appsInput: [String] {
+        hosts.map { "\($0.id)/\($0.serves(RemoteProtocol.appsV2Capability))" }
+    }
+
+    /// Reads every host's apps from its files and its runs.
+    func loadApps() async {
+        for host in hosts { await apps.load(host, spaces: mobileHosts.host(host.id)?.state.spaces ?? []) }
+    }
+
+    /// While Apps shows: reads every host's apps, then its runs every few seconds.
+    func watchApps() async {
+        await loadApps()
+        while !Task.isCancelled {
+            try? await Task.sleep(for: ClientApps.refresh)
+            for host in hosts { await apps.poll(host) }
+        }
+    }
 
     // MARK: Refreshing
 
     /// Reads every connected host's settings, instructions, suggestions and skills afresh, and the
     /// first hooks host's hooks.
     func refresh() async {
+        refreshes += 1
         let hosts = self.hosts
         await hostSettings.refresh(hosts)
         await instructions.refresh(hosts)
@@ -215,7 +248,9 @@ final class SettingsStore {
         hosts = mobileHosts.hosts.map { host in
             SettingsHost(id: host.id, name: host.name, client: host.connectedClient, capabilities: host.capabilities)
         }
+        suggestions.use(hosts)
         hooks.use(hosts)
+        spaceDialogs.keep(shownIn: hosts)
         if watchers > 0, connected { Task { await refresh() } }
     }
 }

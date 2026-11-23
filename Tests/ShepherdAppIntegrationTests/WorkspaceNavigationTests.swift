@@ -96,7 +96,7 @@ struct WorkspaceNavigationTests {
         #expect(vm.shownDestination == .fleet)
         let extensions = try #require(vm.paletteItems.first { $0.title == "Open Extensions" })
         vm.runPaletteItem(extensions)
-        #expect(vm.showSettings && vm.settingsSection == .extensions)
+        #expect(vm.showSettings && vm.settingsSection == .tools)
         vm.showSettings = false
         vm.openDestination(.newThread)
         #expect(vm.newThread.place == NewThreadPlace(host: nil, space: space.id), "New thread opens in the thread's project")
@@ -148,14 +148,14 @@ struct WorkspaceNavigationTests {
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
-        #expect(vm.settingsSection == .appearance)
+        #expect(vm.settingsSection == .general)
 
         vm.showSettings = true
-        vm.settingsSection = .pi
+        vm.settingsSection = .models
         vm.showSettings = false
         vm.showSettings = true
 
-        #expect(vm.settingsSection == .pi)
+        #expect(vm.settingsSection == .models)
     }
 
     /// Cold parking at the view-model seam: a layout holding a terminal pane, hidden past the

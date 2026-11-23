@@ -197,6 +197,12 @@ struct ReviewPaneContent: View {
             }
             ChangesToolbar(model: model, session: session)
             ChangesCompare(model: model, session: session, baseAnchor: $baseAnchor)
+            if let problem = session.overview?.turnHistoryProblem {
+                SHBanner(.failed, title: "Turn history", message: problem, stacked: true) {
+                    Button("Refresh", action: model.actions.refresh).buttonStyle(.sh(.ghost, size: .s))
+                }
+                .padding(SH.Space.m)
+            }
             if !maximized, !session.files.isEmpty {
                 ReviewFileStrip(model: model, session: session, touchedPaths: touchedPaths)
                     .shTransition(.content)
@@ -429,7 +435,7 @@ private struct BaseAnchorReader: View {
         if case .compare(let head, _) = lead {
             HStack(spacing: SH.Space.m) {
                 Text(head).font(.sh(.mono)).lineLimit(1)
-                Image(systemName: "arrow.right").font(.system(size: 10, weight: .medium))
+                Image(systemName: "arrow.right").font(.sh(.micro))
             }
             .padding(.leading, SH.Space.l)
             .fixedSize()

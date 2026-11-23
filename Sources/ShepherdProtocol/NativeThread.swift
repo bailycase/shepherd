@@ -3,6 +3,8 @@ import CryptoKit
 
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
+    /// One text-only snapshot page of the saved branch, including messages before compaction.
+    case transcriptSnapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil)
     /// `images` is v2 (RPC agents, `sendImages` in `supportedActions`); absent on the wire when nil.
     /// `designContext` is what the sender's design screen showed (`DesignViewRecord`), gated by
     /// `designContext` in `supportedActions` and, remotely, `design.context.v1`; absent when nil.
@@ -627,6 +629,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// What a running hook says while it runs (its status message, `setStatus` with key
     /// `shepherd.hook`), for the thread's live line. nil when none runs, and from older hosts.
     public var hookStatus: String?
+    /// Read-only warning from the host for damaged thread origins and saved questions.
+    public var originsProblem: String?
 
     /// Startup has asked a question before history is ready. Only answering is available;
     /// messages are not an authoritative history page yet. Absent from older hosts.
@@ -783,6 +787,8 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// expanded text no longer names. The thread shows the name and the words instead of the template
     /// (`NativeSentCommand`). Skills need none: pi's `<skill>` block names itself. Absent from older hosts.
     public var typedCommand: String?
+    /// The sender's Fleet dispatch for this result message. Not part of pi's prompt text.
+    public var fleetResultID: UUID?
     /// Role "custom", `shepherd.hook`: the hook row's facts (`NativeHookRecord`). The text block
     /// is its readable line, what a client without it draws. Absent from older hosts.
     public var hook: NativeHookRecord?
@@ -838,7 +844,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case entryID, role, customType, blocks, toolName, toolCallID, argumentsText, status, isError, truncated
         case timestamp, startedAt, thinkingSeconds, origin, operationID, compaction, question, provider, model
-        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand, hook, designBoard
+        case designReferences, browserElements, projectAction, timing, argumentBytes, typedCommand, hook, designBoard, fleetResultID
     }
 
     public init(from decoder: Decoder) throws {
@@ -869,6 +875,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         timing = try? c.decodeIfPresent(NativeResponseTiming.self, forKey: .timing)
         argumentBytes = try? c.decodeIfPresent(Int.self, forKey: .argumentBytes)
         typedCommand = try? c.decodeIfPresent(String.self, forKey: .typedCommand)
+        fleetResultID = try? c.decodeIfPresent(UUID.self, forKey: .fleetResultID)
         hook = try? c.decodeIfPresent(NativeHookRecord.self, forKey: .hook)
         designBoard = try? c.decodeIfPresent(UUID.self, forKey: .designBoard)
     }

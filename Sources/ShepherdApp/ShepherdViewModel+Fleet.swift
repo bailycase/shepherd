@@ -14,7 +14,6 @@ extension ShepherdViewModel {
         actions.card = { [weak self] action, card in self?.perform(action, on: card) }
         actions.openResult = { [weak self] card in self?.openDispatchedThread(card) }
         actions.reviewResult = { [weak self] card in self?.reviewDispatchedThread(card) }
-        actions.openSender = { [weak self] from in self?.openSender(of: from) }
         actions.cancelMove = { [weak self] in self?.cancelMove($0) }
         actions.dismissMove = { [weak self] in self?.dismissMove($0) }
         actions.retryHost = { [weak self] in
@@ -46,14 +45,15 @@ extension ShepherdViewModel {
     func fleetSurface(for agent: Agent, onRemote remoteName: String? = nil, hostID: UUID? = nil) -> FleetThreadSurface? {
         let cards = remoteName == nil ? fleetPage.dispatchCards.filter { $0.parentAgentID == agent.id } : []
         let move = moveCard(for: agent.id, on: hostID)
-        guard agent.dispatchedFrom != nil || !cards.isEmpty || move != nil else { return nil }
+        guard agent.dispatchedFrom != nil || agent.startedBy != nil || !cards.isEmpty || move != nil else { return nil }
         var surface = FleetThreadSurface(cards: cards, parent: agent.id, actions: fleetThreadActions)
         surface.move = move
-        if let from = agent.dispatchedFrom {
-            var sentBy = FleetSentBy(from, host: remoteName ?? "This Mac", viewer: thisFleetID)
-            sentBy.senderOpens = senderRow(of: from) != nil
-            surface.sentBy = sentBy
-            surface.dispatched = from
+        if let started = agent.startedBy {
+            surface.sentBy = FleetSentBy(started, host: remoteName ?? "This Mac")
+            surface.sender = startedByRow(started.agentID, near: hostID)
+        } else if let from = agent.dispatchedFrom {
+            surface.sentBy = FleetSentBy(from, host: remoteName ?? "This Mac", viewer: thisFleetID)
+            surface.sender = senderRow(of: from)
             // The Mac that sent it knows whether its dispatch is going; any other reads the thread's own state.
             if let card = fleetPage.dispatchCards.first(where: { $0.id == from.dispatchID }) {
                 surface.goesBack = from.agentID != nil && [.preparing, .running].contains(card.state)
@@ -73,8 +73,14 @@ extension ShepherdViewModel {
         return .remote(RemoteAgentRef(hostID: connection.id, agentID: sender))
     }
 
-    func openSender(of from: DispatchedFrom) {
-        if let row = senderRow(of: from) { selectSidebarRow(row) }
+    /// The row of the thread that started one with `agent_spawn`, on the same host or wherever it moved; nil when it isn't anywhere this Mac sees.
+    private func startedByRow(_ id: AgentID, near host: UUID?) -> SidebarRowID? {
+        let hosts = remoteHosts.allConnections
+        if let host, hosts.first(where: { $0.id == host })?.state.agents.contains(where: { $0.id == id }) == true {
+            return .remote(RemoteAgentRef(hostID: host, agentID: id))
+        }
+        if state.agents.contains(where: { $0.id == id }) { return .local(id) }
+        return hosts.first { $0.state.agents.contains { $0.id == id } }.map { .remote(RemoteAgentRef(hostID: $0.id, agentID: id)) }
     }
 
     /// The thread a dispatch runs as, on whichever Mac runs it.

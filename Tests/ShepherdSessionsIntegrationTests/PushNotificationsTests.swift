@@ -12,16 +12,504 @@ struct PushNotificationsTests {
         .init(id: UUID().uuidString, sendToken: String(repeating: "a", count: 64))
     }
 
+    private typealias Mac = FleetPairingTests.Mac
+    private typealias Device = FleetDevicesIntegrationTests.Device
+
+    private func connect(_ device: Device, to mac: Mac) async throws -> RemoteHostClient {
+        let code = try #require(try await mac.local.fleetAction(.startDeviceCode).deviceCode).code
+        _ = try await device.pair(with: mac, code: code)
+        return try await device.connect(to: mac)
+    }
+
+    @Test(arguments: [false, true])
+    func revokingAPairedDeviceStopsItsDelivery(fromAnotherMac: Bool) async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let peer = fromAnotherMac ? try await Mac("Acme Mini") : nil
+        defer { peer?.stop() }
+        if let peer {
+            try await mac.pair(with: peer, code: try await peer.startJoin())
+            try await mac.waitForLink(to: peer)
+        }
+        let phone = Device(), pad = Device("iPad", kind: .ipad)
+        defer { phone.stop(); pad.stop() }
+        let revoked = registration(), retained = registration()
+        try await connect(phone, to: mac).registerPush(revoked)
+        try await connect(pad, to: mac).registerPush(retained)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let backup = try Data(contentsOf: file)
+        let posted = Locked<[String]>([])
+        let cancelled = Locked<[String]>([])
+        await mac.server.queue.testHop {
+            mac.server.pushNotifications.transport = { request, _ in
+                let id = request.url!.deletingLastPathComponent().lastPathComponent
+                posted.withValue { $0.append(id) }
+                return { cancelled.withValue { $0.append(id) } }
+            }
+            mac.server.pushNotifications.send(agentID: AgentID(), kind: .done, title: "Acme build", preview: "First turn")
+        }
+        #expect(Set(posted.current) == [revoked.id, retained.id])
+        _ = try await (peer ?? mac).local.fleetAction(.revokeDevice(phone.intro.deviceID))
+        try await eventually("the revoked device disconnects") { phone.disconnected.current }
+        posted.withValue { $0.removeAll() }
+        await mac.server.queue.testHop {
+            mac.server.pushNotifications.send(agentID: AgentID(), kind: .done, title: "Acme build", preview: "Next turn")
+        }
+        #expect(posted.current == [retained.id], "only the still-paired device receives the next alert")
+        #expect(cancelled.current == [revoked.id], "only the revoked device's pending delivery is cancelled")
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [retained])
+
+        // A restored backup must not start sending to a device that was revoked after it was taken.
+        try backup.write(to: file, options: .atomic)
+        posted.withValue { $0.removeAll() }
+        await mac.server.queue.testHop {
+            mac.server.pushNotifications.send(agentID: AgentID(), kind: .done, title: "Acme build", preview: "Another turn")
+        }
+        #expect(posted.current == [retained.id])
+    }
+
+    @Test func aRepairedDeviceReclaimsItsRegistrationFromARestoredFile() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let oldPhone = Device(), newPhone = Device()
+        defer { oldPhone.stop(); newPhone.stop() }
+        let old = registration()
+        try await connect(oldPhone, to: mac).registerPush(old)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let backup = try Data(contentsOf: file)
+        _ = try await mac.local.fleetAction(.revokeDevice(oldPhone.intro.deviceID))
+        try backup.write(to: file, options: .atomic)
+
+        let replacement = RemotePushRegistration(id: old.id, sendToken: String(repeating: "b", count: 64))
+        try await connect(newPhone, to: mac).registerPush(replacement)
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows == [.init(id: old.id, sendToken: replacement.sendToken, preferences: nil, deviceID: newPhone.intro.deviceID)])
+        let posted = Locked<[URLRequest]>([])
+        await mac.server.queue.testHop {
+            let pushes = mac.server.pushNotifications
+            pushes.transport = { request, _ in
+                posted.withValue { $0.append(request) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done, title: "Acme build")
+        }
+        let request = try #require(posted.current.first)
+        #expect(posted.current.count == 1)
+        #expect(request.url?.deletingLastPathComponent().lastPathComponent == replacement.id)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(replacement.sendToken)")
+    }
+
+    @Test(arguments: [false, true])
+    func registerKeepsRowsWithoutRevocationEvidence(pairingStoreUnreadable: Bool) async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fleetDir = dir.appendingPathComponent("fleet", isDirectory: true)
+        try FileManager.default.createDirectory(at: fleetDir, withIntermediateDirectories: true)
+        if pairingStoreUnreadable {
+            try Data("not valid JSON".utf8).write(to: fleetDir.appendingPathComponent(FleetDevices.fileName))
+        } else {
+            try FleetDevices().save(to: fleetDir)
+        }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let old = registration()
+        let owned = PushNotifications.Registration(id: old.id, sendToken: old.sendToken, preferences: nil, deviceID: UUID())
+        try JSONEncoder().encode([owned]).write(to: file)
+        let mac = try await Mac("Acme Studio", dir: dir)
+        defer { mac.stop(keepFiles: true) }
+        let added = registration()
+        try await mac.local.registerPush(added)
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows.count == 2)
+        #expect(rows.contains(owned))
+        #expect(rows.contains { $0.id == added.id })
+    }
+
+    @Test func aPeerMacIsNotOfferedPushAndCannotRegister() async throws {
+        let mac = try await Mac("Acme Studio"), peer = try await Mac("Acme Mini")
+        defer { mac.stop(); peer.stop() }
+        try await peer.pair(with: mac, code: try await mac.startJoin())
+        let token = try #require(peer.record(of: mac.name)["myToken"] as? String)
+        let client = try RawRemote(port: mac.port)
+        let capability = RemoteProtocol.pushNotificationsCapability
+        let offered = try await client.hello(token: token, capabilities: [capability])
+        #expect(!offered.contains(capability))
+        try client.send(.pushRegistration(id: 2, registration: registration()))
+        _ = try await client.frames(until: {
+            switch $0 {
+            case .error(2, let code, _):
+                #expect(code == "unsupported")
+                return true
+            case .ok(2):
+                Issue.record("Peer Mac was allowed to register for push")
+                return true
+            default: return false
+            }
+        })
+        #expect(!FileManager.default.fileExists(atPath: mac.host.dir.appendingPathComponent("push-registrations.json").path))
+    }
+
+    @Test func devicesCannotChangeEachOthersRegistrations() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let phone = Device(), pad = Device("iPad", kind: .ipad)
+        defer { phone.stop(); pad.stop() }
+        let owner = try await connect(phone, to: mac)
+        let other = try await connect(pad, to: mac)
+        let original = registration(), unused = registration()
+        let replacement = RemotePushRegistration(id: original.id, sendToken: String(repeating: "b", count: 64),
+                                                 preferences: .init(topics: [.questions]))
+        try await owner.registerPush(original)
+        // Valid unknown IDs get ok for both actions. A foreign ID must also get ok, but keep its owner and contents.
+        try await other.registerPush(unused)
+        try await other.unregisterPush(unused.id)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        try await other.registerPush(replacement)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [original],
+                "another device cannot overwrite the send credential or preferences")
+        try await other.unregisterPush(original.id)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [original],
+                "another device cannot remove the registration")
+        try await owner.registerPush(replacement)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [replacement])
+        try await owner.unregisterPush(replacement.id)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+    }
+
+    @Test func oneDeviceLeavesRegistrationSlotsForAnother() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let phone = Device(), pad = Device("iPad", kind: .ipad)
+        defer { phone.stop(); pad.stop() }
+        let first = try await connect(phone, to: mac)
+        let second = try await connect(pad, to: mac)
+        let original = registration()
+        try await first.registerPush(original)
+        let secondSlot = registration(), overLimit = registration(), otherDevice = registration()
+        try await first.registerPush(secondSlot)
+        await #expect {
+            try await first.registerPush(overLimit)
+        } throws: { error in
+            if case RemoteHostClientError.rejected("push_registration", _) = error { return true }
+            return false
+        }
+        try await second.registerPush(otherDevice)
+        // A device at its limit can still update its existing registration.
+        try await first.registerPush(original)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows.count == 3)
+        #expect(Set(rows.filter { $0.deviceID == phone.intro.deviceID }.map(\.id)) == [original.id, secondSlot.id])
+        #expect(rows.first { $0.id == otherDevice.id }?.deviceID == pad.intro.deviceID)
+    }
+
+    private static let firstSeen = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    private static let week: TimeInterval = 604_800
+
+    @Test func ownerlessRowSendsUntilItsDeadlineThenLeavesTheFile() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        try JSONEncoder().encode([legacy]).write(to: file)
+        let queue = DispatchQueue(label: "push.expiry")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let requests = Locked(0)
+        try queue.sync { () throws -> Void in
+            pushes.transport = { _, _ in
+                requests.withValue { $0 += 1 }
+                return {}
+            }
+            pushes.load()
+            clock.withValue { $0 = Self.firstSeen + Self.week - 1 }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(requests.current == 1)
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [legacy])
+            clock.withValue { $0 = Self.firstSeen + Self.week }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(requests.current == 1)
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+        }
+    }
+
+    private func withReadOnlyRegistrations(_ rows: [PushNotifications.Registration],
+                                           test: (PushNotifications, Locked<Date>, Locked<[String]>) -> Void) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let saved = try JSONEncoder().encode(rows)
+        try saved.write(to: file)
+        let attributes = try FileManager.default.attributesOfItem(atPath: dir.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: attributes[.posixPermissions]!], ofItemAtPath: dir.path) }
+        let queue = DispatchQueue(label: "push.expiry-read-only")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let posted = Locked<[String]>([])
+        queue.sync {
+            pushes.transport = { request, _ in
+                posted.withValue { $0.append(request.url!.deletingLastPathComponent().lastPathComponent) }
+                return {}
+            }
+            test(pushes, clock, posted)
+        }
+        #expect(try Data(contentsOf: file) == saved, "the expiry update could not be saved")
+    }
+
+    @Test func ownedRowsStillSendWhenAnOwnerlessStampCannotBeSaved() throws {
+        let owned = registration(), legacy = registration()
+        try withReadOnlyRegistrations([
+            .init(id: owned.id, sendToken: owned.sendToken, preferences: nil, deviceID: UUID()),
+            .init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: nil),
+        ]) { pushes, _, posted in
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current.contains(owned.id))
+        }
+    }
+
+    @Test func expiredOwnerlessRowsAreDroppedEvenWhenRemovalCannotBeSaved() throws {
+        let owned = registration(), expired = registration()
+        try withReadOnlyRegistrations([
+            .init(id: owned.id, sendToken: owned.sendToken, preferences: nil, deviceID: UUID()),
+            .init(id: expired.id, sendToken: expired.sendToken, preferences: nil, deviceID: nil,
+                  ownerlessFirstSeen: Self.firstSeen - Self.week),
+        ]) { pushes, _, posted in
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current == [owned.id])
+            #expect(pushes.registrations[expired.id] == nil)
+        }
+    }
+
+    @Test func anUnsavedStampStillEndsOwnerlessDeliveryAtItsDeadline() throws {
+        let legacy = registration()
+        try withReadOnlyRegistrations([
+            .init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: nil),
+        ]) { pushes, clock, posted in
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current == [legacy.id])
+            clock.withValue { $0 = Self.firstSeen + Self.week + 1 }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(posted.current == [legacy.id])
+            #expect(pushes.registrations[legacy.id] == nil)
+        }
+    }
+
+    @Test func anOwnerlessRowCannotSendARelayFallbackAfterTheDeadline() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        try JSONEncoder().encode([registration()]).write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-fallback")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let callbacks = Locked<[@Sendable (Int?) -> Void]>([])
+        queue.sync {
+            pushes.transport = { _, finished in
+                callbacks.withValue { $0.append(finished) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done)
+        }
+        let finish = try #require(callbacks.current.first)
+        clock.withValue { $0 = Self.firstSeen + Self.week }
+        finish(400)
+        try queue.sync { () throws -> Void in
+            #expect(callbacks.current.count == 1)
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+        }
+    }
+
+    @Test func aFutureStampUsesTheTimeItWasReadAndWaitsForTheNextSave() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration(), owned = registration()
+        let saved = try JSONEncoder().encode([
+            PushNotifications.Registration(id: legacy.id, sendToken: legacy.sendToken, preferences: nil,
+                                           deviceID: nil, ownerlessFirstSeen: Self.firstSeen + 2 * Self.week),
+        ])
+        try saved.write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-future")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        try queue.sync { () throws -> Void in
+            pushes.load()
+            #expect(try Data(contentsOf: file) == saved, "clamping alone must not write the file")
+            clock.withValue { $0 = Self.firstSeen + 1 }
+            try pushes.register(owned, deviceID: UUID())
+            let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+            #expect(rows.first { $0.id == legacy.id }?.ownerlessFirstSeen == Self.firstSeen)
+            clock.withValue { $0 = Self.firstSeen + Self.week }
+            pushes.load()
+            #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [owned])
+        }
+    }
+
+    @Test func anIdleHostStartsTheClockAndThePreviousReaderCanStillLoadTheRows() throws {
+        struct PreviousRegistration: Decodable, Equatable {
+            var id: String
+            let sendToken: String
+            let preferences: RemotePushPreferences?
+            let deviceID: UUID?
+        }
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        let saved = try JSONEncoder().encode([legacy])
+        try saved.write(to: file)
+        let server = SessionServer(socketPath: dir.appendingPathComponent("s.sock").path,
+                                   stateURL: dir.appendingPathComponent("state.json"),
+                                   modelCatalog: { ScratchServer.standInModels }, piSkills: .off,
+                                   triggerSource: ScratchServer.noGitHub, forgeRunner: ScratchServer.noForge)
+        server.queue.sync { server.pushNotifications.now = { Self.firstSeen } }
+        try server.start()
+        defer { server.stop() }
+        let stamped = try Data(contentsOf: file)
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: stamped)
+        #expect(rows.first?.ownerlessFirstSeen == Self.firstSeen,
+                "the host starts the clock before any phone or alert touches the file")
+        guard case .loaded(let previous) = PersistedFile<[PreviousRegistration]>.decode(stamped) else {
+            Issue.record("The previous reader could not load a stamped row")
+            return
+        }
+        #expect(previous == [.init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: nil)])
+        #expect(try Data(contentsOf: file) == stamped)
+    }
+
+    @Test func anOwnerlessRowsDeadlineIsNotResetOnRestart() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        try JSONEncoder().encode([legacy]).write(to: file)
+        let queue = DispatchQueue(label: "push.restart")
+        PushNotifications(file: file, queue: queue, now: { Self.firstSeen }).load()
+        // A restart near the deadline must neither extend it nor remove the row early.
+        PushNotifications(file: file, queue: queue, now: { Self.firstSeen + Self.week - 1 }).load()
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [legacy])
+        PushNotifications(file: file, queue: queue, now: { Self.firstSeen + Self.week + 1 }).load()
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+    }
+
+    @Test func reconnectingBeforeTheDeadlineBindsTheRowAndKeepsDelivery() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let phone = Device()
+        defer { phone.stop() }
+        _ = try await connect(phone, to: mac)
+        phone.stop()
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration(), abandoned = registration()
+        try JSONEncoder().encode([legacy, abandoned]).write(to: file)
+        await mac.server.queue.testHop {
+            let pushes = mac.server.pushNotifications
+            pushes.now = { Self.firstSeen }
+            pushes.load()
+            pushes.now = { Self.firstSeen + Self.week - 1 }
+        }
+        try await phone.connect(to: mac).registerPush(legacy)
+        let posted = Locked<[String]>([])
+        await mac.server.queue.testHop {
+            let pushes = mac.server.pushNotifications
+            pushes.now = { Self.firstSeen + Self.week + 1 }
+            pushes.transport = { request, _ in
+                let id = request.url!.deletingLastPathComponent().lastPathComponent
+                posted.withValue { $0.append(id) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done, title: "Acme build")
+        }
+        #expect(posted.current == [legacy.id])
+        let rows = try JSONDecoder().decode([PushNotifications.Registration].self, from: Data(contentsOf: file))
+        #expect(rows == [.init(id: legacy.id, sendToken: legacy.sendToken, preferences: nil, deviceID: phone.intro.deviceID)])
+    }
+
+    @Test func registrationCanUseExpiredRowsSlotsWithoutASend() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        try JSONEncoder().encode((0..<16).map { _ in registration() }).write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-slots")
+        let clock = Locked(Self.firstSeen)
+        let pushes = PushNotifications(file: file, queue: queue, now: { clock.current })
+        let replacement = registration()
+        try queue.sync {
+            pushes.load()
+            clock.withValue { $0 = Self.firstSeen + Self.week }
+            try pushes.register(replacement, deviceID: UUID())
+        }
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [replacement])
+    }
+
+    @Test(arguments: [false, true])
+    func expiryDoesNotRemoveAnythingFromADamagedFile(duplicateID: Bool) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        // In the duplicate case, a later ownerless row must not overwrite an owned row.
+        let first = duplicateID
+            ? """
+              {"id":"\(legacy.id.lowercased())","sendToken":"\(legacy.sendToken)","deviceID":"\(UUID())"}
+              """
+            : "null"
+        let damage = Data("""
+        [\(first),{"id":"\(legacy.id)","sendToken":"\(legacy.sendToken)","ownerlessFirstSeen":0}]
+        """.utf8)
+        try damage.write(to: file)
+        let queue = DispatchQueue(label: "push.expiry-damage")
+        let pushes = PushNotifications(file: file, queue: queue, now: { Self.firstSeen })
+        try queue.sync {
+            pushes.load()
+            pushes.transport = { _, _ in
+                Issue.record("A damaged file must not send")
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect { try pushes.register(registration()) } throws: { error in
+                if case PushNotifications.Failure.damaged(file.path) = error { return true }
+                return false
+            }
+        }
+        #expect(try Data(contentsOf: file) == damage)
+    }
+
+    @Test func aDeviceAdoptsALegacyRowAndAnOlderHostCanStillReadIt() async throws {
+        let mac = try await Mac("Acme Studio")
+        defer { mac.stop() }
+        let phone = Device()
+        defer { phone.stop() }
+        let client = try await connect(phone, to: mac)
+        let file = mac.host.dir.appendingPathComponent("push-registrations.json")
+        let legacy = registration()
+        try JSONEncoder().encode([legacy]).write(to: file)
+        try await client.registerPush(legacy)
+        let bytes = try Data(contentsOf: file)
+        let rows = try #require(JSONSerialization.jsonObject(with: bytes) as? [[String: Any]])
+        #expect(rows.first?["deviceID"] as? String == phone.intro.deviceID.uuidString)
+        // Nightly reads the same bare array through PersistedFile with the unchanged wire type.
+        guard case .loaded(let oldRows) = PersistedFile<[RemotePushRegistration]>.load(from: file) else {
+            Issue.record("The older reader could not load an owned row")
+            return
+        }
+        #expect(oldRows == [legacy])
+        #expect(try Data(contentsOf: file) == bytes)
+        try await mac.local.unregisterPush(legacy.id)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)).isEmpty)
+    }
+
     @Test func authenticatedRegistrationPersistsPrivatelyAndRevocationCancels() async throws {
-        let host = try RemoteHost()
+        let host = try await Mac("Acme Studio")
         defer { host.stop() }
         let registration = registration()
-        let anonymous = try await host.raw(authenticated: false)
+        let anonymous = try RawRemote(port: host.port)
         try anonymous.send(.pushRegistration(id: 2, registration: registration))
         #expect(try await anonymous.disconnected())
-        #expect(host.server.queue.sync { host.server.pushNotifications.registrations.isEmpty })
-        let client = try await host.typed()
-        defer { client.disconnect() }
+        #expect(await host.server.queue.testHop { host.server.pushNotifications.registrations.isEmpty })
+        let phone = Device()
+        defer { phone.stop() }
+        let client = try await connect(phone, to: host)
         try await client.registerPush(registration)
         let file = host.host.dir.appendingPathComponent("push-registrations.json")
         let saved = try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file))
@@ -42,6 +530,38 @@ struct PushNotificationsTests {
         let restored = PushNotifications(file: file, queue: DispatchQueue(label: "push.restore"))
         #expect(restored.registrations.isEmpty)
         #expect(requests.current.count == 1)
+    }
+
+    @Test func damagedFileReachesExistingClientErrorAndCanBeDeletedWithoutRestart() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let file = host.host.dir.appendingPathComponent("push-registrations.json")
+        let client = try await host.typed()
+        defer { client.disconnect() }
+        let original = registration()
+        try await client.registerPush(original)
+        let registration = RemotePushRegistration(id: original.id, sendToken: String(repeating: "b", count: 64))
+        let damaged = Data("{\"version\":99,\"value\":[]}".utf8)
+        try damaged.write(to: file)
+        for register in [true, false] {
+            do {
+                if register { try await client.registerPush(registration) }
+                else { try await client.unregisterPush(registration.id) }
+                Issue.record("Expected damaged push file to be refused")
+            } catch let error as RemoteHostClientError {
+                guard case .rejected("push_registration", let message) = error else {
+                    Issue.record("Unexpected push error: \(error)")
+                    continue
+                }
+                #expect(error.localizedDescription == message)
+                #expect(message.contains("\(file.path) on the host"))
+                #expect(message.contains("move or delete the file"))
+            }
+            #expect(try Data(contentsOf: file) == damaged)
+        }
+        try FileManager.default.removeItem(at: file)
+        try await client.registerPush(registration)
+        #expect(try JSONDecoder().decode([RemotePushRegistration].self, from: Data(contentsOf: file)) == [registration])
     }
 
     @Test func payloadValidationRegistrationAndFlightCapsAndDeadline() async throws {
@@ -232,7 +752,7 @@ struct PushNotificationsTests {
         callbacks.current[registrations[4].id]?(nil)
         try queue.sync {
             #expect(pushes.registrations.count == 14)
-            #expect(pushes.registrations[old.id] == replacement)
+            #expect(pushes.registrations[old.id]?.sendToken == replacement.sendToken)
             #expect(pushes.registrations[registrations[3].id] != nil)
             #expect(pushes.registrations[registrations[4].id] != nil)
             let restored = PushNotifications(file: file, queue: queue)
@@ -244,6 +764,68 @@ struct PushNotificationsTests {
             pushes.stop()
         }
         #expect(callbacks.current.count == 16, "revocation never retries")
+    }
+
+    @Test(arguments: [nil, 400, 410] as [Int?])
+    func damageAfterDeliveryStartsBlocksNewSendsFallbackAndPruning(_ status: Int?) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.damaged-revocation")
+        let file = dir.appendingPathComponent("push-registrations.json")
+        let pushes = PushNotifications(file: file, queue: queue)
+        let callback = Locked<(@Sendable (Int?) -> Void)?>(nil)
+        let requests = Locked(0)
+        try queue.sync {
+            try pushes.register(registration())
+            try pushes.register(registration())
+            pushes.transport = { _, finished in
+                requests.withValue { $0 += 1 }
+                callback.withValue { $0 = finished }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done)
+        }
+        #expect(requests.current == 2)
+        let damage = Data("[null]".utf8)
+        try damage.write(to: file)
+        if let status {
+            let finish = try #require(callback.current)
+            finish(status)
+        }
+        try queue.sync {
+            let saved = try Data(contentsOf: file)
+            #expect(saved == damage)
+            pushes.send(agentID: AgentID(), kind: .done)
+            #expect(requests.current == 2, "damage suspends delivery and relay fallback")
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func relayFallbackChecksPairingState(revoked: Bool) throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.fallback-pairing")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let deviceID = UUID()
+        let callbacks = Locked<[@Sendable (Int?) -> Void]>([])
+        try queue.sync {
+            try pushes.register(registration(), deviceID: deviceID)
+            pushes.canDeliverToDevice = { $0 == deviceID }
+            pushes.transport = { _, finished in
+                callbacks.withValue { $0.append(finished) }
+                return {}
+            }
+            pushes.send(agentID: AgentID(), kind: .done, title: "Acme build")
+            // Keep the registration and pending delivery intact so cancellation cannot mask a missing check.
+            if revoked { pushes.canDeliverToDevice = { $0 != deviceID } }
+        }
+        let finish = try #require(callbacks.current.first)
+        #expect(callbacks.current.count == 1)
+        finish(400)
+        queue.sync {
+            #expect(callbacks.current.count == (revoked ? 1 : 2))
+            pushes.stop()
+        }
     }
 
     @Test func alertsCarryTheirStackLoudnessAndSummaryRankAndFallBackForAnOlderRelay() throws {

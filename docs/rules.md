@@ -15,7 +15,10 @@ change.
   arms, a row in the protocol round-trip table, and its lines in `speaksFor` (the agent it acts
   as; `nil` only when it names none) and `replyID`. Replies (`ExtensionReply`) are the same without
   the last part. Remote messages follow the same rules, plus the capabilities, both clients and the
-  listener tests ([remote-protocol](remote-protocol.md)).
+  listener tests ([remote-protocol](remote-protocol.md)). A new `RemoteRequest` also needs its
+  `kind` line and a row in `MessageSpec.table` (who may send it, and the capability the host
+  refuses without); a test fails for a kind with no row. A new capability is one `Capability`
+  member, and `RemoteProtocol.<name>Capability` points at it.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
@@ -167,9 +170,55 @@ At launch only the visible layout mounts, and nothing but showing an agent mount
 nobody has opened has no mounted layout, so nothing may wait for its layout to draw: its pi, its
 terminals (a terminal a tool or another device opens starts its own shell), its browser page, its
 status and notifications, and remote clients all work without one. During a live resize hidden
-layouts keep their frozen size. The deliberate unmounts are cold parking, only for a layout holding
-a terminal (`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project
-page draws: its coordinator never mounts here, and a worker only while it is the one open.
+layouts keep their frozen size and take no layout pass (SwiftUI marks every hosting view for one on
+each frame of the drag): each takes the one it owes a turn of the run loop apart after the drag
+(`DeckCatchUp`), and a hidden thread is never told of the drag (`liveResizing` reads false in it).
+The deliberate unmounts are cold parking, only for a layout holding a terminal
+(`WorkspaceSelection.coldParkCandidates`), and a Project's threads, which its Project page draws:
+its coordinator never mounts here, and a worker only while it is the one open.
+
+A thread lays out for real only the rows at its end that its cost allows (its eager tail; the older rows
+are a lazy stack's, built only as the reader scrolls to them): the last rows whose views add up to
+`NativeMountedCost.eagerTailCap` (`NativeThreadStore.eagerTailRows`), at most `ThreadView.eagerRows` (thirty,
+which is every thread of cheap rows) and never fewer than the rows covering two viewports by the low height
+estimate (`AppLayout.eagerTailViewports`), the streaming reply, or the last row, whatever it costs. A show, a
+history that reloads and a restore build at most that, so a thread of 250 MiB replies builds one where it built
+thirty. The view holds where the tail starts (`ThreadEagerTail`) and moves it toward the rule each time its rows
+change. Rows that leave it go at once for a reader following the tail (they are above the two viewports it covers)
+and two at a time (`AppLayout.eagerTailCrossing`) for one who has left it, so that no bulk of rows crosses where
+they can see it (a crossing builds the row again and drops its state); rows that come back, which are built, come
+two at a time for everyone. The first draw takes the rule whole. A hidden thread's tail follows the same rule whatever rows
+arrive while it is hidden (another view of the thread polls it, a queued prompt lands), ignoring only the
+window's height, which its frozen frame does not report. While the window is dragged, and while the
+tail grows back after it, the history above the tail of a reader who follows it is not drawn at all
+(`ThreadView.parksHistory`): a lazy stack is measured again at every width, and now and then lays
+out the whole history from its top. Nothing stands in for it: a geometry reader on that stack, or a
+spacer of its height, disturbed how the scroll view keeps a history page's boundary row in place
+(`ThreadScrollingTests`). A reply whose parse has not landed (a large one is parsed off the main
+thread) costs by its text until it does.
+
+The first rows of a thread (it opened, or its history came back) draw the eager tail alone, and `ThreadRestore`
+brings the lazy stack of the older rows after that frame, once the scroll view is at the tail and the replies at
+its end have their blocks: a stack drawn with them, or above a tail of replies that draw as nothing, a few points
+tall, would be in the window and build rows that grow out of view and out of the budget. A reply has no blocks
+yet while its parse is out (`NativeThreadStore.tailAwaitsParse`), never because its text has nothing to draw
+(whitespace, a comment), and the wait is bounded (`AppLayout.restoreParseRetries`), so the stack always comes. A
+thread whose first rows arrive while it is hidden draws its eager tail alone as well, and its stack after the
+first frame it is shown: a stack in a window nobody sees is laid out from the top of the thread and builds rows
+there that nothing counts. A hidden thread that follows its tail lets a stack it had go too, two seconds after
+the switch, never while a key is pressed and not while it is one of the `AppLayout.keptStacks` threads left most
+recently (`ThreadReaderPins.leftRecently`; `ThreadRestore.withdrawStack`): taking realized rows down must not land
+in the turn that shows another thread, and bringing a stack back costs the main thread about what measuring the
+rows at its start does (about 5 ms a MiB of them, the stall after a heavy thread's first frame), which the threads
+a person goes back and forth between do not pay. A stack's identity changes when it has no rows to draw while its
+thread is hidden and releasing them (not a thread of a few rows), which is what frees what a hidden host keeps. A
+reader left in the history keeps their stack. Rows that arrive while a tail waits for its stack do not grow it past
+the rule.
+
+What the view last drew, shown or hidden, is `NativeThreadStore.drawnEagerRows`, which `mountedCost` and the passes
+that let rows go count, and `ThreadRestore` restores up to; the store clears it when its rows are replaced from
+the first one (history that came back, another session). A thread that has not drawn yet counts as the rule says,
+for the window's default height and every row, the ones its view will leave out too.
 
 A hidden thread keeps its host, page, history and draft, but its rows are bounded: past
 `NativeThreadStores.mountedBudget` (an eighth of the memory, at most 2 GiB, counted by
@@ -195,11 +244,18 @@ the remote thread stores has its own budget.
 
 Showing a thread that let rows go draws that last screen in the pass that shows it and builds
 nothing there (the deck lays the host out as it unhides one, so no frame has the layout without
-them). A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
-each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead. The rest
+them), unless it is shorter than the window: it then draws the rows that cover the window by the low
+height estimate (`ThreadRestore.firstFrameRows`), as many as owe no more than a step beyond it, for the
+rest of the window would stay blank until the pull. A thread whose rest costs no more than a step (`AppLayout.restoreStepBytes`, counted beyond
+each row's chrome, so a dozen rows of one line cost nothing) draws all of it there instead, unless the thread kept only its
+tail (`NativeThreadStore.releaseToTail`), that tail is bound by cost and more rows wait above it: it draws that tail and
+nothing above it, as rows that arrive do. The rest
 comes back after that frame (`ThreadRestore`): first the lazy stack, whatever the person types (it
 builds nothing at the tail, and without it a reader could not scroll to older rows; it waits only
-for a hand on the scroll view or a flick's momentum, and a reader who scrolled away before it came
+for a hand on the scroll view or a flick's momentum, and, for a thread that kept only its tail, for the pull that catches it
+up (not one that failed, or pi held off or not started in time) and for the scroll view to have reported nothing for `AppLayout.restoreQuiet`
+and rest on its end (a stack that joins sooner is laid out where the viewport was and builds the heavy rows it finds there),
+each at most `AppLayout.restoreParseRetries` looks; a reader who scrolled away before it came
 goes back to the tail then), then the rows above the last screen, newest first, a step of rows at
 a time. Those steps wait for keystrokes, scrolls and a reader away from the tail, and start again
 from the last screen if a pass lets the rows go again meanwhile. The thread sits at the bottom of
@@ -230,7 +286,7 @@ no local checkout or branch is touched; bodies go on stdin): comment, review, me
 when ready, and deleting the head branch on GitHub only when the person ticks it), Clean up's
 deletion of a merged pull request's head branch on GitHub (never a fork's), convert to draft and
 mark ready, close and reopen, edit a title, and re-run a run's failed jobs. Its Remove the worktree
-is the confirmed Delete Worktree. The branch card's actions (`BranchGit.swift`, in the agent's own
+is the confirmed Delete Worktree. The branch card's actions (`ShepherdSessions/BranchGit.swift`, in the agent's own
 checkout, each on the person's click; branch names pass `check-ref-format` and never reach git as
 options): Commit (`commit --only` of the ticked files, new ones intent-to-add first and taken back
 if the commit fails; refused while a rebase or merge is stopped), Amend the last commit (`commit
@@ -238,11 +294,12 @@ if the commit fails; refused while a rebase or merge is stopped), Amend the last
 has the commit, Commit & push is off and the card's Push is refused, never forced, with how to
 replace it by hand), Push (`push -u origin` of the current branch, never forced), Update from the base (fetch
 the base, then rebase or merge onto it; refused on a dirty tree; a conflict stops, and Abort runs
-`rebase --abort` or `merge --abort`), Switch branch (`switch`, a remote branch to a tracking local
+`rebase --abort` or `merge --abort`; a paired device's branch sheet sends the same Update and Abort to
+the host as `branchUpdate` and `branchAbort`, each on the person's tap), Switch branch (`switch`, a remote branch to a tracking local
 copy), New branch from here (`switch -c`), Rename branch (`branch -m`, local only), and Fetch from
 origin (`fetch origin`, remote-tracking refs only); Change base rewrites only Shepherd's record. A
 new thread's worktree on an existing branch (`GitWorktree.addExisting`: `worktree add`, a remote
-branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Worktrees,
+branch with a tracking local copy) or a named new one. Close threads when their pull request merges (Settings ▸ Git,
 off by default; `ShepherdSessions/PullRequestLinks.swift`): once a thread's pull request is seen
 going from open to merged in this host's run, it deletes the thread, removes its worktree and local
 branch through Delete Worktree's path, and deletes the head branch on GitHub through the forge's
@@ -266,6 +323,15 @@ this Mac's own git sign-in and no prompt, or from a bundle the sender made when 
 it. It never writes into an existing checkout, and a clone that is stopped, fails or is cut off by a restart removes the
 folder it made and registers nothing. Binding a checkout this Mac already has (`FleetRepoFinder`, from places Shepherd
 already knows, never a walk of the disk) only reads it. Nothing else.
+An explicit sender-requested Fleet close (`fleet_close`) removes the settled receiver thread. Like ordinary delete, it stops every session in the tab, including any terminal the person opened. Fleet close sends `SIGKILL` to any of those session process groups still alive after the stop request. It may remove root `.build` or `DerivedData` only in that thread’s registered Shepherd worktree, if the folder was absent before the thread started, is ignored and untracked, and has the expected build marker; a symlink or unverified folder stays. It never removes the checkout, source, branches, or saved conversation. Fleet cancel stops the dispatched thread’s owned session processes, but neither cancel nor result delivery removes the thread or its files. Fleet never removes an external checkout it merely found or a temporary clone it did not create and register.
+Cancel, close and delete also look for escaped processes carrying a thread's exact launch marker.
+Ordinary Stop aborts the running turn and stops managed Bash groups, including retained groups.
+Stop requests an escaped-process sweep only for Bash calls still in flight, not for retained groups
+from returned calls. Direct aborts and timeouts also request a sweep scoped to the call. A scoped
+sweep requires both the thread and call markers. A close receipt flags inspection failures, but
+macOS can return arguments without the environment for protected binaries. Those processes
+appear unmarked and do not trigger the caveat. When no marker is available after restart, close
+uses the tracked-session check and the same build-output safeguards above.
 Shepherd may remove or prune worktrees it created.
 
 ## Reviews dock; they don't split
@@ -284,7 +350,7 @@ anything that keeps going without a person watching. Each needs, before it is a 
 - Tool output, file contents, web pages and model prose are data, never instructions, including
   text that reaches an evaluator.
 - A restart never resumes unattended features (Projects, executions, goals or design Git work): they come back paused. Enabled automation schedules and triggers are a standing instruction: they keep firing whenever Shepherd's host runs, after a launch, a login or a host restart, with the app open or not, but an automation run a restart interrupted is never resumed: its run log records it as interrupted. A login start and an update's drain are restarts. Ordinary interactive agents may recover previously authorized unfinished turns and queued messages from a durable, session-fenced checkpoint, with at most three consecutive automatic recovery attempts. Explicit Stop and questions prevent automatic continuation; an idle agent stays idle. A pi that stops on its own holds its agent's checkpoint paused and inactive: pi starts again only when a person acts (Retry, Locate Folder…, Use another model), by the thread's ordinary start after a launch, or, for a Project coordinator, by its Project's next message; none continues the interrupted turn or sends the queue, which comes back paused. An automation run whose pi stops on its own ends as failed in its run log and is never resumed.
-- Fleet dispatch (a thread sending work to another Mac) is gated by the hosts, never by a prompt: the synced "Threads can send work" setting (off by default), no dispatched thread, mission or project worker, coordinator, design agent or automation run may send (`fleet_scope`), at most three in flight per thread, eight running per receiving Mac, one id one thread (a repeated create never starts a second). A restart never sends a waiting dispatch by itself (it comes back `heldRestart`) and never creates a running one again; its result, like any text from another agent, is data and reaches the parent framed as another agent's words.
+- Fleet dispatch (a thread sending work to another Mac) is gated by the hosts, never by a prompt: the synced "Threads can send work" setting (off by default), no mission or project worker, coordinator, design agent or automation run may send (`fleet_scope`), no thread `StartedBy.maxDepth` (3) below one the person started may start another by dispatch or `agent_spawn` (`too_deep`, the depth travels on the dispatch), `agent_spawn` is refused in a turn a person didn't start unless Settings ▸ Agents ▸ Threads can start threads is on (`not_asked`, read from the thread's latest message) and past the same per-thread cap (`held_limit`), at most three in flight per thread, eight running per receiving Mac, one id one thread (a repeated create never starts a second). A restart never sends a waiting dispatch by itself (it comes back `heldRestart`) and never creates a running one again; its result, like any text from another agent, is data and reaches the parent framed as another agent's words.
 - Every control carries a fence (the revision it acts on) and limits are enforced on the host.
 - Stop, Steer now, the queue, subagents, retries, errors, compaction, quitting and a second client
   are each defined and tested.

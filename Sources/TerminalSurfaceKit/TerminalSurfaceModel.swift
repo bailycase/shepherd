@@ -325,7 +325,7 @@ public final class TerminalSurfaceModel {
     /// Retries: on the update that reveals a pane, its terminal view may not
     /// be in the window yet, and AppKit ignores `makeFirstResponder` for a
     /// view with no window. A brand-new agent is the slow case — the process
-    /// spawns, the surface is created, and the New Agent sheet is still
+    /// spawns, the surface is created, and New thread is still
     /// dismissing — so the window has to cover roughly a second, not a frame.
     public func takeKeyboardFocus(remainingAttempts: Int = 40) {
         focusGeneration &+= 1
@@ -616,6 +616,8 @@ extension TerminalConfiguration {
         "shift+cmd+d", "alt+cmd+left", "alt+cmd+right",
         // ⌘↑/↓: previous/next agent in sidebar order. ⌥⌘↑/↓: turn jumps.
         "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
+        // ⇧⌘↓ Next Needing You · ⌥⇧⌘R Review Next.
+        "shift+cmd+down", "alt+shift+cmd+r",
         // ⇧⌘S sidebar · ⇧⌘B side pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
         "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
         // ⇧⌘I Import Claude Design Project….

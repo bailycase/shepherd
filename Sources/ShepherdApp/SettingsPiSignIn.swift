@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdSessions
 
-/// Settings ▸ Pi ▸ Sign-in (SettingsPiSignIn, SettingsPiSignInKeys):
+/// Settings ▸ Models ▸ Accounts (SettingsPiSignIn, SettingsPiSignInKeys):
 /// Subscriptions, API keys and Custom providers, each provider with its state and what to do
 /// about it. Everything here is Shepherd's pi's alone.
 struct PiSignInSettings: View {
@@ -22,23 +22,19 @@ struct PiSignInSettings: View {
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: auth.expired,
                                      needed: auth.needed, problems: auth.problems, accounts: auth.accounts, providers: auth.providers)
         ScrollViewReader { proxy in
-            SettingsPage(title: "Sign-in",
-                         explanation: "Subscriptions and API keys, the same on every Mac in your fleet: sign in once. They live in Shepherd’s own pi, so your terminal pi keeps its own.") {
-                Button("Re-import from pi") { Task { await yourPi.reimport(.logins) } }
-                .buttonStyle(.sh(.secondary, size: .s))
-                .shControlScale(.standard)
-                .disabled(yourPi.survey?.folder == nil || yourPi.busy.contains(YourPiModel.rowID(.logins)))
-                .help(yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.")
-            } content: {
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 if let problem = auth.providersProblem { SHInlineProblem(problem) }
-                SettingsGroup(title: "Subscriptions", footnote: PiSignInWords.sharedLoginNote(page.subscriptions.filter(\.sharedLoginNote).map(\.name))) {
+                SettingsGroup(title: "Subscriptions", footnote: PiSignInWords.sharedLoginNote(page.subscriptions.filter(\.sharedLoginNote).map(\.name)),
+                              links: [SettingsLink("Re-import from pi",
+                                                   enabled: yourPi.survey?.folder != nil && !yourPi.busy.contains(YourPiModel.rowID(.logins)),
+                                                   help: yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.") {
+                                  Task { await yourPi.reimport(.logins) }
+                              }]) {
                     ForEach(page.subscriptions) { row in
                         providerRow(row).id(row.id)
                     }
                 }
-                SettingsGroup(title: "API keys",
-                              footnote: "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables are read each time an agent starts. Command values are not supported."
-                              + " A sign-in kept only in a Mac’s Keychain stays on that Mac.") {
+                SettingsGroup(title: "API keys", footnote: "Sign in once: every Mac in the fleet uses the same keys.") {
                     ForEach(page.apiKeys) { row in
                         providerRow(row).id(row.id)
                     }
@@ -56,6 +52,7 @@ struct PiSignInSettings: View {
                     SHInlineProblem(problem)
                 }
             }
+            .shControlScale(.settings)
             .onChange(of: auth.focus, initial: true) {
                 guard let focus = auth.focus else { return }
                 withAnimation(SH.Motion.content.animation(reduceMotion: false)) { proxy.scrollTo(focus, anchor: .center) }
@@ -95,54 +92,48 @@ struct PiSignInSettings: View {
         return session.provider
     }
 
+    /// One provider: its dot, name, one hint line (plan, usage, key source), then its account menu, its
+    /// sign-in button and a ⋯ menu for the rest.
     private func providerRow(_ row: ProviderRowModel) -> some View {
         let list = row.accounts.flatMap { $0.accounts.count > 1 ? $0 : nil }
-        return VStack(spacing: 0) {
-            // With two accounts or more, usage is each account's, under it.
-            SHProviderRow(row.name, badge: row.badge, mono: row.custom, status: PiSignInWords.status(row.auth), problem: row.problem,
-                          usage: row.auth.isSignedIn && list == nil ? PiSignInWords.usage(auth.usage[row.id] ?? []) : []) {
+        return SettingsRow(title: row.name, subtitle: hint(row, list: list), problem: row.problem,
+                           dot: Self.dot(PiSignInWords.status(row.auth).dot), mono: row.custom) {
+            HStack(spacing: SH.Space.s) {
+                if let list {
+                    SHPopupMenu(list.accounts.first { $0.id == list.active }?.title ?? "Account", minWidth: 0) {
+                        ForEach(list.accounts) { account in
+                            Button(account.title) { Task { await auth.switchAccount(row.id, to: account.id) } }
+                        }
+                    }
+                    .accessibilityLabel("Account for \(row.name)")
+                }
                 trailing(row)
                 if hasMenu(row) {
-                    SHProviderMenuButton(for: row.name) { menu(row) }
+                    SHProviderMenuButton(for: row.name) { menu(row, list: list) }
                 }
-            }
-            if let list {
-                accounts(row, list)
             }
         }
     }
 
-    /// A provider's saved accounts, once there are two: each with its usage, Use and its menu, then rotation.
-    @ViewBuilder private func accounts(_ row: ProviderRowModel, _ list: PiAccountList) -> some View {
-        let now = Date()
-        SHHairline().padding(.leading, SHPiAccountMetrics.inset)
-        VStack(spacing: 0) {
-            ForEach(list.accounts) { account in
-                let active = account.id == list.active
-                let limited = account.limitedUntil.flatMap { $0 > now ? $0.formatted(date: .omitted, time: .shortened) : nil }
-                SHProviderAccountRow(account.title, detail: account.detail, state: SHAccountState(active: active, limitedUntil: limited),
-                                     usage: PiSignInWords.usage(account.usage, now: now),
-                                     asOf: PiSignInWords.asOf(account.usage.isEmpty ? nil : account.usageAt, now: now)) {
-                    if !active {
-                        Button("Use") { Task { await auth.switchAccount(row.id, to: account.id) } }
-                            .buttonStyle(.sh(.secondary, size: .s))
-                            .accessibilityLabel("Use \(account.title) for \(row.name)")
-                    }
-                    SHProviderMenuButton(for: account.title) {
-                        Button("Rename…") {
-                            newName = account.name
-                            renaming = Renaming(provider: row.id, providerName: row.name, account: account)
-                        }
-                        Divider()
-                        Button("Remove", role: .destructive) { Task { await auth.removeAccount(row.id, account.id) } }
-                    }
-                }
-            }
+    static func dot(_ dot: SHProviderStatus.Dot) -> SHRowDot {
+        switch dot {
+        case .on: .on
+        case .attention, .live: .warn
+        case .off: .off
         }
-        .padding(.vertical, SH.Space.s)
-        SHHairline().padding(.leading, SHPiAccountMetrics.inset)
-        SHAccountRotationRow(provider: row.name, isOn: Binding(get: { list.rotate },
-                                                               set: { on in Task { await auth.setRotate(row.id, on) } }))
+    }
+
+    /// "Claude Max · 41% of the week used": plan, usage, key source, or the state's word.
+    private func hint(_ row: ProviderRowModel, list: PiAccountList?) -> String {
+        let status = PiSignInWords.status(row.auth)
+        var parts: [String] = []
+        if case .signedIn = row.auth {} else { parts.append(status.word) }
+        parts += status.parts.map(\.text)
+        if let list { parts.append("\(list.accounts.count) accounts") }
+        else if row.auth.isSignedIn, let window = (auth.usage[row.id] ?? []).max(by: { $0.usedPercent < $1.usedPercent }) {
+            parts.append("\(Int(window.usedPercent.rounded()))% of the \(window.name.lowercased()) used")
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// Subscriptions and keys in auth.json can save more than one account; a variable or custom provider can't.
@@ -193,7 +184,18 @@ struct PiSignInSettings: View {
         }
     }
 
-    @ViewBuilder private func menu(_ row: ProviderRowModel) -> some View {
+    @ViewBuilder private func menu(_ row: ProviderRowModel, list: PiAccountList? = nil) -> some View {
+        if let list, let account = list.accounts.first(where: { $0.id == list.active }) {
+            Button("Rename \(account.title)…") {
+                newName = account.name
+                renaming = Renaming(provider: row.id, providerName: row.name, account: account)
+            }
+            Button("Remove \(account.title)", role: .destructive) { Task { await auth.removeAccount(row.id, account.id) } }
+            Button(list.rotate ? "Stop rotating accounts" : "Rotate accounts when one hits its limit") {
+                Task { await auth.setRotate(row.id, !list.rotate) }
+            }
+            Divider()
+        }
         switch row.auth {
         case .key, .environment:
             Button("Change key…") { auth.signIn(row.id, key: true) }.disabled(!row.signInAvailable)
@@ -227,37 +229,22 @@ struct PiSignInSettings: View {
     }
 }
 
-/// Add an API key: a row of its own whose menu lists the providers with no key yet.
+/// Add an API key: a row whose menu lists the providers with no key yet.
 private struct AddKeyRow: View {
     let providers: [String]
     var names: [String: String] = [:]
     let add: (String) -> Void
-    @State private var hovering = false
 
     var body: some View {
-        let sh = Color.sh
-        Menu {
-            ForEach(providers, id: \.self) { provider in
-                Button(names[provider] ?? PiSignInCatalog.name(provider)) { add(provider) }
+        SettingsRow(title: "Add an API key") {
+            SHPopupMenu("Choose a provider", minWidth: 0) {
+                ForEach(providers, id: \.self) { provider in
+                    Button(names[provider] ?? PiSignInCatalog.name(provider)) { add(provider) }
+                }
             }
-        } label: {
-            HStack(spacing: SHPiSignInMetrics.addGap) {
-                Image(systemName: "plus").font(.shSans(SHPiSignInMetrics.addGlyphSize, .medium)).foregroundStyle(sh.running).frame(width: SHPiSignInMetrics.badge)
-                Text("Add an API key").font(.shSans(SHPiSignInMetrics.proseSize)).foregroundStyle(sh.running)
-                Text(PiSignInPage.addableSummary(providers, names: names)).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, SHPiSignInMetrics.rowSides)
-            .frame(minHeight: AppLayout.addKeyRowHeight)
-            .background(hovering ? sh.bgHover : .clear)
-            .contentShape(Rectangle())
+            .disabled(providers.isEmpty)
+            .accessibilityLabel("Add an API key")
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .disabled(providers.isEmpty)
-        .onHover { hovering = $0 }
-        .accessibilityLabel("Add an API key")
     }
 }
 
@@ -339,5 +326,18 @@ enum PiSignInWords {
         case .changedHere?: "changed here"
         case nil: nil
         }
+    }
+}
+
+/// Models' header button: copies every sign-in from the user's pi again.
+struct PiReimportLoginsButton: View {
+    let yourPi: YourPiModel
+
+    var body: some View {
+        Button("Re-import from pi") { Task { await yourPi.reimport(.logins) } }
+            .buttonStyle(.sh(.secondary, size: .s))
+            .shControlScale(.settings)
+            .disabled(yourPi.survey?.folder == nil || yourPi.busy.contains(YourPiModel.rowID(.logins)))
+            .help(yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.")
     }
 }

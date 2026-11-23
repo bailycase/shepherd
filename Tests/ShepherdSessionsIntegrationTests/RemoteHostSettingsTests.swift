@@ -84,4 +84,18 @@ struct RemoteHostSettingsTests {
         guard case .error(4, let code, _) = try await raw.next() else { Issue.record("expected an error"); return }
         #expect(code == "unavailable")
     }
+
+    @Test(arguments: [
+        (RemoteRequest.hostInventory(id: 4, request: .subagents), "This host has no inventory to share."),
+        (.hostConfig(id: 4, request: .mcpEntry(name: "acme")), "This host's configuration can't be changed from here."),
+    ])
+    func aHostWithoutStoresRefusesInventoryAndConfig(_ request: RemoteRequest, _ message: String) async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let raw = try await host.raw()
+
+        try raw.send(request)
+
+        #expect(try await raw.next() == .error(id: 4, code: "unavailable", message: message))
+    }
 }

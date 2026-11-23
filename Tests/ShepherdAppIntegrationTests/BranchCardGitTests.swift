@@ -3,6 +3,7 @@ import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// The branch card's git reads on real repositories: the base resolves through origin, the
 /// branch counts what it is behind, and Changes counts lines since the branch left its base,

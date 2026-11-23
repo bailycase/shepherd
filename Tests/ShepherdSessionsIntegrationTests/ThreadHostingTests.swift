@@ -12,11 +12,11 @@ import ShepherdTestSupport
 @Suite("Threads hosted by the server", .mainActorExclusive)
 @MainActor
 struct ThreadHostingTests {
-    private func host() throws -> (ScratchServer, path: String, token: String) {
+    private func host(threadsStartThreads: Bool = false) throws -> (ScratchServer, path: String, token: String) {
         let h = try ScratchServer.fresh()
         h.server.serveThreads(ThreadHosting(defaults: {
             ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard,
-                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
+                                   worktreeBaseMode: .head, worktreeFetchBeforeCreate: false, threadsStartThreads: threadsStartThreads)
         }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
         let path = h.dir.appendingPathComponent("h.sock").path
         let tokenURL = h.dir.appendingPathComponent("remote-token")
@@ -51,6 +51,30 @@ struct ThreadHostingTests {
         await #expect(throws: RemoteHostClientError.self, "no such space") { try await client.agentAction(agentID: id, action: .move(spaceID: SpaceID())) }
         try await client.agentAction(agentID: id, action: .deleteKeepingWorktree)
         #expect(!h.server.state.agents.contains { $0.id == id })
+    }
+
+    /// Another Mac starts a thread with no space here: an empty space id, as This Mac's own No space, in a folder of its own.
+    @Test func aClientStartsAThreadWithNoSpace() async throws {
+        try StubPi.installAsEngine()
+        let (h, path, token) = try host()
+        defer { h.stop() }
+        let client = try await connect(path, token)
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.createAgentNoSpaceCapability))
+
+        let options = try await client.creationOptions(spaceID: SpaceID(rawValue: ""), cwd: nil, fetchFirst: nil)
+        #expect(options.model == "stub/model-a" && options.base.isEmpty)
+        await #expect(throws: RemoteHostClientError.self, "no repository to branch") {
+            try await client.createAgent(spaceID: SpaceID(rawValue: ""), cwd: nil, model: nil, thinking: nil, initialPrompt: "x",
+                                         worktreeBranch: "worktree/x")
+        }
+        let id = try await client.createAgent(spaceID: SpaceID(rawValue: ""), cwd: "/etc", model: nil, thinking: nil, initialPrompt: "Look around")
+        let agent = try #require(h.server.state.agents.first { $0.id == id })
+        let space = try #require(h.server.state.spaces.first { $0.id == agent.spaceID })
+        #expect(space.holdsThreads)
+        let cwd = h.server.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.first?.cwd
+        #expect(cwd?.hasSuffix("/threads/\(id.rawValue)") == true)
+        try await eventuallyOnMain("the stub pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
     }
 
     /// Done is the host's: a finished thread opened on the iPhone (over TCP) leaves the Mac's Done (its app over
@@ -132,16 +156,18 @@ struct ThreadHostingTests {
         try caller.send(.helloAgent(agentID: lead.id))
 
         try caller.send(.listAgents(id: 1, agentID: lead.id))
-        guard case .agents(1, let peers) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        guard case .agents(1, let peers, _) = try await caller.reply() else { Issue.record("agent_list not served"); return }
         #expect(Set(peers.map(\.id)) == [lead.id, worker.id] && peers.first { $0.isSelf }?.id == lead.id)
 
         try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build",
                                     model: "claude-fable-5-1", thinking: "low"))
-        guard case .agents(2, let spawned) = try await caller.reply(), let id = spawned.first?.id else {
+        guard case .agents(2, let spawned, _) = try await caller.reply(), let id = spawned.first?.id else {
             Issue.record("agent_spawn not served"); return
         }
         let created = h.server.state.agents.first { $0.id == id }
         #expect(created?.spaceID == space.id)
+        // It records the thread that started it, one deeper; nothing else about it changes.
+        #expect(created?.startedBy?.agentID == lead.id && created?.startedBy?.depth == 1 && created?.worktreeBranch == nil)
         // The pinned model and reasoning level land on the new thread; its defaults are not used.
         #expect(created?.model == "claude-fable-5-1" && created?.thinkingLevel == .low)
         try await eventuallyOnMain("the spawned pi to launch") { StubPi.launches().contains { $0.env["SHEPHERD_AGENT_ID"] == id.rawValue } }
@@ -149,6 +175,134 @@ struct ThreadHostingTests {
         try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
         guard case .agentResult(3, let result) = try await caller.reply(), result.code == nil else { Issue.record("agent_delete not served"); return }
         #expect(!h.server.state.agents.contains { $0.id == worker.id })
+    }
+
+    /// agent_list names the space of every thread, in every space, with its last activity and whether it is asking. Listing a thread in another
+    /// space widens nothing: agent_read, agent_send and agent_delete reach a thread by id, in any space, exactly as before (the host checks the
+    /// caller's identity and that the target is an ordinary thread, never its space). Pinned so a change to either shows.
+    @Test func agentListNamesEverySpaceAndAThreadInAnotherSpaceIsReachedExactlyAsBefore() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        h.server.setAgentMessagePolicy(.always)
+        let (web, docs) = (Space(name: "acme-web", path: h.dir.path), Space(name: "acme-docs", path: h.dir.appendingPathComponent("docs").path))
+        try await h.server.addSpace(web)
+        try await h.server.addSpace(docs)
+        func thread(_ name: String, in space: Space, lastActiveAt: Double? = nil, waitingOn: String? = nil) async throws -> Agent {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true, lastActiveAt: lastActiveAt, waitingOn: waitingOn)
+            try await h.server.addAgent(agent, withTab: tab)
+            return agent
+        }
+        let lead = try await thread("lead", in: web, lastActiveAt: 2_000)
+        let far = try await thread("far", in: docs, lastActiveAt: 1_000, waitingOn: "Which branch?")
+        let caller = try ExtensionClient(path: h.socketPath), target = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+        try target.send(.helloAgent(agentID: far.id))
+        // The target's registration landed once a request addressed to it is answered by the barrier below.
+        try target.send(.coordinateAgent(id: 0, agentID: far.id, targetAgentID: far.id, request: .init(operation: .status)))
+        guard case .error(0, "self_control", _) = try await target.reply() else { Issue.record("no registration barrier"); return }
+
+        try caller.send(.listAgents(id: 1, agentID: lead.id))
+        guard case .agents(1, let peers, _) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        let byName = Dictionary(uniqueKeysWithValues: peers.map { ($0.name, $0) })
+        #expect(byName["lead"]?.space == "acme-web" && byName["lead"]?.lastActiveAt == 2_000 && byName["lead"]?.asking == false && byName["lead"]?.isSelf == true)
+        #expect(byName["far"]?.space == "acme-docs" && byName["far"]?.lastActiveAt == 1_000 && byName["far"]?.asking == true && byName["far"]?.isSelf == false)
+
+        // The detailed list, over the wire: newest first, and the plain one above stays in the order of the state.
+        try caller.send(.listAgents(id: 5, agentID: lead.id, details: true))
+        guard case .agents(5, let detailed, let omitted) = try await caller.reply() else { Issue.record("detailed agent_list not served"); return }
+        #expect(detailed.map(\.name) == ["lead", "far"] && omitted == 0)
+
+        // agent_read: relayed to the other space's thread.
+        try caller.send(.coordinateAgent(id: 2, agentID: lead.id, targetAgentID: far.id, request: .init(operation: .read)))
+        guard case .agentRequest(0, let token, far.id, let relayed) = try await target.reply() else { Issue.record("a read of a thread in another space was refused"); return }
+        #expect(relayed.operation == .read)
+        try target.send(.agentResponse(agentID: far.id, requestID: token, result: .init(text: "no messages")))
+        #expect(try await caller.reply() == .agentResult(id: 2, result: .init(text: "no messages")))
+        // agent_send: delivered to it.
+        try caller.send(.sendToAgent(id: 3, agentID: lead.id, targetAgentID: far.id, text: "ping", delivery: .report))
+        guard case .message(_, let delivered, .report) = try await target.reply() else { Issue.record("a message to a thread in another space was not delivered"); return }
+        #expect(delivered.contains("ping"))
+        #expect(try await caller.reply() == .ok(id: 3))
+        // agent_delete: deletes it.
+        try caller.send(.coordinateAgent(id: 4, agentID: lead.id, targetAgentID: far.id, request: .init(operation: .delete)))
+        guard case .agentResult(4, let deleted) = try await caller.reply(), deleted.code == nil else { Issue.record("agent_delete of a thread in another space was refused"); return }
+        #expect(!h.server.state.agents.contains { $0.id == far.id })
+    }
+
+    /// agent_spawn with place worktree: a new branch from the starter's commit, in the same folder of the repository. A thread three deep
+    /// starts none.
+    @Test func aThreadStartsAnotherInANewWorktreeAndDepthStopsAChain() async throws {
+        try StubPi.installAsEngine()
+        // The threads here were started by threads, so no person started their turns: the setting lets them start more.
+        let (h, _, _) = try host(threadsStartThreads: true)
+        defer { h.stop() }
+        let repo = try makeScratchRepo(files: ["README.md": "# acme\n", "web/index.html": "<p>hi</p>\n"])
+        let head = try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        let space = Space(name: "acme-web", path: repo.path)
+        try await h.server.addSpace(space)
+        let pane = LeafPane(cwd: space.path)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        var lead = Agent(name: "lead", spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+        lead.startedBy = StartedBy(agentID: AgentID(), agentTitle: "top", at: 1, depth: 2)
+        try await h.server.addAgent(lead, withTab: tab)
+        let caller = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+
+        let web = repo.appendingPathComponent("web").path
+        // A branch belongs to a new worktree: asked for with the checkout as it is, it is refused, not quietly made a worktree.
+        try caller.send(.spawnAgent(id: 9, agentID: lead.id, cwd: web, prompt: "x", place: .checkout, branch: "agent/x"))
+        guard case .error(9, "invalid", _) = try await caller.reply() else { Issue.record("a branch with place checkout was accepted"); return }
+        try caller.send(.spawnAgent(id: 1, agentID: lead.id, cwd: web, prompt: "Shard the UI tests", place: .worktree, branch: "agent/shard-ui"))
+        guard case .agents(1, let spawned, _) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
+        let child = try #require(h.server.state.agents.first { $0.id == id })
+        #expect(child.worktreeBranch == "agent/shard-ui" && child.worktreeBase == head && child.startedBy?.depth == 3)
+        let path = try #require(child.worktreePath)
+        try await eventuallyOnMain("its worktree") { FileManager.default.fileExists(atPath: path + "/web/index.html") }
+        #expect(spawned.first?.cwd.hasSuffix("/web") == true, "it starts in the same folder of its worktree")
+
+        // The child is three below the thread the person started: it starts none, here or on another Mac.
+        let childCaller = try ExtensionClient(path: h.socketPath)
+        try childCaller.send(.helloAgent(agentID: id))
+        try childCaller.send(.spawnAgent(id: 2, agentID: id, cwd: space.path, prompt: "Go deeper"))
+        guard case .error(2, FleetDispatchCode.tooDeep, _) = try await childCaller.reply() else { Issue.record("a thread three deep started another"); return }
+        #expect(h.server.state.agents.count == 2)
+    }
+
+    /// With Threads can start threads off, a thread whose turn a person didn't start is refused; one whose turn a person started may start
+    /// threads, at most three running at once.
+    @Test func agentSpawnNeedsAPersonsTurnAndHoldsToTheCap() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let space = Space(name: "acme-web", path: h.dir.path)
+        try await h.server.addSpace(space)
+        func thread(_ name: String, startedBy: StartedBy? = nil, order: Int) async throws -> Agent {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
+            var agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+            agent.startedBy = startedBy
+            try await h.server.addAgent(agent, withTab: tab)
+            return agent
+        }
+        let lead = try await thread("lead", order: 0)
+        let sent = try await thread("sent", startedBy: StartedBy(agentID: lead.id, agentTitle: "lead", at: 1, depth: 1), order: 1)
+        let sentCaller = try ExtensionClient(path: h.socketPath)
+        try sentCaller.send(.helloAgent(agentID: sent.id))
+        try sentCaller.send(.spawnAgent(id: 1, agentID: sent.id, cwd: space.path, prompt: "Go on"))
+        guard case .error(1, "not_asked", _) = try await sentCaller.reply() else { Issue.record("a thread no person prompted started one"); return }
+
+        let caller = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+        for id in 2...4 {
+            try caller.send(.spawnAgent(id: id, agentID: lead.id, cwd: space.path, prompt: "Part \(id)"))
+            guard case .agents(id, _, _) = try await caller.reply() else { Issue.record("spawn \(id) refused"); return }
+        }
+        try caller.send(.spawnAgent(id: 5, agentID: lead.id, cwd: space.path, prompt: "One too many"))
+        guard case .error(5, "held_limit", _) = try await caller.reply() else { Issue.record("a fourth thread started while three ran"); return }
+        #expect(h.server.state.agents.count { $0.startedBy?.agentID == lead.id } == 4, "the three and the idle one")
     }
 
     @Test func theAppMovesADormantThreadToAnotherSpaceAndItStaysDormant() async throws {
@@ -370,6 +524,16 @@ struct ThreadHostingTests {
         #expect(restarted != session)
         try await client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
         #expect(leaf(opened)?.sessionID == restarted, "a running shell is kept")
+
+        // Two demands while it starts (a view shown again, a phone) share the one start, neither fails.
+        h.server.killSession(restarted)
+        try await h.server.updatePaneSession(tabID: agent.tabID, paneID: opened, sessionID: nil)
+        async let first: Void = client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
+        async let second: Void = client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
+        _ = try await (first, second)
+        let shared = try #require(leaf(opened)?.sessionID)
+        #expect(shared != restarted)
+        #expect(await h.server.sessionInfo(sessionID: shared)?.isAlive == true)
 
         // The thread itself is never a terminal.
         await #expect(throws: RemoteHostClientError.self) {

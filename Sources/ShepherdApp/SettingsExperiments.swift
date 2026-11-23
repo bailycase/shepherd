@@ -1,10 +1,13 @@
 import SwiftUI
+import AppKit
+import ApplicationServices
+import CoreGraphics
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Experiments (SettingsExperiments): features still being tried, each off until the
-/// user turns it on. Suggested instructions, the Design tool, conversation Goals and Projects each
+/// user turns it on. Suggested instructions, the Design tool, conversation Goals, Projects and Computer use each
 /// keep their own switch. A wide page: the experiment and what waits for the user, beside a
 /// 320pt side column (how it works, what was added, and a note about experiments).
 struct ExperimentsSettings: View {
@@ -14,46 +17,162 @@ struct ExperimentsSettings: View {
     var settings: AppSettings
     /// Opens Settings ▸ Instructions (where the lines go).
     let openInstructions: () -> Void
+    /// The drill-in open, owned by the view model so Esc and the back button reach it.
+    @Binding var page: ExperimentsPage?
+    @State private var permissions = ComputerUsePermissions()
+    @Bindable private var bindable: AppSettings
 
     static let feedbackURL = URL(string: "https://github.com/bailycase/shepherd/issues/new?title=Suggested%20instructions%3A%20")!
 
+    init(model: SuggestionsModel, instructions: InstructionsModel, settings: AppSettings, page: Binding<ExperimentsPage?> = .constant(nil),
+         openInstructions: @escaping () -> Void) {
+        self.model = model
+        self.instructions = instructions
+        self.settings = settings
+        _page = page
+        self.openInstructions = openInstructions
+        bindable = settings
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.settingsWideBlockSpacing) {
-            SettingsHeader(title: "Experiments", explanation: "Features we're still trying out. Each is off until you turn it on.")
-                .frame(maxWidth: AppLayout.settingsWideHeaderWidth, alignment: .leading)
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                HStack(alignment: .top, spacing: AppLayout.experimentsColumnSpacing) {
-                    ScrollView(.vertical) {
-                        VStack(alignment: .leading, spacing: AppLayout.experimentsBlockSpacing) {
-                            SuggestedInstructionsCard(model: model, instructions: instructions, openInstructions: openInstructions)
-                            DesignToolCard(settings: settings)
-                            GoalExperimentCard(settings: settings)
-                            ProjectsExperimentCard(settings: settings)
-                            if model.settings.enabled || !model.snapshot.waiting.isEmpty {
-                                WaitingSuggestions(model: model, instructions: instructions, now: context.date)
-                                    .shTransition(.disclosure)
-                            }
-                            if let problem = model.problem {
-                                SHInlineProblem(problem).shTransition(.disclosure)
+        Group {
+            switch page {
+            case .waiting?:
+                SettingsPage(title: SuggestionsPresentation.waitingTitle(model.snapshot.waiting.count)) {
+                    if let message = model.unavailable {
+                        recoveryBanner(message)
+                    } else {
+                        TimelineView(.periodic(from: .now, by: 60)) { context in
+                            WaitingSuggestions(model: model, instructions: instructions, now: context.date)
+                        }
+                    }
+                }
+            case .apps?:
+                SettingsPage(title: "Allowed apps") {
+                    SettingsGroup(title: "macOS permissions", footnote: "Granted in System Settings ▸ Privacy & Security.") {
+                        // Only what still needs allowing: an allowed permission has nothing to change here.
+                        if !permissions.accessibility {
+                            SettingsRow(title: "Accessibility", subtitle: "Lets Shepherd click and type in other apps") {
+                                permission(name: "Accessibility", request: permissions.requestAccessibility)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        if !permissions.screenRecording {
+                            SettingsRow(title: "Screen Recording", subtitle: "Lets Shepherd see the windows it works in") {
+                                permission(name: "Screen Recording", request: permissions.requestScreenRecording)
+                            }
+                        }
                     }
-                    .scrollIndicators(.hidden)
-                    ScrollView(.vertical) {
-                        ExperimentsSideColumn(model: model)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .scrollIndicators(.hidden)
-                    .frame(width: AppLayout.experimentsSideWidth)
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
+            case nil:
+                list
+            }
+        }
+        .task { await model.refresh() }
+        .onAppear { permissions.refresh() }
+        // Allowed apps has nothing left once both are allowed.
+        .onChange(of: permissions.accessibility && permissions.screenRecording) { _, allowed in
+            if allowed, page == .apps { page = nil }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in permissions.refresh() }
+    }
+
+    private var learnsFrom: String {
+        let sources = model.settings.sources
+        switch (sources.contains(.thread), sources.contains(.automation)) {
+        case (true, true): return "Threads and automations"
+        case (true, false): return "Threads"
+        case (false, true): return "Automations"
+        default: return "Nothing"
+        }
+    }
+
+    private func recoveryBanner(_ message: String) -> some View {
+        SHBanner(.failed, title: "Suggested instructions unavailable", message: message) {
+            Button("Refresh") { Task { await model.refresh() } }.buttonStyle(.sh(.secondary, size: .s))
+        }
+    }
+
+    private var suggestionsGroup: some View {
+        SettingsGroup(title: "") {
+            SettingsRow(title: "Suggested instructions", subtitle: "Learn rules from your corrections") {
+                SettingsSwitch(label: "Suggested instructions",
+                               isOn: Binding(get: { model.settings.enabled }, set: { on in Task { await model.setEnabled(on) } }))
+                    .disabled(model.busy)
+            }
+            if model.settings.enabled || !model.snapshot.waiting.isEmpty {
+                let waiting = model.snapshot.waiting.count
+                SettingsDrillRow(title: "Waiting", subtitle: waiting == 0 ? "Nothing to review" : "\(waiting) line\(waiting == 1 ? "" : "s") to review",
+                                 value: waiting == 0 ? nil : "\(waiting)", action: { page = .waiting })
+            }
+            if model.settings.enabled {
+                SettingsRow(title: "Learn from") {
+                    SHPopupMenu(learnsFrom, minWidth: 0) {
+                        Toggle("Threads", isOn: Binding(get: { model.settings.sources.contains(.thread) },
+                                                        set: { on in Task { await model.setLearns(from: .thread, on) } }))
+                        Toggle("Automations", isOn: Binding(get: { model.settings.sources.contains(.automation) },
+                                                            set: { on in Task { await model.setLearns(from: .automation, on) } }))
+                    }
+                    .accessibilityLabel("Learn from")
+                }
+                SettingsRow(title: "Can suggest for", subtitle: "APPEND_SYSTEM.md overrides everything else") {
+                    SHPopupMenu(InstructionFile.allCases.filter { model.settings.files.contains($0) }.map(\.fileName).joined(separator: ", ").nonEmpty ?? "Nothing",
+                                mono: true, minWidth: 0) {
+                        ForEach(InstructionFile.allCases, id: \.self) { file in
+                            Toggle(file.fileName, isOn: Binding(get: { model.settings.files.contains(file) },
+                                                                set: { on in Task { await model.setSuggests(for: file, on) } }))
+                        }
+                    }
+                    .accessibilityLabel("Can suggest for")
+                }
+                SettingsRow(title: "Where lines go", subtitle: "Settings › Instructions, shared by the whole fleet") {
+                    Button("Open Instructions", action: openInstructions).buttonStyle(.sh(.secondary, size: .s))
+                }
+            }
+            if let problem = model.problem {
+                SettingsRow(title: "", problem: problem) { EmptyView() }
+            }
+        }
+        .disabled(model.busy)
+    }
+
+    private var list: some View {
+        SettingsPage(title: "Experiments") {
+            if let message = model.unavailable {
+                recoveryBanner(message)
+            } else {
+                suggestionsGroup
+            }
+            SettingsGroup(title: "", footnote: "Experiments can change or go away.") {
+                SettingsRow(title: "Design tool", subtitle: "Boards and design systems") {
+                    SettingsSwitch(label: "Design tool", isOn: $bindable.designToolEnabled)
+                }
+                SettingsRow(title: "Goals", subtitle: "Keep an agent going until a check passes") {
+                    SettingsSwitch(label: "Goals", isOn: $bindable.goalsEnabled)
+                }
+                SettingsRow(title: "Projects", subtitle: "One conversation that runs many threads") {
+                    SettingsSwitch(label: "Projects", isOn: $bindable.projectsEnabled)
+                }
+                SettingsRow(title: "Computer use", subtitle: "Threads can click and type in your apps") {
+                    SettingsSwitch(label: "Computer use", isOn: $bindable.computerUseEnabled)
+                }
+                if settings.computerUseEnabled, !(permissions.accessibility && permissions.screenRecording) {
+                    SettingsDrillRow(title: "Allowed apps", subtitle: "Accessibility and Screen Recording", value: "Needs you",
+                                     action: { page = .apps })
+                }
             }
         }
         .shAnimation(.disclosure, value: model.settings.enabled)
-        .shAnimation(.list, value: model.snapshot.waiting.map(\.id))
-        .task { await model.refresh() }
     }
+
+    private func permission(name: String, request: @escaping () -> Void) -> some View {
+        Button("Allow…", action: request)
+            .buttonStyle(.sh(.secondary, size: .s))
+            .accessibilityLabel("Allow \(name)")
+    }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: The experiments
@@ -155,6 +274,35 @@ private struct ProjectsExperimentCard: View {
         .padding(.vertical, SH.Space.l + SH.Space.xxs)
         .padding(.horizontal, SH.Space.xl)
         .shCard(fill: sh.bgWindow, line: sh.lineStrong)
+    }
+}
+
+/// What macOS has allowed Shepherd to do in other apps. Read when the card appears and when the
+/// app becomes active, since the user grants these in System Settings.
+@MainActor @Observable
+final class ComputerUsePermissions {
+    private(set) var accessibility = false
+    private(set) var screenRecording = false
+
+    func refresh() {
+        accessibility = AXIsProcessTrusted()
+        screenRecording = CGPreflightScreenCaptureAccess()
+    }
+
+    func requestAccessibility() {
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+        open("Privacy_Accessibility")
+    }
+
+    func requestScreenRecording() {
+        _ = CGRequestScreenCaptureAccess()
+        open("Privacy_ScreenCapture")
+    }
+
+    private func open(_ pane: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
@@ -296,7 +444,7 @@ private struct WaitingSuggestions: View {
             .padding(.horizontal, SH.Space.xxs)
             if waiting.isEmpty {
                 Text("Nothing is waiting. When an agent learns something the hard way, its line shows up here.")
-                    .shText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
+                    .shText(size: SHTextStyle.caption.size, lineHeight: AppLayout.settingsFootnoteLineHeight)
                     .foregroundStyle(Color.sh.textTertiary)
                     .padding(.horizontal, SH.Space.xxs)
             }

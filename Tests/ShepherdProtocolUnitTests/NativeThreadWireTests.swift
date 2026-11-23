@@ -15,6 +15,21 @@ struct NativeThreadWireTests {
         return try JSONDecoder().decode(NativeThreadSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
+    @Test func aFleetResultIDRoundTripsOutsideTheMessageText() throws {
+        let json = Data(#"{"entryID":"u","role":"user","blocks":[{"kind":"text","text":"Result"}],"truncated":false,"fleetResultID":"\#(Self.op.uuidString)"}"#.utf8)
+        let row = try JSONDecoder().decode(NativeThreadMessage.self, from: json)
+        #expect(row.fleetResultID == Self.op && row.blocks.first?.text == "Result")
+        let encoded = try JSONEncoder().encode(row)
+        let fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(fields["fleetResultID"] as? String == Self.op.uuidString)
+    }
+
+    @Test func aMalformedFleetResultIDDoesNotDropTheMessage() throws {
+        let json = Data(#"{"entryID":"u","role":"user","blocks":[{"kind":"text","text":"Result"}],"truncated":false,"fleetResultID":"not-a-uuid"}"#.utf8)
+        let row = try JSONDecoder().decode(NativeThreadMessage.self, from: json)
+        #expect(row.fleetResultID == nil && row.blocks.first?.text == "Result")
+    }
+
     /// `Tests/Extensions/native-thread-wire.json` is shared with the JS children tests: every
     /// frame must decode and re-encode to exactly the same JSON.
     @Test func goldenFramesRoundTripExactly() throws {
@@ -53,6 +68,8 @@ struct NativeThreadWireTests {
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .resume),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .pause),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .continue),
+        .transcriptSnapshot(),
+        .transcriptSnapshot(expectedSessionID: "s", beforeEntryID: "50"),
         .subagentTranscript(expectedSessionID: "s", runID: "native-1"),
         .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:9"),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "see", delivery: .followUp,
@@ -467,9 +484,10 @@ struct NativeThreadWireTests {
         #expect(NativeThreadCode.unavailable == "native_unavailable")
     }
 
+    static let startingRefusal = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
+
     @Test func aStartingRefusalTravelsAsARemoteError() throws {
-        let reply = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
-        #expect(try Wire.roundTrip(reply) == reply)
+        #expect(try Wire.roundTrip(Self.startingRefusal) == Self.startingRefusal)
     }
 
     @Test func aV1SnapshotDecodesWithEveryV2FieldAbsent() throws {

@@ -15,7 +15,6 @@ final class FleetThreadActions: @unchecked Sendable {
     var openResult: @MainActor (FleetDispatchCard) -> Void = { _ in }
     var reviewResult: @MainActor (FleetDispatchCard) -> Void = { _ in }
     /// Opens the thread that sent this one (the header's "sent by" link).
-    var openSender: @MainActor (DispatchedFrom) -> Void = { _ in }
     /// Tries the Mac's link again now (the offline banner's Retry).
     var retryHost: @MainActor () -> Void = {}
     /// The move card's Cancel (a move waiting for the turn to end) and Dismiss (a failed one).
@@ -28,7 +27,8 @@ final class FleetThreadActions: @unchecked Sendable {
 struct FleetThreadSurface: Equatable {
     /// The thread was sent from another thread or by the person: its host, sender and what the From box says.
     var sentBy: FleetSentBy?
-    var dispatched: DispatchedFrom?
+    /// The row of the thread that started it, when this Mac can open it ("started by" is then a link).
+    var sender: SidebarRowID?
     /// Its dispatch is going: "its last message goes back" shows.
     var goesBack = false
     /// The dispatches this thread sent, as cards; the thread draws each where the `fleet_dispatch` call is.
@@ -41,7 +41,7 @@ struct FleetThreadSurface: Equatable {
     var move: FleetMoveCard?
 
     static func == (a: FleetThreadSurface, b: FleetThreadSurface) -> Bool {
-        a.sentBy == b.sentBy && a.dispatched == b.dispatched && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
+        a.sentBy == b.sentBy && a.sender == b.sender && a.goesBack == b.goesBack && a.cards == b.cards && a.parent == b.parent
             && a.actions === b.actions && a.offline == b.offline && a.move == b.move
     }
 
@@ -53,7 +53,9 @@ struct FleetThreadSurface: Equatable {
 
     /// The card of the dispatch a result message belongs to.
     func card(for result: FleetResultMessage) -> FleetDispatchCard? {
-        cards.filter { $0.title == result.title && $0.host == result.host && $0.layout == .row }.max { $0.createdAt < $1.createdAt }
+        if let id = result.dispatchID { return cards.first { $0.id == id && $0.layout == .row } }
+        // A branch can outlive its dispatch card. Older results keep the title match, never a branch guess.
+        return cards.filter { $0.title == result.title && $0.host == result.host && $0.layout == .row }.max { $0.createdAt < $1.createdAt }
     }
 }
 
@@ -349,6 +351,8 @@ struct FleetResultCard: View, Equatable {
     let card: FleetDispatchCard?
     var actions: FleetThreadActions?
 
+    private var title: String { card?.title ?? result.title }
+
     nonisolated static func == (a: FleetResultCard, b: FleetResultCard) -> Bool {
         a.result == b.result && a.time == b.time && a.card == b.card && a.actions === b.actions
     }
@@ -362,7 +366,7 @@ struct FleetResultCard: View, Equatable {
                     .foregroundStyle(sh.done)
                     .frame(width: AppLayout.fleetResultTick)
                     .accessibilityHidden(true)
-                (Text("Result from ") + Text(result.title).fontWeight(.semibold).foregroundStyle(sh.textPrimary) + Text(" on \(result.host)"))
+                (Text("Result from ") + Text(title).fontWeight(.semibold).foregroundStyle(sh.textPrimary) + Text(" on \(result.host)"))
                     .font(.sh(.caption, weight: .regular))
                     .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
@@ -376,6 +380,13 @@ struct FleetResultCard: View, Equatable {
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+            if let notice = result.checkoutNotice {
+                Text(verbatim: notice)
+                    .font(.sh(.caption, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
             if let card, card.remoteAgentID != nil {
                 HStack(spacing: SH.Space.m) {
                     Button("Open thread") { actions?.openResult(card) }
@@ -392,7 +403,7 @@ struct FleetResultCard: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
         .shCard(radius: SH.Radius.l, fill: sh.bgSunken, line: sh.lineSubtle)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Result from \(result.title) on \(result.host)")
+        .accessibilityLabel("Result from \(title) on \(result.host)")
     }
 
     /// The text with its inline code in mono.
@@ -486,52 +497,6 @@ struct FleetGoesBackBanner: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// The header of a thread another Mac or thread started, after its title: the Mac it runs on as a pill with a dot, and "started by <thread>" as a link
-/// when a thread started it.
-struct FleetSentByHeader: View, Equatable {
-    let sentBy: FleetSentBy
-    let online: Bool
-    var openSender: (() -> Void)?
-    /// The Mac's pill: the header's own chip (FleetMove) says it when the thread can move.
-    var showsHost = true
-
-    nonisolated static func == (a: FleetSentByHeader, b: FleetSentByHeader) -> Bool {
-        a.sentBy == b.sentBy && a.online == b.online && (a.openSender == nil) == (b.openSender == nil) && a.showsHost == b.showsHost
-    }
-
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
-            if showsHost {
-                HStack(spacing: SH.Space.s) {
-                    Circle().fill(online ? sh.done : sh.textTertiary).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                    Text(sentBy.host).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                }
-                .padding(.horizontal, SH.Space.m)
-                .frame(height: AppLayout.fleetHeaderPillHeight)
-                .shBorder(sh.lineStrong, radius: SH.Radius.s)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(online ? "Runs on \(sentBy.host)" : "Runs on \(sentBy.host), offline")
-            }
-            // A thread the person started on another Mac is a thread like any other: only one that a thread started says who.
-            if sentBy.fromThread {
-                HStack(spacing: SH.Space.xs) {
-                    Text("started by").foregroundStyle(sh.textTertiary)
-                    if let openSender {
-                        Button(action: openSender) { Text(sentBy.sender).foregroundStyle(sh.running) }
-                            .buttonStyle(.plain)
-                            .help("Open \(sentBy.sender)")
-                    } else {
-                        Text(sentBy.sender).foregroundStyle(sh.textSecondary)
-                    }
-                }
-                .font(.sh(.caption, weight: .regular))
-                .lineLimit(1)
-            }
-        }
     }
 }
 

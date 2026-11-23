@@ -23,10 +23,11 @@ struct SettingsPreviewTests {
         workspace.vm.settingsSection = section
         // Tall enough for the whole page.
         let height: CGFloat = switch section {
-        case .pi: 3000
-        case .piSignIn: 1500
+        case .models, .fromYourPi: 3000
         case .keyboard: 2200
-        case .worktrees, .appearance: 1000
+        case .general, .agents, .tools: 1400
+        case .worktrees: 1000
+        case .appearance: 1800
         default: 900
         }
         try await Preview.render("settings-\(section.rawValue)", size: CGSize(width: 1280, height: height)) {
@@ -34,14 +35,30 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// The user's full-width Settings requirement, rendered through the real window root.
+    @Test func damagedPiImportHistory() async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = PiHome(directory: dir, engine: .missing(app: dir))
+        let imports = YourPiImport(home: home, yourPi: nil)
+        try Data(#"{"copies":42}"#.utf8).write(to: imports.stateURL)
+        let workspace = try PreviewWorkspace(yourPi: imports.survey())
+        defer { workspace.stop() }
+        for section in [SettingsSection.models, .fromYourPi] {
+            workspace.vm.settingsSection = section
+            try await Preview.render("settings-\(section.rawValue)-damaged-import", size: CGSize(width: 1280, height: 1200)) {
+                SettingsView(vm: workspace.vm)
+            }
+        }
+    }
+
+    /// Settings as a modal over the window (SettingsModal), rendered through the real window root.
     @Test(arguments: SettingsSection.allCases)
-    func settingsFullWidth(section: SettingsSection) async throws {
+    func settingsModal(section: SettingsSection) async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         workspace.vm.settingsSection = section
         workspace.vm.showSettings = true
-        try await Preview.renderMatrix("settings-full-width-\(section.rawValue)", size: CGSize(width: 2400, height: 1100)) {
+        try await Preview.renderMatrix("settings-modal-\(section.rawValue)", size: CGSize(width: 1440, height: 900)) {
             RootView(vm: workspace.vm)
         }
     }
@@ -124,7 +141,7 @@ struct SettingsPreviewTests {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         workspace.settings.designToolEnabled = true
-        workspace.vm.settingsSection = .extensions
+        workspace.vm.settingsSection = .tools
         try await Preview.renderMatrix("settings-extensions-no-agent-permissions", size: CGSize(width: 1280, height: 1400), ready: { true }) {
             SettingsView(vm: workspace.vm)
         }
@@ -156,7 +173,7 @@ struct SettingsPreviewTests {
             workspace.settings.codemode = false
         }
         // Tall enough that the last row still shows at text scale 1.3, where the subtitles wrap to four lines.
-        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1400)) {
+        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1750)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -224,6 +241,35 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The host can't read skills.json (where each skill came from): the list and an open skill say so, with no source shown.
+    @Test(arguments: [false, true]) func settingsSkillsDamagedRecords(open: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/pdf/reference.md": "# Reference\n",
+            "skills/frontend-design/SKILL.md": "---\nname: frontend-design\ndescription: Production-grade UI that doesn’t look generic.\n---\n",
+        ])
+        let store = workspace.server.skills
+        try store.install(repo: "file://" + repo.path, paths: ["skills/pdf", "skills/frontend-design"], commit: nil, invocation: nil)
+        try Data("{".utf8).write(to: store.stateDirectory.appendingPathComponent("skills.json"))
+        try await workspace.seed(ShepherdState())
+        let vm = workspace.vm
+        vm.settingsSection = .skills
+        if open {
+            try await Preview.render("settings-skill-damaged", size: CGSize(width: 1180, height: 640), ready: { vm.skills.recordsProblem(in: vm.skillsHosts) != nil }) {
+                SkillsSettings(vm: vm, model: vm.skills, open: "pdf")
+                    .padding(SH.Space.xxl)
+                    .frame(height: 640, alignment: .top)
+                    .background(Color.sh.bgWindow)
+            }
+        } else {
+            try await Preview.render("settings-skills-damaged", size: CGSize(width: 1440, height: 900), ready: { vm.skills.recordsProblem(in: vm.skillsHosts) != nil }) {
+                SettingsView(vm: vm)
+            }
+        }
+    }
+
     /// Skills beside the ones pi loads from elsewhere, read-only: pi's own folder and settings
     /// (one shadowing an installed skill), then pi packages (one a same-named installed skill
     /// shadows). pi's answer is a fixture, never this machine's pi.
@@ -277,7 +323,7 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         let vm = workspace.vm
         vm.mcpOpenServer = "linear"
-        vm.settingsSection = .mcp
+        vm.settingsSection = .tools
         try await Preview.renderMatrix("settings-mcp-servers", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: vm)
         }
@@ -291,7 +337,7 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         let vm = workspace.vm
         vm.mcpOpenServer = "github"
-        vm.settingsSection = .mcp
+        vm.settingsSection = .tools
         try await Preview.renderMatrix("settings-mcp-servers-edges", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: vm)
         }
@@ -412,8 +458,27 @@ struct SettingsPreviewTests {
         await model.refresh()
         model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
                       file: .agents)
-        workspace.vm.settingsSection = .instructions
+        workspace.vm.settingsSection = .instructions; workspace.vm.instructions.editing = true
         try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func settingsInstructionsDamagedHistory(editing: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = workspace.server.instructions
+        try store.save(.agents, content: Self.instructionsSample)
+        let url = store.directory.appendingPathComponent("history.json")
+        try Data(#"{"version":1,"revisions":["#.utf8).write(to: url, options: .atomic)
+        try await workspace.seed(workspace.server.state)
+        await workspace.vm.instructions.refresh()
+        #expect(workspace.vm.instructions.local?.historyProblem?.contains(url.path) == true)
+        workspace.vm.settingsSection = .instructions
+        workspace.vm.instructions.editing = editing
+        try await Preview.render(editing ? "settings-instructions-damaged-editor" : "settings-instructions-damaged-list",
+                                 size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -430,7 +495,7 @@ struct SettingsPreviewTests {
         let model = workspace.vm.instructions
         model.piHome = workspace.server.pi.home
         await model.refresh()
-        workspace.vm.settingsSection = .instructions
+        workspace.vm.settingsSection = .instructions; workspace.vm.instructions.editing = true
         try await Preview.render("settings-instructions-imported", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }
@@ -443,6 +508,19 @@ struct SettingsPreviewTests {
         workspace.vm.settings.goalsEnabled = enabled
         workspace.vm.settingsSection = .experiments
         try await Preview.renderMatrix(enabled ? "settings-experiments-goals-on" : "settings-experiments-goals-off",
+                                       size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// The Computer use card, off (the default) and on with its two permission rows.
+    @Test(arguments: [false, true])
+    func settingsComputerUseExperiment(_ enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.computerUseEnabled = enabled
+        workspace.vm.settingsSection = .experiments
+        try await Preview.renderMatrix(enabled ? "settings-experiments-computer-use-on" : "settings-experiments-computer-use-off",
                                        size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }
@@ -496,6 +574,25 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test func settingsShowsDamagedSuggestions() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let url = workspace.server.suggestions.url
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{broken".utf8).write(to: url)
+        try await workspace.seed(ShepherdState())
+        await workspace.vm.suggestions.refresh()
+        #expect(workspace.vm.suggestions.unavailable?.contains(url.path) == true)
+        workspace.vm.settingsSection = .experiments
+        try await Preview.render("settings-suggestions-damaged", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+        workspace.vm.experimentsPage = .waiting
+        try await Preview.render("settings-waiting-damaged", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Settings ▸ Advanced ▸ Updates as each app shows it. Sparkle only runs in a bundled app,
     /// so the Advanced page above renders without this group.
     @Test func updateChannelRows() async throws {
@@ -517,26 +614,6 @@ struct SettingsPreviewTests {
 
     // MARK: Creation sheets
 
-    /// `sheet-new-agent` with a model that reasons; `-plain-model` with pi's default one that
-    /// takes no thinking level, so the sheet offers no Thinking row.
-    @Test(arguments: [("sheet-new-agent", true), ("sheet-new-agent-plain-model", false)])
-    func newAgentSheet(name: String, reasons: Bool) async throws {
-        let workspace = try PreviewWorkspace(modelCatalog: {
-            ModelListing(entries: [PiModelCatalog.Entry(id: "qa/gemini-3.1-flash-lite", reasoning: reasons)],
-                         defaultModel: "qa/gemini-3.1-flash-lite")
-        })
-        defer { workspace.stop() }
-        let repo = try makeScratchRepo()
-        defer { try? FileManager.default.removeItem(at: repo) }
-        try await workspace.seed(ShepherdState(spaces: [Space(name: "Shepherd", path: repo.path)]))
-        workspace.vm.selectedSpaceID = workspace.vm.state.spaces.first?.id
-        workspace.vm.settings.defaultModel = "qa/gemini-3.1-flash-lite"
-        try await Preview.render(name, size: CGSize(width: AppLayout.newAgentSheetWidth, height: 640),
-                                 untilGone: reasons ? nil : "Thinking", showing: "gemini-3.1-flash-lite") {
-            NewAgentSheet(vm: workspace.vm)
-        }
-    }
-
     @Test func newWorktreeSheet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -555,7 +632,7 @@ struct SettingsPreviewTests {
     @Test func remoteDeleteWorktreeSheet() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
-        workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
+        workspace.vm.remoteHosts.addHost(name: "orbit", host: "127.0.0.1", port: 1, token: "x")
         let host = try #require(workspace.vm.remoteHosts.connections.first)
         let target = RemoteAgentRef(hostID: host.id, agentID: AgentID())
         let info = RemoteWorktreeInfo(path: "/Users/ada/Developer/Shepherd-worktree-fix-login", branch: "worktree/fix-login",
@@ -582,7 +659,7 @@ struct SettingsPreviewTests {
     /// (SHStatus's loading placeholder).
     @Test func directoryPickerLoading() async throws {
         try await Preview.render("sheet-directory-picker-loading", size: CGSize(width: AppLayout.directoryPickerWidth, height: 480)) {
-            RemoteDirectoryPicker(hostName: "horizon", startPath: "", list: { _ in
+            RemoteDirectoryPicker(hostName: "orbit", startPath: "", list: { _ in
                 // A listing that never arrives while the render looks.
                 for await _ in AsyncStream<Void> { _ in } {}
                 throw CancellationError()
@@ -604,9 +681,30 @@ struct SettingsPreviewTests {
     @Test func settingsPiWithNoPiOfYours() async throws {
         let workspace = try PreviewWorkspace(yourPi: PreviewYourPi.none)
         defer { workspace.stop() }
-        workspace.vm.settingsSection = .pi
+        workspace.vm.settingsSection = .models
         try await Preview.render("settings-pi-none", size: CGSize(width: 1280, height: 900)) {
             SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// Settings ▸ Pi ▸ Models (SettingsPiModels): before a refresh, during one, and after it worked
+    /// or couldn't reach pi.dev.
+    @Test func settingsPiModelsRow() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let catalog = workspace.vm.pi.catalog
+        try FileManager.default.createDirectory(at: workspace.vm.pi.home, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: workspace.vm.pi.home.appendingPathComponent("models-store.json"))
+        try await Preview.render("settings-pi-models", size: CGSize(width: 1000, height: 420)) {
+            SettingsGroup(title: "Shepherd's pi") {
+                PiModelsRow(catalog: catalog)
+                PiModelsRow(catalog: catalog, state: .refreshing)
+                PiModelsRow(catalog: catalog, state: .current)
+                PiModelsRow(catalog: catalog, state: .failed)
+            }
+            .padding(SH.Space.xxl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -637,7 +735,7 @@ struct SettingsPreviewTests {
         defer { workspace.stop() }
         workspace.vm.piAuth.noteTurnError("OAuth refresh failed for openai-codex: invalid_grant")
         workspace.vm.piAuth.needed = ["openai-codex"]
-        workspace.vm.settingsSection = .piSignIn
+        workspace.vm.settingsSection = .models
         try await Preview.renderMatrix("settings-pi-sign-in", size: CGSize(width: 1280, height: 2000)) {
             SettingsView(vm: workspace.vm)
         }
@@ -680,13 +778,13 @@ struct SettingsPreviewTests {
         #expect(auth.accounts["anthropic"]?.accounts.first?.usage.count == 3)
         // The fixture's readings stand in for the read: the page shows what each account saved.
         auth.readUsage = { _ in [:] }
-        workspace.vm.settingsSection = .piSignIn
+        workspace.vm.settingsSection = .models
         try await Preview.renderMatrix("settings-pi-sign-in-accounts", size: CGSize(width: 1280, height: 2200)) {
             SettingsView(vm: workspace.vm)
         }
     }
 
-    @Test(arguments: ["copied", "empty", "long"], [SettingsSection.pi, .piSignIn])
+    @Test(arguments: ["copied", "empty", "long"], [SettingsSection.models])
     func settingsCommandCredentials(state: String, section: SettingsSection) async throws {
         var survey = state == "empty" ? YourPiSurvey() : PreviewYourPi.imported
         if state != "empty" {
@@ -841,7 +939,7 @@ struct SettingsPreviewTests {
 
     @Test func actionErrorDialog() async throws {
         try await Preview.render("sheet-action-error", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
-            ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
+            ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "orbit rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
         }
     }
 
@@ -854,6 +952,17 @@ struct SettingsPreviewTests {
         workspace.vm.settings.worktreeDeleteAction = .removeWorktree
         workspace.vm.settingsSection = .advanced
         try await Preview.render("settings-advanced-skipped", size: CGSize(width: 1280, height: 1000)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// Settings ▸ Advanced ▸ Editor with apps picked for two file types from Open in (OpenInD2): the By file type row and Reset.
+    @Test func settingsAdvancedEditorsByType() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.editorsByType = [".md": "com.apple.TextEdit", ".tsx": "com.apple.dt.Xcode"]
+        workspace.vm.settingsSection = .advanced
+        try await Preview.render("settings-advanced-editors-by-type", size: CGSize(width: 1280, height: 1000)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -878,4 +987,31 @@ struct SettingsPreviewTests {
 
 extension SettingsSection: CustomTestStringConvertible {
     public var testDescription: String { rawValue }
+}
+
+// MARK: Drill-ins and sub-pages
+
+extension SettingsPreviewTests {
+    /// The Instructions list, then its editor drill-in with the "‹ Instructions" button above the title.
+    @Test(arguments: [false, true])
+    func settingsInstructionsDrill(editing: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = .instructions
+        workspace.vm.instructions.editing = editing
+        try await Preview.renderMatrix(editing ? "settings-instructions-file" : "settings-instructions-list", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// Experiments' waiting list drill-in.
+    @Test func settingsExperimentsWaiting() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = .experiments
+        workspace.vm.experimentsPage = .waiting
+        try await Preview.renderMatrix("settings-experiments-waiting", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
 }

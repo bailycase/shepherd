@@ -4,6 +4,9 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+#if DEBUG
+import os
+#endif
 
 public enum SessionServerError: Error, CustomStringConvertible {
     case socketPathTooLong(path: String)
@@ -509,6 +512,19 @@ public final class SessionServer: @unchecked Sendable {
     /// An install waiting for the threads that work here to settle (`RemoteHostUpdateRequest.installWhenIdle`): the updater holds the offer, and the
     /// host sends `install` once none is busy. Memory only: a restart of the host drops it, and nothing resumes it. Server queue.
     private var idleInstall: (offerID: UUID, since: Date, attempt: UUID)?
+    /// The updater took the last install this host sent it (it answered downloading or installing): from there the app quits and relaunches, which is
+    /// no sign that a person closed it (`HostUpdateStatus.installHandedOff`). A marker file, because this host may restart before anyone looks:
+    /// the app quitting to install is what restarts it. Cleared by the next request that isn't a status. Server queue.
+    private var installHandedOff: Bool {
+        get { FileManager.default.fileExists(atPath: installHandoffMarker.path) }
+        set {
+            if newValue { FileManager.default.createFile(atPath: installHandoffMarker.path, contents: nil) }
+            else { try? FileManager.default.removeItem(at: installHandoffMarker) }
+        }
+    }
+    private var installHandoffMarker: URL { supportDirectory.appendingPathComponent("host-update-handoff") }
+    /// Tests: answer as a host from before `installHandedOff` did, which says nothing of it.
+    var omitsInstallHandoff = false
     /// Server queue: an install waits for the threads to settle.
     var isWaitingForIdleInstall: Bool { idleInstall != nil }
     /// How often the host looks at its threads while an install waits for them, and the longest it waits.
@@ -539,6 +555,7 @@ public final class SessionServer: @unchecked Sendable {
         // `install` when the threads have settled. Another install, a cancel or a new look ends the wait.
         var forwarded = request
         var waits: UUID?
+        if request != .status { installHandedOff = false }
         switch request {
         case .installWhenIdle(let offerID, let consent):
             if consent, busyThreadCount == 0 { forwarded = .install(offerID: offerID, authorized: true) }
@@ -559,12 +576,14 @@ public final class SessionServer: @unchecked Sendable {
                     self.idleInstall = (waits, Date(), UUID())
                     self.pollIdleInstall(waits, attempt: self.idleInstall?.attempt)
                 }
+                if case .install = forwarded, status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                 status.busyThreads = self.busyThreadCount
                 status.waitingForIdle = self.idleInstall != nil && status.phase == .available
+                status.installHandedOff = self.omitsInstallHandoff ? nil : self.installHandedOff
                 reply(status)
             }
         }
-        queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
+        queue.asyncAfter(deadline: .now() + RemoteHostUpdateRequest.hostReplyDeadline) { finish(nil) }
         let toUpdater = forwarded
         hopToMain { [weak self] in
             guard let self else { return }
@@ -601,6 +620,7 @@ public final class SessionServer: @unchecked Sendable {
                 handler(.install(offerID: offerID, authorized: true), { true }) { status in
                     self.queue.async {
                         guard answered.first() else { return }
+                        if status.phase == .downloading || status.phase == .installing { self.installHandedOff = true }
                         guard let wait = self.idleInstall, wait.offerID == offerID, wait.attempt == attempt else { return }
                         if status.phase == .available { next() } else { self.idleInstall = nil }
                     }
@@ -741,6 +761,46 @@ public final class SessionServer: @unchecked Sendable {
     /// When each thread left its recent notes back (ms), for `DesignThreadNote.rateLimit`.
     /// Queue-confined.
     private var noteTimes: [AgentID: [Double]] = [:]
+    // Retain the marker after pi exits or retries: its former tools can still be alive.
+    private var threadProcessMarkers: [AgentID: Set<String>] = [:]
+
+    private var pendingBashSweeps: [AgentID: Set<UUID>] = [:]
+
+    private func enqueueBashSweep(_ agent: AgentID, scope: UUID) {
+        guard threadProcessMarkers[agent] != nil else { return }
+        if let pending = pendingBashSweeps[agent] {
+            // ponytail: cap a burst per thread; excessive requests still have supervisor cleanup.
+            if pending.count < 64 { pendingBashSweeps[agent]?.insert(scope) }
+            return
+        }
+        pendingBashSweeps[agent] = [scope]
+        scheduleBashSweep(agent)
+    }
+
+    private func scheduleBashSweep(_ agent: AgentID) {
+        queue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
+            guard let self else { return }
+            guard let scopes = self.pendingBashSweeps[agent], !scopes.isEmpty,
+                  let markers = self.threadProcessMarkers[agent] else {
+                self.pendingBashSweeps.removeValue(forKey: agent)
+                return
+            }
+            // At most one scoped sweep per thread at a time. Batch requests received in the meantime.
+            self.pendingBashSweeps[agent] = []
+            let sweep = ThreadProcessSweep(markers: markers, bashScopes: scopes)
+            Task.detached { [weak self] in
+                _ = await sweep.run()
+                self?.queue.async { [weak self] in self?.scheduleBashSweep(agent) }
+            }
+        }
+    }
+
+    private func sweepThreadProcesses(_ agent: AgentID, tracked: Set<OwnedProcessTree.Birth> = [],
+                                      forget: Bool = false) -> Task<ThreadProcessSweep.Report, Never>? {
+        guard let markers = forget ? threadProcessMarkers.removeValue(forKey: agent) : threadProcessMarkers[agent] else { return nil }
+        let sweep = ThreadProcessSweep(markers: markers, tracked: tracked)
+        return Task.detached { await sweep.run() }
+    }
     /// Every design system this host keeps (the support directory's `design-systems/`, plus the
     /// built-ins the app registers). Reads go to it directly; writes, installs and re-syncs go
     /// through the server.
@@ -804,6 +864,8 @@ public final class SessionServer: @unchecked Sendable {
     lazy var pushNotifications: PushNotifications = {
         let pushes = PushNotifications(file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
         pushes.muted = { [weak self] id in self?.store.state.agents.first { $0.id == id }?.pushMuted == true }
+        pushes.canDeliverToDevice = { [weak self] id in self?.fleet?.isDeviceActive(id) == true }
+        pushes.isDeviceRevoked = { [weak self] id in self?.fleet?.isDeviceRevoked(id) == true }
         return pushes
     }()
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
@@ -837,13 +899,16 @@ public final class SessionServer: @unchecked Sendable {
     /// for an app that connects later.
     var pullRequestLinksPush: RemoteReply?
     @MainActor var startingAutomationRuns = Set<AutomationID>()
-    /// Main actor: terminal panes whose shell `startTerminal` is starting now.
-    @MainActor var startingTerminals = Set<PaneID>()
+    /// Main actor: the shell `startTerminal` is starting now in each terminal pane, which a second
+    /// request for the same pane waits for.
+    @MainActor var startingTerminals: [PaneID: Task<SessionID, Error>] = [:]
     /// Main actor: agents whose pi `spawnAgent` is starting now (a draining host waits for them).
     @MainActor var spawningAgents = 0
     /// Main actor: new agents `startNewAgent` is still starting, whose pi is its to spawn and bind (a
     /// client's first poll of the thread must not start a second one: `respawnAgent`).
     @MainActor var creatingAgents = Set<AgentID>()
+    /// Main actor: threads agent_spawn is starting now, by the thread that asked (the per-thread cap counts them).
+    @MainActor var spawning: [AgentID: Int] = [:]
     /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
     /// how many wait for it now.
     @MainActor var firstCopy: Task<Void, Never>?
@@ -869,6 +934,10 @@ public final class SessionServer: @unchecked Sendable {
     var publicationTransfers: Set<UUID> = []
     var publicationTransferQueue: [ProjectArtifactReceipt] = []
     var publicationTransferDuration = ProjectArtifactReceipt.transferSeconds
+    #if DEBUG
+    /// An isolated file backlog for publication preflight; other file work must still be able to drain.
+    let publicationFileBacklog = OSAllocatedUnfairLock<(queue: DispatchQueue, didEnqueue: @Sendable () -> Void)?>(initialState: nil)
+    #endif
     /// Test barrier after preparation, outside both state and file queues.
     var publicationBeforeCommit: (@Sendable () async -> Void)?
     /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.
@@ -934,7 +1003,7 @@ public final class SessionServer: @unchecked Sendable {
     private let originStore: ThreadOriginStore
     private let agentRecovery: AgentRecoveryStore
     /// How each automation's runs went (support directory), for remote clients.
-    private let runLog: AutomationRunLog
+    let runLog: AutomationRunLog
     /// Fires triggered automations (schedules, GitHub). `serveAutomations` installs its host.
     public let automationTriggers: AutomationTriggers
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
@@ -961,10 +1030,15 @@ public final class SessionServer: @unchecked Sendable {
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
-    /// Signalled when the remote listener's descriptor is really closed: until then its port is still taken.
-    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped and is awaited.
-    private var remoteListenerClosed: DispatchSemaphore?
-    private var remoteListenerClosing: DispatchSemaphore?
+    /// Marks when the remote listener's descriptor is really closed: until then its port is still taken.
+    /// `Closed` belongs to the listener that is open, `Closing` to one that was stopped, kept until its descriptor closes.
+    private var remoteListenerClosed: ListenerClose?
+    var remoteListenerClosing: ListenerClose?
+    /// How long `stop` waits for that close before it gives up and exits anyway (tests shorten it).
+    var remoteListenerExitDeadline: DispatchTimeInterval = .seconds(5)
+    /// Changes `setRemoteListener` was asked for and has not finished, and whether one is running.
+    private var listenerChanges: [(port: UInt16?, completion: @Sendable (Result<UInt16?, Error>) -> Void)] = []
+    private var changingListener = false
     /// The local socket (`host.sock`) the app connects to a background host through.
     private var localAcceptSource: DispatchSourceRead?
     private var localSocketPath: String?
@@ -1000,6 +1074,12 @@ public final class SessionServer: @unchecked Sendable {
     /// The grid this Mac's app's terminals last reported: a new terminal starts at it, not 80×24.
     var lastLocalGrid: (cols: Int, rows: Int)?
     private var clients: [Int32: ExtensionConnection] = [:]
+    private var projectMCPDisconnectGrace: DispatchTimeInterval = .seconds(60)
+    private var projectMCPDisconnects: [UUID: DispatchWorkItem] = [:]
+
+    func setProjectMCPDisconnectGraceForTests(_ grace: DispatchTimeInterval) {
+        queue.sync { projectMCPDisconnectGrace = grace }
+    }
     private struct PendingAgentRequest {
         let caller: ExtensionConnection
         let target: ExtensionConnection?
@@ -1013,6 +1093,23 @@ public final class SessionServer: @unchecked Sendable {
     public var onAgentPeerCancellation: ((String) -> Void)?
 
     private var agentMessagePolicy: AgentMessagePolicy = .default
+
+    private final class LiveRename {
+        let session: SessionID
+        let generation: String
+        let name: String
+        let finish: (Result<(oldName: String, newName: String), ProjectFileError>) -> Void
+        var observed = false
+
+        init(session: SessionID, generation: String, name: String,
+             finish: @escaping (Result<(oldName: String, newName: String), ProjectFileError>) -> Void) {
+            self.session = session
+            self.generation = generation
+            self.name = name
+            self.finish = finish
+        }
+    }
+    private var liveRenames: [AgentID: LiveRename] = [:]
     /// Retained for existing consumers; agent calls no longer request UI approval.
     public var onAgentApprovalRequest: ((AgentApprovalPrompt) -> Void)?
 
@@ -1239,6 +1336,7 @@ public final class SessionServer: @unchecked Sendable {
     private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
         offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
             .filter { client.fleetDeviceID == nil || FleetAccess.device.isOffered($0) }
+            .filter { $0 != RemoteProtocol.pushNotificationsCapability || client.isLocal || client.fleetDeviceID != nil }
             + (client.isLocal ? [RemoteProtocol.localCapability, RemoteProtocol.changesWritesCapability] : [])
             + (client.isLocal && onDrainRequest != nil ? [RemoteProtocol.hostDrainCapability] : [])
     }
@@ -1286,6 +1384,76 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
+    // MARK: - Host settings
+
+    private func remoteHostSettings(_ input: RouteInput) {
+        let send = input.send
+        // The reply closure holds the server weakly. Keep it alive through each queued reply.
+        switch input.request {
+        case .hostSettings(let id, let request):
+            if case .change(let change) = request, let capability = change.capability,
+               !input.offeredCapabilities().contains(capability) {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."))
+                return
+            }
+            guard let handler = onRemoteHostSettings else {
+                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let settings): send(.hostSettings(id: id, settings: settings))
+                        case .failure(let error): send(.error(id: id, code: "settings_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        case .hostInventory(let id, let request):
+            // Read-only, and only the GUI knows: hops as hostSettings does.
+            guard let handler = onRemoteHostInventory else {
+                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let value): send(.hostInventory(id: id, result: value))
+                        case .failure(let error): send(.error(id: id, code: "inventory_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        case .hostConfig(let id, let request):
+            guard let handler = onRemoteHostConfig else {
+                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        defer { withExtendedLifetime(self) {} }
+                        switch result {
+                        case .success(let value): send(.hostConfig(id: id, result: value))
+                        case .failure(let error): send(.error(id: id, code: "config_failed", message: error.message))
+                        }
+                    }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Model catalog
+
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> ModelListing
@@ -1299,6 +1467,28 @@ public final class SessionServer: @unchecked Sendable {
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
     /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
     public func modelListing() -> ModelListing { modelCatalog() }
+
+    private func remoteListModels(_ input: RouteInput) {
+        switch input.request {
+        case .listModels(let id):
+            let send = input.send
+            // Asking pi shells out (~0.5s cold); never block the server
+            // queue. Reply from the queue once the catalog returns.
+            let catalog = modelCatalog
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let listing = catalog()
+                self?.queue.async {
+                    send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                 withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                 serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages))
+                }
+            }
+        default:
+            preconditionFailure("Mismatched listModels route")
+        }
+    }
+
+    // MARK: - Initialization
 
     /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
     /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
@@ -1426,8 +1616,10 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The host settings as the app last reported them: the fleet's policy (Threads can send work, the cap, the
-    /// weights) is read from here. Server queue.
-    private var fleetSettings: HostSettings?
+    /// weights) is read from here. Server queue (tests read it there, off the main actor).
+    private(set) var fleetSettings: HostSettings?
+    /// Tests: the host settings the app last reported (`fleetHostSettingsChanged`), read synchronously.
+    var fleetSettingsForTests: HostSettings? { queue.sync { fleetSettings } }
     /// Places promised to dispatches that haven't started (`FleetPressureSample.reserved`), for any thread.
     private let fleetReserved = FleetCounter()
     /// The agents whose pi is running a shell command now (`FleetPressureSample.commandAgents`), for any thread.
@@ -1531,6 +1723,15 @@ public final class SessionServer: @unchecked Sendable {
         return token
     }
 
+    /// Tests: a token a test's client can present as a Mac of this host's fleet (a fleet peer), held in memory like `clientTokenForTests`'s.
+    func peerTokenForTests() -> String {
+        let token = FleetProtocol.makeToken()
+        queue.sync { if fleet == nil { fleetOptions.advertises = false } }
+        startFleet()
+        queue.sync { fleet?.addTestPeer(tokenHash: FleetProtocol.hash(token)) }
+        return token
+    }
+
     /// Starts this host's fleet (`FleetService`): its identity, its links to the Macs it is paired with, its Bonjour advertisement,
     /// the pairing of Macs and devices and the fleet requests. There is no off state. It opens no port by itself: it says when it
     /// needs the listener (`onFleetListenerNeed`). `name` is what other Macs call this one (the Mac's own name unless a test names it).
@@ -1595,7 +1796,9 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 service.onDeviceRevoked = { [weak self] deviceID in
                     guard let self else { return }
+                    self.pushNotifications.pruneRevokedDevices()
                     for client in Array(self.clients.values) where client.fleetDeviceID == deviceID { self.disconnect(client, reason: "device revoked") }
+                    Task { await self.projects.cancelMCP(owner: deviceID) }
                 }
                 fleet = service
                 fleetRepoFinder.value = service.dispatch.finder
@@ -1689,7 +1892,9 @@ public final class SessionServer: @unchecked Sendable {
         service.dispatch.host = FleetDispatchHost(
             state: { [weak self] in self?.store.state ?? ShepherdState() },
             settings: { [weak self] in self?.fleetSettings },
-            wakeParent: { [weak self] agentID, text in await self?.pushMessage(toAgent: agentID, text: text, delivery: .task) ?? false },
+            wakeParent: { [weak self] agentID, text, dispatchID in
+                await self?.pushMessage(toAgent: agentID, text: text, delivery: .task, fleetResultID: dispatchID) ?? false
+            },
             defaultModel: { [home = pi.home] in PiConfig.defaultModel(in: home) },
             createThread: { [weak self] request in
                 await withCheckedContinuation { continuation in
@@ -1702,27 +1907,57 @@ public final class SessionServer: @unchecked Sendable {
                 }
             },
             stopThread: { [weak self] agentID in self?.rpcThread(forAgent: agentID)?.stop { _ in } },
+            terminateThread: { [weak self] agentID in self?.terminateFleetThread(agentID) },
+            closeThread: { [weak self] agent, dispatch in
+                guard let self else { throw FleetDispatchRefusal(code: "unreachable", message: "The receiving host is shutting down.") }
+                let (sessions, sweep) = try await self.deleteAgent(agent, closingDispatch: dispatch)
+                let deadline = ContinuousClock.now + .seconds(4)
+                let processes = await sweep?.value
+                repeat {
+                    if await self.enqueueValue({ sessions.allSatisfy { self.sessions[$0]?.isAlive != true } }) {
+                        return FleetCloseProcesses(sessionsStopped: true, sweep: processes)
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                } while ContinuousClock.now < deadline
+                return FleetCloseProcesses(sessionsStopped: false, sweep: processes)
+            },
             messageThread: { [weak self] agentID, text, delivery in
                 await withCheckedContinuation { continuation in
                     self?.queue.async {
-                        guard let self, let thread = self.rpcThread(forAgent: agentID), thread.isServable else {
-                            return continuation.resume(returning: false)
+                        guard let self, let thread = self.rpcThread(forAgent: agentID) else {
+                            return continuation.resume(returning: .refused)
                         }
+                        guard thread.isServable else {
+                            return continuation.resume(returning: thread.session.isAlive && thread.bootstrapFailure == nil ? .starting : .refused)
+                        }
+                        thread.lastInputFromPerson = false
                         thread.send(id: UUID(), text: text, delivery: delivery, images: [], alone: true) { result in
-                            if case .accepted = result { continuation.resume(returning: true) } else { continuation.resume(returning: false) }
+                            if case .accepted = result { continuation.resume(returning: .accepted) } else { continuation.resume(returning: .refused) }
                         }
-                    } ?? continuation.resume(returning: false)
+                    } ?? continuation.resume(returning: .refused)
+                }
+            },
+            renameThread: { [weak self] agentID, name, completion in
+                guard let self else { return completion(.failure(.init(code: "unreachable", message: "The receiving host is shutting down."))) }
+                self.renameLiveThread(agentID, to: name) { result in
+                    completion(result.map(\.newName).mapError { .init(code: $0.code, message: $0.description) })
                 }
             },
             threadFacts: { [weak self] agentID in
                 guard let self, let agent = self.store.state.agents.first(where: { $0.id == agentID }) else { return nil }
-                var lastText: String?
-                if let thread = self.rpcThread(forAgent: agentID) {
-                    let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
-                        ?? thread.history.last(where: { $0.role == "assistant" })
-                    lastText = assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+                let thread = self.rpcThread(forAgent: agentID)
+                let sessionID = thread?.session.id ?? agent.paneID.flatMap { pane in
+                    self.store.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: pane)?.sessionID
                 }
-                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastText: lastText, worktree: agent.worktreePath)
+                return FleetThreadFacts(status: agent.status, waitingOn: agent.waitingOn, lastThreadEventAt: thread?.lastTurnEventAt,
+                                        completedAt: agent.completedAt, worktree: agent.worktreePath, failure: thread?.turnFailure,
+                                        stopProblem: sessionID.flatMap { self.keptStarts[$0]?.problem })
+            },
+            threadResult: { [weak self] agentID in
+                guard let thread = self?.rpcThread(forAgent: agentID) else { return nil }
+                let assistant = thread.live.last(where: { $0.value.role == "assistant" })?.value
+                    ?? thread.history.last(where: { $0.role == "assistant" })
+                return assistant?.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             },
             repoPlaces: { [weak self] in self?.fleetRepoPlaces() ?? [] },
             bindSpace: { [weak self] binding in self?.bindFleetCheckout(binding) },
@@ -1734,13 +1969,14 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// An agent's `fleet_*` tool. Refused unless Fleet is on and the thread may send work at all (`fleet_scope`:
-    /// a dispatched thread, a project worker, a coordinator, a design's agent or an automation run
-    /// never does); the settings and the per-thread cap are the engine's. Server queue.
+    /// a project worker, a coordinator, a design's agent or an automation run never does); the settings, the depth
+    /// limit and the per-thread cap are the engine's. Server queue.
     private func serveFleetTool(_ message: ExtensionMessage, from client: ExtensionConnection) {
         let id: Int, agentID: AgentID
         switch message {
         case .fleetListHosts(let value, let agent), .fleetDispatch(let value, let agent, _, _, _, _, _, _), .fleetDispatchStatus(let value, let agent, _),
-             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _):
+             .fleetDispatchMessage(let value, let agent, _, _, _), .fleetDispatchCancel(let value, let agent, _), .fleetDispatchClose(let value, let agent, _),
+             .fleetDispatchRename(let value, let agent, _, _), .fleetListDispatches(let value, let agent):
             (id, agentID) = (value, agent)
         default: return
         }
@@ -1761,6 +1997,9 @@ public final class SessionServer: @unchecked Sendable {
         switch message {
         case .fleetListHosts:
             reply(.fleetHosts(id: id, hosts: fleet.dispatch.hosts(for: agentID)), to: client)
+        case .fleetListDispatches:
+            let list = fleet.dispatch.listRows(for: agentID)
+            reply(.fleetDispatches(id: id, dispatches: list.rows, omitted: list.omitted), to: client)
         case .fleetDispatch(_, _, let key, let task, let title, let host, let model, let thinking):
             fleet.dispatch.dispatch(from: agentID, key: key, task: task, title: title, host: host, model: model, thinking: thinking, reply: answer)
         case .fleetDispatchStatus(_, _, let key):
@@ -1769,6 +2008,10 @@ public final class SessionServer: @unchecked Sendable {
             fleet.dispatch.agentControl(from: agentID, key: key, .message(text: text, delivery: delivery), reply: answer)
         case .fleetDispatchCancel(_, _, let key):
             fleet.dispatch.agentControl(from: agentID, key: key, .cancel, reply: answer)
+        case .fleetDispatchClose(_, _, let key):
+            fleet.dispatch.agentControl(from: agentID, key: key, .close, reply: answer)
+        case .fleetDispatchRename(_, _, let key, let name):
+            fleet.dispatch.agentControl(from: agentID, key: key, .rename(name: name), reply: answer)
         default: break
         }
     }
@@ -2003,21 +2246,26 @@ public final class SessionServer: @unchecked Sendable {
         defer { lifecycleLock.unlock() }
         if queue.sync(execute: { isStarted }) { return }
         do {
-            try queue.sync {
+            let (repair, recovered) = try queue.sync {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
-                projects.migrateExistingProjectConfiguration(in: store.state)
-                projects.remember(store.state)
-                runLog.reload()
+                let repair = store.recoveryError != nil, recovered = store.didRecover
+                if !repair && !recovered {
+                    projects.migrateExistingProjectConfiguration(in: store.state)
+                    projects.remember(store.state)
+                }
+                if !repair { runLog.reload() }
+                return (repair, recovered)
             }
-            try finishStart()
+            if !repair { try finishStart(recovered: recovered) }
             queue.sync {
                 isStarted = true
+                pushNotifications.load()
                 acceptOnQueue()
-                recoverCommittedProjectPublications()
+                if !repair && !recovered { recoverCommittedProjectPublications() }
             }
-            if refreshesModelCatalog { pi.catalog.refreshDaily() }
+            if !repair && refreshesModelCatalog { pi.catalog.refreshDaily() }
         } catch {
             queue.sync {
                 stopOnQueue()
@@ -2027,16 +2275,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func finishStart() throws {
+    private func finishStart(recovered: Bool) throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
-        // A design deleted in its undo window before a crash (state.json no longer lists it), and
-        // an import a crash left staged.
-        designs.removeLeftovers()
-        // A Git merge copy is never resumed after a restart.
-        DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        // Do not prune files on the strength of a partially recovered workspace.
+        if !recovered {
+            designs.removeLeftovers()
+            DesignGit.dropLeftoverMergeCopies(in: designs.directory)
+        }
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
+        guard !recovered else { return }
         // Copies of design references whose agent or grant is gone (a send the app quit during).
         var kept: [AgentID: Set<UUID>] = [:]
         for agent in store.committed.agents { kept[agent.id] = Set(agent.designGrants.compactMap(\.payload)) }
@@ -2052,14 +2301,14 @@ public final class SessionServer: @unchecked Sendable {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         let owned = queue.sync { () -> Bool in
-            let owned = isStarted
+            let owned = isStarted && store.recoveryError == nil && !store.didRecover
             stopOnQueue()
             return owned
         }
         // Keep ownership until cleanup is over; a rejected instance cleans up nothing.
         if owned { designs.removeLeftovers() }
         queue.sync { releaseOwnershipOnQueue() }
-        awaitRemoteListenerClosed()
+        awaitRemoteListenerClosed(within: remoteListenerExitDeadline)
     }
 
     // MARK: - Lifecycle (server queue)
@@ -2220,7 +2469,7 @@ public final class SessionServer: @unchecked Sendable {
             || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
-                try store.update { state in
+                try store.reconcileStartup { state in
                     for id in stale {
                         if let i = state.agents.firstIndex(where: { $0.id == id }) {
                             state.agents[i].status = .idle
@@ -2311,6 +2560,7 @@ public final class SessionServer: @unchecked Sendable {
                 throw SessionServerError.persistFailed(String(describing: error))
             }
         }
+        guard !store.didRecover else { return }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns(keeping: Set(store.state.agents.filter { $0.automationOrigin != nil }.map(\.id)))
         do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
@@ -2399,6 +2649,8 @@ public final class SessionServer: @unchecked Sendable {
         fleetRepoFinder.value = nil
         instructions.onChange = nil
         isStarted = false
+        for work in projectMCPDisconnects.values { work.cancel() }
+        projectMCPDisconnects.removeAll()
         pushNotifications.stop()
         logicalProjectEpoch &+= 1
         automationStarts.removeAll()
@@ -2580,7 +2832,7 @@ public final class SessionServer: @unchecked Sendable {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
         if hostUpdateReserved {
             switch request {
-            case .snapshot, .image, .subagentTranscript, .abort: break
+            case .snapshot, .transcriptSnapshot, .image, .subagentTranscript, .abort: break
             default:
                 completion(.result(.failure(code: "host_updating", message: "Host update in progress. Try again after reconnecting.")))
                 return
@@ -2612,6 +2864,11 @@ public final class SessionServer: @unchecked Sendable {
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
             unavailable("The agent has no thread.")
+            return
+        }
+        if case .transcriptSnapshot(let expectedSessionID, let beforeEntryID) = request {
+            serveTranscriptSnapshot(agent: agent, leaf: leaf, expectedSessionID: expectedSessionID,
+                                    beforeEntryID: beforeEntryID, authorized: transportAuthorization, completion: completion)
             return
         }
         // A pi that stopped, before it served or on its own after: its agent waits, and says why (or
@@ -2711,6 +2968,7 @@ public final class SessionServer: @unchecked Sendable {
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
+        if case .snapshot = request { logRunDisagreement(agentID: agentID, status: agent.status, thread: thread) }
         // Arm before dispatch: pi can exit before acknowledging a prompt.
         let previousPush = (thread.pushRunArmed, thread.pushAwaitingStart)
         if isSend {
@@ -2744,6 +3002,38 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// A copy reads the saved branch, not the engine's compacted context. Resolve the source on
+    /// the server queue and keep file I/O off it, as for a preview.
+    private func serveTranscriptSnapshot(agent: Agent, leaf: LeafPane, expectedSessionID: String?, beforeEntryID: String?,
+                                         authorized: @escaping () -> Bool, completion: @escaping (NativeOutcome) -> Void) {
+        let thread = leaf.sessionID.flatMap { sessions[$0] }.flatMap { $0.isAlive ? $0.thread : nil }
+        if thread?.isServable == false {
+            completion(.result(.failure(code: NativeThreadCode.starting, message: "The thread is still loading. Try copying it again when it’s ready.")))
+            return
+        }
+        let sessionID = thread?.piSessionID ?? agent.effectivePiSessionID
+        let stale = NativeOutcome.result(.failure(code: "stale_session", message: "The transcript changed. Nothing was copied."))
+        guard expectedSessionID == nil || expectedSessionID == sessionID else { completion(stale); return }
+        let root = pi.sessionsRoot
+        DispatchQueue.global(qos: .userInitiated).async {
+            let file = PiSessionFile.file(sessionID: sessionID, cwd: AgentLaunch.resolvedCwd(leaf.cwd), sessionsRoot: root)
+            let result = PiSessionFile.transcriptSnapshot(file: file, sessionID: sessionID, beforeEntryID: beforeEntryID)
+            self.queue.async {
+                guard authorized(), !self.movingThreads.contains(agent.id),
+                      let current = self.store.state.agents.first(where: { $0.id == agent.id }),
+                      current.tabID == agent.tabID, current.paneID == agent.paneID,
+                      let paneID = current.paneID,
+                      self.store.state.tabs.first(where: { $0.id == current.tabID })?.layout.leaf(withID: paneID) == leaf,
+                      (leaf.sessionID.flatMap { self.sessions[$0] }.flatMap { $0.isAlive ? $0.thread?.piSessionID : nil }
+                        ?? current.effectivePiSessionID) == sessionID else {
+                    completion(stale)
+                    return
+                }
+                completion(.result(result))
+            }
+        }
+    }
+
     /// Server queue: answers a snapshot for an agent whose pi is not running from pi's session file
     /// (`PiSessionPreview`), read off the queue; an agent with no file yet gets an empty thread.
     /// Marked `preview` with no actions: nothing a client can do with it reaches pi (`RemoteProtocol.nativeThreadPreviewCapability`).
@@ -2752,11 +3042,11 @@ public final class SessionServer: @unchecked Sendable {
                                       completion: @escaping (NativeOutcome) -> Void) {
         let sessionID = agent.effectivePiSessionID
         let root = pi.sessionsRoot
-        let origins = originStore.directory
+        let origins = originStore
         let model = agent.model, thinking = agent.thinkingLevel?.rawValue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var snapshot = PiSessionPreview.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root)
-                .flatMap { PiSessionPreview.snapshot(file: $0, sessionID: sessionID, origins: origins) }
+                .flatMap { PiSessionPreview.snapshot(file: $0, sessionID: sessionID, originStore: origins) }
                 ?? PiSessionPreview.empty(sessionID: sessionID, model: model, thinking: thinking)
             snapshot.preview = true
             snapshot.supportedActions = []
@@ -2847,7 +3137,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// One authenticated controller connection per parent; no helper opens a new host channel.
-    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, completion: @escaping (String?) -> Void) {
+    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, sweepChildren: Bool? = nil, completion: @escaping (String?) -> Void) {
         if action == .stop { projectChildClosed.insert(scope) }
         let finish: (String?) -> Void = { error in
             if action == .stop, error == nil { self.projectChildStopped.insert(scope) }
@@ -2862,7 +3152,7 @@ public final class SessionServer: @unchecked Sendable {
         nextChildCommandID += 1
         let id = nextChildCommandID
         childCommandPending[id] = (client, finish)
-        reply(.projectChildren(id: id, scope: scope, action: action), to: client)
+        reply(.projectChildren(id: id, scope: scope, action: action, sweepChildren: sweepChildren), to: client)
         queue.asyncAfter(deadline: .now() + (action == .stop ? 15 : 615)) { [weak self] in
             self?.childCommandPending.removeValue(forKey: id)?.completion("Project helper acknowledgement timed out; outcome is unknown.")
         }
@@ -2870,28 +3160,74 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Remote listener (server queue)
 
+    /// Whoever waits for a stopped remote listener's descriptor to close. Touched only on the server queue.
+    final class ListenerClose {
+        var waiters: [() -> Void] = []
+        func markClosed() {
+            let pending = waiters
+            waiters = []
+            pending.forEach { $0() }
+        }
+    }
+
     /// Bind the TCP listener for remote Shepherd clients. Pass port 0 to bind
     /// an ephemeral port; the bound port is returned either way. A client
     /// gets in only with a token of its own (a device's, or a Mac's of the fleet)
     /// after pairing with a code; there is no token shared by every client. The
     /// listener binds all interfaces — the user's VPN is the reachability and
     /// security boundary; the tokens keep other devices on that network honest.
+    /// Blocks on the server queue: for setup and tests, never the main actor (`setRemoteListener`).
     public func startRemoteListener(port: UInt16) throws -> UInt16 {
         try queue.sync { try startRemoteListenerOnQueue(port: port) }
     }
 
     /// Close the TCP listener and every remote client connection. Extension
-    /// connections and sessions are unaffected.
+    /// connections and sessions are unaffected. Blocks like `startRemoteListener`, until the port is really closed.
     public func stopRemoteListener() {
         queue.sync { stopRemoteListenerOnQueue() }
-        awaitRemoteListenerClosed()
+        awaitRemoteListenerClosed(within: nil)
+    }
+
+    /// Makes the remote listener `port` (0 for an ephemeral one) or, with nil, closed, without blocking the caller. Changes run one
+    /// at a time in the order asked, each closing the listener and waiting for its port to be free before it binds, so the last
+    /// one asked is the state that stays. `completion` runs on the main queue with the bound port (nil when closed), or why the
+    /// bind failed.
+    public func setRemoteListener(port: UInt16?, completion: @escaping @Sendable (Result<UInt16?, Error>) -> Void) {
+        queue.async {
+            self.listenerChanges.append((port, completion))
+            self.runListenerChangeOnQueue()
+        }
+    }
+
+    private func runListenerChangeOnQueue() {
+        guard !changingListener, !listenerChanges.isEmpty else { return }
+        changingListener = true
+        let (port, completion) = listenerChanges.removeFirst()
+        stopRemoteListenerOnQueue()
+        whenRemoteListenerClosedOnQueue {
+            let result = Result { try port.map { try self.startRemoteListenerOnQueue(port: $0) } }
+            DispatchQueue.main.async { completion(result) }
+            self.changingListener = false
+            self.runListenerChangeOnQueue()
+        }
     }
 
     /// A cancelled dispatch source closes its descriptor later, on the queue, so a port is free again only
     /// once that has happened: a stop is not finished (a relisten on the same port would find it busy) before it.
-    private func awaitRemoteListenerClosed() {
-        guard let closing = queue.sync(execute: { () -> DispatchSemaphore? in defer { remoteListenerClosing = nil }; return remoteListenerClosing }) else { return }
-        _ = closing.wait(timeout: .now() + 5)
+    /// Calls `body` on the queue once the stopped listener's descriptor is closed (at once when none is pending).
+    /// Every caller waiting on the same listener is called.
+    func whenRemoteListenerClosedOnQueue(_ body: @escaping () -> Void) {
+        if let closing = remoteListenerClosing { closing.waiters.append(body) } else { body() }
+    }
+
+    /// The blocking wait for the same, for `stop` and `stopRemoteListener` (never the main thread). `within` nil waits
+    /// for the close however long it takes; `stop` gives up after its deadline so a host can still exit. Whether it closed.
+    @discardableResult
+    func awaitRemoteListenerClosed(within limit: DispatchTimeInterval?) -> Bool {
+        let closed = DispatchSemaphore(value: 0)
+        queue.sync { whenRemoteListenerClosedOnQueue { closed.signal() } }
+        guard let limit else { closed.wait(); return true }
+        return closed.wait(timeout: .now() + limit) == .success
     }
 
     private func startRemoteListenerOnQueue(port: UInt16) throws -> UInt16 {
@@ -2946,8 +3282,12 @@ public final class SessionServer: @unchecked Sendable {
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.acceptRemotePending(on: fd) }
-        let closed = DispatchSemaphore(value: 0)
-        source.setCancelHandler { close(fd); closed.signal() }
+        let closed = ListenerClose()
+        source.setCancelHandler { [weak self] in
+            close(fd)
+            if self?.remoteListenerClosing === closed { self?.remoteListenerClosing = nil }
+            closed.markClosed()
+        }
         remoteAcceptSource = source
         remoteListenerClosed = closed
         source.activate()
@@ -2957,7 +3297,7 @@ public final class SessionServer: @unchecked Sendable {
         return boundPort
     }
 
-    private func stopRemoteListenerOnQueue() {
+    func stopRemoteListenerOnQueue() {
         for client in Array(clients.values) where client.isRemote && !client.isLocal {
             disconnect(client, reason: "remote listener stopped")
         }
@@ -2976,37 +3316,48 @@ public final class SessionServer: @unchecked Sendable {
     /// client: the remote protocol over a unix socket, offered `local.v1`. Only this user's
     /// processes running this app's own code get past accept (`LocalPeer`), and that is all the proof
     /// they give: the `hello` token is not looked at. Off unless the host entry starts it.
+    /// Blocks on the server queue: for tests, never the main actor (`listenLocal`).
     public func startLocalListener(path: String) throws {
-        try queue.sync {
-            try requireStarted()
-            guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
-            // This Mac's app reads the run log again after each change (`automationsChanged`).
-            runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
-            var addr = try Self.socketAddress(for: path)
-            // Only the workspace's owner binds here, and this server holds the ownership lock: any
-            // socket file left is a dead host's.
-            unlink(path)
-            let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
-            let bound = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-            }
-            guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
-                let err = errno
-                close(fd)
-                unlink(path)
-                throw SessionServerError.system(call: "bind", errno: err)
-            }
-            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
-            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-            source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
-            source.setCancelHandler { close(fd) }
-            localAcceptSource = source
-            localSocketPath = path
-            source.activate()
-            ShepherdLog.info("local listener on \(path)")
+        try queue.sync { try startLocalListenerOnQueue(path: path) }
+    }
+
+    /// `startLocalListener` that suspends instead of waiting: the host's start-up runs on the main actor, and the server
+    /// queue may still hold the remote listener's bind.
+    public func listenLocal(path: String) async throws {
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            queue.async { done.resume(with: Result { try self.startLocalListenerOnQueue(path: path) }) }
         }
+    }
+
+    private func startLocalListenerOnQueue(path: String) throws {
+        try requireStarted()
+        guard localAcceptSource == nil else { throw SessionServerError.conflict("local listener already running") }
+        // This Mac's app reads the run log again after each change (`automationsChanged`).
+        runLog.changed = { [weak self] in self?.sendToLocalApps(.automationsChanged) }
+        var addr = try Self.socketAddress(for: path)
+        // Only the workspace's owner binds here, and this server holds the ownership lock: any
+        // socket file left is a dead host's.
+        unlink(path)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard bound == 0, chmod(path, 0o600) == 0, listen(fd, SOMAXCONN) == 0 else {
+            let err = errno
+            close(fd)
+            unlink(path)
+            throw SessionServerError.system(call: "bind", errno: err)
+        }
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in self?.acceptLocalPending(on: fd) }
+        source.setCancelHandler { close(fd) }
+        localAcceptSource = source
+        localSocketPath = path
+        source.activate()
+        ShepherdLog.info("local listener on \(path)")
     }
 
     /// Drops the app's connections over `host.sock` and keeps listening, as a broken link does
@@ -3079,7 +3430,36 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// What `authorize` decides for one frame of a remote client.
+    private enum RemoteAuthorization {
+        /// Close the connection: a frame that cannot be answered.
+        case close(reason: String)
+        /// Answer with a refusal; `final` closes the connection after it.
+        case refuse(RemoteReply, final: Bool)
+        /// One of the fleet requests answered before `hello`, within its per-connection limit.
+        case serveFleet(RemoteRequest)
+        /// A `hello` of the right protocol version: its token decides.
+        case authenticate(id: Int, token: String, clientName: String, capabilities: [String]?)
+        /// Authorized: the route serves it.
+        case route(RemoteRequest)
+    }
+
     private func handleRemoteLine(_ line: Data, from client: ExtensionConnection) {
+        switch authorize(line, from: client) {
+        case .close(let reason): disconnect(client, reason: reason)
+        case .refuse(let reply, let final): if final { sendFinal(reply, to: client) } else { send(reply, to: client) }
+        case .serveFleet(let request): serveFleet(request, from: client)
+        case .authenticate(let id, let token, let clientName, let capabilities):
+            authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities, client: client)
+        case .route(let request): route(request, line: line, from: client)
+        }
+    }
+
+    /// The one authorization step in front of every remote route: pre-hello rules, then what the
+    /// request's `MessageSpec` row asks (local socket only, a Mac of the fleet, a capability offered
+    /// and negotiated). Checks that read the payload stay in the route. Nothing but the pre-hello
+    /// fleet counter changes here.
+    private func authorize(_ line: Data, from client: ExtensionConnection) -> RemoteAuthorization {
         let request: RemoteRequest
         do {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
@@ -3090,116 +3470,226 @@ public final class SessionServer: @unchecked Sendable {
             // version sends) is refused like any unsupported one once the client has said hello.
             // A frame without an id has no reply to take, so it still closes the connection.
             if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
-                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
-                return
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
             }
-            disconnect(client, reason: "undecodable request before hello")
-            return
+            return .close(reason: "undecodable request before hello")
+        }
+        // A kind with no row is never routed: refused `unsupported` like an unknown kind (`unauthenticated` before hello).
+        guard let spec = MessageSpec.spec(for: request.kind) else {
+            ShepherdLog.warning("remote request kind without a MessageSpec row on fd \(client.fd)")
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                return .refuse(.error(id: id, code: "unsupported", message: "The host does not take this request."), final: false)
+            }
+            return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
         }
 
         guard client.authenticated else {
-            // The two fleet requests answered before `hello`: who is there, and pairing with a code.
-            switch request {
-            case .fleetIdentify(let id), .fleetPair(let id, _, _), .fleetPairDevice(let id, _, _):
+            switch (spec.access, request) {
+            // The fleet requests answered before `hello`: who is there, and pairing with a code.
+            case (.beforeHello, .fleetIdentify(let id)), (.beforeHello, .fleetPair(let id, _, _)), (.beforeHello, .fleetPairDevice(let id, _, _)):
                 client.unauthenticatedFleetRequests += 1
                 guard client.unauthenticatedFleetRequests <= FleetService.unauthenticatedRequestLimit else {
-                    sendFinal(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), to: client)
-                    return
+                    return .refuse(.error(id: id, code: FleetProtocol.Code.busy, message: "Too many requests."), final: true)
                 }
-                serveFleet(request, from: client)
-                return
-            default: break
-            }
-            guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
+                return .serveFleet(request)
+            case (.hello, .hello(let id, let token, let clientName, let protocolVersion, let capabilities)):
+                guard protocolVersion == RemoteProtocol.version else {
+                    return .refuse(.error(
+                        id: id,
+                        code: RemoteProtocol.versionMismatchCode,
+                        message: "host speaks protocol \(RemoteProtocol.version)"
+                    ), final: true)
+                }
+                return .authenticate(id: id, token: token, clientName: clientName, capabilities: capabilities)
+            default:
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
-                sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
-                return
+                return .refuse(.error(id: 0, code: "unauthenticated", message: "hello required"), final: true)
             }
-            guard protocolVersion == RemoteProtocol.version else {
-                sendFinal(.error(
-                    id: id,
-                    code: RemoteProtocol.versionMismatchCode,
-                    message: "host speaks protocol \(RemoteProtocol.version)"
-                ), to: client)
-                return
-            }
-            // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
-            // device's own; the last two never on the local socket. There is no token shared by every client: one
-            // that isn't either is an old client's shared token, or a revoked device's.
-            let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
-            let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
-            guard client.isLocal || peer != nil || device != nil else {
-                ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
-                sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
-                return
-            }
-            // What the other clients are owed goes out first: the new one reads its state from its fetch.
-            flushRemoteState()
-            client.fleetPeerID = peer
-            client.fleetDeviceID = device
-            client.clientName = clientName
-            if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
-            if let device { fleet?.deviceAuthenticated(device, connection: client.fd) }
-            client.authenticated = true
-            client.clientCapabilities = Set(capabilities ?? [])
-            if client.isLocal { localAppsChanged() }
-            send(.helloOk(
-                id: id,
-                protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities(to: client),
-                hostBuild: hostBuild,
-                hostID: fleet?.hostID
-            ), to: client)
-            sendStartProblems(to: client)
-            sendAppProcesses(to: client)
-            if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
-                send(links, to: client)
-            }
-            if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
-            ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
-            return
         }
 
+        // A request that got this far decoded with its `id`.
+        func refuse(_ code: String, _ message: String) -> RemoteAuthorization {
+            .refuse(.error(id: (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id ?? 0, code: code, message: message), final: false)
+        }
+        switch spec.access {
+        case .localOnly(let refusal) where !client.isLocal:
+            return refuse("unsupported", refusal)
+        case .fleetPeer(let refusal) where client.fleetPeerID == nil:
+            return refuse(FleetProtocol.Code.forbidden, refusal)
+        case .notFleetPeer(let refusal) where client.fleetPeerID != nil:
+            return refuse(FleetProtocol.Code.forbidden, refusal)
+        default: break
+        }
+        if let need = spec.requires {
+            let capability = need.capability.rawValue
+            if !offeredCapabilities(to: client).contains(capability) || need.negotiated && !client.clientCapabilities.contains(capability) {
+                return refuse("unsupported", need.message)
+            }
+        }
+        return .route(request)
+    }
+
+    /// Checks a `hello`'s token and opens the connection to its requests.
+    private func authenticate(id: Int, token: String, clientName: String, capabilities: [String]?, client: ExtensionConnection) {
+        // This Mac's app (past `LocalPeer` at accept), a paired Mac's own token (a fleet peer) or a client
+        // device's own; the last two never on the local socket. There is no token shared by every client: one
+        // that isn't either is an old client's shared token, or a revoked device's.
+        let peer = client.isLocal ? nil : fleet?.authenticate(token: token)
+        let device = client.isLocal || peer != nil ? nil : fleet?.authenticateDevice(token: token)
+        guard client.isLocal || peer != nil || device != nil else {
+            ShepherdLog.warning("remote client '\(clientName)' rejected: no token of its own (fd \(client.fd))")
+            sendFinal(.error(id: id, code: RemoteProtocol.sharedTokenRetiredCode, message: RemoteProtocol.sharedTokenRetiredMessage), to: client)
+            return
+        }
+        // What the other clients are owed goes out first: the new one reads its state from its fetch.
+        flushRemoteState()
+        client.fleetPeerID = peer
+        client.fleetDeviceID = device
+        client.clientName = clientName
+        if let peer { fleet?.peerAuthenticated(peer, from: client.peerHost) }
+        if let device {
+            projectMCPDisconnects.removeValue(forKey: device)?.cancel()
+            fleet?.deviceAuthenticated(device, connection: client.fd)
+        }
+        client.authenticated = true
+        client.clientCapabilities = Set(capabilities ?? [])
+        if client.isLocal { localAppsChanged() }
+        send(.helloOk(
+            id: id,
+            protocolVersion: RemoteProtocol.version,
+            capabilities: offeredCapabilities(to: client),
+            hostBuild: hostBuild,
+            hostID: fleet?.hostID
+        ), to: client)
+        sendStartProblems(to: client)
+        sendAppProcesses(to: client)
+        if let links = pullRequestLinksPush, client.isLocal, client.clientCapabilities.contains(RemoteProtocol.localThreadsCapability) {
+            send(links, to: client)
+        }
+        if let peer { fleet?.peerConnected(peer, connection: client.fd, capabilities: client.clientCapabilities) }
+        ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
+    }
+
+    // MARK: - Routed requests (server queue)
+
+    struct RouteInput {
+        let request: RemoteRequest
+        let line: Data
+        let fd: Int32
+
+        // Call on the server queue. The send path checks that the original connection is still current.
+        let send: (RemoteReply) -> Void
+        let offeredCapabilities: () -> [String]
+        let remoteInstructions: (_ id: Int, _ request: RemoteInstructionsRequest) -> Void
+        let remoteSuggestions: (_ id: Int, _ request: RemoteSuggestionsRequest) -> Void
+        let remoteSkills: (_ id: Int, _ request: RemoteSkillsRequest) -> Void
+        let remoteHooks: (_ id: Int, _ request: RemoteHooksRequest) -> Void
+        let remoteApps: (_ id: Int, _ request: RemoteAppsRequest) -> Void
+
+        fileprivate init(request: RemoteRequest, line: Data, fd: Int32, send: @escaping (RemoteReply) -> Void,
+                         offeredCapabilities: @escaping () -> [String],
+                         remoteInstructions: @escaping (Int, RemoteInstructionsRequest) -> Void,
+                         remoteSuggestions: @escaping (Int, RemoteSuggestionsRequest) -> Void,
+                         remoteSkills: @escaping (Int, RemoteSkillsRequest) -> Void,
+                         remoteHooks: @escaping (Int, RemoteHooksRequest) -> Void,
+                         remoteApps: @escaping (Int, RemoteAppsRequest) -> Void) {
+            self.request = request
+            self.line = line
+            self.fd = fd
+            self.send = send
+            self.offeredCapabilities = offeredCapabilities
+            self.remoteInstructions = remoteInstructions
+            self.remoteSuggestions = remoteSuggestions
+            self.remoteSkills = remoteSkills
+            self.remoteHooks = remoteHooks
+            self.remoteApps = remoteApps
+        }
+    }
+
+    typealias Route = @Sendable (SessionServer, RouteInput) -> Void
+
+    // Group by family, one kind per line. Add kinds only under their family anchor here and in the switch.
+    // A duplicate kind traps on first use. Put each family handler beside its code; switch on input.request.
+    // Use a one-line adapter for an existing (id:request:client:) handler instead of rewriting it.
+    static let remoteRoutes: [RemoteRequest.Kind: Route] = [
+        // Host settings
+        .hostSettings: { $0.remoteHostSettings($1) },
+        .hostInventory: { $0.remoteHostSettings($1) },
+        .hostConfig: { $0.remoteHostSettings($1) },
+        // Model catalog
+        .listModels: { $0.remoteListModels($1) },
+        // Push registration
+        // Settings catalogs
+        .instructions: { _, input in switch input.request { case .instructions(let id, let request): input.remoteInstructions(id, request); default: break } },
+        .suggestions: { _, input in switch input.request { case .suggestions(let id, let request): input.remoteSuggestions(id, request); default: break } },
+        .skills: { _, input in switch input.request { case .skills(let id, let request): input.remoteSkills(id, request); default: break } },
+        .hooks: { _, input in switch input.request { case .hooks(let id, let request): input.remoteHooks(id, request); default: break } },
+        .apps: { _, input in switch input.request { case .apps(let id, let request): input.remoteApps(id, request); default: break } },
+        // Add new families above this line.
+    ]
+
+    private func route(_ request: RemoteRequest, line: Data, from client: ExtensionConnection) {
+        #if DEBUG
+        dispatchPrecondition(condition: .onQueue(queue))
+        #endif
+        if let handler = Self.remoteRoutes[request.kind] {
+            let input = RouteInput(request: request, line: line, fd: client.fd,
+                                   send: { [weak self] in self?.send($0, to: client) },
+                                   offeredCapabilities: { [weak self] in self?.offeredCapabilities(to: client) ?? [] },
+                                   remoteInstructions: { [weak self] in self?.remoteInstructions(id: $0, request: $1, client: client) },
+                                   remoteSuggestions: { [weak self] in self?.remoteSuggestions(id: $0, request: $1, client: client) },
+                                   remoteSkills: { [weak self] in self?.remoteSkills(id: $0, request: $1, client: client) },
+                                   remoteHooks: { [weak self] in self?.remoteHooks(id: $0, request: $1, client: client) },
+                                   remoteApps: { [weak self] in self?.remoteApps(id: $0, request: $1, client: client) })
+            handler(self, input)
+            return
+        }
+        func missingRoute() -> Never { preconditionFailure("Missing route for \(request.kind)") }
         switch request {
+        // Route-table kinds share this case. Use leading commas after the first kind.
+        case
+            // Host settings
+            .hostSettings
+            , .hostInventory
+            , .hostConfig
+            // Model catalog
+            , .listModels
+            // Push registration
+            // Settings catalogs
+            , .instructions
+            , .suggestions
+            , .skills
+            , .hooks
+            , .apps
+            // Add new families above this line.
+            : missingRoute()
         case .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
              .fleetPressure, .fleetReadiness, .fleetPressureNow, .fleetCheck, .fleetCheckNow, .fleetRepoManifest, .fleetSnapshotPart, .fleetBlobPush,
              .fleetDispatchCreate, .fleetDispatchControl, .fleetDispatchChanged, .fleetDispatchResult, .fleetRoutes,
              .fleetPairDevice, .fleetSyncDevices:
             serveFleet(request, from: client)
         case .fleetPeerAnswer(let id, let reply):
-            // The answer of a Mac to a call this host sent over the connection it opened: only that Mac's.
-            guard client.fleetPeerID != nil else {
-                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Only a Mac in the fleet answers a call."), to: client)
-                return
-            }
+            // The answer of a Mac to a call this host sent over the connection it opened: `authorize` took it from that Mac only.
             fleet?.peerAnswered(connection: client.fd, id: id, reply: reply)
         case .pushRegistration(let id, let registration):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
-                try pushNotifications.register(registration)
+                try pushNotifications.register(registration, deviceID: client.fleetDeviceID)
                 send(.ok(id: id), to: client)
             } catch {
-                send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
+                send(.error(id: id, code: "push_registration",
+                            message: (error as? PushNotifications.Failure)?.errorDescription ?? "Could not save push registration."), to: client)
             }
         case .pushUnregister(let id, let registrationID):
-            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
-            }
             do {
-                try pushNotifications.unregister(registrationID)
+                try pushNotifications.unregister(registrationID, deviceID: client.fleetDeviceID)
                 send(.ok(id: id), to: client)
             } catch {
-                send(.error(id: id, code: "push_registration", message: "Could not remove push registration."), to: client)
+                send(.error(id: id, code: "push_registration",
+                            message: (error as? PushNotifications.Failure)?.errorDescription ?? "Could not remove push registration."), to: client)
             }
         case .nativeThreadSubscribe(let id, let agentIDs):
             let visible = Set(remoteState(store.state, for: client).agents.map(\.id))
-            guard offeredCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeThreadRevisionsCapability),
-                  agentIDs.count <= 64,
+            guard agentIDs.count <= 64,
                   agentIDs.allSatisfy({ visible.contains($0) && !store.state.isProjectCoordinator($0) }) else {
                 send(.error(id: id, code: "unsupported", message: "Watch at most 64 ordinary threads."), to: client); return
             }
@@ -3207,9 +3697,7 @@ public final class SessionServer: @unchecked Sendable {
             client.revisedThreads.formIntersection(client.watchedThreads)
             send(.ok(id: id), to: client)
         case .fleetDigest(let id, let agentID, let session, let revision):
-            guard offeredCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  client.clientCapabilities.contains(RemoteProtocol.nativeFleetDigestCapability),
-                  remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
+            guard remoteState(store.state, for: client).agents.contains(where: { $0.id == agentID }), !store.state.isProjectCoordinator(agentID) else {
                 send(.error(id: id, code: "unsupported", message: "Fleet digests require an ordinary thread."), to: client); return
             }
             if ContinuousClock.now - client.digestWindow >= .seconds(1) {
@@ -3273,6 +3761,10 @@ public final class SessionServer: @unchecked Sendable {
                     message: "Update the client to use message-free checkpoint recovery. Nothing was resent.")), to: client)
                 return
             }
+            if case .transcriptSnapshot = request, !offeredCapabilities.contains(RemoteProtocol.nativeThreadTranscriptCapability) {
+                send(.error(id: id, code: "unsupported", message: "Update Shepherd on the host to copy the transcript."), to: client)
+                return
+            }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
             dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient,
                                  startupDialogs: client.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability),
@@ -3323,7 +3815,9 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "upload_failed", message: String(describing: error)), to: client)
             }
         case .creationOptions(let id, let spaceID, let cwd, let fetchFirst):
-            guard store.state.spaces.contains(where: { $0.id == spaceID }), let handler = onRemoteCreationOptions else {
+            // An empty space is No space (`createAgentNoSpaceCapability`): the host's defaults, no worktree base.
+            guard spaceID.rawValue.isEmpty || store.state.spaces.contains(where: { $0.id == spaceID }),
+                  let handler = onRemoteCreationOptions else {
                 send(.error(id: id, code: "unavailable", message: "Host creation options unavailable"), to: client)
                 return
             }
@@ -3513,16 +4007,6 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .automation(let id, let automationID, let request):
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
-        case .instructions(let id, let request):
-            remoteInstructions(id: id, request: request, client: client)
-        case .suggestions(let id, let request):
-            remoteSuggestions(id: id, request: request, client: client)
-        case .skills(let id, let request):
-            remoteSkills(id: id, request: request, client: client)
-        case .hooks(let id, let request):
-            remoteHooks(id: id, request: request, client: client)
-        case .apps(let id, let request):
-            remoteApps(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .forge(let id, let request):
@@ -3606,7 +4090,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 if watch { client.watchedExecutions.insert(key) } else { client.watchedExecutions.remove(key) }
             }
-            projectExecutionOnQueue(request) { result in
+            projectExecutionOnQueue(request, replyID: id) { result in
                 guard self.clients[client.fd] === client else { return }
                 switch result {
                 case .success(let value): self.send(.projectExecution(id: id, result: value), to: client)
@@ -3616,10 +4100,6 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .logicalProjects(let id, let request):
-            guard offeredCapabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
-                send(.error(id: id, code: "unsupported", message: "Logical projects are unavailable on this host."), to: client)
-                return
-            }
             guard !request.requiresProjectAutomations || offeredCapabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
                 send(.error(id: id, code: "unsupported", message: "Project automations are unavailable on this host."), to: client)
                 return
@@ -3674,14 +4154,19 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers."), to: client)
                 return
             }
+            guard !request.requiresMCP || client.fleetPeerID == nil else {
+                send(.error(id: id, code: FleetProtocol.Code.forbidden, message: "Use a paired device to manage space MCP sign-in."), to: client)
+                return
+            }
             guard !request.requiresMCP || client.projectMCPRequests.count < 16 else {
                 send(.error(id: id, code: "busy", message: "Too many MCP requests are pending."), to: client)
                 return
             }
             let state = store.state, projects = projects
+            let owner = client.fleetDeviceID ?? client.projectMCPOwner
             let task = Task { [weak self] in
                 let result: Result<RemoteProjectsResult, Error>
-                do { result = .success(try await projects.request(request, state: state, owner: client.projectMCPOwner)) }
+                do { result = .success(try await projects.request(request, state: state, owner: owner)) }
                 catch { result = .failure(error) }
                 self?.queue.async { [weak self] in
                     guard let self, self.clients[client.fd] === client else { return }
@@ -3704,59 +4189,11 @@ public final class SessionServer: @unchecked Sendable {
                 else { self.send(.error(id: id, code: "timeout", message: "Update handler timed out."), to: client) }
             })
             if let refusal { send(.error(id: id, code: refusal.code, message: refusal.message), to: client) }
-        case .hostSettings(let id, let request):
-            guard let handler = onRemoteHostSettings else {
-                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let settings): self.send(.hostSettings(id: id, settings: settings), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "settings_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
-        case .hostInventory(let id, let request):
-            // Read-only, and only the GUI knows: hops as hostSettings does.
-            guard let handler = onRemoteHostInventory else {
-                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let value): self.send(.hostInventory(id: id, result: value), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "inventory_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
-        case .hostConfig(let id, let request):
-            guard let handler = onRemoteHostConfig else {
-                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."), to: client)
-                return
-            }
-            hopToMain { [weak self] in
-                handler(request) { result in
-                    guard let self else { return }
-                    self.queue.async {
-                        guard self.clients[client.fd] === client else { return }
-                        switch result {
-                        case .success(let value): self.send(.hostConfig(id: id, result: value), to: client)
-                        case .failure(let error): self.send(.error(id: id, code: "config_failed", message: error.message), to: client)
-                        }
-                    }
-                }
-            }
         case .stateFetch(let id):
+            if store.recoveryError != nil {
+                send(.error(id: id, code: RemoteProtocol.workspaceRepairRequiredCode, message: "Workspace state.json on this Mac needs repair. Workspace writes are disabled."), to: client)
+                return
+            }
             let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -3798,17 +4235,13 @@ public final class SessionServer: @unchecked Sendable {
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .drain(let id):
-            guard client.isLocal, let handler = onDrainRequest else {
+            guard let handler = onDrainRequest else {
                 send(.error(id: id, code: "unsupported", message: "This host doesn't drain on request."), to: client)
                 return
             }
             send(.ok(id: id), to: client)
             hopToMain { handler() }
         case .hostUpdateGate(let id, let step):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's app installs this host's updates."), to: client)
-                return
-            }
             Task { [weak self, weak client] in
                 guard let self else { return }
                 let refusal: String? = switch step {
@@ -3826,42 +4259,17 @@ public final class SessionServer: @unchecked Sendable {
                     self.send(refusal.map { .error(id: id, code: "refused", message: $0) } ?? .ok(id: id), to: client)
                 }
             }
-        case .listModels(let id):
-            // Asking pi shells out (~0.5s cold); never block the server
-            // queue. Reply from the queue once the catalog returns.
-            let catalog = modelCatalog
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let listing = catalog()
-                self?.queue.async {
-                    guard let self, self.clients[client.fd] === client else { return }
-                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
-                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts, withoutImages: listing.withoutImages), to: client)
-                }
-            }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
         case .focusThread(let id, let agentID, let paneID):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says what it shows."), to: client)
-                return
-            }
             pushNotifications.focused = agentID
             localFocusedPane = paneID
             if let agentID { hopToMain { [weak self] in self?.onThreadFocused?(agentID) } }
             send(.ok(id: id), to: client)
         case .projectExecutors(let id, let update):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app says which Macs it reaches."), to: client)
-                return
-            }
             applyProjectExecutors(update)
             send(.ok(id: id), to: client)
         case .startThread(let id, let thread):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app starts threads this way."), to: client)
-                return
-            }
             var request = RemoteCreateAgentRequest(
                 spaceID: thread.spaceID ?? SpaceID(rawValue: ""), cwd: thread.cwd, model: thread.model, thinking: thread.thinking,
                 initialPrompt: thread.initialPrompt, worktreeBranch: thread.worktreeBranch, worktreeBase: thread.worktreeBase,
@@ -3870,6 +4278,7 @@ public final class SessionServer: @unchecked Sendable {
             request.piSessionID = thread.piSessionID
             request.agentID = thread.agentID
             request.worktreePath = thread.worktreePath
+            request.worktreeBranchExists = thread.worktreeBranchExists == true
             request.standalone = thread.spaceID == nil
             guard !request.standalone || thread.agentID != nil else {
                 send(.error(id: id, code: "invalid", message: "A standalone thread needs its id."), to: client)
@@ -3877,10 +4286,6 @@ public final class SessionServer: @unchecked Sendable {
             }
             remoteCreateAgent(id: id, request: request, client: client)
         case .spaceAction(let id, let spaceID, let action):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
-            }
             let connection = ChangesUnchecked(value: client)
             Task { [weak self] in
                 guard let self else { return }
@@ -3893,11 +4298,26 @@ public final class SessionServer: @unchecked Sendable {
                     else { self.send(.ok(id: id), to: client) }
                 }
             }
-        case .projectRequest(let id, let request):
-            guard client.isLocal else {
-                send(.error(id: id, code: "unsupported", message: "Only this Mac's own app changes its spaces."), to: client)
-                return
+        case .spaceLifecycle(let id, let spaceID, let action):
+            let connection = ChangesUnchecked(value: client)
+            Task { [weak self] in
+                guard let self else { return }
+                let reply: RemoteReply
+                do {
+                    try await self.performSpaceLifecycle(action, on: spaceID)
+                    reply = .ok(id: id)
+                } catch let error as ProjectFileError {
+                    reply = .error(id: id, code: error.code, message: error.description)
+                } catch {
+                    reply = .error(id: id, code: "space_action", message: String(describing: error))
+                }
+                self.queue.async {
+                    let client = connection.value
+                    guard self.clients[client.fd] === client else { return }
+                    self.send(reply, to: client)
+                }
             }
+        case .projectRequest(let id, let request):
             let connection = ChangesUnchecked(value: client)
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -3930,22 +4350,27 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "invalid", message: "A new thread takes up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each, with a prompt."), to: client)
                 return
             }
-            remoteCreateAgent(
-                id: id,
-                request: RemoteCreateAgentRequest(
-                    spaceID: spaceID,
-                    cwd: cwd,
-                    model: model,
-                    thinking: thinking,
-                    initialPrompt: initialPrompt,
-                    worktreeBranch: worktreeBranch,
-                    worktreeBase: worktreeBase,
-                    worktreeFetchFirst: worktreeFetchFirst,
-                    initialImages: images,
-                    serviceTier: serviceTier
-                ),
-                client: client
+            var request = RemoteCreateAgentRequest(
+                spaceID: spaceID,
+                cwd: cwd,
+                model: model,
+                thinking: thinking,
+                initialPrompt: initialPrompt,
+                worktreeBranch: worktreeBranch,
+                worktreeBase: worktreeBase,
+                worktreeFetchFirst: worktreeFetchFirst,
+                initialImages: images,
+                serviceTier: serviceTier
             )
+            // An empty space is No space (`createAgentNoSpaceCapability`): a folder of its own, no checkout to branch.
+            if spaceID.rawValue.isEmpty {
+                guard worktreeBranch == nil else {
+                    send(.error(id: id, code: "invalid", message: "A thread with no space has no repository for a worktree."), to: client)
+                    return
+                }
+                (request.standalone, request.agentID, request.cwd) = (true, AgentID(), nil)
+            }
+            remoteCreateAgent(id: id, request: request, client: client)
         }
     }
 
@@ -4090,7 +4515,7 @@ public final class SessionServer: @unchecked Sendable {
         let timeout = Self.directoryReadTimeout
         let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
         let enumerate = enumerateRemoteDirectory
-        let task = Task.detached(priority: .userInitiated) { [weak self] in
+        let task = Task.detached(executorPreference: BlockingTaskExecutor.shared, priority: .userInitiated) { [weak self] in
             let reply: RemoteReply
             do {
                 reply = try Self.directoryListing(id: id, path: path, deadline: deadline, enumerate: enumerate)
@@ -4180,6 +4605,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         switch request {
         case .runs:
+            // A history that can't be read is an error, never an empty list: the page says why.
+            if let problem = runLog.recheck() { return fail(RemoteAutomationRequest.runHistoryDamagedCode, problem) }
             send(.automationResult(id: id, result: .runs(runLog.runs(for: automationID, in: store.state))), to: client)
             return
         case .markRead(let runID):
@@ -4197,16 +4624,16 @@ public final class SessionServer: @unchecked Sendable {
             guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
             return answer { .status(await triggers.status(of: automation)) }
         case .pause:
-            return answer { await triggers.pause(automationID); return .ok }
+            return answer { try await triggers.pause(automationID); return .ok }
         case .resume:
-            return answer { await triggers.resume(automationID); await triggers.tick(); return .ok }
+            return answer { try await triggers.resume(automationID); await triggers.tick(); return .ok }
         case .dismissEvent(let eventID):
-            return answer { await triggers.dismiss(automationID, eventID: eventID); return .ok }
+            return answer { try await triggers.dismiss(automationID, eventID: eventID); return .ok }
         case .runEvent(let eventID):
             guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
             return answer { try await triggers.runPending(automation, eventID: eventID); return .ok }
         case .setAllPaused(let paused):
-            return answer { await triggers.setAllPaused(paused); return .ok }
+            return answer { try await triggers.setAllPaused(paused); return .ok }
         case .setEnabled(let enabled):
             routed = .update(automationID: automationID, name: nil, prompt: nil, cwd: nil, enabled: enabled)
         case .run:
@@ -4291,7 +4718,7 @@ public final class SessionServer: @unchecked Sendable {
             let snapshot: SuggestionsSnapshot
             switch request {
             case .fetch:
-                snapshot = suggestions.snapshot()
+                snapshot = try suggestions.snapshot()
             case .configure(let settings):
                 snapshot = try suggestions.configure(settings)
             case .add(let suggestionID, let line, let file):
@@ -4312,6 +4739,8 @@ public final class SessionServer: @unchecked Sendable {
             }
             if request != .fetch { announceSuggestions(snapshot) }
             send(.suggestions(id: id, snapshot: snapshot), to: client)
+        } catch SuggestionsStore.StoreError.damaged(let url) {
+            send(.error(id: id, code: "suggestions_unavailable", message: SuggestionsStore.StoreError.damaged(url).description), to: client)
         } catch SuggestionsStore.StoreError.noSuchSuggestion {
             send(.error(id: id, code: "no_such_suggestion", message: SuggestionsStore.StoreError.noSuchSuggestion.description), to: client)
         } catch {
@@ -4329,22 +4758,22 @@ public final class SessionServer: @unchecked Sendable {
         }
         let kind: SuggestionSource.Kind = Self.unattendedAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
         let file = file ?? .agents
-        guard suggestions.snapshot().settings.files(for: kind).contains(file) else {
-            reply(.error(id: id, code: "suggestions_off",
-                         message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
-            return
-        }
-        if let problem = InstructionsText.suggestionProblem(line) {
-            reply(.error(id: id, code: "invalid", message: problem), to: client)
-            return
-        }
         do {
+            guard try suggestions.snapshot().settings.files(for: kind).contains(file) else {
+                reply(.error(id: id, code: "suggestions_off",
+                             message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
+                return
+            }
+            if let problem = InstructionsText.suggestionProblem(line) {
+                reply(.error(id: id, code: "invalid", message: problem), to: client)
+                return
+            }
             let result = try suggestions.suggest(line: line, reason: String(reason.prefix(600)), file: file,
                                                  source: SuggestionSource(kind: kind, name: agent.name))
             if result.outcome == .waiting { announceSuggestions(result.snapshot) }
             reply(.suggestion(id: id, outcome: result.outcome), to: client)
         } catch {
-            reply(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+            reply(.error(id: id, code: "write_failed", message: "Suggested instructions are unavailable. Tell the user to open Settings › Experiments."), to: client)
         }
     }
 
@@ -5385,7 +5814,21 @@ public final class SessionServer: @unchecked Sendable {
         client.projectMCPRequests.removeAll()
         for read in client.directoryReads.values { read.task.cancel() }
         client.directoryReads.removeAll()
-        Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        if let device = client.fleetDeviceID {
+            if isStarted, !clients.values.contains(where: { $0.fleetDeviceID == device }) {
+                let cleanup = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.projectMCPDisconnects[device] = nil
+                    // Do not cancel a new login if a device reconnects while cleanup hops to the actor.
+                    let cutoff = ContinuousClock.now
+                    Task { await self.projects.cancelWaitingMCP(owner: device, startedBefore: cutoff) }
+                }
+                projectMCPDisconnects[device] = cleanup
+                queue.asyncAfter(deadline: .now() + projectMCPDisconnectGrace, execute: cleanup)
+            }
+        } else {
+            Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
+        }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
         if client.isLocal, client.authenticated {
@@ -5447,7 +5890,7 @@ public final class SessionServer: @unchecked Sendable {
         // The fleet tools answer for themselves, ahead of the scope lists below: a thread that may not send work
         // is told `fleet_scope`, whichever kind of thread it is (the lists below refuse them too, as a second wall).
         switch message {
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename, .fleetListDispatches:
             serveFleetTool(message, from: client)
             return
         default: break
@@ -5470,8 +5913,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
-                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+            case .childScope, .spawnAgent, .moveAgent, .renameAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+                 .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -5591,6 +6034,9 @@ public final class SessionServer: @unchecked Sendable {
             // Project membership was refused above. Never turn retained activation identity
             // (also used by publishers and native questions) into helper admission.
             reply(.childScope(id: id, scope: nil, deadline: nil), to: client)
+        case .stopBashProcesses(let agentID, let scope):
+            guard client.childrenAgentID == agentID else { return }
+            enqueueBashSweep(agentID, scope: scope)
         case .helloChildren(let agentID, let projectScopes):
             guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
@@ -5654,9 +6100,9 @@ public final class SessionServer: @unchecked Sendable {
         case .prepareProjectConfiguration(let id, _, _):
             // Spaces need no approval any more; agents started by an older build still ask first.
             reply(.ok(id: id), to: client)
-        case .listAgents(let id, let agentID):
+        case .listAgents(let id, let agentID, let details):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
+            routeAgentPeerRequest(.list(agentID: agentID, details: details), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
@@ -5675,6 +6121,21 @@ public final class SessionServer: @unchecked Sendable {
                 peerDeliveries[deliveryID] = pending
                 dispatchPeerTask(deliveryID)
             }
+        case .renameAgent(let id, let agentID, let targetAgentID, let name):
+            guard !Self.unattendedAgentIDs(in: store.state).contains(agentID) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Automation runs cannot rename threads."), to: client)
+                return
+            }
+            let target = targetAgentID ?? agentID
+            guard !refusesDesignPeer(id: id, sender: agentID, target: target, client: client),
+                  target == agentID || agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
+            renameLiveThread(target, to: name) { [weak self, weak client] result in
+                guard let self, let client else { return }
+                switch result {
+                case .success(let names): self.reply(.agentRenamed(id: id, oldName: names.oldName, newName: names.newName), to: client)
+                case .failure(let error): self.reply(.error(id: id, code: error.code, message: error.description), to: client)
+                }
+            }
         case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
             guard agentID != targetAgentID else {
                 reply(.error(id: id, code: "self_control", message: "An active agent cannot move itself. Ask another thread or move it manually after it finishes."), to: client)
@@ -5687,9 +6148,9 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
-        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+        case .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename, .fleetListDispatches:
             break // Served ahead of the scope lists above (`serveFleetTool`).
-        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking):
+        case .spawnAgent(let id, let agentID, let cwd, let prompt, let model, let thinking, let place, let branch):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
@@ -5706,7 +6167,10 @@ public final class SessionServer: @unchecked Sendable {
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
-            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level), requestID: id, client: client)
+            let pinnedBranch = branch.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt, model: pinnedModel, thinking: level, place: place, branch: pinnedBranch,
+                                         byPerson: spawnByPerson(agentID)),
+                                  requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5781,7 +6245,10 @@ public final class SessionServer: @unchecked Sendable {
         case .designRead(let id, let agentID, let designID, let path):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
-                return .design(id: id, snapshot: try await server.designSnapshot(designID))
+                var snapshot = try await server.designSnapshot(designID)
+                // Thread notes belong to the canvas viewer, not the design agent.
+                snapshot.threadNotesWarning = nil
+                return .design(id: id, snapshot: snapshot)
             }
         case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
@@ -5931,9 +6398,22 @@ public final class SessionServer: @unchecked Sendable {
                                     revision: grant.revision, text: words, createdAt: now)
         let designID = reference.designID
         answerOffQueue(id: id, client: client) { server in
-            let kept = try await server.designs.addThreadNote(designID, note)
-            server.designNotesChanged(designID)
-            return .designNote(id: id, note: kept)
+            do {
+                let kept = try await server.designs.addThreadNote(designID, note)
+                server.designNotesChanged(designID)
+                return .designNote(id: id, note: kept)
+            } catch let error as DesignStoreError {
+                if case .threadNotesUnavailable = error {
+                    // The user can repair the file and retry on this thread without waiting.
+                    await server.enqueueValue {
+                        if let index = server.noteTimes[agentID]?.firstIndex(of: now) {
+                            server.noteTimes[agentID]?.remove(at: index)
+                        }
+                    }
+                }
+                // Recovery details belong on the canvas, not in the implementing agent's tool output.
+                return .error(id: id, code: error.code, message: "Thread notes can't be saved right now. Tell the user to open the design.")
+            }
         }
     }
 
@@ -6311,9 +6791,20 @@ public final class SessionServer: @unchecked Sendable {
         return nil
     }
 
+    /// Whether the turn a thread calls agent_spawn in is one a person started: its latest message came from a client's send. With none
+    /// since its pi started, its opening prompt's: a person's unless another thread, Fleet or an automation started it. Server queue.
+    func spawnByPerson(_ agentID: AgentID) -> Bool {
+        if let known = rpcThread(forAgent: agentID)?.lastInputFromPerson { return known }
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return false }
+        return agent.startedBy == nil && agent.dispatchedFrom == nil && agent.automationOrigin == nil
+            && !Self.unattendedAgentIDs(in: store.state).contains(agentID)
+    }
+
     /// Why a new thread could not be started in `cwd`, or nil.
     private func spawnProblem(sender: AgentID, cwd: String) -> (code: String, message: String)? {
-        guard store.state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        let state = store.state
+        guard state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        if let refusal = FleetDispatch.depthProblem(for: sender, in: state) { return (refusal.code, refusal.message) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: (cwd as NSString).expandingTildeInPath, isDirectory: &isDirectory),
               isDirectory.boolValue else { return ("no_such_directory", "\(cwd) is not a directory") }
@@ -6372,7 +6863,8 @@ public final class SessionServer: @unchecked Sendable {
               thread.session.isAlive, thread.session.id == pending.sessionID else { return }
         pending.dispatched = true
         peerDeliveries[id] = pending
-        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true) { [weak self] result in
+        thread.lastInputFromPerson = false
+        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true, fleetResultID: pending.fleetResultID) { [weak self] result in
             // Refusal stays fenced until exit; successful dispatch or queueing is now tracked.
             if case .accepted = result { self?.peerDeliveries.removeValue(forKey: id) }
         }
@@ -6382,7 +6874,7 @@ public final class SessionServer: @unchecked Sendable {
     /// connection. Returns false when the agent has no live registered
     /// connection (extension not loaded or not yet connected), or dispatch fails.
     /// Success means queued on the socket, not accepted or consumed by pi.
-    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) async -> Bool {
+    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task, fleetResultID: UUID? = nil) async -> Bool {
         await enqueueValue { [self] in
             guard !movingThreads.contains(agentID), peerDeliveries.count < 4096,
                   peerDeliveries.values.filter({ $0.agentID == agentID }).count < 64,
@@ -6398,7 +6890,7 @@ public final class SessionServer: @unchecked Sendable {
             }?.key ?? store.state.agents.first(where: { $0.id == agentID }).flatMap { agent in
                 store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
             }
-            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery)
+            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery, fleetResultID: fleetResultID)
             enqueuePayload(payload, to: client)
             return clients[client.fd] === client
         }
@@ -6801,19 +7293,19 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
-        case .parentInput: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .parentInput, .stopManagedBash: return 0
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
              .paneContent(let id, _, _),
              .reviewResult(let id, _), .appResult(let id, _),
              .automations(let id, _),
-             .agents(let id, _),
-             .fleetHosts(let id, _), .fleetDispatch(let id, _),
+             .agents(let id, _, _),
+             .fleetHosts(let id, _), .fleetDispatch(let id, _), .fleetDispatches(let id, _, _),
              .message(let id, _, _),
              .agentRequest(let id, _, _, _),
-             .agentResult(let id, _),
+             .agentResult(let id, _), .agentRenamed(let id, _, _),
              .suggestion(let id, _),
              .designList(let id, _),
              .design(let id, _),
@@ -6917,6 +7409,16 @@ public final class SessionServer: @unchecked Sendable {
         source.activate()
     }
 
+    /// A thread that serves `running` (what a client's Stop button follows) while its agent's status, which the sidebar shows, says
+    /// it is not working, for longer than a run takes to report its start: logged once, with what holds the run state. This runs only
+    /// when a client asks for a snapshot, so a line proves the host holds the state and its absence proves nothing (a resting client
+    /// asks for none). Any status or run change restarts the count.
+    private func logRunDisagreement(agentID: AgentID, status: AgentStatus, thread: RPCThreadState) {
+        let hostRunning = thread.running || thread.retryDispatch != nil
+        guard thread.runDisagreement.shouldWarn(disagrees: hostRunning && (status == .done || status == .idle)) else { return }
+        ShepherdLog.warning("agent \(agentID): thread serves running (rpc=\(thread.running) retryDispatch=\(thread.retryDispatch != nil) doneHeld=\(thread.doneHeld) piBusy=\(thread.piBusy) settleCapture=\(thread.settleCapture != nil)) but its status is \(status.rawValue) for \(thread.runDisagreement.seconds())s; pi last spoke \(thread.secondsSinceLastEvent)s ago")
+    }
+
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
         let thread = rpcThread(forAgent: agentID)
         let goal = thread?.goal
@@ -6949,6 +7451,7 @@ public final class SessionServer: @unchecked Sendable {
                 hopToMain { [weak self] in self?.onAgentStatus?(agentID, status, failure) }
                 return
             }
+            thread?.runDisagreement.reset()
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
@@ -7080,6 +7583,90 @@ public final class SessionServer: @unchecked Sendable {
             state.agents[index].piSessionID = trimmed
             state.agents[index].nameIsFinal = false
         })
+    }
+
+    /// Same display limit as the namer's /name reports. Line breaks become spaces. Keep joiners
+    /// and emoji flag tags, but drop other control and format characters. Pi validates and saves the name.
+    static func cleanSessionName(_ name: String) -> String {
+        let singleLine = name.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: .newlines).joined(separator: " ")
+        var inFlag = false
+        let printable = String(singleLine.unicodeScalars.filter {
+            if inFlag, (0xE0020...0xE007F).contains($0.value) {
+                inFlag = $0.value != 0xE007F
+                return true
+            }
+            inFlag = $0.value == 0x1F3F4
+            let category = $0.properties.generalCategory
+            return $0.value == 0x200C || $0.value == 0x200D || (category != .control && category != .format)
+        })
+        let trimmed = printable.trimmingCharacters(in: .whitespacesAndNewlines)
+        var units = 0
+        let capped = String(trimmed.prefix { character in
+            units += character.utf16.count
+            return units <= 60
+        }).trimmingCharacters(in: .whitespacesAndNewlines)
+        return capped.unicodeScalars.contains {
+            $0.properties.generalCategory != .format && !$0.properties.isWhitespace
+        } ? capped : ""
+    }
+
+    /// Server queue. A Fleet receiver can use this once it resolves a dispatch to a local thread.
+    func renameLiveThread(_ agentID: AgentID, to name: String,
+                          completion: @escaping (Result<(oldName: String, newName: String), ProjectFileError>) -> Void) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            if let fleet, fleet.dispatch.outbound.values.contains(where: {
+                $0.targetHostID != nil && $0.targetHostID != fleet.hostID && ($0.remoteAgentID == agentID || UUID(uuidString: agentID.rawValue) == $0.id)
+            }) {
+                return completion(.failure(ProjectFileError("other_host", "That thread is on another Mac. Use dispatchID instead if you dispatched it.")))
+            }
+            return completion(.failure(ProjectFileError("no_such_agent", "No thread with that ID exists on this Mac. Only local agent_list IDs are supported.")))
+        }
+        guard store.state.isOrdinaryThread(agent) else {
+            return completion(.failure(ProjectFileError("not_a_thread", "That agent is not an ordinary thread.")))
+        }
+        guard let thread = rpcThread(forAgent: agentID), thread.session.isAlive, thread.isServable else {
+            return completion(.failure(ProjectFileError("not_running", "The thread has no ready Pi process. Start or reconnect it before renaming.")))
+        }
+        guard liveRenames[agentID] == nil else {
+            return completion(.failure(ProjectFileError("rename_pending", "A rename is already in progress for this thread.")))
+        }
+        let pending = LiveRename(session: thread.session.id, generation: thread.generation, name: Self.cleanSessionName(name), finish: completion)
+        liveRenames[agentID] = pending
+        thread.session.request(.setSessionName(pending.name)) { [weak self] result in
+            guard let self, self.liveRenames[agentID] === pending, !pending.observed else { return }
+            self.liveRenames[agentID] = nil
+            if case .success(let response) = result, !response.success, let error = response.error {
+                pending.finish(.failure(ProjectFileError("rename_refused", error)))
+            } else {
+                pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi did not confirm the rename. Check the current thread name before retrying.")))
+            }
+        }
+    }
+
+    /// Only a pending tool rename can override a title here. The namer still reports other
+    /// Pi name changes through setAgentName, which can only replace a provisional title.
+    private func sessionNameChanged(_ name: String, agentID: AgentID, owner: RPCThreadState) {
+        guard !name.isEmpty, let pending = liveRenames[agentID], !pending.observed,
+              pending.session == owner.session.id, pending.generation == owner.generation, pending.name == name,
+              let agent = store.state.agents.first(where: { $0.id == agentID }) else { return }
+        pending.observed = true
+        let generation = owner.generation
+        scheduleStateMutation({ state in
+            guard self.rpcThread(forAgent: agentID) === owner, owner.generation == generation,
+                  let index = state.agents.firstIndex(where: { $0.id == agentID }),
+                  state.isOrdinaryThread(state.agents[index]) else {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            state.agents[index].name = name
+            state.agents[index].nameIsFinal = true
+        }) { result in
+            self.liveRenames[agentID] = nil
+            switch result {
+            case .success: pending.finish(.success((agent.name, name)))
+            case .failure: pending.finish(.failure(ProjectFileError("rename_unconfirmed", "Pi set the name, but Shepherd could not save it.")))
+            }
+        }
     }
 
     /// Apply a namer-proposed title. Provisional names only: a user rename (or
@@ -7528,12 +8115,14 @@ public final class SessionServer: @unchecked Sendable {
     /// sidebar's project tree draws its projects in.
     /// This Mac's own app's change to a space (`RemoteRequest.spaceAction`).
     func performSpaceAction(_ action: RemoteSpaceAction, on spaceID: SpaceID) async throws {
-        func updating(_ change: (inout Space) -> Void) async throws {
-            guard var space = await enqueueValue({ self.store.state.spaces.first { $0.id == spaceID } }) else {
-                throw SessionServerError.noSuchSpace(spaceID)
+        // One queued step, so a change made meanwhile (a rename, Locate Folder…) is not written back over.
+        func updating(_ change: @escaping (inout Space) -> Void) async throws {
+            try await enqueue {
+                guard let index = self.store.state.spaces.firstIndex(where: { $0.id == spaceID }) else {
+                    throw SessionServerError.noSuchSpace(spaceID)
+                }
+                try self.mutateState { change(&$0.spaces[index]) }
             }
-            change(&space)
-            try await updateSpace(space)
         }
         switch action {
         case .rename(let name): _ = try await editProject(spaceID, edit: ProjectEdit(name: name))
@@ -7542,6 +8131,32 @@ public final class SessionServer: @unchecked Sendable {
         case .move(let before): try await moveSpace(spaceID, before: before)
         case .delete: try await deleteSpace(spaceID)
         case .relocate(let path): try await relocateSpaceStoppingThreads(spaceID, to: path)
+        }
+    }
+
+    /// A paired device's rename, Hide from Sidebar, reorder or Remove of a space (`RemoteRequest.spaceLifecycle`), as the
+    /// sidebar's menu does on this Mac. It acts on a space the host shows a device (never a reserved one), and a `move`
+    /// target must be one too. Never touches a folder.
+    func performSpaceLifecycle(_ action: RemoteSpaceLifecycle, on spaceID: SpaceID) async throws {
+        let shown = await enqueueValue { Set(self.store.state.spaces.filter { !$0.hidden }.map(\.id)) }
+        func requireShown(_ id: SpaceID) throws {
+            guard shown.contains(id) else { throw ProjectFileError("no_such_space", "That space isn't on this host.") }
+        }
+        try requireShown(spaceID)
+        switch action {
+        case .rename(let name): try await performSpaceAction(.rename(name: name), on: spaceID)
+        case .setSidebarHidden(let hidden):
+            // Eligibility and the write are one queued step that sets only `sidebarHidden`.
+            try await enqueue {
+                guard let index = self.store.state.spaces.firstIndex(where: { $0.id == spaceID && !$0.hidden }) else {
+                    throw ProjectFileError("no_such_space", "That space isn't on this host.")
+                }
+                try self.mutateState { $0.spaces[index].sidebarHidden = hidden }
+            }
+        case .move(let before):
+            if let before { try requireShown(before) }
+            try await performSpaceAction(.move(before: before), on: spaceID)
+        case .remove: try await performSpaceAction(.delete, on: spaceID)
         }
     }
 
@@ -7955,6 +8570,12 @@ public final class SessionServer: @unchecked Sendable {
         runLog.openRuns
     }
 
+    /// Why the run history can't be read (the file, the reason, how to fix it), or nil. No
+    /// automation starts while it is set.
+    public func automationRunHistoryProblem() async -> String? {
+        await enqueueValue { self.runLog.recheck() }
+    }
+
     /// The runs the host kept for an automation, oldest first; a run's agent only while it exists.
     public func automationRuns(_ automationID: AutomationID) async -> [AutomationRun] {
         await enqueueValue { self.runLog.runs(for: automationID, in: self.store.state) }
@@ -8032,9 +8653,27 @@ public final class SessionServer: @unchecked Sendable {
     /// layout. The GUI never observes the invalid intermediate state where
     /// only one side of that relationship exists.
     public func deleteAgent(_ agentID: AgentID) async throws {
+        let (_, sweep) = try await deleteAgent(agentID, closingDispatch: nil)
+        _ = await sweep?.value
+    }
+
+    private func deleteAgent(_ agentID: AgentID, closingDispatch: UUID?) async throws
+        -> (Set<SessionID>, Task<ThreadProcessSweep.Report, Never>?) {
         try await enqueue {
             guard let agent = self.store.state.agents.first(where: { $0.id == agentID }) else {
                 throw SessionServerError.noSuchAgent(agentID)
+            }
+            if let closingDispatch {
+                let thread = self.rpcThread(forAgent: agentID)
+                // A cancelled pi can retain its last busy flag and queue after being killed.
+                // Keep the normal checks if the person has since restarted the thread.
+                let discardsQueue = self.fleet?.dispatch.inbound[closingDispatch]?.record.state == .cancelled
+                    && thread.map { !$0.session.isAlive || self.startRecords[$0.session.id]?.stop == .requested } == true
+                guard agent.dispatchedFrom?.dispatchID == closingDispatch, agent.movedTo == nil,
+                      discardsQueue || (agent.status != .working && agent.status != .blocked
+                          && thread?.piBusy != true && thread?.items.isEmpty != false) else {
+                    throw FleetDispatchRefusal(code: "not_settled", message: "The thread is active, has queued work, or has moved. It was not closed.")
+                }
             }
             guard let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }) else {
                 throw SessionServerError.noSuchTab(agent.tabID)
@@ -8068,12 +8707,18 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
 
+            var tracked = Set<OwnedProcessTree.Birth>()
             for sessionID in layoutSessions {
                 // A stopped pi's session is already retired; its kept start (and the opening
                 // prompt it holds) goes with the agent.
                 self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
+                if closingDispatch != nil, let session = self.sessions[sessionID] {
+                    if session.isAlive { session.signalProcessGroup(SIGKILL) }
+                    if let rpc = session.thread?.session { tracked.formUnion(rpc.trackedProcessBirths) }
+                }
             }
+            return (layoutSessions, self.sweepThreadProcesses(agentID, tracked: tracked, forget: true))
         }
     }
 
@@ -9316,6 +9961,7 @@ public final class SessionServer: @unchecked Sendable {
         let sessionID: SessionID?
         let text: String
         let delivery: AgentMessageDelivery
+        let fleetResultID: UUID?
         var received = false
         var dispatched = false
     }
@@ -9495,6 +10141,24 @@ public final class SessionServer: @unchecked Sendable {
         return true
     }
 
+    /// Cancel stops pi and its owned descendants, not a person's terminals in the same tab.
+    private func terminateFleetThread(_ id: AgentID) {
+        guard store.state.agents.contains(where: { $0.id == id && $0.dispatchedFrom != nil && $0.movedTo == nil }) else { return }
+        fleet?.dispatch.cancelDispatches(ownedBy: id)
+        if let thread = rpcThread(forAgent: id), let session = sessions[thread.session.id], session.isAlive {
+            let sessionID = thread.session.id
+            startRecords[sessionID]?.requestStop()
+            clearAgentRecovery(sessionID: sessionID)
+            session.thread?.pushRunArmed = false
+            // A pi abort and even SIGTERM can leave tools running. The session owns the
+            // group and captures descendants before signaling; no scan by cwd or name.
+            session.signalProcessGroup(SIGKILL)
+        }
+        _ = sweepThreadProcesses(id)
+        applyAgentQuestion(agentID: id, question: nil)
+        applyAgentStatus(agentID: id, status: .idle)
+    }
+
     /// Stops an agent's pi without retiring its agent (`SessionExit.keepsAgent`).
     public func stopKeepingAgent(sessionID: SessionID) async {
         await enqueueValue {
@@ -9548,7 +10212,14 @@ public final class SessionServer: @unchecked Sendable {
             let session: RPCSession
             writeServiceTierFile(forLaunch: params)
             do {
-                session = try RPCSession(params: params, queue: sessionQueue)
+                let marker = params.env?["SHEPHERD_AGENT_ID"].map { raw in
+                    let agent = AgentID(rawValue: raw)
+                    // A delayed sweep keeps its old markers, never the replacement pi's.
+                    let marker = UUID().uuidString
+                    threadProcessMarkers[agent, default: []].insert(marker)
+                    return marker
+                }
+                session = try RPCSession(params: params, queue: sessionQueue, processMarker: marker)
             } catch {
                 throw PTYSession.SpawnError(message: String(describing: error))
             }
@@ -9588,8 +10259,11 @@ public final class SessionServer: @unchecked Sendable {
             // pi is idle and nothing continues (the run a done was held across has settled, or the
             // queue did not go after all): the agent is done even though its report was held.
             // Stop on a thread cancels the work it sent to other Macs, and nothing wakes it back up.
-            thread.onStopRequested = { [weak serverWeak] in
+            thread.onStopRequested = { [weak serverWeak] explicit in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                if let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) {
+                    server.reply(.stopManagedBash(sweepChildren: explicit ? true : nil), to: children)
+                }
                 server.queue.async { server.fleet?.dispatch.cancelDispatches(ownedBy: agentID) }
             }
             thread.onIdleAfterQueue = { [weak serverWeak] in
@@ -9598,10 +10272,10 @@ public final class SessionServer: @unchecked Sendable {
                 server.applyAgentStatus(agentID: agentID, status: .done)
             }
             // Card actions go to the children extension's control channel, never the parent model.
-            thread.stopProjectChildren = { [weak serverWeak] done in
+            thread.stopProjectChildren = { [weak serverWeak] explicit, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid), let scope = server.currentProjectChildScope[agentID],
                       !server.projectChildStopped.contains(scope) else { done(nil); return }
-                server.commandProjectChildren(scope, action: .stop) { error in
+                server.commandProjectChildren(scope, action: .stop, sweepChildren: explicit ? true : nil) { error in
                     if error == nil { server.projectChildDrained.insert(scope) }
                     done(error)
                 }
@@ -9670,6 +10344,11 @@ public final class SessionServer: @unchecked Sendable {
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread, weak serverWeak] event in
+                if case .sessionInfoChanged(let name) = event {
+                    if let name, let thread, let server = serverWeak, let agentID = server.agentID(forSession: sid) {
+                        server.sessionNameChanged(name, agentID: agentID, owner: thread)
+                    }
+                }
                 thread?.handle(event)
                 if case .messageEnd(let message) = event, message.role == "assistant", message.stopReason == "error",
                    let provider = message.provider, let error = message.errorMessage, let server = serverWeak,
@@ -9992,7 +10671,9 @@ public final class SessionServer: @unchecked Sendable {
     /// first and call `killSessionOnQueue`, so they are unaffected.
     public func killSession(_ sessionID: SessionID) {
         queue.async {
-            if self.agentID(forSession: sessionID) != nil { self.startRecords[sessionID]?.requestStop() }
+            if self.agentID(forSession: sessionID) != nil {
+                self.startRecords[sessionID]?.requestStop()
+            }
             self.killSessionOnQueue(sessionID)
         }
     }
@@ -10152,7 +10833,7 @@ public final class SessionServer: @unchecked Sendable {
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         // An agent's pi keeps its agent for any exit while the agent exists: deleting an agent
         // removes it from state before its pi is killed, so a deletion still retires. A pi no
-        // pane is bound to keeps its agent only for the exits `keepsUnboundAgent` names.
+        // pane is bound to keeps its agent for the exits `keepsUnboundAgent` names.
         if let record = startRecords.removeValue(forKey: sessionID), agent != nil || record.keepsUnboundAgent {
             let thread = sessions[sessionID]?.thread
             let problem = record.problem(exitCode: code, signal: thread?.session.exitSignal)
@@ -10166,6 +10847,7 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
             }
             if let problem, let agent {
+                fleet?.dispatch.agentStopped(agent, problem: problem)
                 recordAgentFailure(agentID: agent, problem.title)
                 sendToLocalApps(.agentStartProblem(agentID: agent, problem: problem))
             }
@@ -10886,8 +11568,12 @@ extension SessionServer {
         changes.agentName = { [weak self] agentID in
             self?.state.agents.first { $0.id == agentID }?.name
         }
-        changes.onTurnsChanged = { [weak self] agentID, turns in
-            self?.queue.async { self?.setTurnChanges(turns, for: agentID) }
+        changes.turnStore.liveAgentIDs = { [weak self] in self?.state.agents.map(\.id) ?? [] }
+        changes.onTurnsChanged = { [weak self] agentID, _ in
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.setTurnChanges(self.changes.turns(agentID: agentID), for: agentID)
+            }
         }
     }
 

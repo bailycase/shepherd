@@ -28,6 +28,8 @@ final class MobileTerminals {
     }
 
     private(set) var panels: [AgentRef: Panel] = [:]
+    /// Tabs asked of a host and not answered yet, which the panel shows ahead of its layout.
+    private(set) var overlays: [AgentRef: TerminalTabOverlay] = [:]
     /// Each thread's last terminal request that failed, for its panel to say so.
     var problems: [AgentRef: String] = [:]
     /// What each thread's terminals run, from its host (`RemoteAgentQuery.terminals`).
@@ -65,6 +67,39 @@ final class MobileTerminals {
 
     func choose(_ tab: TerminalPanelTab, in ref: AgentRef) {
         update(ref) { $0.chosenTab = tab.id }
+    }
+
+    func overlay(_ ref: AgentRef) -> TerminalTabOverlay { overlays[ref] ?? TerminalTabOverlay() }
+
+    @discardableResult
+    private func updateOverlay<T>(_ ref: AgentRef, _ change: (inout TerminalTabOverlay) -> T) -> T {
+        var overlay = overlay(ref)
+        let result = change(&overlay)
+        let stored = overlay.isEmpty ? nil : overlay
+        if overlays[ref] != stored { overlays[ref] = stored }
+        return result
+    }
+
+    /// The terminals of a thread's pushed layout, oldest first, and the thread's pane.
+    static func layout(_ ref: AgentRef, host: MobileHost?) -> (layout: PaneNode, thread: PaneID?)? {
+        guard let host, let agent = host.agent(ref.agent),
+              let tab = host.state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
+        return (tab.layout, agent.paneID)
+    }
+
+    /// The host's layout changed (or a reply came): a placeholder whose pane has arrived is that
+    /// pane, which keeps the selection only if the placeholder had it; a closed tab the layout
+    /// dropped is forgotten.
+    func settle(_ ref: AgentRef, layout: [PaneID]) {
+        guard overlays[ref] != nil else { return }
+        for promotion in updateOverlay(ref, { $0.settle(layout: layout) }) {
+            update(ref) { if $0.chosenTab == promotion.pending { $0.chosenTab = promotion.real } }
+        }
+    }
+
+    private func settle(_ ref: AgentRef, host: MobileHost?) {
+        guard let found = Self.layout(ref, host: host) else { return }
+        settle(ref, layout: TerminalPanel.tabs(in: found.layout, thread: found.thread).map(\.id))
     }
 
     // MARK: Activity
@@ -201,6 +236,7 @@ final class MobileTerminals {
         }
         wired[host] = nil
         for ref in panels.keys where ref.host == host { panels[ref] = nil }
+        for ref in overlays.keys where ref.host == host { overlays[ref] = nil }
         for ref in activity.keys where ref.host == host { activity[ref] = nil }
         for ref in problems.keys where ref.host == host { problems[ref] = nil }
         for key in seen.keys where key.host == host { seen[key] = nil }
@@ -211,25 +247,64 @@ final class MobileTerminals {
     /// + in the tab bar, and the thread's options with no terminal yet: a new terminal under the
     /// thread, which the host makes a tab of its own. The request names the thread, as it always
     /// has: a current host opens a tab whatever it is told, an older one splits it to make one.
-    /// The terminals show the new one once the host has made it; a failure shows their banner.
-    func newTab(_ ref: AgentRef, layout: PaneNode, thread: PaneID?, client: RemoteHostClient) async {
+    /// The tab opens at once, selected and Starting, with no shell to type into; it becomes the
+    /// host's terminal once the layout has it. A failure takes the tab back and shows the banner.
+    func newTab(_ ref: AgentRef, layout: PaneNode, thread: PaneID?, client: RemoteHostClient, host: MobileHost? = nil) async {
         problems[ref] = nil
         let anchor = TerminalPanel.newTabAnchor(in: layout, thread: thread)
+        let cwd = thread.flatMap { layout.leaf(withID: $0)?.cwd } ?? layout.firstLeaf.cwd
+        let before = panel(ref).chosenTab
+        let placeholder = updateOverlay(ref) {
+            $0.beginOpen(layout: TerminalPanel.tabs(in: layout, thread: thread).map(\.id), cwd: cwd, previousChosen: before,
+                         previousFocus: nil)
+        }
+        update(ref) { $0.chosenTab = placeholder }
         do {
             let opened = try await client.openPane(agentID: ref.agent, relativeTo: anchor.pane, axis: anchor.axis)
-            update(ref) { $0.chosenTab = opened }
+            switch updateOverlay(ref, { $0.opened(placeholder, real: opened) }) {
+            case .close(let pane):
+                // Closed while it started: the terminal the host made goes too.
+                await closeOnHost(ref, terminal: pane, client: client, host: host)
+            case .adopted, .unknown:
+                break
+            }
+            settle(ref, host: host)
         } catch {
+            guard let pending = updateOverlay(ref, { $0.openFailed(placeholder) }) else { return }
+            update(ref) { if $0.chosenTab == placeholder { $0.chosenTab = pending.previousChosen } }
             problems[ref] = Self.message(error, doing: "open a terminal")
         }
     }
 
-    /// Closes a terminal on the host, which kills its shell. It refuses the thread's own.
-    func close(_ ref: AgentRef, terminal: PaneID, client: RemoteHostClient) async {
+    /// Closes a terminal on the host, which kills its shell. It refuses the thread's own. The tab
+    /// goes at once; if the host refuses it comes back, selected by nothing it was not before.
+    func close(_ ref: AgentRef, terminal: PaneID, client: RemoteHostClient, host: MobileHost? = nil) async {
+        if overlay(ref).isPending(terminal) {
+            await abandon(ref, placeholder: terminal, client: client, host: host)
+            return
+        }
+        guard updateOverlay(ref, { $0.beginClose(terminal) }) else { return }
+        update(ref) { if $0.chosenTab == terminal { $0.chosenTab = nil } }
+        await closeOnHost(ref, terminal: terminal, client: client, host: host)
+    }
+
+    /// A tab that is still Starting is closed: it goes at once, and the terminal the host makes
+    /// for it is closed when its reply comes.
+    func abandon(_ ref: AgentRef, placeholder: PaneID, client: RemoteHostClient, host: MobileHost? = nil) async {
+        let outcome = updateOverlay(ref) { $0.abandon(placeholder) }
+        update(ref) { if $0.chosenTab == placeholder { $0.chosenTab = nil } }
+        if case .close(let pane) = outcome { await closeOnHost(ref, terminal: pane, client: client, host: host) }
+    }
+
+    private func closeOnHost(_ ref: AgentRef, terminal: PaneID, client: RemoteHostClient, host: MobileHost?) async {
         do {
             try await client.closePane(agentID: ref.agent, paneID: terminal)
+            updateOverlay(ref) { $0.closeConfirmed(terminal) }
         } catch {
+            updateOverlay(ref) { $0.closeFailed(terminal) }
             problems[ref] = Self.message(error, doing: "close the terminal")
         }
+        settle(ref, host: host)
     }
 
     static func message(_ error: Error, doing action: String) -> String {

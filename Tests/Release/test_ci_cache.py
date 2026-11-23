@@ -1,4 +1,5 @@
 """Keep trusted build caches reusable without deleting active work or release artifacts."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import importlib.util
 import json
 import os

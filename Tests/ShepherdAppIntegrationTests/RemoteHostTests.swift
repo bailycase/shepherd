@@ -59,6 +59,7 @@ struct RemoteHostTests {
         let connection = try await remote.connect(local.remoteHosts)
         let refs = agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.agent.id) }
         let hostAgents = { remote.host.server.state.agents.map(\.id) }
+        vm.selectRemoteAgent(hostID: connection.id, agentID: agents[2].agent.id)
         vm.selectRemoteAgent(hostID: connection.id, agentID: agents[0].agent.id)
 
         // Asks: the dialog names the agent and its host, and nothing waits for the sheet.
@@ -83,6 +84,8 @@ struct RemoteHostTests {
         #expect(vm.remoteDeleteTarget == nil && vm.afterDialogDismiss != nil)
         #expect(hostAgents().count == 3, "the delete waits for the sheet to go")
         vm.remoteDeleteDismissed()
+        #expect(vm.selectedRemoteAgent == refs[2])
+        #expect(!vm.sidebarLists.all.contains { $0.id == .remote(refs[0]) })
         try await eventuallyOnMain("the host to delete the agent") { hostAgents() == [agents[1].agent.id, agents[2].agent.id] }
 
         // Deleted elsewhere while its dialog is open: the item goes (the sheet closes) and the dismissal clears the target.
@@ -127,6 +130,10 @@ struct RemoteHostTests {
             #expect(vm.remoteWorktreeSheet == nil)
             try await eventuallyOnMain("the host to delete the agent") { remote.host.server.state.agents.isEmpty }
         } else {
+            if action == .removeWorktree {
+                #expect(!vm.sidebarLists.all.contains { $0.id == .remote(ref) })
+                try await eventuallyOnMain("an uninspectable checkout to require the dialog") { vm.remoteWorktreeSheet == ref }
+            }
             #expect(vm.remoteWorktreeSheet == ref)
             #expect(remote.host.server.state.agents.count == 1)
         }
@@ -437,8 +444,8 @@ struct RemoteHostTests {
         #expect(try second.branches() == ["main"])
     }
 
-    /// A refused token fails the same way every time: the host says why and waits for the
-    /// token to be edited (or Reconnect) instead of retrying it with backoff.
+    /// A token the host does not know (a revoked device's, or the old shared one: the host can't tell them apart) fails the same
+    /// way every time: the host says to pair again and waits for the token to be edited (or Reconnect) instead of retrying it with backoff.
     @Test func aHostThatRefusesTheTokenSaysSoAndWaitsForAnEdit() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
@@ -447,7 +454,7 @@ struct RemoteHostTests {
         local.remoteHosts.addHost(name: "studio", host: "127.0.0.1", port: remote.port, token: "wrong")
         let connection = try #require(local.remoteHosts.connections.last)
 
-        try await eventuallyOnMain("the host's refusal") { connection.phase.failure?.kind == .tokenRefused }
+        try await eventuallyOnMain("the host's refusal") { connection.phase.failure?.kind == .sharedTokenRetired }
         #expect(!connection.retryPending, "a refused token is not retried on its own")
 
         local.remoteHosts.updateHost(id: connection.id, name: "studio", host: "127.0.0.1", port: remote.port, token: remote.token)

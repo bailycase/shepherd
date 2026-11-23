@@ -114,11 +114,9 @@ struct RootView: View {
                         Button("Close") { vm.showComponentGallery = false }
                             .buttonStyle(SHButtonStyle(.secondary)).padding(SH.Space.xl)
                     }
-            } else if vm.showSettings {
-                SettingsView(vm: vm)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .overlay { SettingsOverlay(vm: vm) }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
         .overlay { DesignGitSheetsOverlay(vm: vm) }
@@ -126,6 +124,7 @@ struct RootView: View {
         // Over a design, the palette's chord jumps to a board instead (JumpInContext).
         .overlay { DesignJumpOverlay(vm: vm) }
         .overlay { ImageViewerOverlay(vm: vm) }
+        .overlay { FileViewerOverlay(vm: vm) }
         .overlay { DiagramViewerOverlay(vm: vm) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .shCommandPalette(isPresented: Binding(
@@ -317,7 +316,7 @@ struct WorkspaceHeaderView: View {
                let connection = vm.remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
-                    PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
+                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: Export draws here from this Mac's synced copy.
                     let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
@@ -335,7 +334,7 @@ struct WorkspaceHeaderView: View {
                 } else {
                     let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),
-                                 project: space ?? connection.config.name, title: agent.name,
+                                 project: space ?? connection.config.name, title: vm.presentedThreadName(.remote(remote), hostName: agent.name),
                                  branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
                                  pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil, row: .remote(remote),
@@ -369,7 +368,7 @@ struct WorkspaceHeaderView: View {
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-                threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,
+                threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: vm.presentedThreadName(.local(agent.id), hostName: agent.name),
                              branch: nil, directory: nil,
                              showChanges: { vm.openReview(agentID: agent.id, path: nil) }, rename: { vm.agentRenameTarget = agent.id },
                              pin: vm.offersPin(for: .local(agent.id)) ? .local(agent.id) : nil, row: .local(agent.id),
@@ -409,10 +408,9 @@ struct WorkspaceHeaderView: View {
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
                             pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } },
                             muted: muted, toggleMute: muted == nil ? nil : { vm.togglePushMuted(row) },
-                            move: vm.fleetMoveHeader(for: row), moveWorking: vm.moveSubject(row)?.agent.status == .working || vm.moveSubject(row)?.agent.status == .blocked,
-                            moveTo: { vm.moveThread(row, to: $0, when: $1) },
+                            move: vm.fleetMoveHeader(for: row), moveTo: { vm.requestFleetMove(row, to: $0) },
                             sentBy: fleet?.sentBy, sentByOnline: online,
-                            openSender: fleet?.sentBy?.senderOpens == true ? fleet?.dispatched.map { from in { vm.openSender(of: from) } } : nil,
+                            openSender: fleet?.sender.map { row in { vm.selectSidebarRow(row) } },
                             apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },
                             restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()

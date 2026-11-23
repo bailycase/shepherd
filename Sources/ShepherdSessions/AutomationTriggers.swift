@@ -89,6 +89,10 @@ public actor AutomationTriggers {
         }
     }
 
+    struct Damaged: Error, CustomStringConvertible, Equatable {
+        let description: String
+    }
+
     struct Pending: Codable, Hashable {
         var event: AutomationEvent
         var attempts = 0
@@ -136,6 +140,10 @@ public actor AutomationTriggers {
     private var calendar: Calendar
     private var host: Host?
     private var file = File()
+    /// The last accepted state, without any uncommitted tick changes. Nil if the startup read failed.
+    private var lastGoodFile: File?
+    /// Blocks writes and starts until a tick can recover the file.
+    private var damage: Damaged?
     /// Notes to post once the tick's state is saved.
     private var outbox: [(String, String)] = []
     private var loop: Task<Void, Never>?
@@ -149,13 +157,21 @@ public actor AutomationTriggers {
         self.source = source
         self.clock = clock
         self.calendar = calendar
-        if let data = try? Data(contentsOf: url), let file = try? JSONDecoder().decode(File.self, from: data) {
+        switch PersistedFile<File>.load(from: url) {
+        case .loaded(let file):
             self.file = file
+            lastGoodFile = file
+        case .missing:
+            lastGoodFile = file
+        case .damaged(let original, let error):
+            damage = Self.readDamage(at: url, original: original, error: error)
         }
     }
 
-    public func install(_ host: Host) {
+    public func install(_ host: Host) async {
+        let initialDamage = self.host == nil && damage != nil
         self.host = host
+        if initialDamage { await Self.notifyDamage(to: host) }
     }
 
     /// Starts ticking (the app, once its workspace is adopted). Tests call `tick()` instead.
@@ -177,6 +193,10 @@ public actor AutomationTriggers {
     // MARK: Status and controls
 
     public func status(of automation: Automation) -> AutomationTriggerStatus {
+        if let damage {
+            return AutomationTriggerStatus(state: automation.enabled ? .paused : .off, reason: damage.description,
+                                           allPaused: true, timeZone: calendar.timeZone.identifier, storageDamaged: true)
+        }
         let record = file.records[automation.id.rawValue] ?? Record()
         let now = clock()
         var status = AutomationTriggerStatus(
@@ -213,25 +233,25 @@ public actor AutomationTriggers {
         projectExecution = enabled
     }
 
-    public var allPaused: Bool { file.allPaused }
+    public var allPaused: Bool { damage != nil || file.allPaused }
 
-    public func setAllPaused(_ paused: Bool) {
+    public func setAllPaused(_ paused: Bool) throws {
+        try checkStorage()
         guard file.allPaused != paused else { return }
         file.allPaused = paused
         save()
         host?.changed()
     }
 
-    public func pause(_ id: AutomationID) {
-        update(id) { $0.pausedReason = "" }
+    public func pause(_ id: AutomationID) throws {
+        try update(id) { $0.pausedReason = "" }
     }
 
     /// Resume after a pause or a lasting error: checks again on the next tick, and nothing that
     /// happened while paused fires (a new baseline).
-    public func resume(_ id: AutomationID) {
+    public func resume(_ id: AutomationID) throws {
         let now = clock().timeIntervalSince1970
-        reads = [:]
-        update(id) {
+        try update(id) {
             $0.pausedReason = nil
             $0.failures = 0
             $0.retryAt = nil
@@ -239,14 +259,19 @@ public actor AutomationTriggers {
             $0.lastCheckedAt = nil
             $0.baselineAt = now
         }
+        reads = [:]
     }
 
-    public func dismiss(_ id: AutomationID, eventID: String) {
-        update(id) { $0.pending.removeAll { $0.event.id == eventID } }
+    public func dismiss(_ id: AutomationID, eventID: String) throws {
+        try update(id) { $0.pending.removeAll { $0.event.id == eventID } }
     }
 
     /// Start one pending event's run now, past the daily and concurrent caps (the user asked).
     public func runPending(_ automation: Automation, eventID: String) async throws {
+        try checkStorage()
+        // A start the host will refuse (run history unreadable) must not spend the event or a start.
+        // Checked before reading the record: the actor may interleave a tick at this await.
+        if let host, let held = await host.holdReason(automation) { throw SourceError(held, permanent: false) }
         guard let host, var record = file.records[automation.id.rawValue],
               let index = record.pending.firstIndex(where: { $0.event.id == eventID }) else {
             throw SourceError("That event is no longer pending.", permanent: true)
@@ -268,12 +293,13 @@ public actor AutomationTriggers {
 
     /// The automation was removed: forget its cursors and queue.
     public func forget(_ id: AutomationID) {
-        guard file.records.removeValue(forKey: id.rawValue) != nil else { return }
+        guard (try? checkStorage()) != nil, file.records.removeValue(forKey: id.rawValue) != nil else { return }
         save()
         host?.changed()
     }
 
-    private func update(_ id: AutomationID, _ change: (inout Record) -> Void) {
+    private func update(_ id: AutomationID, _ change: (inout Record) -> Void) throws {
+        try checkStorage()
         var record = file.records[id.rawValue] ?? Record()
         change(&record)
         file.records[id.rawValue] = record
@@ -300,16 +326,57 @@ public actor AutomationTriggers {
 
     private func runTick() async {
         guard let host else { return }
+        if let previousDamage = damage {
+            var reset = false
+            switch PersistedFile<File>.load(from: url) {
+            case .loaded(let restored):
+                file = restored
+            case .missing:
+                if let lastGoodFile {
+                    do {
+                        try write(lastGoodFile)
+                    } catch {
+                        ShepherdLog.error("Couldn't restore automation trigger state at \(url.path): \(error)")
+                        damage = Damaged(description: "Couldn't restore the trigger state file: \(url.path)")
+                        if damage != previousDamage { host.changed() }
+                        return
+                    }
+                    file = lastGoodFile
+                } else {
+                    file = File()
+                    reset = true
+                }
+            case .damaged(let original, let error):
+                damage = Self.readDamage(at: url, original: original, error: error)
+                if damage != previousDamage { host.changed() }
+                return
+            }
+            lastGoodFile = file
+            reads = [:]
+            origins = [:]
+            outbox = []
+            damage = nil
+            ShepherdLog.info("Automation trigger state recovered: \(url.path)")
+            host.changed()
+            if reset {
+                await host.notify("Automation triggers file was reset; Pause all is off.", "Shepherd is using default trigger settings.")
+            }
+        } else if (try? checkStorage()) == nil {
+            return
+        }
         let before = file
         let automations = await host.automations()
+        guard damage == nil else { return }
         let now = clock()
         reads = reads.filter { now.timeIntervalSince($0.value.at) < Self.pollInterval }
         let kept = Set(automations.map(\.id.rawValue))
         file.records = file.records.filter { kept.contains($0.key) }
         for automation in automations where automation.isTriggered {
+            guard damage == nil else { return }
             if automation.projectID != nil && !projectExecution { continue }
             await advance(automation, now: now, host: host)
         }
+        guard (try? checkStorage()) != nil else { return }
         if !sameFile(before, file) {
             save()
             host.changed()
@@ -539,6 +606,7 @@ public actor AutomationTriggers {
         }
         file.records[id] = record
         for group in batch {
+            guard (try? checkStorage()) != nil else { return }
             do {
                 try await host.start(automation, group.map(\.event))
             } catch {
@@ -576,15 +644,108 @@ public actor AutomationTriggers {
         return [trigger, automation.authorGate.rawValue, automation.cwd, automation.enabled ? "on" : "off"].joined(separator: "|")
     }
 
+    private static func readDamage(at url: URL, original: Data?, error: any Error) -> Damaged {
+        ShepherdLog.error("Couldn't read automation trigger state at \(url.path): \(error)")
+        let reason: String
+        if original != nil {
+            reason = "Invalid trigger state JSON"
+        } else if (error as? CocoaError)?.code == .fileReadNoPermission {
+            reason = "Permission denied reading the trigger state file"
+        } else {
+            reason = "Couldn't read the trigger state file"
+        }
+        return Damaged(description: "\(reason): \(url.path)")
+    }
+
+    private static func notifyDamage(to host: Host) async {
+        await host.notify("Automation triggers paused", "Shepherd couldn't read the trigger state file. It will retry automatically.")
+    }
+
+    /// The actor owns the in-memory records. Check the disk before writing or firing in case
+    /// the file became unreadable while the host was running or a tick was suspended.
+    private func checkStorage() throws {
+        if let damage { throw damage }
+        if case .damaged(let original, let error) = PersistedFile<File>.load(from: url) {
+            let problem = Self.readDamage(at: url, original: original, error: error)
+            damage = problem
+            outbox = []
+            if let host {
+                host.changed()
+                Task { await Self.notifyDamage(to: host) }
+            }
+            throw problem
+        }
+    }
+
+    /// Call only after checking storage, with no suspension between the check and this write.
     private func save() {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
+        lastGoodFile = file
         do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(file).write(to: url, options: .atomic)
+            try write(file)
         } catch {
             ShepherdLog.warning("automation triggers not saved: \(error)")
         }
+    }
+
+    private func write(_ file: File) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoder.encode(file).write(to: url, options: .atomic)
+    }
+}
+
+extension AutomationTriggers.File {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeWhenPresent(Int.self, forKey: .version) ?? 1
+        allPaused = try c.decodeWhenPresent(Bool.self, forKey: .allPaused) ?? false
+        records = try c.decodeWhenPresent([String: AutomationTriggers.Record].self, forKey: .records) ?? [:]
+    }
+}
+
+extension AutomationTriggers.Pending {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        event = try c.decode(AutomationEvent.self, forKey: .event)
+        attempts = try c.decodeWhenPresent(Int.self, forKey: .attempts) ?? 0
+        queuedAt = try c.decode(Double.self, forKey: .queuedAt)
+    }
+}
+
+extension AutomationTriggers.Record {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fingerprint = try c.decode(String.self, forKey: .fingerprint)
+        baselineAt = try c.decode(Double.self, forKey: .baselineAt)
+        lastCheckedAt = try c.decodeWhenPresent(Double.self, forKey: .lastCheckedAt)
+        seen = try c.decode([String: Double].self, forKey: .seen)
+        pending = try c.decode([AutomationTriggers.Pending].self, forKey: .pending)
+        nextRunAt = try c.decodeWhenPresent(Double.self, forKey: .nextRunAt)
+        pausedReason = try c.decodeWhenPresent(String.self, forKey: .pausedReason)
+        failures = try c.decode(Int.self, forKey: .failures)
+        retryAt = try c.decodeWhenPresent(Double.self, forKey: .retryAt)
+        retryReason = try c.decodeWhenPresent(String.self, forKey: .retryReason)
+        starts = try c.decode([Double].self, forKey: .starts)
+        capNotifiedDay = try c.decodeWhenPresent(String.self, forKey: .capNotifiedDay)
+        heads = try c.decodeWhenPresent([String: String].self, forKey: .heads) ?? [:]
+        windows = try c.decodeWhenPresent([String: AutomationTriggers.Window].self, forKey: .windows) ?? [:]
+        heldReason = try c.decodeWhenPresent(String.self, forKey: .heldReason)
+    }
+}
+
+extension AutomationTriggers.Window {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        start = try c.decode(Double.self, forKey: .start)
+        end = try c.decodeWhenPresent(Double.self, forKey: .end)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// Older files may omit a field. A present null is not an omitted field.
+    func decodeWhenPresent<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
+        contains(key) ? try decode(type, forKey: key) : nil
     }
 }
 

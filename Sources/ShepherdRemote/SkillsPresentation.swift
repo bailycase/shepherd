@@ -21,15 +21,19 @@ public enum SkillsPresentation {
     }
 
     /// The Source column: the repository, From your pi for a skill copied from the user's own pi,
-    /// or Local for a folder copied in by hand.
-    public static func source(_ skill: InstalledSkill) -> String {
-        skill.source?.repo ?? (skill.copiedFrom != nil ? "From your pi" : "Local")
+    /// or Local for a folder copied in by hand. While the records of where skills came from can't be
+    /// read, a skill with no repository is Source unavailable: it isn't known to be Local.
+    public static func source(_ skill: InstalledSkill, recordsUnavailable: Bool = false) -> String {
+        skill.source?.repo ?? (skill.copiedFrom != nil ? "From your pi" : recordsUnavailable ? "Source unavailable" : "Local")
     }
 
     /// A skill with no repository, in its Source tooltip and its detail: where it came from, and
-    /// that it never updates on its own.
-    public static func unmanagedNote(_ skill: InstalledSkill) -> String {
-        guard let from = skill.copiedFrom else { return "Copied into the skills folder by hand. It never updates." }
+    /// that it never updates on its own (unless the records that would say otherwise can't be read).
+    public static func unmanagedNote(_ skill: InstalledSkill, recordsUnavailable: Bool = false) -> String {
+        guard let from = skill.copiedFrom else {
+            return recordsUnavailable ? "Where this skill came from is kept in skills.json, which can't be read right now."
+                : "Copied into the skills folder by hand. It never updates."
+        }
         return "Copied from your pi (\(tilde(from))). It changes only when you re-import skills in Settings ▸ Pi."
     }
 

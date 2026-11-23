@@ -116,6 +116,11 @@ struct RemoteLayoutDeck: View, Equatable {
                 .equatable()
                 // Nor draw its spinners and glows where no one sees them.
                 .environment(\.shMotionPaused, !model.isVisible)
+                // Nor take the window's drag: a hidden page lays out nothing for it (`ThreadView.eagerCount`).
+                .transformEnvironment(\.liveResizing) { if !model.isVisible { $0 = false } }
+                // Nor run a spring there: a hidden page is laid out again on every frame of one (the
+                // composer's ring letting go of focus as the page is hidden), for no one.
+                .transaction { if !model.isVisible { $0.disablesAnimations = true } }
         }
     }
 
@@ -138,6 +143,12 @@ struct RemoteLayoutDeck: View, Equatable {
         override func hitTest(_ point: NSPoint) -> NSView? {
             let hit = super.hitTest(point)
             return hit === self ? nil : hit
+        }
+
+        /// The drag over, the hidden pages that held their passes back take them, one at a time (`DeckCatchUp`).
+        override func viewDidEndLiveResize() {
+            super.viewDidEndLiveResize()
+            DeckCatchUp.run(pages.values.map(\.host)) { [weak self] in self?.window?.inLiveResize == true }
         }
 
         /// The page on screen alone: VoiceOver never reaches a hidden one.

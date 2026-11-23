@@ -112,14 +112,15 @@ struct AuditViewModelFlowTests {
         defer { app.stop() }
         let (state, _) = fleet(app)
         let vm = try await app.start(with: state)
-        // An agent the server never had: its rename is refused and the optimistic edit reconciles away.
+        // An agent the server never had: its rename is refused, and the name the row showed in the meantime goes with it.
         let ghost = Fixture.agent("ghost", in: state.spaces[0], order: 9)
         vm.state.agents.append(ghost.agent)
         vm.renameAgent(ghost.agent.id, to: "named")
-        await app.settle()
+        #expect(vm.presentedThreadName(.local(ghost.agent.id), hostName: ghost.agent.name) == "named", "shown at once")
+        try await eventuallyOnMain("the refusal to be reported") { vm.actionError != nil }
         #expect(vm.actionError?.title == "Couldn’t rename the agent")
         #expect(vm.actionError?.message.contains("rawValue") == false)
-        #expect(!vm.state.agents.contains { $0.id == ghost.agent.id }, "the server's snapshot wins")
+        #expect(vm.presentedThreadName(.local(ghost.agent.id), hostName: ghost.agent.name) == ghost.agent.name, "the host's name is back")
     }
 
     /// A restored agent's remembered failure shows in its row until this run reports a status.

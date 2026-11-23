@@ -1009,8 +1009,8 @@ struct ListPerformanceTests {
         let screenful = 20
         var asking = thread.snapshot
         asking.revision += 1
-        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
-                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Horizon alone\nDeploy from a clean checkout."])]
+        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Orbit’s uncommitted edits?",
+                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Orbit alone\nDeploy from a clean checkout."])]
         var answered = asking
         answered.revision += 1
         answered.dialogs = []
@@ -2368,7 +2368,8 @@ struct ListPerformanceTests {
             ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }
         #expect(changed["skills.row", default: 0] > 0, "\(changed)")
-        #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
+        // One row, built up to three times as the lazy list lays it out; never the other 199.
+        #expect(changed["skills.row", default: 0] <= 3, "\(changed)")
     }
 
     // MARK: MCP servers
@@ -2397,7 +2398,7 @@ struct ListPerformanceTests {
         let size = CGSize(width: 1200, height: 800)
         var window: OffscreenWindow!
         let opened = ListPerf.counting {
-            window = OffscreenWindow(size: size, dark: true, MCPSettings(vm: vm, store: store))
+            window = OffscreenWindow(size: size, dark: true, ScrollView { MCPSettings(vm: vm, store: store) })
             ListPerf.settle(window)
         }
         defer { window.close() }

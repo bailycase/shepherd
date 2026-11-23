@@ -154,6 +154,35 @@ struct ForgeStoreTests {
         #expect(store.isPinned(ref) && store.sidebar?.needsYou == 3)
     }
 
+    @Test func damagedPinsKeepTheirNoteAndTheNeedsYouCountThroughARefusedChange() async {
+        let ref = ForgeItemRef(kind: .pullRequest, repo: Self.repo, number: 31)
+        let note = "Pinned items can't be read."
+        let store = ForgeStore { request in
+            switch request {
+            case .sidebar: .success(.sidebar(ForgeSidebar(pins: [], needsYou: 3, pinsProblem: note)))
+            case .setPinned: .failure(ForgeError(.failed, note))
+            default: .failure(.ghMissing)
+            }
+        }
+        await store.loadSidebar()
+        #expect(store.sidebar?.pinsProblem == note && store.sidebar?.needsYou == 3)
+        #expect(await store.perform(.setPinned(ref: ref, title: "t", pinned: true)) == false)
+        #expect(store.actionError?.message == note && !store.isPinned(ref))
+        #expect(store.actionTitle == "Couldn't pin", "a file on the host, not GitHub")
+        #expect(await store.perform(.setPinned(ref: ref, title: "t", pinned: false)) == false)
+        #expect(store.actionTitle == "Couldn't unpin")
+        await store.toggleSection(.closed)
+        #expect(store.actionTitle == nil, "another refusal keeps its own title")
+        #expect(store.sidebar?.pinsProblem == note && store.sidebar?.needsYou == 3)
+    }
+
+    @Test func theNoteSitsUnderPinnedWhileItsPinsCantBeRead() {
+        let items = SidebarLists().items(collapsed: [], showsProjects: false, forgePinsProblem: "x")
+        #expect(items == [.header(.pinned, count: 0, collapsed: false), .forgePinsProblem("x")])
+        #expect(SidebarLists().items(collapsed: [.pinned], showsProjects: false, forgePinsProblem: "x") == [.header(.pinned, count: 0, collapsed: true)])
+        #expect(SidebarLists().items(collapsed: [], showsProjects: false).isEmpty)
+    }
+
     @Test func aPinsPreviewSaysWhatItWaitsOn() {
         var pull = Self.pull(31, "Add refund events", checks: .failing)
         pull.reviewDecision = .changesRequested

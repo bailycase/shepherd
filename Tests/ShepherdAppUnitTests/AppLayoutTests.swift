@@ -20,11 +20,11 @@ struct AppLayoutTests {
     func sidebarRowsFollowShepherdDesignAtTheDesignedDensity(rows: SHDensity, height: Double) {
         withDensity(1) {
             #expect(rows.rowHeight == CGFloat(height))
-            #expect(AppLayout.settingsRowMinHeight == 52)
+            #expect(AppLayout.settingsRowMinHeight == 44)
         }
     }
 
-    @Test(arguments: [(0.85, 24.0, 44.0), (1.2, 34.0, 62.0)])
+    @Test(arguments: [(0.85, 24.0, 37.0), (1.2, 34.0, 53.0)])
     func rowHeightsScaleAndRoundToWholePoints(density: Double, row: Double, settings: Double) {
         withDensity(CGFloat(density)) {
             #expect(SHDensity.standard.rowHeight == CGFloat(row))

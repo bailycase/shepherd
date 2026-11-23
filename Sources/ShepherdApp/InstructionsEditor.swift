@@ -56,7 +56,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.drawsBackground = true
         textView.project = project
         textView.plain = plain
-        textView.backgroundColor = NSColor(project ? Color.sh.projectEditorBackground : Color.sh.bgWindow)
+        textView.backgroundColor = NSColor(project ? Color.sh.projectEditorBackground : Color.sh.bgRaised)
         textView.insertionPointColor = NSColor(Color.sh.lantern)
         textView.textContainerInset = NSSize(width: 0, height: project ? AppLayout.projectEditorInset : AppLayout.instructionsEditorInset)
         textView.textContainer?.lineFragmentPadding = 0

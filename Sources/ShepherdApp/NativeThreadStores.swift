@@ -20,10 +20,13 @@ enum ThreadPassWait: Equatable {
 /// Threads off screen are bounded across threads in two tiers, each by recency of showing.
 ///
 /// Loaded history: past the `retainedHistories` most recently shown, or past `historyBudget` bytes in all, the threads
-/// shown longest ago let their history go (`NativeThreadStore.release`) and reload when shown again. The store, its
-/// draft, attachments and deck identity stay. A thread is never released while on screen, selected (`protected`),
-/// pinned by a view showing it or scrolled into its history (`ThreadReaderPins`), or while the store says it holds
-/// unsettled work (`canReleaseHistory`); protected threads may keep the total over budget.
+/// shown longest ago let their older history go and keep its end (`NativeThreadStore.releaseToTail`: the last `tailRows` rows,
+/// at most `tailCap` bytes, with what they were derived from), so showing one draws its last screen, or its eager tail, in its first
+/// frame, before the pull that catches it up has returned. Past `tailBudget` bytes of such tails in all, the ones shown longest ago go whole
+/// (`NativeThreadStore.release`) and reload when shown again. The store, its draft, attachments and deck identity stay. A
+/// thread is never released while on screen, selected (`protected`), pinned by a view showing it or scrolled into its history
+/// (`ThreadReaderPins`), or while the store says it holds unsettled work (`canReleaseHistory`); protected threads may keep the
+/// total over budget.
 ///
 /// Row views: a hidden layout stays mounted and its thread keeps the views of its last rows, which are most of what the
 /// app holds (`NativeThreadStore.mountedCost` estimates them). Past `mountedBudget` bytes of them in all, the least
@@ -46,6 +49,14 @@ final class NativeThreadStores<Key: Hashable> {
     var retainedHistories = 8
     /// Bytes of history (`retainedHistoryBytes`) kept across threads before older ones release it.
     var historyBudget = 96 * 1024 * 1024
+    /// Rows at the end of a thread that a release of its older history keeps (`NativeThreadStore.releaseToTail`): what its eager
+    /// tail can draw, at most.
+    var tailRows = ThreadView.eagerRows
+    /// Bytes (`retainedHistoryBytes`) one such tail holds at most; the last question and its answer stay whatever they hold, and with no
+    /// question the host's newest page of messages.
+    var tailCap = 4 * 1024 * 1024
+    /// Bytes of tails kept across threads before the ones shown longest ago go whole.
+    var tailBudget = 64 * 1024 * 1024
     /// Readers scrolled into a hidden thread's history, shared by every window's views.
     var pins: ThreadReaderPins?
     /// Keys that are never released whatever their recency (the selected thread).
@@ -58,11 +69,25 @@ final class NativeThreadStores<Key: Hashable> {
     var mountedBudget = NativeThreadStores.defaultMountedBudget(physicalMemory: ProcessInfo.processInfo.physicalMemory) {
         didSet { if mountedBudget != oldValue { enforceMountedBudget() } }
     }
+    /// How many rows at the end of `store`'s thread its view builds: the rows it last drew (`NativeThreadStore.drawnEagerRows`), or
+    /// where it has not drawn yet, what the rule gives (`NativeThreadStore.eagerTailRows`) for the default window and every row: the
+    /// view may leave some out (a Project's wake-ups) or be another height, which it corrects when it draws.
+    private func eagerRows(of store: NativeThreadStore) -> Int {
+        min(eagerRows, store.drawnEagerRows ?? store.eagerTailRows(maxRows: eagerRows, costCap: eagerCostCap, coveringHeight: eagerCoverHeight))
+    }
+
+    /// What the views of `store`'s thread hold, as the passes count it (`NativeThreadStore.mountedCost` of the rows its view builds).
+    func mountedCost(of store: NativeThreadStore) -> Int { store.mountedCost(eagerRows: eagerRows(of: store)) }
+
     /// The keys whose threads have a view mounted, hidden or not; nil where no hidden thread has a view to hold rows (a set
     /// of stores nothing mounts), so nothing is released.
     var mounted: (() -> Set<Key>)?
-    /// How many rows at the end of a thread its view builds (`NativeThreadStore.mountedCost`).
+    /// How many rows at the end of a thread its view builds, at most (`NativeThreadStore.mountedCost`).
     var eagerRows = ThreadView.eagerRows
+    /// What the views of those rows may hold before the view builds fewer (`NativeThreadStore.eagerTailRows`).
+    var eagerCostCap = NativeMountedCost.eagerTailCap
+    /// The height of rows a view builds at least, for a thread whose view has not drawn yet (one that has says how many it built).
+    var eagerCoverHeight = AppLayout.eagerTailHeight(cover: AppLayout.eagerCoverHeight(forViewport: AppLayout.windowDefaultHeight))
     /// Readers left scrolled up, most recently shown first, that a pass leaves alone: older ones lose their place once the
     /// budget is over and come back at their tail.
     var keepPinned = 2
@@ -200,12 +225,18 @@ final class NativeThreadStores<Key: Hashable> {
     func enforceHistoryBounds() {
         recent.removeAll { stores[$0] == nil }
         let protected = (protected?() ?? []).union(live).union(recent.suffix(1))
-        let entries = recent.compactMap { key -> HistoryEntry<Key>? in
-            guard let store = stores[key], store.holdsHistory else { return nil }
-            let pinned = protected.contains(key) || pins?.isPinned(store) == true || !store.canReleaseHistory
-            return HistoryEntry(key: key, bytes: store.retainedHistoryBytes, pinned: pinned)
+        /// The threads that hold history, oldest first: whole ones, or the ones that already hold only their tails.
+        func entries(tails: Bool) -> [HistoryEntry<Key>] {
+            recent.compactMap { key -> HistoryEntry<Key>? in
+                guard let store = stores[key], store.holdsHistory, store.keepsOnlyTail == tails else { return nil }
+                let pinned = protected.contains(key) || pins?.isPinned(store) == true || !store.canReleaseHistory
+                return HistoryEntry(key: key, bytes: store.retainedHistoryBytes, pinned: pinned)
+            }
         }
-        for key in Self.evictions(entries, keep: retainedHistories, budget: historyBudget) {
+        for key in Self.evictions(entries(tails: false), keep: retainedHistories, budget: historyBudget) {
+            stores[key]?.releaseToTail(rows: tailRows, maxBytes: tailCap)
+        }
+        for key in Self.evictions(entries(tails: true), keep: .max, budget: tailBudget) {
             stores[key]?.release()
         }
     }
@@ -299,7 +330,7 @@ final class NativeThreadStores<Key: Hashable> {
         var costs: [Key: Int] = [:]
         let entries = (Array(mounted.subtracting(shown)) + shown).compactMap { key -> MountedEntry<Key>? in
             guard !onScreen.contains(key), let store = stores[key] else { return nil }
-            let cost = store.mountedCost(eagerRows: eagerRows)
+            let cost = mountedCost(of: store)
             guard cost > 0 else { return nil }
             costs[key] = cost
             return MountedEntry(key: key, cost: cost, pinned: pins?.isPinned(store) == true, releasable: store.canReleaseTranscript)
@@ -342,18 +373,19 @@ final class NativeThreadStores<Key: Hashable> {
                 more = true
                 break
             }
+            let eager = eagerRows(of: store)
             // A step of everything (`.max`) lets go of the lazy stack with the rows.
-            let first = room < .max && store.releasesLazyStackFirst(eagerRows: eagerRows)
+            let first = room < .max && store.releasesLazyStackFirst(eagerRows: eager)
             if quiet, first, lazy {
                 more = true
                 continue
             }
-            store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true, crossing: quiet)
+            store.releaseTranscript(bytes: room, eagerRows: eager, keepingLastScreen: true, crossing: quiet)
             if quiet, first {
                 lazy = true
-                store.releaseTranscript(bytes: room, eagerRows: eagerRows, keepingLastScreen: true, crossing: true)
+                store.releaseTranscript(bytes: room, eagerRows: eager, keepingLastScreen: true, crossing: true)
             }
-            let gone = (costs[key] ?? 0) - store.mountedCost(eagerRows: eagerRows)
+            let gone = (costs[key] ?? 0) - mountedCost(of: store)
             freed += gone
             if room < .max { room -= gone }
             taken += 1
@@ -455,6 +487,8 @@ final class ThreadReaderPins {
     }
     /// Views showing each store, oldest first; the last started the loop that runs.
     private var runners: [ObjectIdentifier: [Runner]] = [:]
+    /// The stores no view shows, the one left longest ago first, until a view shows one again (`leftRecently`).
+    private var left: [ObjectIdentifier] = []
 
     /// `owner`'s view started the store's loop; `resume` has it run the loop again.
     func started(_ store: NativeThreadStore, owner: UUID, resume: @escaping @MainActor () -> Void) {
@@ -463,6 +497,7 @@ final class ThreadReaderPins {
         list.removeAll { $0.owner == owner }
         list.append(Runner(owner: owner, resume: resume))
         runners[id] = list
+        left.removeAll { $0 == id }
     }
 
     /// `owner`'s loop returned while its view still shows the thread: it was stopped or detached
@@ -481,7 +516,21 @@ final class ThreadReaderPins {
         let handsOver = index == list.count - 1 && !list[index].ended
         list.remove(at: index)
         runners[id] = list.isEmpty ? nil : list
+        if list.isEmpty {
+            left.removeAll { $0 == id }
+            left.append(id)
+            if left.count > Self.leftLimit { left.removeFirst(left.count - Self.leftLimit) }
+        }
         if handsOver, let next = list.last { next.resume() }
+    }
+
+    /// How many left stores are remembered: far more than any caller asks about, so that the list never grows with the threads closed.
+    private static let leftLimit = 64
+
+    /// Whether `store` is among the `count` stores that were left most recently: its last view stopped showing it, and no other has
+    /// since, while fewer than `count` other threads were left after it.
+    func leftRecently(_ store: NativeThreadStore, within count: Int) -> Bool {
+        left.suffix(count).contains(ObjectIdentifier(store))
     }
 
     func pin(_ store: NativeThreadStore, owner: UUID) {

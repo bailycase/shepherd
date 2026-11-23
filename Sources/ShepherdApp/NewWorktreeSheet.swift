@@ -169,3 +169,13 @@ struct NewWorktreeSheet: View {
         }
     }
 }
+
+/// Quiet inline action in a sheet row ("Choose…"): a ghost button.
+struct SheetLinkButton: View {
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(label, action: action).buttonStyle(.sh(.ghost, size: .s))
+    }
+}

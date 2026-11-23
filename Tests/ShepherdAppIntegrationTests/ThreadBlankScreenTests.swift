@@ -47,10 +47,10 @@ struct ThreadBlankScreenTests {
         private(set) var messages: [NativeThreadMessage]
         private var revision: UInt64 = 1
 
-        init(turns: Int, size: CGSize) {
+        init(turns: Int, size: CGSize, messages: [NativeThreadMessage]? = nil) {
             self.size = size
-            messages = ThreadBlankScreenTests.history(turns: turns)
-            host = QueueFixture(ThreadBlankScreenTests.snapshot(messages, revision: 1))
+            self.messages = messages ?? ThreadBlankScreenTests.history(turns: turns)
+            host = QueueFixture(ThreadBlankScreenTests.snapshot(self.messages, revision: 1))
             window = OffscreenWindow(size: size, dark: true)
             window.show(ThreadView(store: store, active: true, isFocused: false, request: { [host] in host.answer($0) },
                                    commandKey: "blank", listModels: { .empty }, retainedTailGuard: tailGuard))
@@ -279,8 +279,8 @@ struct ThreadBlankScreenTests {
     // MARK: Sequences
 
     /// A thread of a long history in a window of `size`, open and drawing its tail, for `body`.
-    static func withRig(size: CGSize, _ body: (Rig) async throws -> Void) async throws {
-        let rig = Rig(turns: 40, size: size)
+    static func withRig(size: CGSize, messages: [NativeThreadMessage]? = nil, _ body: (Rig) async throws -> Void) async throws {
+        let rig = Rig(turns: 40, size: size, messages: messages)
         defer { rig.close() }
         try await rig.open()
         try await body(rig)

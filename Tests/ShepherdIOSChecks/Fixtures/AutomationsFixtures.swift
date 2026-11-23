@@ -32,6 +32,17 @@ extension FixtureCatalog {
             FixtureScreen(name: "automations-list", hosts: fleet, routes: [.home(.automations)], prepare: choose(bump)),
             FixtureScreen(name: "automations-running", hosts: fleet, routes: [.home(.automations)],
                           prepare: choose(AutomationKey(host: FixtureData.studio, automation: AutomationsFixtureData.merge))),
+            FixtureScreen(name: "automations-quiet-budget", hosts: AutomationsFixtureData.budgetFleet(live: false),
+                          routes: [.home(.automations)], setup: ListPerformanceFixture.start, verify: { app in
+                              ListPerformanceFixture.check(rows: AutomationsStore.of(app.hosts).model.quiet.count,
+                                                           expected: 200, probes: "ios.automation.row")
+                          }),
+            FixtureScreen(name: "automations-live-budget", hosts: AutomationsFixtureData.budgetFleet(live: true),
+                          routes: [.home(.automations)], setup: ListPerformanceFixture.start, verify: { app in
+                              // Running cards on iPhone, ordinary list rows on iPad.
+                              ListPerformanceFixture.check(rows: AutomationsStore.of(app.hosts).model.live.count, expected: 200,
+                                                           probes: "ios.automation.runCard", "ios.automation.row")
+                          }),
             FixtureScreen(name: "automation-detail", hosts: fleet,
                           routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump))],
                           prepare: settle),
@@ -87,6 +98,25 @@ enum AutomationsFixtureData {
     static let standup = AutomationID(rawValue: "auto-standup")
     static let loopRun = AgentID(rawValue: "agent-loop-12")
     static let loopDone = AgentID(rawValue: "agent-loop-9")
+
+    static func budgetFleet(live: Bool) -> [FixtureHostData] {
+        let space = HomeFixtureData.hiddenSpace
+        var state = ShepherdState(spaces: [space])
+        for index in 0..<200 {
+            let title = "Verify release check \(index)"
+            let agentID = AgentID(rawValue: "fixture-run-\(index)")
+            if live { state.agents.append(FixtureData.agent(agentID, title, .working, space: space)) }
+            state.automations.append(Automation(id: AutomationID(rawValue: "fixture-auto-\(index)"), name: title,
+                                                prompt: "Run the release checks.", cwd: "/srv/acme-web",
+                                                agentID: live ? agentID : nil))
+        }
+        var host = FixtureHostData(id: FixtureData.studio, name: "Studio", state: state)
+        host.reply = { request in
+            if case .automation(let id, _, .runs) = request { return .automationResult(id: id, result: .runs([])) }
+            return nil
+        }
+        return [host]
+    }
 
     /// Home's fleet with two triggered automations on build-01: pr-loop (GitHub, paused at its
     /// daily limit with two events waiting, one run going, one unread with its PR, one that

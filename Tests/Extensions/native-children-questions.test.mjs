@@ -1,3 +1,4 @@
+import "./hermetic-env.mjs";
 import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children-questions.test.mjs
 // A child never reaches the user: its question goes to its parent, which answers it or asks the user and passes the

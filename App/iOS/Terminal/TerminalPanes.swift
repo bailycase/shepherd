@@ -14,7 +14,12 @@ struct TerminalModel: Equatable {
     let canChangeTerminals: Bool
     let layout: PaneNode?
     let thread: PaneID?
+    /// The tabs as shown: the host's, less the ones closing, plus the ones Starting.
     let tabs: [TerminalPanelTab]
+    /// The terminals the host's layout holds, oldest first: what a tab asked for settles against.
+    let layoutPanes: [PaneID]
+    /// Tabs asked for that the host has not made yet: they have no shell to type into.
+    let startingIDs: Set<PaneID>
     let selected: TerminalPanelTab?
     let panel: MobileTerminals.Panel
     /// The tab strip's items.
@@ -40,14 +45,18 @@ struct TerminalModel: Equatable {
         let tab = agent.flatMap { agent in host?.state.tabs.first { $0.id == agent.tabID } }
         let layout = tab?.layout
         let thread = agent?.paneID
-        let tabs = layout.map { TerminalPanel.tabs(in: $0, thread: thread) } ?? []
+        let overlay = terminals.overlay(ref)
+        let hostTabs = layout.map { TerminalPanel.tabs(in: $0, thread: thread) } ?? []
+        let layoutPanes = hostTabs.map(\.id)
+        let tabs = overlay.tabs(hostTabs)
         let panel = terminals.panel(ref)
-        let selected = TerminalPanel.selected(tabs, chosen: panel.chosenTab)
+        let selected = TerminalPanel.selected(tabs, chosen: overlay.resolved(panel.chosenTab, in: layoutPanes))
         let activity = terminals.activity[ref] ?? [:]
         let items = tabs.map { tab in
             let session = tab.leaf.sessionID.flatMap { terminals.existingSession(host: ref.host, id: $0) }
             let state: SHTerminalTab.Activity
-            if case .exited(let code)? = session?.phase { state = .exited(failed: (code ?? 0) != 0) }
+            if overlay.isPending(tab.id) { state = .starting }
+            else if case .exited(let code)? = session?.phase { state = .exited(failed: (code ?? 0) != 0) }
             else if activity[tab.id]?.isRunning == true { state = .running }
             else if tab.id != selected?.id || !onScreen,
                     tab.leaf.sessionID.map({ terminals.hasUnseen(ref, session: $0) }) == true {
@@ -58,7 +67,8 @@ struct TerminalModel: Equatable {
         }
         return TerminalModel(ref: ref, hostName: host?.name ?? "the host", connected: host?.connectedClient != nil,
                              canChangeTerminals: host?.supports(RemoteProtocol.paneControlCapability) == true,
-                             layout: layout, thread: thread, tabs: tabs, selected: selected, panel: panel, items: items,
+                             layout: layout, thread: thread, tabs: tabs, layoutPanes: layoutPanes,
+                             startingIDs: Set(tabs.map(\.id).filter { overlay.isPending($0) }), selected: selected, panel: panel, items: items,
                              seenMark: TerminalPanel.seenMark(selected: selected, onScreen: onScreen, activity: activity))
     }
 
@@ -77,6 +87,10 @@ struct TerminalModel: Equatable {
     }
 
     func tab(for id: String) -> TerminalPanelTab? { tabs.first { $0.id.rawValue == id } }
+
+    /// The tabs the host has made: the screen closes with the last of these, never with a tab
+    /// that was asked for and refused.
+    var madeTabCount: Int { tabs.filter { !startingIDs.contains($0.id) }.count }
 
     /// What closing `tab` asks: which tab (its place when another has its title) and the shell
     /// that stops.

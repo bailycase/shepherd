@@ -405,7 +405,12 @@ struct WorktreeAgentTests {
         let vm = try await app.start(with: Fixture.state(spaces: [agent.space], agents: [agent]))
         app.settings.worktreeDeleteAction = action
 
-        vm.requestWorktreeDelete(agent.agent.id)
+        vm.selectAgent(agent.agent.id)
+        vm.deleteSelectedAgent()
+        if action != .ask {
+            #expect(vm.shownDestination == .newThread)
+            #expect(!vm.sidebarLists.all.contains { $0.id == .local(agent.agent.id) })
+        }
 
         let server = app.server
         switch (action, dirty) {
@@ -421,6 +426,7 @@ struct WorktreeAgentTests {
         default:
             try await eventuallyOnMain("the dialog to ask") { vm.worktreeDeleteTarget == agent.agent.id }
             #expect(server.state.agents.count == 1 && FileManager.default.fileExists(atPath: sandbox.path(branch)))
+            #expect(vm.sidebarLists.all.contains { $0.id == .local(agent.agent.id) })
         }
     }
 

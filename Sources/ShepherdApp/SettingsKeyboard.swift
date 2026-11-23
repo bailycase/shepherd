@@ -16,7 +16,7 @@ struct KeyboardSettings: View {
     @State private var errorAction: ShortcutAction?
 
     private static let groups: [(title: String, actions: [ShortcutAction])] = [
-        ("Agents", [.newAgent, .newAgentOptions, .newSpace, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette, .quitAndStopAgents]),
+        ("Agents", [.newAgent, .newSpace, .renameAgent, .nextAgent, .previousAgent, .nextNeedingYou, .reviewNext, .deleteAgent, .commandPalette, .quitAndStopAgents]),
         ("Thread", [.stopAgent, .modelPicker, .cycleThinkingLevel, .previousTurn, .nextTurn, .inspectSubagent]),
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Terminal", [.newTerminal, .closeTerminal, .nextTerminal, .previousTerminal,
@@ -26,58 +26,30 @@ struct KeyboardSettings: View {
     ]
 
     var body: some View {
-        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels.") {
+        SettingsPage(title: "Keyboard") {
             ForEach(Self.groups, id: \.title) { group in
-                SettingsGroup(title: group.title) {
+                SettingsGroup(title: group.title,
+                              footnote: group.title == Self.groups.last?.title ? "Click a shortcut to record a new one. Changes apply everywhere at once." : nil,
+                              links: group.title == "Agents" ? [SettingsLink("Reset all") {
+                                  keys.resetAll()
+                                  vm.rebuildSurfaces()
+                                  clearError()
+                              }] : []) {
                     ForEach(group.actions, id: \.self) { action in
                         shortcutRow(action, title: action.sentenceTitle)
                     }
                 }
                 if group.title == "Thread" { whileWorking }
             }
-
-            SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
-                SettingsRow(title: "Select agent 1–9", subtitle: "The first nine in Recents; hold ⌘ to see the numbers.") { SHKeycap(keys: ["⌘", "1–9"]) }
-                ForEach(SidePaneTab.allCases, id: \.self) { tab in
-                    SettingsRow(title: "Side pane: \(tab.title)") { SHKeycap(tab.shortcutDisplay) }
-                }
-                SettingsRow(title: "Settings") { SHKeycap("⌘,") }
-                SettingsRow(title: "Confirm / cancel in sheets") { SHKeycap(keys: ["⏎", "esc"]) }
-            }
-
-            // Under the last group, trailing: disabled while nothing is changed.
-            HStack {
-                Spacer(minLength: 0)
-                Button("Reset all shortcuts") {
-                    keys.resetAll()
-                    vm.rebuildSurfaces()
-                    clearError()
-                }
-                .buttonStyle(.sh(.secondary, size: .s))
-                .disabled(keys.overrides.isEmpty)
-            }
         }
         // A rejected chord's reason discloses under its row.
         .shAnimation(.disclosure, value: errorText)
     }
 
-    /// The keys for sending while pi works and for the queue, as the Queue & steer boards'
-    /// Keyboard card lists them: ↩ queues, the alternate send steers now, and only the alternate
-    /// send can be rebound.
+    /// While pi works: the one key that can be rebound, the alternate send that steers now.
     private var whileWorking: some View {
         SettingsGroup(title: "While the agent is working") {
-            ForEach(WhileWorkingKey.all) { key in
-                switch key {
-                case .send:
-                    SettingsRow(title: key.title) { SHKeycap(keys.sendDisplay) }
-                case .alternateSend:
-                    shortcutRow(.alternateSend, title: key.title)
-                case .fixed(let chord):
-                    SettingsRow(title: key.title) { SHKeycap(keys: chord.keys) }
-                case .steerFocused:
-                    SettingsRow(title: key.title) { SHKeycap(keys.display(.alternateSend)) }
-                }
-            }
+            shortcutRow(.alternateSend, title: "Send and steer now")
         }
     }
 
@@ -151,7 +123,7 @@ private struct ShortcutRecorder: View {
                         .font(.sh(.caption))
                         .foregroundStyle(Color.sh.running)
                         .padding(.horizontal, SH.Space.m)
-                        .frame(minHeight: SHSettingsControlMetrics.keycapHeight)
+                        .frame(minHeight: SH.Height.controlS)
                         .background(Color.sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                         .shBorder(Color.sh.running, radius: SH.Radius.xs)
                 } else {

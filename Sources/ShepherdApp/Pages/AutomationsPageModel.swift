@@ -163,7 +163,7 @@ struct AutomationsPageModel: Equatable {
     /// word the dates (tests fix them).
     static func make(hosts: [AutomationHost], runs: [AutomationKey: [AutomationRun]], selection: AutomationKey?,
                      filter: String, pending: Set<AutomationKey> = [], triggers: [AutomationKey: AutomationTriggerStatus] = [:],
-                     allPaused: Bool = false, now: Date = Date(),
+                     allPaused: Bool = false, runProblems: [AutomationKey: String] = [:], now: Date = Date(),
                      timeZone: TimeZone = .current, locale: Locale = .current) -> AutomationsPageModel {
         let shared = AutomationsModel(hosts: hosts, runs: runs)
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,12 +206,17 @@ struct AutomationsPageModel: Equatable {
         } else if kept.isEmpty {
             model.emptyText = "No automations match “\(query)”."
         }
-        if let selected, let detail = shared.detail(selected, runs: runs[selected], now: now, timeZone: timeZone, locale: locale) {
+        if let selected, var detail = shared.detail(selected, runs: runs[selected], now: now, timeZone: timeZone, locale: locale) {
+            detail.runsProblem = runProblems[selected]
             let host = hosts.first { $0.id == selected.host }
             model.detail = Self.detail(detail, host: host, busy: pending.contains(selected))
             if let automation = saved[selected], let host, automation.isTriggered {
                 model.detail?.addTrigger(automation, host: host, runs: runs[selected], status: triggers[selected],
                                          allPaused: allPaused, now: now, timeZone: timeZone, locale: locale)
+            }
+            // A damaged history outranks a trigger's own banner: nothing starts until it is fixed.
+            if let problem = detail.runsProblem {
+                model.detail?.banner = AutomationsPageBanner(state: .failed, title: "Run history is damaged", message: problem, canResume: false)
             }
         }
         return model
@@ -346,7 +351,9 @@ struct AutomationsPageModel: Equatable {
             AutomationsPageRun(id: run.id, started: run.started, word: run.word, state: state(run.tone),
                                duration: run.duration, thread: run.agent)
         }
-        let note: String? = if !detail.runsKnown {
+        let note: String? = if detail.runsProblem != nil {
+            "Runs can't be read from this host."
+        } else if !detail.runsKnown {
             row.abilities.readOnlyReason == nil ? "Reading runs…" : "Runs aren't available from this host."
         } else if runs.isEmpty {
             "No runs yet."
@@ -359,6 +366,7 @@ struct AutomationsPageModel: Equatable {
             prompt: row.prompt, facts: facts, runs: runs, runsNote: note, live: row.live,
             canRun: row.abilities.run && !busy, canStop: row.abilities.stop && !busy, canEdit: row.abilities.edit && !busy,
             readOnlyReason: row.abilities.readOnlyReason)
+
     }
 }
 
@@ -426,6 +434,11 @@ extension AutomationsPageDetail {
         }
         // A host without triggers sends no status: its automation keeps the facts alone.
         guard let status else { return }
+        if status.storageDamaged == true {
+            banner = AutomationsPageBanner(state: .failed, title: "Trigger state is damaged",
+                                           message: status.reason, canResume: false)
+            return
+        }
         if local, allPaused || status.allPaused {
             banner = AutomationsPageBanner(state: .idle, title: "All triggers are paused",
                                            message: "Nothing starts on its own until you turn off Pause all triggers.", canResume: false)

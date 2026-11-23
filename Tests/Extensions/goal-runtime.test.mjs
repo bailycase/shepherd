@@ -1,4 +1,5 @@
 // The goal controller on the real pinned pi RPC runtime with a loopback fake model only.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

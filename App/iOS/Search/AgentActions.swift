@@ -16,12 +16,42 @@ enum AgentActions {
 
     static func client(_ ref: AgentRef, hosts: MobileHosts) throws -> RemoteHostClient {
         guard let host = hosts.host(ref.host) else { throw Failure("This host was forgotten.") }
-        guard let client = host.connectedClient else { throw Failure("\(host.name) is offline. Try again once it reconnects.") }
+        guard let client = host.connectedClient else { throw offline(host.name) }
         return client
     }
 
-    static func rename(_ ref: AgentRef, to name: String, hosts: MobileHosts) async throws {
-        try await perform(ref, .rename(name: name), hosts: hosts)
+    private static func offline(_ hostName: String) -> Failure {
+        Failure("\(hostName) is offline. Try again once it reconnects.")
+    }
+
+    /// Optimistic: the thread shows `name` at once (`MobileHost.agent`, `threadState`) and the host takes it in the
+    /// background, the latest name last. Throws only when it cannot be tried now (host forgotten or offline); a
+    /// refusal later restores the host's name and goes to `failed`.
+    static func rename(_ ref: AgentRef, to name: String, hosts: MobileHosts, failed: @escaping @MainActor (Failure) -> Void) throws {
+        _ = try client(ref, hosts: hosts)
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let host = hosts.host(ref.host), host.submitRename(ref.agent, to: name) else { return }
+        sendRename(ref, host: host, hosts: hosts, failed: failed)
+    }
+
+    private static func sendRename(_ ref: AgentRef, host: MobileHost, hosts: MobileHosts, failed: @escaping @MainActor (Failure) -> Void) {
+        guard let name = host.beginRename(ref.agent) else { return }
+        sendRename(ref, name: name, host: host, hosts: hosts, failed: failed)
+    }
+
+    private static func sendRename(_ ref: AgentRef, name: String, host: MobileHost, hosts: MobileHosts,
+                                   failed: @escaping @MainActor (Failure) -> Void) {
+        Task { @MainActor in
+            var failure: Failure?
+            do { try await perform(ref, .rename(name: name), hosts: hosts) }
+            catch let error as Failure { failure = error }
+            catch { failure = Failure(String(describing: error)) }
+            switch host.endRename(ref.agent, sent: name, failed: failure != nil) {
+            case .resend(let next): sendRename(ref, name: next, host: host, hosts: hosts, failed: failed)
+            case .reverted: if let failure { failed(failure) }
+            case .settled, .ignored: break
+            }
+        }
     }
 
     /// One place up or down within the agent's group; a move past the last agent is two
@@ -74,7 +104,31 @@ enum AgentActions {
 // The app's half: presenting a failure and the worktree operations. The macOS checks (Tests/ShepherdIOSChecks/run.sh) build
 // the transport above against real TCP hosts without the app's screens.
 #if canImport(UIKit)
+import UIKit
+
 extension AgentActions {
+    /// Like the Mac's menu item, copy the saved conversation only once all its pages arrive.
+    static func copyTranscript(_ ref: AgentRef, hosts: MobileHosts, navigator: MobileNavigator) {
+        run("Couldn’t copy the transcript", navigator: navigator) {
+            let client = try client(ref, hosts: hosts)
+            let host = hosts.host(ref.host)
+            do {
+                let copied = try await ShepherdRemote.ThreadTranscript.copy(fetch: { request in
+                    try await client.nativeThread(agentID: ref.agent, request: request)
+                }, to: { UIPasteboard.general.string = $0 })
+                guard copied else {
+                    let name = host?.agent(ref.agent).map { "“\($0.name)”" } ?? "This thread"
+                    throw Failure("\(name) has no transcript yet. Nothing was copied.")
+                }
+            } catch RemoteHostClientError.disconnected {
+                throw offline(host?.name ?? "The host")
+            } catch RemoteHostClientError.rejected(_, let message) {
+                throw Failure(message)
+            }
+            navigator.present(.search(.problem(title: "Transcript copied", message: "The transcript is on the clipboard.")))
+        }
+    }
+
     /// Runs `action` from a menu or the palette, where nothing is on screen to show an error:
     /// a failure is presented on its own.
     static func run(_ title: String, navigator: MobileNavigator, _ action: @escaping @MainActor () async throws -> Void) {

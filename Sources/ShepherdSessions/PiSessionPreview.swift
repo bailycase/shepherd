@@ -41,6 +41,12 @@ public enum PiSessionPreview {
 
     /// `snapshot(file:sessionID:)` reading windows of these sizes (tests make them small).
     static func snapshot(file: URL, sessionID: String, initialWindow: Int, maxWindow: Int, origins: URL? = nil) -> NativeThreadSnapshot? {
+        snapshot(file: file, sessionID: sessionID, initialWindow: initialWindow, maxWindow: maxWindow,
+                 originStore: origins.map { ThreadOriginStore(directory: $0) })
+    }
+
+    static func snapshot(file: URL, sessionID: String, initialWindow: Int = initialWindow, maxWindow: Int = maxWindow,
+                         originStore: ThreadOriginStore?) -> NativeThreadSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
@@ -76,11 +82,14 @@ public enum PiSessionPreview {
                let level = newestThinkingLevel(in: handle, before: oldest) {
                 settings.thinking = level
             }
-            let sent = origins.map { ThreadOriginStore(directory: $0).load(sessionID: sessionID) } ?? []
+            let originSnapshot = originStore?.loadSession(sessionID: sessionID)
+            let sent = originSnapshot?.entries ?? []
             let references = Dictionary(sent.compactMap { entry in entry.record.references.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
-            let commands = Dictionary(sent.compactMap { entry in entry.record.command.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
-            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references,
-                            commands: commands)
+            let metadata = Dictionary(sent.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
+            var preview = snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references,
+                                   metadata: metadata)
+            preview.originsProblem = originSnapshot?.problem
+            return preview
         }
     }
 
@@ -355,10 +364,13 @@ public enum PiSessionPreview {
     }
 
     private static func snapshot(_ walk: Walk, settings: (model: String?, thinking: String?), sessionID: String, moreBefore: Bool,
-                                 sentReferences: [String: [String]], commands: [String: String] = [:]) -> NativeThreadSnapshot {
+                                 sentReferences: [String: [String]], metadata: [String: ThreadOriginStore.Record]) -> NativeThreadSnapshot {
         var value = base(sessionID: sessionID, model: settings.model, thinking: settings.thinking)
         let history = RPCThreadState.projectHistory(messages(walk.path), sentReferences: sentReferences) { row, message in
-            if message.role == "user" { row.typedCommand = commands[row.entryID] }
+            if message.role == "user" {
+                row.typedCommand = metadata[row.entryID]?.command
+                row.fleetResultID = metadata[row.entryID]?.fleetResultID
+            }
         }
         RPCThreadState.fillPage(&value, from: history, end: history.count, moreBefore: moreBefore)
         return value

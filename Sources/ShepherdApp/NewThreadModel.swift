@@ -6,7 +6,7 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-/// Where a new thread runs. Nil space is a standalone thread on This Mac.
+/// Where a new thread runs. Nil space is a standalone thread (No space) on that host.
 struct NewThreadPlace: Hashable {
     var host: UUID?
     var space: SpaceID?
@@ -21,6 +21,8 @@ enum NewThreadPlaces {
         var id: UUID?
         var name: String
         var spaces: [Space]
+        /// It starts threads with no space: This Mac always, a host with `createAgentNoSpaceCapability`.
+        var takesNoSpace = true
     }
 
     static let thisMac = "This Mac"
@@ -28,9 +30,9 @@ enum NewThreadPlaces {
     /// This Mac's projects, then each connected host's, the chosen one checked.
     static func sections(_ hosts: [Host], chosen: NewThreadPlace?) -> [SHPlaceSection] {
         hosts.map { host in
-            SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.id == nil ? [
-                SHPlaceOption(id: "local/no-space", section: sectionID(nil), title: "No space",
-                              detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: nil, space: nil))
+            SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.takesNoSpace ? [
+                SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: nil)), section: sectionID(host.id), title: "No space",
+                              detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: host.id, space: nil))
             ] : []) + tree(host.spaces).map { space, ancestors in
                 SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
                               title: space.name, detail: NewThreadRules.abbreviatedPath(space.path),
@@ -54,8 +56,11 @@ enum NewThreadPlaces {
     /// The chip's words: the project and its host ("shepherd", "This Mac").
     static func chip(_ hosts: [Host], chosen: NewThreadPlace?) -> (project: String, host: String) {
         if chosen == NewThreadPlace(host: nil, space: nil) { return ("No space", thisMac) }
-        guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }),
-              let space = host.spaces.first(where: { $0.id == chosen.space }) else {
+        guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }) else {
+            return ("Choose a space", hosts.first?.name ?? thisMac)
+        }
+        if chosen.space == nil, host.takesNoSpace { return ("No space", host.name) }
+        guard let space = host.spaces.first(where: { $0.id == chosen.space }) else {
             return ("Choose a space", hosts.first?.name ?? thisMac)
         }
         return (space.name, host.name)
@@ -67,7 +72,9 @@ enum NewThreadPlaces {
         func exists(_ place: NewThreadPlace?) -> NewThreadPlace? {
             guard let place else { return nil }
             if place == NewThreadPlace(host: nil, space: nil) { return place }
-            guard hosts.contains(where: { $0.id == place.host && $0.spaces.contains { $0.id == place.space } }) else { return nil }
+            guard hosts.contains(where: { host in
+                host.id == place.host && (place.space == nil ? host.takesNoSpace : host.spaces.contains { $0.id == place.space })
+            }) else { return nil }
             return place
         }
         if let chosen = exists(chosen) { return chosen }
@@ -88,7 +95,7 @@ enum NewThreadPlaces {
         guard parts.count == 2 else { return nil }
         let host = parts[0] == "local" ? nil : UUID(uuidString: parts[0])
         if parts[0] != "local", host == nil { return nil }
-        if parts[1] == "no-space" { return host == nil ? NewThreadPlace(host: nil, space: nil) : nil }
+        if parts[1] == "no-space" { return NewThreadPlace(host: host, space: nil) }
         return NewThreadPlace(host: host, space: SpaceID(rawValue: parts[1]))
     }
 
@@ -180,7 +187,8 @@ final class NewThreadState {
     static func hosts(_ vm: ShepherdViewModel) -> [NewThreadPlaces.Host] {
         (vm.localHost != nil ? [NewThreadPlaces.Host(id: nil, name: NewThreadPlaces.thisMac, spaces: vm.visibleSpaces)] : [])
             + vm.remoteHosts.connections.filter { $0.phase == .connected }.map {
-                NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden })
+                NewThreadPlaces.Host(id: $0.id, name: $0.config.name, spaces: $0.state.spaces.filter { !$0.hidden },
+                                     takesNoSpace: $0.supportsNoSpace)
             }
     }
 
@@ -188,7 +196,8 @@ final class NewThreadState {
     /// the target's defaults.
     func prepare(for vm: ShepherdViewModel) {
         let recent: NewThreadPlace? = if let remote = vm.selectedRemoteAgent, let agent = vm.remoteAgent(remote) {
-            NewThreadPlace(host: remote.hostID, space: agent.spaceID)
+            NewThreadPlace(host: remote.hostID, space: vm.remoteHosts.allConnections.first { $0.id == remote.hostID }?.state.spaces
+                .first { $0.id == agent.spaceID }?.holdsThreads == true ? nil : agent.spaceID)
         } else {
             vm.selectedSpaceID.map { id in
                 NewThreadPlace(host: nil, space: vm.state.spaces.first { $0.id == id }?.holdsThreads == true ? nil : id)
@@ -389,7 +398,7 @@ final class NewThreadState {
     func offersWorktree(_ vm: ShepherdViewModel) -> Bool {
         guard let place else { return false }
         if let host = place.host {
-            return vm.remoteHosts.allConnections.first { $0.id == host }?.supportsWorktreeCreation == true
+            return place.space != nil && vm.remoteHosts.allConnections.first { $0.id == host }?.supportsWorktreeCreation == true
         }
         return vm.state.spaces.first { $0.id == place.space }.map(vm.spaceIsRepo) ?? false
     }
@@ -421,10 +430,10 @@ final class NewThreadState {
             }
             return
         }
-        let space = place?.space
+        // No space asks for the host's defaults with an empty space id.
+        let space = place?.space ?? SpaceID(rawValue: "")
         Task {
             do {
-                guard let space else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a space first") }
                 let options = try await vm.remoteHosts.creationOptions(hostID: host, spaceID: space, cwd: nil, fetchFirst: nil)
                 guard defaultsRequest == request else { return }
                 if !edited.model { model = options.model ?? "" }
@@ -504,7 +513,8 @@ final class NewThreadState {
         let submittedWorktree = worktree
         let submittedBase = worktreeBase
         let submittedBranch = worktreeBranch
-        let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        // pi runs only a leading command: a skill chip mid-prompt moves to the front, as a thread's composer sends it.
+        let text = ComposerSkillToken.message(submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines))
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinkingLevel(vm)
         let tier = place.host == nil || vm.remoteHosts.allConnections.first(where: { $0.id == place.host })?.supportsCreateAgentServiceTier == true
@@ -514,10 +524,27 @@ final class NewThreadState {
         // Where the thread goes when Fleet is on: another Mac, with the words and nothing else. The local host confirms the Mac at send.
         let picker = place.host == nil ? fleetPicker(vm) : .empty
         let held = place.host == nil && limitHolds(vm)
+        let submittedAttachments = attachments
+        // The draft clears once: as the thread shows on This Mac, else when it started.
+        var cleared = false
+        func clearSent() {
+            guard !cleared else { return }
+            cleared = true
+            if prompt == submittedPrompt { prompt = "" }
+            for id in submittedImages { attachments.remove(id) }
+            let sent = Set(submittedReferences.map(\.id))
+            references.removeAll { sent.contains($0.id) }
+            if worktree == submittedWorktree { useProjectDefaults(vm) }
+            if worktreeBase == submittedBase { worktreeBase = nil }
+            if worktreeBranch == submittedBranch { worktreeBranch = nil }
+        }
+        let threadID = AgentID()
+        // Send takes another draft once the thread shows, and this send's end leaves it alone.
+        var released = false
         starting = true
         error = nil
         Task {
-            defer { starting = false }
+            defer { if !released { starting = false } }
             do {
                 if picker.dispatches || held, let spaceID = place.space {
                     let named: String? = if case .mac(let id)? = wherePick { id.uuidString } else { nil }
@@ -531,7 +558,12 @@ final class NewThreadState {
                     }
                     // The host kept it on this Mac (it had the room, and no limit holds it): it starts here as it always did.
                 }
-                if let host = place.host {
+                if let host = place.host, place.space == nil {
+                    // The host makes the thread's folder as it starts it (`createAgentNoSpaceCapability`).
+                    try await vm.createRemoteAgent(
+                        hostID: host, spaceID: SpaceID(rawValue: ""), cwd: nil, model: chosenModel.isEmpty ? nil : chosenModel,
+                        thinking: level, initialPrompt: text, initialImages: images, serviceTier: tier)
+                } else if let host = place.host {
                     guard let space = vm.remoteHosts.allConnections.first(where: { $0.id == host })?.state.spaces
                         .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That space is gone.") }
                     var base: RemoteCreationOptions?
@@ -544,17 +576,14 @@ final class NewThreadState {
                         worktreeBranch: useWorktree ? NewThreadRules.generatedBranch() : nil,
                         worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images, serviceTier: tier)
                 } else {
-                    let standaloneID = place.space == nil ? AgentID() : nil
                     let spaceID: SpaceID
                     let directory: String
-                    var projectBase: String?
-                    if standaloneID != nil {
+                    if place.space == nil {
                         // The background host makes the thread's folder as it starts it.
                         (spaceID, directory) = (SpaceID(rawValue: ""), "")
                     } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {
                         spaceID = space.id
                         directory = space.path
-                        projectBase = space.worktreeBase
                     } else {
                         throw AgentStartFailure(message: "That space is gone.")
                     }
@@ -564,7 +593,7 @@ final class NewThreadState {
                     var config = NewAgentConfig(spaceID: spaceID, workingDirectory: directory,
                                                 model: chosenModel.isEmpty ? nil : chosenModel, thinking: level,
                                                 initialPrompt: withPieces ? nil : text)
-                    config.reservedAgentID = standaloneID
+                    config.reservedAgentID = threadID
                     if withPieces {
                         config.openingReferencesPending = true
                         config.initialName = NewAgentConfig.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
@@ -573,51 +602,34 @@ final class NewThreadState {
                     }
                     config.serviceTier = tier
                     if useWorktree {
-                        let repo = directory
-                        let picked = submittedBranch
-                        let mode = vm.settings.worktreeBaseMode
-                        let fetch = vm.settings.worktreeFetchBeforeCreate
-                        let chosen = submittedBase
-                        let (path, branch, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String, String) in
-                            // A picked base is the start point as it is; otherwise Settings resolves one.
-                            let start: (point: String?, display: String)
-                            if let chosen {
-                                GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetch)
-                                start = (chosen, chosen)
-                            } else {
-                                let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch, projectBase: projectBase)
-                                start = (resolution.startPoint, resolution.display)
-                            }
-                            switch picked {
-                            case .existing(let name):
-                                let added = try GitWorktree.addExisting(repo: repo, branch: name)
-                                return (added.path, added.branch, start.display)
-                            case .named(let name):
-                                return (try GitWorktree.add(repo: repo, branch: name, from: start.point), name, start.display)
-                            case nil:
-                                let branch = GitWorktree.generatedBranch()
-                                return (try GitWorktree.add(repo: repo, branch: branch, from: start.point), branch, start.display)
-                            }
-                        }.value
-                        config.workingDirectory = path
-                        config.worktreeBranch = branch
-                        config.worktreeBase = base
-                        config.worktreePath = path
+                        // The host makes the checkout (a fetch, then git worktree add) once the thread shows.
+                        switch submittedBranch {
+                        case .existing(let name): (config.worktreeBranch, config.worktreeBranchExists) = (name, true)
+                        case .named(let name): config.worktreeBranch = name
+                        case nil: config.worktreeBranch = GitWorktree.generatedBranch()
+                        }
+                        config.worktreeBase = submittedBase
                     }
-                    let agentID = try await vm.startAgent(config, focusWindow: false)
+                    // The page goes as the thread shows, before its checkout and pi are ready: the draft clears then.
+                    let agentID = try await vm.startAgent(config, focusWindow: false) {
+                        clearSent()
+                        released = true
+                        self.starting = false
+                    }
                     if withPieces { vm.deliverOpeningDesignReferences(submittedReferences, text: text, images: images, to: agentID) }
                 }
-                if prompt == submittedPrompt { prompt = "" }
-                for id in submittedImages { attachments.remove(id) }
-                let sent = Set(submittedReferences.map(\.id))
-                references.removeAll { sent.contains($0.id) }
-                if worktree == submittedWorktree { useProjectDefaults(vm) }
-                if worktreeBase == submittedBase { worktreeBase = nil }
-                if worktreeBranch == submittedBranch { worktreeBranch = nil }
-            } catch RemoteHostClientError.rejected(_, let message) {
-                self.error = message
+                clearSent()
             } catch {
-                self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                if case RemoteHostClientError.rejected(_, let message) = error { self.error = message }
+                else { self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)" }
+                // The thread showed, then failed to start (its checkout couldn't be made) and went: the draft comes back
+                // unless another was started, and so does the page, unless the person went elsewhere.
+                guard cleared else { return }
+                if prompt.isEmpty, attachments.isEmpty, references.isEmpty {
+                    (prompt, attachments, references) = (submittedPrompt, submittedAttachments, submittedReferences)
+                    (worktree, worktreeBase, worktreeBranch) = (submittedWorktree, submittedBase, submittedBranch)
+                }
+                if vm.selectionHistory.last == .local(threadID), vm.destination == nil { vm.openNewThread() }
             }
         }
     }

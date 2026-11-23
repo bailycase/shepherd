@@ -18,9 +18,9 @@ final class RemoteUpdateDriver: SPUStandardUserDriver {
     private(set) var installationHandedOff = false
     private(set) var restartAuthorized = false
 
-    init(status: HostUpdateStatus) {
+    init(status: HostUpdateStatus, delegate: SPUStandardUserDriverDelegate? = nil) {
         self.status = status
-        super.init(hostBundle: .main, delegate: nil)
+        super.init(hostBundle: .main, delegate: delegate)
     }
 
     func begin() {

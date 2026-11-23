@@ -143,7 +143,7 @@ final class FixtureHost: @unchecked Sendable {
 
     private func answer(_ request: RemoteRequest) -> [RemoteReply] {
         switch request {
-        case .logicalProjects, .logicalProjectRuntime:
+        case .logicalProjects, .logicalProjectRuntime, .projects:
             if let reply = data.projectReply?(request) {
                 note(Self.kind(request))
                 return [reply]
@@ -263,7 +263,7 @@ final class FixtureHost: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, _, let command):
             switch command {
-            case .snapshot, .subagentTranscript: return nil
+            case .snapshot, .transcriptSnapshot, .subagentTranscript: return nil
             default:
                 mutation("nativeThread." + Self.kind(command))
                 return [.nativeThread(id: id, result: .failure(code: "fixture", message: refused))]
@@ -274,7 +274,7 @@ final class FixtureHost: @unchecked Sendable {
         case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
              .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _, _, _),
              .agentAction(let id, _, _), .upload(let id, _), .hostUpdate(let id, _),
-             .hostUpdateGate(let id, _), .spaceAction(let id, _, _), .startThread(let id, _), .focusThread(let id, _, _),
+             .hostUpdateGate(let id, _), .spaceAction(let id, _, _), .spaceLifecycle(let id, _, _), .startThread(let id, _), .focusThread(let id, _, _),
              .projectExecutors(let id, _):
             mutation(Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
@@ -358,12 +358,21 @@ final class FixtureHost: @unchecked Sendable {
             if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
             return []
         case .apps(let id, let command):
-            // A thread header's Run and Stop change the host; its list is a read.
-            if case .list = command { return nil }
+            // A thread header's Run and Stop change the host; its list, every run and an app's output are reads.
+            switch command {
+            case .list, .processes, .output: return nil
+            default: break
+            }
             mutation("apps")
             return [.error(id: id, code: "fixture", message: refused)]
-        case .projects(let id, _), .logicalProjectRuntime(let id, _):
-            // Projects are not drawn by any fixture screen: a request is refused rather than served.
+        case .projects(let id, let request):
+            switch request {
+            case .list, .files, .context, .read, .resources, .mcp(_, _, .credentials): return nil
+            default:
+                mutation("projects")
+                return [.error(id: id, code: "fixture", message: refused)]
+            }
+        case .logicalProjectRuntime(let id, _):
             mutation("projects")
             return [.error(id: id, code: "fixture", message: refused)]
         case .forge(let id, let request):

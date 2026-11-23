@@ -5,6 +5,20 @@ import ShepherdRemote
 
 // Home track's settings and hosts screens.
 extension FixtureCatalog {
+    private static let suggestionsDamageMessage = "Couldn't read suggested instructions at /tmp/acme/instructions/suggestions.json on the host. Fix access, restore a backup, or move or delete the file to start fresh. Then refresh Experiments."
+
+    private static func damagedSuggestionsHosts() -> [FixtureHostData] {
+        let message = suggestionsDamageMessage
+        return FixtureData.hosts().prefix(1).map { data in
+            var host = data
+            host.reply = { request in
+                guard case .suggestions(let id, _) = request else { return nil }
+                return .error(id: id, code: "suggestions_unavailable", message: message)
+            }
+            return host
+        }
+    }
+
     static var settings: [FixtureScreen] {
         [
             FixtureScreen(name: "settings", routes: [.settings(.root)], tab: .settings),
@@ -23,12 +37,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "addhost-none", routes: [.settings(.fleet), .settings(.host(nil))], tab: .settings,
                           setup: { FixtureData.pairing(found: [], code: "") }),
             // Each host's own settings (hostSettings.v1).
-            FixtureScreen(name: "settings-defaults", routes: [.settings(.defaults)], tab: .settings),
+            FixtureScreen(name: "settings-models", routes: [.settings(.models)], tab: .settings),
+            FixtureScreen(name: "settings-agents", routes: [.settings(.agents)], tab: .settings),
             FixtureScreen(name: "settings-worktrees", routes: [.settings(.worktrees)], tab: .settings),
             // Its lower half: Deleting, with Close threads when their pull request merges.
             FixtureScreen(name: "settings-worktrees-lower", routes: [.settings(.worktrees)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
-            FixtureScreen(name: "settings-pi", routes: [.settings(.piExtensions)], tab: .settings),
+            FixtureScreen(name: "settings-tools", routes: [.settings(.tools)], tab: .settings),
             // Root instructions, the fleet's (instructions.v1): one copy, no host to pick.
             FixtureScreen(name: "settings-instructions", routes: [.settings(.instructions)], tab: .settings),
             FixtureScreen(name: "settings-instructions-edit", routes: [.settings(.instructions), .settings(.instructionsFile(.agents))],
@@ -41,11 +56,42 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-skill", routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
             FixtureScreen(name: "settings-skills-repo", hosts: FixtureData.skillsRepoHosts(),
                           routes: [.settings(.skills), .settings(.skillsRepo("anthropics/skills"))], tab: .settings),
+            // A host whose skills.json won't read: the banner, with every skill shown without a source.
+            FixtureScreen(name: "settings-skills-damaged", hosts: FixtureData.skillsDamagedHosts(), routes: [.settings(.skills)], tab: .settings),
+            FixtureScreen(name: "settings-skill-damaged", hosts: FixtureData.skillsDamagedHosts(),
+                          routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
             // Suggested instructions on every host (suggestions.v1).
             FixtureScreen(name: "settings-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
+            FixtureScreen(name: "settings-suggestions-damaged", hosts: damagedSuggestionsHosts(),
+                          routes: [.settings(.experiments)], tab: .settings,
+                          prepare: { app in
+                              let store = SettingsStore.of(app.hosts)
+                              Task { await store.suggestions.refresh(store.hosts) }
+                              await FixtureCheck.wait("the host's suggestions warning", seconds: 12) {
+                                  store.suggestions.unavailable.values.contains(suggestionsDamageMessage)
+                              }
+                              FixtureCheck.report("FIXTURE CHECK ok: Experiments received the host's suggestions warning")
+                          }),
             FixtureScreen(name: "settings-suggestion", hosts: FixtureData.suggestingHosts(),
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
+            // Settings search (S5): "model" matches the Models page and its model rows.
+            // Duo uses the compact list; iPad shows the results beside Models, with one row selected.
+            FixtureScreen(name: "settings-search", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in
+                              await HomeFeed.of(app.hosts).refresh()
+                              let selection = app.navigator.settingsSelection
+                              selection.searchQuery = "model"
+                              selection.select(.models, row: "Image reading model")
+                          },
+                          verify: { app in
+                              let hits = SettingsSearch.hits(for: "model", showsHooks: true)
+                              let selection = app.navigator.settingsSelection
+                              let selected = hits.flatMap { page, rows in rows.filter { selection.isSelected(page, row: $0) } }
+                              FixtureCheck.report(selected == ["Image reading model"]
+                                  ? "FIXTURE CHECK ok: settings search selects one matching Models row"
+                                  : "FIXTURE CHECK FAILED: settings search selected \(selected)")
+                          }),
             // The iPad's list beside a page (iPadSettingsInstructions).
             FixtureScreen(name: "settings-pad-instructions", routes: [.settings(.root)], tab: .settings, prepare: { app in
                 app.navigator.settingsSelection.page = .instructions
@@ -54,6 +100,8 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-pad-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .experiments }),
             FixtureScreen(name: "settings-pad-skills", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in app.navigator.settingsSelection.page = .skills }),
+            FixtureScreen(name: "settings-pad-skills-damaged", hosts: FixtureData.skillsDamagedHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in app.navigator.settingsSelection.page = .skills }),
         ]
     }

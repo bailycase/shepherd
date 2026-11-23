@@ -9,6 +9,11 @@
       }
     }
   },
+  "computerUse": {
+    "version": "0.54.0",
+    "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.54.0/cua-driver-rs-0.54.0-darwin-universal-binary.tar.gz",
+    "sha256": "c0ddcf71381ec4b745703694c2cd19812d2938b8a095cbccac994d8d2dc4893d"
+  },
   "pi": {
     "name": "@earendil-works/pi-coding-agent",
     "version": "1.5.1",

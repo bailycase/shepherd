@@ -56,6 +56,17 @@ struct FleetRunGroupTests {
         #expect(loop.rollup == .waiting)
     }
 
+    @Test func aManualAutomationsRunWaitingOnYouIsInNeedsYouNotAutomationRuns() {
+        let idle = F.agent("idle-run", .idle, space: F.hidden), asking = F.agent("ask-run", .blocked, space: F.hidden)
+        let automations = [Automation(id: AutomationID(rawValue: "a1"), name: "Nightly", prompt: "p", cwd: "/src", agentID: idle.id),
+                           Automation(id: AutomationID(rawValue: "a2"), name: "Weekly", prompt: "p", cwd: "/src", agentID: asking.id),
+                           Automation(id: AutomationID(rawValue: "a3"), name: "No run", prompt: "p", cwd: "/src")]
+        let hosts = S.hosts([idle, asking], automations: automations)
+        let groups = S.observed([idle, asking]).groups(FleetModel(hosts: hosts, digests: [:]))
+        #expect(groups.automationRuns.map(\.name) == ["Nightly"])
+        #expect(groups.needsYou.map(\.ref) == [F.ref("ask-run")])
+    }
+
     @Test func groupsStartClosedOpenOnTheirRowAndGoWithTheirHost() {
         let agents = [Self.run("r1", .idle, of: Self.loop)]
         let hosts = S.hosts(agents, automations: Self.automations)

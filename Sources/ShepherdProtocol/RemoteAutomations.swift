@@ -87,7 +87,8 @@ public struct AutomationRun: Codable, Hashable, Sendable, Identifiable {
         trigger = try c.decodeIfPresent(String.self, forKey: .trigger)
         triggerURL = try c.decodeIfPresent(String.self, forKey: .triggerURL)
         pullRequestURL = try c.decodeIfPresent(String.self, forKey: .pullRequestURL)
-        unread = try c.decodeIfPresent(Bool.self, forKey: .unread) ?? false
+        // Older files omit it; a present null is damage, not false.
+        unread = try c.contains(.unread) ? c.decode(Bool.self, forKey: .unread) : false
         failure = try c.decodeIfPresent(String.self, forKey: .failure)
     }
 
@@ -168,6 +169,8 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
     public var state: State
     /// Why it's paused or retrying, in words the user can act on.
     public var reason: String?
+    /// True when the host cannot read trigger state and refuses trigger controls.
+    public var storageDamaged: Bool?
     /// Events waiting for a free slot (oldest first); they expire after a week.
     public var pending: [AutomationEvent]
     /// The schedule's next run (seconds since 1970).
@@ -184,10 +187,11 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
 
     public init(state: State, reason: String? = nil, pending: [AutomationEvent] = [], nextRunAt: Double? = nil,
                 lastCheckedAt: Double? = nil, retryAt: Double? = nil, runsToday: Int = 0, allPaused: Bool = false,
-                timeZone: String? = nil) {
+                timeZone: String? = nil, storageDamaged: Bool? = nil) {
         self.timeZone = timeZone
         self.state = state
         self.reason = reason
+        self.storageDamaged = storageDamaged
         self.pending = pending
         self.nextRunAt = nextRunAt
         self.lastCheckedAt = lastCheckedAt
@@ -196,12 +200,13 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
         self.allPaused = allPaused
     }
 
-    private enum CodingKeys: String, CodingKey { case state, reason, pending, nextRunAt, lastCheckedAt, retryAt, runsToday, allPaused, timeZone }
+    private enum CodingKeys: String, CodingKey { case state, reason, storageDamaged, pending, nextRunAt, lastCheckedAt, retryAt, runsToday, allPaused, timeZone }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         state = try c.decode(State.self, forKey: .state)
         reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        storageDamaged = try c.decodeIfPresent(Bool.self, forKey: .storageDamaged)
         pending = try c.decodeIfPresent([AutomationEvent].self, forKey: .pending) ?? []
         nextRunAt = try c.decodeIfPresent(Double.self, forKey: .nextRunAt)
         lastCheckedAt = try c.decodeIfPresent(Double.self, forKey: .lastCheckedAt)
@@ -210,6 +215,12 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
         allPaused = try c.decodeIfPresent(Bool.self, forKey: .allPaused) ?? false
         timeZone = try c.decodeIfPresent(String.self, forKey: .timeZone)
     }
+}
+
+extension RemoteAutomationRequest {
+    /// The error `.runs` answers with while the host can't read its run history file. Its message
+    /// names the file and the fix; a client shows it where the runs would be.
+    public static let runHistoryDamagedCode = "run_history_damaged"
 }
 
 public enum RemoteAutomationRequest: Codable, Hashable, Sendable {

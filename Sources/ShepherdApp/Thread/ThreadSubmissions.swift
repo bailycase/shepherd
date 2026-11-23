@@ -4,10 +4,10 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Sends the store has captured but the host has not accepted, at the thread's tail in the held
-/// message style (a pending bubble with its note under it):
+/// Sends the store captured and the host did not accept, at the thread's tail in the held
+/// message style (a pending bubble with its note under it). A send still waiting ("Sending…") is a row of the
+/// transcript itself (`NativeThreadStore.rows`), the turn its accepted echo and the host's message then keep:
 ///
-/// - sending: "Sending…", nothing to do yet;
 /// - failed (the host refused it): Restore puts the words, files, references, elements and
 ///   images back in the composer, only when the composer is empty so nothing typed since is
 ///   overwritten; Discard lets it go;
@@ -19,7 +19,8 @@ struct ThreadSubmissions: View {
     let input: ThreadInput
 
     var body: some View {
-        ForEach(store.submissions) { submission in
+        // A send still waiting for the host is in the transcript itself (its row says "Sending…"); only its outcomes are here.
+        ForEach(store.submissions.filter { $0.state != .sending }) { submission in
             SubmissionRow(submission: submission, restorable: Self.canRestore(submission, store: store, input: input),
                           discardable: store.canDiscardSubmission(submission.id),
                           restore: { Self.restore(submission.id, store: store, input: input) },
@@ -36,7 +37,7 @@ struct ThreadSubmissions: View {
         guard input.attachments.isEmpty, input.preparingImages == 0, let restored = store.restoreSubmission(id) else { return }
         // Back at once, in order and within the limits they were sent under; their thumbnails decode off the main actor.
         let attachments = restored.images.map { ImageAttachment(name: $0.name ?? "Image", image: $0) }
-        input.attachments.add(attachments.map { ($0.name, $0) })
+        input.attachments.add(attachments.map { ($0.name, $0) }, clearingError: false)
         input.focus()
         let pixels = ThreadImageLoad.thumbnailPixels
         for attachment in attachments {
@@ -51,7 +52,7 @@ struct ThreadSubmissions: View {
 
     static func note(_ state: NativeThreadSubmission.State, restorable: Bool) -> String {
         switch state {
-        case .sending: "Sending…"
+        case .sending: NativeThreadSubmission.sendingNote
         case .failed: restorable ? "Not sent. Restore it to edit and send again." : "Not sent. Clear the composer to restore it."
         case .uncertain: "Delivery unknown. It may have reached the agent; check the thread before sending it again."
         }
@@ -113,82 +114,22 @@ enum ComposerImageCapture {
     static func send(store: NativeThreadStore, input: ThreadInput, delivery: NativeThreadDelivery) async -> Bool {
         // An image still being read belongs to this message: Send waits for it (`Composer.canSend`).
         guard input.preparingImages == 0 else { return false }
-        let send = Send(store: store, input: input)
-        send.watch()
-        let accepted = await store.send(images: send.images, delivery: delivery)
-        // Accepted: captured, even if its record came and went before the watch looked.
-        send.done = true
-        if accepted { send.accepted() } else { send.step() }
-        return accepted
-    }
-
-    @MainActor final class Send {
-        let store: NativeThreadStore
-        let input: ThreadInput
-        let images: [NativeImage]
-        private let submitted: [UUID]
-        private let typed: String
-        private let before: Set<UUID>
-        /// The record the store captured for this send, once seen.
-        private var record: UUID?
-        var done = false
-        private var finished = false
-
-        init(store: NativeThreadStore, input: ThreadInput) {
-            self.store = store
-            self.input = input
-            images = input.attachments.images
-            submitted = input.attachments.ids
-            typed = store.draft
-            before = Set(store.submissions.map(\.id))
-        }
-
-        func watch() {
-            guard !finished else { return }
-            withObservationTracking { step() } onChange: { [weak self] in
-                Task { @MainActor in self?.watch() }
-            }
-        }
-
-        func accepted() {
-            guard !finished else { return }
-            finished = true
-            for id in submitted { input.attachments.remove(id) }
-        }
-
-        /// One look at the store's records; idempotent.
-        func step() {
-            guard !finished else { return }
-            let current = record.flatMap { id in store.submissions.first { $0.id == id } }
-                ?? store.submissions.first { !before.contains($0.id) && $0.typed == typed && $0.images == images }
-            guard let current else {
-                // Accepted (its record gone) or never captured: either way this send is over once it returned.
-                if record != nil || done {
-                    if record != nil { for id in submitted { input.attachments.remove(id) } }
-                    finished = true
-                }
-                return
-            }
-            if record == nil {
-                record = current.id
+        let images = input.attachments.images
+        let submitted = input.attachments.ids
+        var captured: UUID?
+        let accepted = await store.send(images: images, delivery: delivery) {
+            // The store just appended this send. A host without image support captures only text.
+            guard let submission = store.submissions.last else { return }
+            captured = submission.id
+            if !submission.images.isEmpty {
                 for id in submitted { input.attachments.remove(id) }
             }
-            switch current.state {
-            case .sending: break
-            case .failed:
-                // Refused, but the store is still reconciling it (its refresh after the refusal): it can be
-                // neither restored nor discarded yet. Look again once it settles.
-                guard store.canDiscardSubmission(current.id) else { return }
-                finished = true
-                if ThreadSubmissions.canRestore(current, store: store, input: input) {
-                    ThreadSubmissions.restore(current.id, store: store, input: input)
-                }
-            case .uncertain:
-                // Hidden mid-send, it reads as unknown while its answer may still come (a late refusal is still
-                // put back): settled only once the store stops reconciling it.
-                guard store.canDiscardSubmission(current.id) else { return }
-                finished = true
-            }
+            if input.attachments.isEmpty { input.attachments.clearError() }
         }
+        if !accepted, let captured {
+            // Restore still requires a settled refusal and an empty composer.
+            ThreadSubmissions.restore(captured, store: store, input: input)
+        }
+        return accepted
     }
 }

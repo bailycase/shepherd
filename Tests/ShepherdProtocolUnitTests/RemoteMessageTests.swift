@@ -10,7 +10,9 @@ enum RemoteSamples {
     static let space = SpaceID(rawValue: "space")
     static let pane = PaneID(rawValue: "pane")
     static let tab = TabID(rawValue: "tab")
-    static let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(cwd: "/a")), second: .leaf(LeafPane(cwd: "/b")))
+    static let split = PaneNode.split(axis: .vertical, ratio: 0.5,
+                                     first: .leaf(LeafPane(id: PaneID(rawValue: "pane-a"), cwd: "/a")),
+                                     second: .leaf(LeafPane(id: PaneID(rawValue: "pane-b"), cwd: "/b")))
 
     static let fleetHost = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
     static let fleetHash = String(repeating: "ab", count: 32)
@@ -111,7 +113,7 @@ enum RemoteSamples {
         clone: FleetCloneProgress(name: "orders-svc", source: "github.com/acme/orders-svc", phase: "receiving objects", fraction: 0.37),
         createdAt: 1_790_000_000_000, updatedAt: 1_790_000_001_000)
     static let branchFacts = FleetBranchFacts(branch: "fleet/fix-flaky-payment-test", head: String(repeating: "b", count: 40), ahead: 2, pushed: true,
-                                              filesChanged: 3, insertions: 10, deletions: 2)
+                                              filesChanged: 3, insertions: 10, deletions: 2, uncommittedModified: 2, uncommittedUntracked: 1)
     static let fleetOp = FleetOp(mac: fleetHost, seq: 3, hlc: FleetHLC(wallMs: 1_790_000_000_123, counter: 2), unit: "instruction:AGENTS.md",
                                  change: .blob(hash: String(repeating: "cd", count: 32), size: 424), seed: true, macName: "MacBook Pro")
     static let fleetSettingOp = FleetOp(mac: fleetHost, seq: 4, hlc: FleetHLC(wallMs: 1_790_000_000_200), unit: "setting:host.defaultModel",
@@ -136,13 +138,13 @@ enum RemoteSamples {
         title: "", body: "", draftsMessage: false, agentWorking: false, blocked: "HEAD is detached.")
 
     static let state: ShepherdState = {
-        let parent = Space(name: "parent", path: "/elsewhere")
-        let space = Space(name: "demo", path: "/tmp/demo", parentID: parent.id, parentIsExplicit: true)
-        let pane = LeafPane(cwd: "/tmp/demo")
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let parent = Space(id: SpaceID(rawValue: "parent"), name: "parent", path: "/elsewhere")
+        let space = Space(id: Self.space, name: "demo", path: "/tmp/demo", parentID: parent.id, parentIsExplicit: true)
+        let pane = LeafPane(id: Self.pane, cwd: "/tmp/demo")
+        let tab = Tab(id: Self.tab, spaceID: space.id, order: 0, layout: .leaf(pane))
         // The live fields ride the wire (state.json drops `waitingOn` and `waitingReason`; a remote
         // client needs them).
-        let agent = Agent(name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .blocked,
+        let agent = Agent(id: Self.agent, name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .blocked,
                           lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?", waitingReason: "base?")
         return ShepherdState(spaces: [space, parent], tabs: [tab], agents: [agent])
     }()
@@ -163,6 +165,7 @@ enum RemoteSamples {
         .finishReview(paneID: pane, text: nil),
         .children,
         .pullRequest,
+        .branchStatus, .branchUpdate(base: "main", rebase: true), .branchAbort,
         .inspectorPane(tabID: tab, action: .split(paneID: pane, axis: .horizontal)),
         .inspectorPane(tabID: tab, action: .close(paneID: pane)),
         .inspectorPane(tabID: tab, action: .resize(split: split, ratio: 0.6)),
@@ -243,9 +246,13 @@ enum RemoteSamples {
         .pullRequest(ThreadPullRequest(ref: ForgeItemRef(kind: .pullRequest, repo: "acme/web", number: 31), state: .merged,
                                        headRefName: "agent/refund-events", headRefOid: "3f2a91c")),
         .pullRequest(nil),
-        .terminals([RemoteTerminalActivity(paneID: pane, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 42),
-                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: nil, command: nil, outputSequence: 0),
-                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: "zsh", command: nil, outputSequence: 9,
+        .branchStatus(RemoteBranchStatus(base: "main", behind: 3, additions: 71, deletions: 8, pull: ForgeSamples.summary,
+                                         conflict: RemoteBranchConflict(rebase: true, files: ["ledger/outbox.go"]))),
+        .branchStatus(RemoteBranchStatus(base: nil)),
+        .branchUpdate(nil), .branchUpdate(RemoteBranchConflict(rebase: false, files: ["a.go", "b.go"])),
+        .terminals([RemoteTerminalActivity(paneID: pane, sessionID: session, process: "make", command: "make dev", outputSequence: 42),
+                    RemoteTerminalActivity(paneID: PaneID(rawValue: "pane-2"), sessionID: SessionID(rawValue: "session-2"), process: nil, command: nil, outputSequence: 0),
+                    RemoteTerminalActivity(paneID: PaneID(rawValue: "pane-3"), sessionID: SessionID(rawValue: "session-3"), process: "zsh", command: nil, outputSequence: 9,
                                            newsSequence: 4)]),
         .terminals([]),
         .commitInfo(commitInfo),
@@ -265,6 +272,8 @@ enum RemoteSamples {
                                                     ChangesBranch(name: "agent/retry-plan", isRemote: false, worktree: "/w/retry", committedAt: 1),
                                                     ChangesBranch(name: "agent/refund-events", isRemote: false, isCurrent: true, committedAt: 2)])),
         .changesBranches(ChangesBranches(defaultBase: nil, branches: [])),
+        .changesBranches(ChangesBranches(defaultBase: "main", branches: [.init(name: "main", isRemote: false, isCurrent: true, committedAt: 1)],
+                                         recentsProblem: "Can't read the recents file on the host Mac.")),
         .changesPatch(text: "diff --git a/a b/a\n", truncated: false),
         .changesTurn(turn),
         .changesTurn(ChangesTurn(id: op, startedAt: 1, state: .unavailable, reason: "Shepherd quit before this turn ended.")),
@@ -332,8 +341,9 @@ enum RemoteSamples {
                                                                   files: [.agents, .appendSystem])
     static let suggestionsRequests: [RemoteSuggestionsRequest] = [
         .fetch,
-        .configure(suggestionSettings),
-        .configure(SuggestedInstructionsSettings()),
+        // Exact NDJSON cannot pin the iteration order of a Set with multiple members.
+        .configure(suggestions.settings),
+        .configure(SuggestedInstructionsSettings(sources: [.thread])),
         .add(id: op, line: nil, file: nil),
         .add(id: op, line: "- Ask for \"join keys\" first.", file: .appendSystem),
         .addAll,
@@ -341,7 +351,9 @@ enum RemoteSamples {
         .undo(id: op),
     ]
     static let suggestions = SuggestionsSnapshot(
-        settings: suggestionSettings,
+        // Set iteration order is not stable. The byte fixture uses one file;
+        // the round-trip tests also cover settings with both files.
+        settings: SuggestedInstructionsSettings(enabled: true, since: 1_700_000_000, sources: [.automation], files: [.agents]),
         waiting: [
             InstructionSuggestion(id: op, line: "- Run `go mod tidy` with any dependency bump.", reason: "CI failed twice on a stale go.sum.",
                                   file: .agents, source: SuggestionSource(kind: .automation, name: "Nightly dependency bump"),
@@ -357,7 +369,7 @@ enum RemoteSamples {
         defaultServiceTier: .fast, textGenerationModel: "anthropic/claude-haiku", visionModel: "google/gemini-flash", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase, closeOnMerge: true,
-        backgroundService: true, designToolEnabled: true,
+        backgroundService: true, designToolEnabled: true, computerUseEnabled: true,
         subagentDefaults: HostSettings.SubagentDefaults(concurrency: 6, model: "openai/gpt-5-mini", thinking: .low, context: .fork),
         worktreeDeleteAction: .removeWorktree, skillsInSlashMenu: false, mcpProjectConfig: true,
         slashCommands: [NativeCommand(name: "review", description: "Review a diff", source: "extension")], hiddenSlashCommands: ["review"],
@@ -395,6 +407,8 @@ enum RemoteSamples {
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
         .designToolEnabled(true),
+        .computerUseEnabled(true),
+        .threadsStartThreads(true), .subThreadPlace(.worktree),
         .subagentDefaults(HostSettings.SubagentDefaults(concurrency: 2, model: nil, thinking: nil, context: .fresh)),
         .worktreeDeleteAction(.keepWorktree), .skillsInSlashMenu(false), .mcpProjectConfig(true), .slashCommand(name: "review", on: false),
         .closeOnMerge(true), .closeOnMerge(false),
@@ -523,6 +537,13 @@ enum RemoteSamples {
 
 @Suite("Remote requests")
 struct RemoteRequestTests {
+    @Test func legacyFleetBranchFactsDecodeWithoutCheckoutStatus() throws {
+        let json = #"{"branch":"fleet/checkout-notes","head":"abc","ahead":1,"pushed":true,"filesChanged":2,"insertions":3,"deletions":4}"#
+        let facts = try JSONDecoder().decode(FleetBranchFacts.self, from: Data(json.utf8))
+        #expect(facts == FleetBranchFacts(branch: "fleet/checkout-notes", head: "abc", ahead: 1, pushed: true,
+                                          filesChanged: 2, insertions: 3, deletions: 4))
+    }
+
     typealias S = RemoteSamples
 
     /// Exhaustive on purpose: a new case fails to compile here until it is named, then
@@ -530,7 +551,7 @@ struct RemoteRequestTests {
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
         case .nativeThreadSubscribe, .fleetDigest, .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
-             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
+             .closePane, .resizePaneSplit, .listDir, .listModels, .drain, .hostUpdateGate, .addSpace, .spaceAction, .spaceLifecycle, .projectRequest, .startThread, .focusThread, .projectExecutors, .createAgent, .upload,
              .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .forge, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .hooks, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .designRelayAnswer, .appRelayAnswer, .hostConfig, .apps,
              .fleetIdentify, .fleetPair, .fleetIntroduce, .fleetRevoke, .fleetRead, .fleetAction, .fleetSync,
@@ -540,7 +561,7 @@ struct RemoteRequestTests {
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 76
+    static let caseCount = 77
 
     static let samples: [RemoteRequest] = [
         .nativeThreadSubscribe(id: 95, agentIDs: [S.agent]),
@@ -549,7 +570,7 @@ struct RemoteRequestTests {
         .fleetDigest(id: 98, agentID: S.agent, session: nil, revision: nil),
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
         .pushRegistration(id: 94, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
-            preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false))),
+            preferences: RemotePushPreferences(topics: [.questions], awayOnly: false))),
         .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .fleetIdentify(id: 70),
         .fleetPair(id: 71, code: "482913", from: RemoteSamples.fleetIntroduction),
@@ -602,11 +623,14 @@ struct RemoteRequestTests {
         .fleetSnapshotPart(id: 120, dispatchID: RemoteSamples.dispatchID, part: FleetSnapshotPart(index: -1, wantsNeeds: true)),
         .fleetBlobPush(id: 121, dispatchID: RemoteSamples.dispatchID, chunk: RemoteSamples.blobChunk),
         .fleetDispatchCreate(id: 111, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .userThread, task: "Look at the logs.", title: "",
-                                                                  repoKey: "github.com/acme/web", from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""))),
+                                                                  repoKey: "github.com/acme/web", from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
+                                                                  comparisonBranch: "nightly")),
         .fleetDispatchControl(id: 112, dispatchID: RemoteSamples.dispatchID, control: .status),
         .fleetDispatchControl(id: 113, dispatchID: RemoteSamples.dispatchID, control: .cancel),
+        .fleetDispatchControl(id: 133, dispatchID: RemoteSamples.dispatchID, control: .close),
         .fleetDispatchControl(id: 114, dispatchID: RemoteSamples.dispatchID, control: .message(text: "Also update the docs.", delivery: .steer)),
         .fleetDispatchControl(id: 130, dispatchID: RemoteSamples.dispatchID, control: .commit),
+        .fleetDispatchControl(id: 138, dispatchID: RemoteSamples.dispatchID, control: .rename(name: "Payment test")),
         .fleetDispatchCreate(id: 131, create: FleetDispatchCreate(dispatchID: RemoteSamples.dispatchID, kind: .move, task: "", title: "Speed up checkout CI", repoKey: "github.com/acme/web",
                                                                   from: FleetDispatchSender(hostID: RemoteSamples.fleetHost, hostName: "MacBook Pro", agentTitle: ""),
                                                                   snapshot: RemoteSamples.repoOnlyHeader,
@@ -616,6 +640,8 @@ struct RemoteRequestTests {
         .fleetDispatchChanged(id: 124, record: RemoteSamples.dispatchRecordCloning),
         .fleetDispatchResult(id: 116, dispatchID: RemoteSamples.dispatchID, text: "Fixed: the test raced the clock.", branchFacts: RemoteSamples.branchFacts),
         .fleetDispatchResult(id: 117, dispatchID: RemoteSamples.dispatchID, text: "Nothing to change.", branchFacts: nil),
+        .fleetDispatchResult(id: 118, dispatchID: RemoteSamples.dispatchID, text: "Updated the notes.",
+                             branchFacts: FleetBranchFacts(branch: "fleet/checkout-notes", uncommittedCheckFailed: true)),
         .fleetRoutes(id: 140, report: RemoteSamples.routeReport),
         .fleetRoutes(id: 141, report: FleetRouteReport(port: 7434, routes: [])),
         .fleetPeerAnswer(id: 142, reply: .ok(id: 142)),
@@ -628,14 +654,14 @@ struct RemoteRequestTests {
         .fleetAction(id: 87, action: .stopDeviceCode),
         .fleetAction(id: 88, action: .revokeDevice(RemoteSamples.fleetDevice.deviceID)),
         .fleetAction(id: 100, action: .enrollApp(name: "MacBook Pro")),
-        .fleetAction(id: 101, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
-        .fleetAction(id: 102, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
+        .fleetAction(id: 101, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: nil))),
+        .fleetAction(id: 102, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", title: "Profile import",
                                                                     host: "Mac mini", model: "acme/model-1", thinking: "high"))),
-        .fleetAction(id: 126, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: "Mac mini",
+        .fleetAction(id: 126, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", host: "Mac mini",
                                                                     start: FleetThreadStart(place: .newWorktree, base: "origin/main", branch: "fix/orders-import")))),
-        .fleetAction(id: 127, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.",
+        .fleetAction(id: 127, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.",
                                                                     start: FleetThreadStart(place: .existingBranch, branch: "feat/orders")))),
-        .fleetAction(id: 128, action: .sendThread(FleetUserThread(spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", start: FleetThreadStart(place: .checkout)))),
+        .fleetAction(id: 128, action: .sendThread(FleetUserThread(dispatchID: S.dispatchID, spaceID: SpaceID(rawValue: "s1"), task: "Profile the orders import.", start: FleetThreadStart(place: .checkout)))),
         .fleetAction(id: 103, action: .retryDispatch(id: RemoteSamples.dispatchID, host: nil)),
         .fleetAction(id: 104, action: .retryDispatch(id: RemoteSamples.dispatchID, host: RemoteSamples.fleetHost)),
         .fleetAction(id: 105, action: .cancelDispatch(id: RemoteSamples.dispatchID)),
@@ -648,8 +674,10 @@ struct RemoteRequestTests {
         .fleetAction(id: 133, action: .update(hostID: RemoteSamples.dispatchID, .start(when: .idle))),
         .fleetAction(id: 134, action: .update(hostID: RemoteSamples.dispatchID, .start(when: .now))),
         .fleetAction(id: 135, action: .update(hostID: RemoteSamples.dispatchID, .cancel)),
-        .logicalProjectRuntime(id: 81, request: .action(projectID: ProjectID(), expectedRevision: 1, request: .read)),
+        .logicalProjectRuntime(id: 81, request: .action(projectID: ProjectID(rawValue: "project"), expectedRevision: 1, request: .read)),
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
+        .nativeThread(id: 136, agentID: S.agent, request: .transcriptSnapshot()),
+        .nativeThread(id: 137, agentID: S.agent, request: .transcriptSnapshot(expectedSessionID: "s", beforeEntryID: "50")),
         .hello(id: 2, token: "", clientName: "Alex's MacBook \"Pro\"", protocolVersion: 99),
         .hello(id: 9, token: "t", clientName: "Mac", protocolVersion: 1, capabilities: RemoteProtocol.clientCapabilities),
         .stateFetch(id: 3),
@@ -674,6 +702,11 @@ struct RemoteRequestTests {
         .spaceAction(id: 5, spaceID: S.space, action: .move(before: nil)),
         .spaceAction(id: 5, spaceID: S.space, action: .delete),
         .spaceAction(id: 5, spaceID: S.space, action: .relocate(path: "/Users/demo/Developer/acme-web")),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .rename(name: "acme-web")),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .setSidebarHidden(hidden: true)),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .move(before: nil)),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .move(before: S.space)),
+        .spaceLifecycle(id: 5, spaceID: S.space, action: .remove),
         .projectRequest(id: 5, request: .register(path: "/Users/demo/Developer/acme-web", name: "acme-web")),
         .projectRequest(id: 5, request: .edit(spaceID: S.space, edit: ProjectEdit(parentProjectID: ""))),
         .projectRequest(id: 5, request: .child(parentPath: "/Users/demo/Developer/acme", path: "/Users/demo/Developer/acme/web", name: "web", create: true)),
@@ -684,7 +717,7 @@ struct RemoteRequestTests {
         .projectExecutors(id: 7, update: .hosts([
             ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!,
                                                  bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!),
-                              name: "build-01", spaces: [Space(name: "acme-web", path: "/srv/acme-web")]),
+                              name: "build-01", spaces: [Space(id: S.space, name: "acme-web", path: "/srv/acme-web")]),
             ProjectHostOption(reference: .remote(hostID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!,
                                                  bindingID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B4")!), name: "old-mac"),
         ])),
@@ -698,6 +731,8 @@ struct RemoteRequestTests {
                                                       serviceTier: .fast, initialPrompt: "fix it", name: "Fix it (fork)", piSessionID: "sess-1",
                                                       agentID: S.agent, worktreeBranch: "agent/fix", worktreeBase: "main",
                                                       worktreePath: "/tmp/acme-web-worktrees/fix")),
+        .startThread(id: 6, thread: RemoteThreadStart(spaceID: S.space, cwd: "/tmp/acme-web", agentID: S.agent,
+                                                      worktreeBranch: "origin/fix", worktreeBranchExists: true)),
         .createAgent(id: 6, spaceID: S.space, cwd: "/tmp/checkout", model: "anthropic/claude-4", thinking: .high,
                      initialPrompt: "fix the \"thing\"\nplease", worktreeBranch: "worktree/a", worktreeBase: "origin/release",
                      worktreeFetchFirst: false,
@@ -748,7 +783,7 @@ struct RemoteRequestTests {
         .appRelayAnswer(requestToken: 10, result: .nativeThread(result: .failure(code: "starting", message: "The agent is starting."))),
         .appRelayAnswer(requestToken: 11, result: .projectExecution(result: ProjectExecutionResult(receipt: ProjectExecutionReceipt(
             key: ProjectExecutionKey(ownerID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!, projectID: ProjectID(rawValue: "acme-release"),
-                                     operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!), phase: .settled)))),
+                                     operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!), phase: .settled, admittedAt: 1_790_000_000)))),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -771,7 +806,22 @@ struct RemoteRequestTests {
         #expect(try NDJSON.decode(DesignRelayJob.self, from: NDJSON.encode(job)) == job)
     }
 
-    @Test(arguments: samples)
+    static let pushRegistrationWithMultipleTopics = RemoteRequest.pushRegistration(id: 94, registration: RemotePushRegistration(
+        id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64),
+        preferences: RemotePushPreferences(topics: [.questions, .failures], awayOnly: false)))
+
+    private static let minimalCreateAgent = RemoteRequest.createAgent(id: 7, spaceID: S.space, cwd: nil, model: nil, thinking: nil, initialPrompt: nil)
+
+    static let wireSamples = samples + additionalWireSamples
+
+    // Exact NDJSON cannot pin the order of these multi-member Sets.
+    static let roundTripOnly: [RemoteRequest] = [
+        pushRegistrationWithMultipleTopics,
+        .suggestions(id: 1, request: .configure(S.suggestionSettings)),
+        .suggestions(id: 1, request: .configure(SuggestedInstructionsSettings())),
+    ]
+
+    @Test(arguments: wireSamples + roundTripOnly)
     func roundTripsThroughNDJSON(_ request: RemoteRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -781,31 +831,41 @@ struct RemoteRequestTests {
         #expect(try Wire.object(request)["type"] as? String == Self.caseName(request))
     }
 
-    @Test(arguments: RemoteSamples.agentQueries)
-    func everyAgentQueryRoundTrips(_ query: RemoteAgentQuery) throws {
-        let request = RemoteRequest.agentQuery(id: 1, agentID: S.agent, query: query)
-        #expect(try Wire.roundTrip(request) == request)
-    }
+    static let agentActions: [RemoteAgentAction] = [
+        .rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
+        .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
+        .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
+        .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout,
+        .moveToMac(FleetMoveRequest(moveID: S.op, agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone)),
+    ]
 
-    @Test(arguments: [
-        RemoteUploadAction.begin(sessionID: RemoteSamples.session, name: "a.png", size: 3),
-        .chunk(uploadID: RemoteSamples.op, data: Data([0, 1, 2])),
-        .finish(uploadID: RemoteSamples.op),
-        .cancel(uploadID: RemoteSamples.op),
-    ])
-    func everyUploadActionRoundTrips(_ action: RemoteUploadAction) throws {
-        #expect(try Wire.roundTrip(RemoteRequest.upload(id: 1, action: action)) == .upload(id: 1, action: action))
-    }
-
-    @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
-                      .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
-                      .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
-                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev"), .restartPi(newConversation: true), .restartPi(newConversation: false, model: "anthropic/claude-x"), .markSeen(upTo: 1_760_000_000_123), .mutePushes(true), .mutePushes(false), .readCheckout,
-                      .moveToMac(FleetMoveRequest(moveID: UUID(), agentID: AgentID(rawValue: "a"), host: "Mac mini", when: .whenDone))])
-    func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
-        #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
-            == .agentAction(id: 1, agentID: S.agent, action: action))
-    }
+    // Add nested round-trip cases here so the same messages are pinned by WireCodecTests.
+    static let additionalWireSamples: [RemoteRequest] = {
+        var samples = S.agentQueries.map { RemoteRequest.agentQuery(id: 1, agentID: S.agent, query: $0) }
+        samples += agentActions.map { .agentAction(id: 1, agentID: S.agent, action: $0) }
+        samples += S.hostSettingChanges.map { .hostSettings(id: 1, request: .change($0)) }
+        samples += S.configRequests.map { .hostConfig(id: 1, request: $0) }
+        samples += S.inventoryRequests.map { .hostInventory(id: 1, request: $0) }
+        samples += S.automationRequests.map { .automation(id: 1, automationID: S.automation, request: $0) }
+        samples += S.instructionsRequests.map { .instructions(id: 1, request: $0) }
+        samples += S.suggestionsRequests.map { .suggestions(id: 1, request: $0) }
+        samples += S.skillsRequests.map { .skills(id: 1, request: $0) }
+        samples += S.hooksRequests.map { .hooks(id: 1, request: $0) }
+        samples += ForgeSamples.wireRequests + RemoteDesignSamples.wireRequests
+        samples += ProjectsSamples.wireRequests + LogicalProjectsSamples.wireRequests
+        samples += BrowserTunnelTests.frames.map(RemoteRequest.tunnel)
+        samples += ProjectExecutionWireTests.wireRequests + ProjectRuntimeWireTests.wireRequests
+        samples.append(ProjectPublicationWireTests.wireRequest)
+        samples += [
+            minimalCreateAgent,
+            .hostSettings(id: 2, request: .fetch),
+            .upload(id: 1, action: .begin(sessionID: S.session, name: "a.png", size: 3)),
+            .upload(id: 1, action: .chunk(uploadID: S.op, data: Data([0, 1, 2]))),
+            .upload(id: 1, action: .finish(uploadID: S.op)),
+            .upload(id: 1, action: .cancel(uploadID: S.op)),
+        ]
+        return samples
+    }()
 
     /// Run in terminal is gone: an older client's `typeInTerminal` is no action this side knows.
     /// An older host's skill carries no `copiedFrom`: it decodes as installed from a repository or
@@ -841,58 +901,6 @@ struct RemoteRequestTests {
         #expect(throws: DecodingError.self) { try NDJSON.decode(RemoteRequest.self, from: line) }
     }
 
-    @Test(arguments: RemoteSamples.automationRequests)
-    func everyAutomationRequestRoundTrips(_ request: RemoteAutomationRequest) throws {
-        let message = RemoteRequest.automation(id: 1, automationID: S.automation, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.instructionsRequests)
-    func everyInstructionsRequestRoundTrips(_ request: RemoteInstructionsRequest) throws {
-        let message = RemoteRequest.instructions(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.suggestionsRequests)
-    func everySuggestionsRequestRoundTrips(_ request: RemoteSuggestionsRequest) throws {
-        let message = RemoteRequest.suggestions(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.hostSettingChanges)
-    func everyHostSettingChangeRoundTrips(_ change: HostSettingChange) throws {
-        let message = RemoteRequest.hostSettings(id: 1, request: .change(change))
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.configRequests)
-    func everyConfigRequestRoundTrips(_ request: RemoteHostConfigRequest) throws {
-        let message = RemoteRequest.hostConfig(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.inventoryRequests)
-    func everyInventoryRequestRoundTrips(_ request: RemoteHostInventoryRequest) throws {
-        let message = RemoteRequest.hostInventory(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test func fetchingHostSettingsRoundTrips() throws {
-        #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
-    }
-
-    @Test(arguments: RemoteSamples.hooksRequests)
-    func everyHooksRequestRoundTrips(_ request: RemoteHooksRequest) throws {
-        let message = RemoteRequest.hooks(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
-    @Test(arguments: RemoteSamples.skillsRequests)
-    func everySkillsRequestRoundTrips(_ request: RemoteSkillsRequest) throws {
-        let message = RemoteRequest.skills(id: 1, request: request)
-        #expect(try Wire.roundTrip(message) == message)
-    }
-
     @Test func anAutomationRequestNamesItsAutomation() throws {
         let object = try Wire.object(RemoteRequest.automation(id: 1, automationID: S.automation, request: .run))
         #expect(object["automationID"] as? String == "automation")
@@ -911,7 +919,7 @@ struct RemoteRequestTests {
     }
 
     @Test func aMinimalCreateAgentOmitsEveryOptional() throws {
-        let request = RemoteRequest.createAgent(id: 7, spaceID: S.space, cwd: nil, model: nil, thinking: nil, initialPrompt: nil)
+        let request = Self.minimalCreateAgent
         #expect(Set(try Wire.object(request).keys) == ["type", "id", "spaceID"])
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -970,8 +978,14 @@ struct RemoteReplyTests {
                                                   offerID: S.op, offeredVersion: "2", canInstall: true)),
         .hostUpdate(id: 91, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
                                                   offerID: S.op, offeredVersion: "2", busyThreads: 2, waitingForIdle: true)),
-        .logicalProjectRuntime(id: 81, result: .project(Project(name: "Owner"))),
+        .logicalProjectRuntime(id: 81, result: .project(Wire.project(named: "Owner"))),
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
+        .nativeThread(id: 136, result: .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "s", generation: "g", revision: 0, running: false, supportedActions: [],
+            dialogsSupported: true, dialogs: [], widgets: [],
+            messages: [.init(entryID: "50", role: "assistant", blocks: [.init(kind: .text, text: "Here is the transcript.")])],
+            olderCursor: "50", provisional: [], clipped: true, runtime: "rpc"
+        ))),
         .uploadResult(id: 51, result: .complete(path: "/host/private/image.png")),
         .creationOptions(id: 52, options: RemoteCreationOptions(base: "origin/main", note: "cached", fetchFirst: false,
                                                                 model: "host/model", thinking: .high, serviceTier: .fast)),
@@ -1034,7 +1048,7 @@ struct RemoteReplyTests {
         .hostInventory(id: 29, result: .mcp(S.mcpInventory)),
         .hostConfig(id: 29, result: .mcp(S.mcpInventory)),
         .skills(id: 30, result: .skills(S.skills)),
-        .hooks(id: 30, result: .hooks(S.hooks)),
+        hooksSnapshot,
         .apps(id: 35, result: RemoteAppsResult(space: "acme-web", apps: [
             RemoteApp(app: AppDefinition(name: "Web app", command: "npm run dev", folder: "apps/web", opens: .browser,
                                          address: "http://localhost:3000", quickAction: true),
@@ -1055,7 +1069,7 @@ struct RemoteReplyTests {
         .pullRequestLinks(links: [:], notes: [:]),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
-        .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
+        .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled, admittedAt: 1_790_000_000))),
         .projectExecutionChanged(key: ProjectExecutionWireTests.key, revision: 2),
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
@@ -1106,7 +1120,36 @@ struct RemoteReplyTests {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
     }
 
-    @Test(arguments: samples)
+    @Test func changesBranchesWorksBeforeAndAfterRecentsProblem() throws {
+        struct LegacyBranches: Decodable, Equatable {
+            var defaultBase: String?
+            var pullRequestBase: String?
+            var recents: [String]
+            var branches: [ChangesBranch]
+        }
+        let old = Data(#"{"defaultBase":"main","recents":[],"branches":[{"name":"main","isRemote":false,"isCurrent":true,"committedAt":1}]}"#.utf8)
+        let branches = try JSONDecoder().decode(ChangesBranches.self, from: old)
+        #expect(branches.recentsProblem == nil)
+        var damaged = branches
+        damaged.recentsProblem = "Can't read the recents file on the host Mac."
+        let legacy = try JSONDecoder().decode(LegacyBranches.self, from: old)
+        #expect(try JSONDecoder().decode(LegacyBranches.self, from: JSONEncoder().encode(damaged)) == legacy)
+    }
+
+    private static let hooksSnapshot = RemoteReply.hooks(id: 30, result: .hooks(S.hooks))
+
+    static let suggestionsWithMultipleFiles: RemoteReply = {
+        var snapshot = S.suggestions
+        snapshot.settings = S.suggestionSettings
+        return .suggestions(id: 26, snapshot: snapshot)
+    }()
+
+    static let wireSamples = samples + additionalWireSamples
+
+    // Exact NDJSON cannot pin the order of this multi-member Set.
+    static let roundTripOnly = [suggestionsWithMultipleFiles]
+
+    @Test(arguments: wireSamples + roundTripOnly)
     func roundTripsThroughNDJSON(_ reply: RemoteReply) throws {
         #expect(try Wire.roundTrip(reply) == reply)
     }
@@ -1116,20 +1159,31 @@ struct RemoteReplyTests {
         #expect(try Wire.object(reply)["type"] as? String == Self.caseName(reply))
     }
 
-    @Test(arguments: RemoteSamples.agentResults)
-    func everyAgentResultRoundTrips(_ result: RemoteAgentResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.agentResult(id: 1, result: result)) == .agentResult(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.automationResults)
-    func everyAutomationResultRoundTrips(_ result: RemoteAutomationResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.automationResult(id: 1, result: result)) == .automationResult(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.hooksResults)
-    func everyHooksResultRoundTrips(_ result: RemoteHooksResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.hooks(id: 1, result: result)) == .hooks(id: 1, result: result))
-    }
+    // Add nested round-trip cases here so the same messages are pinned by WireCodecTests.
+    static let additionalWireSamples: [RemoteReply] = {
+        var samples = S.agentResults.map { RemoteReply.agentResult(id: 1, result: $0) }
+        samples += S.automationResults.map { .automationResult(id: 1, result: $0) }
+        samples += S.hooksResults.map { .hooks(id: 1, result: $0) }
+        samples += S.skillsResults.map { .skills(id: 1, result: $0) }
+        samples += S.inventoryResults.map { .hostInventory(id: 1, result: $0) }
+        samples += S.configResults.map { .hostConfig(id: 1, result: $0) }
+        samples += ForgeSamples.wireReplies + RemoteDesignSamples.wireReplies + RemoteDesignSamples.pushes
+        samples += ProjectsSamples.wireReplies + LogicalProjectsSamples.wireReplies
+        samples += BrowserTunnelTests.frames.map(RemoteReply.tunnel)
+        samples += BrowserDriveTests.pushes.map(RemoteReply.browserDrive)
+        samples += NativeProjectActionWireTests.wireReplies
+        samples += ProjectExecutionWireTests.wireReplies + ProjectRuntimeWireTests.wireReplies
+        samples.append(ProjectPublicationWireTests.wireReply)
+        samples += [NativeThreadWireTests.startingRefusal]
+        samples += [
+            .uploadResult(id: 1, result: .ready(uploadID: S.op)),
+            .uploadResult(id: 1, result: .complete(path: "/p")),
+            .sessionExited(sessionID: S.session, code: nil),
+            .dirListing(id: 9, path: "/", parent: nil, dirs: []),
+            .models(id: 11, models: [], defaultModel: nil),
+        ]
+        return samples
+    }()
 
     /// A test reply without output or cut marks decodes as empty and uncut.
     @Test func aHookTestResultWithoutOutputDecodesEmpty() throws {
@@ -1140,7 +1194,7 @@ struct RemoteReplyTests {
 
     /// A handler keeps its keys in file order on the wire, so a remote edit leaves unknown keys where they were.
     @Test func aHookHandlerKeepsItsKeyOrderOnTheWire() throws {
-        guard case .hooks(_, .hooks(let snapshot)) = try Wire.roundTrip(RemoteReply.hooks(id: 1, result: .hooks(S.hooks))) else {
+        guard case .hooks(_, .hooks(let snapshot)) = try Wire.roundTrip(Self.hooksSnapshot) else {
             Issue.record("expected hooks"); return
         }
         #expect(snapshot.entries[0].handler.raw.objectValue?.map(\.key) == ["type", "command", "timeout", "zeta", "alpha"])
@@ -1152,26 +1206,11 @@ struct RemoteReplyTests {
         #expect(snapshot.home == "" && snapshot.settings.readers.codex)
     }
 
-    @Test(arguments: RemoteSamples.skillsResults)
-    func everySkillsResultRoundTrips(_ result: RemoteSkillsResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.skills(id: 1, result: result)) == .skills(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.inventoryResults)
-    func everyInventoryResultRoundTrips(_ result: RemoteHostInventoryResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.hostInventory(id: 1, result: result)) == .hostInventory(id: 1, result: result))
-    }
-
-    @Test(arguments: RemoteSamples.configResults)
-    func everyConfigResultRoundTrips(_ result: RemoteHostConfigResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.hostConfig(id: 1, result: result)) == .hostConfig(id: 1, result: result))
-    }
-
     /// An older host's settings carry none of the newer fields: they read as the Mac's defaults.
     @Test func hostSettingsFromAnOlderHostDecodeWithDefaults() throws {
         var object = try Wire.object(RemoteReply.hostSettings(id: 1, settings: S.hostSettings))
         var settings = try #require(object["settings"] as? [String: Any])
-        for key in ["designToolEnabled", "subagentDefaults", "worktreeDeleteAction",
+        for key in ["designToolEnabled", "computerUseEnabled", "subagentDefaults", "worktreeDeleteAction",
                     "skillsInSlashMenu", "mcpProjectConfig", "slashCommands", "hiddenSlashCommands", "closeOnMerge", "backgroundService"] {
             settings[key] = nil
         }
@@ -1181,6 +1220,7 @@ struct RemoteReplyTests {
             Issue.record("expected settings"); return
         }
         #expect(!decoded.designToolEnabled)
+        #expect(!decoded.computerUseEnabled, "an older host has no Computer use")
         #expect(decoded.subagentDefaults == HostSettings.SubagentDefaults())
         #expect(decoded.worktreeDeleteAction == .ask && decoded.skillsInSlashMenu && !decoded.mcpProjectConfig)
         #expect(decoded.slashCommands.isEmpty && decoded.hiddenSlashCommands.isEmpty)
@@ -1391,20 +1431,6 @@ struct RemoteReplyTests {
         #expect(run.duration == duration)
     }
 
-    @Test(arguments: [RemoteUploadResult.ready(uploadID: RemoteSamples.op), .complete(path: "/p")])
-    func everyUploadResultRoundTrips(_ result: RemoteUploadResult) throws {
-        #expect(try Wire.roundTrip(RemoteReply.uploadResult(id: 1, result: result)) == .uploadResult(id: 1, result: result))
-    }
-
-    @Test(arguments: [
-        RemoteReply.sessionExited(sessionID: RemoteSamples.session, code: nil),
-        .dirListing(id: 9, path: "/", parent: nil, dirs: []),
-        .models(id: 11, models: [], defaultModel: nil),
-    ])
-    func absentOptionalsRoundTrip(_ reply: RemoteReply) throws {
-        #expect(try Wire.roundTrip(reply) == reply)
-    }
-
     @Test func sessionExitCodeTravelsUnderExitCode() throws {
         #expect(try Wire.object(RemoteReply.sessionExited(sessionID: S.session, code: 3))["exitCode"] as? Int == 3)
     }
@@ -1524,15 +1550,16 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.thinkingLevelsCapability,
             RemoteProtocol.changesCapability,
             RemoteProtocol.nativeContextCapability,
-            RemoteProtocol.createAgentImagesCapability,
+            RemoteProtocol.createAgentImagesCapability, RemoteProtocol.createAgentNoSpaceCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability, RemoteProtocol.hostSettingsTextGenerationModelCapability, RemoteProtocol.hostSettingsVisionModelCapability,
             RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability, RemoteProtocol.changesCwdCapability,
             RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectResourcesCapability, RemoteProtocol.projectInheritanceCapability, RemoteProtocol.projectInheritedResourcesCapability, RemoteProtocol.projectParentCapability, RemoteProtocol.spaceLifecycleCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability, RemoteProtocol.checkoutReadCapability, RemoteProtocol.pullRequestLinkCapability,
+            RemoteProtocol.branchStatusCapability, RemoteProtocol.hostSettingsSubThreadsCapability,
             RemoteProtocol.designContextCapability,
-            RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
+            RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability, RemoteProtocol.nativeThreadTranscriptCapability,
             RemoteProtocol.checkpointRecoveryCapability,
             RemoteProtocol.nativeQueueSubagentCapability, RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.browserTabsCapability,
@@ -1540,12 +1567,13 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             RemoteProtocol.designToolExperimentCapability,
+            RemoteProtocol.computerUseExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
             RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
-            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability,
+            RemoteProtocol.fleetCapability, RemoteProtocol.fleetPressureCapability, RemoteProtocol.fleetCheckCapability, RemoteProtocol.fleetDispatchCapability, RemoteProtocol.fleetDispatchCloseCapability, RemoteProtocol.fleetDispatchRenameCapability,
             RemoteProtocol.fleetSyncCapability, RemoteProtocol.fleetSnapshotCapability, RemoteProtocol.fleetMoveCapability, RemoteProtocol.fleetRendezvousCapability, RemoteProtocol.fleetLinkCapability, RemoteProtocol.fleetPairLinkCapability, RemoteProtocol.fleetUpdateCapability,
             // Offered to every client, a device included.
             RemoteProtocol.fleetViewCapability, RemoteProtocol.fleetFollowCapability, RemoteProtocol.fleetMoveViewCapability, RemoteProtocol.fleetUpdateViewCapability,
@@ -1574,6 +1602,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.fleetRendezvousCapability == "fleet.rendezvous.v1")
         #expect(RemoteProtocol.fleetPairLinkCapability == "fleet.pairlink.v1")
         #expect(RemoteProtocol.fleetDispatchCapability == "fleet.dispatch.v1")
+        #expect(RemoteProtocol.fleetDispatchCloseCapability == "fleet.dispatch.close.v1")
         #expect(RemoteProtocol.fleetDevicesCapability == "fleet.devices.v1")
         #expect(RemoteProtocol.fleetFollowCapability == "fleet.follow.v1")
         #expect(RemoteProtocol.fleetMoveCapability == "fleet.move.v1")
@@ -1590,6 +1619,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.projectInheritanceCapability == "projects.inheritance.v1")
         #expect(RemoteProtocol.projectInheritedResourcesCapability == "projects.inheritance.resources.v1")
         #expect(RemoteProtocol.projectParentCapability == "projects.parent.v1")
+        #expect(RemoteProtocol.spaceLifecycleCapability == "spaces.lifecycle.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
@@ -1604,6 +1634,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsBackgroundServiceCapability == "hostSettings.backgroundService.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
+        #expect(RemoteProtocol.computerUseExperimentCapability == "experiments.computerUse.v1")
         #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))
         #expect(RemoteProtocol.filesCapability == "files.v1")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))

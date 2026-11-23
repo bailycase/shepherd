@@ -19,7 +19,7 @@ final class PushManager {
     }
     private(set) var hostStates: [UUID: HostPushState] = [:]
     private(set) var deviceTokenHex: String?
-    /// Settings ▸ Notifications, the same for every host; each host applies it before sending.
+    /// Settings ▸ General, the same for every host; each host applies it before sending.
     private(set) var preferences: RemotePushPreferences
     @ObservationIgnored private let keychain: PushKeychainAccess
     @ObservationIgnored private let defaults: UserDefaults
@@ -215,7 +215,7 @@ final class PushManager {
         }
     }
 
-    /// Saves Settings ▸ Notifications and tells every connected host that sends to this phone.
+    /// Saves Settings ▸ General and tells every connected host that sends to this phone.
     func setPreferences(_ next: RemotePushPreferences, hosts: [MobileHost]) async {
         guard next != preferences else { return }
         preferences = next

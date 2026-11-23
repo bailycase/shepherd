@@ -35,7 +35,9 @@ struct HooksScreen: View {
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SH.Space.xs)
-                if let problem = model.problem {
+                if let problem = state?.page?.snapshot.settingsProblem {
+                    SHBanner(.failed, title: problem)
+                } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
                         Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }

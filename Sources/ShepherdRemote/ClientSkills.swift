@@ -36,7 +36,7 @@ public struct SkillsHost: Identifiable, Sendable {
     /// A remote host from Settings' own list.
     public init(_ host: SettingsHost) {
         self.init(id: host.id, name: host.name, client: host.client,
-                  serves: host.client == nil || host.capabilities.contains(RemoteProtocol.skillsCapability))
+                  serves: host.client == nil || host.supports(.skills))
     }
 
     public var isConnected: Bool { client != nil }
@@ -251,6 +251,11 @@ public final class ClientSkills {
         rows(in: hosts).first { $0.name == name }
     }
 
+    /// Why the edited host can't change its skills' records (the file that says where each came from), when it can't.
+    public func recordsProblem(in hosts: [SkillsHost]) -> String? {
+        reference(in: hosts).flatMap { state(of: $0).snapshot?.problem }
+    }
+
     /// When the host last looked for updates.
     public func checkedAt(in hosts: [SkillsHost]) -> Double? {
         reference(in: hosts).flatMap { state(of: $0).snapshot?.checkedAt }
@@ -330,8 +335,8 @@ public final class ClientSkills {
     /// Takes a skill off the fleet; Undo puts it back.
     @discardableResult
     public func remove(_ name: String, in hosts: [SkillsHost]) -> Task<Void, Never> {
-        removal = Removal(name: name)
-        return post(.remove(name: name), in: hosts) { snapshot in
+        // Undo is offered once the host has removed it: a refusal puts the skill back instead.
+        post(.remove(name: name), in: hosts, then: { [self] in removal = Removal(name: name) }) { snapshot in
             snapshot.skills.removeAll { $0.name == name }
         }
     }
@@ -443,29 +448,33 @@ public final class ClientSkills {
 
     // MARK: Private
 
-    private func post(_ request: RemoteSkillsRequest, in hosts: [SkillsHost],
+    private func post(_ request: RemoteSkillsRequest, in hosts: [SkillsHost], then succeeded: (() -> Void)? = nil,
                       showing change: ((inout SkillsSnapshot) -> Void)?) -> Task<Void, Never> {
         problem = nil
         if let change, let host = edited(in: hosts), case .loaded(var snapshot)? = loaded[host.id] {
             change(&snapshot)
             loaded[host.id] = .loaded(snapshot)
         }
-        return Task { await send(request, in: hosts) }
+        return Task { if await send(request, in: hosts) { succeeded?() } }
     }
 
-    private func post(_ request: RemoteSkillsRequest, in hosts: [SkillsHost], showing change: @escaping (inout SkillsSnapshot) -> Void) -> Task<Void, Never> {
-        post(request, in: hosts, showing: Optional(change))
+    private func post(_ request: RemoteSkillsRequest, in hosts: [SkillsHost], then succeeded: (() -> Void)? = nil,
+                      showing change: @escaping (inout SkillsSnapshot) -> Void) -> Task<Void, Never> {
+        post(request, in: hosts, then: succeeded, showing: Optional(change))
     }
 
-    /// Sends `request` to the edited host: it answers with its skills.
-    private func send(_ request: RemoteSkillsRequest, in hosts: [SkillsHost]) async {
-        guard let host = edited(in: hosts) else { return }
+    /// Sends `request` to the edited host: it answers with its skills. False when it didn't take it.
+    @discardableResult
+    private func send(_ request: RemoteSkillsRequest, in hosts: [SkillsHost]) async -> Bool {
+        guard let host = edited(in: hosts) else { return false }
         do {
             if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
+            return true
         } catch {
-            guard !forgotten.contains(host.id) else { return }
+            guard !forgotten.contains(host.id) else { return false }
             problem = settingsProblem(error)
             await fetch(host)
+            return false
         }
     }
 

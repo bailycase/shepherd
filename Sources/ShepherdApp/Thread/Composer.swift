@@ -114,6 +114,8 @@ struct Composer: View, Equatable {
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @State private var composing = false
+    @State private var inputOwner: UUID?
+    @State private var claimed = ClaimedLayout()
     /// "Up next": what the stack shows of the store's queue, and its own view state.
     @State private var ownQueueStack = QueueStackState()
     private var queueStack: QueueStackState { queueState ?? ownQueueStack }
@@ -143,10 +145,17 @@ struct Composer: View, Equatable {
     }
 
     /// When the field claims the keyboard: the thread taking it, or a question giving the card
-    /// back.
+    /// back. `active` is in it so that a claim made as the layout comes on screen or goes off it
+    /// is told from one made on screen.
     private struct FieldClaim: Equatable {
+        var active: Bool
         var focused: Bool
         var question: Bool
+    }
+
+    /// Whether the layout was on screen at the last claim.
+    private final class ClaimedLayout {
+        var active: Bool?
     }
 
     /// How long pi may keep the thread waiting before the composer says it is starting: `delay`
@@ -373,22 +382,22 @@ struct Composer: View, Equatable {
             }
             if let problem = store.startProblem, !(hidesNotSignedIn && problem.kind == .notSignedIn) {
                 SHBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
-                    if let restartPi {
-                        if problem.kind == .resumedAsNew {
+                    // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
+                    ForEach(problem.actions(canRestart: restartPi != nil, canLocateFolder: true), id: \.self) { action in
+                        switch action {
+                        case .startNewConversation:
                             Button("Start new conversation") {
                                 store.restarting()
-                                restartPi(true)
+                                restartPi?(true)
                             }
                             .buttonStyle(.sh(.ghost, size: .s))
-                        }
-                        if problem.kind == .folderMissing {
-                            // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
-                            Button("Locate Folder…") { restartPi(false) }
+                        case .locateFolder:
+                            Button("Locate Folder…") { restartPi?(false) }
                                 .buttonStyle(.sh(.secondary, size: .s))
-                        } else {
+                        case .retry:
                             Button("Retry") {
                                 store.restarting()
-                                restartPi(false)
+                                restartPi?(false)
                             }
                             .buttonStyle(.sh(.secondary, size: .s))
                         }
@@ -534,27 +543,34 @@ struct Composer: View, Equatable {
         // A hold that opened the Send menu and let go elsewhere leaves the next click a send.
         .onChange(of: menu) { _, menu in if menu != .send { sendHeld = false } }
         .onChange(of: active && questionKey == nil, initial: true) { _, available in
-            input.available = available
+            let owner = inputOwner ?? UUID()
+            if inputOwner == nil { inputOwner = owner }
+            input.setAvailable(available, for: owner)
         }
         .onChange(of: input.focusRequest) { _, _ in
             guard active, questionKey == nil else { return }
             composing = true
         }
         .onDisappear {
-            input.available = false
+            if let inputOwner { input.setAvailable(false, for: inputOwner) }
             dismissal.watch(false)
             keyMonitor.watch(false)
         }
         // Let any deferred AppKit focus release finish before claiming the field (again once a
         // question gives the card back).
-        .task(id: FieldClaim(focused: active && isFocused, question: questionKey != nil)) {
-            composing = false
+        .task(id: FieldClaim(active: active, focused: active && isFocused, question: questionKey != nil)) {
+            // The layout coming on screen or going off it is a flip: the card's ring follows at once, as the
+            // toolbar does, and a spring it left running would lay the whole layout out again on every frame.
+            // The one coming on still fades its ring in (Core Animation, so no frame lays anything out).
+            let flip = claimed.active != active
+            claimed.active = active
+            claim(false, flip: flip)
             guard active && isFocused, questionKey == nil, menu == nil else { return }
             await Task.yield()
             // A chip can focus its pane and open a menu in the same click. The menu already
             // claimed its search field; a deferred pane claim must not take it back.
             guard !Task.isCancelled, menu == nil else { return }
-            composing = true
+            claim(true, flip: flip)
         }
         // A normal start is over before the delay: only a slow pi is ever said to be starting.
         .task(id: StartingWait(awaiting: active && store.awaitingPi, blank: store.session == nil)) {
@@ -755,6 +771,14 @@ struct Composer: View, Equatable {
         let all = input.attachments.items
         presentImages(ImageViewerState(images: all.map(ViewerImage.init), index: all.firstIndex { $0.id == attachment.id } ?? 0,
                                            origin: "Waiting to send"))
+    }
+
+    private func claim(_ value: Bool, flip: Bool) {
+        guard flip else { composing = value; return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        instant.shFocusFades = value
+        withTransaction(instant) { composing = value }
     }
 
     private var card: some View {
@@ -1093,13 +1117,14 @@ struct Composer: View, Equatable {
             // The Project's own send. No delivery choice: the project runtime queues, orders and (while paused) holds the message,
             // and reports it back through the Project record. The images on the card go with it, and only the ones submitted are
             // cleared once the runtime accepts; a refusal keeps the draft and every image.
-            let text = ComposerSkillToken.message(store.draft).trimmingCharacters(in: .whitespacesAndNewlines)
+            let draft = store.draft
+            let text = ComposerSkillToken.message(draft).trimmingCharacters(in: .whitespacesAndNewlines)
             let images = input.attachments.images
             let submitted = input.attachments.ids
             guard !text.isEmpty || !images.isEmpty else { return }
             Task {
                 if await projectSend.send(text, images) {
-                    store.draft = ""
+                    if store.draft == draft { store.draft = "" }
                     for id in submitted { input.attachments.remove(id) }
                 } else if !images.isEmpty, let why = projectSend.refusal() {
                     // The composer's own failed line says why the images (and words) were kept.

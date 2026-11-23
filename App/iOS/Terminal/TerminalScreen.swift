@@ -42,7 +42,11 @@ struct TerminalScreen: View {
         VStack(spacing: 0) {
             SHTerminalTabBar(model.items, selection: selected?.id.rawValue, select: { id in
                 if let tab = model.tab(for: id) { terminals.choose(tab, in: ref) }
-            }, close: model.canChangeTerminals && model.connected ? { id in closing = model.tab(for: id) } : nil,
+            }, close: model.canChangeTerminals && model.connected ? { id in
+                guard let tab = model.tab(for: id) else { return }
+                // A tab still Starting has no shell to stop: it goes without asking.
+                if model.startingIDs.contains(tab.id) { closeStarting(tab) } else { closing = tab }
+            } : nil,
                newTab: model.canChangeTerminals && model.connected ? { newTab(model) } : nil) {
                 if let selected, model.connected,
                    hosts.host(ref.host)?.supports(RemoteProtocol.terminalControlCapability) == true {
@@ -73,7 +77,13 @@ struct TerminalScreen: View {
                 .padding(SH.Space.m)
             }
             ZStack {
-                if let selected {
+                if let selected, model.startingIDs.contains(selected.id) {
+                    // No session yet: nothing here takes input, and no start is asked of the host.
+                    SHTerminalNotice("starting session…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.sh.bgWindow)
+                        .id(selected.id)
+                } else if let selected {
                     TerminalPaneView(ref: ref, pane: selected.leaf)
                         .id(selected.id)
                 } else {
@@ -119,9 +129,11 @@ struct TerminalScreen: View {
             askedForFirst = true
             newTab(model)
         }
+        // A tab asked for settles when the host's layout has its terminal.
+        .onChange(of: model.layoutPanes, initial: true) { _, panes in terminals.settle(ref, layout: panes) }
         // The screen closes with its last terminal.
-        .onChange(of: model.tabs.count) { before, after in
-            if !embedded, TerminalPanel.closesWithLastTerminal(before: before, after: after) { dismiss() }
+        .onChange(of: model.madeTabCount) { before, after in
+            if !embedded, model.startingIDs.isEmpty, TerminalPanel.closesWithLastTerminal(before: before, after: after) { dismiss() }
         }
         .modifier(PushedTerminalChrome(active: !embedded))
         .confirmationDialog(closing.map { model.closeConfirmation($0).title } ?? "",
@@ -129,8 +141,8 @@ struct TerminalScreen: View {
                             titleVisibility: .visible) {
             if let tab = closing {
                 Button("Close Terminal", role: .destructive) {
-                    guard let client = hosts.host(ref.host)?.connectedClient else { return }
-                    Task { await terminals.close(ref, terminal: tab.id, client: client) }
+                    guard let host = hosts.host(ref.host), let client = host.connectedClient else { return }
+                    Task { await terminals.close(ref, terminal: tab.id, client: client, host: host) }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -170,8 +182,13 @@ struct TerminalScreen: View {
     }
 
     private func newTab(_ model: TerminalModel) {
-        guard let layout = model.layout, let client = hosts.host(ref.host)?.connectedClient else { return }
-        Task { await MobileTerminals.shared.newTab(ref, layout: layout, thread: model.thread, client: client) }
+        guard let layout = model.layout, let host = hosts.host(ref.host), let client = host.connectedClient else { return }
+        Task { await MobileTerminals.shared.newTab(ref, layout: layout, thread: model.thread, client: client, host: host) }
+    }
+
+    private func closeStarting(_ tab: TerminalPanelTab) {
+        guard let host = hosts.host(ref.host), let client = host.connectedClient else { return }
+        Task { await MobileTerminals.shared.abandon(ref, placeholder: tab.id, client: client, host: host) }
     }
 }
 

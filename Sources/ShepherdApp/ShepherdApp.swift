@@ -274,10 +274,10 @@ extension ShepherdHost {
     /// Settings pages write to the shared preferences (`followOtherProcesses`). Serve this Mac opens and
     /// closes the TCP listener with its switch, as the app did; `listener` hears each outcome (its
     /// port, or why it didn't open) and the app's Settings ▸ Remote reads it again. The
-    /// listener's port, when it opened at start.
-    @discardableResult
+    /// listener opens off the main actor, so `listener` hears the start's outcome a moment after this returns.
     @MainActor static func serveSettings(_ settings: AppSettings, on server: SessionServer,
-                                         listener: ((UInt16?, Error?) -> Void)? = nil) -> UInt16? {
+                                         listener: ((UInt16?, Error?) -> Void)? = nil) {
+        settings.adoptHostPreferences(HostSettingsStore(file: server.supportDirectory.appendingPathComponent("host-preferences.json")))
         settings.followOtherProcesses()
         server.setProjectsEnabled(settings.projectsEnabled)
         settings.onProjectsChange = { [weak server] in server?.setProjectsEnabled($0) }
@@ -295,26 +295,29 @@ extension ShepherdHost {
         }
         compact(settings.compactAtPercent)
         settings.onCompactAtChange = { compact($0) }
-        let listen = { [weak server, settings] (on: Bool) -> UInt16? in
-            guard let server, on else {
-                listener?(nil, nil)
-                return nil
-            }
-            do {
-                let port = try server.startRemoteListener(port: UInt16(clamping: settings.remoteListenerPort))
-                listener?(port, nil)
-                return port
-            } catch {
-                ShepherdLog.error("host's remote listener failed to start: \(error)")
-                listener?(nil, error)
-                return nil
-            }
-        }
-        let listening = Listening(open: false)
+        let listening = Listening()
+        // The server opens and closes the listener off the main actor (`setRemoteListener`), one change after the other, and
+        // each outcome comes back here on the main queue.
         let relisten = { [weak server, settings] in
-            server?.stopRemoteListener()
-            listening.open = listen(settings.remoteListenerEnabled || listening.fleetNeeds) != nil
-            server?.settingsChanged(.remote)
+            guard let server else { return }
+            let on = settings.remoteListenerEnabled || listening.fleetNeeds
+            listening.requested = on
+            listening.pending += 1
+            server.setRemoteListener(port: on ? UInt16(clamping: settings.remoteListenerPort) : nil) { result in
+                MainActor.assumeIsolated {
+                    listening.pending -= 1
+                    switch result {
+                    case .success(let port):
+                        listening.open = port != nil
+                        listener?(port, nil)
+                    case .failure(let error):
+                        ShepherdLog.error("host's remote listener failed to start: \(error)")
+                        listening.open = false
+                        listener?(nil, error)
+                    }
+                    server.settingsChanged(.remote)
+                }
+            }
         }
         settings.onRemoteListenerChange = { _ in relisten() }
         // Fleet is how Macs connect: the host's links and pairing (`FleetService`) run as long as it does, but a fresh host listens on
@@ -323,7 +326,7 @@ extension ShepherdHost {
         server.onFleetListenerNeed { need in
             Task { @MainActor in
                 listening.fleetNeeds = need
-                if (settings.remoteListenerEnabled || need) != listening.open { relisten() }
+                if (settings.remoteListenerEnabled || need) != listening.wanted { relisten() }
             }
         }
         server.startFleet()
@@ -337,18 +340,21 @@ extension ShepherdHost {
         }
         report()
         settings.observeWrites(report)
-        let port = listen(settings.remoteListenerEnabled)
-        listening.open = port != nil
-        return port
+        // Off at start leaves a listener someone else opened alone: only a change closes it.
+        if settings.remoteListenerEnabled { relisten() } else { listener?(nil, nil) }
     }
 }
 
-/// Whether the host's listener is open, for the closures `serveSettings` hands the settings.
+/// The host's listener as `serveSettings` hands its closures: whether it is open, and what was last asked of it.
 private final class Listening: @unchecked Sendable {
-    var open: Bool
+    var open = false
     /// The fleet needs the listener (`SessionServer.onFleetListenerNeed`).
     var fleetNeeds = false
-    init(open: Bool) { self.open = open }
+    /// What the last change asked for, and how many are not answered yet.
+    var requested = false
+    var pending = 0
+    /// Open or not once every change asked for is done.
+    var wanted: Bool { pending > 0 ? requested : open }
 }
 
 /// The headless host entry (`Shepherd --host`), for the launcher shim: the session server with
@@ -468,7 +474,8 @@ public enum ShepherdHost {
                 ThreadHosting(defaults: {
                     ThreadHosting.Defaults(model: settings.defaultModel(piHome: server.pi.home), thinking: settings.defaultThinking,
                                            serviceTier: settings.defaultServiceTier, worktreeBaseMode: settings.worktreeBaseMode,
-                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate)
+                                           worktreeFetchBeforeCreate: settings.worktreeFetchBeforeCreate, subThreadPlace: settings.subThreadPlace,
+                                           threadsStartThreads: settings.threadsStartThreads, threadCap: settings.fleetThreadCap)
                 }, launch: { settings.agentLaunch }, mcp: mcp, shell: shell)
             }
         }

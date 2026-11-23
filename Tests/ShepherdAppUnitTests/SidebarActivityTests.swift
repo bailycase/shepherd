@@ -99,7 +99,7 @@ struct SidebarActivityTests {
         agent.status = .done
         agent.lastActiveAt = 1000
         agent.completedAt = 1000
-        var source = SidebarSource(local: ShepherdState(agents: [agent]), hosts: [.init(id: host, name: "horizon", state: ShepherdState(agents: [agent]))])
+        var source = SidebarSource(local: ShepherdState(agents: [agent]), hosts: [.init(id: host, name: "orbit", state: ShepherdState(agents: [agent]))])
         let ids: [SidebarRowID] = [.local(agent.id), .remote(.init(hostID: host, agentID: agent.id))]
         func done() -> [SidebarRowID] {
             var completions = SidebarCompletions()
@@ -191,7 +191,7 @@ struct SidebarActivityTests {
         second.runID = "second"
         func source(_ children: [ChildRun]) -> SidebarSource {
             let state = SidebarSource.presentationState(raw, children: [parent.id: children])
-            return SidebarSource(local: state, hosts: [.init(id: host, name: "horizon", state: state)])
+            return SidebarSource(local: state, hosts: [.init(id: host, name: "orbit", state: state)])
         }
         var completions = SidebarCompletions()
         completions.reconcile(source([]), endpoints: [host: endpoint])
@@ -212,7 +212,7 @@ struct SidebarActivityTests {
         let lists = SidebarDerivation.lists(finished, seen: seen)
         #expect(lists.done.count == 2 && lists.working.isEmpty)
         for row in lists.done { #expect(try #require(row.completion) != seen[row.id]) }
-        #expect(lists.done.first(where: { if case .remote = $0.id { true } else { false } })?.accessory == .tag("horizon"))
+        #expect(lists.done.first(where: { if case .remote = $0.id { true } else { false } })?.accessory == .tag("orbit"))
         finished.hosts[0].offline = true
         #expect(SidebarDerivation.lists(finished).recents.count == 1)
     }
@@ -242,7 +242,7 @@ struct SidebarActivityTests {
         agent.status = .done
         agent.lastActiveAt = 1000
         var source = SidebarSource(local: ShepherdState(), hosts: [
-            .init(id: host, name: "horizon", state: ShepherdState(agents: [agent]))
+            .init(id: host, name: "orbit", state: ShepherdState(agents: [agent]))
         ])
         let id = SidebarRowID.remote(.init(hostID: host, agentID: agent.id))
         var completions = SidebarCompletions()

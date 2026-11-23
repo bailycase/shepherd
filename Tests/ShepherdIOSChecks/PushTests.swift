@@ -105,7 +105,7 @@ struct PushTests {
         do { try await manager.forget(host: hostID) {}; assertionFailure("forget must fail") } catch {}
         assert(manager.isEnabled(host: hostID) && memory.read(host: hostID) != nil)
 
-        // Settings ▸ Notifications outlives the app, and a phone that never chose sends everything.
+        // Settings ▸ General outlives the app, and a phone that never chose sends everything.
         assert(manager.preferences == RemotePushPreferences())
         let chosen = RemotePushPreferences(topics: [.questions], awayOnly: false)
         await manager.setPreferences(chosen, hosts: [])
@@ -235,14 +235,16 @@ struct PushTests {
             } catch {}
         }
 
-        let alerts = GoalNotifications()
+        let alerts = GoalNotifications(bundleID: "com.bailycase.shepherd.ios")
+        let granted = try await alerts.authorizeLocalAlert(host: hostID) { true }
+        assert(granted, "local goal alerts must work on iPad as well as iPhone")
         let allowed = try await alerts.authorizeLocalAlert(host: hostID) {
             await Task.yield()
             alerts.pushEnabledHosts.insert(hostID)
             return true
         }
         assert(!allowed, "push enabled during permission must suppress the local post")
-        print("PUSH CHECK COMPLETE: payload, renewal, durable intent, failed revoke/forget, multiwindow taps, permission race")
+        print("PUSH CHECK COMPLETE: payload, renewal, durable intent, failed revoke/forget, multiwindow taps, local goal availability, permission race")
     }
 }
 

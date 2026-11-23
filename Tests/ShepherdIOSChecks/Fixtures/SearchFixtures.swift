@@ -236,7 +236,7 @@ enum SearchFixtures {
         hosts[0].state.agents.append(Agent(id: worktree, name: "Queue steering polish", spaceID: FixtureData.shepherdSpace.id,
                                            tabID: TabID(rawValue: "tab-worktree"), status: .done, nameIsFinal: true,
                                            worktreeBranch: "worktree/calm-stone-3831", worktreeBase: "origin/nightly",
-                                           worktreePath: "/Users/dev/Shepherd/.worktrees/calm-stone-3831"))
+                                           worktreePath: "/Users/dev/acme-web/.worktrees/calm-stone-3831"))
         hosts[0].threads[worktree] = FixtureData.thread()
         hosts[0].reply = { request in
             answer(request, snippets: [
@@ -259,7 +259,7 @@ enum SearchFixtures {
             return .agentResult(id: id, result: .search(snippet: snippet))
         case .worktreeInfo where agent == worktree:
             return .agentResult(id: id, result: .worktreeInfo(RemoteWorktreeInfo(
-                path: "/Users/dev/Shepherd/.worktrees/calm-stone-3831", branch: "worktree/calm-stone-3831",
+                path: "/Users/dev/acme-web/.worktrees/calm-stone-3831", branch: "worktree/calm-stone-3831",
                 warning: "2 uncommitted files and 1 unpushed commit", fingerprint: "fixture")))
         default:
             return nil

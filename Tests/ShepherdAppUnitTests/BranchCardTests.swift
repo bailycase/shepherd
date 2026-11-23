@@ -4,6 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// The branch card's pure reads: git's shortstat, the base's name, and which of the space's other
 /// threads it lists, in what order.

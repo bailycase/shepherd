@@ -15,6 +15,7 @@
     "review": "review tool",
     "subagents": "subagent tools",
     "browser": "browser tools",
+    "computer": "computer use tools",
     "mcp": "MCP",
     "design": "design tools",
     "instructions": "instruction suggestions",
@@ -110,7 +111,8 @@
         "agent_wait",
         "agent_delete",
         "agent_spawn",
-        "agent_move"
+        "agent_move",
+        "agent_rename"
       ],
       "group": "agent",
       "extension": "shepherd-panes.ts",
@@ -126,7 +128,8 @@
         "fleet_read",
         "fleet_wait",
         "fleet_send",
-        "fleet_cancel"
+        "fleet_cancel",
+        "fleet_close"
       ],
       "group": "fleet",
       "extension": "shepherd-panes.ts",
@@ -265,6 +268,15 @@
         "automation": "defer"
       },
       "reason": "The thread's own Browser tabs: 17 tools, deferred together in threads and automations. Tab management and optional page targeting add no definitions to ordinary requests; loading browser tools brings in their full schemas. A design's agent has no Browser. See docs/context-budget.md for measured cost."
+    },
+    {
+      "tools": ["list_apps", "list_windows", "launch_app", "bring_to_front", "get_window_state", "get_desktop_state", "zoom",
+        "click", "double_click", "right_click", "drag", "scroll", "type_text", "press_key", "hotkey", "set_value",
+        "invoke_menu", "run_steps", "verify_state", "check_permissions"],
+      "group": "computer",
+      "extension": "shepherd-computer-use.ts",
+      "verdicts": { "thread": "defer", "automation": "drop", "design": "drop", "child": "drop" },
+      "reason": "Registered only while Settings > Experiments > Computer use is on, and only in a thread: deferred together like the browser's, since they are large and used together. Automations, designs and children never get them."
     },
     {
       "tools": [

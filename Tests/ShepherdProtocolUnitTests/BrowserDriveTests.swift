@@ -15,7 +15,7 @@ struct BrowserDriveTests {
 
     static let pushes: [BrowserDrivePush] = [
         .request(token: 1, agentID: agent, request: .open(url: "http://localhost:5173/", note: "opening the app")),
-        .request(token: 2, agentID: agent, request: .type(ref: "e2", text: "baily@acme.dev", clear: true, submit: false, note: nil)),
+        .request(token: 2, agentID: agent, request: .type(ref: "e2", text: "alex@acme.dev", clear: true, submit: false, note: nil)),
         .request(token: 3, agentID: agent, request: .screenshot(ref: nil)),
         .abandoned(agentID: agent),
         .ended(agentID: agent, reason: BrowserDriveEnd.superseded),
