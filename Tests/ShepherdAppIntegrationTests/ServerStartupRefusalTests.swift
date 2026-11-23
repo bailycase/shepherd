@@ -1,10 +1,10 @@
 import Darwin
 import Foundation
 import ShepherdRemote
-import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSessions
 
 @Suite("App startup ownership", .mainActorExclusive)
 @MainActor
