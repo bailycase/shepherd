@@ -94,20 +94,28 @@ struct HostLaunchTests {
 
     @Test(arguments: EarlyStop.allCases)
     func earlyStopDeletesBothScratchPaths(_ reason: EarlyStop) async throws {
-        var workspace = try makeScratchDirectory("stop")
-        defer { Self.removeScratch(workspace) } // fallback after checking the child's cleanup
         let witness = try makeScratchDirectory("witness")
         defer { Self.removeScratch(witness) }
         let receipt = witness.appendingPathComponent("child-root")
 
-        let parentWorkspace = workspace
+        let base = reason == .parentDeath ? try Self.makeDyingParentBase() : nil
+        defer { if let base { Self.removeScratch(base) } }
+        let workspace: URL
+        if let base {
+            workspace = base.appendingPathComponent("workspace", isDirectory: true)
+            try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: false)
+        } else {
+            workspace = try makeScratchDirectory("stop")
+        }
+        defer { Self.removeScratch(workspace) } // fallback after checking the child's cleanup
+
         switch reason {
         case .timeout:
             let observer = Task {
                 do {
                     try await eventually("the guardian to arm", timeout: .seconds(5)) { FileManager.default.fileExists(atPath: receipt.path) }
-                    #expect(await Self.waitForHost(parentWorkspace, timeout: .milliseconds(100)) == nil)
-                    Self.requestStop(parentWorkspace)
+                    #expect(await Self.waitForHost(workspace, timeout: .milliseconds(100)) == nil)
+                    Self.requestStop(workspace)
                 } catch { Issue.record(error) }
             }
             await Self.guardControl(workspace: workspace.path, receipt: receipt.path, deadline: 10, status: 76)
@@ -115,23 +123,16 @@ struct HostLaunchTests {
         case .deadline:
             await Self.guardControl(workspace: workspace.path, receipt: receipt.path, deadline: 2, status: 72)
         case .parentDeath:
-            try await Self.runDyingParent(receipt: receipt)
+            try await Self.runDyingParent(receipt: receipt, base: try #require(base))
         }
         let paths = try String(contentsOf: receipt, encoding: .utf8).split(separator: "\n").map(String.init)
         try #require(paths.count == 2)
-        let childRoot = URL(fileURLWithPath: paths[1], isDirectory: true)
-        if reason == .parentDeath {
-            let ownedPrefix = TestProcess.root.path + "/shepherd-tests-"
-            try #require(paths[0].hasPrefix(ownedPrefix) && paths[1].hasPrefix(ownedPrefix))
-            Self.removeScratch(workspace)
-            workspace = URL(fileURLWithPath: paths[0], isDirectory: true)
-            // Verify before deleting the disposable parent's own isolation root, not this test's root.
-            let disposedParentRoot = workspace.deletingLastPathComponent()
-            defer { Self.removeScratch(disposedParentRoot) }
-            try await Self.expectClean(workspace, childRoot, reason: reason, receipt: receipt)
-            return
-        }
         try #require(paths[0] == workspace.path)
+        let childRoot = URL(fileURLWithPath: paths[1], isDirectory: true)
+        if let base {
+            try #require(childRoot.deletingLastPathComponent().path == base.path)
+            try #require(childRoot.lastPathComponent.hasPrefix("shepherd-tests-"))
+        }
         try await Self.expectClean(workspace, childRoot, reason: reason, receipt: receipt)
     }
 
@@ -143,8 +144,16 @@ struct HostLaunchTests {
         print("launch cleanup \(reason.rawValue): absent \(workspace.path) and \(childRoot.path)")
     }
 
+    /// Keep TMPDIR below the isolation constructor's 60-byte cutoff, regardless of the outer TMPDIR.
+    /// The owner can remove this exact base even if the disposable runner dies before writing its receipt.
+    private static func makeDyingParentBase() throws -> URL {
+        var template = Array("/tmp/launch-death-XXXXXX".utf8CString)
+        guard mkdtemp(&template) != nil else { throw CommandFailure("mkdtemp", String(cString: strerror(errno))) }
+        return URL(fileURLWithPath: String(cString: template), isDirectory: true)
+    }
+
     /// Swift Testing cannot nest exit tests. Re-run just the driver in a fresh SwiftPM test runner.
-    private static func runDyingParent(receipt: URL) async throws {
+    private static func runDyingParent(receipt: URL, base: URL) async throws {
         let args = CommandLine.arguments
         let index = try #require(args.firstIndex(of: "--test-bundle-path"), "run this diagnostic with SwiftPM")
         try #require(index + 1 < args.count)
@@ -153,7 +162,7 @@ struct HostLaunchTests {
         let bundle = args[index + 1]
         process.arguments = ["--test-bundle-path", bundle, "--filter", "HostLaunchTests/dyingParentDriver", bundle, "--testing-library", "swift-testing"]
         var env = ProcessInfo.processInfo.environment
-        env["TMPDIR"] = TestProcess.root.path
+        env["TMPDIR"] = base.path
         env["SHEPHERD_LAUNCH_DEATH_RECEIPT"] = receipt.path
         process.environment = env
         process.standardOutput = FileHandle.nullDevice
@@ -166,8 +175,11 @@ struct HostLaunchTests {
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_LAUNCH_DEATH_RECEIPT"] != nil))
     func dyingParentDriver() async throws {
-        let receipt = try #require(ProcessInfo.processInfo.environment["SHEPHERD_LAUNCH_DEATH_RECEIPT"])
-        let workspace = try makeScratchDirectory("parent-death")
+        let env = ProcessInfo.processInfo.environment
+        let receipt = try #require(env["SHEPHERD_LAUNCH_DEATH_RECEIPT"])
+        let base = try #require(env["TMPDIR"])
+        try #require(TestProcess.root.deletingLastPathComponent().path == base)
+        let workspace = URL(fileURLWithPath: base, isDirectory: true).appendingPathComponent("workspace", isDirectory: true)
         let parent = Task {
             do {
                 try await eventually("the guardian to arm", timeout: .seconds(5)) { FileManager.default.fileExists(atPath: receipt) }
@@ -302,6 +314,35 @@ struct HostLaunchTests {
             pullRequests = { services.pullRequests($0) }
             banners = { services.banners($0) }
         }
+    }
+
+    @Test func unreadableSocketInfoRequiresAClosedDescriptor() throws {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        #expect(throws: CommandFailure.self) {
+            try Self.listenerPort(fd, readInfo: { _, _ in false })
+        }
+
+        // Leave a low descriptor open and close a higher one to avoid reuse by unrelated opens.
+        let closed = fcntl(fd, F_DUPFD_CLOEXEC, 64)
+        try #require(closed >= 0)
+        try #require(close(closed) == 0)
+        #expect(try Self.listenerPort(closed) == nil)
+    }
+
+    /// A socket may close after enumeration. Anything but a confirmed close needs a full socket record.
+    private static func listenerPort(_ fd: Int32, readInfo: (Int32, inout socket_fdinfo) -> Bool = { fd, info in
+        let size = Int32(MemoryLayout<socket_fdinfo>.size)
+        return proc_pidfdinfo(getpid(), fd, PROC_PIDFDSOCKETINFO, &info, size) == size
+    }) throws -> Int? {
+        var info = socket_fdinfo()
+        guard readInfo(fd, &info) else {
+            if fcntl(fd, F_GETFD) == -1, errno == EBADF { return nil }
+            throw CommandFailure("proc_pidfdinfo", "socket descriptor \(fd) is unreadable and not confirmed closed")
+        }
+        guard info.psi.soi_kind == Int32(SOCKINFO_TCP), info.psi.soi_proto.pri_tcp.tcpsi_state == Int32(TSI_S_LISTEN) else { return nil }
+        return Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: info.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport)))
     }
 
     // MARK: The child's guards and report
@@ -481,11 +522,13 @@ struct HostLaunchTests {
             var now = rlimit()
             guard getrlimit(RLIMIT_NOFILE, &now) == 0 else { sampleFailed("sample getrlimit failed (errno \(errno))"); return }
             var ports: [Int] = []
-            for entry in list where entry.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
-                var info = socket_fdinfo()
-                guard proc_pidfdinfo(getpid(), entry.proc_fd, PROC_PIDFDSOCKETINFO, &info, Int32(MemoryLayout<socket_fdinfo>.size)) > 0,
-                      info.psi.soi_kind == Int32(SOCKINFO_TCP), info.psi.soi_proto.pri_tcp.tcpsi_state == Int32(TSI_S_LISTEN) else { continue }
-                ports.append(Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: info.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport))))
+            do {
+                for entry in list where entry.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
+                    if let port = try HostLaunchTests.listenerPort(entry.proc_fd) { ports.append(port) }
+                }
+            } catch {
+                sampleFailed(String(describing: error))
+                return
             }
             var names: [String: Int]?
             if list.count >= Int(HostLaunchTests.launchdDescriptorLimit) - HostLaunchTests.exhaustionMargin, list.count > lastNamed * 2 {
@@ -578,6 +621,7 @@ struct HostLaunchTests {
                 let isolatedExpected = "the soft limit reads back \(HostLaunchTests.launchdDescriptorLimit), no TCP listener ever open in the host, none on the edition's own port, and no listener line in its log"
                 var leaks: [String] = []
                 if final.limit != HostLaunchTests.launchdDescriptorLimit { leaks.append("soft limit \(final.limit)") }
+                if let failure = final.samplingFailure { leaks.append("incomplete listener observation: \(failure)") }
                 if final.mostListening > 0 { leaks.append("\(final.mostListening) TCP listener(s) on port(s) \(final.listenPorts)") }
                 if hostLog.contains("remote listener on port") { leaks.append("the log says the remote listener opened") }
                 if leaks.isEmpty { report.pass(steps.isolated, expected: isolatedExpected, actual: "limit \(final.limit), no TCP listener in \(final.ticks) samples") }
