@@ -88,7 +88,7 @@ struct FleetUserThreadTests {
     }
 
     @Test func aNamedMacThatIsAsleepHoldsTheThreadAndStartsItWhenItWakes() async throws {
-        let (a, b, origin) = try await D.pair()
+        let (a, b, origin) = try await D.pair(loopbackOnly: true)
         defer { a.stop() }
         let (dir, port) = (b.host.dir, b.port)
         b.stop(keepFiles: true)
@@ -100,7 +100,7 @@ struct FleetUserThreadTests {
         #expect(a.sent().first?.state == .waitingWake, "it never moves to another Mac")
         #expect(a.dispatched.isEmpty)
 
-        let woken = try await D.Mac("Mac mini", origin: origin, dir: dir, port: port)
+        let woken = try await D.Mac("Mac mini", origin: origin, dir: dir, port: port, loopbackOnly: true)
         defer { woken.stop() }
         try await D.wait("the thread to start on Mac mini once it is back", timeout: .seconds(60)) { !woken.dispatched.isEmpty }
         #expect(woken.dispatched.first?.dispatchedFrom?.agentID == nil)

@@ -284,7 +284,8 @@ private final class Corpus {
         coordinator = owner
         // Off, so that nothing starts it: a request names it, and the guard under test is the one in front of the run log.
         automation = Automation(name: seed["automation"]!, prompt: "Watch the build.", cwd: app.dir.path, enabled: false)
-        // The host's fleet starts with the app's host services: named, and with no Bonjour or iCloud.
+        // The host's Fleet starts with the app's host services, before the corpus opens its TCP listener.
+        try await app.server.useLoopbackNetworkingForTests()
         app.server.configureFleet(name: seed["fleetName"]!, advertises: false)
         var seeded = Fixture.state(spaces: [space, reserved], agents: [thread, owner])
         seeded.automations = [automation]
