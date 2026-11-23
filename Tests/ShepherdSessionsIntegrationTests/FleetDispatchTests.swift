@@ -109,16 +109,17 @@ struct FleetDispatchTests {
                 try git(["config", "user.email", "tests@example.com"], in: folder)
                 try await server.addSpace(Space(name: "acme-web", path: folder.path, repoKey: repoKey))
             }
-            let tokenURL = scratch.appendingPathComponent("remote-token")
-            let socket = scratch.appendingPathComponent("h.sock").path
-            let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
-            token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            try server.startLocalListener(path: socket, tokenURL: tokenURL)
+            // Issuing the test token starts Fleet. A returning peer can deliver work immediately.
             await MainActor.run {
                 server.serveThreads(ThreadHosting(defaults: {
                     ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard, worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
                 }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
             }
+            let tokenURL = scratch.appendingPathComponent("remote-token")
+            let socket = scratch.appendingPathComponent("h.sock").path
+            let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
+            token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            try server.startLocalListener(path: socket, tokenURL: tokenURL)
             // Serving threads installs the host's own window relay, which a test's updater stands in for.
             await prepare?(server)
             let settings = settings
