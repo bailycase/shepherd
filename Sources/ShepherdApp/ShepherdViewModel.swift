@@ -791,6 +791,8 @@ final class ShepherdViewModel {
         self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
+        // An extension added, removed or switched: Sign-in lists the providers it registers.
+        self.yourPi.onExtensionsChanged = { [weak piAuth = self.piAuth] in Task { await piAuth?.refreshProviders() } }
         // A host that comes back takes the skill changes it is owed (instructions sync underneath, over the fleet).
         hosts.onHostConnected = { [weak self] hostID in
             self?.skillsHostConnected(hostID)

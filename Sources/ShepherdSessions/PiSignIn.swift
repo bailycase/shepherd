@@ -120,6 +120,8 @@ public enum PiKeyCheck: Equatable, Sendable {
 public enum PiSignInReply: Equatable, Sendable {
     case ready
     case providers([PiSignInProvider])
+    /// An installed extension at this path didn't load while listing providers: it is skipped.
+    case extensionFailed(path: String)
     /// The browser sign-in's page: open it.
     case authURL(URL, instructions: String?)
     /// A device-code sign-in's code and where to enter it.
@@ -162,6 +164,7 @@ public enum PiSignInReply: Equatable, Sendable {
         var result: String?
         var models: [String]?
         var providers: [PiSignInProvider]?
+        var path: String?
     }
 
     /// One line of the bridge's stdout; nil for anything it doesn't say.
@@ -174,6 +177,8 @@ public enum PiSignInReply: Equatable, Sendable {
                   providers.allSatisfy({ !$0.id.isEmpty && !$0.name.isEmpty }),
                   Set(providers.map(\.id)).count == providers.count else { return nil }
             return .providers(providers)
+        case "extensionFailed":
+            return wire.path.flatMap { $0.isEmpty ? nil : .extensionFailed(path: $0) }
         case "event":
             guard let event = wire.event else { return nil }
             switch event.type {

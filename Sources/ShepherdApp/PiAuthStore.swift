@@ -81,11 +81,15 @@ final class PiAuthStore {
                 }
                 defer { watchdog.cancel() }
                 bridge.send(.providers)
+                var failed: [String] = []
                 for await reply in bridge.replies {
                     switch reply {
+                    case .extensionFailed(let path):
+                        failed.append(path)
                     case .providers(let list):
                         providers = list
                         providersProblem = nil
+                        if !failed.isEmpty { await extensionsFailed(failed) }
                         return
                     case .failed(let failure):
                         providersProblem = failure.reason
@@ -101,6 +105,19 @@ final class PiAuthStore {
         providerRead = read
         await read.value
         providerRead = nil
+    }
+
+    /// Extensions that didn't load while listing providers: like a failure at an agent's launch,
+    /// each of the person's is left out until its files change or it is switched on again, and
+    /// Settings shows it on its row.
+    private func extensionsFailed(_ paths: [String]) async {
+        let pi = pi
+        let changed = await Task.detached(priority: .userInitiated) {
+            paths.compactMap { path in
+                try? pi.importedState().extensionFailed(path: path, reason: "It didn't load when Sign-in listed providers. Fix it, then switch it on again.")
+            }
+        }.value
+        if !changed.isEmpty { onChanged?() }
     }
 
     // MARK: Signing in
@@ -468,7 +485,7 @@ final class PiSignInSession: Identifiable {
 
     func handle(_ reply: PiSignInReply) {
         switch reply {
-        case .ready, .providers, .info, .progress:
+        case .ready, .providers, .extensionFailed, .info, .progress:
             break
         case .authURL(let url, _):
             authURL = url

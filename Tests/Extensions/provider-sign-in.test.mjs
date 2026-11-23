@@ -41,15 +41,22 @@ export default pi => {
 };`;
 }
 
-async function bridge(t, sdk, { source = provider(), disabled = false, auth = {} } = {}) {
+async function bridge(t, sdk, { source = provider(), disabled = false, auth = {}, added = false } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-signin-")));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const home = path.join(dir, "home"), workspace = path.join(dir, "workspace");
   fs.mkdirSync(path.join(home, "extensions"), { recursive: true });
   fs.mkdirSync(path.join(workspace, ".pi", "extensions"), { recursive: true });
-  fs.writeFileSync(path.join(home, "extensions", "fixture.ts"), source);
+  // `added`: where Settings ▸ Models ▸ Extensions puts an extension, loaded by its absolute path in settings.
+  const addedPath = path.join(home, "your-extensions", "added", "fixture.ts");
+  if (added) {
+    fs.mkdirSync(path.dirname(addedPath), { recursive: true });
+    fs.writeFileSync(addedPath, source);
+  } else {
+    fs.writeFileSync(path.join(home, "extensions", "fixture.ts"), source);
+  }
   fs.writeFileSync(path.join(workspace, ".pi", "extensions", "untrusted.ts"), `throw Error("Workspace extension must not load");`);
-  fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ extensions: disabled ? ["-extensions/fixture.ts"] : [] }));
+  fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ extensions: added ? [addedPath] : disabled ? ["-extensions/fixture.ts"] : [] }));
   fs.writeFileSync(path.join(home, "auth.json"), JSON.stringify(auth));
   const child = spawn(process.execPath, [script, path.join(pkg, sdk), home], {
     cwd: workspace, stdio: ["pipe", "pipe", "pipe"],
@@ -142,17 +149,33 @@ for (const sdk of ["dist/index.js", "dist/bundle/index.js"]) {
     await b.close();
   });
 
-  test(`${sdk}: a broken extension does not block sign-out, even after failed discovery`, { timeout: 30000 }, async t => {
+  test(`${sdk}: a broken extension blocks neither other providers nor sign-out`, { timeout: 30000 }, async t => {
     const b = await bridge(t, sdk, {
       source: `throw Error("fixture-extension-private-detail");`,
       auth: { "fixture-login": { type: "api_key", key: "fixture-old-key" }, unrelated: { type: "api_key", key: "fixture-other-key" } },
     });
     b.send({ type: "providers" });
-    assert.equal((await b.reply("failed")).reason, "Could not load installed provider extensions.");
+    // The broken extension is named by path and skipped; pi's own providers still list.
+    assert.match((await b.reply("extensionFailed")).path, /fixture\.ts$/);
+    const { providers } = await b.reply("providers");
+    assert.equal(providers.find(p => p.id === "fixture-login"), undefined);
+    assert.ok(providers.some(p => p.id === "anthropic"));
     b.send({ type: "logout", provider: "fixture-login" });
     await b.reply("loggedOut");
     assert.deepEqual(b.auth(), { unrelated: { type: "api_key", key: "fixture-other-key" } });
     assert.doesNotMatch(b.output(), /fixture-extension-private-detail/);
+    await b.close();
+  });
+
+  test(`${sdk}: an extension added in Shepherd, loaded by its path in settings, offers its sign-in`, { timeout: 30000 }, async t => {
+    const b = await bridge(t, sdk, { added: true });
+    b.send({ type: "providers" });
+    const { providers } = await b.reply("providers");
+    assert.equal(providers.find(p => p.id === "fixture-login")?.oauth, "Fixture account");
+    b.send({ type: "login", provider: "fixture-login", method: "oauth", flow: "paste" });
+    const prompt = await b.reply("prompt");
+    b.send({ type: "answer", id: prompt.id, value: "fixture-code" });
+    assert.equal((await b.reply("done")).credential, "oauth");
     await b.close();
   });
 

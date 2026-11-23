@@ -17,6 +17,7 @@
 // stdout:
 //   {"type":"ready"}
 //   {"type":"providers","providers":[{"id":…, "name":…, "oauth"?:…, "apiKey"?:…}]}
+//   {"type":"extensionFailed","path":…}         an installed extension that didn't load (before the first reply that loads them)
 //   {"type":"event","event":{"type":"auth_url"|"device_code"|"info"|"progress",…}}
 //   {"type":"prompt","id":"p1","kind":"manual_code"|"secret"|"text"|"select","message":…,"placeholder"?,"options"?}
 //   {"type":"promptClosed","id":"p1"}           pi no longer needs that answer (the browser won)
@@ -85,9 +86,10 @@ async function modelRuntime() {
       settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }),
       resourceLoaderOptions: { noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true },
     });
-    if (services.resourceLoader.getExtensions().errors.length || services.diagnostics.some(d => d.type === "error")) {
-      throw new Error("Could not load installed provider extensions.");
-    }
+    if (services.diagnostics.some(d => d.type === "error")) throw new Error("Could not load installed provider extensions.");
+    // One extension that fails leaves the others' providers usable: the app learns its path (never
+    // its error, which may quote its code) and leaves it out of launches, as pi's own failure does.
+    for (const { path: failed } of services.resourceLoader.getExtensions().errors) send({ type: "extensionFailed", path: String(failed) });
     return services.modelRuntime;
   })();
 }

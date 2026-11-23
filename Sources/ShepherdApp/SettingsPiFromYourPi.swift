@@ -3,8 +3,8 @@ import ShepherdUI
 import ShepherdSessions
 import ShepherdRemote
 
-/// Settings ▸ Models ▸ Your pi (SettingsPiFromPi, SettingsPiExtensions): a sub-page of Models. Where Shepherd's copy came from, each item
-/// with how it stands and Re-import, the files copied, and the user's extensions with their switches.
+/// Settings ▸ Models ▸ Your pi (SettingsPiFromPi): a sub-page of Models. Where Shepherd’s copy came from, each item
+/// with how it stands and Re-import. The extensions it copies are switched in Settings ▸ Models ▸ Extensions.
 struct FromYourPiSettings: View {
     let model: YourPiModel
     var openExtensions: () -> Void = {}
@@ -32,23 +32,9 @@ struct FromYourPiSettings: View {
                     reimportRow("Skills", hint: Self.countText(survey.copies(.skills).count, "skill"), item: .files(.skills))
                     reimportRow("Prompts", hint: Self.countText(survey.copies(.prompts).count, "template"), item: .files(.prompts))
                     reimportRow("Themes", hint: Self.countText(survey.copies(.themes).count, "theme"), item: .files(.themes))
-                }
-                SettingsGroup(title: "Imported extensions", footnote: "Imported extensions run with your account’s access.") {
-                    ForEach(survey.extensions) { item in
-                        SettingsRow(title: item.copy.name, subtitle: item.failure ?? [YourPiText.extensionPath(item), item.summary]
-                                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
-                                    problem: nil) {
-                            SettingsSwitch(label: item.copy.name, isOn: Binding(
-                                get: { item.on }, set: { on in Task { await model.setExtension(item.copy.destination, on: on) } }))
-                        }
-                    }
-                    SettingsRow(title: "Copy again", subtitle: survey.extensions.isEmpty ? "Your pi has no extensions Shepherd copied."
-                                    : Self.countText(survey.extensions.count, "extension"),
-                                problem: model.problems[YourPiModel.rowID(.files(.extensions))]) {
-                        Button("Copy") { Task { await model.reimport(.files(.extensions)) } }
-                            .buttonStyle(.sh(.secondary, size: .s))
-                            .disabled(model.busy.contains(YourPiModel.rowID(.files(.extensions))))
-                    }
+                    // Switched on and off with those added in Shepherd, in Settings ▸ Models ▸ Extensions.
+                    reimportRow("Extensions", hint: Self.countText(survey.copies(.extensions).filter { !YourPiImport.isAdded($0.destination) }.count, "extension"),
+                                item: .files(.extensions))
                 }
             } else {
                 SettingsGroup(title: "", footnote: survey.problems.first) {

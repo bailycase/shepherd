@@ -47,6 +47,9 @@ struct PiSignInProtocolTests {
               reply: .providers([PiSignInProvider(id: "acme", name: "Acme", oauth: "Acme account")])),
         Reply(json: #"{"type":"providers","providers":[{"id":"a","name":"A"},{"id":"a","name":"Again"}]}"#, reply: nil),
         Reply(json: #"{"type":"providers","providers":[{"id":"","name":"Empty"}]}"#, reply: nil),
+        Reply(json: #"{"type":"extensionFailed","path":"/home/your-extensions/added/x.ts"}"#,
+              reply: .extensionFailed(path: "/home/your-extensions/added/x.ts")),
+        Reply(json: #"{"type":"extensionFailed"}"#, reply: nil),
         Reply(json: #"{"type":"event","event":{"type":"auth_url","url":"https://claude.ai/oauth/authorize?x=1","instructions":"Complete login"}}"#,
               reply: .authURL(URL(string: "https://claude.ai/oauth/authorize?x=1")!, instructions: "Complete login")),
         // Only a web page is ever opened.

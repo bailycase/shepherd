@@ -459,6 +459,8 @@ enum PreviewYourPi {
                    destination: "your-extensions/files/web-search", entries: ["index.ts"]),
         YourPiCopy(kind: .extensions, name: "git-guard", source: "/Users/you/.pi/agent/extensions/git-guard.ts",
                    destination: "your-extensions/files/git-guard.ts", entries: [""]),
+        YourPiCopy(kind: .extensions, name: "acme-login", source: "https://github.com/acme/pi-acme-login",
+                   destination: "your-extensions/added/acme-login", entries: ["index.ts"]),
     ]
 
     /// After the first copy, as SettingsPiSignIn and SettingsPiFromPi draw it: subscriptions signed
@@ -493,6 +495,7 @@ enum PreviewYourPi {
         survey.copies = copies
         survey.instructionLines = 38
         survey.extensions = [
+            YourPiExtensionRow(copy: copies[11], on: true, summary: "Sign in to Acme with your Acme account."),
             YourPiExtensionRow(copy: copies[7], summary: "Adds a /pr-review command that checks the diff against your repo’s rules."),
             YourPiExtensionRow(copy: copies[8], on: true, summary: "Posts to Slack when an agent finishes or needs you."),
             {

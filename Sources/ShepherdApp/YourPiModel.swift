@@ -98,7 +98,33 @@ final class YourPiModel {
     /// agents load it, running ones on `/reload`.
     func setExtension(_ destination: String, on: Bool) async {
         await run(Self.extensionRowID(destination)) { pi in try pi.importedState().setExtension(destination, on: on) }
+        onExtensionsChanged?()
     }
+
+    /// The row an add's problem shows on (Settings ▸ Models ▸ Extensions).
+    static let addExtensionRow = "extensions:add"
+
+    /// Adds an extension from a file or folder on this Mac, or a Git repository URL, switched on.
+    func addExtension(_ source: ExtensionSource) async {
+        await run(Self.addExtensionRow) { pi in
+            switch source {
+            case .path(let url): try pi.importedState().addExtension(from: url)
+            case .git(let url): try pi.importedState().addExtension(git: url)
+            }
+        }
+        onExtensionsChanged?()
+    }
+
+    enum ExtensionSource: Sendable { case path(URL), git(String) }
+
+    /// Removes an extension's copy: new agents start without it.
+    func removeExtension(_ destination: String) async {
+        await run(Self.extensionRowID(destination)) { pi in try pi.importedState().removeExtension(destination) }
+        onExtensionsChanged?()
+    }
+
+    /// Extensions changed: Sign-in lists the providers they register afresh.
+    @ObservationIgnored var onExtensionsChanged: (() -> Void)?
 
     private func run(_ row: String, _ body: @escaping @Sendable (PiSetup) throws -> Void) async {
         guard !fixed, !busy.contains(row) else { return }
