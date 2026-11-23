@@ -869,10 +869,19 @@ private final class Corpus {
         let peer = try await connect(capabilities: Self.current, name: "acme-peer", token: token)
         let project = app.dir.appendingPathComponent("acme-oauth")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        try await app.server.addSpace(Space(name: "Acme OAuth", path: project.path), first: false)
+        let oauthSpace = Space(name: "Acme OAuth", path: project.path)
+        try await app.server.addSpace(oauthSpace, first: false)
         let directory = project.path, file = ".shepherd/mcp.json"
         _ = try await local.projects(.save(directory: directory, file: file,
                                            text: #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#, expected: nil))
+        // Pairing starts Fleet's index. Let its Git probe and repo-stamp write for this space finish before measuring refusals.
+        let stampsURL = app.dir.appendingPathComponent("fleet/repo-stamps.json")
+        try await eventuallyAsync("Fleet to finish indexing and stamping the MCP fixture") {
+            guard try await local.fleetRead().snapshot.index?.indexing == false,
+                  let data = try? Data(contentsOf: stampsURL),
+                  let stamps = try? JSONDecoder().decode([String: String].self, from: data) else { return false }
+            return stamps[oauthSpace.id.rawValue] != nil
+        }
         let owner = RemoteHostClient()
         defer { owner.disconnect() }
         _ = try await owner.connect(host: "127.0.0.1", port: port, token: app.server.clientTokenForTests(), clientName: "acme-phone")
