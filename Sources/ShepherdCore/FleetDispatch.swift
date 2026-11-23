@@ -320,6 +320,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var failure: String?
     public var failureDetail: String?
     public var title: String
+    /// The receiving Mac increments this on each confirmed rename. Older status pushes cannot restore a previous title.
+    public var titleRevision: UInt64?
     /// The sender gave `title` (else it is the task's first line, so a thread other than the sender must not be shown it). False from an older
     /// build, whose titles are all treated as the task's.
     public var titleGiven: Bool
@@ -436,7 +438,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentAgentID, parentHostID, parentHostName, parentTitle, targetHostID, targetHostName, requestedHost, state
-        case failure, failureDetail, title, titleGiven, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
+        case failure, failureDetail, title, titleGiven, titleRevision, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
         case activity, lastThreadEventAt, resultText, resultBranchFacts, createdAt, updatedAt, hostRunningDispatches, closeReport, comparisonBranch
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
         case spaceID, origin, clone, start, fixes, move, movedOn, limitProvider, parentDepth
@@ -460,6 +462,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         failureDetail = try c.decodeIfPresent(String.self, forKey: .failureDetail)
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         titleGiven = try c.decodeIfPresent(Bool.self, forKey: .titleGiven) ?? false
+        titleRevision = try c.decodeIfPresent(UInt64.self, forKey: .titleRevision)
         task = try c.decodeIfPresent(String.self, forKey: .task) ?? ""
         repoKey = try c.decodeIfPresent(String.self, forKey: .repoKey) ?? ""
         commitSHA = try c.decodeIfPresent(String.self, forKey: .commitSHA)
@@ -511,6 +514,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(failureDetail, forKey: .failureDetail)
         try c.encode(title, forKey: .title)
         if titleGiven { try c.encode(titleGiven, forKey: .titleGiven) }
+        try c.encodeIfPresent(titleRevision, forKey: .titleRevision)
         try c.encode(task, forKey: .task)
         try c.encode(repoKey, forKey: .repoKey)
         try c.encodeIfPresent(commitSHA, forKey: .commitSHA)

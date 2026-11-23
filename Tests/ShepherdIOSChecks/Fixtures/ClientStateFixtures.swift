@@ -48,6 +48,7 @@ enum ClientStateChecks {
         await creation(app)
         await review(app)
         await reviewColors(app)
+        await reviewCancellation(app)
     }
 
     static func keyboardCommands(_ app: MobileApp) async {
@@ -654,6 +655,93 @@ extension ClientStateChecks {
             store.setWordDiffs(split)
             check(changed.raised, "cached \(split ? "split" : "unified") diff rows update when their colors change")
         }
+    }
+}
+
+extension ClientStateChecks {
+    /// A cancelled read (the screen left, or a newer load took over) is not a failure: no error
+    /// text, the files already shown stay. With nothing to show and nothing taking over, the
+    /// review is idle (Try again), never a spinner. A refusal still shows.
+    static func reviewCancellation(_ app: MobileApp) async {
+        let path = "file.swift"
+        let file = DiffFile(oldPath: path, newPath: path, displayPath: path, isNew: false, isDeleted: false, isRenamed: false, isBinary: false,
+                            hunks: [DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "let x = 1", oldLine: nil, newLine: 1, id: 1)])])
+        let list = ChangesList(scope: .uncommitted, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
+                               comparison: ChangesComparison(head: "working", base: "HEAD"),
+                               files: [ChangesFile(path: path, status: .modified, added: 1, removed: 0)])
+        var failure: Error = CancellationError()
+        var listed = false
+        var served = false
+        var asked = 0
+        let store = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            asked += 1
+            switch query {
+            case .changesList:
+                if listed { throw failure }
+                return .changesList(list)
+            case .changesBranches:
+                if served { return .changesBranches(ChangesBranches(defaultBase: "main", branches: [])) }
+                throw failure
+            case .changesFile:
+                if served { return .changesFile(ChangesFileDiff(file: file)) }
+                throw failure
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        listed = true
+        await store.load(hosts: app.hosts)
+        await Task.yield()
+        let afterFirst = asked
+        check(store.loadError == nil && !store.loaded && !store.loading, "a cancelled first load shows no error and stays unloaded")
+        check(store.loadIdle, "a cancelled first load with nothing after it is idle, not loading")
+        check(asked == afterFirst, "reading the idle state starts no request")
+        listed = false
+        await store.refresh()?.value
+        listed = true
+        check(store.loaded && !store.loadIdle && store.entries.map(\.id) == [path], "Try again from idle loads the review")
+        await store.load(hosts: app.hosts)
+        check(store.loadError == nil && store.loaded && store.entries.map(\.id) == [path], "a cancelled reload keeps the files on hand")
+        await store.loadBranches()
+        let afterBranches = asked
+        check(store.branchesError == nil && store.branches == nil && store.branchesCancelled,
+              "a cancelled branch list is idle: no error, none loaded")
+        check(asked == afterBranches, "reading the idle branch list starts no request")
+        let fetch = store.ensure(path)
+        check(fetch != nil, "the review asks for the file's hunks")
+        await fetch?.value
+        let afterFile = asked
+        check(store.fileErrors[path] == nil && store.state(of: path) == .idle, "a cancelled file fetch is idle, not loading and not failed")
+        check(asked == afterFile, "reading the idle file starts no request")
+        served = true
+        await store.loadBranches()
+        check(store.branches != nil && !store.branchesCancelled, "Try again from an idle branch list loads it")
+        await store.ensure(path)?.value
+        check(store.state(of: path) == .lines, "Try again from an idle file loads its hunks")
+        failure = RemoteHostClientError.rejected(code: "fixture", message: "The host refused.")
+        await store.load(hosts: app.hosts)
+        check(store.loadError == "The host refused.", "a refused load still shows its message")
+
+
+        // Branch request A is pending, B starts and is cancelled: the picker is still loading, not idle.
+        var heldBranches: CheckedContinuation<Void, Never>?
+        let second = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            switch query {
+            case .changesList: return .changesList(list)
+            case .changesBranches:
+                if heldBranches != nil { throw CancellationError() }
+                await withCheckedContinuation { heldBranches = $0 }
+                return .changesBranches(ChangesBranches(defaultBase: "main", branches: []))
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        await second.load(hosts: app.hosts)
+        let requestA = Task { await second.loadBranches() }
+        while heldBranches == nil { await Task.yield() }
+        await second.loadBranches()
+        check(!second.branchesCancelled && second.branches == nil, "a cancelled branch request with another still pending is loading, not idle")
+        heldBranches?.resume()
+        await requestA.value
+        check(second.branches != nil && !second.branchesCancelled, "the pending branch request's reply fills the list")
     }
 }
 

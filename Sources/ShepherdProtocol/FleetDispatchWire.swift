@@ -243,8 +243,11 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
     /// (`fleet.move.v1`; only ever sent to a Mac that offers it).
     case commit
 
-    private enum Kind: String, Codable { case status, cancel, close, message, commit }
-    private enum CodingKeys: String, CodingKey { case type, text, delivery }
+    /// Rename the existing thread, even after its run finishes (`fleet.dispatch.rename.v1`).
+    case rename(name: String)
+
+    private enum Kind: String, Codable { case status, cancel, close, message, commit, rename }
+    private enum CodingKeys: String, CodingKey { case type, text, delivery, name }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -253,6 +256,7 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
         case .cancel: self = .cancel
         case .close: self = .close
         case .commit: self = .commit
+        case .rename: self = .rename(name: try c.decode(String.self, forKey: .name))
         case .message:
             self = .message(text: try c.decode(String.self, forKey: .text),
                             delivery: (try? c.decodeIfPresent(FleetMessageDelivery.self, forKey: .delivery)) ?? .followUp)
@@ -266,6 +270,9 @@ public enum FleetDispatchControl: Codable, Hashable, Sendable {
         case .cancel: try c.encode(Kind.cancel, forKey: .type)
         case .close: try c.encode(Kind.close, forKey: .type)
         case .commit: try c.encode(Kind.commit, forKey: .type)
+        case .rename(let name):
+            try c.encode(Kind.rename, forKey: .type)
+            try c.encode(name, forKey: .name)
         case .message(let text, let delivery):
             try c.encode(Kind.message, forKey: .type)
             try c.encode(text, forKey: .text)

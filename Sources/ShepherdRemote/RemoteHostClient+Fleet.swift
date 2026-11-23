@@ -174,8 +174,15 @@ extension RemoteHostClient {
     /// Asks the Mac a dispatch runs on about it, stops it, or messages its thread. Throws `unknown_dispatch`
     /// when that Mac holds no such dispatch.
     public func fleetDispatchControl(_ dispatchID: UUID, _ control: FleetDispatchControl) async throws -> FleetDispatchRecord {
-        let closing = control == .close
-        return try Self.dispatchRecord(from: try await request(timeout: closing ? 120 : Self.requestTimeout, keepConnectionOnTimeout: closing) {
+        let timeout: TimeInterval
+        let keepConnectionOnTimeout: Bool
+        switch control {
+        case .close: (timeout, keepConnectionOnTimeout) = (120, true)
+        // Give the receiver's 10 s Pi request time to return before the tool's 20 s deadline.
+        case .rename: (timeout, keepConnectionOnTimeout) = (15, true)
+        default: (timeout, keepConnectionOnTimeout) = (Self.requestTimeout, false)
+        }
+        return try Self.dispatchRecord(from: try await request(timeout: timeout, keepConnectionOnTimeout: keepConnectionOnTimeout) {
             .fleetDispatchControl(id: $0, dispatchID: dispatchID, control: control)
         })
     }

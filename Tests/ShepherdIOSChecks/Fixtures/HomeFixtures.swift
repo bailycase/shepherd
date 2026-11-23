@@ -13,8 +13,23 @@ extension FixtureCatalog {
         let fleet = HomeFixtureData.fleet()
         return [
             FixtureScreen(name: "home", prepare: settle),
-            FixtureScreen(name: "home-fleet", hosts: fleet, prepare: settle),
+            FixtureScreen(name: "home-fleet", hosts: fleet, prepare: { app in
+                await settle(app)
+                await HostNoticeCheck.run(app, label: "Retry MacBook Air") { app in app.hosts.host(FixtureData.laptop)?.phase == .connecting }
+            }),
             FixtureScreen(name: "home-empty", hosts: []),
+            // iPad: the overview with nothing in its columns and Macs that cannot be reached: one (as the closed screen
+            // shows it), then more than a screen holds, which scrolls so New thread stays reachable.
+            FixtureScreen(name: "overview-offline-one", hosts: HomeFixtureData.offline(1), prepare: { app in
+                SidebarAutomationsCheck.enableAccessibility()
+                if app.navigator.layout == .pad { await OverviewOpenCheck.waitForOverview(app) }
+                await FixtureCheck.wait("the build-01 notice to be drawn", seconds: 10) {
+                    SidebarAutomationsCheck.all.contains { $0.accessibilityLabel == "build-01" && !$0.accessibilityFrame.isEmpty }
+                }
+            }),
+            FixtureScreen(name: "overview-offline-many", hosts: HomeFixtureData.offline(24, refusing: true), prepare: { app in
+                await OverviewScrollCheck.run(app)
+            }),
             // iPad: hosts with no threads, so the overview is its empty state.
             FixtureScreen(name: "home-nothreads", hosts: [FixtureHostData(id: FixtureData.studio, name: "Studio", state: ShepherdState())],
                           prepare: settle),
@@ -33,7 +48,10 @@ extension FixtureCatalog {
             // The Designs tab while no host serves designs: its root says why (DuoClosedHome).
             FixtureScreen(name: "designs-unserved", hosts: fleet, routes: [.designs(.list)], prepare: settle),
             // The laptop is up but refuses the phone's token, instead of being unreachable.
-            FixtureScreen(name: "home-refused", hosts: FixtureData.refusingLaptop(fleet), prepare: settle),
+            FixtureScreen(name: "home-refused", hosts: FixtureData.refusingLaptop(fleet), prepare: { app in
+                await settle(app)
+                await HostNoticeCheck.run(app, label: "Add MacBook Air again with a code") { app in app.navigator.presented?.route == .settings(.host(nil)) }
+            }),
             FixtureScreen(name: "more-refused", hosts: FixtureData.refusingLaptop(fleet), routes: [.home(.more)], prepare: settle),
             FixtureScreen(name: "recents", hosts: fleet, routes: [.home(.recents)], prepare: settle),
             // iPad: the sidebar over a portrait thread (run with --sidebar).
@@ -146,6 +164,22 @@ extension FixtureCatalog {
         try? await Task.sleep(for: .seconds(1))
     }
 
+    /// Wait for the overview to be drawn, not just for the split-view binding to change.
+    static func waitForOverview(_ app: MobileApp) async {
+        await FixtureCheck.wait("the Overview to be drawn with the sidebar out", seconds: 10) {
+            if app.navigator.padColumns != .detailOnly {
+                app.navigator.padColumns = .detailOnly
+                return false
+            }
+            guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow) else { return false }
+            let screen = UIAccessibility.convertToScreenCoordinates(window.bounds, in: window)
+            let visible = SidebarAutomationsCheck.all.filter { $0.accessibilityFrame.intersects(screen) }
+            return visible.contains { $0.accessibilityLabel?.hasPrefix("Overview") == true && $0.accessibilityTraits.contains(.header) }
+                && !visible.contains { $0.accessibilityLabel == "Projects" }
+        }
+    }
+
     static func run(_ app: MobileApp) async {
         func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
         SidebarAutomationsCheck.enableAccessibility()
@@ -170,6 +204,117 @@ extension FixtureCatalog {
             check(pressed && app.navigator.selectedThread == ref, "pressing \(what) opens its thread")
         }
         app.navigator.padSelection = nil
+    }
+}
+
+/// A host that is not connected is told on Home, and on the iPad overview with the sidebar out: its notice is drawn, and
+/// pressing its button (the way VoiceOver activates it) does what the button says.
+@MainActor enum HostNoticeCheck {
+    static func run(_ app: MobileApp, label: String, pressed effect: (MobileApp) -> Bool) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        SidebarAutomationsCheck.enableAccessibility()
+        if app.navigator.layout == .pad { await OverviewOpenCheck.waitForOverview(app) }
+        func notice() -> NSObject? {
+            SidebarAutomationsCheck.all.first { $0.accessibilityLabel == label && !$0.accessibilityFrame.isEmpty }
+        }
+        // The tree fills in once SwiftUI has an assistive client; a notice that never draws fails here, not on a missing button.
+        await FixtureCheck.wait("the host notice's button (\(label))", seconds: 10) { notice() != nil }
+        guard let button = notice() else { return check(false, "the host notice's button is drawn (\(label))") }
+        check(button.accessibilityActivate() && effect(app), "pressing \(label) does what it says")
+        // The shot shows the notice, not the sheet Add a Mac opened; the runner lets the dismissal settle before it.
+        app.navigator.dismissPresented()
+    }
+}
+
+/// With nothing in the overview's columns, the notices and New thread scroll when they outgrow the screen: scrolled to the end,
+/// the last control is inside the window. (Without a scroll view they run off the bottom with no way to reach them.)
+@MainActor enum OverviewScrollCheck {
+    static func run(_ app: MobileApp) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        guard app.navigator.layout == .pad else { return }
+        SidebarAutomationsCheck.enableAccessibility()
+        await OverviewOpenCheck.waitForOverview(app)
+        await FixtureCheck.wait("the first offline Mac's notice to be drawn", seconds: 10) {
+            SidebarAutomationsCheck.all.contains { $0.accessibilityLabel == "Add build-01 again with a code" && !$0.accessibilityFrame.isEmpty }
+        }
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow),
+              let scroll = largestScrollView(in: window) else {
+            return check(false, "a scroll view holds the overflowing overview content")
+        }
+        func viewport() -> CGRect {
+            let safe = UIAccessibility.convertToScreenCoordinates(window.bounds.inset(by: window.safeAreaInsets), in: window)
+            let bounds = UIAccessibility.convertToScreenCoordinates(scroll.bounds.inset(by: scroll.safeAreaInsets), in: scroll)
+            return bounds.intersection(safe)
+        }
+        let contentID = "overview-content-new-thread"
+        let identifier = #selector(getter: UIAccessibilityIdentification.accessibilityIdentifier)
+        func hasID(_ element: NSObject, _ id: String) -> Bool {
+            // SwiftUI's AX node implements the getter without declaring protocol conformance.
+            element.responds(to: identifier) && element.value(forKey: NSStringFromSelector(identifier)) as? String == id
+        }
+        func newThreadIsVisible(_ elements: [NSObject], in viewport: CGRect) -> Bool {
+            elements.contains { element in
+                let frame = element.accessibilityFrame
+                return element.accessibilityLabel == "New thread" && hasID(element, contentID)
+                    && !frame.isEmpty && viewport.contains(frame)
+            }
+        }
+        check(!newThreadIsVisible(SidebarAutomationsCheck.all, in: viewport()), "the overflowing fixture starts with the content New thread out of view")
+        // The cards are lazy, so their height estimate moves as the rows are built. Poll until the
+        // end and a fully visible content button hold still together.
+        var held = 0, height = scroll.contentSize.height
+        await FixtureCheck.wait("the content New thread to fit in the visible scroll viewport", seconds: 15) {
+            let end = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height
+            let still = abs(scroll.contentOffset.y - end) < 1 && scroll.contentSize.height == height
+                && newThreadIsVisible(SidebarAutomationsCheck.all, in: viewport())
+            held = still ? held + 1 : 0
+            height = scroll.contentSize.height
+            if held >= 10 { return true }
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: end), animated: false)
+            return false
+        }
+        let visible = viewport()
+        let elements = SidebarAutomationsCheck.all
+        // Duo puts the toolbar in a side rail; do not infer which button it is from its position.
+        let toolbarOnly = elements.filter {
+            $0.accessibilityLabel == "New thread" && hasID($0, "overview-toolbar-new-thread") && !$0.accessibilityFrame.isEmpty
+        }
+        check(!toolbarOnly.isEmpty, "the toolbar's New thread is drawn")
+        check(!newThreadIsVisible(toolbarOnly, in: visible), "the toolbar action alone cannot satisfy the content visibility assertion")
+        check(newThreadIsVisible(elements, in: visible), "scrolled to the end, the content New thread fits in the visible scroll viewport")
+    }
+
+    private static func largestScrollView(in view: UIView) -> UIScrollView? {
+        var found: [UIScrollView] = []
+        func walk(_ view: UIView) {
+            if let scroll = view as? UIScrollView, !(scroll is UICollectionView), !(scroll is UITextView),
+               scroll.contentSize.height > scroll.bounds.height { found.append(scroll) }
+            view.subviews.forEach(walk)
+        }
+        walk(view)
+        return found.max { $0.contentSize.height < $1.contentSize.height }
+    }
+}
+
+/// The iPad overview stays between the sidebar and the rail: with the sidebar docked (the split view brings it back after the
+/// fixture hides it) the review queue row and the first Open button sit inside the window's safe area, and clear of the sidebar.
+@MainActor enum OverviewFitCheck {
+    static func run(_ app: MobileApp) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        SidebarAutomationsCheck.enableAccessibility()
+        let titles = ["Review queue"] + HomeFeed.of(app.hosts).model.needsYou.map { "Open \($0.thread)" }
+        func drawn() -> [NSObject] { SidebarAutomationsCheck.all.filter { element in titles.contains { element.accessibilityLabel?.hasPrefix($0) == true } } }
+        await FixtureCheck.wait("the overview's rows to be drawn", seconds: 10) { drawn().count == titles.count }
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) else {
+            return check(false, "a key window")
+        }
+        let safe = window.bounds.inset(by: window.safeAreaInsets)
+        // A sidebar that slides over the overview (portrait) covers it by design; only a docked one takes room.
+        let left = app.navigator.padColumns == .detailOnly || app.navigator.padSidebarOverlays ? safe.minX : MobileLayout.sidebarWidth
+        let placed = drawn()
+        check(placed.count == titles.count, "the overview's rows are drawn (\(placed.count) of \(titles.count))")
+        check(placed.allSatisfy { $0.accessibilityFrame.minX >= left - 0.5 && $0.accessibilityFrame.maxX <= safe.maxX + 0.5 },
+              "no overview row runs under the sidebar (to \(left)) or the rail (from \(safe.maxX))")
     }
 }
 
@@ -281,6 +426,14 @@ enum HomeFixtureData {
             hosts[0].state.agents[4].name = "Merge the release pull request after every required check on every platform has finished"
         }
         return hosts
+    }
+
+    /// `count` Macs with a notice and no thread. Unreachable ones keep retrying, so their notices flip between Retry and
+    /// Connecting; `refusing` ones are up and refuse the token, which holds still.
+    static func offline(_ count: Int, refusing: Bool = false) -> [FixtureHostData] {
+        (1...count).map {
+            FixtureHostData(id: UUID(), name: String(format: "build-%02d", $0), state: ShepherdState(), online: refusing, refusesToken: refusing)
+        }
     }
 
     /// Two hosts with threads and nothing waiting on the user.

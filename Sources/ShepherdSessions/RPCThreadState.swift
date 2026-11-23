@@ -2063,6 +2063,7 @@ final class RPCThreadState {
                     value.origin = origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
                 }
                 value.typedCommand = origins[value.entryID]?.command
+                value.fleetResultID = origins[value.entryID]?.fleetResultID
                 value.operationID = operationsByEntry[value.entryID]
             }
         }

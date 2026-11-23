@@ -85,9 +85,9 @@ public enum PiSessionPreview {
             let originSnapshot = originStore?.loadSession(sessionID: sessionID)
             let sent = originSnapshot?.entries ?? []
             let references = Dictionary(sent.compactMap { entry in entry.record.references.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
-            let commands = Dictionary(sent.compactMap { entry in entry.record.command.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
+            let metadata = Dictionary(sent.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
             var preview = snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references,
-                                   commands: commands)
+                                   metadata: metadata)
             preview.originsProblem = originSnapshot?.problem
             return preview
         }
@@ -364,10 +364,13 @@ public enum PiSessionPreview {
     }
 
     private static func snapshot(_ walk: Walk, settings: (model: String?, thinking: String?), sessionID: String, moreBefore: Bool,
-                                 sentReferences: [String: [String]], commands: [String: String] = [:]) -> NativeThreadSnapshot {
+                                 sentReferences: [String: [String]], metadata: [String: ThreadOriginStore.Record]) -> NativeThreadSnapshot {
         var value = base(sessionID: sessionID, model: settings.model, thinking: settings.thinking)
         let history = RPCThreadState.projectHistory(messages(walk.path), sentReferences: sentReferences) { row, message in
-            if message.role == "user" { row.typedCommand = commands[row.entryID] }
+            if message.role == "user" {
+                row.typedCommand = metadata[row.entryID]?.command
+                row.fleetResultID = metadata[row.entryID]?.fleetResultID
+            }
         }
         RPCThreadState.fillPage(&value, from: history, end: history.count, moreBefore: moreBefore)
         return value

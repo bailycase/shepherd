@@ -24,11 +24,11 @@ struct ExtensionMessageTests {
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject,
-             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetListDispatches:
+             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename, .fleetListDispatches:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 72
+    static let caseCount = 73
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -89,6 +89,7 @@ struct ExtensionMessageTests {
         .fleetDispatchMessage(id: 135, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Thanks.", delivery: .followUp),
         .fleetDispatchCancel(id: 136, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
         .fleetDispatchClose(id: 137, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetDispatchRename(id: 138, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", name: "Payment test"),
         .fleetListDispatches(id: 138, agentID: agent),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
