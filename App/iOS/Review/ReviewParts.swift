@@ -131,6 +131,10 @@ struct ReviewLoadState: View {
             SHEmptyState(Text("Couldn't load the changes"), message: error) {
                 Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
+        } else if store.loadIdle {
+            SHEmptyState(Text("Couldn't load the changes"), message: "") {
+                Button("Try again", action: retry).buttonStyle(.sh(.secondary))
+            }
         } else if !store.loaded {
             ProgressView().progressViewStyle(SHSpinnerStyle())
                 .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
@@ -158,7 +162,7 @@ struct ReviewLoadState: View {
     }
 }
 
-/// What a file shows instead of its lines: loading, a failed fetch, a binary file, or none.
+/// What a file shows instead of its lines: loading, a failed or cancelled fetch, a binary file, or none.
 struct ReviewFileNotice: View {
     let state: ReviewStore.FileState
     let retry: () -> Void
@@ -171,6 +175,10 @@ struct ReviewFileNotice: View {
                 .accessibilityLabel("Loading the file's changes")
         case .failed(let message):
             SHEmptyState(Text("Couldn't load this file"), message: message) {
+                Button("Try again", action: retry).buttonStyle(.sh(.secondary))
+            }
+        case .idle:
+            SHEmptyState(Text("Couldn't load this file"), message: "") {
                 Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
         case .binary:

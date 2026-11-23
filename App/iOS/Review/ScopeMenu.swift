@@ -189,6 +189,11 @@ struct ChangesBasePicker: View {
                 } else if let error = store.branchesError {
                     SHEmptyState(Text("Couldn't list the branches"), message: error)
                         .listRowBackground(Color.clear)
+                } else if store.branchesCancelled {
+                    SHEmptyState(Text("Couldn't list the branches"), message: "") {
+                        Button("Try again") { Task { await store.loadBranches() } }.buttonStyle(.sh(.secondary))
+                    }
+                    .listRowBackground(Color.clear)
                 } else {
                     ProgressView().progressViewStyle(SHSpinnerStyle())
                         .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
