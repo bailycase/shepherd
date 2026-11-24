@@ -10,7 +10,7 @@ body:
 
         Search existing issues before submitting. If this may be a security
         vulnerability, do not continue here. Follow the private reporting
-        instructions in our [security policy](https://github.com/bailycase/shepherd/security/policy).
+        instructions in our [security policy](https://github.com/shepherd-app/shepherd/security/policy).
 
         Remove API keys, remote tokens, credentials, private prompts, repository
         contents, and other sensitive information from logs and screenshots.

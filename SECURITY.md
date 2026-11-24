@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Do not report suspected vulnerabilities in public issues, discussions, or pull requests. Use
-[GitHub private vulnerability reporting](https://github.com/bailycase/shepherd/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/shepherd-app/shepherd/security/advisories/new).
 If private reporting is unavailable, open a public issue that says only that you need a private
 security contact, with no technical details.
 

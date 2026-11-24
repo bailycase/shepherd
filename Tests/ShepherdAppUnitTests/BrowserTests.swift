@@ -24,7 +24,7 @@ struct BrowserTests {
         ("acme.test", "http://acme.test"),
         ("app.local:4000", "http://app.local:4000"),
         ("acme.dev", "https://acme.dev"),
-        ("github.com/bailycase/shepherd", "https://github.com/bailycase/shepherd"),
+        ("github.com/shepherd-app/shepherd", "https://github.com/shepherd-app/shepherd"),
         ("https://example.com/a?b=c", "https://example.com/a?b=c"),
         ("HTTP://Example.com", "HTTP://Example.com"),
         ("about:blank", "about:blank"),

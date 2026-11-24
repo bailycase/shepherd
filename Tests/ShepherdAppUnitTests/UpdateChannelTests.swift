@@ -7,7 +7,7 @@ import Testing
 /// Shepherd rides Stable or Beta; Shepherd Nightly is its own app on its own feed.
 @Suite("Update channels")
 struct UpdateChannelTests {
-    static let pages = "https://bailycase.github.io/shepherd/"
+    static let pages = "https://shepherd-app.github.io/shepherd/"
 
     @Test(arguments: [
         (UpdateChannel.stable, "appcast.xml", Set<String>()),
