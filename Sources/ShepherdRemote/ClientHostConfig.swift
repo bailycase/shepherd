@@ -10,12 +10,13 @@ import ShepherdProtocol
 @Observable
 public final class ClientHostConfig {
     public enum Page: Hashable, Sendable {
-        case mcp, subagents, providers
+        case mcp, subagents, providers, extensions
     }
 
     public private(set) var mcp: [UUID: HostMCPInventory] = [:]
     public private(set) var profiles: [UUID: [HostSubagentProfile]] = [:]
     public private(set) var providers: [UUID: [HostProviderStatus]] = [:]
+    public private(set) var extensions: [UUID: [HostExtension]] = [:]
     /// The sign-in a host runs for this client, while it shows.
     public private(set) var signIns: [UUID: HostSignInProgress] = [:]
     /// What failed last, per host and page, in words.
@@ -34,12 +35,18 @@ public final class ClientHostConfig {
         mcp[host] = nil
         profiles[host] = nil
         providers[host] = nil
+        extensions[host] = nil
         signIns[host] = nil
         problems[host] = nil
     }
 
     /// The host takes changes here; an older one is read-only.
     public func canEdit(_ host: SettingsHost) -> Bool { host.serves(RemoteProtocol.hostConfigCapability) }
+
+    /// The host lists its pi extensions and takes changes to them (`hostExtensions.v1`): the screen shows only here.
+    public func servesExtensions(_ host: SettingsHost) -> Bool {
+        canRead(host) && canEdit(host) && host.serves(RemoteProtocol.hostExtensionsCapability)
+    }
 
     public func canRead(_ host: SettingsHost) -> Bool { host.serves(RemoteProtocol.hostInventoryCapability) }
 
@@ -52,6 +59,7 @@ public final class ClientHostConfig {
         case .mcp: .mcp
         case .subagents: .subagents
         case .providers: .providers
+        case .extensions: .extensions
         }
         do {
             let result = try await client.hostInventory(request)
@@ -60,6 +68,7 @@ public final class ClientHostConfig {
             case .mcp(let value): mcp[host.id] = value
             case .subagents(let value): profiles[host.id] = value
             case .providers(let value): providers[host.id] = value
+            case .extensions(let value): extensions[host.id] = value
             case .subagent: break
             }
         } catch {
@@ -94,14 +103,29 @@ public final class ClientHostConfig {
             case .mcp(let value): mcp[host.id] = value
             case .subagents(let value): profiles[host.id] = value
             case .providers(let value): providers[host.id] = value
+            case .extensions(let value): extensions[host.id] = value
             case .signIn(let value): signIns[host.id] = value
             case .mcpEntry, .subagent: break
+            }
+            if case .extensions = result {
+                // A provider extension was added, switched or removed: the host lists its providers afresh.
+                busy.remove(host.id)
+                await refreshProvidersQuietly(on: host)
             }
             return result
         } catch {
             guard !forgotten.contains(host.id) else { return nil }
             problems[host.id] = settingsProblem(error)
             return nil
+        }
+    }
+
+    /// Reads the providers again after an extension changed, if the host serves them; a failure
+    /// here is not the change's.
+    private func refreshProvidersQuietly(on host: SettingsHost) async {
+        guard canRead(host), let client = host.client else { return }
+        if let result = try? await client.hostInventory(.providers), case .providers(let value) = result, !forgotten.contains(host.id) {
+            providers[host.id] = value
         }
     }
 
@@ -121,9 +145,10 @@ public final class ClientHostConfig {
     }
 
     /// Sends the code or address the person pasted for the sign-in under way.
-    public func complete(signInOn host: SettingsHost, with code: String) async {
-        guard let progress = signIns[host.id] else { return }
-        await perform(.signIn(id: progress.id, action: .complete(code)), on: host)
+    public func complete(signInOn host: SettingsHost, with code: String, signInID: UUID? = nil, promptID: String? = nil) async {
+        guard let progress = signIns[host.id], signInID == nil || signInID == progress.id else { return }
+        // IDs belong to the rendered question, never whichever question polling read most recently.
+        await perform(.signIn(id: signInID ?? progress.id, action: .complete(code, promptID: promptID)), on: host)
     }
 
     /// Ends the sign-in under way, and forgets it.

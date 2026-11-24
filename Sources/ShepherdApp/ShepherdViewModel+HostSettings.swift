@@ -15,6 +15,7 @@ enum HostSettingsMapping {
         ("subagents", "Subagent display", \.subagentDisplay),
         ("mcp", "MCP servers", \.piMCPExtension),
         ("browser", "Browser tools", \.piBrowserExtension),
+        ("usage", "Subscription usage", \.piUsageExtension),
         // Settings ▸ Extensions shows it only while the Design tool is on; a client lists it always.
         ("designReferences", "Design references", \.piDesignReferences),
         // Settings ▸ Agents ▸ Context on the Mac; a client lists it with the other switches.

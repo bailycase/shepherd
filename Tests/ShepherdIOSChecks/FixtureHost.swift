@@ -319,7 +319,7 @@ final class FixtureHost: @unchecked Sendable {
                 return [.error(id: id, code: "fixture", message: refused)]
             }
         case .hostInventory:
-            // Reading the host's MCP servers, profiles or providers changes nothing.
+            // Reading the host's MCP servers, profiles, providers or extensions changes nothing.
             return nil
         case .hostConfig(let id, let command):
             // Every configuration request changes the host (or starts a sign-in on it).

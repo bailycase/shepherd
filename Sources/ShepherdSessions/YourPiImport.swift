@@ -296,6 +296,8 @@ public struct YourPiExtensionRow: Equatable, Sendable, Identifiable {
     public var summary: String?
     /// pi's last lines as it failed (Show log).
     public var failureLines: [String] = []
+    /// Terminal UI its code calls that Shepherd can't show (`PiExtensionSupport.scan`); only for one that is on.
+    public var terminalOnly: [String] = []
 
     public init(copy: YourPiCopy, on: Bool = false, failure: String? = nil, summary: String? = nil) {
         self.copy = copy
@@ -351,7 +353,7 @@ public struct YourPiImport: Sendable {
     /// Changes to the state file wait for one another.
     private static let stateLock = NSLock()
     /// So do copies of files into the home.
-    private static let filesLock = NSLock()
+    static let filesLock = NSLock()
 
     public var stateURL: URL { home.directory.appendingPathComponent(Self.stateName) }
     var auth: URL { home.directory.appendingPathComponent("auth.json") }
@@ -760,7 +762,7 @@ public struct YourPiImport: Sendable {
         try updateState { state in try applyExtensions(&state) }
     }
 
-    private func applyExtensions(_ state: inout YourPiImportState) throws {
+    func applyExtensions(_ state: inout YourPiImportState) throws {
         var entries: [String] = []
         for destination in state.extensionsOn {
             guard !state.extensionsHeld.contains(destination),
@@ -777,7 +779,8 @@ public struct YourPiImport: Sendable {
             }
             guard paths.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) else {
                 state.extensionFailures[destination] = YourPiExtensionFailure(
-                    reason: "Its files are missing from Shepherd's pi. Re-import your extensions to copy them again.", modified: now)
+                    reason: Self.isAdded(destination) ? "Its files are missing from Shepherd's pi. Add it again to copy them."
+                        : "Its files are missing from Shepherd's pi. Re-import your extensions to copy them again.", modified: now)
                 continue
             }
             entries += paths
@@ -797,7 +800,7 @@ public struct YourPiImport: Sendable {
     }
 
     /// When an extension's copy last changed: the newest of its entry files.
-    private func modified(_ copy: YourPiCopy) -> Double {
+    func modified(_ copy: YourPiCopy) -> Double {
         let root = home.directory.appendingPathComponent(copy.destination)
         return (copy.entries ?? [""]).map { entry -> Double in
             var info = stat()
@@ -959,6 +962,7 @@ public struct YourPiImport: Sendable {
             var row = YourPiExtensionRow(copy: copy, on: state?.extensionsOn.contains(copy.destination) == true,
                                          failure: state?.extensionFailures[copy.destination]?.reason, summary: summary)
             row.failureLines = state?.extensionFailures[copy.destination]?.lines ?? []
+            if row.on { row.terminalOnly = PiExtensionSupport.scan(root) }
             return row
         }
 

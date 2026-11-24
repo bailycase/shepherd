@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 
 // A host's inventory as a client reads it (Settings on the iPhone and the iPad): its MCP servers
-// and their status, its subagent profiles, and its providers' sign-in state. Read-only: what the
-// Mac's Settings ▸ MCP, Subagents and Sign-in show, never a secret. Changes go through
+// and their status, its subagent profiles, its providers' sign-in state and its pi extensions.
+// Read-only: what the Mac's Settings ▸ MCP, Subagents, Sign-in and Tools ▸ Extensions show, never a secret. Changes go through
 // `RemoteRequest.hostConfig` (HostConfig.swift).
 // The host's GUI answers (`SessionServer.onRemoteHostInventory`); a headless host has none.
 
@@ -18,6 +18,9 @@ public enum RemoteHostInventoryRequest: Codable, Hashable, Sendable {
     case subagent(file: String)
     /// The host's providers and whether each is signed in (Settings ▸ Sign-in).
     case providers
+    /// The pi extensions in the host's pi home (Settings ▸ Tools ▸ Extensions), with their switches
+    /// (`RemoteProtocol.hostExtensionsCapability`).
+    case extensions
 }
 
 /// A host's answer: the shape named by the request.
@@ -26,6 +29,58 @@ public enum RemoteHostInventoryResult: Codable, Hashable, Sendable {
     case subagents([HostSubagentProfile])
     case subagent(HostSubagentProfileText)
     case providers([HostProviderStatus])
+    case extensions([HostExtension])
+}
+
+/// One pi extension of a host, as Settings ▸ Tools ▸ Extensions lists it. Never its code or a
+/// credential in its source address.
+public struct HostExtension: Codable, Hashable, Sendable, Identifiable {
+    /// Its copy's place in the host's pi home ("your-extensions/added/acme-login"): what a change names.
+    public var id: String
+    public var name: String
+    /// Where it came from, in the Mac's words ("Added from https://github.com/acme/pi-login · Signs in to Acme").
+    public var subtitle: String
+    public var on: Bool
+    /// Switched on but left out of launches: pi's reason.
+    public var failure: String?
+    /// Added in Shepherd (a file, folder or Git repository), rather than copied from the host's own pi.
+    public var added: Bool
+    /// How far it works in Shepherd once the host's pi has loaded it; nil before, for one that is off
+    /// or failed, or from an older host.
+    public var support: Support?
+    /// What Shepherd can't show of it, in the Mac's words (its tag's tooltip).
+    public var supportDetail: String?
+
+    public enum Support: String, Codable, Hashable, Sendable {
+        case works, partly
+    }
+
+    public init(id: String, name: String, subtitle: String, on: Bool, failure: String? = nil, added: Bool = false,
+                support: Support? = nil, supportDetail: String? = nil) {
+        self.id = id
+        self.name = name
+        self.subtitle = subtitle
+        self.on = on
+        self.failure = failure
+        self.added = added
+        self.support = support
+        self.supportDetail = supportDetail
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, subtitle, on, failure, added, support, supportDetail }
+
+    // A support word a newer host adds reads as none, not as a broken list.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        subtitle = try c.decode(String.self, forKey: .subtitle)
+        on = try c.decode(Bool.self, forKey: .on)
+        failure = try c.decodeIfPresent(String.self, forKey: .failure)
+        added = try c.decodeIfPresent(Bool.self, forKey: .added) ?? false
+        support = (try? c.decodeIfPresent(Support.self, forKey: .support)) ?? nil
+        supportDetail = try c.decodeIfPresent(String.self, forKey: .supportDetail)
+    }
 }
 
 /// One of a host's MCP servers, as its Settings row shows it.
@@ -150,6 +205,24 @@ public struct HostSubagentProfileText: Codable, Hashable, Sendable {
     }
 }
 
+/// Interactive methods reported by Pi after loading enabled provider extensions.
+public struct HostProviderSignIn: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var oauth: String?
+    public var apiKey: String?
+    /// Pi's verified one-field key login can use Shepherd's existing checked-key form.
+    public var keyForm: Bool?
+
+    public init(id: String, name: String, oauth: String? = nil, apiKey: String? = nil, keyForm: Bool? = nil) {
+        self.id = id
+        self.name = name
+        self.oauth = oauth
+        self.apiKey = apiKey
+        self.keyForm = keyForm
+    }
+}
+
 /// One provider of a host's pi and how its sign-in stands, as Settings ▸ Sign-in's row says it.
 /// Never a key or token: the state, its words, and saved accounts by opaque id and name.
 public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
@@ -185,11 +258,21 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     public var accountList: [HostProviderAccount]?
     /// Switches to the next account when the active one hits a limit.
     public var rotate: Bool?
+    /// Effective provider methods, absent from older hosts. Neither a credential nor an endpoint.
+    public var signIn: HostProviderSignIn?
+    /// Its limit windows as the host last read them (a subscription's own, or its extension's); nil from an older host.
+    public var usage: [HostUsageWindow]?
+    /// A prepaid balance its extension reports.
+    public var balance: HostBalance?
 
     public init(id: String, name: String, badge: String, auth: Auth, detail: String? = nil, problem: String? = nil,
-                accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil) {
+                accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil,
+                signIn: HostProviderSignIn? = nil, usage: [HostUsageWindow]? = nil, balance: HostBalance? = nil) {
+        self.usage = usage
+        self.balance = balance
         self.accountList = accountList
         self.rotate = rotate
+        self.signIn = signIn
         self.id = id
         self.name = name
         self.badge = badge
@@ -205,6 +288,33 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
         case .signedIn, .apiKey, .environment, .noKey: true
         case .expired, .notSignedIn, .signingIn: false
         }
+    }
+}
+
+/// One limit window of a provider's usage: "Week", 84% used, resetting then (seconds since 1970).
+public struct HostUsageWindow: Codable, Hashable, Sendable {
+    public var name: String
+    /// 0–100.
+    public var usedPercent: Double
+    public var resetsAt: Double?
+
+    public init(name: String, usedPercent: Double, resetsAt: Double? = nil) {
+        self.name = name
+        self.usedPercent = usedPercent
+        self.resetsAt = resetsAt
+    }
+}
+
+/// A prepaid balance: an amount in an ISO 4217 currency or the provider's own unit, with its word ("Credit").
+public struct HostBalance: Codable, Hashable, Sendable {
+    public var amount: Double
+    public var currency: String
+    public var label: String?
+
+    public init(amount: Double, currency: String, label: String? = nil) {
+        self.amount = amount
+        self.currency = currency
+        self.label = label
     }
 }
 

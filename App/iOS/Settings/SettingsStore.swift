@@ -30,6 +30,9 @@ final class SettingsStore {
     var hookEditor: ClientHookEditor?
     /// Settings ▸ Tools' server editor while it is open: the server it edits and its JSON.
     var mcpEditor: MCPEditor?
+    /// Settings ▸ Tools ▸ Extensions' Add from a Git repository while it asks, and the extension its Remove… confirms.
+    var addingExtension = false
+    var removingExtension: HostExtension?
     /// Settings ▸ Spaces ▸ Organize's Rename and Remove Space… dialogs, each bound to the host that opened it.
     let spaceDialogs = SpaceLifecycleDialogs()
 

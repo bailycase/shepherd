@@ -385,7 +385,7 @@ enum RemoteSamples {
                                 note: "connection refused", signIn: "DATABASE_URI", tools: nil, enabled: true),
                   HostMCPServer(name: "old", kind: .remote, endpoint: "https://example.invalid/mcp", status: .off, enabled: false)],
         configPath: "~/Library/Application Support/Shepherd/pi/mcp.json", problem: nil, checkedAt: 1_700_000_000)
-    static let inventoryRequests: [RemoteHostInventoryRequest] = [.mcp, .subagents, .subagent(file: "team/scout.md"), .providers]
+    static let inventoryRequests: [RemoteHostInventoryRequest] = [.mcp, .subagents, .subagent(file: "team/scout.md"), .providers, .extensions]
     static let inventoryResults: [RemoteHostInventoryResult] = [
         .mcp(mcpInventory),
         .mcp(HostMCPInventory(servers: [], configPath: "~/mcp.json", problem: "mcp.json line 12 isn\u{2019}t valid JSON")),
@@ -394,7 +394,20 @@ enum RemoteSamples {
         .subagent(HostSubagentProfileText(file: "reviewer.md", text: "---\nname: reviewer\n---\nReview.\n", fingerprint: "ab12")),
         .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .expired, detail: "Claude Pro or Max", accounts: 2, activeAccount: "work"),
                     HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey, problem: "Couldn\u{2019}t sign out."),
-                    HostProviderStatus(id: "local", name: "local", badge: "Custom", auth: .noKey, detail: "http://localhost:11434")]),
+                    HostProviderStatus(id: "local", name: "local", badge: "Custom", auth: .noKey, detail: "http://localhost:11434"),
+                    HostProviderStatus(id: "deepseek", name: "DeepSeek", badge: "API key", auth: .apiKey,
+                                       usage: [HostUsageWindow(name: "Month", usedPercent: 42, resetsAt: 1_800_000_000)],
+                                       balance: HostBalance(amount: 110, currency: "CNY", label: "Credit")),
+                    HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .notSignedIn,
+                                       signIn: HostProviderSignIn(id: "acme", name: "Acme", oauth: "Acme account", apiKey: "Acme key", keyForm: false))]),
+        .extensions(hostExtensions),
+    ]
+    static let hostExtensions = [
+        HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://github.com/acme/pi-login · Signs in to Acme",
+                      on: true, added: true, support: .partly, supportDetail: "Registered, but Shepherd can’t show: shortcut ctrl+x."),
+        HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from ~/code/acme-tools", on: true,
+                      failure: "Cannot find module 'acme-sdk'", added: true),
+        HostExtension(id: "your-extensions/review.ts", name: "review", subtitle: "From your pi · extensions/review.ts", on: false),
     ]
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
@@ -424,10 +437,15 @@ enum RemoteSamples {
         .subagentSave(file: "reviewer.md", text: "---\nname: reviewer\n---\n", fingerprint: "ab12"),
         .subagentDelete(file: "team/scout.md", fingerprint: "cd34"), .subagentRestoreDefaults(expected: ["reviewer.md": "ab12"]),
         .providerKey(provider: "openai", key: "$OPENAI_API_KEY"), .providerSignOut(provider: "openai"), .providerSignIn(provider: "anthropic"),
+        .providerSignIn(provider: "acme", method: .apiKey, adding: true),
         .providerAccount(provider: "anthropic", action: .use(id: "a1")), .providerAccount(provider: "anthropic", action: .remove(id: "a1")),
         .providerAccount(provider: "anthropic", action: .rename(id: "a1", name: "work")), .providerAccount(provider: "anthropic", action: .rotate(true)),
         .providerAccount(provider: "anthropic", action: .add), .providerAccount(provider: "deepseek", action: .addKey("$DEEPSEEK_API_KEY")),
         .signIn(id: op, action: .poll), .signIn(id: op, action: .complete("code#state")), .signIn(id: op, action: .cancel),
+        .signIn(id: op, action: .complete("west", promptID: "p1")),
+        .extensionSetEnabled(destination: "your-extensions/added/acme-login", on: false),
+        .extensionRemove(destination: "your-extensions/added/acme-login"),
+        .extensionAddGit(url: "https://github.com/acme/pi-login"),
     ]
     static let configResults: [RemoteHostConfigResult] = [
         .mcp(mcpInventory), .mcpEntry(json: #"{"mcpServers":{"github":{"url":"https://x"}}}"#),
@@ -441,6 +459,12 @@ enum RemoteSamples {
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai/oauth", wantsCode: true)),
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "GitHub Copilot", authorizationURL: "https://github.com/login/device", deviceCode: "AB-12")),
         .signIn(HostSignInProgress(id: op, phase: .failed, name: "linear", message: "Cancelled.")),
+        .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Acme",
+                                  prompt: HostSignInPrompt(id: "p1", kind: .secret, message: "Password"))),
+        .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Acme",
+                                  prompt: HostSignInPrompt(id: "p2", kind: .select, message: "Region",
+                                                          options: [.init(id: "west", label: "West")]))),
+        .extensions(hostExtensions),
     ]
 
     static let skillSource = SkillSource(repo: "anthropics/skills", path: "skills/pdf", commit: "3f2a91c0", committedAt: 1_700_000_000)
@@ -869,6 +893,17 @@ struct RemoteRequestTests {
     }
 
     /// An older client's `changes*` reads name no folder: the agent's own.
+    @Test func olderProviderAndSignInPayloadsNeedNoDiscoveryFields() throws {
+        let provider = try JSONDecoder().decode(HostProviderStatus.self, from: Data(#"{"id":"acme","name":"Acme","badge":"Subscription","auth":"notSignedIn","accounts":0}"#.utf8))
+        #expect(provider.signIn == nil)
+        let progress = try JSONDecoder().decode(HostSignInProgress.self, from: Data(#"{"id":"00000000-0000-0000-0000-00000000000A","phase":"waiting","name":"Acme","wantsCode":true}"#.utf8))
+        #expect(progress.prompt == nil && progress.wantsCode)
+        let action = try JSONDecoder().decode(HostSignInAction.self, from: Data(#"{"complete":{"_0":"legacy-code"}}"#.utf8))
+        #expect(action == .complete("legacy-code"))
+        let request = try JSONDecoder().decode(RemoteHostConfigRequest.self, from: Data(#"{"providerSignIn":{"provider":"acme"}}"#.utf8))
+        #expect(request == .providerSignIn(provider: "acme"))
+    }
+
     @Test func anOlderClientsChangesReadsNameNoFolder() throws {
         for json in [#"{"changesOverview":{}}"#, #"{"changesBranches":{}}"#] {
             let query = try JSONDecoder().decode(RemoteAgentQuery.self, from: Data(json.utf8))
@@ -1550,7 +1585,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.designToolExperimentCapability,
             RemoteProtocol.computerUseExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hostExtensionsCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
@@ -1614,6 +1649,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsCloseOnMergeCapability == "hostSettings.closeOnMerge.v1")
         #expect(RemoteProtocol.hostSettingsBackgroundServiceCapability == "hostSettings.backgroundService.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
+        #expect(RemoteProtocol.hostExtensionsCapability == "hostExtensions.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
         #expect(RemoteProtocol.computerUseExperimentCapability == "experiments.computerUse.v1")
         #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))
@@ -1697,5 +1733,12 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.composedInput(text: "one\ntwo", submit: true) == Data("\u{1B}[200~one\ntwo\u{1B}[201~\r".utf8))
         #expect(RemoteProtocol.composedInput(text: "draft", submit: false) == Data("\u{1B}[200~draft\u{1B}[201~".utf8))
         #expect(RemoteProtocol.composedInput(text: "", submit: false) == Data("\u{1B}[200~\u{1B}[201~".utf8))
+    }
+
+    /// A support word a newer host adds leaves the row readable, with no support.
+    @Test func anUnknownExtensionSupportWordReadsAsNone() throws {
+        let json = #"{"id":"your-extensions/added/acme","name":"acme","subtitle":"Added","on":true,"added":true,"support":"sometimes"}"#
+        let row = try JSONDecoder().decode(HostExtension.self, from: Data(json.utf8))
+        #expect(row.support == nil && row.name == "acme")
     }
 }

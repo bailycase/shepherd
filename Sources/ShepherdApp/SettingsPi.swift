@@ -13,6 +13,10 @@ struct ModelsSettings: View {
     var settings: AppSettings? = nil
     /// Opens Settings ▸ Your pi.
     var openYourPi: () -> Void = {}
+    /// Opens Settings ▸ Tools' extensions (Sign-in's Add a provider).
+    var openExtensions: (() -> Void)? = nil
+    /// Opens Settings ▸ Tools at one extension (a provider's Show the extension).
+    var openExtension: ((String) -> Void)? = nil
 
     private var yourPiHint: String {
         if yourPi.survey?.stateProblem != nil { return "Import history unavailable" }
@@ -22,7 +26,7 @@ struct ModelsSettings: View {
 
     var body: some View {
         SettingsPage(title: "Models") {
-            PiSignInSettings(yourPi: yourPi, auth: auth)
+            PiSignInSettings(yourPi: yourPi, auth: auth, openExtensions: openExtensions, openExtension: openExtension)
             AgentModelGroups(pi: pi, settings: settings)
             SettingsGroup(title: "Shepherd’s pi") {
                 PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",

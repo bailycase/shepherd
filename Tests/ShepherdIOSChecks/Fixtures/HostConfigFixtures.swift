@@ -15,6 +15,21 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings-agents-profiles", hosts: FixtureData.configuredHosts(), routes: [.settings(.agents)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
             FixtureScreen(name: "settings-mcp", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings),
+            // Tools' Extensions: the pi extensions added in Shepherd or copied from the host's pi, each with its switch.
+            FixtureScreen(name: "settings-extensions", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
+                          prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
+            // Its two dialogs: Add from a Git repository, and Remove…'s confirmation.
+            FixtureScreen(name: "settings-extensions-add", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
+                          prepare: { app in
+                              await TriggerFlowCheck.scrollDown(holding: nil)
+                              SettingsStore.of(app.hosts).addingExtension = true
+                          }),
+            FixtureScreen(name: "settings-extensions-remove", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
+                          prepare: { app in
+                              await TriggerFlowCheck.scrollDown(holding: nil)
+                              SettingsStore.of(app.hosts).removingExtension = HostExtension(
+                                  id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "", on: true, added: true)
+                          }),
             FixtureScreen(name: "settings-mcp-editor", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
                           prepare: { app in
                               SettingsStore.of(app.hosts).mcpEditor = MCPEditor(replacing: "postgres", json: FixtureData.postgresJSON)
@@ -73,7 +88,23 @@ extension FixtureData {
                                                  HostProviderAccount(id: "a2", name: "personal", active: false)],
                                    rotate: true),
                 HostProviderStatus(id: "openai-codex", name: "OpenAI Codex", badge: "Subscription", auth: .notSignedIn, detail: "ChatGPT Plus or Pro"),
-                HostProviderStatus(id: "deepseek", name: "DeepSeek", badge: "API key", auth: .apiKey, detail: "$DEEPSEEK_API_KEY"),
+                HostProviderStatus(id: "deepseek", name: "DeepSeek", badge: "API key", auth: .apiKey, detail: "$DEEPSEEK_API_KEY",
+                                   balance: HostBalance(amount: 110, currency: "CNY")),
+                HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .signedIn, detail: "Acme account · from acme-login",
+                                   usage: [HostUsageWindow(name: "Month", usedPercent: 42)],
+                                   balance: HostBalance(amount: 18.4, currency: "USD", label: "Credit")),
+            ])
+        case .extensions:
+            return .extensions([
+                HostExtension(id: "your-extensions/added/acme-login", name: "acme-login",
+                              subtitle: "Adds Acme sign-in, /acme-usage · Added from https://github.com/acme/pi-login", on: true, added: true,
+                              support: .works, supportDetail: "Everything it registered works in Shepherd."),
+                HostExtension(id: "your-extensions/added/acme-footer", name: "acme-footer",
+                              subtitle: "Adds 1 event hook · Not shown in Shepherd: footer or header · Added from ~/code/acme-footer", on: true, added: true,
+                              support: .partly, supportDetail: "Its code uses terminal UI Shepherd may not show: footer or header."),
+                HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from ~/code/acme-tools", on: true,
+                              failure: "Cannot find module 'acme-sdk'", added: true),
+                HostExtension(id: "your-extensions/review.ts", name: "review", subtitle: "From your pi · extensions/review.ts", on: false),
             ])
         }
     }

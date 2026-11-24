@@ -448,7 +448,7 @@ struct PiLauncherTests {
         try """
             #!/bin/sh
             printf 'arg=%s\\n' "$@"
-            env | grep -E '^(PI_|JITI_|NODE_|OPENSSL_CONF)' | sort
+            env | grep -E '^(PI_|JITI_|NODE_|OPENSSL_CONF|SHEPHERD_USAGE)' | sort
 
             """.write(to: node, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
@@ -462,6 +462,12 @@ struct PiLauncherTests {
         #expect(run.status == 0, "\(run.err)")
         #expect(run.out == ["arg=/c.mjs", "arg=/sdk.js", "arg=\(home.directory.path)", "NODE_EXTRA_CA_CERTS=/their/ca.pem",
                             "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0"])
+
+        // Shepherd's usage extension goes after the home, and switches itself on with its variable.
+        let usage = PiLaunch.signInBridge(node: .executable(node.path), script: "/c.mjs", sdk: "/sdk.js", home: home, extensions: ["/u x.mjs"])
+        let withUsage = try Self.run(usage.argv[0], Array(usage.argv.dropFirst()), environment: environment)
+        #expect(withUsage.out.prefix(4) == ["arg=/c.mjs", "arg=/sdk.js", "arg=\(home.directory.path)", "arg=/u x.mjs"])
+        #expect(withUsage.out.contains("SHEPHERD_USAGE_EXTENSION=1"))
     }
 
     /// Same fallback the launcher uses (below): with no user CA and a non-empty keychain export

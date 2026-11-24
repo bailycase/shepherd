@@ -35,6 +35,32 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Tools ▸ Extensions and Sign-in once pi has loaded the extensions: what each adds, how far it
+    /// works in Shepherd, and the provider row naming the extension it came from.
+    @Test func extensionSupportAndProviderSources() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let auth = workspace.vm.piAuth
+        let copies = PreviewYourPi.copies
+        let home = workspace.vm.pi.home
+        func at(_ index: Int, _ entry: String = "") -> String { home.appendingPathComponent(copies[index].destination).appendingPathComponent(entry).path }
+        auth.extensionInventory = [
+            copies[11].destination: [PiExtensionInventory(path: at(11, "index.ts"), providers: ["acme"], commands: ["acme-usage"])],
+            copies[8].destination: [PiExtensionInventory(path: at(8, "index.ts"), events: ["agent_end", "session_start"])],
+            copies[10].destination: [PiExtensionInventory(path: at(10), events: ["tool_call"], shortcuts: ["ctrl+shift+g"])],
+        ]
+        auth.providerOwners = ["acme": copies[11]]
+        // Usage and balances as provider extensions report them (and Anthropic's own).
+        auth.usage = ["anthropic": [PiUsageWindow(name: "Week", usedPercent: 41, resetsAt: nil)]]
+        auth.balances = ["deepseek": PiBalance(amount: 110, currency: "CNY"), "openai": PiBalance(amount: 18.4, currency: "USD", label: "Credit")]
+        for section in [SettingsSection.tools, .models] {
+            workspace.vm.settingsSection = section
+            try await Preview.render("settings-\(section.rawValue)-extension-support", size: CGSize(width: 1280, height: section == .tools ? 1400 : 1500)) {
+                SettingsView(vm: workspace.vm)
+            }
+        }
+    }
+
     @Test func damagedPiImportHistory() async throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -79,6 +105,59 @@ struct SettingsPreviewTests {
             }
             .frame(width: 720, height: 260, alignment: .top)
             .background(Color.sh.bgWindow)
+        }
+    }
+
+    /// Runtime-discovered provider rows and questions, from the real bridge against the fixture SDK.
+    @Test func providerSignIn() async throws {
+        let workspace = try PreviewWorkspace(yourPi: YourPiSurvey())
+        defer { workspace.stop() }
+        let pi = workspace.server.pi
+        let node = try #require(TestNode.url)
+        let script = try PiSignInScript.install(in: workspace.dir)
+        var environment = ProcessInfo.processInfo.environment
+        environment["FAKE_PI_CONTROL"] = workspace.dir.path
+        let auth = PiAuthStore(pi: pi, bridge: { _ in
+            PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: FakePiSDK.path, home: pi.files),
+                           environment: environment)
+        })
+        auth.openURL = { _ in }
+        auth.copy = { _ in }
+        let yours = YourPiModel(pi: pi)
+        await auth.refreshProviders()
+        await yours.refresh()
+        try await Preview.render("provider-sign-in-settings", size: CGSize(width: 960, height: 1100)) {
+            ScrollView { PiSignInSettings(yourPi: yours, auth: auth).padding(SH.Space.xl) }
+                .frame(width: 960, height: 1100)
+                .background(Color.sh.bgWindow)
+        }
+        auth.signIn("fixture-login")
+        let session = try #require(auth.session)
+        defer { auth.closeSheet() }
+        for (kind, answer, surface) in [(PiSignInPrompt.Kind.select, "west", "provider-sign-in-select"),
+                                        (.text, "acme", "provider-sign-in-text"),
+                                        (.secret, " fixture-password ", "provider-sign-in-secret")] {
+            try await eventuallyOnMain("the preview provider's \(kind) question") {
+                if case .prompt(let prompt) = session.phase { return prompt.kind == kind }; return false
+            }
+            if kind == .secret { session.promptAnswer = answer }
+            try await Preview.render(surface, size: CGSize(width: 520, height: 340)) {
+                PiSignInSheet(session: session, close: {})
+            }
+            session.submitPrompt(answer)
+        }
+        try await eventuallyOnMain("the preview account to land") { if case .done = session.phase { return true }; return false }
+        await auth.landing?.value
+        try await Preview.render("provider-sign-in-done", size: CGSize(width: 520, height: 340)) {
+            PiSignInSheet(session: session, close: {})
+        }
+        await yours.refresh()
+        try await Preview.render("provider-sign-in-signed-in", size: CGSize(width: 960, height: 1100), ready: {
+            yours.survey?.logins.contains { $0.provider == "fixture-login" && $0.shepherd == .subscription } == true
+        }) {
+            ScrollView { PiSignInSettings(yourPi: yours, auth: auth).padding(SH.Space.xl) }
+                .frame(width: 960, height: 1100)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -723,7 +802,6 @@ struct SettingsPreviewTests {
         #expect(auth.accounts.count == 3)
         #expect(auth.accounts["anthropic"]?.accounts.first?.usage.count == 3)
         // The fixture's readings stand in for the read: the page shows what each account saved.
-        auth.readUsage = { _ in [:] }
         workspace.vm.settingsSection = .models
         try await Preview.renderMatrix("settings-pi-sign-in-accounts", size: CGSize(width: 1280, height: 2200)) {
             SettingsView(vm: workspace.vm)

@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-/// Settings ▸ MCP, Subagents, Sign-in and Spaces on the iPhone and the iPad: each row's words and
+/// Settings ▸ MCP, Subagents, Sign-in, Extensions and Spaces on the iPhone and the iPad: each row's words and
 /// tone from a host's inventory, as the Mac's pages say them. Pure, so it has a unit test.
 public enum HostInventoryPresentation {
     /// A row's tone, named as an `AgentState` raw value so this module needs no ShepherdUI:
@@ -86,6 +86,17 @@ public enum HostInventoryPresentation {
 
     // MARK: Providers
 
+    public struct ProviderPage: Equatable, Sendable {
+        public var groups: [String: [HostProviderStatus]]
+        public var addableKeys: [HostProviderStatus]
+    }
+
+    public static func providerPage(_ providers: [HostProviderStatus]) -> ProviderPage {
+        let addable = providers.filter { $0.badge == "API key" && $0.auth == .notSignedIn }
+        let existing = providers.filter { $0.badge != "API key" || $0.auth != .notSignedIn }
+        return ProviderPage(groups: Dictionary(grouping: existing, by: \.badge), addableKeys: addable)
+    }
+
     /// The row's word: "Signed in", "Expired · sign in again", "Not signed in", "Signing in…",
     /// "API key", "From the host’s environment", "No key needed". Host-neutral: a client may be
     /// another Mac, and the host may take a sign-in from it (`hostConfig.v1`).
@@ -111,13 +122,34 @@ public enum HostInventoryPresentation {
     }
 
     /// The row's status line: the word, its detail, and the accounts when there are several.
+    /// Usage and balance come straight after the word: a phone's one line cuts the end off, and they are what changes.
     public static func providerLine(_ provider: HostProviderStatus) -> String {
-        var parts = [authWord(provider.auth)]
+        var reading: [String] = []
+        if provider.isSignedIn, provider.accounts <= 1, let window = (provider.usage ?? []).max(by: { $0.usedPercent < $1.usedPercent }) {
+            reading.append(usageWords(window))
+        }
+        if provider.isSignedIn, let balance = provider.balance { reading.append(balanceWords(balance)) }
+        // With a reading, "Signed in" is the green dot's to say, as on the Mac's row.
+        var parts = provider.auth == .signedIn && !reading.isEmpty ? reading : [authWord(provider.auth)] + reading
         if let detail = provider.detail, !detail.isEmpty { parts.append(detail) }
         if provider.accounts > 1 {
             parts.append(provider.activeAccount.map { "\(provider.accounts) accounts · \($0)" } ?? "\(provider.accounts) accounts")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// "84% of the week used", as the Mac's row says it.
+    public static func usageWords(_ window: HostUsageWindow) -> String {
+        "\(Int(window.usedPercent.rounded()))% of the \(window.name.lowercased()) used"
+    }
+
+    /// "Credit $18.40", "Balance CN¥110.00", "Balance 1,200 credits": a currency code is formatted as money.
+    public static func balanceWords(_ balance: HostBalance, locale: Locale = .current) -> String {
+        let code = balance.currency.uppercased()
+        let amount = code.count == 3 && Locale.commonISOCurrencyCodes.contains(code)
+            ? balance.amount.formatted(.currency(code: code).locale(locale))
+            : balance.amount.formatted(.number.locale(locale)) + " " + balance.currency
+        return (balance.label ?? "Balance") + " " + amount
     }
 
     /// A saved account's line: "In use", "Saved", or "Limited until 3:40 PM".
@@ -139,6 +171,24 @@ public enum HostInventoryPresentation {
 
     public static func providersGuidance(host: String) -> String {
         "Sign in, sign out, add an API key or switch accounts in Settings ▸ Sign-in on \(host). Keys and tokens stay there."
+    }
+
+    // MARK: Extensions
+
+    /// The row's line: pi's reason while the extension is left out of launches, else where it came from.
+    public static func extensionLine(_ item: HostExtension) -> String { item.failure ?? item.subtitle }
+
+    /// Loaded or not: "Partly" is its tag's word, not a dot that asks for the person (attention glows).
+    public static func tone(_ item: HostExtension) -> Tone { item.failure != nil ? .failed : item.on ? .done : .idle }
+
+    /// The tag beside its switch, as the Mac's: "Works", "Partly", "Didn’t load"; nil before the host's pi loaded it.
+    public static func supportWord(_ item: HostExtension) -> String? {
+        if item.failure != nil { return "Didn’t load" }
+        switch item.support {
+        case .works?: return "Works"
+        case .partly?: return "Partly"
+        case nil: return nil
+        }
     }
 
     // MARK: Spaces

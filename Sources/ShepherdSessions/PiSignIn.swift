@@ -8,10 +8,7 @@ import ShepherdRemote
 // as a prompt's answer, and hears back only that it worked.
 
 /// How a provider signs in: with an account (OAuth), or with a key.
-public enum PiSignInMethod: String, Codable, Sendable {
-    case oauth
-    case apiKey = "api_key"
-}
+public typealias PiSignInMethod = HostProviderSignInMethod
 
 /// Which of a provider's account sign-ins to take when pi asks (OpenAI Codex and Radius offer both).
 public enum PiSignInFlow: String, Codable, Sendable {
@@ -40,8 +37,12 @@ public enum PiKeyInput: Equatable, Sendable {
     }
 }
 
+/// Interactive authentication exposed by a loaded Pi provider. Never a credential or endpoint.
+public typealias PiSignInProvider = HostProviderSignIn
+
 /// What the app tells the bridge.
 public enum PiSignInCommand: Equatable, Sendable {
+    case providers
     case login(provider: String, method: PiSignInMethod, flow: PiSignInFlow)
     /// A prompt's answer.
     case answer(id: String, value: String)
@@ -52,11 +53,21 @@ public enum PiSignInCommand: Equatable, Sendable {
     /// Whether a key works, with the smallest request pi can make; with no `key`, whether the
     /// provider's stored login does (a stale OAuth token is refreshed on the way).
     case check(id: String, provider: String, key: PiKeyInput?)
+    /// Each provider extension's usage and balance (`usage(auth)` or the "shepherd:usage" event):
+    /// the signed-in account's, and each saved account's in `accounts` with its stored credential.
+    case usage(accounts: [PiSavedCredential] = [])
 
     /// One JSON line, newline included.
     public var line: Data {
         var object: [String: String]
         switch self {
+        case .providers: object = ["type": "providers"]
+        case .usage(let accounts) where !accounts.isEmpty:
+            let list = accounts.map { ["provider": $0.provider, "id": $0.id, "credential": $0.credential] as [String: Any] }
+            var data = (try? JSONSerialization.data(withJSONObject: ["type": "usage", "accounts": list] as [String: Any], options: [.sortedKeys])) ?? Data()
+            data.append(0x0A)
+            return data
+        case .usage: object = ["type": "usage"]
         case .login(let provider, let method, let flow):
             object = ["type": "login", "provider": provider, "method": method.rawValue, "flow": flow.rawValue]
         case .answer(let id, let value): object = ["type": "answer", "id": id, "value": value]
@@ -76,40 +87,8 @@ public enum PiSignInCommand: Equatable, Sendable {
     }
 }
 
-/// A question pi asks while it signs in.
-public struct PiSignInPrompt: Equatable, Sendable, Identifiable {
-    public enum Kind: String, Sendable {
-        /// A code pasted from the provider's page, raced against the browser's callback.
-        case manualCode = "manual_code"
-        /// A key.
-        case secret
-        case text
-        case select
-    }
-
-    public struct Option: Equatable, Sendable {
-        public var id: String
-        public var label: String
-        public init(id: String, label: String) {
-            self.id = id
-            self.label = label
-        }
-    }
-
-    public var id: String
-    public var kind: Kind
-    public var message: String
-    public var placeholder: String?
-    public var options: [Option]
-
-    public init(id: String, kind: Kind, message: String, placeholder: String? = nil, options: [Option] = []) {
-        self.id = id
-        self.kind = kind
-        self.message = message
-        self.placeholder = placeholder
-        self.options = options
-    }
-}
+/// A question pi asks while it signs in, shared with clients of the host.
+public typealias PiSignInPrompt = HostSignInPrompt
 
 /// Why a sign-in ended without one, in words fit for the sheet: never a credential.
 public struct PiSignInFailure: Equatable, Sendable, Error {
@@ -146,9 +125,124 @@ public enum PiKeyCheck: Equatable, Sendable {
     case unset(String)
 }
 
+/// What one loaded extension registered, as pi's loader recorded it: the providers it added (by
+/// id, the last registration of an id winning) and the rest of what it gave pi. Names only.
+public struct PiExtensionInventory: Codable, Equatable, Sendable {
+    /// The file pi loaded, as Shepherd's settings name it.
+    public var path: String
+    public var providers: [String]
+    public var tools: [String]
+    public var commands: [String]
+    /// The events it listens to (`session_start`, `tool_call`, …).
+    public var events: [String]
+    public var shortcuts: [String]
+    public var flags: [String]
+    /// Message, entry and tool renderers and markdown transformers: all drawn by pi's terminal UI.
+    public var renderers: Int
+
+    public init(path: String, providers: [String] = [], tools: [String] = [], commands: [String] = [], events: [String] = [],
+                shortcuts: [String] = [], flags: [String] = [], renderers: Int = 0) {
+        self.path = path
+        self.providers = providers
+        self.tools = tools
+        self.commands = commands
+        self.events = events
+        self.shortcuts = shortcuts
+        self.flags = flags
+        self.renderers = renderers
+    }
+
+    private enum CodingKeys: String, CodingKey { case path, providers, tools, commands, events, shortcuts, flags, renderers }
+
+    // A field an older bridge leaves out reads as none.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        providers = try c.decodeIfPresent([String].self, forKey: .providers) ?? []
+        tools = try c.decodeIfPresent([String].self, forKey: .tools) ?? []
+        commands = try c.decodeIfPresent([String].self, forKey: .commands) ?? []
+        events = try c.decodeIfPresent([String].self, forKey: .events) ?? []
+        shortcuts = try c.decodeIfPresent([String].self, forKey: .shortcuts) ?? []
+        flags = try c.decodeIfPresent([String].self, forKey: .flags) ?? []
+        renderers = try c.decodeIfPresent(Int.self, forKey: .renderers) ?? 0
+    }
+}
+
+/// A provider's prepaid balance as its extension reports it ("Credit", 18.40, "USD").
+public struct PiBalance: Codable, Equatable, Sendable {
+    public var amount: Double
+    /// An ISO 4217 code ("USD", "CNY") or the provider's own unit ("credits").
+    public var currency: String
+    public var label: String?
+
+    public init(amount: Double, currency: String, label: String? = nil) {
+        self.amount = amount
+        self.currency = currency
+        self.label = label
+    }
+}
+
+/// A saved account that isn't active, sent to the bridge so a usage hook can ask about it.
+public struct PiSavedCredential: @unchecked Sendable, Equatable {
+    public var provider: String
+    public var id: String
+    /// As `PiAccounts` stores it: pi's credential object.
+    public var credential: [String: Any]
+
+    public init(provider: String, id: String, credential: [String: Any]) {
+        self.provider = provider
+        self.id = id
+        self.credential = credential
+    }
+
+    public static func == (a: Self, b: Self) -> Bool {
+        a.provider == b.provider && a.id == b.id && NSDictionary(dictionary: a.credential).isEqual(to: b.credential)
+    }
+}
+
+/// One provider's usage from its extension: limit windows and a balance, for the signed-in account
+/// (`account` nil) or a saved one, and the account's email when the provider said it.
+public struct PiProviderUsage: Decodable, Equatable, Sendable {
+    public var provider: String
+    public var account: String?
+    public var windows: [PiUsageWindow]
+    public var balance: PiBalance?
+    public var email: String?
+
+    public init(provider: String, account: String? = nil, windows: [PiUsageWindow] = [], balance: PiBalance? = nil, email: String? = nil) {
+        self.provider = provider
+        self.account = account
+        self.windows = windows
+        self.balance = balance
+        self.email = email
+    }
+
+    private struct Window: Decodable { var name: String; var usedPercent: Double; var resetsAt: Double? }
+    private enum CodingKeys: String, CodingKey { case provider, account, windows, balance, email }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decode(String.self, forKey: .provider)
+        account = try c.decodeIfPresent(String.self, forKey: .account)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
+        windows = (try c.decodeIfPresent([Window].self, forKey: .windows) ?? []).map {
+            PiUsageWindow(name: $0.name, usedPercent: min(100, max(0, $0.usedPercent)),
+                          resetsAt: $0.resetsAt.map { Date(timeIntervalSince1970: $0 / 1000) })
+        }
+        balance = try? c.decodeIfPresent(PiBalance.self, forKey: .balance)
+    }
+}
+
 /// What the bridge says.
 public enum PiSignInReply: Equatable, Sendable {
     case ready
+    case providers([PiSignInProvider])
+    /// An installed extension at this path didn't load while listing providers: it is skipped.
+    case extensionFailed(path: String)
+    /// What each loaded extension registered, just before `providers`.
+    case extensions([PiExtensionInventory])
+    /// Usage and balance from the providers' extensions that report them.
+    case usage([PiProviderUsage])
     /// The browser sign-in's page: open it.
     case authURL(URL, instructions: String?)
     /// A device-code sign-in's code and where to enter it.
@@ -179,6 +273,7 @@ public enum PiSignInReply: Equatable, Sendable {
         var event: Event?
         var id: String?
         var kind: String?
+        var keyForm: Bool?
         var message: String?
         var placeholder: String?
         var options: [Option]?
@@ -189,6 +284,10 @@ public enum PiSignInReply: Equatable, Sendable {
         var port: Int?
         var result: String?
         var models: [String]?
+        var providers: [PiSignInProvider]?
+        var path: String?
+        var extensions: [PiExtensionInventory]?
+        var usage: [PiProviderUsage]?
     }
 
     /// One line of the bridge's stdout; nil for anything it doesn't say.
@@ -196,6 +295,17 @@ public enum PiSignInReply: Equatable, Sendable {
         guard let wire = try? JSONDecoder().decode(Wire.self, from: line) else { return nil }
         switch wire.type {
         case "ready": return .ready
+        case "providers":
+            guard let providers = wire.providers,
+                  providers.allSatisfy({ !$0.id.isEmpty && !$0.name.isEmpty }),
+                  Set(providers.map(\.id)).count == providers.count else { return nil }
+            return .providers(providers)
+        case "extensionFailed":
+            return wire.path.flatMap { $0.isEmpty ? nil : .extensionFailed(path: $0) }
+        case "extensions":
+            return wire.extensions.map { .extensions($0) }
+        case "usage":
+            return .usage(wire.usage ?? [])
         case "event":
             guard let event = wire.event else { return nil }
             switch event.type {
@@ -203,7 +313,8 @@ public enum PiSignInReply: Equatable, Sendable {
                 guard let url = event.url.flatMap(URL.init(string:)), ["https", "http"].contains(url.scheme ?? "") else { return nil }
                 return .authURL(url, instructions: event.instructions)
             case "device_code":
-                guard let code = event.userCode, let uri = event.verificationUri else { return nil }
+                guard let code = event.userCode, let uri = event.verificationUri,
+                      let url = URL(string: uri), ["https", "http"].contains(url.scheme ?? "") else { return nil }
                 return .deviceCode(code: code, verificationURI: uri, expiresIn: event.expiresInSeconds.map { Int($0) })
             case "info": return .info(event.message ?? "")
             case "progress": return .progress(event.message ?? "")
@@ -212,7 +323,7 @@ public enum PiSignInReply: Equatable, Sendable {
         case "prompt":
             guard let id = wire.id, let kind = wire.kind.flatMap(PiSignInPrompt.Kind.init(rawValue:)) else { return nil }
             return .prompt(PiSignInPrompt(id: id, kind: kind, message: wire.message ?? "", placeholder: wire.placeholder,
-                                          options: (wire.options ?? []).map { .init(id: $0.id, label: $0.label ?? $0.id) }))
+                                          options: (wire.options ?? []).map { .init(id: $0.id, label: $0.label ?? $0.id) }, keyForm: wire.keyForm))
         case "promptClosed":
             return wire.id.map { .promptClosed($0) }
         case "done":
@@ -243,11 +354,13 @@ extension PiLaunch {
     /// key's variable and the user's proxy settings are there), with the shell's pi, jiti and
     /// Node settings dropped and Shepherd's pi home pinned, in the home: `$0` is the script, `$1`
     /// pi's SDK (the engine's `dist/bundle/index.js`), `$2` the home.
-    public static func signInBridge(node: PiEngine.Program, script: String, sdk: String, home: PiHome) -> Line {
+    /// `extensions`: Shepherd's own extensions the bridge loads beside the home's (`PiSignInScript.usageExtension`).
+    public static func signInBridge(node: PiEngine.Program, script: String, sdk: String, home: PiHome, extensions: [String] = []) -> Line {
         Line(script: clearedEnvironment(home: home)
-                + "export PI_CODING_AGENT_DIR=\(quoted(home.directory.path)) PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0; "
-                + "cd -- \(quoted(home.directory.path)) && exec \(word(node)) \"$0\" \"$1\" \"$2\"",
-             positional: [script, sdk, home.directory.path])
+                + "export PI_CODING_AGENT_DIR=\(quoted(home.directory.path)) PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0"
+                + (extensions.isEmpty ? "" : " SHEPHERD_USAGE_EXTENSION=1") + "; "
+                + "cd -- \(quoted(home.directory.path)) && exec \(word(node)) \"$0\" \"$@\"",
+             positional: [script, sdk, home.directory.path] + extensions)
     }
 }
 
@@ -261,7 +374,6 @@ public final class PiSignInBridge: @unchecked Sendable {
     private let input = Pipe()
     private let lock = NSLock()
     private var buffer = LineBuffer()
-    private var errors = Data()
     private var closed = false
 
     /// Starts `line` (`PiLaunch.signInBridge`). The environment is the app's, without Shepherd's
@@ -286,13 +398,9 @@ public final class PiSignInBridge: @unchecked Sendable {
                 if let reply = PiSignInReply.parse(line) { self.continuation.yield(reply) }
             }
         }
-        stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let chunk = handle.availableData
-            guard let self, !chunk.isEmpty else { handle.readabilityHandler = nil; return }
-            self.lock.withLock {
-                self.errors.append(chunk)
-                if self.errors.count > 8192 { self.errors = self.errors.suffix(4096) }
-            }
+        // Extensions can write credentials to stderr. Drain it, never retain or display it.
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            if handle.availableData.isEmpty { handle.readabilityHandler = nil }
         }
         process.terminationHandler = { [weak self] process in
             output.fileHandleForReading.readabilityHandler = nil
@@ -302,11 +410,10 @@ public final class PiSignInBridge: @unchecked Sendable {
             let rest = output.fileHandleForReading.readDataToEndOfFile()
             let lines = self.lock.withLock { (try? self.buffer.append(rest + (rest.last == 0x0A || rest.isEmpty ? Data() : Data([0x0A])))) ?? [] }
             for line in lines { if let reply = PiSignInReply.parse(line) { self.continuation.yield(reply) } }
-            let (wasClosed, text) = self.lock.withLock { (self.closed, String(decoding: self.errors, as: UTF8.self)) }
+            let wasClosed = self.lock.withLock { self.closed }
             if !wasClosed, process.terminationStatus != 0 {
-                let last = text.split(whereSeparator: \.isNewline).last.map(String.init)?.trimmingCharacters(in: .whitespaces)
                 let reason = process.terminationStatus == 127 ? "Shepherd can’t find its pi’s runtime."
-                    : last.map { "The sign-in stopped: \($0.prefix(200))" } ?? "The sign-in stopped (status \(process.terminationStatus))."
+                    : "The sign-in helper stopped (status \(process.terminationStatus))."
                 self.continuation.yield(.failed(PiSignInFailure(.bridge, reason: reason)))
             }
             self.continuation.finish()
@@ -348,12 +455,14 @@ public final class PiSignInBridge: @unchecked Sendable {
 /// The installed bridge script.
 public enum PiSignInScript {
     public static let fileName = "shepherd-sign-in.mjs"
+    /// Anthropic's and OpenAI Codex's usage, a provider extension shipped with Shepherd (Settings ▸ Tools ▸ Built in).
+    public static let usageExtension = "shepherd-usage.mjs"
 
-    /// Writes the script into `directory` when it differs, and returns its path.
-    public static func install(in directory: URL) throws -> URL {
+    /// Writes the script (or another of Shepherd's, `name`) into `directory` when it differs, and returns its path.
+    public static func install(in directory: URL, name: String = fileName) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent(fileName)
-        let data = Data(source.utf8)
+        let url = directory.appendingPathComponent(name)
+        let data = Data(EmbeddedExtensions.source(name).utf8)
         if (try? Data(contentsOf: url)) != data { try data.write(to: url, options: .atomic) }
         return url
     }

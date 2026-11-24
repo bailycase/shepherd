@@ -540,6 +540,8 @@ final class ShepherdViewModel {
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .general
+    /// A group the Settings page scrolls to once it shows (its view's `id`), then nil.
+    var settingsScrollTarget: String?
     @ObservationIgnored var madeProjects: ProjectsModel?
     @ObservationIgnored var madeLogicalProjects: LogicalProjectsModel?
     /// The Project whose page or settings the main column shows (ProjectLead boards). Ephemeral.
@@ -746,6 +748,7 @@ final class ShepherdViewModel {
         self.installThemeMarker = themeInstaller
         self.yourPi = yourPi ?? YourPiModel(pi: pi)
         self.piAuth = piAuth ?? PiAuthStore(pi: pi)
+        self.piAuth.bundledUsage = { [settings = self.settings] in settings.piUsageExtension }
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
@@ -794,6 +797,8 @@ final class ShepherdViewModel {
         self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
+        // An extension added, removed or switched: Sign-in lists the providers it registers.
+        self.yourPi.onExtensionsChanged = { [weak piAuth = self.piAuth] in Task { await piAuth?.refreshProviders() } }
         // A host that comes back takes the skill changes it is owed (instructions sync underneath, over the fleet).
         hosts.onHostConnected = { [weak self] hostID in
             self?.skillsHostConnected(hostID)

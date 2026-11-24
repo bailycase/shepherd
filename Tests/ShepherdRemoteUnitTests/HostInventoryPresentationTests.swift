@@ -10,6 +10,16 @@ import ShepherdProtocol
 struct HostInventoryPresentationTests {
     typealias P = HostInventoryPresentation
 
+    @Test func unconfiguredKeysBelongInTheAddMenuNotTheSavedAccountsList() {
+        let available = HostProviderStatus(id: "acme", name: "Acme", badge: "API key", auth: .notSignedIn,
+                                           signIn: HostProviderSignIn(id: "acme", name: "Acme", apiKey: "Acme credentials", keyForm: false))
+        let saved = HostProviderStatus(id: "saved", name: "Saved", badge: "API key", auth: .apiKey)
+        let account = HostProviderStatus(id: "account", name: "Account", badge: "Subscription", auth: .notSignedIn)
+        let page = P.providerPage([available, saved, account])
+        #expect(page.addableKeys == [available])
+        #expect(page.groups["API key"] == [saved] && page.groups["Subscription"] == [account])
+    }
+
     @Test func mcpRowsAndValue() {
         let github = HostMCPServer(name: "github", kind: .remote, endpoint: "https://api.githubcopilot.com/mcp/", status: .connected, tools: 12)
         let postgres = HostMCPServer(name: "postgres", kind: .local, endpoint: "npx server-postgres", status: .error, note: "connection refused", tools: nil)
@@ -44,10 +54,29 @@ struct HostInventoryPresentationTests {
         #expect(P.providerLine(expired) == "Expired · sign in again · Claude Pro or Max · 2 accounts · work")
         #expect(P.providerLine(key) == "API key · $OPENAI_API_KEY")
         #expect(P.providerLine(none) == "Not signed in")
+        var metered = key
+        metered.usage = [HostUsageWindow(name: "5-hour", usedPercent: 23), HostUsageWindow(name: "Week", usedPercent: 84.4)]
+        metered.balance = HostBalance(amount: 18.4, currency: "USD", label: "Credit")
+        let line = P.providerLine(metered)
+        #expect(line.hasPrefix("API key · 84% of the week used · Credit ") && line.hasSuffix(" · $OPENAI_API_KEY"))
+        var subscription = metered
+        subscription.auth = .signedIn
+        subscription.detail = "Acme account"
+        #expect(P.providerLine(subscription).hasPrefix("84% of the week used · Credit "), "the dot says signed in")
+        var signedOut = metered
+        signedOut.auth = .notSignedIn
+        #expect(P.providerLine(signedOut) == "Not signed in · $OPENAI_API_KEY", "an old reading isn’t shown once signed out")
         #expect(P.tone(.expired) == .attention && P.tone(.apiKey) == .done && P.tone(.notSignedIn) == .idle)
         #expect(P.providersValue([expired, key, none]) == "1 expired")
         #expect(P.providersValue([key, none]) == "1" && P.providersValue([none]) == "None")
         #expect(P.providersGuidance(host: "studio").contains("Settings ▸ Sign-in on studio"))
+    }
+
+    @Test func aBalanceIsMoneyInItsCurrencyOrAnAmountInTheProvidersUnit() {
+        let us = Locale(identifier: "en_US")
+        #expect(P.balanceWords(HostBalance(amount: 18.4, currency: "USD", label: "Credit"), locale: us) == "Credit $18.40")
+        #expect(P.balanceWords(HostBalance(amount: 110, currency: "cny"), locale: us) == "Balance CN¥110.00")
+        #expect(P.balanceWords(HostBalance(amount: 1200, currency: "credits"), locale: us) == "Balance 1,200 credits")
     }
 
     @Test func spaceRowsAndTrust() {
@@ -70,5 +99,21 @@ struct HostInventoryPresentationTests {
         #expect(P.accountLine(HostProviderAccount(id: "a", name: "work", active: true), now: now) == "In use")
         #expect(P.accountLine(HostProviderAccount(id: "b", name: "home", active: false, limitedUntil: 500), now: now) == "Saved")
         #expect(P.accountLine(HostProviderAccount(id: "b", name: "home", active: false, limitedUntil: 5_000), now: now).hasPrefix("Limited until"))
+    }
+
+    @Test func anExtensionRowSaysWhyItIsLeftOutOrWhereItCameFrom() {
+        let fine = HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://example.invalid/acme/pi-login", on: true, added: true)
+        let broken = HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added", on: true, failure: "Cannot find module", added: true)
+        #expect(P.extensionLine(fine) == "Added from https://example.invalid/acme/pi-login" && P.tone(fine) == .done)
+        var off = fine
+        off.on = false
+        #expect(P.tone(off) == .idle)
+        #expect(P.extensionLine(broken) == "Cannot find module" && P.tone(broken) == .failed)
+        #expect(P.supportWord(fine) == nil && P.supportWord(broken) == "Didn’t load")
+        var partly = fine
+        partly.support = .partly
+        #expect(P.supportWord(partly) == "Partly" && P.tone(partly) == .done)
+        partly.support = .works
+        #expect(P.supportWord(partly) == "Works" && P.tone(partly) == .done)
     }
 }

@@ -377,6 +377,7 @@ extension ShepherdViewModel {
                 mcpOpenServer = nil
                 settingsSection = .tools
                 showSettings = true
+                settingsScrollTarget = ExtensionsSettingsGroup.scrollID
             case "nextNeedingYou": openNextNeedingYou()
             case "reviewNext": openReviewNext()
             case "reviewDiff": openUserReview()

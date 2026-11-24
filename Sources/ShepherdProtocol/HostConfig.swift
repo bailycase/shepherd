@@ -1,7 +1,7 @@
 import Foundation
 
 // A host's configuration as a client changes it (Settings on the iPhone, the iPad and another
-// Mac): its MCP servers, its subagent profiles, and its providers' sign-ins. The host's GUI does
+// Mac): its MCP servers, its subagent profiles, its providers' sign-ins and its pi extensions. The host's GUI does
 // the work as its own Settings would (`SessionServer.onRemoteHostConfig`); a headless host has
 // none. Secrets a client sends (an MCP secret, an API key, a pasted sign-in code) go one way:
 // a reply never carries one, only the state the host's Settings row shows.
@@ -44,13 +44,28 @@ public enum RemoteHostConfigRequest: Codable, Hashable, Sendable {
     case providerSignOut(provider: String)
     /// Starts an account sign-in on the host: its page opens on the client, which sends back the
     /// code the page shows (`signIn(.complete)`). Answers `.signIn`.
-    case providerSignIn(provider: String)
+    case providerSignIn(provider: String, method: HostProviderSignInMethod? = nil, adding: Bool? = nil)
     /// One of a provider's saved accounts (Settings ▸ Sign-in's account rows). Answers `.providers`,
     /// or `.signIn` for `add`.
     case providerAccount(provider: String, action: HostProviderAccountAction)
 
+    /// Switches a pi extension on or off (on also tries a failed one again), by `HostExtension.id`.
+    /// New agents load it, running ones on `/reload`. Answers `.extensions`
+    /// (`RemoteProtocol.hostExtensionsCapability`).
+    case extensionSetEnabled(destination: String, on: Bool)
+    /// Removes an extension's copy from the host's pi home. Answers `.extensions`.
+    case extensionRemove(destination: String)
+    /// The host clones a Git repository (https, ssh, `git@host:owner/repo` or file) with its own Git
+    /// sign-in and adds what it holds, switched on. Answers `.extensions`.
+    case extensionAddGit(url: String)
+
     /// A sign-in under way (`mcpSignIn`, `providerSignIn`). Answers `.signIn`.
     case signIn(id: UUID, action: HostSignInAction)
+}
+
+public enum HostProviderSignInMethod: String, Codable, Hashable, Sendable {
+    case oauth
+    case apiKey = "api_key"
 }
 
 public enum HostMCPExposure: String, Codable, Hashable, Sendable, CaseIterable {
@@ -79,8 +94,42 @@ public enum HostSignInAction: Codable, Hashable, Sendable {
     case poll
     /// The code a provider's page showed, or for an MCP server the address the browser was sent
     /// back to (`http://127.0.0.1:…/callback?code=…`).
-    case complete(String)
+    case complete(String, promptID: String? = nil)
     case cancel
+}
+
+/// A provider's pending question. Answers travel only from client to host.
+public struct HostSignInPrompt: Codable, Hashable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Hashable, Sendable {
+        case manualCode = "manual_code"
+        case secret, text, select
+    }
+
+    public struct Option: Codable, Hashable, Sendable {
+        public var id: String
+        public var label: String
+        public init(id: String, label: String) {
+            self.id = id
+            self.label = label
+        }
+    }
+
+    public var id: String
+    public var kind: Kind
+    public var message: String
+    public var placeholder: String?
+    public var options: [Option]
+    /// The bridge identified Pi's built-in, single-field API-key login. Never inferred from a secret prompt alone.
+    public var keyForm: Bool?
+
+    public init(id: String, kind: Kind, message: String, placeholder: String? = nil, options: [Option] = [], keyForm: Bool? = nil) {
+        self.id = id
+        self.kind = kind
+        self.message = message
+        self.placeholder = placeholder
+        self.options = options
+        self.keyForm = keyForm
+    }
 }
 
 /// One sign-in under way on a host, as a client draws it. Never a token.
@@ -104,9 +153,11 @@ public struct HostSignInProgress: Codable, Hashable, Sendable {
     public var wantsCode: Bool
     /// Why it failed, or what to do now.
     public var message: String?
+    /// Interactive provider prompt; absent from older hosts and from MCP sign-ins.
+    public var prompt: HostSignInPrompt?
 
     public init(id: UUID, phase: Phase, name: String, authorizationURL: String? = nil, deviceCode: String? = nil,
-                wantsCode: Bool = false, message: String? = nil) {
+                wantsCode: Bool = false, message: String? = nil, prompt: HostSignInPrompt? = nil) {
         self.id = id
         self.phase = phase
         self.name = name
@@ -114,6 +165,7 @@ public struct HostSignInProgress: Codable, Hashable, Sendable {
         self.deviceCode = deviceCode
         self.wantsCode = wantsCode
         self.message = message
+        self.prompt = prompt
     }
 }
 
@@ -124,5 +176,6 @@ public enum RemoteHostConfigResult: Codable, Hashable, Sendable {
     case subagents([HostSubagentProfile])
     case subagent(HostSubagentProfileText)
     case providers([HostProviderStatus])
+    case extensions([HostExtension])
     case signIn(HostSignInProgress)
 }

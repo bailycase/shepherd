@@ -34,7 +34,7 @@ PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Help
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
 ```
 
-Use the staged Node locally: older Node versions may lack the TypeScript transform mode that `anthropic-oauth.test.mjs` needs. Use `Tests/Extensions/*.test.mjs` for the whole suite.
+Use the staged Node locally: older Node versions may lack the TypeScript transform mode some extension tests need. Use `Tests/Extensions/*.test.mjs` for the whole suite.
 
 `scripts/check.py <TestTarget> [filter]` builds only that test target (its folder under `Tests/`)
 and its dependencies, then runs it with the filter. `swift test --filter` builds every test target

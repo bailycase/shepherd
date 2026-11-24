@@ -98,9 +98,11 @@ struct SettingsSearchTests {
         ("groq", .models, ["Add an API key"]),
         ("models.json", .models, ["Custom providers"]),
         ("re-import", .fromYourPi, ["Re-import all", "Logins", "Custom providers", "Default model", "Instructions",
-                            "Skills", "Prompts", "Themes"]),
+                            "Skills", "Prompts", "Themes", "Extensions"]),
         ("CLAUDE.md", .fromYourPi, ["Instructions"]),
-        ("full access", .fromYourPi, ["Imported extensions"]),
+        ("full access", .tools, ["Extensions"]),
+        ("sign-in extension", .models, ["Add a provider"]),
+        ("sign-in extension", .tools, ["Extensions"]),
         // Settings ▸ Slash commands.
         ("hide", .piSlashCommands, ["Off"]),
         ("registerCommand", .piSlashCommands, ["Extensions"]),

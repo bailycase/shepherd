@@ -13,7 +13,7 @@ const model = { id: "claude-opus-5-5", name: "fixture", api: "anthropic-messages
   reasoning: true, input: ["text"], contextWindow: 1000000, maxTokens: 64000, cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } };
 const idle = 1500;
 
-// `oauth` signs the fixture in the way a Claude subscription does, which takes Shepherd's own Anthropic stream.
+// Exercise Pi's native provider with either a stored OAuth credential or an API key.
 const piOptions = (entrypoint, oauth, settings) => ({
   entrypoint, api: "anthropic-messages", settings: { httpIdleTimeoutMs: idle, retry: { enabled: false }, ...settings },
   args: ["-ne", "-ns", "-np", "--model", oauth ? `anthropic/${model.id}` : "fixture/fixture"],

@@ -5,7 +5,7 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-/// The stores Settings ▸ MCP, Subagents and Sign-in read and change, served to remote clients
+/// The stores Settings ▸ MCP, Subagents, Sign-in and Tools ▸ Extensions read and change, served to remote clients
 /// (`RemoteRequest.hostInventory` and `.hostConfig`) by the app or by the headless host.
 @MainActor
 struct HostStores {
@@ -76,6 +76,20 @@ struct HostStores {
             return .subagent(HostSubagentProfileText(file: opened.file, text: opened.text, fingerprint: opened.fingerprint))
         case .providers:
             return .providers(await hostProviders())
+        case .extensions:
+            return .extensions(await hostExtensions())
+        }
+    }
+
+    /// Settings ▸ Tools ▸ Extensions' rows, read afresh, as a client sees them.
+    func hostExtensions() async -> [HostExtension] {
+        await yourPi.refresh()
+        await piAuth.refreshProviders()
+        let inventory = piAuth.extensionInventory, names = piAuth.providerNames
+        return (yourPi.survey?.extensions ?? []).map { item in
+            HostInventoryMapping.hostExtension(item, support: inventory[item.copy.destination].map {
+                PiExtensionSupport.make($0, scanned: item.terminalOnly)
+            }, names: names)
         }
     }
 
@@ -84,10 +98,27 @@ struct HostStores {
         await piAuth.landing?.value
         await yourPi.refresh()
         await piAuth.refreshAccounts()
+        await piAuth.refreshProviders()
+        // Usage asks the providers over the network: once per few minutes, however often a client lists.
+        if piAuth.usageReadAt.map({ Date().timeIntervalSince($0) > PiAuthStore.usageMaxAge }) ?? true { await piAuth.refreshUsage() }
+        let usage = piAuth.usage, balances = piAuth.balances
         let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
-                                     needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts)
-        return (page.subscriptions + page.apiKeys + page.customProviders).map(HostInventoryMapping.provider)
+                                     needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts, providers: piAuth.providers,
+                                     owners: piAuth.providerOwners)
+        let rows = (page.subscriptions + page.apiKeys + page.customProviders).map { row in
+            let methods = piAuth.providers?.first { $0.id == row.id }
+                ?? (piAuth.providers == nil ? nil : HostProviderSignIn(id: row.id, name: row.name))
+            var status = HostInventoryMapping.provider(row, signIn: methods)
+            status.usage = usage[row.id].map { $0.map { HostUsageWindow(name: $0.name, usedPercent: $0.usedPercent,
+                                                                       resetsAt: $0.resetsAt?.timeIntervalSince1970) } }
+            status.balance = balances[row.id].map { HostBalance(amount: $0.amount, currency: $0.currency, label: $0.label) }
+            return status
+        }
+        return rows + page.addable.map { id in
+            HostProviderStatus(id: id, name: page.providerNames[id] ?? PiSignInCatalog.name(id), badge: "API key", auth: .notSignedIn,
+                               signIn: piAuth.providers?.first { $0.id == id })
+        }
     }
 }
 
@@ -132,13 +163,24 @@ enum HostInventoryMapping {
         }
     }
 
+    static func hostExtension(_ item: YourPiExtensionRow, support: PiExtensionSupport? = nil, names: [String: String] = [:]) -> HostExtension {
+        let state: HostExtension.Support? = switch ExtensionsText.state(item, support: support) {
+        case .works?: .works
+        case .partly?: .partly
+        case .failed?, nil: nil
+        }
+        return HostExtension(id: item.copy.destination, name: item.copy.name, subtitle: ExtensionsText.subtitle(item, support: support, names: names),
+                             on: item.on, failure: item.failure, added: YourPiImport.isAdded(item.copy.destination), support: state,
+                             supportDetail: state == nil ? nil : ExtensionsText.help(item, support: support))
+    }
+
     static func profile(_ definition: SubagentDefinitionsStore.Definition) -> HostSubagentProfile {
         HostSubagentProfile(file: definition.file, name: definition.name, description: definition.description, tools: definition.tools,
                             context: definition.context, error: definition.error, disabled: definition.disabled ?? false,
                             isDefault: definition.isDefault, fingerprint: definition.fingerprint)
     }
 
-    static func provider(_ row: ProviderRowModel) -> HostProviderStatus {
+    static func provider(_ row: ProviderRowModel, signIn: HostProviderSignIn? = nil) -> HostProviderStatus {
         let auth: HostProviderStatus.Auth
         var detail: String?
         switch row.auth {
@@ -155,13 +197,22 @@ enum HostInventoryMapping {
         }
         let accounts = row.accounts
         let several = (accounts?.accounts.count ?? 0) > 1
-        return HostProviderStatus(id: row.id, name: row.name, badge: row.badge, auth: auth, detail: detail, problem: row.problem,
+        let group: String = if row.custom { "Custom" } else {
+            switch auth {
+            case .apiKey, .environment: "API key"
+            case .noKey: "Custom"
+            default: "Subscription"
+            }
+        }
+        // Where it came from, as the Mac's row says it ("from acme-login").
+        if let source = row.source { detail = [detail, "from \(source)"].compactMap { $0 }.joined(separator: " · ") }
+        return HostProviderStatus(id: row.id, name: row.name, badge: group, auth: auth, detail: detail, problem: row.problem,
                                   accounts: accounts?.accounts.count ?? 0,
                                   activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.title : nil },
                                   accountList: several ? accounts?.accounts.map { account in
                                       HostProviderAccount(id: account.id, name: account.title, active: account.id == accounts?.active,
                                                           limitedUntil: account.limitedUntil?.timeIntervalSince1970)
                                   } : nil,
-                                  rotate: several ? accounts?.rotate : nil)
+                                  rotate: several ? accounts?.rotate : nil, signIn: signIn)
     }
 }

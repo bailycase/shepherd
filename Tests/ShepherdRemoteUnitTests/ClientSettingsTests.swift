@@ -109,6 +109,12 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
     private var log: [String] = []
     private var server = HostMCPServer(name: "github", kind: .remote, endpoint: "https://x", status: .connected)
     private var signedIn = false
+    private var extensionRows = [HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://example.invalid/acme/pi-login",
+                                               on: true, added: true)]
+    private var pendingPrompt: HostSignInPrompt?
+    private var configLog: [RemoteHostConfigRequest] = []
+    var configRequests: [RemoteHostConfigRequest] { lock.withLock { configLog } }
+    func showPrompt(_ prompt: HostSignInPrompt) { lock.withLock { pendingPrompt = prompt } }
     var refuses = false
     var requests: [String] { lock.withLock { log } }
 
@@ -124,8 +130,13 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
         lock.withLock {
             log.append("inventory.\(request)")
             switch request {
-            case .providers: return .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription",
-                                                                   auth: signedIn ? .signedIn : .notSignedIn)])
+            case .providers:
+                var rows = [HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: signedIn ? .signedIn : .notSignedIn)]
+                if extensionRows.contains(where: { $0.name == "acme-login" }) {
+                    rows.append(HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .notSignedIn))
+                }
+                return .providers(rows)
+            case .extensions: return .extensions(extensionRows)
             default: return .mcp(HostMCPInventory(servers: [server], configPath: "~/mcp.json"))
             }
         }
@@ -134,14 +145,24 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
     func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
         try lock.withLock {
             log.append("config.\(String(describing: request).prefix { $0 != "(" })")
+            configLog.append(request)
             if refuses { throw RemoteHostClientError.rejected(code: "config_failed", message: "The host said no.") }
             let id = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
             switch request {
             case .mcpSetEnabled(_, let on):
                 server.enabled = on
                 return .mcp(HostMCPInventory(servers: [server], configPath: "~/mcp.json"))
+            case .extensionSetEnabled(let destination, let on):
+                if let index = extensionRows.firstIndex(where: { $0.id == destination }) { extensionRows[index].on = on }
+                return .extensions(extensionRows)
+            case .extensionRemove(let destination):
+                extensionRows.removeAll { $0.id == destination }
+                return .extensions(extensionRows)
+            case .extensionAddGit(let url):
+                extensionRows.append(HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from \(url)", on: true, added: true))
+                return .extensions(extensionRows)
             case .providerSignIn:
-                return .signIn(HostSignInProgress(id: id, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai", wantsCode: true))
+                return .signIn(HostSignInProgress(id: id, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai", wantsCode: true, prompt: pendingPrompt))
             case .signIn:
                 signedIn = true
                 return .signIn(HostSignInProgress(id: id, phase: .done, name: "Anthropic"))
@@ -272,6 +293,45 @@ struct ClientSettingsTests {
         await model.follow(signInOn: live, page: .providers)
         #expect(model.signIns[live.id]?.phase == .done)
         #expect(model.providers[live.id]?.first?.auth == .signedIn, "a finished sign-in reads the page again")
+    }
+
+    @Test func extensionsShowOnlyOnAHostThatServesThemAndRefreshSignIn() async {
+        let client = FakeConfigClient()
+        let model = ClientHostConfig()
+        let base = [RemoteProtocol.hostInventoryCapability, RemoteProtocol.hostConfigCapability]
+        let old = SettingsHost(id: UUID(), name: "old", client: client, capabilities: Set(base))
+        let live = SettingsHost(id: UUID(), name: "new", client: client, capabilities: Set(base + [RemoteProtocol.hostExtensionsCapability]))
+        #expect(!model.servesExtensions(old))
+        #expect(model.servesExtensions(live))
+
+        await model.refresh(.extensions, on: live)
+        #expect(model.extensions[live.id]?.map(\.name) == ["acme-login"])
+        await model.perform(.extensionSetEnabled(destination: "your-extensions/added/acme-login", on: false), on: live)
+        #expect(model.extensions[live.id]?.first?.on == false)
+        #expect(model.providers[live.id]?.map(\.id) == ["anthropic", "acme"], "an extension change reads the providers again")
+        await model.perform(.extensionAddGit(url: "https://example.invalid/acme/pi-tools"), on: live)
+        #expect(model.extensions[live.id]?.map(\.name) == ["acme-login", "acme-tools"])
+        await model.perform(.extensionRemove(destination: "your-extensions/added/acme-login"), on: live)
+        #expect(model.extensions[live.id]?.map(\.name) == ["acme-tools"])
+        #expect(model.providers[live.id]?.map(\.id) == ["anthropic"])
+        #expect(!model.busy.contains(live.id))
+        model.forget(host: live.id)
+        #expect(model.extensions[live.id] == nil)
+    }
+
+    @Test func anAnswerUsesTheRenderedQuestionRatherThanTheLatestPolledQuestion() async throws {
+        let client = FakeConfigClient()
+        let host = SettingsHost(id: UUID(), name: "studio", client: client,
+                                capabilities: [RemoteProtocol.hostInventoryCapability, RemoteProtocol.hostConfigCapability])
+        let model = ClientHostConfig()
+        client.showPrompt(HostSignInPrompt(id: "p1", kind: .secret, message: "Password"))
+        await model.perform(.providerSignIn(provider: "acme"), on: host)
+        let rendered = try #require(model.signIns[host.id])
+        client.showPrompt(HostSignInPrompt(id: "p2", kind: .text, message: "Tenant"))
+        await model.perform(.providerSignIn(provider: "acme"), on: host)
+        #expect(model.signIns[host.id]?.prompt?.id == "p2")
+        await model.complete(signInOn: host, with: "fixture-password", signInID: rendered.id, promptID: rendered.prompt?.id)
+        #expect(client.configRequests.last == .signIn(id: rendered.id, action: .complete("fixture-password", promptID: "p1")))
     }
 
     /// A host's model menus offer its own catalog, keeping a current model it no longer lists.

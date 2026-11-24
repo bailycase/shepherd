@@ -24,8 +24,28 @@ final class PiAuthStore {
     private(set) var signingOut: Set<String> = []
     /// Saved accounts by provider (`PiAccounts`): only providers with any.
     private(set) var accounts: [String: PiAccountList] = [:]
-    /// Subscription usage by provider (`PiUsage`), read when Sign-in opens.
-    private(set) var usage: [String: [PiUsageWindow]] = [:]
+    /// Usage by provider, read when Sign-in opens: subscriptions' own (`PiUsage`), and what provider
+    /// extensions report (theirs wins: the person installed it for that).
+    internal(set) var usage: [String: [PiUsageWindow]] = [:]
+    /// Prepaid balances provider extensions report, by provider.
+    internal(set) var balances: [String: PiBalance] = [:]
+    /// When usage was last read: a remote client's list reads it again once it is older than `usageMaxAge`.
+    @ObservationIgnored private(set) var usageReadAt: Date?
+    static let usageMaxAge: TimeInterval = 300
+    /// Effective interactive methods from Pi, including enabled provider extensions. Set by
+    /// `refreshProviders`; previews seed it.
+    internal(set) var providers: [PiSignInProvider]?
+    private(set) var providersProblem: String?
+    /// What each switched-on extension registered, by its copy (`YourPiCopy.destination`), as the
+    /// last provider listing loaded it (Settings ▸ Tools' Adds and support).
+    internal(set) var extensionInventory: [String: [PiExtensionInventory]] = [:]
+    /// The extension copy each provider came from, by provider id (Sign-in's "from acme-login").
+    internal(set) var providerOwners: [String: YourPiCopy] = [:]
+    /// Each listed provider's name, by id.
+    var providerNames: [String: String] {
+        Dictionary((providers ?? []).map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+    @ObservationIgnored private var providerRead: Task<Void, Never>?
     /// The provider whose sign-in under way adds an account instead of replacing the active one.
     @ObservationIgnored private var adding: String?
     /// The last sign-in's account bookkeeping, still being saved: a remote client's answer waits on it.
@@ -36,16 +56,24 @@ final class PiAuthStore {
     /// Sign-ins changed (a sign-in, a sign-out): Settings reads both sides again.
     @ObservationIgnored var onChanged: (() -> Void)?
     @ObservationIgnored let pi: PiSetup
-    @ObservationIgnored let bridge: @MainActor () throws -> PiSignInBridge
+    /// A bridge run; `usage` loads Shepherd's own usage extension beside the home's (only a usage read asks).
+    @ObservationIgnored let bridge: @MainActor (_ usage: Bool) throws -> PiSignInBridge
+    /// Whether Settings ▸ Tools ▸ Built in has Shepherd's Anthropic and Codex usage on.
+    @ObservationIgnored var bundledUsage: @MainActor () -> Bool = { true }
     @ObservationIgnored var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     @ObservationIgnored var copy: (String) -> Void = { text in
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    init(pi: PiSetup, bridge: (@MainActor () throws -> PiSignInBridge)? = nil) {
+    /// A fixed provider list (previews) is never listed again, nor its usage read, as `YourPiModel`'s fixed survey isn't read again.
+    @ObservationIgnored private let fixedProviders: Bool
+
+    init(pi: PiSetup, bridge: (@MainActor (_ usage: Bool) throws -> PiSignInBridge)? = nil, providers: [PiSignInProvider]? = nil) {
         self.pi = pi
-        self.bridge = bridge ?? { try PiAuthStore.appBridge(pi) }
+        self.bridge = bridge ?? { try PiAuthStore.appBridge(pi, usage: $0) }
+        self.providers = providers
+        fixedProviders = providers != nil
     }
 
     /// Why this build can't sign in: a Debug build run on a stand-in engine has no pi SDK.
@@ -55,11 +83,89 @@ final class PiAuthStore {
 
     /// The bridge on the engine's node, with pi's SDK from the engine's package, installed beside
     /// Shepherd's other scripts in the support folder.
-    static func appBridge(_ pi: PiSetup) throws -> PiSignInBridge {
+    static func appBridge(_ pi: PiSetup, usage: Bool = false) throws -> PiSignInBridge {
         guard let package = pi.engine.packageDirectory else { throw NoSDK() }
-        let script = try PiSignInScript.install(in: ShepherdPaths.supportDirectory())
+        let support = try ShepherdPaths.supportDirectory()
+        let script = try PiSignInScript.install(in: support)
+        let extensions = usage ? [try PiSignInScript.install(in: support, name: PiSignInScript.usageExtension).path] : []
         let sdk = URL(fileURLWithPath: package).appendingPathComponent(BundledPiEngine.libraryPath).path
-        return PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files))
+        return PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files,
+                                                          extensions: extensions))
+    }
+
+    /// Refresh when Sign-in opens or provider resources change. Concurrent readers share one subprocess.
+    func refreshProviders() async {
+        guard !fixedProviders else { return }
+        if let providerRead { await providerRead.value; return }
+        let read = Task { [weak self] in
+            guard let self else { return }
+            if let problem = await readyHome() { providersProblem = problem; return }
+            do {
+                let bridge = try bridge(false)
+                defer { bridge.close() }
+                let watchdog = Task {
+                    try? await Task.sleep(for: .seconds(20))
+                    if !Task.isCancelled { bridge.close() }
+                }
+                defer { watchdog.cancel() }
+                bridge.send(.providers)
+                var failed: [String] = []
+                var inventories: [PiExtensionInventory] = []
+                for await reply in bridge.replies {
+                    switch reply {
+                    case .extensionFailed(let path):
+                        failed.append(path)
+                    case .extensions(let list):
+                        inventories = list
+                    case .providers(let list):
+                        providers = list
+                        providersProblem = nil
+                        await attribute(inventories)
+                        if !failed.isEmpty { await extensionsFailed(failed) }
+                        return
+                    case .failed(let failure):
+                        providersProblem = failure.reason
+                        return
+                    default: continue
+                    }
+                }
+                providersProblem = "The sign-in helper stopped before listing providers."
+            } catch {
+                providersProblem = "Couldn’t load sign-in providers."
+            }
+        }
+        providerRead = read
+        await read.value
+        providerRead = nil
+    }
+
+    /// Files each inventory to the extension copy it belongs to, and each provider to its copy.
+    private func attribute(_ inventories: [PiExtensionInventory]) async {
+        let pi = pi
+        let byCopy: ([String: [PiExtensionInventory]], [YourPiCopy]) = await Task.detached(priority: .userInitiated) {
+            let copies = pi.importedState().state()?.copies(.extensions) ?? []
+            return (PiExtensionSupport.byCopy(copies, inventories: inventories, home: pi.home), copies)
+        }.value
+        var owners: [String: YourPiCopy] = [:]
+        for (destination, list) in byCopy.0 {
+            guard let copy = byCopy.1.first(where: { $0.destination == destination }) else { continue }
+            for provider in list.flatMap(\.providers) { owners[provider] = copy }
+        }
+        if extensionInventory != byCopy.0 { extensionInventory = byCopy.0 }
+        if providerOwners != owners { providerOwners = owners }
+    }
+
+    /// Extensions that didn't load while listing providers: like a failure at an agent's launch,
+    /// each of the person's is left out until its files change or it is switched on again, and
+    /// Settings shows it on its row.
+    private func extensionsFailed(_ paths: [String]) async {
+        let pi = pi
+        let changed = await Task.detached(priority: .userInitiated) {
+            paths.compactMap { path in
+                try? pi.importedState().extensionFailed(path: path, reason: "It didn't load when Sign-in listed providers. Fix it, then switch it on again.")
+            }
+        }.value
+        if !changed.isEmpty { onChanged?() }
     }
 
     // MARK: Signing in
@@ -71,7 +177,7 @@ final class PiAuthStore {
         if let session, session.provider == provider, session.phase.isLive { return }
         if adding != provider { adding = nil }
         session?.end()
-        let subscription = key ? nil : PiSignInCatalog.subscription(provider)
+        let subscription = key ? nil : PiSignInCatalog.subscriptions(for: providers).first { $0.id == provider }
         let next = PiSignInSession(provider: provider, subscription: subscription, origin: origin, store: self)
         session = next
         next.start()
@@ -113,7 +219,7 @@ final class PiAuthStore {
             failure = problem
         } else {
             do {
-                let bridge = try bridge()
+                let bridge = try bridge(false)
                 bridge.send(.logout(provider: provider))
                 failure = await Self.outcome(of: bridge, provider: provider)
                 bridge.close()
@@ -137,7 +243,7 @@ final class PiAuthStore {
     /// back `invalid_grant`). Returns the providers that failed with the provider's reason, and
     /// marks each one expired so Sign-in says so. A bridge that can't run checks nothing.
     func checkLogins(_ providers: [String]) async -> [String: String] {
-        guard !providers.isEmpty, await readyHome() == nil, let bridge = try? bridge() else { return [:] }
+        guard !providers.isEmpty, await readyHome() == nil, let bridge = try? bridge(false) else { return [:] }
         defer { bridge.close() }
         for provider in providers { bridge.send(.check(id: provider, provider: provider, key: nil)) }
         var broken: [String: String] = [:]
@@ -177,15 +283,50 @@ final class PiAuthStore {
         accounts = await Task.detached { store.lists() }.value
     }
 
-    /// Asks each signed-in subscription that reports usage how much is used.
-    /// Each saved account's usage is saved with it, so the account list reads again after.
+    /// Asks every provider extension that reports usage (Shepherd's own Anthropic and Codex one
+    /// among them, when on) about the signed-in account and each saved one. A saved account's reading
+    /// and email are saved with it, so one whose token has expired still shows what it last read.
     func refreshUsage() async {
-        usage = await readUsage(pi.files)
+        guard !fixedProviders else { return }
+        let accounts = PiAccounts(home: pi.files)
+        let lists = accounts.lists()
+        let saved = lists.keys.sorted().flatMap { provider in
+            accounts.inactiveCredentials(provider).map { PiSavedCredential(provider: provider, id: $0.id, credential: $0.credential) }
+        }
+        var next: [String: [PiUsageWindow]] = [:]
+        var balances: [String: PiBalance] = [:]
+        for report in await extensionUsage(saved) {
+            if report.account == nil {
+                if !report.windows.isEmpty { next[report.provider] = report.windows }
+                if let balance = report.balance { balances[report.provider] = balance }
+                if lists[report.provider] == nil { continue }
+            }
+            if !report.windows.isEmpty {
+                let known = lists[report.provider]?.accounts.first { $0.id == (report.account ?? lists[report.provider]?.active) }?.email
+                try? accounts.saveUsage(report.provider, report.account, report.windows, email: known == nil ? report.email : nil)
+            }
+        }
+        if usage != next { usage = next }
+        if self.balances != balances { self.balances = balances }
+        usageReadAt = Date()
         await refreshAccounts()
     }
 
-    @ObservationIgnored var readUsage: (PiHome) async -> [String: [PiUsageWindow]] = { home in
-        await Task.detached { await PiUsage.read(home: home) }.value
+    /// What provider extensions report, through the bridge (`PiSignInCommand.usage`); none in previews.
+    private func extensionUsage(_ saved: [PiSavedCredential]) async -> [PiProviderUsage] {
+        guard await readyHome() == nil, let bridge = try? bridge(bundledUsage()) else { return [] }
+        defer { bridge.close() }
+        // Each hook has 10 s in the bridge; loading the extensions comes first.
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(30))
+            if !Task.isCancelled { bridge.close() }
+        }
+        defer { watchdog.cancel() }
+        bridge.send(.usage(accounts: saved))
+        for await reply in bridge.replies {
+            if case .usage(let reports) = reply { return reports }
+        }
+        return []
     }
 
     /// Signs another account in beside the one there: the current one is saved first.
@@ -301,6 +442,8 @@ final class PiSignInSession: Identifiable {
         case paste(rejected: String?)
         /// The key form.
         case key
+        /// A provider-defined text, secret or selection question.
+        case prompt(PiSignInPrompt)
         /// A pasted code or key went to pi; waiting for it to land.
         case saving
         /// Signed in: `pickedUp` agents started again.
@@ -321,12 +464,15 @@ final class PiSignInSession: Identifiable {
     let provider: String
     let subscription: PiSignInCatalog.Subscription?
     let origin: Origin
+    let method: PiSignInMethod
+    private let usesKeyForm: Bool
     private(set) var flow: Flow
     private(set) var phase: Phase = .starting
     /// The browser page, once pi gave it.
     private(set) var authURL: URL?
     /// The code the user pastes (paste flow).
     var code = ""
+    var promptAnswer = ""
     var keyMode: KeyMode = .paste { didSet { if keyMode != oldValue { scheduleCheck() } } }
     var key = "" { didSet { if key != oldValue { scheduleCheck() } } }
     var variable = "" { didSet { if variable != oldValue { scheduleCheck() } } }
@@ -338,6 +484,7 @@ final class PiSignInSession: Identifiable {
     @ObservationIgnored private var reader: Task<Void, Never>?
     @ObservationIgnored private var checking: Task<Void, Never>?
     @ObservationIgnored private var pendingPrompt: PiSignInPrompt?
+    @ObservationIgnored private var hasPrompted = false
     @ObservationIgnored private var checkCount = 0
     /// Continue was pressed before pi asked for the code.
     @ObservationIgnored private var submitWhenAsked = false
@@ -348,8 +495,10 @@ final class PiSignInSession: Identifiable {
         self.provider = provider
         self.subscription = subscription
         self.origin = origin
+        method = subscription == nil ? .apiKey : .oauth
+        usesKeyForm = store.providers?.first { $0.id == provider }?.keyForm ?? true
         self.store = store
-        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? .key
+        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? (usesKeyForm ? .key : .browser)
         if let names = PiProviders.environmentKeys[provider], let first = names.first { variable = first }
     }
 
@@ -359,6 +508,8 @@ final class PiSignInSession: Identifiable {
         self.provider = provider
         subscription = flow == .key ? nil : PiSignInCatalog.subscription(provider)
         origin = .settings
+        method = flow == .key ? .apiKey : .oauth
+        usesKeyForm = flow == .key
         self.flow = flow
         self.phase = phase
         self.authURL = authURL
@@ -369,7 +520,7 @@ final class PiSignInSession: Identifiable {
         self.keyCheck = keyCheck
     }
 
-    var name: String { PiSignInCatalog.name(provider) }
+    var name: String { subscription?.name ?? store?.providers?.first { $0.id == provider }?.name ?? PiSignInCatalog.name(provider) }
     var site: String { subscription?.site ?? PiSignInCatalog.keyPages[provider] ?? name }
 
     // MARK: Running pi's login
@@ -378,6 +529,8 @@ final class PiSignInSession: Identifiable {
         reader?.cancel()
         bridge?.close()
         pendingPrompt = nil
+        hasPrompted = false
+        promptAnswer = ""
         guard let store else { return }
         if flow != .paste { phase = flow == .key ? .key : .starting }
         reader = Task { [weak self] in
@@ -395,7 +548,7 @@ final class PiSignInSession: Identifiable {
     private func run(_ override: PiSignInFlow?) {
         guard let store else { return }
         do {
-            let bridge = try store.bridge()
+            let bridge = try store.bridge(false)
             self.bridge = bridge
             reader = Task { [weak self] in
                 for await reply in bridge.replies {
@@ -403,7 +556,6 @@ final class PiSignInSession: Identifiable {
                     self.handle(reply)
                 }
             }
-            let method: PiSignInMethod = flow == .key ? .apiKey : .oauth
             let piFlow = override ?? (flow == .device ? .device : flow == .paste ? .paste : .browser)
             bridge.send(.login(provider: provider, method: method, flow: piFlow))
             if flow != .paste { phase = flow == .key ? .key : .starting }
@@ -416,7 +568,7 @@ final class PiSignInSession: Identifiable {
 
     func handle(_ reply: PiSignInReply) {
         switch reply {
-        case .ready, .info, .progress:
+        case .ready, .providers, .extensionFailed, .extensions, .usage, .info, .progress:
             break
         case .authURL(let url, _):
             authURL = url
@@ -428,11 +580,28 @@ final class PiSignInSession: Identifiable {
             store?.copy(code)
         case .prompt(let prompt):
             pendingPrompt = prompt
-            if prompt.kind == .secret { flow = .key; phase = .key }
-            if submitWhenAsked, prompt.kind == .manualCode || prompt.kind == .text { submitCode() }
+            promptAnswer = ""
+            if prompt.kind == .secret, method == .apiKey, prompt.keyForm == true, !hasPrompted {
+                flow = .key
+                phase = .key
+                if keyInput != nil { scheduleCheck() }
+            } else if prompt.kind != .manualCode {
+                if flow == .key { flow = .browser }
+                phase = .prompt(prompt)
+            } else if authURL == nil, flow != .paste {
+                flow = .paste
+                phase = .paste(rejected: nil)
+            }
+            hasPrompted = true
+            if submitWhenAsked, prompt.kind == .manualCode { submitCode() }
         case .promptClosed(let id):
-            if pendingPrompt?.id == id { pendingPrompt = nil }
+            if pendingPrompt?.id == id {
+                pendingPrompt = nil
+                promptAnswer = ""
+                if case .prompt = phase { phase = .saving }
+            }
         case .done(let provider, _):
+            promptAnswer = ""
             bridge?.close()
             let count = store?.landed(provider) ?? 0
             phase = .done(pickedUp: count)
@@ -440,13 +609,18 @@ final class PiSignInSession: Identifiable {
             // The login ended: its questions went with it.
             submitWhenAsked = false
             pendingPrompt = nil
+            promptAnswer = ""
             switch failure.code {
             case .cancelled: break
             case .portBusy:
                 // A pasted code's login can meet the taken port too (pi's Anthropic login always
                 // listens): the sheet says so where the browser's would.
-                if flow == .paste { flow = .browser }
-                phase = .portBusy(failure.port ?? 0)
+                if method == .oauth, let port = failure.port {
+                    if flow == .paste { flow = .browser }
+                    phase = .portBusy(port)
+                } else {
+                    phase = .failed(failure.reason)
+                }
             default:
                 if flow == .paste { phase = .paste(rejected: failure.reason) }
                 else if flow == .key { phase = .failed(failure.reason) }
@@ -471,6 +645,18 @@ final class PiSignInSession: Identifiable {
         bridge?.close()
         reader?.cancel()
         checking?.cancel()
+        promptAnswer = ""
+    }
+
+    /// Provider questions are answered verbatim, without key validation or credential interpretation.
+    func submitPrompt(_ value: String? = nil) {
+        guard case .prompt(let asked) = phase, pendingPrompt?.id == asked.id else { return }
+        let answer = value ?? promptAnswer
+        if asked.kind == .select, !asked.options.contains(where: { $0.id == answer }) { return }
+        pendingPrompt = nil
+        promptAnswer = ""
+        phase = .saving
+        bridge?.send(.answer(id: asked.id, value: answer))
     }
 
     /// Open browser again.
@@ -529,7 +715,7 @@ final class PiSignInSession: Identifiable {
     }
 
     func tryAgain() {
-        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? .key
+        flow = subscription.map { $0.flow == .device ? .device : .browser } ?? (usesKeyForm ? .key : .browser)
         keyCheck = .idle
         start()
     }
@@ -567,7 +753,7 @@ final class PiSignInSession: Identifiable {
         let id = "c\(checkCount)"
         // A preview's sheet has no pi to ask.
         guard store != nil else { return }
-        guard flow == .key, let input = keyInput else {
+        guard flow == .key, pendingPrompt?.keyForm == true, let input = keyInput else {
             keyCheck = .idle
             return
         }

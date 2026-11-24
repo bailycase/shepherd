@@ -341,7 +341,7 @@
     missing from an older host: off and the same checkout).
   - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ Tools (MCP), Agents ▸ Subagents and
     Models (sign-in) show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
-    `providers`), answered by the host through `HostStores`. A sign-in column in words that name no machine ("Not
+    `providers`, `extensions`), answered by the host through `HostStores`. A sign-in column in words that name no machine ("Not
     signed in", "Expired"; an older host's "Sign in on the Mac" reads as the state alone),
     a key's variable name but never its mask, account counts (with `hostConfig.v1`, each saved
     account's opaque id and name), never a credential; nothing here changes the host. With
@@ -358,7 +358,9 @@
     with the provider first; `$NAME` names a login-shell variable), sign out, an account sign-in,
     and the saved accounts (`providerAccount`: use, rename, remove, rotate, add another account, or `addKey` another
     key beside the saved one, as the host's own Add account does; their
-    ids are opaque and `HostProviderStatus.accountList` lists them once there are two). A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
+    ids are opaque and `HostProviderStatus.accountList` lists them once there are two).
+    `HostProviderStatus.usage` and `.balance` carry the host's last usage reading (limit windows, and a
+    balance a provider extension reports); older hosts send neither, and older clients ignore them. A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
     `HostSignInProgress`: the page to open on the client, a device code, or that the host waits
     for `signIn(.complete)` with the code the page shows (a provider's pasted-code flow; nothing
     opens on the host) or, for an MCP server, the loopback address the browser ended on, which the
@@ -369,6 +371,14 @@
     the capability refuses before sending. The additive
     `goalCrossProviderEvaluation` is legacy: false when missing/null, always false from current
     hosts, and its change is ignored. Both clients disclose that scope
+  - `hostExtensions` (`hostExtensions.v1`): the host's pi extensions, as Settings ▸ Tools ▸
+    Extensions lists them. `hostInventory(.extensions)` answers `[HostExtension]` (id = the copy's
+    place in the host's pi home, name, the Mac's subtitle words, on, pi's failure reason, whether it was
+    added in Shepherd, and `support`, works or partly, with `supportDetail`); `hostConfig` takes `extensionSetEnabled(destination:on:)`,
+    `extensionRemove(destination:)` and `extensionAddGit(url:)` (an https or ssh address only, never
+    `file://`, a path, `http://` or `git://`; the host clones it with its own Git sign-in and switches it on), each answering `.extensions` or failing with the Mac's reason. A host
+    without the capability can't decode these requests, so a client sends none and shows no screen.
+    Adding a file or folder stays on the Mac. A client reads the host's providers again after a change.
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and
     cancellation to space requests. The host resolves the allowlisted space entry and
     owns the bounded OAuth bridge. A run UUID is scoped to the connection, directory and file;

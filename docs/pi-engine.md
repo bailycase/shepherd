@@ -163,42 +163,46 @@ input refuse continuation. Old receipts remain unknown after new input; they are
 This does not relax manual Continue's failed-turn executable seal.
 
 Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
-definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
+definition-discovery imports still use `bundle/index.js`. Provider behavior comes from Pi and
+separately installed provider extensions. Settings sign-in discovers interactive authentication
+methods from the home's enabled providers, without starting a conversation or running session
+event handlers. Sign-out uses Pi's credential store without loading extensions, so a broken
+extension cannot prevent removing a saved login.
 
-Anthropic OAuth compatibility automatically uses a full source port of
-[`leohenon/pi-anthropic-oauth` v0.3.9](https://github.com/leohenon/pi-anthropic-oauth/tree/0078268804557bbbc82c60e364a34debf0450a90)
-(revision `0078268804557bbbc82c60e364a34debf0450a90`) at both modular and bundled stream
-boundaries, including native children, helpers and launches with extensions disabled. API-key
-requests remain native Pi. `scripts/pi-engine-patches/anthropic-oauth/` carries the upstream
-stream, conversion, prompt, auth, version and usage modules with MIT notices, transpiled by Node 24's
-`stripTypeScriptTypes` (`transform` for auth's parameter property, `strip` for the others).
-`upstream/` retains the original source and hashes as an independent test oracle. Only the five
-request-path modules ship as engine copies; upstream's `usage` module is oracle-only and its
-extension registration (including the `/usage` command) is replaced by automatic engine routing.
-The small `anthropic-oauth.js` adapter translates pi's auth interaction/credential API (since 1.0); upstream login
-and refresh replace Pi's differing callback validation, fallback and refresh semantics. No new
-runtime dependency is installed. Its `~/.Claude Code` symlink setup is deliberately **not** shipped.
+### Usage and balance from provider extensions
 
-**Upstream's outgoing prompt rewriting is aggressive, not path-safe.** It removes whole system
-paragraphs containing `you are pi` (case-insensitive), `pi-coding-agent`,
-`@earendil-works/pi-coding-agent` or `badlogic/pi-mono`, then replaces standalone `pi`/`Pi` with
-`Claude Code`, including inside executable, documentation, skill and instruction paths. For
-example `/tmp/pi/project/.pi/AGENTS.md` becomes `/tmp/Claude Code/project/.Claude Code/AGENTS.md`.
-Those references can be unusable; no aliases or home-directory changes compensate for them.
-Original stored transcripts and files, user messages and tool descriptions/arguments stay
-unchanged. This is the upstream request behavior, not a promise that all original project or
-user system instructions reach the model. Upstream's rewrite/version environment options are
-retained without a Shepherd override. Its tool conversion is also exact: existing MCP names
-receive another `mcp__pi__` prefix, sanitization collisions are not repaired, and Pi-specific
-parameters unsupported by upstream (such as `toolChoice`, `temperature` and native deferred
-wire blocks) are not added back in a hybrid implementation.
+Pi has no usage or balance API, so Shepherd adds a convention its sign-in bridge reads
+(`Extensions/shepherd-sign-in.mjs`, `{"type":"usage"}`). A provider an extension registers may
+have `usage(auth)`. An extension can also report for a provider it doesn't own, such as a
+built-in's API key, by emitting `shepherd:usage` while it loads. Pi itself ignores both.
 
-Offline checks in `anthropic-oauth.test.mjs` compare SDK-serialized requests and streaming results
-against the unmodified pinned source, including `claude-opus-5-5`, histories, cache/thinking
-parameters and custom tools. Both CLI entrypoints execute selected tools and return tool-result
-history with and without extensions. API-key serialization is compared with pristine pinned Pi.
-These checks do **not** establish live subscription billing, cache hits or Anthropic's direct
-server acceptance; a direct OAuth call still needs user validation.
+```ts
+export default pi => {
+  pi.events.emit("shepherd:usage", {
+    provider: "deepseek",
+    async usage(auth) {
+      const response = await fetch("https://api.deepseek.com/user/balance", {
+        headers: { Authorization: `Bearer ${auth.apiKey}` },
+      });
+      const info = (await response.json()).balance_infos?.[0];
+      return info && { balance: { amount: Number(info.total_balance), currency: info.currency } };
+    },
+  });
+};
+```
+
+`auth` is Pi's resolved request auth for the provider (`apiKey`, `headers`; an OAuth login is
+refreshed as a request would be). The hook returns `{ windows?: [{ name, usedPercent, resetsAt? }],
+balance?: { amount, currency, label? } }`. The bridge keeps at most four windows, clamps percentages
+to 0–100, cuts words short, masks the provider's own key out of them, and drops a hook that throws
+or takes more than 10 seconds. Sign-in reads usage when it opens; a paired device's provider list
+reads it again once it is five minutes old. Shepherd reads no provider's usage itself: Anthropic's and OpenAI Codex's come from
+`Extensions/shepherd-usage.mjs`, a provider extension like any other that only the bridge loads
+(Settings ▸ Tools ▸ Built in ▸ Subscription usage; `SHEPHERD_USAGE_EXTENSION=1` switches it on). A
+usage request also lists each saved account that isn't active (`accounts`); the hook gets that
+account's stored credential as it is, never refreshed, and a reading and `email` it returns are
+saved with the account. Rows show the fullest window and the balance
+("Credit $18.40"); a three-letter ISO currency is formatted as money, any other unit as a number and its word.
 
 Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
 client secrets and model credentials must use literal values or environment-variable references;

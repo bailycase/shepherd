@@ -46,6 +46,24 @@ public enum PiSignInCatalog {
         subscriptions.first { $0.id == id }
     }
 
+    /// Runtime capabilities decide which rows exist. Known providers keep the board's wording.
+    public static func subscriptions(for providers: [PiSignInProvider]?) -> [Subscription] {
+        guard let providers else { return subscriptions }
+        let available = providers.filter { $0.oauth != nil }
+        let known = subscriptions.filter { row in available.contains { $0.id == row.id } }
+        let added = available.filter { subscription($0.id) == nil }
+            .sorted { ($0.name.lowercased(), $0.id) < ($1.name.lowercased(), $1.id) }
+            .map { account(id: $0.id, name: $0.name, label: $0.oauth) }
+        return known + added
+    }
+
+    /// Presentation for a provider or a saved account whose extension is currently unavailable.
+    public static func account(id: String, name: String? = nil, label: String? = nil) -> Subscription {
+        subscription(id) ?? Subscription(id: id, name: name ?? self.name(id), plan: label ?? "Account",
+                                        sheetSubtitle: label ?? "With your account", flow: .browser,
+                                        site: name ?? self.name(id), sharedLogin: false)
+    }
+
     /// A provider's name as Sign-in shows it.
     public static func name(_ id: String) -> String {
         subscription(id)?.name ?? PiProviders.name(id)

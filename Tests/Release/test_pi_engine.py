@@ -231,28 +231,6 @@ class SkillPatchTests(unittest.TestCase):
             with self.assertRaisesRegex(pi_engine.EngineError, "source differs"):
                 pi_engine.engine_patch(pi_engine.load_pin())
 
-    def test_anthropic_oauth_port_sources_and_both_runtime_copies_are_pinned(self):
-        directory = os.path.join(ROOT, "scripts", "pi-engine-patches", "anthropic-oauth")
-        upstream = os.path.join(directory, "upstream")
-        manifest = json.loads(read(upstream, "pin.json"))
-        self.assertEqual(manifest["revision"], "0078268804557bbbc82c60e364a34debf0450a90")
-        self.assertEqual(manifest["version"], "0.3.9")
-        self.assertEqual(set(manifest["sha256"]), {"auth.ts", "convert.ts", "index.ts", "prompt.ts", "stream.ts", "usage.ts", "version.ts", "LICENSE"})
-        for name, digest in manifest["sha256"].items():
-            self.assertEqual(pi_engine.sha256_of(os.path.join(upstream, name)), digest, name)
-        changes = pi_engine.engine_patch(pi_engine.load_pin())["files"]
-        for module in ("auth", "convert", "prompt", "stream", "version"):
-            source = f"anthropic-oauth/{module}.js"
-            copies = [change for change in changes if change.get("source") == source]
-            self.assertEqual({change["path"] for change in copies}, {
-                f"node_modules/@earendil-works/pi-ai/dist/api/{source}",
-                f"dist/bundle/chunks/{source}",
-            })
-            self.assertIn("Copyright (c) 2026 Leo Henon", read(directory, f"{module}.js"))
-            self.assertIn(manifest["revision"], read(directory, f"{module}.js"))
-        self.assertFalse(any(change.get("source", "").endswith("index.ts") for change in changes))
-        self.assertFalse(any(change.get("source", "") == "anthropic-oauth/usage.js" for change in changes))
-
     def test_patch_checks_source_anchor_and_result_before_staging(self):
         change = {"path": "test.js", "before": hashlib.sha256(b"old").hexdigest(),
                   "after": hashlib.sha256(b"new").hexdigest(), "edits": [{"old": "old", "new": "new"}]}
