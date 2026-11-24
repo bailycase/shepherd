@@ -839,6 +839,19 @@ extension PreviewTests {
         }
     }
 
+    /// The palette as it opens (GXPalette): no query, the commands and This thread, the first row highlighted.
+    @Test func commandPaletteIdle() async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.selectAgent(agents[3].id)
+        try await Preview.render("command-palette-idle", size: CGSize(width: 1000, height: 900)) {
+            Color.sh.bgWindow
+                .shCommandPalette(isPresented: .constant(true)) {
+                    PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {})
+                }
+        }
+    }
+
     /// "an" reaches the agents: a working one with its time ("Shepherd · running · 8m").
     @Test func commandPaletteAgents() async throws {
         let (workspace, agents) = try await populatedWorkspace()

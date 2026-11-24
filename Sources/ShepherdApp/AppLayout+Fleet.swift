@@ -88,8 +88,6 @@ extension AppLayout {
     static let fleetCardButtonHeight: CGFloat = 26
     /// The thread behind an offline banner fades to this.
     static let fleetOfflineOpacity: Double = 0.6
-    /// New thread's Where it runs popover hangs 33pt in from the card's trailing edge (FleetNewThread).
-    static let fleetPlaceTrailingInset: CGFloat = 33
 
     // Moving a thread to another Mac (FleetMove).
     /// A step's mark column in the progress card.

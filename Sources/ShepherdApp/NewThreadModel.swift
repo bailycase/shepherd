@@ -35,7 +35,7 @@ enum NewThreadPlaces {
                               detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: host.id, space: nil))
             ] : []) + tree(host.spaces).map { space, ancestors in
                 SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
-                              title: space.name, detail: NewThreadRules.abbreviatedPath(space.path),
+                              title: space.name, path: NewThreadRules.abbreviatedPath(space.path),
                               isCurrent: chosen == NewThreadPlace(host: host.id, space: space.id),
                               ancestors: ancestors.map { optionID(NewThreadPlace(host: host.id, space: $0)) })
             })
