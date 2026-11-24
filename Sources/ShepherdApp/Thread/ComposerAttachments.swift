@@ -270,10 +270,10 @@ struct ImageAttachment: Identifiable, Equatable {
 
     var isOversize: Bool { image.data.count > NativeImage.maxBytes }
 
-    /// "1.4 MB", and "3.1 MB · over 2 MB" for an image Send cannot take.
+    /// "1.4 MB", and "3.1 MB, over 2 MB" for an image Send cannot take.
     var sizeLabel: String {
         let size = ByteCountFormatter.string(fromByteCount: Int64(image.data.count), countStyle: .file)
-        return isOversize ? "\(size) · over \(NativeImage.maxBytes / 1024 / 1024) MB" : size
+        return isOversize ? "\(size), over \(NativeImage.maxBytes / 1024 / 1024) MB" : size
     }
 
     /// nil when the file is not a raster image.

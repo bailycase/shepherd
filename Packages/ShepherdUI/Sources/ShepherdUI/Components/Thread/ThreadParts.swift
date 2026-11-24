@@ -186,6 +186,18 @@ public struct SHQueueDivider: View {
     }
 }
 
+#if os(macOS)
+/// The Mac's image chip: 40pt tall at radius 9, its picture a 32pt tile at radius 6.
+enum SHAttachmentChipMetrics {
+    static let height: CGFloat = 40
+    static let radius: CGFloat = 9
+    static let tile: CGFloat = 32
+    static let tileRadius: CGFloat = 6
+    static let nameFont: CGFloat = 12.5
+    static let removeGlyph: CGFloat = 8
+}
+#endif
+
 /// A file or image with a message (SHThread board): 26pt, a 1px strong line, radius 6. Files
 /// lead with a document glyph; images with their 20pt thumbnail. In the composer it has a
 /// remove button; in a sent bubble it has none. `.compact` is the queue's read-only chip: 22pt,
@@ -204,7 +216,7 @@ public struct SHAttachmentChip: View {
 
     /// `thumbnail` shows an image's preview in place of the file glyph; `remove` adds the
     /// remove button. `detail` is a mono size after the name ("1.4 MB"); `problem` draws the
-    /// chip and its detail in `failed` ("3.1 MB · over 2 MB"); `open` makes the thumbnail a
+    /// chip and its detail in `failed` ("3.1 MB, over 2 MB"); `open` makes the thumbnail a
     /// button that opens the image full size.
     public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, size: Size = .regular, detail: String? = nil,
                 problem: Bool = false, open: (() -> Void)? = nil, remove: (() -> Void)? = nil) {
@@ -218,7 +230,59 @@ public struct SHAttachmentChip: View {
         self.remove = remove
     }
 
-    public var body: some View {
+    @ViewBuilder public var body: some View {
+        #if os(macOS)
+        // The composer's image chip (GXImagesComposer): its picture, name and size on a `bgHover` tile.
+        if let thumbnail, size == .regular { macImageChip(thumbnail) } else { standardBody }
+        #else
+        standardBody
+        #endif
+    }
+
+    #if os(macOS)
+    private func macImageChip(_ thumbnail: Image) -> some View {
+        let sh = Color.sh
+        let tile = RoundedRectangle(cornerRadius: SHAttachmentChipMetrics.tileRadius)
+        let picture = thumbnail
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: SHAttachmentChipMetrics.tile, height: SHAttachmentChipMetrics.tile)
+            .background(sh.bgRaised)
+            .clipShape(tile)
+            .shBorder(sh.lineSubtle, radius: SHAttachmentChipMetrics.tileRadius)
+        return HStack(spacing: SH.Space.m) {
+            if let open {
+                Button(action: open) { picture }
+                    .buttonStyle(.plain)
+                    .shFocusRing(radius: SHAttachmentChipMetrics.tileRadius)
+                    .accessibilityLabel("Open \(name)")
+            } else {
+                picture.accessibilityHidden(true)
+            }
+            Text(name).font(.shSans(SHAttachmentChipMetrics.nameFont)).foregroundStyle(sh.textPrimary)
+                .lineLimit(1).truncationMode(.middle)
+            if let detail {
+                Text(detail).font(.sh(.caption)).foregroundStyle(problem ? sh.failed : sh.textTertiary).lineLimit(1)
+            }
+            if let remove {
+                Button(action: remove) {
+                    Image(systemName: "xmark").font(.system(size: SHAttachmentChipMetrics.removeGlyph, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                        .frame(width: SH.Height.controlS, height: SH.Height.controlS)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(name)")
+            }
+        }
+        .padding(.leading, SH.Space.xs)
+        .padding(.trailing, SH.Space.xs)
+        .frame(height: SHAttachmentChipMetrics.height)
+        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SHAttachmentChipMetrics.radius))
+        .accessibilityElement(children: .contain)
+    }
+    #endif
+
+    @ViewBuilder private var standardBody: some View {
         let sh = Color.sh
         let compact = size == .compact
         let side = compact ? SHQueueMetrics.chipThumbnail : SHThreadMetrics.attachmentThumbnail

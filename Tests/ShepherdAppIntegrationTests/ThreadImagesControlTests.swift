@@ -100,8 +100,19 @@ struct ThreadImagesControlTests {
                          ("after-promax.png", attachment("after-promax.png", bytes: 3_100_000))])
         var opened: [String] = []
         var removed: [UUID] = []
-        let strip = ComposerImageStrip(attachments: attachments, open: { opened.append($0.name) }, remove: { removed.append($0) })
-        let window = OffscreenWindow(size: CGSize(width: 820, height: 160), dark: true, strip)
+        // The chips in the real card: the composer's own slot for what waits to go, and its line under them.
+        let card = SHComposer(isFocused: false, layout: .inline) {
+            ForEach(attachments.items) { item in item.chip(open: { opened.append(item.name) }, remove: { removed.append(item.id) }) }
+        } leading: {
+            Color.clear
+        } field: {
+            Text("Here it is on the mini and the Pro Max.")
+        } controls: {
+            EmptyView()
+        }
+        .environment(\.shComposerNotice, attachments.error)
+        .padding(SH.Space.l)
+        let window = OffscreenWindow(size: CGSize(width: 820, height: 220), dark: true, card)
         defer { window.close() }
         // Both chips name themselves and their size; the one over the limit says so, and so does the line under them.
         let labels = window.controls().compactMap(\.label)

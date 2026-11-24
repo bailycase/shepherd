@@ -99,7 +99,7 @@ struct ComposerAttachmentsTests {
         let fine = try #require(Self.image("a.png", bytes: 1_400_000).attachment)
         let big = try #require(Self.image("b.png", bytes: 3_100_000).attachment)
         #expect(fine.sizeLabel == "1.4 MB" && !fine.isOversize)
-        #expect(big.sizeLabel == "3.1 MB · over 2 MB" && big.isOversize)
+        #expect(big.sizeLabel == "3.1 MB, over 2 MB" && big.isOversize)
     }
 }
 

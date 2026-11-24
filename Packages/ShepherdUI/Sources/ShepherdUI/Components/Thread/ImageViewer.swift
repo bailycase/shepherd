@@ -55,13 +55,22 @@ public struct SHImageViewer: View {
         GeometryReader { window in
             // The picture may take the window less `margin` all round, the arrows beside it, and the pill and its gap below it.
             let room = CGSize(width: max(1, window.size.width - 2 * M.margin - arrowsWidth),
-                              height: max(1, window.size.height - 2 * M.margin - M.pill - SH.Space.l))
+                              height: max(1, window.size.height - 2 * M.reservedVertical))
             ZStack {
                 // A real button, so a click and VoiceOver's press both close it; Esc and the pill's close stay the keyboard's way.
                 Button(action: close) { Color.sh.sheetScrim.contentShape(Rectangle()) }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .accessibilityLabel("Close viewer")
+                #if os(macOS)
+                // The board centres the picture in the window and holds the pill 36pt above its foot.
+                HStack(spacing: M.arrowGap) {
+                    if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
+                    picture(size: shownSize(in: room))
+                    if position != nil { arrow("chevron.right", label: "Next image", action: next) }
+                }
+                pill.frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, M.pillBottom)
+                #else
                 VStack(spacing: SH.Space.l) {
                     HStack(spacing: SH.Space.xl) {
                         if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
@@ -70,6 +79,7 @@ public struct SHImageViewer: View {
                     }
                     pill
                 }
+                #endif
             }
             .frame(width: window.size.width, height: window.size.height)
         }
@@ -79,13 +89,33 @@ public struct SHImageViewer: View {
         .accessibilityHint(caption)
     }
 
-    private var arrowsWidth: CGFloat { position != nil ? 2 * (SHImageViewerMetrics.arrow + SH.Space.xl) : 0 }
+    private var arrowsWidth: CGFloat { position != nil ? 2 * (SHImageViewerMetrics.arrow + SHImageViewerMetrics.arrowGap) : 0 }
 
     /// The popover pill: "1 of 2" in `mono` `textTertiary`, the actions as 28pt ghost icons, and the 28pt close circle, which
-    /// sits 8pt inside the pill's round end.
+    /// sits 8pt inside the pill's round end. The Mac's (GXImageViewer) is a glass capsule 40pt tall: "1 of 2" in
+    /// `textSecondary`, the icons in `textPrimary` 4pt apart, and a bare ✕.
     private var pill: some View {
         let sh = Color.sh
         let M = SHImageViewerMetrics.self
+        #if os(macOS)
+        return HStack(spacing: SH.Space.xs) {
+            if let position {
+                Text(position).font(.shSans(M.positionFont)).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
+                    .padding(.trailing, SH.Space.s)
+            }
+            if let copy { action("Copy", "doc.on.doc", copy) }
+            if let addToMessage { action("Add to message", "plus", addToMessage) }
+            if let showInFinder { action("Show in Finder", "folder", showInFinder) }
+            action("Close", "xmark", close)
+        }
+        .foregroundStyle(sh.textPrimary)
+        .padding(.leading, position == nil ? SH.Space.s : M.pillLeading)
+        .padding(.trailing, SH.Space.s)
+        .frame(height: M.pill)
+        .fixedSize()
+        .shLift(Capsule(), fill: sh.bgGlass)
+        .shBorder(sh.lineSubtle, in: Capsule())
+        #else
         return HStack(spacing: SH.Space.m) {
             if let position { Text(position).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize() }
             if let copy { action("Copy", "doc.on.doc", copy) }
@@ -108,6 +138,7 @@ public struct SHImageViewer: View {
         .frame(height: M.pill)
         .fixedSize()
         .shPopover(radius: M.pill / 2)
+        #endif
     }
 
     private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
@@ -125,9 +156,9 @@ public struct SHImageViewer: View {
         return Button(action: { action?() }) {
             Image(systemName: symbol)
                 .font(.system(size: SHImageViewerMetrics.glyph, weight: .medium))
-                .foregroundStyle(sh.textSecondary)
+                .foregroundStyle(SHImageViewerMetrics.arrowGlyph(sh))
                 .frame(width: SHImageViewerMetrics.arrow, height: SHImageViewerMetrics.arrow)
-                .background(sh.bgRaised, in: Circle())
+                .background(SHImageViewerMetrics.arrowFill(sh), in: Circle())
                 .shBorder(sh.lineSubtle, in: Circle())
                 .contentShape(Circle())
         }
@@ -154,9 +185,11 @@ public struct SHImageViewer: View {
         case .picture(let image):
             image.resizable().aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
-                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+                .clipShape(RoundedRectangle(cornerRadius: SHImageViewerMetrics.pictureRadius))
+                .shBorder(sh.lineSubtle, radius: SHImageViewerMetrics.pictureRadius)
+                #if !os(macOS)
                 .shFloatShadow()
+                #endif
                 .accessibilityLabel(name)
                 .accessibilityValue(facts)
                 .accessibilityAddTraits(.isImage)
@@ -193,6 +226,24 @@ public enum SHImageViewerMetrics {
     /// The close circle and the round ‹ › buttons: 28 and 36. Glyphs in the pill and beside the picture are 14; the close ✕ is 12.
     public static let close: CGFloat = 28
     public static let arrow: CGFloat = 36
+    #if os(macOS)
+    /// The Mac's board: 28pt between the picture and its arrows, a 10pt picture, a 40pt pill 36pt above the foot.
+    public static let arrowGap: CGFloat = 28
+    public static let pictureRadius: CGFloat = 10
+    static let pillBottom: CGFloat = 36
+    static let pillLeading: CGFloat = 14
+    static let positionFont: CGFloat = 12.5
+    /// What the picture's room leaves at the top and the foot: the pill, its 36pt and a gap.
+    static let reservedVertical: CGFloat = pillBottom + pill + SH.Space.l
+    @MainActor static func arrowFill(_ sh: SHPalette) -> Color { sh.bgGlass }
+    @MainActor static func arrowGlyph(_ sh: SHPalette) -> Color { sh.textPrimary }
+    #else
+    public static let arrowGap: CGFloat = SH.Space.xl
+    public static let pictureRadius: CGFloat = SH.Radius.m
+    static let reservedVertical: CGFloat = margin + (pill + SH.Space.l) / 2
+    @MainActor static func arrowFill(_ sh: SHPalette) -> Color { sh.bgRaised }
+    @MainActor static func arrowGlyph(_ sh: SHPalette) -> Color { sh.textSecondary }
+    #endif
     public static let glyph: CGFloat = 14
     public static let closeGlyph: CGFloat = 12
     /// The field standing in for a picture while its bytes load.
