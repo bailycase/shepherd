@@ -29,10 +29,13 @@ extension AppLayout {
     static let paneAdjustStep: CGFloat = 40
 
     // Sidebar
-    static let sidebarDefaultWidth: CGFloat = 232
+    static let sidebarDefaultWidth: CGFloat = 248
     static let sidebarMinWidth: CGFloat = 190
     static let sidebarMaxWidth: CGFloat = 340
     static let sidebarPadding: CGFloat = SHSidebarMetrics.listInset
+    /// The docked sidebar panel's inset from the window's leading edge: what the window gives it
+    /// beyond its width.
+    static let sidebarGutter: CGFloat = SHSidebarMetrics.panelInset
     static let sidebarRowSpacing: CGFloat = SHSidebarMetrics.rowSpacing
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
@@ -110,7 +113,7 @@ enum ShellLayout {
     /// and ⇧⌘S overlays it.
     static func sidebar(windowWidth: CGFloat, preferredWidth: CGFloat, userHidden: Bool, overlayShown: Bool) -> Sidebar {
         let preferred = min(max(preferredWidth, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth)
-        let room = windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth
+        let room = windowWidth - AppLayout.sidebarGutter - AppLayout.mainColumnMinWidth
         if room >= AppLayout.sidebarMinWidth {
             return Sidebar(mode: userHidden ? .hidden : .docked, width: min(preferred, room), autoHidden: false)
         }
@@ -120,7 +123,7 @@ enum ShellLayout {
 
     /// The narrowest window that docks the sidebar at `width`.
     static func sidebarFitWidth(_ width: CGFloat) -> CGFloat {
-        min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + AppLayout.dividerWidth + AppLayout.mainColumnMinWidth
+        min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + AppLayout.sidebarGutter + AppLayout.mainColumnMinWidth
     }
 
     /// A window width as the shell's layout tells it apart: at and past the narrowest window that

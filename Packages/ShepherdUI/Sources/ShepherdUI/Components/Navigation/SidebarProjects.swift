@@ -31,8 +31,8 @@ public enum SHSidebarStyle: String, CaseIterable, Identifiable, Sendable {
 
 /// The project tree's own measures (SidebarTree › Tree rows). Row heights follow `SHDensity`.
 public enum SHProjectMetrics {
-    /// The chevron's slot, and the chevron in it.
-    public static let chevronSlot: CGFloat = 14
+    /// The chevron's slot (the boards' 16pt `.lead`), and the chevron in it.
+    public static let chevronSlot: CGFloat = 16
     public static let chevron: CGFloat = 9
     /// The folder glyph.
     public static let folder: CGFloat = 14
@@ -46,8 +46,8 @@ public enum SHProjectMetrics {
     public static let headerTrailing: CGFloat = 2
     /// Between this mode's rows and headers (`--space-xxs`).
     public static let listSpacing: CGFloat = 2
-    /// A project row sits 2pt further out than a thread row.
-    public static let outdent: CGFloat = 2
+    /// A space row sits as far in as a thread row.
+    public static let outdent: CGFloat = 0
     /// The + and ··· circles a hovered project row shows, 2pt apart, and their glyphs.
     public static let action: CGFloat = 20
     public static let actionGap: CGFloat = 2
@@ -66,8 +66,8 @@ public enum SHProjectMetrics {
 extension SHDensity {
     /// A project row's leading padding: 2pt outside a thread row's.
     public var projectRowLeading: CGFloat { sidebarRowPadding - SHProjectMetrics.outdent }
-    /// A thread row inside a project: its dot sits under the project's folder.
-    public var treeChildLeading: CGFloat { projectRowLeading + SHProjectMetrics.chevronSlot + SHProjectMetrics.gap }
+    /// A thread row inside a space: 26pt in (the boards' `.row.nest`), short of the space's name.
+    public var treeChildLeading: CGFloat { SHSidebarMetrics.sentLeading }
 }
 
 // MARK: Project row
@@ -135,17 +135,14 @@ public struct SHProjectRow<MenuContent: View>: View, Equatable {
         let _ = SHRenderProbe.tick("sidebar.project")
         let sh = Color.sh
         let hovering = pointer || hovered
+        // The boards' `.row.space`: the chevron in the 16pt lead slot, the name at medium, the count.
         HStack(spacing: SHProjectMetrics.gap) {
             Image(systemName: "chevron.right")
                 .font(.system(size: SHProjectMetrics.chevron, weight: .semibold))
-                .foregroundStyle(sh.textTertiary)
+                .foregroundStyle(sh.textSecondary)
                 .rotationEffect(.degrees(expanded ? 90 : 0))
                 .shAnimation(.disclosure, value: expanded)
                 .frame(width: SHProjectMetrics.chevronSlot)
-            (missing ? SHGlyph.failedStep.image : Image(systemName: "folder"))
-                .font(.system(size: SHProjectMetrics.folder, weight: .regular))
-                .foregroundStyle(missing ? sh.failed : sh.textSecondary)
-                .frame(width: SHSidebarMetrics.rowSlot)
             Text(name)
                 .font(density.rowTitleFont(weight: .medium))
                 .foregroundStyle(missing ? sh.textTertiary : sh.textPrimary)
@@ -169,8 +166,8 @@ public struct SHProjectRow<MenuContent: View>: View, Equatable {
         .padding(.leading, density.projectRowLeading)
         .padding(.trailing, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .shRowBackground(selected: false, hovering: hovering, radius: SH.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shRowBackground(selected: false, hovering: hovering, radius: SH.Radius.s)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onTapGesture(perform: toggle)
         .onHover { pointer = $0 }
         .shAnimation(.hover, value: hovering)
@@ -201,13 +198,13 @@ public struct SHProjectRow<MenuContent: View>: View, Equatable {
     @ViewBuilder private var summary: some View {
         HStack(spacing: SHProjectMetrics.rollupGap) {
             if missing {
-                Text("missing").font(.shMono(10)).foregroundStyle(Color.sh.failed).lineLimit(1).fixedSize()
+                Text("missing").font(.sh(.caption)).foregroundStyle(Color.sh.failed).lineLimit(1).fixedSize()
             }
             // The boards draw a Space row as its count alone (ProjectLead-AddsSpace): the rollup is said to VoiceOver in the row's
             // label ("needs you", "running") but draws no dot.
             if count > 0 {
                 Text("\(count)")
-                    .font(.shMono(10.5))
+                    .font(.sh(.caption))
                     .foregroundStyle(Color.sh.textTertiary)
                     .monospacedDigit()
                     .shContentTransition(.numeric())
@@ -269,19 +266,18 @@ public struct SHProjectsHeader<MenuContent: View>: View, Equatable {
     }
 
     public var body: some View {
-        HStack(alignment: .bottom, spacing: SH.Space.s) {
+        // The boards' `.grp`: 28pt, 10pt below what is above, the title in `caption` medium, a 20pt + at its end.
+        HStack(spacing: SH.Space.s) {
             Text(title)
-                .font(.sh(.ui))
+                .font(.sh(.caption, weight: .medium))
                 .foregroundStyle(Color.sh.textTertiary)
                 .accessibilityAddTraits(.isHeader)
-                .padding(.bottom, SHProjectMetrics.headerBottom)
             Spacer(minLength: SH.Space.xs)
             if let add {
                 Button(action: add) {
                     Image(systemName: "plus").font(.system(size: SHProjectMetrics.addGlyph, weight: .medium))
-                        .offset(x: SHProjectMetrics.addGlyphShift)
                 }
-                .buttonStyle(.shIcon(size: SHProjectMetrics.addButton, tint: .sh.textSecondary))
+                .buttonStyle(.shIcon(size: SHSidebarMetrics.sectionAction, tint: .sh.textTertiary))
                 .shHelp("New project")
                 .accessibilityLabel("New project")
             } else if let menu, hasMenu {
@@ -290,15 +286,15 @@ public struct SHProjectsHeader<MenuContent: View>: View, Equatable {
                 }
                 .menuStyle(.button)
                 .menuIndicator(.hidden)
-                .buttonStyle(.shIcon(size: SHProjectMetrics.addButton, tint: .sh.textSecondary))
+                .buttonStyle(.shIcon(size: SHSidebarMetrics.sectionAction, tint: .sh.textTertiary))
                 .fixedSize()
                 .shHelp("Hidden spaces")
                 .accessibilityLabel("Hidden spaces")
             }
         }
-        .padding(EdgeInsets(top: 0, leading: SHProjectMetrics.headerLeading, bottom: SHProjectMetrics.headerBottom,
-                            trailing: SHProjectMetrics.headerTrailing))
-        .frame(maxWidth: .infinity, minHeight: SHProjectMetrics.headerHeight, alignment: .bottomLeading)
+        .padding(.horizontal, density.sidebarRowPadding)
+        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
+        .padding(.top, density.sidebarHeaderTop)
     }
 }
 

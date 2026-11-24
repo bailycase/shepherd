@@ -10,10 +10,9 @@ extension SHSidebarMetrics {
     public static let projectToolbarTitle: CGFloat = 13
 }
 
-/// A Project in the sidebar, Activity mode (ProjectLead-Activity): the supplied Project glyph in the 14pt slot
-/// (`lanternText` while selected, else `textTertiary`), the name (semibold while selected) in the density's row
-/// font, and a mono 10 summary (`lanternText` when it needs you). 28pt, radius 8, 8pt in from the sides, 9pt gaps;
-/// the same box as every Activity row. The summary and its tone come only from a real lifecycle.
+/// A Project in the sidebar, Activity mode: the name in the density's row font and a `caption` summary
+/// (`textSecondary` when it needs you, else `textTertiary`), in the same box as every Activity row. The summary
+/// and its tone come only from a real lifecycle.
 public struct SHLeadProjectRow: View, Equatable {
     let name: String
     let selected: Bool
@@ -35,27 +34,26 @@ public struct SHLeadProjectRow: View, Equatable {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.leadProject")
+        // The boards' Projects rows: the name and its summary, like a thread's ("1 asks you").
         HStack(spacing: density.sidebarRowGap) {
-            SHProjectGlyphView(tint: selected ? .sh.lanternText : .sh.textTertiary)
-                .frame(width: SHSidebarMetrics.rowSlot)
             Text(name)
-                .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
+                .font(density.rowTitleFont(weight: .regular))
                 .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: SH.Space.xs)
             if let summary {
                 Text(summary)
-                    .font(.shMono(SHSidebarMetrics.accessoryFont))
-                    .foregroundStyle(needsYou ? Color.sh.lanternText : Color.sh.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(needsYou ? Color.sh.textSecondary : Color.sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)

@@ -209,22 +209,25 @@ private struct SHIconButton: View {
         let side = style.size
         #endif
         let active = enabled && (hovering || configuration.isPressed)
-        let foreground: Color = style.tint ?? (style.isOn ? sh.lanternText : active ? sh.textPrimary : sh.textSecondary)
-        let fill: Color = style.isOn ? sh.lanternTint : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
+        // On is the boards' `.ib.on`: the selection fill with the glyph in ink.
+        let foreground: Color = style.tint ?? (style.isOn || active ? sh.textPrimary : sh.textSecondary)
+        let fill: Color = style.isOn ? sh.bgSelected : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
+        // The boards' icon button: a rounded square (radius 7), not a circle.
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
         configuration.label
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(size: 14, weight: .regular))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(foreground)
             .frame(width: side, height: side)
-            .background(fill, in: Circle())
-            .shBorder(style.bordered ? sh.lineStrong : .clear, in: Circle())
+            .background(fill, in: shape)
+            .shBorder(style.bordered ? sh.lineStrong : .clear, in: shape)
             .shEnabledOpacity(enabled)
-            .contentShape(Circle())
+            .contentShape(shape)
             .onHover { hovering = $0 }
             .shAnimation(.hover, value: hovering)
             // A pane toggle lights up however its pane opened (a menu, a shortcut, an agent).
             .shComponentAnimation(.hover, value: style.isOn)
-            .shFocusRingCircle()
+            .shFocusRing(radius: SH.Radius.s)
     }
 }
 

@@ -287,7 +287,7 @@ struct FleetCornerPreviewTests {
         return hit.map { after + $0.boundingBox.minX * (size.width - after) }
     }
 
-    /// In Activity a sent thread's title starts 18pt right of its sender's (FleetCornerFull: x57 against x39 at the default width); the Spaces tree nests
+    /// In Activity a sent thread's title starts 18pt right of its sender's (the boards' `.row.nest`: x34 against x16); the Spaces tree nests
     /// nothing, so there it lines up with its sender. Read from the rendered pixels of the board's own sidebar, not from the metrics.
     @Test func aSentThreadSitsUnderItsSenderOnlyInActivity() async throws {
         let space = Space(name: "payments-api", path: "/tmp/p")
@@ -306,8 +306,8 @@ struct FleetCornerPreviewTests {
                 try await eventuallyOnMain("the rows to draw") { vm.presentedSidebarLists.working.contains { $0.fleetNested } || style == .projects }
                 var sender: CGFloat?, child: CGFloat?
                 try await eventuallyOnMain("\(name) rows' text to be read", timeout: .seconds(20)) {
-                    sender = try Self.textX("Speed up", after: style == .activity ? 31 : 50, in: view, size: size)
-                    child = try Self.textX("Fix flaky", after: style == .activity ? 47 : 50, in: view, size: size)
+                    sender = try Self.textX("Speed up", after: style == .activity ? 10 : 28, in: view, size: size)
+                    child = try Self.textX("Fix flaky", after: 20, in: view, size: size)
                     return sender != nil && child != nil
                 }
                 let delta = try #require(child) - (try #require(sender))
@@ -315,7 +315,7 @@ struct FleetCornerPreviewTests {
                 #expect(abs(delta - (style == .activity ? 18 : 0)) <= (style == .activity ? 1.5 : 3), "\(name), selected \(selected != nil): child at \(child ?? 0), sender at \(sender ?? 0)")
                 if style == .activity {
                     let (senderX, childX) = (try #require(sender), try #require(child))
-                    #expect(abs(senderX - 39) <= 1.5 && abs(childX - 57) <= 1.5, "activity: sender \(senderX), child \(childX)")
+                    #expect(abs(senderX - 16) <= 1.5 && abs(childX - 34) <= 1.5, "activity: sender \(senderX), child \(childX)")
                 }
             }
         }

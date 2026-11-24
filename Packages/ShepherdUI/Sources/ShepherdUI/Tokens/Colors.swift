@@ -20,8 +20,9 @@ public final class SHPalette: Sendable {
     public let bgBubble: Color
     public let bgHover: Color
     public let bgSelected: Color
-    /// The sidebar's glass panel.
+    /// The sidebar's glass panel, and the 1px shine inside its top edge.
     public let bgGlass: Color
+    public let glassShine: Color
     /// SettingsProjects' selected navigation row; custom themes keep their selection role.
     public let settingsNavSelected: Color
     /// Muted Settings metadata in SettingsProjects; custom themes keep textTertiary.
@@ -164,6 +165,7 @@ public final class SHPalette: Sendable {
         bgHover = role(\.bgHover)
         bgSelected = role(\.bgSelected)
         bgGlass = role(\.bgGlass)
+        glassShine = Color(light: HexColor(red: 1, green: 1, blue: 1, alpha: 0.5), dark: HexColor(red: 1, green: 1, blue: 1, alpha: 0.06))
         settingsNavSelected = bgSelected
         lineSubtle = role(\.lineSubtle)
         lineStrong = role(\.lineStrong)

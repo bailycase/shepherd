@@ -54,17 +54,14 @@ extension AppLayout {
     static let fleetTagFont: CGFloat = 10
     /// A card of a Mac that isn't answering fades.
     static let fleetAsleepOpacity: Double = 0.72
-    /// The sidebar's Fleet corner (FleetCornerFull, FleetCornerMin): its glyph 16pt, the header and a Mac's row 24pt tall, a Mac's name in a 68pt
-    /// column, its room gauge 36pt wide.
-    static let fleetFooterGlyph: CGFloat = 16
-    static let fleetCornerHeaderHeight: CGFloat = 28
-    static let fleetCornerRowHeight: CGFloat = 24
-    static let fleetCornerNameWidth: CGFloat = 64
-    static let fleetCornerGaugeWidth: CGFloat = 36
+    /// The sidebar's Fleet corner (the boards' `.flt`): the header 30pt tall, a Mac's row 26pt.
+    static let fleetCornerHeaderHeight: CGFloat = 30
+    static let fleetCornerRowHeight: CGFloat = 26
+    /// A Mac's dot and the gap after it (the boards' `.gd`, `.flr`).
+    static let fleetCornerDot: CGFloat = 6
+    static let fleetCornerRowGap: CGFloat = 9
     /// An asleep Mac's hollow dot.
     static let fleetCornerDotStroke: CGFloat = 1
-    /// The minimized corner's two lines stand 36pt tall.
-    static let fleetCornerMinHeight: CGFloat = 36
 
     // The Check tab (FleetCheck): the grid beside a panel.
     /// The panel's width, the grid's head and its rows' least height.

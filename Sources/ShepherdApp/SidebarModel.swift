@@ -646,7 +646,9 @@ enum SidebarDerivation {
             }
         } else {
             leading = .dot(failed ? .failed : AgentState(agent.status))
-            accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none : .none
+            // No dot says it failed any more: the word does.
+            accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none
+                : failed ? .text("failed", tone: .failed) : .none
             word = AgentRow.statusWord(agent.status, turnFailed: failed)
         }
         // A completion the host says was opened, here or on another device, is no longer Done.

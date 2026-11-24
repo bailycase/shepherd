@@ -171,7 +171,8 @@ private struct SidebarItemView: View, Equatable {
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: accessory(row), hasGoal: row.hasGoal, nested: row.foldedUnder != nil,
                              badge: row.pullRequest, elbow: row.fleetNested, subtitle: row.subtitle,
-                             fold: row.fold.map { fold in SHSidebarRow.Fold(open: fold.open) { vm.toggleRunGroup(fold.key) } })
+                             fold: row.fold.map { fold in SHSidebarRow.Fold(open: fold.open) { vm.toggleRunGroup(fold.key) } },
+                             unseen: row.section == .done)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -246,10 +247,12 @@ struct SidebarAutomationRow: View {
 }
 
 private extension SidebarItemView {
+    /// A working thread shows nothing after its title (its section says it works), but for the
+    /// ⌘-digit while ⌘ is held. Reading nothing live, its row never redraws as the agent works.
     func accessory(_ row: SidebarListRow) -> SHSidebarRow.Accessory {
-        if row.section == .working, !row.fleetNested, case .local(let id) = row.id {
+        if row.section == .working, !row.fleetNested, case .local = row.id {
             if case .shortcut = row.accessory { return row.accessory }
-            return .activity(vm.agentLive(id).samples)
+            return .none
         }
         return row.accessory
     }
