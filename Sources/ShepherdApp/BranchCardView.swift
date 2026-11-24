@@ -62,27 +62,41 @@ struct BranchCardOverlay: View {
     let wide: Bool
     @State private var hovering = false
     @State private var pinnedOpen = false
-    /// Switch branch and Change base show the Branch picker in the card's place.
+    /// Switch branch and Change base open the Branch picker under the card's branch.
     @State private var picking: Picking?
 
     enum Picking { case branch, base }
 
+    /// `picking` opens the card with a picker already out (previews).
+    init(store: BranchCardStore, branch: String, active: Bool, wide: Bool, picking: Picking? = nil) {
+        self.store = store
+        self.branch = branch
+        self.active = active
+        self.wide = wide
+        _picking = State(initialValue: picking)
+    }
+
     var body: some View {
         Group {
             if let card = store.card {
-                if let picking {
-                    picker(picking, card: card)
-                } else if wide || hovering || pinnedOpen {
-                    BranchCardView(card: card, status: store.status) { action in
-                        switch action {
-                        case .pickBranch: picking = .branch
-                        case .pickBase: picking = .base
-                        default:
-                            pinnedOpen = false
-                            store.handle.perform(action)
+                if wide || hovering || pinnedOpen || picking != nil {
+                    // The picker opens under the card's branch row, over the rest of the card (GXBranchPicker).
+                    ZStack(alignment: .topTrailing) {
+                        BranchCardView(card: card, status: store.status) { action in
+                            switch action {
+                            case .pickBranch: picking = picking == .branch ? nil : .branch
+                            case .pickBase: picking = .base
+                            default:
+                                pinnedOpen = false
+                                store.handle.perform(action)
+                            }
+                        }
+                        .shCard(lift: true)
+                        if let picking {
+                            picker(picking, card: card)
+                                .padding(.top, AppLayout.branchCardHeaderHeight)
                         }
                     }
-                    .shCard(lift: true)
                 } else {
                     Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: store.status?.git) }
                         .buttonStyle(.plain)
@@ -119,12 +133,12 @@ extension BranchCardOverlay {
         }
         switch mode {
         case .branch:
-            BranchPickerMenu(title: "Switch branch", selected: card.branch, load: handle.branches,
+            BranchPickerMenu(selected: card.branch, load: handle.branches,
                              choose: { finish($0.map(BranchCardAction.switchBranch)) },
                              move: { finish(.moveToCheckout($0, $1)) },
                              newBranch: { finish(.newBranch) }, fetch: fetch, close: { picking = nil })
         case .base:
-            BranchPickerMenu(title: "Change base", selected: store.status?.git.base.map { "origin/\($0)" }, load: handle.branches,
+            BranchPickerMenu(prompt: "Search for a base branch", selected: store.status?.git.base.map { "origin/\($0)" }, load: handle.branches,
                              choose: { finish($0.map(BranchCardAction.changeBase)) }, fetch: fetch, close: { picking = nil })
         }
     }
@@ -161,6 +175,8 @@ struct BranchCardCompact: View {
 struct BranchCardView: View {
     let card: BranchCardModel
     let status: BranchCardStatus?
+    /// The Mac the thread runs on, when it is not this one (GXRemote's "Runs on mini").
+    var runsOn: String?
     let perform: (BranchCardAction) -> Void
     @State private var othersOpen = false
 
@@ -186,6 +202,9 @@ struct BranchCardView: View {
                 SHOptionsMenu("Branch actions", size: SH.Height.controlS + 2) { menu }
             }
             .padding(EdgeInsets(top: SH.Space.m, leading: AppLayout.branchCardInset, bottom: SH.Space.xs, trailing: SH.Space.xs))
+            if let runsOn {
+                row { Text("Runs on") } value: { Text(runsOn) }
+            }
             if let pull = status?.pull {
                 Button { perform(.openPull(pull.ref)) } label: {
                     row {
@@ -202,17 +221,21 @@ struct BranchCardView: View {
                 }
                 .buttonStyle(.shRow(radius: 0))
             }
-            if let git = status?.git, let base = git.base, git.behind > 0 {
+            if let git = status?.git, let base = git.base {
                 row {
-                    Text(base).font(.sh(.mono))
+                    Text(base).font(.shMono(AppLayout.branchCardCodeSize))
                 } value: {
-                    Text("\(git.behind) new commit\(git.behind == 1 ? "" : "s")")
-                    Button("Update") { perform(.update) }
-                        .buttonStyle(.plain)
-                        .font(.sh(.ui, weight: .medium))
-                        .foregroundStyle(Color.sh.textPrimary)
-                        .padding(.leading, SH.Space.s)
-                        .help("Update from \(base)")
+                    if git.behind > 0 {
+                        Text("\(git.behind) new commit\(git.behind == 1 ? "" : "s")")
+                        Button("Update") { perform(.update) }
+                            .buttonStyle(.plain)
+                            .font(.sh(.ui, weight: .medium))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .padding(.leading, SH.Space.s)
+                            .help("Update from \(base)")
+                    } else {
+                        Text("Up to date")
+                    }
                 }
             }
             if !card.others.isEmpty {
@@ -220,6 +243,12 @@ struct BranchCardView: View {
                     row {
                         Text(card.others.count == 1 ? "1 other branch" : "\(card.others.count) other branches")
                     } value: {
+                        // Threads waiting on you, before the chevron (GXAppsRunning).
+                        if card.asking > 0 {
+                            Circle().fill(Color.sh.lantern).frame(width: AppLayout.branchCardDot, height: AppLayout.branchCardDot)
+                                .accessibilityHidden(true)
+                            Text("\(card.asking) asked you")
+                        }
                         SHTurningChevron(isOpen: othersOpen).foregroundStyle(Color.sh.textTertiary)
                     }
                 }

@@ -101,7 +101,7 @@ struct BranchCardTests {
 
     @Test func menuAndSheetWords() {
         #expect(BranchCardView.pushTitle(0) == "Push" && BranchCardView.pushTitle(1) == "Push 1 Commit" && BranchCardView.pushTitle(2) == "Push 2 Commits")
-        #expect(BranchUpdateSheet.conflictTitle(.init(kind: .rebase, step: 2, steps: 4, files: ["a", "b"])) == "Stopped at commit 2 of 4: 2 files conflict")
-        #expect(BranchUpdateSheet.conflictTitle(.init(kind: .merge, files: ["a"])) == "Stopped: 1 file conflict")
+        #expect(BranchUpdateSheet.conflictLabel(.init(kind: .rebase, step: 2, steps: 4, files: ["a", "b"])) == "Stopped at commit 2 of 4")
+        #expect(BranchUpdateSheet.conflictLabel(.init(kind: .merge, files: ["a"])) == "Stopped")
     }
 }

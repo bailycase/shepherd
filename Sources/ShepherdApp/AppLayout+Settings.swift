@@ -258,10 +258,17 @@ extension AppLayout {
     static let branchCardWidth: CGFloat = 324
     static let branchCardInset: CGFloat = 14
     static let branchCardGlyph: CGFloat = 16
-    /// The branch card's sheets: Update from the base, New and Rename branch.
-    static let branchSheetWidth: CGFloat = 520
-    /// The branch card's Commit… (BranchCommit).
-    static let branchCommitSheetWidth: CGFloat = 560
+    /// The base row's branch in mono 12.5; the "asked you" dot.
+    static let branchCardCodeSize: CGFloat = 12.5
+    static let branchCardDot: CGFloat = 7
+    /// The branch card's sheets (GXBranchCommit, GXBranchConflict): Commit…, Update from the base, New and Rename branch.
+    static let branchSheetWidth: CGFloat = SHCardSheetMetrics.width
+    static let branchCommitSheetWidth: CGFloat = SHCardSheetMetrics.width
+    /// The Branch picker (GXBranchPicker): 330pt, and how tall its list grows before it scrolls. It opens under the card's
+    /// branch row, which is this tall.
+    static let branchPickerWidth: CGFloat = 330
+    static let branchPickerListMaxHeight: CGFloat = 300
+    static let branchCardHeaderHeight: CGFloat = 44
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280
     /// The card's own column at the thread's right: the card and the 16pt beside it, 8pt under the toolbar.

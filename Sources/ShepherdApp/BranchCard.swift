@@ -20,6 +20,9 @@ struct BranchCardModel: Equatable {
     var worktree: Bool
     var directory: String?
     var others: [BranchCardOther]
+
+    /// How many of the other branches' threads wait on the person.
+    var asking: Int { others.reduce(0) { $0 + ($1.state == .attention ? 1 : 0) } }
 }
 
 /// Another thread's branch in the same space.
