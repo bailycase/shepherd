@@ -168,11 +168,11 @@ struct FleetUpdateTests {
 
     /// Two paired Macs that share an origin, each with a fake updater (A's and B's). `open` and `blocked` say which can dial the other.
     static func fleet(_ routingA: LinkRouting = LinkRouting(), _ routingB: LinkRouting = LinkRouting(), updaterA: FakeUpdater = FakeUpdater(),
-                      updaterB: FakeUpdater = FakeUpdater(), pairing: Bool = true) async throws -> (a: Mac, b: Mac, origin: FleetDispatchTests.Origin) {
+                      updaterB: FakeUpdater = FakeUpdater(), pairing: Bool = true, loopbackOnly: Bool = false) async throws -> (a: Mac, b: Mac, origin: FleetDispatchTests.Origin) {
         try StubPi.installAsEngine()
         let origin = try FleetDispatchTests.makeOrigin(extra: [:])
-        let a = try await Mac("MacBook Pro", origin: origin, links: routingA.options, prepare: { updaterA.install(on: $0) })
-        let b = try await Mac("Mac mini", origin: origin, links: routingB.options, prepare: { updaterB.install(on: $0) })
+        let a = try await Mac("MacBook Pro", origin: origin, links: routingA.options, loopbackOnly: loopbackOnly, prepare: { updaterA.install(on: $0) })
+        let b = try await Mac("Mac mini", origin: origin, links: routingB.options, loopbackOnly: loopbackOnly, prepare: { updaterB.install(on: $0) })
         if pairing {
             try await a.pair(with: b)
             try await FleetDispatchTests.waitForReports(a, b)
@@ -406,7 +406,7 @@ struct FleetUpdateTests {
     /// A Mac that is asleep starts when it wakes; one that goes away to install is relaunching and the job ends when it is back on another build.
     @Test func aMacThatIsAsleepStartsWhenItWakesAndOneThatRelaunchesIsFollowedBack() async throws {
         let (updaterA, updaterB) = (FakeUpdater(), FakeUpdater())
-        let (a, b, origin) = try await Self.fleet(updaterA: updaterA, updaterB: updaterB)
+        let (a, b, origin) = try await Self.fleet(updaterA: updaterA, updaterB: updaterB, loopbackOnly: true)
         defer { a.stop() }
         let id = try await b.hostID()
         let (dir, port) = (b.host.dir, b.port)
@@ -420,7 +420,7 @@ struct FleetUpdateTests {
 
         // It wakes (the same Mac, on its own files and port): the job begins.
         let woke = FakeUpdater()
-        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { woke.install(on: $0) })
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, loopbackOnly: true, prepare: { woke.install(on: $0) })
         defer { b2.stop() }
         try await Self.waitForStage(.checking, on: a, of: id)
         try await woke.answerTheCheck()
@@ -433,7 +433,7 @@ struct FleetUpdateTests {
         b2.stop(keepFiles: true)
         try await Self.waitForStage(.relaunching, on: a, of: id)
         let relaunched = FakeUpdater(build: "675", phase: .idle)
-        let b3 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { relaunched.install(on: $0) })
+        let b3 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, loopbackOnly: true, prepare: { relaunched.install(on: $0) })
         defer { b3.stop() }
         try await Self.waitForStage(.updated, on: a, of: id)
         // Check looks at the Mac again once it is back (the page's row changes).
