@@ -49,12 +49,12 @@ struct ForgeTabs: View {
     var pane = false
 
     var body: some View {
-        HStack(spacing: SH.Space.xxs) {
+        HStack(spacing: pane ? SH.Space.xs : SH.Space.xxs) {
             tab(.summary) { Text(pane ? "Overview" : "Summary") }
             tab(.changes) {
                 HStack(spacing: SH.Space.s) {
                     Text(pane ? "Files \(detail?.changedFiles ?? 0)" : "Changes")
-                    if let summary = detail?.summary { SHDiffStat(added: summary.additions, removed: summary.deletions, font: .sh(.mono)) }
+                    if let summary = detail?.summary { SHDiffStat(added: summary.additions, removed: summary.deletions, font: pane ? .sh(.caption) : .sh(.mono)) }
                 }
             }
             tab(.checks) {
@@ -64,9 +64,10 @@ struct ForgeTabs: View {
                 }
             }
         }
-        .padding(SH.Space.xxs)
-        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+        // The pane's tabs are bare (GXPanePR `.seg2`); the page's sit in a sunken, outlined track.
+        .padding(pane ? 0 : SH.Space.xxs)
+        .background(pane ? Color.clear : Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(pane ? .clear : Color.sh.lineSubtle, radius: SH.Radius.s)
         .fixedSize()
         .disabled(detail == nil)
     }
@@ -75,11 +76,11 @@ struct ForgeTabs: View {
         let selected = store.tab == value
         return Button { store.tab = value } label: {
             label()
-                .font(.sh(.ui, weight: selected ? .semibold : .medium))
+                .font(.sh(.ui, weight: pane ? (selected ? .medium : .regular) : (selected ? .semibold : .medium)))
                 .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
-                .padding(.horizontal, SH.Space.m)
-                .frame(height: SH.Height.controlS)
-                .background(selected ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                .padding(.horizontal, pane ? SH.Space.m + SH.Space.xxs : SH.Space.m)
+                .frame(height: pane ? AppLayout.prPaneTabHeight : SH.Height.controlS)
+                .background(selected ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: pane ? SH.Radius.s : SH.Radius.xs))
                 .contentShape(Rectangle())
                 .shFocusRing(radius: SH.Radius.xs)
         }

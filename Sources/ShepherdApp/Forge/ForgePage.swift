@@ -287,6 +287,7 @@ struct ForgeColumns<Content: View, Rail: View>: View {
 struct ForgeTitle: View {
     let title: String
     let editable: Bool
+    var font: Font = .sh(.display)
     let save: (String) async -> Bool
     @State private var draft: String?
     @FocusState private var focused: Bool
@@ -295,7 +296,7 @@ struct ForgeTitle: View {
         if let current = draft {
             TextField("Title", text: Binding(get: { current }, set: { draft = $0 }))
                 .textFieldStyle(.plain)
-                .font(.sh(.display))
+                .font(font)
                 .foregroundStyle(Color.sh.textPrimary)
                 .focused($focused)
                 .onAppear { focused = true }
@@ -308,7 +309,7 @@ struct ForgeTitle: View {
         } else {
             HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
                 Text(title)
-                    .font(.sh(.display))
+                    .font(font)
                     .foregroundStyle(Color.sh.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -399,6 +400,8 @@ struct ForgeActivity: View {
     let kind: ForgeKind
     /// Reviews show their line comments (the side pane's PRPane).
     var lineComments = false
+    /// Drawn for the side pane (GXPanePR): plain event rows, outlined words.
+    var pane = false
 
     var body: some View {
         let shown = store.commentsOnly ? events.filter { ForgeActivityRow.words($0) != nil } : events
@@ -421,9 +424,9 @@ struct ForgeActivity: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
-            LazyVStack(alignment: .leading, spacing: SH.Space.m) {
+            LazyVStack(alignment: .leading, spacing: pane ? SH.Space.xxs : SH.Space.m) {
                 ForEach(shown) { event in
-                    ForgeActivityRow(event: event, viewer: viewer, kind: kind, now: now, lineComments: lineComments).equatable()
+                    ForgeActivityRow(event: event, viewer: viewer, kind: kind, now: now, lineComments: lineComments, pane: pane).equatable()
                 }
             }
         }

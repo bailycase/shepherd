@@ -326,13 +326,17 @@ extension PreviewTests {
         let store = try #require(vm.branchPullRequests[agentID])
         store.now = { Self.forgeNow }
         #expect(vm.sidePaneTabs(for: .local(agentID)).contains(.pullRequest))
-        // The boards' 801pt pane, and a narrow one whose rail follows the column.
-        for width: CGFloat in merged ? [801] : [801, 440] {
-            try await Preview.render("forge-side-pane\(merged ? "-merged" : "")\(width < 801 ? "-narrow" : "")",
-                                     size: CGSize(width: width, height: 900), ready: { store.pullRequest != nil }) {
+        // The boards' 720pt pane card (GXPanePR), and a narrow one whose rail follows the column.
+        for width: CGFloat in merged ? [720] : [720, 440] {
+            try await Preview.render("forge-side-pane\(merged ? "-merged" : "")\(width < 720 ? "-narrow" : "")",
+                                     size: CGSize(width: width + 2 * SHSidePaneMetrics.cardInset, height: 900),
+                                     ready: { store.pullRequest != nil }) {
                 SidePaneView(vm: vm, owner: .local(agentID), tab: .pullRequest, news: [], review: nil,
                              store: vm.threadStores.store(for: agentID))
-                .frame(width: width, height: 900)
+                .frame(width: width, height: 900 - 2 * SHSidePaneMetrics.cardInset)
+                .shCard(lift: true)
+                .padding(SHSidePaneMetrics.cardInset)
+                .background(Color.sh.bgWindow)
             }
         }
     }
