@@ -22,6 +22,10 @@ public enum SHCardSheetMetrics {
     public static let listPadding: CGFloat = SH.Space.xs
     public static let directoryGap: CGFloat = SH.Space.s
     public static let fieldMinHeight: CGFloat = 76
+    /// A one-line field (GXNewWorktree): 32pt, its text in mono 12.5.
+    public static let lineFieldHeight: CGFloat = 32
+    public static let lineFieldPadding: CGFloat = 10
+    public static let codeSize: CGFloat = 12.5
     public static let fieldPadding = EdgeInsets(top: SH.Space.m, leading: 10, bottom: SH.Space.m, trailing: 10)
     public static let amendTop: CGFloat = 10
     public static let footTop: CGFloat = 18
@@ -32,17 +36,20 @@ public enum SHCardSheetMetrics {
 }
 
 /// The sheet: `title`, an optional `message`, the content, and the foot's actions (right-aligned, the last one the pill).
+/// `status` is a line at the foot's left while something runs ("Creating the worktree…").
 public struct SHCardSheet<Content: View, Actions: View>: View {
     let title: String
     let message: Text?
+    let status: String?
     let width: CGFloat
     let content: Content
     let actions: Actions
 
-    public init(_ title: String, message: Text? = nil, width: CGFloat = SHCardSheetMetrics.width,
+    public init(_ title: String, message: Text? = nil, status: String? = nil, width: CGFloat = SHCardSheetMetrics.width,
                 @ViewBuilder content: () -> Content, @ViewBuilder actions: () -> Actions) {
         self.title = title
         self.message = message
+        self.status = status
         self.width = width
         self.content = content()
         self.actions = actions()
@@ -68,6 +75,7 @@ public struct SHCardSheet<Content: View, Actions: View>: View {
             }
             content
             HStack(spacing: M.footGap) {
+                if let status { SHDialogStatus(status) }
                 Spacer(minLength: 0)
                 actions
             }
@@ -207,6 +215,21 @@ public struct SHCardSheetField<Content: View>: View {
         content
             .padding(SHCardSheetMetrics.fieldPadding)
             .frame(maxWidth: .infinity, minHeight: SHCardSheetMetrics.fieldMinHeight, alignment: .topLeading)
+            .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(Color.sh.lineSubtle, lineWidth: 1) }
+    }
+}
+
+/// A one-line bordered field (the new worktree's branch and base): 32pt, 10pt in, the line, radius 8. Its parts
+/// (the text, a button at the end) sit 8pt apart.
+public struct SHCardSheetLineField<Content: View>: View {
+    let content: Content
+
+    public init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    public var body: some View {
+        HStack(spacing: SH.Space.m) { content }
+            .padding(.horizontal, SHCardSheetMetrics.lineFieldPadding)
+            .frame(maxWidth: .infinity, minHeight: SHCardSheetMetrics.lineFieldHeight, alignment: .leading)
             .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(Color.sh.lineSubtle, lineWidth: 1) }
     }
 }
