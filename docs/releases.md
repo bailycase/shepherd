@@ -11,10 +11,7 @@ breaking changes), one logical change per commit, with no AI or attribution line
 back through a PR, merged with `gh pr merge --squash`.
 Every push to `nightly` ships a Shepherd Nightly build. Nightly pushes build and publish without running tests, including the release
 test preflight. Signing, notarization and artifact verification still run. CI tests pull requests targeting `master`
-and pushes to `master`; its daily run also tests `master` (docs/testing.md). A separate hosted
-`Build cache` workflow compiles reusable test products on relevant Nightly pushes without
-running tests. Release jobs do not depend on it. It maintains bounded retention of recognized
-Actions caches, not release artifacts; an unavailable cache leaves normal cold builds.
+and pushes to `master`; its daily run also tests `master` (docs/testing.md).
 
 ## Releases
 
@@ -83,14 +80,13 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   every feed's update until one ages out. So a nightly re-run whose commit already carries a
   `nightly-*` tag builds nothing (push again instead), and a tag's re-run stops at
   `gh release create`.
-- **New Nightly runs cancel older runs.** A push or plain manual run on `nightly` cancels the
-  previous Mac release run for that branch, including a stale build waiting for a runner.
-  TestFlight runs queue separately without cancellation so uploads and retirement can finish.
-  Tagged releases also keep running. The `publish-appcasts` job retains its shared
-  `appcast-publication` concurrency group (`cancel-in-progress: false`), but cancellation of a
-  Nightly parent can still stop its publisher. The next successful publisher rereads all completed
-  releases, including any release made public before its parent was cancelled. A cancelled upload
-  can leave a draft release or tag; drafts are ignored by publication.
+- **Nightly pushes batch.** A running release is never cancelled. Pushes that land while it
+  builds collapse into one pending run (GitHub replaces a pending run with a newer one), which
+  then ships the latest `nightly`, so every push ships within two builds and no macOS minutes
+  go to builds that get thrown away. TestFlight runs queue separately. The `publish-appcasts`
+  job keeps its shared `appcast-publication` concurrency group (`cancel-in-progress: false`).
+  The next successful publisher rereads all completed releases. A manually cancelled upload can
+  leave a draft release or tag; drafts are ignored by publication.
   Releases upload as drafts, including `shepherd-appcast.json` eligibility metadata, and become
   public only after their required assets exist. Publication ignores drafts, excludes marked
   ad-hoc releases, and refuses malformed present metadata. Unmarked historical releases retain
