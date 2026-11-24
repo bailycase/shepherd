@@ -74,8 +74,6 @@ struct ThemeContrastTests {
         "shepherd-design-light: failed on failedTint over bgWindow": 3.91,
         "shepherd-design-light: failed on failedTint over bgRaised": 4.17,
         "shepherd-design-dark: failed on failedTint over bgRaised": 4.4998,
-        // Light lantern (the boards' #FF9500) as a dot or glyph on the window.
-        "shepherd-design-light: lantern mark on bgWindow": 2.05,
         // The Browser's element tag and the design canvas's selection tag put white on `running`
         // in mono 10.5, as the board draws it; dark falls short, the board's choice.
         "shepherd-design-dark: textOnRunning on running": 2.39,
