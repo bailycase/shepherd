@@ -31,19 +31,19 @@ struct NewThreadPage: View {
     @State private var dismissedQuery: String?
     @State private var slash = SlashMatchCache()
 
-    private enum Menu: Equatable { case place, base, models, settings, branch, whereRuns }
+    private enum Menu: Equatable { case place, base, models, settings, branch }
     /// The Branch picker's New branch…: the name being typed, while its prompt is up.
     @State private var namingBranch = false
     @State private var newBranchName = ""
     /// What a click outside closes: a chip's menu, the slash menu, or the @ picker.
     private enum OpenMenu: Equatable { case none, chip, slash, mention }
 
-    /// `settingsOpen`, `placeOpen` and `whereOpen` start with the model settings, the place menu or Where it runs open, for the
-    /// preview renders.
+    /// `settingsOpen` and `placeOpen` start with the model settings or the place menu open; `whereOpen` is the place menu too, whose
+    /// Where it runs section lists the Macs. For the preview renders.
     init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false, placeOpen: Bool = false, whereOpen: Bool = false) {
         self.vm = vm
         self.chrome = chrome
-        _menu = State(initialValue: settingsOpen ? .settings : placeOpen ? .place : whereOpen ? .whereRuns : nil)
+        _menu = State(initialValue: settingsOpen ? .settings : placeOpen || whereOpen ? .place : nil)
     }
 
     private var draft: NewThreadState { vm.newThread }
@@ -299,35 +299,27 @@ struct NewThreadPage: View {
             return true
         }
         .background { if mentionShown || commandQuery != nil { ComposerMenuRegion(dismissal: dismissal) } }
-        // Where it runs hangs under its own chip, toward the card's trailing edge (FleetNewThread); the others at its leading one.
-        .overlay(alignment: menu == .whereRuns ? .bottomTrailing : .bottomLeading) {
-            menus.padding(.trailing, menu == .whereRuns ? AppLayout.fleetPlaceTrailingInset : 0)
-        }
+        .overlay(alignment: .bottomLeading) { menus }
         .overlay(alignment: .bottomLeading) { mentionMenu }
     }
 
-    /// The boards' line: the attach plus, then where it runs ("shepherd on This Mac") and, with another Mac paired, which Mac.
+    /// The boards' line: the attach plus, then where it runs ("payments on This Mac"). With another Mac paired the chip names the Mac
+    /// (its menu's Where it runs section picks it).
     private var leadingControls: some View {
         let chip = NewThreadPlaces.chip(NewThreadState.hosts(vm), chosen: draft.place)
         let fleet = draft.fleetPicker(vm)
         let withMac = !fleet.options.isEmpty
+        let host = withMac ? fleet.chip : chip.host
         return HStack(spacing: SH.Space.xxs) {
             Button { picking = true } label: { Image(systemName: "plus").font(.system(size: SHComposerMetrics.sendGlyph + 2)) }
                 .buttonStyle(.shIcon(size: SHComposerMetrics.actionSize, round: true))
                 .disabled(draft.attachments.isFull)
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
-            // Fleet on and another Mac paired: the Mac is its own chip, after the project (FleetNewThread).
-            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: withMac ? nil : chip.host) }
+            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: host) }
                 .buttonStyle(.shComposerChip(active: menu == .place || menu == .base || menu == .branch))
                 .background { ComposerMenuRegion(dismissal: dismissal) }
-                .help(withMac ? chip.project : draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
-            if withMac {
-                Button { toggle(.whereRuns) } label: { SHFleetPlaceChipLabel(fleet.chip) }
-                    .buttonStyle(.shComposerChip(active: menu == .whereRuns))
-                    .background { ComposerMenuRegion(dismissal: dismissal) }
-                    .help("Where it runs: \(fleet.chip)")
-            }
+                .help(draft.worktree ? "In a new worktree of \(chip.project) on \(host)" : "\(chip.project) on \(host)")
         }
         .layoutPriority(1)
     }
@@ -379,8 +371,6 @@ struct NewThreadPage: View {
             switch menu {
             case .place:
                 placeMenu.shTransition(.overlay, anchor: .topLeading)
-            case .whereRuns:
-                whereMenu.shTransition(.overlay, anchor: .topLeading)
             case .base:
                 if let space = draft.place.flatMap({ place in vm.state.spaces.first { $0.id == place.space } }) {
                     WorktreeBasePicker(vm: vm, space: space.id, repo: space.path, selected: draft.worktreeBase ?? space.worktreeBase) { base in
@@ -459,12 +449,15 @@ struct NewThreadPage: View {
         let base = draft.worktreeBase ?? draft.projectBase(vm)
         // Branch and Base are this Mac's; a host resolves its own.
         let local = draft.place?.host == nil
+        let space = local ? draft.place.flatMap { place in vm.state.spaces.first { $0.id == place.space } } : nil
+        let repo = space.flatMap { vm.spaceIsRepo($0) ? $0 : nil }
+        let fleet = draft.fleetPicker(vm)
         return SHPlaceMenu(
             sections: NewThreadPlaces.sections(hosts, chosen: draft.place),
             worktree: offers ? SHPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: base ?? ""),
                                                branch: local ? draft.worktreeBranch?.title ?? "new from \(base.map(BranchCardGitReader.baseName) ?? "default")" : nil,
                                                base: local ? base ?? "Default" : nil) : nil,
-            maxHeight: SHComposerMetrics.modelPickerMaxHeight,
+            maxHeight: SHPlaceMenuMetrics.maxHeight,
             onChoose: { option in
                 if let place = NewThreadPlaces.place(option) { draft.choose(host: place.host, space: place.space, vm: vm) }
                 menu = nil
@@ -477,6 +470,14 @@ struct NewThreadPage: View {
             onWorktree: { draft.worktree = $0 },
             onChooseBranch: { menu = .branch },
             onChooseBase: { menu = .base },
+            onNewWorktree: repo.map { space in { menu = nil; vm.worktreeSheetTarget = space.id } },
+            onImportWorktree: repo.map { space in { menu = nil; vm.importExistingWorktreeFromPanel(in: space.id) } },
+            runs: fleet.options.map(Self.row), runsNote: fleet.footnote,
+            onRun: { row in
+                draft.wherePick = fleet.options.first { $0.id == row.id }?.pick
+                menu = nil
+                composing = true
+            },
             onClose: { menu = nil; composing = true }
         ) { option in
             ProjectMenu(vm: vm, place: NewThreadPlaces.place(option))
@@ -492,19 +493,6 @@ struct NewThreadPage: View {
         }
         return SHFleetPlaceRow(id: option.id, title: option.name, detail: option.detail, room: option.room, roomWord: option.roomWord,
                                tone: tone, isCurrent: option.chosen, isEnabled: option.selectable)
-    }
-
-    /// FleetNewThread's popover: Auto and every Mac ranked by room.
-    private var whereMenu: some View {
-        let picker = draft.fleetPicker(vm)
-        return SHFleetPlaceMenu(
-            rows: picker.options.map(Self.row), footnote: picker.footnote,
-            onChoose: { row in
-                draft.wherePick = picker.options.first { $0.id == row.id }?.pick
-                menu = nil
-                composing = true
-            },
-            onClose: { menu = nil; composing = true })
     }
 
     private func toggle(_ next: Menu) {

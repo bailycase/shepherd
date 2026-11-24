@@ -289,6 +289,7 @@ public struct SHPaletteRow<Detail: View>: View {
                         .frame(width: M.tile, height: M.tile)
                         .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.s))
                         .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+                        .accessibilityHidden(true)
                     Text(title)
                         .font(.sh(.body))
                         .foregroundStyle(.sh.textPrimary)

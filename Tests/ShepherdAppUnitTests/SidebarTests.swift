@@ -363,7 +363,7 @@ struct NewThreadPlacesTests {
         let sections = NewThreadPlaces.sections(hosts, chosen: NewThreadPlace(host: nil, space: sub.id))
         #expect(sections.map(\.title) == ["This Mac", "orbit"])
         #expect(sections[0].options.map(\.title) == ["No space", "mono", "sub"])
-        #expect(sections[0].options.dropFirst().map(\.detail) == ["~/mono", "~/mono/sub"])
+        #expect(sections[0].options.dropFirst().map(\.path) == ["~/mono", "~/mono/sub"])
         #expect(sections[0].options.map(\.isCurrent) == [false, false, true])
         #expect(sections.allSatisfy { $0.addTitle == "Add folder…" })
         #expect(NewThreadPlaces.place(sections[1].options[0]) == NewThreadPlace(host: hostID, space: web.id))

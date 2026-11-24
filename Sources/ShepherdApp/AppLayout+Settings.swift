@@ -240,7 +240,7 @@ extension AppLayout {
     // Sheets
     static let renameSheetWidth: CGFloat = 420
     static let confirmSheetWideWidth: CGFloat = 520
-    static let newWorktreeSheetWidth: CGFloat = 520
+    static let newWorktreeSheetWidth: CGFloat = 480
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.
@@ -279,7 +279,6 @@ extension AppLayout {
     static let directoryPickerWidth: CGFloat = 480
     static let directoryListHeight: CGFloat = 260
     static let promptEditorHeight: CGFloat = 96
-    static let baseFieldMaxWidth: CGFloat = 200
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12
     /// The tool-output sheet ("… n more lines", Open Output): its minimum and ideal size.

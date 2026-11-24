@@ -60,7 +60,7 @@ extension ShepherdViewModel {
         items.append(PaletteItem(id: "action.openExtensions", kind: .action("openExtensions"), section: .commands,
                                  title: "Open Extensions", icon: "puzzlepiece.extension"))
         items.append(PaletteItem(id: "action.openAutomations", kind: .action("openAutomations"), section: .commands,
-                                 title: "Open Automations", icon: "bolt"))
+                                 title: "Open Automations", icon: SHGlyph.automation.symbolName))
         items.append(PaletteItem(id: "action.openForge", kind: .action("openForge"), section: .commands,
                                  title: "Open Issues & PRs", icon: "arrow.triangle.pull"))
         if designToolEnabled {
