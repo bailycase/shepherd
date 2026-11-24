@@ -963,11 +963,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("path: .build/pi-engine-cache", cache)
         self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
 
-    def test_derived_data_persists_locally_and_hosted_builds_start_clean(self):
+    def test_derived_data_is_not_cached_and_builds_start_clean(self):
         names = [title for title, _ in self.steps()]
         self.assertNotIn("Cache DerivedData", names)
         workflow = read(".github", "workflows", "release-build.yml")
-        self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", workflow)
+        self.assertNotIn("runner.environment", workflow)
+        self.assertNotIn("clean:", workflow)
         version = self.step("Xcode version")
         self.assertIn("xcrun --show-sdk-version", version)
         self.assertIn("git ls-files -s Sources Packages Package.swift Package.resolved", version)
@@ -975,6 +976,43 @@ class ReleaseWorkflowTests(unittest.TestCase):
         over = self.step("Start over when shared build inputs changed")
         self.assertIn("${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}", over)
         self.assertIn("marker=build/ci-toolchain", over)
+
+    def test_nightly_only_restores_compiler_results_after_cleaning_derived_data(self):
+        names = [title for title, _ in self.steps()]
+        cache = self.step("Cache Nightly compiler results")
+        self.assertIn("if: env.CHANNEL == 'nightly'", cache)
+        self.assertRegex(cache, r"(?m)^          path: build/CompilationCache\.noindex$")
+        self.assertIn("steps.xcode.outputs.version", cache)
+        self.assertLess(names.index("Start over when shared build inputs changed"),
+                        names.index("Cache Nightly compiler results"))
+        self.assertLess(names.index("Cache Nightly compiler results"), names.index("Build ${{ env.APP_NAME }}"))
+        build = self.step("Build ${{ env.APP_NAME }}")
+        self.assertIn("env.CHANNEL == 'nightly' && 'YES' || 'NO'", build)
+        self.assertIn('COMPILATION_CACHE_ENABLE_CACHING="$COMPILATION_CACHE"', build)
+
+    def test_only_nightly_overrides_swift_compilation_mode(self):
+        body = self.step("Build ${{ env.APP_NAME }}").split("run: |\n", 1)[1]
+        script = "\n".join(line[10:] for line in body.splitlines() if line.startswith("          "))
+        batch_settings = {
+            "SWIFT_OPTIMIZATION_LEVEL=-O",
+            "SWIFT_WHOLE_MODULE_OPTIMIZATION=NO",
+            "SWIFT_COMPILATION_MODE=singlefile",
+        }
+        for channel in ("nightly", "beta", "stable"):
+            with self.subTest(channel=channel):
+                result = subprocess.run(
+                    ["bash", "-e", "-c", 'xcodebuild() { printf "%s\\n" "$@"; }\n' + script],
+                    env={**os.environ, "CHANNEL": channel}, capture_output=True, text=True, check=True,
+                )
+                settings = {line for line in result.stdout.splitlines() if line.startswith("SWIFT_")}
+                self.assertEqual(settings, batch_settings if channel == "nightly" else set())
+
+    def test_package_checkouts_are_cached_by_the_resolved_versions_before_the_build(self):
+        names = [title for title, _ in self.steps()]
+        cache = self.step("Cache Swift package checkouts")
+        self.assertIn("path: build/SourcePackages", cache)
+        self.assertIn("swiftpm/Package.resolved", cache)
+        self.assertLess(names.index("Cache Swift package checkouts"), names.index("Build ${{ env.APP_NAME }}"))
 
     def test_changed_shared_inputs_drop_release_products_but_keep_package_downloads(self):
         body = self.step("Start over when shared build inputs changed")

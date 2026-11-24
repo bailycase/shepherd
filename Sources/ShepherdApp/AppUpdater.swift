@@ -168,7 +168,7 @@ final class AppUpdater {
 
     /// Where Shepherd Nightly is downloaded: its releases are prereleases with dated tags, so
     /// the list, not a fixed release, is the stable link.
-    static let nightlyDownloadURL = URL(string: "https://github.com/bailycase/shepherd/releases?q=nightly&expanded=true")!
+    static let nightlyDownloadURL = URL(string: "https://github.com/shepherd-app/shepherd/releases?q=nightly&expanded=true")!
 
     private let updater: SPUUpdater
     private let remoteDriver: RemoteUpdateDriver

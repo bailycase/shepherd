@@ -192,7 +192,8 @@ struct ComposerTextField: NSViewRepresentable {
         var caret: Color
         var placeholder: String
         var lineSpacing: CGFloat
-        var size: CGFloat
+        /// The words' size; New thread passes its larger one.
+        var size: CGFloat = SHTextStyle.body.size
     }
 
     final class Field: NSTextField {

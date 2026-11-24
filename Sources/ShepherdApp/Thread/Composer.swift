@@ -1454,16 +1454,19 @@ struct ComposerControls: View, Equatable {
 
     @ViewBuilder private var row: some View {
         if part == .trailing {
-            // After the words on the thread card's line: only as wide as it is, so the words take the rest.
-            HStack(spacing: SH.Space.xxs) {
-                ViewThatFits(in: .horizontal) {
-                    chips(compact: size == .compact, startingLabel: true)
-                    chips(compact: true, startingLabel: false)
+            // After the words on the thread card's line, laid out before them (the priority) so the words take the rest.
+            // Through `ComposerControlsMinimum` like the full row, so a keystroke's minimum-size pass never measures the chips.
+            ComposerControlsMinimum {
+                HStack(spacing: SH.Space.xxs) {
+                    ViewThatFits(in: .horizontal) {
+                        chips(compact: size == .compact, startingLabel: true)
+                        chips(compact: true, startingLabel: false)
+                    }
+                    .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
+                    meterAndPrimary
                 }
-                .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
-                meterAndPrimary
             }
-            .fixedSize()
+            .layoutPriority(1)
         } else {
             fullRow
         }

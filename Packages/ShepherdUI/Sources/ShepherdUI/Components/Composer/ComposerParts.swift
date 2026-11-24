@@ -69,6 +69,7 @@ public enum SHComposerMetrics {
     public static let modelSectionGap: CGFloat = 4
     public static let modelSearchHeight: CGFloat = 30
     public static let modelListInset: CGFloat = SH.Space.xs
+    public static let modelIdSize: CGFloat = 12.5
     #endif
     public static let modelPickerMaxHeight: CGFloat = 360
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
@@ -199,9 +200,10 @@ public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Con
             // arriving), what it holds is revealed by its edge rather than drawn outside it.
             .clipShape(below)
         }
-        .shLift(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the card as it grows.
+        // Inside the lift, so the ring is drawn over the card's shadow rather than under it.
         .modifier(SHComposerFocus(isFocused: isFocused))
+        .shLift(shape)
     }
 
     private var chips: some View {

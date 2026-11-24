@@ -111,14 +111,25 @@ struct SHComposerFocusLayer: NSViewRepresentable {
 
     func updateNSView(_ view: SHComposerFocusView, context: Context) {
         let sh = Color.sh
-        let (on, rest) = part == .line ? (sh.textTertiary, sh.lineStrong) : (sh.bgSelected, sh.bgSelected)
+        let environment = context.environment
+        // The ring is the selection fill as it looks on the window, opaque, so the card's shadow beneath never shows through it.
+        let ring = Self.over(sh.bgSelected.resolve(in: environment), sh.bgWindow.resolve(in: environment))
+        let (on, rest) = part == .line ? (sh.textTertiary.resolve(in: environment), sh.lineStrong.resolve(in: environment)) : (ring, ring)
         let transaction = context.transaction
         // A focus taken as a layout comes on screen fades although the transaction lands everything else
         // at once; a hidden layout's, or Reduce Motion's, lands at once.
         let fades = !context.environment.accessibilityReduceMotion && (transaction.shFocusFades || !transaction.disablesAnimations)
-        view.update(focused: focused, color: on.resolve(in: context.environment).cgColor,
-                    rest: rest.resolve(in: context.environment).cgColor,
+        view.update(focused: focused, color: on.cgColor,
+                    rest: rest.cgColor,
                     hairline: SH.hairline(context.environment.displayScale), fades: fades)
+    }
+
+    /// `top` laid over `bottom`, as one opaque colour.
+    static func over(_ top: Color.Resolved, _ bottom: Color.Resolved) -> Color.Resolved {
+        let a = top.opacity
+        return Color.Resolved(colorSpace: .sRGBLinear, red: top.linearRed * a + bottom.linearRed * (1 - a),
+                              green: top.linearGreen * a + bottom.linearGreen * (1 - a),
+                              blue: top.linearBlue * a + bottom.linearBlue * (1 - a), opacity: 1)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: SHComposerFocusView, context: Context) -> CGSize? {

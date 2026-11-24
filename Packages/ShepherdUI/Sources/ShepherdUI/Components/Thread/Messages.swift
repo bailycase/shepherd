@@ -145,7 +145,11 @@ public struct SHUserBubble<Leading: View>: View {
                         #if os(macOS)
                         if let title { line(title, weight: .regular) } // the redesign's answer is one plain line
                         #else
+                        #if os(macOS)
+                        if let title { line(title, weight: .regular) } // the redesign's answer is one plain line
+                        #else
                         if let title { line(title, weight: .semibold) }
+                        #endif
                         #endif
                         if !text.isEmpty { line(text, weight: nil) }
                     }
