@@ -8,7 +8,8 @@ import ShepherdSessions
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk, FleetMove, FleetRemote boards)
 /// for the agent on screen: "space / parent / title" (the parent only for a thread another thread
 /// started), then the one side-pane button, the options menu (where it runs, Refresh Thread,
-/// Rename…, Pin, Mute Notifications, Move to), and another host's thread's branch chip. Everything comes in as values, compared by
+/// Rename…, Pin, Mute Notifications, Move to), and another host's thread's branch chip. A thread on another Mac names it after the
+/// title ("on mini ⌄", FleetRemote), and that menu takes where it runs, Move to and Sent by. Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
 /// ⌘J, the Terminal menu and the palette show it.
@@ -20,7 +21,7 @@ struct ThreadHeader: View, Equatable {
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
             && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
             && a.muted == b.muted && (a.toggleMute == nil) == (b.toggleMute == nil)
-            && a.apps == b.apps && a.move == b.move && (a.moveTo == nil) == (b.moveTo == nil) && a.sentBy == b.sentBy && a.sentByOnline == b.sentByOnline && (a.openSender == nil) == (b.openSender == nil)
+            && a.apps == b.apps && a.move == b.move && (a.moveTo == nil) == (b.moveTo == nil) && a.remoteHost == b.remoteHost && a.sentBy == b.sentBy && a.sentByOnline == b.sentByOnline && (a.openSender == nil) == (b.openSender == nil)
     }
 
     var store: NativeThreadStore
@@ -58,6 +59,9 @@ struct ThreadHeader: View, Equatable {
     var sentBy: FleetSentBy?
     var sentByOnline = true
     var openSender: (() -> Void)?
+    /// The Mac a thread runs on when it is not this one: "on mini ⌄" after the title, whose menu has where it runs, Move to and who
+    /// sent it (GXRemote). Those leave the options menu and the breadcrumb for such a thread.
+    var remoteHost: String?
     /// The space's quick actions (AppsQuickAction board); nil draws no Run button.
     var apps: QuickApps?
     var runApp: (AppKey) -> Void = { _ in }
@@ -65,15 +69,24 @@ struct ThreadHeader: View, Equatable {
     var restartApp: (AppKey) -> Void = { _ in }
     var appOutput: (AppKey) -> Void = { _ in }
     var editApps: () -> Void = {}
+    @State private var hostMenu = false
 
     var body: some View {
         let _ = SHRenderProbe.tick("thread.header")
         // A thread the person started on another Mac is a thread like any other: only one a thread started names its parent.
         let parent = sentBy?.fromThread == true ? sentBy?.sender : nil
+        let shownParent = remoteHost == nil ? parent : nil
         let crumbs = [project, parent, title].compactMap { $0 }.joined(separator: " / ")
-        SHThreadToolbar(title, project: project, titleHelp: crumbs, parent: parent, openParent: parent == nil ? nil : openSender,
+        SHThreadToolbar(title, project: project, titleHelp: crumbs, parent: shownParent, openParent: shownParent == nil ? nil : openSender,
                         leadingInset: leadingInset, sidebar: showSidebar, newThread: newThread) {
-            EmptyView()
+            if let remoteHost {
+                SHHostChip(host: remoteHost) { hostMenu = true }
+                    .popover(isPresented: $hostMenu, arrowEdge: .bottom) {
+                        RemoteThreadMenu(host: remoteHost, movedFrom: move?.chip.movedFrom, online: sentByOnline,
+                                         targets: move?.menu.targets ?? [], busy: move?.busy ?? false, sender: parent, openSender: openSender,
+                                         moveTo: { moveTo?($0) }, close: { hostMenu = false })
+                    }
+            }
         } trailing: {
             ThreadGoalHeader(store: store)
             if let apps {
@@ -83,7 +96,7 @@ struct ThreadHeader: View, Equatable {
                 SHSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)
             }
             SHOptionsMenu("Thread options") {
-                if let runsOn {
+                if let runsOn, remoteHost == nil {
                     Section("Runs on") {
                         Text(runsOn)
                         if let movedFrom = move?.chip.movedFrom { Text(movedFrom) }
@@ -100,7 +113,7 @@ struct ThreadHeader: View, Equatable {
                 if let muted, let toggleMute {
                     Button(MuteWords.menuTitle(muted: muted), systemImage: MuteWords.symbol(muted: muted), action: toggleMute)
                 }
-                if let move, let moveTo {
+                if let move, let moveTo, remoteHost == nil {
                     Divider()
                     Menu(move.busy ? "Moving…" : "Move to") {
                         ForEach(move.menu.targets) { target in

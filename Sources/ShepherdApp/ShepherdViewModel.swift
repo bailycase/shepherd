@@ -516,6 +516,8 @@ final class ShepherdViewModel {
     var branchSheet: BranchSheet?
     /// Each local thread's branch card, made when its card first shows.
     @ObservationIgnored var branchCardStores: [AgentID: BranchCardStore] = [:]
+    /// The read-only card of each thread running on another Mac (GXRemote), made when it first shows.
+    @ObservationIgnored var remoteBranchCardStores: [RemoteAgentRef: BranchCardStore] = [:]
 
     @ObservationIgnored private var childSweepTimer: Timer?
     /// Focus is recorded per layout on every change (clicks, tab switches, new terminals),

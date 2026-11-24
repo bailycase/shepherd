@@ -84,12 +84,41 @@ struct BranchCardPreviewTests {
         // Branch lists come from This Mac's host, for one of its spaces.
         let space = Space(name: "payments", path: clone.path)
         try await workspace.seed(ShepherdState(spaces: [space]))
-        try await Preview.render("branch-picker-switch", size: CGSize(width: 380, height: 360)) {
-            BranchPickerMenu(title: "Switch branch", selected: "agent/refund-events", load: { try await workspace.vm.branchPickerList(cwd: clone.path, space: space.id) },
+        try await Preview.render("branch-picker-switch", size: CGSize(width: 380, height: 360), untilGone: "Reading branches", showing: "Fetch from origin") {
+            BranchPickerMenu(selected: "agent/refund-events", load: { try await workspace.vm.branchPickerList(cwd: clone.path, space: space.id) },
                              choose: { _ in }, newBranch: {}, fetch: {}, close: {})
                 .padding(SH.Space.xl)
                 .frame(width: 380, height: 360, alignment: .top)
                 .background(Color.sh.bgWindow)
+        }
+    }
+
+    /// The card with its Branch picker out under the branch (GXBranchPicker), and the card for a thread on another Mac (GXRemote).
+    @Test func theCardWithItsPicker() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let (origin, clone) = try clone()
+        defer { for url in [origin, clone] { try? FileManager.default.removeItem(at: url) } }
+        let space = Space(name: "payments", path: clone.path)
+        try await workspace.seed(ShepherdState(spaces: [space]))
+        let now = Date()
+        let card = BranchCardModel(space: "payments", branch: "agent/refund-events", worktree: true, directory: clone.path,
+                                   others: [BranchCardOther(id: AgentID(), branch: "agent/webhook-retries", state: .attention, detail: "asked you"),
+                                            BranchCardOther(id: AgentID(), branch: "baily/ledger-refactor", state: .idle, detail: "3d")])
+        let pull = PullRequestSummary(ref: ForgeItemRef(kind: .pullRequest, repo: "acme/payments", number: 31), title: "Add refund events",
+                                      author: "baily", updatedAt: now, state: .open, checks: .running, headRef: card.branch, baseRef: "main")
+        let status = BranchCardStatus(git: BranchCardGit(additions: 34, deletions: 6, base: "main", behind: 3, ahead: 2), pull: pull)
+        let handle = BranchCardHandle(agentID: AgentID(), card: { card }, load: { _ in status }, perform: { _ in },
+                                      branches: { try await workspace.vm.branchPickerList(cwd: clone.path, space: space.id) })
+        let store = BranchCardStore(handle: handle)
+        await store.refresh()
+        for (name, picking) in [("card", nil), ("card-picker", BranchCardOverlay.Picking.branch)] {
+            try await Preview.render("branch-\(name)", size: CGSize(width: 420, height: 520), untilGone: picking == nil ? nil : "Reading branches",
+                                     showing: picking == nil ? nil : "Fetch from origin") {
+                BranchCardOverlay(store: store, branch: card.branch, active: true, wide: true, picking: picking)
+                    .frame(width: 420, height: 520, alignment: .topTrailing)
+                    .background(Color.sh.bgWindow)
+            }
         }
     }
 
@@ -113,8 +142,9 @@ struct BranchCardPreviewTests {
         for busy in [nil, "running"] as [String?] {
             list.busy = busy
             let shown = list
-            try await Preview.render(busy == nil ? "branch-picker-move" : "branch-picker-move-running", size: CGSize(width: 420, height: 360)) {
-                BranchPickerMenu(title: "Switch branch", selected: "agent/webhook-retries", load: { shown },
+            try await Preview.render(busy == nil ? "branch-picker-move" : "branch-picker-move-running", size: CGSize(width: 420, height: 360),
+                                     untilGone: "Reading branches", showing: "Fetch from origin") {
+                BranchPickerMenu(selected: "agent/webhook-retries", load: { shown },
                                  choose: { _ in }, move: { _, _ in }, newBranch: {}, fetch: {}, close: {})
                     .padding(SH.Space.xl)
                     .frame(width: 420, height: 360, alignment: .top)
@@ -132,7 +162,7 @@ struct BranchCardPreviewTests {
         // Branch lists come from This Mac's host, for one of its spaces.
         let space = Space(name: "payments", path: clone.path)
         try await workspace.seed(ShepherdState(spaces: [space]))
-        try await Preview.render("new-thread-branch-picker", size: CGSize(width: 420, height: 380)) {
+        try await Preview.render("new-thread-branch-picker", size: CGSize(width: 420, height: 380), untilGone: "Reading branches", showing: "Fetch from origin") {
             BranchPickerMenu(first: "New branch from main", selected: nil, load: { try await workspace.vm.branchPickerList(cwd: clone.path, space: space.id) },
                              choose: { _ in }, newBranch: {}, fetch: {}, close: {})
             .padding(SH.Space.xl)
