@@ -232,7 +232,7 @@ each rule. Add a budget with any new long list.
 ## Verifying visuals
 
 Render affected surfaces and states with
-`SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<preview suite or test>'`.
+`SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews scripts/check.py ShepherdPreviewTests '<preview suite or test>'`.
 Use real data and inspect the light and dark PNGs beside the design; unrelated previews need not run.
 Appearance-only changes do not also require launching the app. For interactions, focus, menus or
 app lifecycle, use integration tests; add a manual Dev-app check only where the isolated harness

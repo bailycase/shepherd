@@ -12,8 +12,8 @@ the app's own supervised child (`HostSupervisor`), which stops at Quit. Terminal
 Choose only what the change needs; these are alternatives, not a checklist. Replace placeholders.
 
 ```bash
-swift test --filter '<affected suite or test>' # builds before running; no separate swift build
-SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<affected preview>'
+scripts/check.py <TestTarget> '<affected suite or test>' # target = its Tests/ folder; builds only it
+SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews scripts/check.py ShepherdPreviewTests '<affected preview>'
 PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test 'Tests/Extensions/<affected>.test.mjs'
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py' # docs guards
 ```
@@ -61,7 +61,7 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 - Swift Testing only: pure logic is unit; server, socket, process, git or window work is integration.
   Unit tests use no processes, sockets, windows, git or sleeps. Integration tests use
   `Tests/ShepherdTestSupport` and wait with `eventually`, never a fixed sleep.
-- Run the smallest relevant checks. Expand for shared changes or wider regressions, not every edit.
+- Run the smallest relevant checks once edits settle, not after each one. Expand for shared changes.
   Report actual results and gaps; required CI still gates PRs into `master`.
 - Fix only docs the change makes wrong. Don't write new docs for a feature unless asked.
 - Keep tool output small (`| head`, `--stat`, a file by range). Hand a broad search or a long log
