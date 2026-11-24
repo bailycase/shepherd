@@ -232,6 +232,43 @@ struct ThreadHostingTests {
         #expect(!h.server.state.agents.contains { $0.id == far.id })
     }
 
+    @Test func detailedAgentListReportsCheckoutStatusWithoutFilenamesOrAttribution() async throws {
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let dirty = try makeScratchRepo(files: ["sub/tracked.txt": "base\n"])
+        let clean = h.dir.appendingPathComponent("linked-checkout")
+        try git(["worktree", "add", "-q", "--detach", clean.path], in: dirty)
+        let nonGit = try makeScratchDirectory("not-git")
+        let unexpected = "private-untracked-name"
+        try "not disclosed".write(to: dirty.appendingPathComponent(unexpected), atomically: true, encoding: .utf8)
+
+        func thread(_ name: String, in directory: URL, expected: PeerCheckoutStatus) async throws -> (AgentID, PeerCheckoutStatus) {
+            let space = Space(name: name, path: directory.path)
+            try await h.server.addSpace(space)
+            let pane = LeafPane(cwd: directory.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+            try await h.server.addAgent(agent, withTab: tab)
+            return (agent.id, expected)
+        }
+        let expected = [try await thread("lead", in: dirty, expected: .dirty),
+                        try await thread("shared", in: dirty.appendingPathComponent("sub"), expected: .dirty),
+                        try await thread("clean", in: clean, expected: .clean),
+                        try await thread("unknown", in: nonGit, expected: .unknown)]
+        let caller = try ExtensionClient(path: h.socketPath)
+        let agentID = expected[0].0
+        try caller.send(.listAgents(id: 1, agentID: agentID))
+        guard case .agents(1, let plain, _) = try await caller.reply() else { Issue.record("plain list not served"); return }
+        #expect(plain.count == expected.count && plain.allSatisfy { $0.checkoutStatus == nil })
+        try caller.send(.listAgents(id: 2, agentID: agentID, details: true))
+        let reply = try await caller.reply()
+        guard case .agents(2, let detailed, _) = reply else { Issue.record("detailed list not served"); return }
+        #expect(detailed.count == expected.count)
+        for (id, checkout) in expected { #expect(detailed.first { $0.id == id }?.checkoutStatus == checkout) }
+        #expect(!String(decoding: try NDJSON.encode(reply), as: UTF8.self).contains(unexpected))
+        #expect(h.server.state.agents.count == expected.count)
+    }
+
     /// agent_spawn with place worktree: a new branch from the starter's commit, in the same folder of the repository. A thread three deep
     /// starts none.
     @Test func aThreadStartsAnotherInANewWorktreeAndDepthStopsAChain() async throws {

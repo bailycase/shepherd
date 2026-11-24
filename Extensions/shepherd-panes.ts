@@ -127,6 +127,7 @@ interface AgentPeerInfo {
   space?: string | null;
   lastActiveAt?: number | null;
   asking?: boolean | null;
+  checkoutStatus?: "clean" | "dirty" | "unknown" | null;
 }
 
 interface FleetDispatchListRow {
@@ -676,13 +677,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "List Agent Threads",
     description:
       "List the other agent threads in Shepherd, in every space: id, name, status (working/blocked/idle/done), and working " +
-      "directory. details adds each one's space, last activity and whether it is asking a question. " +
+      "directory. details adds space, last activity, asking and local checkout status (uncommitted changes only). " +
       "Use it to find a thread the user named. It only reads: it is not a reason to message, " +
       `steer, read${threadsStartThreads ? "" : " or start"} any thread, which you may do only when the user explicitly asks you to.`,
     promptSnippet: line(deferPeers, "List the other agent threads, only to find one the user named"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
-    parameters: Type.Object({ details: Type.Optional(Type.Boolean({ description: "Add space, last activity and asking; at most 50 rows, newest first" })) }),
+    parameters: Type.Object({ details: Type.Optional(Type.Boolean({ description: "Add space, last activity, asking and checkout status; at most 50 rows, newest first" })) }),
     async execute(_id, params) {
       const reply = await request(params?.details ? { type: "listAgents", details: true } : { type: "listAgents" });
       let rows = reply.agents ?? [];
@@ -698,8 +699,10 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       return text(shown.map((a) => {
         const last = typeof a.lastActiveAt === "number" ? `  active ${ago(a.lastActiveAt)}` : "";
         const id = UUID_PATTERN.test(String(a.id)) ? a.id : "(invalid-id)";
-        return `${id}  ${oneLine(a.name)}  [${oneLine(a.status, 20)}]${a.isSelf ? "  (you)" : ""}${a.space ? `  space: ${oneLine(a.space)}` : ""}${last}${a.asking ? "  asking" : ""}  ${oneLine(a.cwd, 240)}`;
-      }).join("\n") + (more > 0 ? `\n${more} more, older, not shown` : "") + `\n${LABELS_ARE_DATA}` + reminder);
+        const checkout = a.checkoutStatus === "clean" || a.checkoutStatus === "dirty" ? a.checkoutStatus : "unknown";
+        return `${id}  ${oneLine(a.name)}  [${oneLine(a.status, 20)}]${a.isSelf ? "  (you)" : ""}${a.space ? `  space: ${oneLine(a.space)}` : ""}${last}${a.asking ? "  asking" : ""}  ${oneLine(a.cwd, 240)}  checkout: ${checkout}`;
+      }).join("\n") + (more > 0 ? `\n${more} more, older, not shown` : "") +
+        `\nCheckout status describes uncommitted changes in the whole checkout, not an individual thread's work.\n${LABELS_ARE_DATA}` + reminder);
     },
   });
 

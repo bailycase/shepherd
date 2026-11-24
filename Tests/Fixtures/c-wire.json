@@ -12,7 +12,7 @@
       ],
       "agents": [
         "{\"agents\":[{\"cwd\":\"/tmp\",\"id\":\"worker\",\"isSelf\":false,\"name\":\"worker\",\"status\":\"working\"},{\"cwd\":\"/tmp\",\"id\":\"me\",\"isSelf\":true,\"name\":\"me\",\"status\":\"idle\"}],\"id\":1,\"type\":\"agents\"}\n",
-        "{\"agents\":[{\"asking\":true,\"cwd\":\"/docs\",\"id\":\"far\",\"isSelf\":false,\"lastActiveAt\":1700000000000,\"name\":\"far\",\"space\":\"acme-docs\",\"status\":\"blocked\"}],\"id\":2,\"omitted\":3,\"type\":\"agents\"}\n"
+        "{\"agents\":[{\"asking\":true,\"checkoutStatus\":\"dirty\",\"cwd\":\"/docs\",\"id\":\"far\",\"isSelf\":false,\"lastActiveAt\":1700000000000,\"name\":\"far\",\"space\":\"acme-docs\",\"status\":\"blocked\"}],\"id\":2,\"omitted\":3,\"type\":\"agents\"}\n"
       ],
       "appResult": [
         "{\"id\":8,\"text\":\"Apps in payments:\\n- Web app: running · port 3000\",\"type\":\"appResult\"}\n"

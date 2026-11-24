@@ -909,6 +909,7 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var creatingAgents = Set<AgentID>()
     /// Main actor: threads agent_spawn is starting now, by the thread that asked (the per-thread cap counts them).
     @MainActor var spawning: [AgentID: Int] = [:]
+    @MainActor var readingPeerCheckouts = false
     /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
     /// how many wait for it now.
     @MainActor var firstCopy: Task<Void, Never>?
