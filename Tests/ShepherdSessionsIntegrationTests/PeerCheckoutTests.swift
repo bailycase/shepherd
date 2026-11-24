@@ -14,7 +14,7 @@ struct PeerCheckoutTests {
         func check(_ expected: PeerCheckoutStatus) throws {
             let indexBefore = try Data(contentsOf: index)
             let modifiedBefore = try index.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            #expect(PeerCheckouts.read([subdir, subdir]) == [subdir: expected])
+            #expect(PeerCheckouts.read([subdir, subdir]) == [subdir: .init(status: expected)])
             #expect(try Data(contentsOf: index) == indexBefore)
             #expect(try index.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == modifiedBefore)
         }
@@ -32,8 +32,35 @@ struct PeerCheckoutTests {
         try check(.dirty)
     }
 
+    @Test func countsAgainstTheLocalTrackingRefEvenWhenItIsStale() throws {
+        let repo = try makeScratchRepo()
+        try configureUpstream(in: repo)
+        #expect(PeerCheckouts.read([repo.path])[repo.path] == .init(status: .clean), "configured upstream has no local ref yet")
+        try git(["update-ref", "refs/remotes/origin/main", "HEAD"], in: repo)
+        #expect(PeerCheckouts.read([repo.path])[repo.path] == .init(status: .clean, commitsAheadOfLocalUpstream: 0))
+        // The tracking ref is still at the initial commit. No connection to origin is needed.
+        try git(["commit", "--allow-empty", "-qm", "new local commit"], in: repo)
+        try "not a header".write(to: repo.appendingPathComponent("# branch.ab +99 -0"), atomically: true, encoding: .utf8)
+        #expect(PeerCheckouts.read([repo.path])[repo.path] == .init(status: .dirty, commitsAheadOfLocalUpstream: 1))
+    }
+
+    @Test func unbornHeadHasNoComparison() throws {
+        let repo = try makeScratchDirectory("unborn")
+        try git(["init", "-q", "-b", "main"], in: repo)
+        try configureUpstream(in: repo)
+        #expect(PeerCheckouts.read([repo.path])[repo.path] == .init(status: .clean))
+    }
+
+    private func configureUpstream(in repo: URL) throws {
+        try git(["remote", "add", "origin", "https://example.invalid/acme.git"], in: repo)
+        try git(["config", "branch.main.remote", "origin"], in: repo)
+        try git(["config", "branch.main.merge", "refs/heads/main"], in: repo)
+    }
+
     @Test func missingNonGitAndFailedChecksAreUnknown() throws {
         let repo = try makeScratchRepo()
+        try configureUpstream(in: repo)
+        try git(["update-ref", "refs/remotes/origin/main", "HEAD"], in: repo)
         let nonGit = try makeScratchDirectory("not-git")
         let missing = repo.appendingPathComponent("does-not-exist")
         try Data("a broken index".utf8).write(to: repo.appendingPathComponent(".git/index"))

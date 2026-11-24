@@ -852,12 +852,16 @@ struct ChildRunTests {
     }
 
     @Test(arguments: [PeerCheckoutStatus.clean, .dirty, .unknown])
-    func aDetailedAgentListRowCarriesOnlyTheCheckoutState(_ status: PeerCheckoutStatus) throws {
-        let row = AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false,
+    func aDetailedAgentListRowCarriesOnlyCheckoutStateAndAnOptionalLocalCount(_ status: PeerCheckoutStatus) throws {
+        var row = AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false,
                                 checkoutStatus: status)
         let encoded = try Wire.object(row)
         #expect(encoded["checkoutStatus"] as? String == status.rawValue)
         #expect(Set(encoded.keys) == ["cwd", "id", "isSelf", "name", "status", "checkoutStatus"])
+        row.commitsAheadOfLocalUpstream = 0
+        let withCount = try Wire.object(row)
+        #expect(withCount["commitsAheadOfLocalUpstream"] as? Int == 0)
+        #expect(Set(withCount.keys) == Set(encoded.keys).union(["commitsAheadOfLocalUpstream"]))
         #expect(try JSONDecoder().decode(AgentPeerInfo.self, from: JSONEncoder().encode(row)) == row)
     }
 
