@@ -94,7 +94,7 @@ private struct SHStyledButton: View {
 
     private func foreground(_ sh: SHPalette) -> Color {
         switch kind {
-        case .primary: sh.textOnLantern
+        case .primary: sh.textOnPrimary
         case .secondary, .raised: tint ?? sh.textPrimary
         case .ghost: tint ?? (hovering && enabled && !configuration.isPressed ? sh.textPrimary : sh.textSecondary)
         case .danger: sh.failed
@@ -106,8 +106,8 @@ private struct SHStyledButton: View {
     private func background(_ sh: SHPalette) -> AnyShapeStyle {
         switch kind {
         case .primary:
-            // Hover lifts the fill, pressed sinks it (the board's #f7b84f and #d9922a).
-            let fill = !enabled ? sh.lantern : configuration.isPressed ? sh.lanternPressed : hovering ? sh.lanternHover : sh.lantern
+            // Hover lifts the fill, pressed sinks it.
+            let fill = !enabled ? sh.primary : configuration.isPressed ? sh.primaryPressed : hovering ? sh.primaryHover : sh.primary
             return AnyShapeStyle(fill)
         case .dangerFill:
             // A confirmed destructive action stays put on hover and sinks while pressed.

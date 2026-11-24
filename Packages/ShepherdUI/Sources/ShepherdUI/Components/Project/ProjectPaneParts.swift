@@ -218,7 +218,7 @@ public struct SHLeadFieldStyle: TextFieldStyle {
 }
 
 /// The sheet's footer buttons (ProjectLead-New): 28pt, radius 6, 10pt sides inside a 1pt line, 12.5/500. Cancel is ghost (`textSecondary`); Create
-/// project is the one primary action (`lantern` on `textOnLantern`). 40% opacity when disabled.
+/// project is the one primary action (`primary` on `textOnPrimary`). 40% opacity when disabled.
 public struct SHLeadSheetButton: ButtonStyle {
     public enum Kind { case ghost, primary }
     let kind: Kind
@@ -228,10 +228,10 @@ public struct SHLeadSheetButton: ButtonStyle {
     @MainActor public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.sh(.ui, weight: .medium))
-            .foregroundStyle(kind == .primary ? Color.sh.textOnLantern : Color.sh.textSecondary)
+            .foregroundStyle(kind == .primary ? Color.sh.textOnPrimary : Color.sh.textSecondary)
             .padding(.horizontal, SHLeadMetrics.sheetButtonSide)
             .frame(height: SHLeadMetrics.toolbarButtonHeight)
-            .background(kind == .primary ? Color.sh.lantern : (configuration.isPressed ? Color.sh.bgSelected : .clear),
+            .background(kind == .primary ? Color.sh.primary : (configuration.isPressed ? Color.sh.bgSelected : .clear),
                         in: RoundedRectangle(cornerRadius: SH.Radius.s))
             // The whole 28pt box answers a click, not only its label: a clear background has no hit area of its own.
             .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))

@@ -1,12 +1,10 @@
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
-public typealias SHPlatformFont = NSFont
 private typealias PlatformColor = NSColor
 private typealias PlatformImage = NSImage
 #else
 import UIKit
-public typealias SHPlatformFont = UIFont
 private typealias PlatformColor = UIColor
 private typealias PlatformImage = UIImage
 #endif
@@ -34,8 +32,7 @@ public final class SHSkillChipAttachment: NSTextAttachment {
         let sh = Color.sh
         let scale = font.pointSize / SHTextStyle.body.size
         let monoSize = SHTextStyle.code.size * scale
-        let mono = SHPlatformFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: monoSize)
-            ?? .monospacedSystemFont(ofSize: monoSize, weight: .regular)
+        let mono = SHFonts.platform(mono: true, weight: .regular, size: monoSize)
         #if canImport(AppKit)
         func color(_ color: Color) -> PlatformColor { PlatformColor(color) }
         let glyph = PlatformImage(systemSymbolName: SHGlyph.skill.symbolName, accessibilityDescription: nil)?
@@ -175,10 +172,8 @@ extension UIFont {
     /// A ramp style as a UIKit font, for a UIKit field beside SwiftUI text: the same face and size
     /// (`Font.sh`), scaled for `category` as Dynamic Type scales body text.
     @MainActor public static func sh(_ style: SHTextStyle, category: UIContentSizeCategory) -> UIFont {
-        SHFonts.register()
         let size = style.size * ThemeStore.shared.textScale
-        let base = UIFont(name: SHFonts.postScriptName(mono: style.isMonospaced, weight: style.weight), size: size)
-            ?? (style.isMonospaced ? .monospacedSystemFont(ofSize: size, weight: .regular) : .systemFont(ofSize: size))
+        let base = SHFonts.platform(mono: style.isMonospaced, weight: style.weight, size: size)
         return UIFontMetrics(forTextStyle: .body).scaledFont(for: base, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
     }
 }

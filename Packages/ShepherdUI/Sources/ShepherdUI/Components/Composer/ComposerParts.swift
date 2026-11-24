@@ -247,11 +247,11 @@ public struct SHComposerActionButton: View {
         let send = mode == .send
         Button(action: action) {
             ZStack {
-                glyph("arrow.up", size: SHComposerMetrics.sendGlyph, color: sh.textOnLantern, shown: send)
+                glyph("arrow.up", size: SHComposerMetrics.sendGlyph, color: sh.textOnPrimary, shown: send)
                 glyph("stop.fill", size: SHComposerMetrics.stopGlyph, color: sh.textOnFailed, shown: !send)
             }
         }
-        .buttonStyle(SHComposerActionStyle(fill: send ? sh.lantern : sh.failed))
+        .buttonStyle(SHComposerActionStyle(fill: send ? sh.primary : sh.failed))
         .disabled(!enabled)
         .background {
             Circle().inset(by: -SHComposerMetrics.focusRing).fill(sh.lanternTint)

@@ -251,9 +251,7 @@ struct ComposerTextField: NSViewRepresentable {
         private func applyStyle() {
             guard let style = pendingStyle, style != appliedStyle,
                   appliedStyle == nil || (window != nil && !isHiddenOrHasHiddenAncestor) else { return }
-            SHFonts.register()
-            font = NSFont(name: "\(SHFonts.sansFamily)-Regular", size: SHTextStyle.body.size * style.scale)
-                ?? .systemFont(ofSize: SHTextStyle.body.size * style.scale)
+            font = SHFonts.platform(mono: false, weight: .regular, size: SHTextStyle.body.size * style.scale)
             textColor = NSColor(style.text)
             placeholderAttributedString = NSAttributedString(string: style.placeholder, attributes: [
                 .font: font!, .foregroundColor: NSColor(style.placeholderColor)

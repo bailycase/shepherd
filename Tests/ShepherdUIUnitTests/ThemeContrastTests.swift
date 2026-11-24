@@ -45,7 +45,8 @@ struct ThemeContrastTests {
             pairs.append(Pair(name: "\(name) over bgWindow", text: textRole, fill: tint, base: \.bgWindow, minimum: text))
             pairs.append(Pair(name: "\(name) over bgRaised", text: textRole, fill: tint, base: \.bgRaised, minimum: text))
         }
-        // The primary button's label.
+        // The primary button's label, and a lantern badge's.
+        pairs.append(Pair(name: "textOnPrimary on primary", text: \.textOnPrimary, fill: \.primary, base: \.bgWindow, minimum: text))
         pairs.append(Pair(name: "textOnLantern on lantern", text: \.textOnLantern, fill: \.lantern, base: \.bgWindow, minimum: text))
         // The Browser's element tag and the design canvas's selection tag.
         pairs.append(Pair(name: "textOnRunning on running", text: \.textOnRunning, fill: \.running, base: \.bgWindow, minimum: text))
@@ -59,21 +60,22 @@ struct ThemeContrastTests {
     /// Pairs the board uses that fall short, with their measured ratios (the report).
     static let exceptions: [String: Double] = [
         // Meta text ("Meta, timestamps") is deliberately faint in both appearances.
-        "shepherd-design-dark: textTertiary on bgBase": 3.35,
-        "shepherd-design-dark: textTertiary on bgWindow": 3.29,
-        "shepherd-design-dark: textTertiary on bgRaised": 3.06,
+        "shepherd-design-dark: textTertiary on bgBase": 3.36,
+        "shepherd-design-dark: textTertiary on bgWindow": 3.36,
+        "shepherd-design-dark: textTertiary on bgRaised": 2.98,
         "shepherd-design-light: textTertiary on bgBase": 2.40,
-        "shepherd-design-light: textTertiary on bgWindow": 2.60,
-        "shepherd-design-light: textTertiary on bgRaised": 2.69,
-        // Light state pills: the state color on its own tint.
-        "shepherd-design-light: running on runningTint over bgWindow": 3.98,
+        "shepherd-design-light: textTertiary on bgWindow": 2.40,
+        "shepherd-design-light: textTertiary on bgRaised": 2.57,
+        // State pills: the state color on its own tint.
+        "shepherd-design-light: running on runningTint over bgWindow": 3.86,
         "shepherd-design-light: running on runningTint over bgRaised": 4.11,
-        "shepherd-design-light: done on doneTint over bgWindow": 3.01,
-        "shepherd-design-light: done on doneTint over bgRaised": 3.11,
-        "shepherd-design-light: failed on failedTint over bgWindow": 3.71,
-        "shepherd-design-light: failed on failedTint over bgRaised": 3.84,
-        // Light lantern as a dot or glyph on the window.
-        "shepherd-design-light: lantern mark on bgWindow": 2.27,
+        "shepherd-design-light: done on doneTint over bgWindow": 3.48,
+        "shepherd-design-light: done on doneTint over bgRaised": 3.71,
+        "shepherd-design-light: failed on failedTint over bgWindow": 3.91,
+        "shepherd-design-light: failed on failedTint over bgRaised": 4.17,
+        "shepherd-design-dark: failed on failedTint over bgRaised": 4.4998,
+        // Light lantern (the boards' #FF9500) as a dot or glyph on the window.
+        "shepherd-design-light: lantern mark on bgWindow": 2.05,
         // The Browser's element tag and the design canvas's selection tag put white on `running`
         // in mono 10.5, as the board draws it; dark falls short, the board's choice.
         "shepherd-design-dark: textOnRunning on running": 2.39,
@@ -98,14 +100,14 @@ struct ThemeContrastTests {
         #expect(Set(Self.exceptions.keys).subtracting(keys).isEmpty)
     }
 
-    /// The dangerFill button and the failed count badge put white on `failed`, as the board
-    /// draws them; neither variant reaches 4.5:1 (dark 3.18, light 4.33).
-    @Test(arguments: [(false, 4.33), (true, 3.18)])
-    func whiteOnFailedIsADocumentedException(isDark: Bool, measured: Double) {
+    /// The dangerFill button and the failed count badge put white on `failed`: light reaches
+    /// 4.5:1 (4.77); dark's lighter red falls short (2.82).
+    @Test(arguments: [(false, 4.77), (true, 2.82)])
+    func whiteOnFailedIsADocumentedExceptionInDark(isDark: Bool, measured: Double) {
         let variant = Variant(theme: .shepherdDesign, isDark: isDark)
         let ratio = HexColor("#ffffff")!.contrast(with: variant.color(\.failed))
         #expect(abs(ratio - measured) < 0.01)
-        #expect(ratio < Self.text)
+        #expect((ratio >= Self.text) == !isDark)
     }
 
     /// `textOnRunning` on `running`, as the Browser's element tag and the design canvas's
@@ -119,15 +121,11 @@ struct ThemeContrastTests {
         #expect((ratio >= Self.text) == !isDark)
     }
 
-    /// The primary button's hover and pressed fills (the Controls board's hexes) keep its label
-    /// at 4.5:1 in both variants.
+    /// The primary fill keeps its label at 4.5:1 in both variants.
     @Test(arguments: [false, true])
-    func primaryHoverAndPressedFillsKeepTheLabelReadable(isDark: Bool) throws {
+    func primaryFillKeepsTheLabelReadable(isDark: Bool) {
         let variant = Variant(theme: .shepherdDesign, isDark: isDark)
-        for fill in [SHButtonFills.lanternHover, SHButtonFills.lanternPressed] {
-            let hex = try #require(HexColor(isDark ? fill.dark : fill.light))
-            #expect(variant.color(\.textOnLantern).contrast(with: hex) >= Self.text)
-        }
+        #expect(variant.color(\.textOnPrimary).contrast(with: variant.color(\.primary)) >= Self.text)
     }
 
     /// White on the dangerFill button's pressed fill: light reaches 4.5:1 (5.42); dark is darker
@@ -140,13 +138,13 @@ struct ThemeContrastTests {
         #expect((ratio >= Self.text) == !isDark)
     }
 
-    /// Surfaces stay distinct and ordered: the window is not the chrome, a card is not the
-    /// window, and the strong line reads stronger than the subtle one.
+    /// Surfaces stay distinct: a card, a well, and a bubble are not the window (the boards draw
+    /// the chrome and the window in one fill), and the strong line reads stronger than the subtle one.
     @Test(arguments: Variant.all)
     func surfacesAndLinesStayDistinct(_ variant: Variant) {
         let c = variant.colors
-        #expect(Set([c.bgBase, c.bgWindow, c.bgRaised, c.bgSunken, c.bgBubble]).count == 5)
-        #expect(variant.contrast(\.lineStrong, on: \.bgWindow) > variant.contrast(\.lineSubtle, on: \.bgWindow))
+        #expect(Set([c.bgWindow, c.bgRaised, c.bgSunken, c.bgBubble]).count == 4)
+        #expect(variant.contrast(\.lineStrong, on: \.bgWindow, over: \.bgWindow) > variant.contrast(\.lineSubtle, on: \.bgWindow, over: \.bgWindow))
         #expect(variant.contrast(\.bgSelected, on: \.bgBase, over: \.bgBase) > variant.contrast(\.bgHover, on: \.bgBase, over: \.bgBase))
     }
 

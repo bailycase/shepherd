@@ -538,8 +538,7 @@ final class ReviewPaneModel {
         #if DEBUG
         widthMeasurements += 1
         #endif
-        let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
-            ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * textScale, weight: .regular)
+        let font = SHFonts.platform(mono: true, weight: .regular, size: SHTextStyle.code.size * textScale)
         var old: CGFloat = 0, new: CGFloat = 0
         for line in file.hunks.flatMap(\.lines) {
             let text = NSAttributedString(string: line.text, attributes: [.font: font])

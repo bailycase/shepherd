@@ -684,9 +684,9 @@ struct SHContextButtonStyle: ButtonStyle {
             configuration.label
                 .labelStyle(SHContextLabelStyle())
                 .font(.shSans(12.5, primary ? .semibold : .medium))
-                .foregroundStyle(primary ? sh.textOnLantern : sh.textPrimary)
+                .foregroundStyle(primary ? sh.textOnPrimary : sh.textPrimary)
                 .frame(maxWidth: .infinity, minHeight: touch ? SH.Height.touch : SHContextMetrics.buttonHeight)
-                .background(primary ? AnyShapeStyle(configuration.isPressed && enabled ? sh.lanternPressed : active ? sh.lanternHover : sh.lantern)
+                .background(primary ? AnyShapeStyle(configuration.isPressed && enabled ? sh.primaryPressed : active ? sh.primaryHover : sh.primary)
                                     : AnyShapeStyle(active ? sh.bgHover : sh.bgWindow), in: shape)
                 .overlay { if !primary { shape.strokeBorder(sh.lineStrong, lineWidth: 1) } }
                 .contentShape(shape)

@@ -82,13 +82,12 @@ struct SHHTMLBlock<Code: View>: View {
     /// The agent's markup in a body after our head: the policy comes first, so nothing in the page can loosen it; no
     /// network, frames, forms or plugins; inline scripts and styles run. Theme colors are CSS variables the page may use.
     static func document(source: String, colors: ThemeColors, dark: Bool, revision: String) -> String? {
-        guard source.utf8.count <= SHHTMLMetrics.maximumSourceBytes, let fontData = MermaidRenderer.fontData else { return nil }
+        guard source.utf8.count <= SHHTMLMetrics.maximumSourceBytes else { return nil }
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-        <style>@font-face{font-family:Geist;src:url(data:font/otf;base64,\(fontData)) format('opentype')}
-        :root{color-scheme:\(dark ? "dark" : "light");--bg:\(colors.bgBase);--bg-raised:\(colors.bgRaised);--bg-sunken:\(colors.bgSunken);--text:\(colors.textPrimary);--text-secondary:\(colors.textSecondary);--text-tertiary:\(colors.textTertiary);--line:\(colors.lineSubtle);--line-strong:\(colors.lineStrong);--accent:\(colors.running);--accent-tint:\(colors.runningTint);--done:\(colors.done);--failed:\(colors.failed)}
-        html{background:transparent;overflow:hidden}body{margin:\(Int(SH.Space.xl))px;font:\(SHTextStyle.body.size)px/1.5 Geist,-apple-system,sans-serif;color:var(--text);overflow:hidden}</style>
+        <style>        :root{color-scheme:\(dark ? "dark" : "light");--bg:\(colors.bgBase);--bg-raised:\(colors.bgRaised);--bg-sunken:\(colors.bgSunken);--text:\(colors.textPrimary);--text-secondary:\(colors.textSecondary);--text-tertiary:\(colors.textTertiary);--line:\(colors.lineSubtle);--line-strong:\(colors.lineStrong);--accent:\(colors.running);--accent-tint:\(colors.runningTint);--done:\(colors.done);--failed:\(colors.failed)}
+        html{background:transparent;overflow:hidden}body{margin:\(Int(SH.Space.xl))px;font:\(SHTextStyle.body.size)px/1.5 \(SHFonts.sansCSS);color:var(--text);overflow:hidden}</style>
         <script>(() => {
           const report = () => window.webkit.messageHandlers.diagram.postMessage({revision:'\(revision)',state:'ready',
             height:Math.ceil(document.body.getBoundingClientRect().bottom + parseFloat(getComputedStyle(document.body).marginBottom))});

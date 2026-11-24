@@ -20,6 +20,8 @@ public final class SHPalette: Sendable {
     public let bgBubble: Color
     public let bgHover: Color
     public let bgSelected: Color
+    /// The sidebar's glass panel.
+    public let bgGlass: Color
     /// SettingsProjects' selected navigation row; custom themes keep their selection role.
     public let settingsNavSelected: Color
     /// Muted Settings metadata in SettingsProjects; custom themes keep textTertiary.
@@ -55,6 +57,9 @@ public final class SHPalette: Sendable {
     public let textSecondary: Color
     public let textTertiary: Color
     public let textOnLantern: Color
+    /// The primary action: its fill and what sits on it.
+    public let primary: Color
+    public let textOnPrimary: Color
     // Brand and state
     public let lantern: Color
     public let lanternText: Color
@@ -84,6 +89,9 @@ public final class SHPalette: Sendable {
     public let focusDivider: Color
     /// `.shPopover()`'s shadow, the only shadow in the system.
     public let popoverShadow: Color
+    /// The `lift` shadow's close and soft layers (`View.shLift`).
+    public let liftNear: Color
+    public let liftFar: Color
     /// Behind the command palette: black at 30% in both appearances (Composer board).
     public let scrim: Color
     /// Behind the Export sheet and an open image: black at 55% in both appearances (DZExport).
@@ -100,10 +108,10 @@ public final class SHPalette: Sendable {
     public let islandFill: Color
     /// The design canvas's selection handles: white squares on a `running` line (SHDesignTool).
     public let selectionHandle: Color
-    /// The primary button's fill lifted on hover and sunk while pressed, and the dangerFill
-    /// button's sunk fill (the Controls board's hexes; `SHButtonFills`).
-    public let lanternHover: Color
-    public let lanternPressed: Color
+    /// The primary fill lifted on hover and sunk while pressed (mixed toward `textOnPrimary` and
+    /// darkened), and the dangerFill button's sunk fill (`SHButtonFills`).
+    public let primaryHover: Color
+    public let primaryPressed: Color
     public let failedPressed: Color
     /// The switch knob, on and off.
     public let knobOn: Color
@@ -155,24 +163,25 @@ public final class SHPalette: Sendable {
         bgBubble = role(\.bgBubble)
         bgHover = role(\.bgHover)
         bgSelected = role(\.bgSelected)
+        bgGlass = role(\.bgGlass)
         settingsNavSelected = bgSelected
         lineSubtle = role(\.lineSubtle)
         lineStrong = role(\.lineStrong)
         textPrimary = role(\.textPrimary)
         textSecondary = role(\.textSecondary)
         textTertiary = role(\.textTertiary)
-        settingsMuted = theme.id == "shepherd-design" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
-        projectDivider = theme.id == "shepherd-design" ? Color(light: l.lineSubtle, dark: "#22262a") : lineSubtle
-        projectRowDivider = theme.id == "shepherd-design" ? Color(light: l.lineSubtle, dark: "#1b1e21") : lineSubtle
+        settingsMuted = textTertiary
+        projectDivider = lineSubtle
+        projectRowDivider = lineSubtle
         func failedTile(_ colors: ThemeColors) -> HexColor {
             let color = HexColor(colors.failed) ?? HexColor(red: 1, green: 0, blue: 1)
             return HexColor(red: color.red, green: color.green, blue: color.blue, alpha: 0.12)
         }
         subagentFailureTile = Color(light: failedTile(l), dark: failedTile(d))
-        subagentFailureBorder = theme.id == "shepherd-design" ? Color(light: l.failedTint, dark: "#5a2a2a") : mix(\.failed, \.bgWindow, portion: 0.34)
-        subagentChipOn = theme.id == "shepherd-design" ? Color(light: l.bgBubble, dark: "#23272c") : bgSelected
-        subagentChipOnBorder = theme.id == "shepherd-design" ? Color(light: l.lineStrong, dark: "#3a3f45") : lineStrong
-        subagentControlText = theme.id == "shepherd-design" ? Color(light: l.textSecondary, dark: "#c1c5cb") : textSecondary
+        subagentFailureBorder = mix(\.failed, \.bgWindow, portion: 0.34)
+        subagentChipOn = bgSelected
+        subagentChipOnBorder = lineStrong
+        subagentControlText = textSecondary
         projectCookieDanger = mix(\.failed, \.textPrimary, portion: 0.8)
         projectCookieConfirm = mix(\.failed, \.textOnLantern, portion: 0.75)
         projectCookieConfirmHover = mix(\.failed, \.textOnLantern, portion: 0.75, brightness: 0.94)
@@ -183,12 +192,14 @@ public final class SHPalette: Sendable {
                                    dark: HexColor(red: shadeDark.red, green: shadeDark.green, blue: shadeDark.blue, alpha: 0.65))
         tabTileViolet = theme.id == "shepherd-design" ? Color(light: "#635bff", dark: "#635bff") : syn(\.keyword)
         tabTileOrange = theme.id == "shepherd-design" ? Color(light: "#f46800", dark: "#f46800") : role(\.lantern)
-        projectEditorBackground = theme.id == "shepherd-design" ? Color(light: l.bgSunken, dark: "#111316") : bgSunken
-        projectEditorHeader = theme.id == "shepherd-design" ? Color(light: l.bgRaised, dark: "#15171a") : bgRaised
-        projectMarkdownHeading = theme.id == "shepherd-design" ? Color(light: ls.type, dark: "#79aaff") : syn(\.type)
-        projectMarkdownCode = theme.id == "shepherd-design" ? Color(light: ls.string, dark: "#efb550") : syn(\.string)
-        projectInstructionText = theme.id == "shepherd-design" ? Color(light: l.textPrimary, dark: "#b7bec7") : textSecondary
+        projectEditorBackground = bgSunken
+        projectEditorHeader = bgRaised
+        projectMarkdownHeading = syn(\.type)
+        projectMarkdownCode = syn(\.string)
+        projectInstructionText = textPrimary
         textOnLantern = role(\.textOnLantern)
+        primary = role(\.primary)
+        textOnPrimary = role(\.textOnPrimary)
         lantern = role(\.lantern)
         lanternText = role(\.lanternText)
         lanternTint = role(\.lanternTint)
@@ -218,6 +229,8 @@ public final class SHPalette: Sendable {
                              dark: HexColor(red: runningDark.red, green: runningDark.green, blue: runningDark.blue, alpha: 0.34))
         popoverShadow = Color(light: HexColor(red: 20 / 255, green: 20 / 255, blue: 20 / 255, alpha: 0.12),
                               dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.55))
+        liftNear = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.04), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.3))
+        liftFar = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.05), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0))
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
         scrim = Color(light: scrimBlack, dark: scrimBlack)
         let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
@@ -229,10 +242,11 @@ public final class SHPalette: Sendable {
         islandSecondary = Color(light: islandWhite(0.55), dark: islandWhite(0.55))
         islandFill = Color(light: islandWhite(0.14), dark: islandWhite(0.14))
         selectionHandle = Color(light: "#ffffff", dark: "#ffffff")
-        lanternHover = Color(light: SHButtonFills.lanternHover.light, dark: SHButtonFills.lanternHover.dark)
-        lanternPressed = Color(light: SHButtonFills.lanternPressed.light, dark: SHButtonFills.lanternPressed.dark)
+        primaryHover = mix(\.primary, \.textOnPrimary, portion: 0.88)
+        primaryPressed = mix(\.primary, \.primary, portion: 1, brightness: 0.85)
         failedPressed = Color(light: SHButtonFills.failedPressed.light, dark: SHButtonFills.failedPressed.dark)
-        knobOn = Color(light: "#ffffff", dark: "#ffffff")
+        // On the primary fill: white on ink in light, ink on near-white in dark.
+        knobOn = textOnPrimary
         knobOff = Color(light: "#ffffff", dark: "#c9ccd1")
         knobShadow = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.2), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.3))
         windowClose = Color(light: "#ff5f57", dark: "#ff5f57")
@@ -253,11 +267,8 @@ public final class SHPalette: Sendable {
     }
 }
 
-/// The filled buttons' hover and pressed fills, as the Controls board draws them (light, dark):
-/// primary lifts on hover and sinks while pressed; dangerFill stays put on hover and sinks.
+/// The dangerFill button's sunk fill (light, dark): it stays put on hover and sinks while pressed.
 enum SHButtonFills {
-    static let lanternHover = (light: "#eca63a", dark: "#f7b84f")
-    static let lanternPressed = (light: "#cf8a1c", dark: "#d9922a")
     static let failedPressed = (light: "#bf3a35", dark: "#d24f4b")
 }
 

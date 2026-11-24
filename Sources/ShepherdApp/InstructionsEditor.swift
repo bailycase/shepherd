@@ -235,8 +235,8 @@ struct InstructionsEditorStyles {
 
     init(scale: CGFloat, project: Bool = false, plain: Bool = false) {
         let size = (project ? AppLayout.projectsHostSize : AppLayout.instructionsEditorTextSize) * scale
-        let font = NSFont(name: "GeistMono-Regular", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
-        let bold = NSFont(name: "GeistMono-SemiBold", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .semibold)
+        let font = SHFonts.platform(mono: true, weight: .regular, size: size)
+        let bold = SHFonts.platform(mono: true, weight: .semibold, size: size)
         let lineHeight = (plain ? AppLayout.subagentInstructionLineHeight : project ? AppLayout.projectEditorLineHeight : AppLayout.instructionsEditorLineHeight) * scale
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight
@@ -257,7 +257,7 @@ struct InstructionsEditorStyles {
         let right = NSMutableParagraphStyle()
         right.alignment = .right
         numbers = [
-            .font: NSFont(name: "GeistMono-Regular", size: numberSize) ?? .monospacedSystemFont(ofSize: numberSize, weight: .regular),
+            .font: SHFonts.platform(mono: true, weight: .regular, size: numberSize),
             .foregroundColor: NSColor(Color.sh.textTertiary),
             .paragraphStyle: right,
         ]

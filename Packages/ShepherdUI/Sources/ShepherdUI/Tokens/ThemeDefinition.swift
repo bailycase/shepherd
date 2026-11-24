@@ -76,6 +76,8 @@ public struct ThemeColors: Codable, Hashable, Sendable {
     public var bgHover: String
     /// Selected row (translucent).
     public var bgSelected: String
+    /// The sidebar's glass panel (translucent).
+    public var bgGlass: String
 
     // Lines and text
     /// Dividers, row separators, card borders.
@@ -91,8 +93,13 @@ public struct ThemeColors: Codable, Hashable, Sendable {
     /// Text on brand (lantern) fills.
     public var textOnLantern: String
 
+    /// The primary action's fill (send, the main button, a picked option).
+    public var primary: String
+    /// Text and glyphs on a `primary` fill.
+    public var textOnPrimary: String
+
     // Brand and state
-    /// Brand, primary action, needs-you.
+    /// Brand, needs-you.
     public var lantern: String
     /// Lantern text on its tint.
     public var lanternText: String
@@ -115,9 +122,10 @@ public struct ThemeColors: Codable, Hashable, Sendable {
 
     public init(
         bgBase: String, bgWindow: String, bgRaised: String, bgSunken: String, bgBubble: String,
-        bgHover: String, bgSelected: String,
+        bgHover: String, bgSelected: String, bgGlass: String,
         lineSubtle: String, lineStrong: String,
         textPrimary: String, textSecondary: String, textTertiary: String, textOnLantern: String,
+        primary: String, textOnPrimary: String,
         lantern: String, lanternText: String, lanternTint: String,
         running: String, runningTint: String, textOnRunning: String,
         done: String, doneTint: String,
@@ -130,12 +138,15 @@ public struct ThemeColors: Codable, Hashable, Sendable {
         self.bgBubble = bgBubble
         self.bgHover = bgHover
         self.bgSelected = bgSelected
+        self.bgGlass = bgGlass
         self.lineSubtle = lineSubtle
         self.lineStrong = lineStrong
         self.textPrimary = textPrimary
         self.textSecondary = textSecondary
         self.textTertiary = textTertiary
         self.textOnLantern = textOnLantern
+        self.primary = primary
+        self.textOnPrimary = textOnPrimary
         self.lantern = lantern
         self.lanternText = lanternText
         self.lanternTint = lanternTint

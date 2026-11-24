@@ -84,8 +84,6 @@ public struct ShepherdMacApp: App {
     public init() {
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
-        // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
-        SHFonts.register()
         let launch = ShepherdLaunch<ShepherdViewModel>(
             // Acquire the workspace before constructing anything that can restore agents or write it.
             start: {

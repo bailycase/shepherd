@@ -24,8 +24,7 @@ struct ReviewFoldedWidthTests {
 
     /// Independently measure expected text, without warming the model's width cache/probe.
     private func widths(_ file: DiffFile, scale: CGFloat) -> (old: CGFloat, new: CGFloat) {
-        let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * scale)
-            ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * scale, weight: .regular)
+        let font = NSFont.monospacedSystemFont(ofSize: SHTextStyle.code.size * scale, weight: .regular)
         var old: CGFloat = 0, new: CGFloat = 0
         for line in file.hunks.flatMap(\.lines) {
             let text = NSAttributedString(string: line.text, attributes: [.font: font])

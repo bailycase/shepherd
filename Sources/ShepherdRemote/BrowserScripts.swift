@@ -110,7 +110,7 @@ public enum BrowserScripts {
         box.style.cssText = 'position: fixed; box-sizing: border-box; border: 2px solid ' + colors.accent + '; border-radius: 10px; background: '
           + colors.tint + '; pointer-events: none; display: none;';
         tag.style.cssText = 'position: fixed; height: 20px; display: none; align-items: center; gap: 6px; padding: 0 7px; border-radius: 4px; background: '
-          + colors.accent + '; color: ' + colors.text + '; font: 10.5px/20px "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; pointer-events: none;';
+          + colors.accent + '; color: ' + colors.text + '; font: 10.5px/20px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; pointer-events: none;';
       };
       const hide = () => { if (box) { box.style.display = 'none'; tag.style.display = 'none'; } };
       const show = (element) => {

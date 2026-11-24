@@ -30,17 +30,16 @@ struct ProjectBrowserControlTests {
     }
 
     @Test @MainActor func fractionalFontsKeepTheBoardsTextWidths() {
-        SHFonts.register()
         let scale = ThemeStore.shared.textScale
         defer { ThemeStore.shared.textScale = scale }
         ThemeStore.shared.textScale = 1
         let sample = "Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other spaces"
-        let font = CTFontCreateWithName("Geist-Regular" as CFString, 13.5, nil)
+        let font = NSFont.systemFont(ofSize: 13.5)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: font]))
         let expected = CTLineGetTypographicBounds(line, nil, nil, nil)
         let host = NSHostingView(rootView: Text(sample).font(.shSans(13.5)).fixedSize())
         #expect(abs(host.fittingSize.width - expected) <= 1)
-        #expect(expected < 610, "13.5pt Geist must not round up to 14pt")
+        #expect(abs(expected - CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: NSFont.systemFont(ofSize: 14)])), nil, nil, nil)) > 1, "13.5pt must not round up to 14pt")
     }
 
     @Test func projectsAndBrowserFillTheSettingsWidthAfterNavigationAndResize() async throws {

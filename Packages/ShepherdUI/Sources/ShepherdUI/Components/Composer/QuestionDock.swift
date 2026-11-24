@@ -521,8 +521,8 @@ struct SHQuestionRadio: View {
     var body: some View {
         let sh = Color.sh
         let M = SHQuestionDockMetrics.self
-        Circle().strokeBorder(picked ? sh.lantern : sh.lineStrong, lineWidth: M.radioLine)
-            .overlay { if picked { Circle().fill(sh.lantern).frame(width: M.radioDot, height: M.radioDot) } }
+        Circle().strokeBorder(picked ? sh.primary : sh.lineStrong, lineWidth: M.radioLine)
+            .overlay { if picked { Circle().fill(sh.primary).frame(width: M.radioDot, height: M.radioDot) } }
             .frame(width: M.radio, height: M.radio)
             .accessibilityHidden(true)
     }
@@ -680,12 +680,12 @@ private struct SHQuestionDockButton: View {
         let shape = RoundedRectangle(cornerRadius: M.controlRadius)
         let pressed = enabled && configuration.isPressed
         let fill: Color = primary
-            ? (pressed ? sh.lanternPressed : hovering && enabled ? sh.lanternHover : sh.lantern)
+            ? (pressed ? sh.primaryPressed : hovering && enabled ? sh.primaryHover : sh.primary)
             : (pressed ? sh.bgSelected : hovering && enabled ? sh.bgHover : .clear)
         configuration.label
             .font(.shSans(M.buttonSize, primary ? .semibold : .regular))
             .lineLimit(1)
-            .foregroundStyle(primary ? sh.textOnLantern : hovering && enabled ? sh.textPrimary : sh.textSecondary)
+            .foregroundStyle(primary ? sh.textOnPrimary : hovering && enabled ? sh.textPrimary : sh.textSecondary)
             .padding(.horizontal, primary ? M.answerPadding : M.skipPadding)
             .frame(height: SH.Height.controlM)
             .background(fill, in: shape)
@@ -708,10 +708,10 @@ struct SHQuestionDockNumber: View {
         let sh = Color.sh
         let side = SHQuestionDockMetrics.yesNoNumber
         Text("\(number)").font(.shMono(SHQuestionDockMetrics.numberSize, picked ? .semibold : .regular)).monospacedDigit()
-            .foregroundStyle(picked ? sh.textOnLantern : sh.textSecondary)
+            .foregroundStyle(picked ? sh.textOnPrimary : sh.textSecondary)
             .frame(width: side, height: side)
-            .background(picked ? sh.lantern : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-            .shBorder(picked ? sh.lantern : sh.lineStrong, radius: SH.Radius.xs)
+            .background(picked ? sh.primary : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+            .shBorder(picked ? sh.primary : sh.lineStrong, radius: SH.Radius.xs)
             .accessibilityHidden(true)
     }
 }
