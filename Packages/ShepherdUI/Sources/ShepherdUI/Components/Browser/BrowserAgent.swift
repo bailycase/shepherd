@@ -20,26 +20,52 @@ public enum SHBrowserAgentMetrics {
     public static let cardOther: CGFloat = SH.Space.m
 }
 
-/// The 2pt `running` ring inset the page.
+/// The 2pt ring inset the page: `running` blue, and on the Mac the board's gray (GXPaneBrowserAgent's `.web.driven`).
 public struct SHAgentRing: View {
     public init() {}
 
+    private var color: Color {
+        #if os(macOS)
+        Color.sh.textSecondary
+        #else
+        Color.sh.running
+        #endif
+    }
+
     public var body: some View {
         Rectangle()
-            .strokeBorder(Color.sh.running, lineWidth: SHBrowserAgentMetrics.ringWidth)
+            .strokeBorder(color, lineWidth: SHBrowserAgentMetrics.ringWidth)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }
 
-/// The pointer glyph: the board's arrow, `running` with a white edge.
+/// The pointer glyph: the board's arrow, `running` with a white edge; on the Mac the system cursor's look,
+/// a white arrow with a dark edge.
 public struct SHAgentPointer: View {
     public init() {}
 
+    private var fill: Color {
+        #if os(macOS)
+        Color.sh.selectionHandle
+        #else
+        Color.sh.running
+        #endif
+    }
+
+    private var edge: Color {
+        #if os(macOS)
+        // Dark in both appearances: the page under it is usually light.
+        Color.sh.textOnLantern
+        #else
+        Color.sh.selectionHandle
+        #endif
+    }
+
     public var body: some View {
         SHAgentPointerShape()
-            .fill(Color.sh.running)
-            .overlay { SHAgentPointerShape().stroke(Color.sh.selectionHandle, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)) }
+            .fill(fill)
+            .overlay { SHAgentPointerShape().stroke(edge, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)) }
             .frame(width: SHBrowserAgentMetrics.pointerWidth, height: SHBrowserAgentMetrics.pointerHeight)
             .allowsHitTesting(false)
             .accessibilityHidden(true)

@@ -64,7 +64,7 @@ struct BrowserTabsControlTests {
         #expect(!newTab.isEnabled, "New tab is disabled at the cap")
         #expect((try? window.press("New tab")) == nil, "and a press is refused")
         #expect(log.lines.isEmpty, "\(log.lines)")
-        #expect(window.controls().compactMap(\.label).filter { $0.hasPrefix("Close ") && $0 != "Close other tabs" } == ["Close Checkout"], "only the shown tab offers close with eight")
+        #expect(window.controls().compactMap(\.label).filter { $0.hasPrefix("Close ") && $0 != "Close other tabs" }.count == 8, "every tab offers close, as the board draws them")
         #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty,
                 "\(ControlPress.undersized(window.controls(), minimum: .desktop))")
         #expect(ControlPress.controls(in: "All tabs", under: window.host).count >= 9, "eight rows and Close other tabs")

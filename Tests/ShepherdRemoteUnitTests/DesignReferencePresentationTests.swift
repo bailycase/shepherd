@@ -168,6 +168,33 @@ struct DesignMentionTests {
         #expect(DesignReferencePresentation.showLatest(moved) == "Show v14" && DesignReferencePresentation.showLatest(.deleted) == nil)
     }
 
+    @Test(arguments: [
+        (DesignReferencePayload.Proposal(kind: .draft), "Drew a board", "Draft"),
+        (DesignReferencePayload.Proposal(kind: .change), "Changed", "From revision 13"),
+        (DesignReferencePayload.Proposal(kind: .draft, state: .added), "Drew a board", "Added to the design"),
+        (DesignReferencePayload.Proposal(kind: .change, state: .added), "Changed", "Applied to the design"),
+        (DesignReferencePayload.Proposal(kind: .change, state: .discarded), "Changed", "Discarded"),
+    ])
+    func theMacCardHeadSaysWhatTheAgentDid(proposal: DesignReferencePayload.Proposal, label: String, tag: String) {
+        #expect(DesignReferencePresentation.boardHeader(proposal, revision: 13) == .init(label: label, tag: tag))
+    }
+
+    @Test func theMacCardNamesWhatTheAgentDidAndWhereTheBoardStands() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"), revision: 13))
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 13, capturedAt: 0, width: 560, height: 410)
+        payload.boardPageTitle = "Checkout"
+        let shown = DesignReferencePresentation.boardFooter(payload, board: "A · Funnel first")
+        #expect(shown.title == "Checkout redesign, A · Funnel first" && shown.meta == ["Checkout", "560 × 410", "revision 13"])
+        payload.proposal = .init(kind: .draft)
+        let draft = DesignReferencePresentation.boardFooter(payload, board: "A · Funnel first")
+        #expect(draft.title == "A · Funnel first" && draft.meta == ["Draft for Checkout redesign", "560 × 410"])
+        let moved = DesignReferenceFreshness.updatedSince(latest: 15, changes: [])
+        #expect(DesignReferencePresentation.boardNote(moved, shown: 13) == "Changed since. This is revision 13; the board is at 15.")
+        #expect(DesignReferencePresentation.boardNote(.current, shown: 13) == nil)
+        #expect(DesignReferencePresentation.boardNote(.deleted, shown: 13) == DesignReferencePresentation.boardNote(.deleted))
+    }
+
     @Test func eachDesignShowIsItsOwnCardNeverJoinedToTheCallsAroundIt() {
         func call(_ name: String, board: UUID?) -> NativeActivityCall {
             var message = NativeThreadMessage(entryID: "e-\(UUID())", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "ok")], toolName: name,

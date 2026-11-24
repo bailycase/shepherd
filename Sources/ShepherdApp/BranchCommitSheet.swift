@@ -58,19 +58,17 @@ struct BranchCommitSheet: View {
     }
 
     var body: some View {
-        SHDialog("Commit", message: subtitle, monoMessage: true, width: AppLayout.branchCommitSheetWidth) {
+        SHCardSheet("Commit", width: AppLayout.branchCommitSheetWidth) {
             content
-        } status: {
-            if let text = error ?? problem {
-                SHDialogStatus(text, isError: error != nil)
-            }
         } actions: {
-            Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
-            Button("Commit") { commit(push: false) }.buttonStyle(.sh(.secondary)).disabled(problem != nil || running)
+            Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.shCardSheet(.dim)).keyboardShortcut(.cancelAction)
             Button("Commit & push") { commit(push: true) }
-                .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+                .buttonStyle(.shCardSheet(.link))
                 .disabled(problem != nil || running || pushProblem != nil)
                 .help(pushProblem ?? "Push without force after committing")
+            Button("Commit") { commit(push: false) }
+                .buttonStyle(.shCardSheet(.pill)).keyboardShortcut(.defaultAction)
+                .disabled(problem != nil || running)
         }
         .shAnimation(.content, value: drafting)
         .task {
@@ -82,12 +80,6 @@ struct BranchCommitSheet: View {
     private var pushProblem: String? {
         guard let form else { return "" }
         return Self.pushProblem(form, amend: amend)
-    }
-
-    private var subtitle: String? {
-        guard let form else { return unavailable == nil ? "Reading the checkout…" : nil }
-        let files = "\(form.selected.count) of \(form.info.files.count) file\(form.info.files.count == 1 ? "" : "s")"
-        return form.info.branch.map { "\($0) · \(files)" } ?? files
     }
 
     /// Why Commit can't run yet, else nil.
@@ -103,33 +95,34 @@ struct BranchCommitSheet: View {
 
     @ViewBuilder private var content: some View {
         if let unavailable {
-            SHBanner(.failed, title: "Can’t commit here", message: unavailable).padding(.horizontal, SHDialogMetrics.inset)
+            SHBanner(.failed, title: "Can’t commit here", message: unavailable).padding(.top, SHCardSheetMetrics.labelTop)
         } else if let form = Binding($form) {
             fields(form)
+        } else {
+            Text("Reading the checkout…").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+                .padding(.top, SHCardSheetMetrics.labelTop)
         }
     }
 
     private func fields(_ form: Binding<Form>) -> some View {
         let sh = Color.sh
         let files = form.wrappedValue.info.files
-        return VStack(alignment: .leading, spacing: SH.Space.l) {
-            VStack(spacing: 0) {
-                HStack(spacing: SH.Space.m) {
-                    Toggle(sources: Binding(get: { files.map { form.wrappedValue.selected.contains($0.id) } }, set: { ticks in
-                        form.wrappedValue.selected = Set(zip(files, ticks).filter(\.1).map(\.0.id))
-                    }), isOn: \.self) { Text("Changes").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary) }
-                    .toggleStyle(.shCheckbox)
-                    Spacer(minLength: SH.Space.s)
-                    SHDiffStat(added: files.reduce(0) { $0 + $1.added }, removed: files.reduce(0) { $0 + $1.removed },
-                               font: .sh(.micro, weight: .regular))
-                }
-                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
-                .frame(minHeight: SH.Height.row)
-                SHHairline()
+        let selected = form.wrappedValue.selected
+        return VStack(alignment: .leading, spacing: 0) {
+            // The label takes all of them or none: the board has no header row.
+            Button {
+                form.wrappedValue.selected = selected.count == files.count ? [] : Set(files.map(\.id))
+            } label: {
+                SHCardSheetLabel("Changes", count: "\(selected.count) of \(files.count)")
+            }
+            .buttonStyle(.plain)
+            .help(selected.count == files.count ? "Untick every file" : "Tick every file")
+            SHCardSheetList {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(reviewCommitRows(files, selected: form.wrappedValue.selected)) { row in
-                            SHCommitFileRow(SHCommitFileRow.Item(row), showsStatus: true) {
+                    LazyVStack(spacing: SHCardSheetMetrics.rowGap) {
+                        ForEach(reviewCommitRows(files, selected: selected)) { row in
+                            SHCardSheetFileRow(name: row.name, directory: row.directory.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                                               checked: row.selected, added: row.added, removed: row.removed, help: SHFileStatus(row.status).label) {
                                 if form.wrappedValue.selected.remove(row.id) == nil { form.wrappedValue.selected.insert(row.id) }
                             }
                             .equatable()
@@ -140,30 +133,48 @@ struct BranchCommitSheet: View {
                 .frame(maxHeight: AppLayout.commitFileListMaxHeight)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            .shCard()
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                HStack {
-                    Text("Message").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
-                    Spacer(minLength: SH.Space.s)
-                    Button("Generate from diff", action: generate)
-                        .buttonStyle(.shLink(font: .sh(.caption)))
-                        .disabled(drafting || form.wrappedValue.selected.isEmpty)
+            SHCardSheetLabel("Message") {
+                Button("Generate from diff", action: generate)
+                    .buttonStyle(.shCardSheet(.small))
+                    .disabled(drafting || selected.isEmpty)
+            }
+            SHCardSheetField {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    TextField("Summary", text: form.title, prompt: Text("Summary").foregroundStyle(sh.textTertiary), axis: .vertical)
+                        .lineLimit(1...3)
+                        .font(.sh(.ui, weight: .regular))
+                        .foregroundStyle(sh.textPrimary)
+                        .accessibilityLabel("Commit summary")
+                    TextField("Description", text: form.details, prompt: Text("Description (optional)").foregroundStyle(sh.textTertiary), axis: .vertical)
+                        .lineLimit(1...8)
+                        .font(.sh(.ui, weight: .regular))
+                        .foregroundStyle(sh.textSecondary)
+                        .accessibilityLabel("Commit description")
+                    if drafting || drafted {
+                        Text(drafting ? "Drafting from the diff…" : "Drafted from the diff · edit anything")
+                            .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    }
                 }
-                SHCommitMessageEditor(title: form.title, message: form.details,
-                                      source: drafting ? .drafting : drafted ? .drafted : .written)
+                .textFieldStyle(.plain)
+                .tint(sh.lantern)
             }
             VStack(alignment: .leading, spacing: SH.Space.xs) {
                 Toggle("Amend the last commit", isOn: Binding(get: { amend }, set: setAmend))
                     .toggleStyle(.shCheckbox)
-                    .font(.sh(.caption))
-                    .foregroundStyle(sh.textSecondary)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(sh.textPrimary)
                     .disabled(form.wrappedValue.amendBlocked != nil)
                 if let reason = form.wrappedValue.amendBlocked ?? Self.amendedPushNote(form.wrappedValue, amend: amend) {
                     Text(reason).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                 }
             }
+            .padding(.top, SHCardSheetMetrics.amendTop)
+            if let text = error ?? problem, !text.isEmpty {
+                Text(text).font(.sh(.caption)).foregroundStyle(error != nil ? sh.failed : sh.textSecondary)
+                    .textSelection(.enabled)
+                    .padding(.top, SH.Space.m)
+            }
         }
-        .padding(.horizontal, SHDialogMetrics.inset)
         .disabled(running || form.wrappedValue.info.blocked != nil)
     }
 

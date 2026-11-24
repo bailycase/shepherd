@@ -2687,7 +2687,7 @@ struct ListPerformanceTests {
         ListPerf.settle(window)
         let scroll = try #require(ListPerf.scrollView(in: window))
 
-        let row = SHDensity.standard.rowHeight
+        let row = SHPaletteMetrics.rowHeight
         let cap = SHPaletteMetrics.placement(in: CGSize(width: 900, height: 700), rowHeight: row).maxListHeight
         let natural = SHPaletteMetrics.sectionHeight + CGFloat(count) * row
         #expect(abs(scroll.frame.height - min(natural, cap)) < 1, "list \(scroll.frame.height), rows \(natural), cap \(cap)")
@@ -2703,6 +2703,6 @@ struct ListPerformanceTests {
         ListPerf.time(window) { highlight.move(to: 200) }
 
         let visible = scroll.contentView.bounds
-        #expect(visible.minY > CGFloat(150) * SHDensity.standard.rowHeight, "scrolled to \(visible.minY)")
+        #expect(visible.minY > CGFloat(150) * SHPaletteMetrics.rowHeight, "scrolled to \(visible.minY)")
     }
 }

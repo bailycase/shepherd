@@ -5,7 +5,12 @@ import Testing
 @Suite("Browser tabs components")
 struct BrowserTabsComponentTests {
     @Test func theBoardsMeasures() {
+        #if os(macOS)
+        // GXPaneBrowserTabs: a 28pt tab in the 38pt strip.
+        #expect(SHBrowserTabsMetrics.stripHeight == 38 && SHBrowserTabsMetrics.tabHeight == 28)
+        #else
         #expect(SHBrowserTabsMetrics.stripHeight == 38 && SHBrowserTabsMetrics.tabHeight == 26)
+        #endif
         #expect(SHBrowserTabsMetrics.menuWidth == 260 && SHBrowserTabsMetrics.favicon == 12 && SHBrowserTabsMetrics.unseenDot == 6)
         #expect(SHBrowserTabsMetrics.agentBarHeight == SHBrowserMetrics.consoleBarHeight, "the agent's bar is as tall as the console's")
         #expect(SHBrowserTabsMetrics.closeWidth >= 24, "a close button meets the desktop hit area")
