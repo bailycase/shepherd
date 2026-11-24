@@ -27,8 +27,8 @@ Run the smallest selection that protects the affected behavior. These are indepe
 not a checklist; replace the suite, test or file with the one relevant to the change:
 
 ```bash
-swift test --filter PaneNodeTests
-SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests/threadActivityIdle
+scripts/check.py ShepherdCoreUnitTests PaneNodeTests
+SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews scripts/check.py ShepherdPreviewTests ThreadPreviewTests/threadActivityIdle
 python3 scripts/pi_engine.py stage   # once; re-run after the pin changes
 PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test Tests/Extensions/instructions.test.mjs
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
@@ -36,10 +36,12 @@ python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
 
 Use the staged Node locally: older Node versions may lack the TypeScript transform mode some extension tests need. Use `Tests/Extensions/*.test.mjs` for the whole suite.
 
-`swift test` builds before running; a separate `swift build` is unnecessary. Keep build flags and
-configuration consistent across runs. Use `--skip-build` only after a successful build with the
-same inputs and configuration, never after edits. Check that the intended tests actually ran.
-Filtering narrows execution, not the package build graph; a cold build can still be expensive.
+`scripts/check.py <TestTarget> [filter]` builds only that test target (its folder under `Tests/`)
+and its dependencies, then runs it with the filter. `swift test --filter` builds every test target
+first: about twice the CPU of the app unit target alone, cold. The script holds a per-user lock,
+so builds from several worktrees queue instead of competing for every core, and it prints errors,
+failing tests and the run summary (`--verbose` prints everything). Validate once edits settle, not
+after each one. Check that the summary counts the tests you meant to run.
 Use [Xcode](build-and-run.md) when the change needs app-level validation, not as a test prerequisite.
 Docs-only changes need the applicable docs guards, not Swift builds or tests.
 
