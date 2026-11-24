@@ -46,8 +46,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 - Branch from `nightly` (`feat/…`, `fix/…`), open the PR into `nightly`. Conventional commits
   (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). No AI attribution in commits or PR bodies.
 - A change ends merged into `nightly`, not at an open PR, unless the user says to hold it. Open it
-  ready for review (never a draft): the repo then squash auto-merges it. Confirm it merged; if
-  auto-merge didn't fire, `gh pr merge --squash`. GitHub deletes the branch; remove your worktree.
+  ready for review (never a draft), then `gh pr merge --squash` once checks pass and confirm it
+  merged. GitHub deletes the branch; remove your worktree.
 - Each merge into `nightly` publishes a Shepherd Nightly build. That is the normal end of a task,
   not a release. When landing several PRs at once, merge them together rather than spread out.
   TestFlight, `master` and release tags only when the user asks ([docs/releases.md](docs/releases.md)).
