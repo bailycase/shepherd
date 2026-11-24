@@ -77,6 +77,14 @@ jobs:
           # Reuse products only while shared library inputs match, not across model/ABI changes.
           shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
           echo "shared=$shared" >> "$GITHUB_OUTPUT"
+      # Cloning the Swift packages (Sentry's repository above all) took about 3 minutes per build.
+      # They change only with Package.resolved, and the step below keeps SourcePackages.
+      - name: Cache Swift package checkouts
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-release-${{ runner.os }}-${{ hashFiles('Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
       # No DerivedData cache: the shared-input key changed on nearly every commit, so it never
       # restored and only spent time saving. This marker discards any products that predate a change.
       - name: Start over when shared build inputs changed
@@ -89,6 +97,17 @@ jobs:
             find build -mindepth 1 -maxdepth 1 ! -name SourcePackages -exec rm -rf {} +
           fi
           mkdir -p build && echo "$VERSION" > "$marker"
+
+      # Reuse compiler results, not the build graph or the assembled app. Tagged releases
+      # remain cold because Actions caches from nightly aren't visible to tag runs.
+      - name: Cache Nightly compiler results
+        if: env.CHANNEL == 'nightly'
+        uses: actions/cache@v4
+        with:
+          path: build/CompilationCache.noindex
+          key: compile-nightly-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}
+          restore-keys: |
+            compile-nightly-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-
 
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
@@ -136,6 +155,7 @@ jobs:
       - name: Build ${{ env.APP_NAME }}
         env:
           SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_SENTRY_DSN }}
+          COMPILATION_CACHE: ${{ env.CHANNEL == 'nightly' && 'YES' || 'NO' }}
         run: |
           xcodebuild \
             -project Shepherd.xcodeproj \
@@ -144,8 +164,10 @@ jobs:
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build \
             -onlyUsePackageVersionsFromResolvedFile \
+            -showBuildTimingSummary \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
+            COMPILATION_CACHE_ENABLE_CACHING="$COMPILATION_CACHE" \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             SHEPHERD_SENTRY_DSN="$SHEPHERD_SENTRY_DSN" \
