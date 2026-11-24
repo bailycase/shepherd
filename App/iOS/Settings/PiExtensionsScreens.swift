@@ -87,7 +87,7 @@ struct PiExtensionSections: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("\(host.name) clones it with its Git sign-in and switches it on. Its npm dependencies must be committed with it.")
+                Text("An https:// or ssh address. \(host.name) clones it with its Git sign-in and switches it on. Its npm dependencies must be committed with it.")
             }
             .confirmationDialog("Remove \(removing?.name ?? "this extension") from \(host.name)?", isPresented: Binding(
                 get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { item in

@@ -9,7 +9,8 @@ import Testing
 
 /// A client managing this Mac's pi extensions over the listener (`hostExtensions.v1`): the host's
 /// own Settings ▸ Tools ▸ Extensions model does the work against a scratch pi home. An extension is
-/// added from a Git repository (a local `file://` one), listed as the Mac's row words it, switched
+/// added from a Git repository by its https address (git reaches a local one through a scoped
+/// `insteadOf`: no network), listed as the Mac's row words it, switched
 /// off and on in the home's settings.json, and removed with its files. A failure comes back as the
 /// Mac's reason, not as a list.
 @Suite("Remote extensions", .mainActorExclusive)
@@ -31,6 +32,14 @@ struct RemoteExtensionsFlowTests {
                           ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "provider"]] {
             try SkillsGit.run(["-C", repository.path] + arguments, in: nil)
         }
+
+        // `https://example.invalid/<unique>/acme-login` is the local repository for the git this test runs,
+        // and only that prefix: GIT_CONFIG_* reach every git the host starts.
+        let base = "https://example.invalid/\(UUID().uuidString)/"
+        setenv("GIT_CONFIG_COUNT", "1", 1)
+        setenv("GIT_CONFIG_KEY_0", "url.file://\(dir.path)/.insteadOf", 1)
+        setenv("GIT_CONFIG_VALUE_0", base, 1)
+        defer { for name in ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"] { unsetenv(name) } }
 
         let host = try ScratchServer(pi: pi)
         defer { host.stop() }
@@ -62,7 +71,7 @@ struct RemoteExtensionsFlowTests {
         #expect(none.isEmpty)
 
         // Added from a repository: cloned on this Mac, switched on, worded as the Mac's row words it.
-        let url = "file://" + repository.path
+        let url = base + "acme-login"
         let added = try list(try await client.hostConfig(.extensionAddGit(url: url)))
         let row = try #require(added.first)
         #expect(added.count == 1 && row.name == "acme-login" && row.on && row.added && row.failure == nil)
@@ -90,7 +99,11 @@ struct RemoteExtensionsFlowTests {
             Issue.record("a non-repository address must be refused")
         } catch let error as RemoteHostClientError {
             guard case .rejected(_, let message) = error else { Issue.record("expected a rejection"); return }
-            #expect(message.contains("isn't a Git repository URL"))
+            #expect(message.contains("https:// or ssh"))
+        }
+        // Nor one on this Mac's own disk, or over a transport anyone on the way could tamper with.
+        for refused in ["file://" + repository.path, repository.path, "http://example.invalid/acme/pi-login", "git://example.invalid/acme/pi-login"] {
+            await #expect(throws: RemoteHostClientError.self, "\(refused)") { try await client.hostConfig(.extensionAddGit(url: refused)) }
         }
         #expect(try list(try await client.hostConfig(.extensionAddGit(url: url))).count == 1, "the same address again replaces its copy")
 

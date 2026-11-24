@@ -109,3 +109,17 @@ struct AddedExtensionTests {
         #expect(throws: YourPiFileError.self) { try setup.importer.addExtension(git: "file://" + setup.dir.appendingPathComponent("missing").path) }
     }
 }
+
+/// Which addresses another device may ask this Mac to clone.
+@Suite("Remote extension addresses")
+struct RemoteExtensionAddressTests {
+    @Test(arguments: [
+        ("https://github.com/acme/pi-login", true), ("ssh://git@github.com/acme/pi-login.git", true), ("git@github.com:acme/pi-login.git", true),
+        ("HTTPS://github.com/acme/pi-login", true),
+        ("file:///Users/alex/acme", false), ("/Users/alex/acme", false), ("http://github.com/acme/pi-login", false),
+        ("git://github.com/acme/pi-login", false), ("--upload-pack=touch /tmp/x", false), ("ext::sh -c touch% /tmp/x", false),
+    ])
+    func onlyEncryptedNetworkRepositories(url: String, allowed: Bool) {
+        #expect(YourPiImport.isNetworkGitURL(url) == allowed)
+    }
+}

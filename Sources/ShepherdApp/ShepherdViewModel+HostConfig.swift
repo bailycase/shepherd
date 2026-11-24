@@ -155,6 +155,10 @@ extension HostStores {
             guard !trimmed.isEmpty, trimmed.utf8.count <= HostConfigMapping.maxURLBytes else {
                 throw RemoteCreateAgentError("Enter a Git repository address.")
             }
+            // Another device never reaches this Mac's own disk, nor code an unencrypted hop could swap.
+            guard YourPiImport.isNetworkGitURL(trimmed) else {
+                throw RemoteCreateAgentError("From another device, add a repository by its https:// or ssh address.")
+            }
             await yourPi.addExtension(.git(trimmed))
             return try await extensionsAfter(YourPiModel.addExtensionRow)
         case .signIn(let id, let action):

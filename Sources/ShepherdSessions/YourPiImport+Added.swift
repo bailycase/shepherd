@@ -143,6 +143,15 @@ extension YourPiImport {
         }
     }
 
+    /// An address another device may ask this Mac to clone: an https or ssh repository (`git@host:path`
+    /// too), never one on this Mac's disk (`file://`, a path) nor over an unencrypted transport
+    /// (`http://`, `git://`) that anyone on the way could swap code into.
+    public static func isNetworkGitURL(_ url: String) -> Bool {
+        guard isGitURL(url) else { return false }
+        if let scheme = url.range(of: "://") { return ["https", "ssh"].contains(url[..<scheme.lowerBound].lowercased()) }
+        return true
+    }
+
     /// An address git clones over the network or from a local repository, never an option.
     static func isGitURL(_ url: String) -> Bool {
         guard !url.isEmpty, !url.hasPrefix("-"), !url.contains(where: \.isWhitespace) else { return false }
