@@ -31,37 +31,26 @@ struct BranchUpdateSheet: View {
     @State private var rebase = true
 
     var body: some View {
-        SHDialog("Update from origin/\(base)", message: subtitle, width: AppLayout.branchSheetWidth) {
-            VStack(alignment: .leading, spacing: SH.Space.l) {
-                SHSegmentedPicker("Update by", selection: $rebase, options: [(true, "Rebase"), (false, "Merge")])
-                    .fixedSize()
-                    .disabled(!isReady)
+        SHCardSheet("Update from origin/\(base)", message: message, width: AppLayout.branchSheetWidth) {
+            VStack(alignment: .leading, spacing: 0) {
                 switch stage {
                 case .conflict(let conflict):
-                    SHBanner(.failed, title: Self.conflictTitle(conflict),
-                             message: "Nothing is lost. Abort puts the branch back exactly as it was.") { EmptyView() }
-                    VStack(spacing: 0) {
+                    SHCardSheetLabel(Self.conflictLabel(conflict))
+                    SHCardSheetList {
                         ForEach(conflict.files, id: \.self) { file in
-                            HStack {
-                                Text(file).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
-                                Spacer(minLength: SH.Space.m)
-                                Text("both changed").font(.sh(.caption)).foregroundStyle(Color.sh.failed)
-                            }
-                            .frame(minHeight: SH.Height.row)
+                            let (directory, name) = reviewPathParts(file)
+                            SHCardSheetFileRow(name: name, directory: directory.trimmingCharacters(in: CharacterSet(charactersIn: "/")), word: "Conflict")
                         }
                     }
-                case .failed(let message):
-                    SHDialogStatus(message, isError: true)
+                    Text("Nothing is lost. Abort puts the branch back exactly as it was.")
+                        .font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                        .padding(.top, SH.Space.l)
+                case .failed(let text):
+                    updateBy
+                    Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.failed).textSelection(.enabled).padding(.top, SH.Space.m)
                 default:
-                    EmptyView()
+                    updateBy
                 }
-            }
-            .padding(.horizontal, SHDialogMetrics.inset)
-        } status: {
-            // Abort leads the footer, away from the ways forward.
-            if case .conflict(let conflict) = stage {
-                Button("Abort") { abort(conflict.kind) }.buttonStyle(.sh(.danger)).fixedSize()
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         } actions: {
             actions
@@ -73,34 +62,47 @@ struct BranchUpdateSheet: View {
         }
     }
 
+    private var updateBy: some View {
+        SHSegmentedPicker("Update by", selection: $rebase, options: [(true, "Rebase"), (false, "Merge")])
+            .fixedSize()
+            .disabled(!isReady)
+            .padding(.top, SHCardSheetMetrics.labelTop)
+    }
+
     private var isReady: Bool { if case .ready = stage { true } else { false } }
 
-    private var subtitle: String {
+    /// What the sheet says under its title: the state of the update, or where a conflict stopped it.
+    private var message: Text {
+        func code(_ text: String) -> Text { Text(text).font(.sh(.mono)) }
         switch stage {
-        case .reading: "Fetching origin/\(base)…"
-        case .ready(let behind): behind == 0 ? "\(branch) is up to date. Fetched just now." : "\(branch) is \(behind) behind. Fetched just now."
-        case .running: "Updating \(branch)…"
-        case .conflict, .failed: "\(branch) onto origin/\(base)."
+        case .reading: return Text("Fetching origin/\(base)…")
+        case .ready(let behind): return Text(behind == 0 ? "\(branch) is up to date. Fetched just now." : "\(branch) is \(behind) behind. Fetched just now.")
+        case .running: return Text("Updating \(branch)…")
+        case .conflict(let conflict):
+            return Text("Updating ") + code(branch) + Text(" from ") + code("origin/\(base)")
+                + Text(" stopped on conflicts in \(conflict.files.count) file\(conflict.files.count == 1 ? "" : "s").")
+        case .failed: return code(branch) + Text(" onto ") + code("origin/\(base)") + Text(".")
         }
     }
 
     @ViewBuilder private var actions: some View {
         switch stage {
         case .conflict(let conflict):
-            Button("Open in editor") { openFiles(conflict.files) }.buttonStyle(.sh(.secondary))
-            Button("Ask the agent to resolve") { ask(conflict) }.buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+            Button("Abort") { abort(conflict.kind) }.buttonStyle(.shCardSheet(.dim))
+            Button("Open in editor") { openFiles(conflict.files) }.buttonStyle(.shCardSheet(.dim))
+            Button("Ask the agent to resolve") { ask(conflict) }.buttonStyle(.shCardSheet(.pill)).keyboardShortcut(.defaultAction)
         default:
-            Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
+            Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.shCardSheet(.dim)).keyboardShortcut(.cancelAction)
             Button(rebase ? "Rebase" : "Merge") { update() }
-                .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+                .buttonStyle(.shCardSheet(.pill)).keyboardShortcut(.defaultAction)
                 .disabled(!isReady)
         }
     }
 
-    static func conflictTitle(_ conflict: BranchGit.Conflict) -> String {
-        let files = "\(conflict.files.count) file\(conflict.files.count == 1 ? "" : "s") conflict"
-        if let step = conflict.step, let steps = conflict.steps { return "Stopped at commit \(step) of \(steps): \(files)" }
-        return "Stopped: \(files)"
+    /// "Stopped at commit 2 of 3", or "Stopped" for a merge.
+    static func conflictLabel(_ conflict: BranchGit.Conflict) -> String {
+        if let step = conflict.step, let steps = conflict.steps { return "Stopped at commit \(step) of \(steps)" }
+        return "Stopped"
     }
 
     private func read() async {
@@ -188,22 +190,22 @@ struct BranchNameSheet: View {
     }
 
     var body: some View {
-        SHDialog(rename ? "Rename branch" : "New branch from here",
-                 message: rename ? "Renames \(branch) here. A pushed branch keeps its name on origin."
-                                 : "Starts a branch at \(branch)’s last commit and switches to it. Uncommitted changes come along.",
-                 width: AppLayout.branchSheetWidth) {
+        SHCardSheet(rename ? "Rename branch" : "New branch from here",
+                    message: Text(rename ? "Renames \(branch) here. A pushed branch keeps its name on origin."
+                                         : "Starts a branch at \(branch)’s last commit and switches to it. Uncommitted changes come along."),
+                    width: AppLayout.branchSheetWidth) {
             VStack(alignment: .leading, spacing: SH.Space.s) {
                 TextField("Branch name", text: $name)
                     .focused($focused)
                     .shField(focused: focused, mono: true)
                     .onSubmit(save)
-                if let problem, name != branch { SHDialogStatus(problem, isError: true) }
+                if let problem, name != branch { Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed).textSelection(.enabled) }
             }
-            .padding(.horizontal, SHDialogMetrics.inset)
+            .padding(.top, SHCardSheetMetrics.labelTop)
         } actions: {
-            Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
+            Button("Cancel") { vm.branchSheet = nil }.buttonStyle(.shCardSheet(.dim)).keyboardShortcut(.cancelAction)
             Button(rename ? "Rename" : "Create") { save() }
-                .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+                .buttonStyle(.shCardSheet(.pill)).keyboardShortcut(.defaultAction)
                 .disabled(problem != nil || name == branch)
         }
         .onAppear { focused = true }

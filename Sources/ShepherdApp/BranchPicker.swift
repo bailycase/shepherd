@@ -28,6 +28,8 @@ struct BranchPickerList: Equatable {
         var name: String
         /// "1d", "in use · Add refund events · move here", "remote · 1d".
         var detail: String
+        /// What trails the row in the picker (GXBranchPicker): "HEAD", "3d", "Remote", "In use by Add refund events".
+        var word: String = ""
         /// Checked out here.
         var current: Bool
         var pick: Pick
@@ -55,26 +57,28 @@ struct BranchPickerList: Equatable {
         return ordered.map { branch in
             let age = ForgePresentation.age(Date(timeIntervalSince1970: branch.committedAt), now: now)
             guard !branch.isCurrent, let worktree = branch.worktree else {
-                return Row(name: branch.name, detail: branch.isRemote ? "remote · \(age)" : age, current: branch.isCurrent,
+                return Row(name: branch.name, detail: branch.isRemote ? "remote · \(age)" : age,
+                           word: branch.isCurrent ? "HEAD" : branch.isRemote ? "Remote" : age, current: branch.isCurrent,
                            pick: .checkout, inUse: false)
             }
             let path = ShepherdViewModel.standard(worktree)
             let holder = threads[path] ?? (path == mainCheckout ? "main checkout" : nil)
             let pick: Pick = moves && busy == nil ? .move(worktree) : .none
             let action = moves ? busy.map { "can’t move while \($0)" } ?? "move here" : nil
+            let who = holder.map { "In use by \($0)" } ?? "In use"
             return Row(name: branch.name, detail: ["in use", holder, action].compactMap { $0 }.joined(separator: " · "),
-                       current: false, pick: pick, inUse: true)
+                       word: [who, action].compactMap { $0 }.joined(separator: " · "), current: false, pick: pick, inUse: true)
         }
     }
 }
 
-/// The Branch picker (BranchPicker board): search, an optional first choice ("New branch from
+/// The Branch picker (GXBranchPicker board): search, an optional first choice ("New branch from
 /// main"), the branches, then "New branch…" and "Fetch from origin". A branch another worktree
 /// has is listed but can't be chosen, except by Switch branch (`moves`), where choosing it moves
 /// the thread to that worktree. Used by the branch card's Switch branch and Change base and by
-/// the new thread's Branch and Base.
+/// the new thread's Branch and Base. The card's own branch button and Esc close it.
 struct BranchPickerMenu: View {
-    var title: String?
+    var prompt = "Search branches"
     /// A first row before the branches, checked when nothing else is chosen.
     var first: String?
     var selected: String?
@@ -86,47 +90,42 @@ struct BranchPickerMenu: View {
     var fetch: (() async throws -> Void)?
     let close: () -> Void
     @State private var list: BranchPickerList?
+    /// The list's rows for the query, made when either changes rather than on every draw.
+    @State private var rows: [BranchPickerList.Row] = []
     @State private var failure: String?
     @State private var query = ""
     @State private var fetching = false
     @FocusState private var searching: Bool
 
     var body: some View {
-        let rows = list?.rows(query: query, moves: move != nil) ?? []
-        SHChangesMenu(width: SHChangesMenuMetrics.baseWidth) {
-            SHChangesMenuSearch(text: $query, prompt: "Search branches", isFocused: $searching,
-                                onSubmit: { if let row = rows.first(where: { $0.pick != .none }) { pick(row) } }, onEscape: close)
-            if let title {
-                SHChangesMenuTitle(title)
-                SHChangesMenuRow("Back", systemImage: "chevron.left", action: close)
-            }
+        SHPopMenu(width: AppLayout.branchPickerWidth) {
+            SHPopMenuSearch(text: $query, prompt: prompt, isFocused: $searching,
+                            onSubmit: { if let row = rows.first(where: { $0.pick != .none }) { pick(row) } }, onEscape: close)
             if let first, query.isEmpty {
-                SHChangesMenuRow(first, systemImage: nil, titleIsMono: true, checked: selected == nil) { choose(nil) }
+                SHPopMenuRow(first, mono: true, lead: .check(selected == nil)) { choose(nil) }
             }
             if list != nil {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { row in
-                            // A branch in use says where under its name, which stays whole.
-                            SHChangesMenuRow(row.name, subtitle: row.inUse ? row.detail : nil, systemImage: nil, titleIsMono: true,
-                                             trailing: row.inUse ? .none : .text(row.detail),
-                                             checked: row.name == selected || (selected == nil && first == nil && row.current),
-                                             enabled: row.pick != .none) { pick(row) }
+                            SHPopMenuRow(row.name, mono: true,
+                                         lead: .check(row.name == selected || (selected == nil && first == nil && row.current)),
+                                         trailing: row.word, enabled: row.pick != .none) { pick(row) }
                         }
                     }
                 }
-                .frame(maxHeight: ChangesMenuLayout.listMaxHeight)
+                .frame(maxHeight: AppLayout.branchPickerListMaxHeight)
                 .fixedSize(horizontal: false, vertical: true)
-                if rows.isEmpty, !query.isEmpty { SHChangesMenuNote("No branch matches “\(query)”.") }
+                if rows.isEmpty, !query.isEmpty { SHPopMenuNote("No branch matches “\(query)”.") }
             } else if let failure {
-                SHChangesMenuNote(failure)
+                SHPopMenuNote(failure)
             } else {
-                SHChangesMenuNote("Reading branches…")
+                SHPopMenuNote("Reading branches…")
             }
-            if newBranch != nil || fetch != nil { SHChangesMenuDivider() }
-            if let newBranch { SHChangesMenuRow("New branch…", systemImage: "plus", action: newBranch) }
+            if newBranch != nil || fetch != nil { SHPopMenuSeparator() }
+            if let newBranch { SHPopMenuRow("New branch…", lead: .glyph("plus"), action: newBranch) }
             if let fetch {
-                SHChangesMenuRow(fetching ? "Fetching…" : "Fetch from origin", systemImage: "arrow.down.to.line", enabled: !fetching) {
+                SHPopMenuRow(fetching ? "Fetching…" : "Fetch from origin", lead: .glyph("arrow.clockwise"), enabled: !fetching) {
                     fetching = true
                     Task {
                         do { try await fetch(); await reload() } catch { failure = ActionError.describe(error) }
@@ -136,14 +135,17 @@ struct BranchPickerMenu: View {
             }
         }
         .task { searching = true; await reload() }
+        .onChange(of: query) { remake() }
     }
+
+    private func remake() { rows = list?.rows(query: query, moves: move != nil) ?? [] }
 
     private func pick(_ row: BranchPickerList.Row) {
         if case .move(let path) = row.pick { move?(row.name, path) } else { choose(row.name) }
     }
 
     private func reload() async {
-        do { list = try await load(); failure = nil }
+        do { list = try await load(); failure = nil; remake() }
         catch { failure = (error as? ChangesError)?.message ?? ActionError.describe(error) }
     }
 }

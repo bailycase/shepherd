@@ -687,6 +687,8 @@ struct RemoteLayoutModel: Equatable {
         let cwd: String
         /// What it draws of where it came from, when another Mac's thread or the person sent it (`ShepherdViewModel.fleetSurface`).
         var fleet: FleetThreadSurface? = nil
+        /// The branch its card names and the checkout's changed-file count, which moves the card's read.
+        var branch: AgentBranchLabel? = nil
     }
 
     let ref: RemoteAgentRef
@@ -830,7 +832,8 @@ extension RemoteLayoutModel {
         let thread = tab.layout.leaves.lazy.compactMap { leaf in
             primaryAgent(in: tab, pane: leaf, agents: own).map {
                 Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd,
-                       fleet: screen.fleet.map { var fleet = $0; fleet.offline = dispatchedAway; return fleet })
+                       fleet: screen.fleet.map { var fleet = $0; fleet.offline = dispatchedAway; return fleet },
+                       branch: AgentBranchLabel(agent: $0))
             }
         }.first
         let panel = screen.panel(tab.id)
@@ -1163,7 +1166,8 @@ private struct RemotePaneLeafView: View {
                                       isFocused: shown && model.focusedPaneID == leaf.id,
                                       active: model.isVisible && shown, cwd: thread.cwd,
                                       inspectingRunID: model.inspectingRunID, supportsChanges: model.supportsChanges,
-                                      designReferences: model.designReferences, fleet: thread.fleet)
+                                      designReferences: model.designReferences, fleet: thread.fleet,
+                                      branch: thread.branch, hostName: model.hostName)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1224,6 +1228,9 @@ struct RemoteAgentThreadPane: View {
     var designReferences: DesignReferenceChips? = nil
     /// Where the thread came from, when it was sent (`FleetThreadSurface`).
     var fleet: FleetThreadSurface? = nil
+    /// The branch the thread works on and the Mac it runs on: the card at its right (GXRemote).
+    var branch: AgentBranchLabel? = nil
+    var hostName: String? = nil
 
     var body: some View {
         ThreadView(
@@ -1264,6 +1271,9 @@ struct RemoteAgentThreadPane: View {
         .environment(\.threadLinkSelf, ref.agentID.rawValue)
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm))
+        // The branch card's column at the thread's right, naming the Mac it runs on.
+        .modifier(BranchCardDock(store: branch.map { _ in vm.remoteBranchCardStore(for: ref) }, branch: branch?.branch,
+                                 changedFiles: branch?.changedFiles ?? 0, active: active, runsOn: hostName))
     }
 }
 

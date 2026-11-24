@@ -320,7 +320,7 @@ struct ThreadTranscript: View {
                         }
                     }
                     // These are transcript notices, independent of host and pane status.
-                    if let problem = store.snapshot?.originsProblem {
+                    if let problem = store.originsProblem {
                         Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
