@@ -168,6 +168,25 @@ struct DesignMentionTests {
         #expect(DesignReferencePresentation.showLatest(moved) == "Show v14" && DesignReferencePresentation.showLatest(.deleted) == nil)
     }
 
+    @Test func theMacCardNamesWhatTheAgentDidAndWhereTheBoardStands() throws {
+        let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"), revision: 13))
+        var payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
+                                             boardTitle: "A · Funnel first", revision: 13, capturedAt: 0, width: 560, height: 410)
+        payload.boardPageTitle = "Checkout"
+        let shown = DesignReferencePresentation.boardFooter(payload, board: "A · Funnel first")
+        #expect(shown.title == "Checkout redesign, A · Funnel first" && shown.meta == ["Checkout", "560 × 410", "revision 13"])
+        payload.proposal = .init(kind: .draft)
+        let draft = DesignReferencePresentation.boardFooter(payload, board: "A · Funnel first")
+        #expect(draft.title == "A · Funnel first" && draft.meta == ["Draft for Checkout redesign", "560 × 410"])
+        #expect(DesignReferencePresentation.boardHeader(.init(kind: .draft), revision: 13) == .init(label: "Drew a board", tag: "Draft"))
+        #expect(DesignReferencePresentation.boardHeader(.init(kind: .change), revision: 13) == .init(label: "Changed", tag: "From revision 13"))
+        #expect(DesignReferencePresentation.boardHeader(.init(kind: .change, state: .added), revision: 13).tag == "Applied to the design")
+        let moved = DesignReferenceFreshness.updatedSince(latest: 15, changes: [])
+        #expect(DesignReferencePresentation.boardNote(moved, shown: 13) == "Changed since. This is revision 13; the board is at 15.")
+        #expect(DesignReferencePresentation.boardNote(.current, shown: 13) == nil)
+        #expect(DesignReferencePresentation.boardNote(.deleted, shown: 13) == DesignReferencePresentation.boardNote(.deleted))
+    }
+
     @Test func eachDesignShowIsItsOwnCardNeverJoinedToTheCallsAroundIt() {
         func call(_ name: String, board: UUID?) -> NativeActivityCall {
             var message = NativeThreadMessage(entryID: "e-\(UUID())", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "ok")], toolName: name,
