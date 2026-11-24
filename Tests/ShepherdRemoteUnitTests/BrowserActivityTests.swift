@@ -41,6 +41,7 @@ struct BrowserActivityTests {
         ("browser_back", [:], "Went back"),
         ("browser_forward", [:], "Went forward"),
         ("browser_reload", [:], "Reloaded the page"),
+        ("browser_show", [:], "Showed you the Browser"),
     ] as [(String, [String: String], String)])
     func eachToolReadsAsAnActivityLine(tool: String, args: [String: String], label: String) {
         let burst = line(call(tool, args, output: result("ok")))
