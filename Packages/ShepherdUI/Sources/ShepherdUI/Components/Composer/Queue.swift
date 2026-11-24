@@ -703,7 +703,7 @@ public struct SHQueueRow: View {
 
     @MainActor private static var textFont: Font {
         #if os(macOS)
-        .sh(.body)
+        .sh(.ui, weight: .regular)
         #else
         .shSans(13)
         #endif
@@ -800,7 +800,7 @@ public struct SHQueueEditor: View {
             TextField(text: $text, selection: $selection, axis: .vertical) { Text("Queued message") }
                 .lineLimit(1...SHQueueMetrics.editorMaxLines)
                 .textFieldStyle(.plain)
-                .font(.sh(.body))
+                .font(.sh(.ui, weight: .regular))
                 .foregroundStyle(sh.textPrimary)
                 .tint(sh.lantern)
                 .autocorrectionDisabled()
@@ -967,7 +967,7 @@ extension SHQueueDeletedRow {
 
     @MainActor fileprivate static var wordsFont: Font {
         #if os(macOS)
-        .sh(.body)
+        .sh(.ui, weight: .regular)
         #else
         .sh(.ui, weight: .regular)
         #endif
@@ -975,7 +975,7 @@ extension SHQueueDeletedRow {
 
     @MainActor fileprivate static var undoFont: Font {
         #if os(macOS)
-        .sh(.body, weight: .medium)
+        .sh(.ui, weight: .medium)
         #else
         .sh(.ui)
         #endif
@@ -1083,7 +1083,7 @@ public struct SHSendMenu: View {
                     VStack(alignment: .leading, spacing: SH.Space.xxs) {
                         #if os(macOS)
                         // The boards' `.mi.two`: the words in 14, what they do in 12 `textTertiary`, its keys as plain text.
-                        Text(option.title).font(.sh(.body)).foregroundStyle(sh.textPrimary)
+                        Text(option.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
                         Text(option.detail).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                         #else
