@@ -193,8 +193,8 @@ early with status 0 also passes. `ModelSettingsPopoverTests` is the worked examp
 
 PR CI runs only for pull requests targeting `master`, not `nightly`. Pushes to `master`,
 the daily schedule and manual dispatch keep their existing triggers. CI and Release run on
-GitHub-hosted runners (`ubuntu-latest`, `macos-26`); there is no
-self-hosted runner, so every job starts on a fresh VM.
+Blacksmith runners (`blacksmith-2vcpu-ubuntu-2404`, `blacksmith-6vcpu-macos-26`), each job on a
+fresh VM.
 
 The `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
 sidebar loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI
