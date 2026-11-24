@@ -116,7 +116,7 @@ class BuildCacheWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/build-cache.yml").read_text()
         release = (ROOT / ".github/workflows/release.yml").read_text()
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
-        for token in ("branches: [nightly]", "github.ref == 'refs/heads/nightly'", "runs-on: macos-26",
+        for token in ("branches: [nightly]", "github.ref == 'refs/heads/nightly'", "runs-on: blacksmith-6vcpu-macos-26",
                       "timeout-minutes: 25", "cancel-in-progress: true", "persist-credentials: false",
                       "uses: ./.github/actions/swift-build", "--delete --closed-only",
                       "actions: write", "pull-requests: read"):

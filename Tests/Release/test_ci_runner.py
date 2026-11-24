@@ -36,13 +36,13 @@ def metadata(event="pull_request"):
 
 
 class CIRunnerTests(unittest.TestCase):
-    def test_every_job_runs_on_a_github_hosted_runner_with_no_persistent_runner_path(self):
+    def test_every_job_runs_on_a_blacksmith_runner_with_no_persistent_runner_path(self):
         job = JOBS["tests"]
-        self.assertIn("    runs-on: macos-26\n", job)
+        self.assertIn("    runs-on: blacksmith-6vcpu-macos-26\n", job)
         self.assertIn("timeout-minutes: 60", job)
         for name, job in JOBS.items():
             if name != "tests":
-                self.assertIn("runs-on: ubuntu-latest", job)
+                self.assertIn("runs-on: blacksmith-2vcpu-ubuntu-2404", job)
         for text in (CI, ACTION, RELEASE, RELEASE_BUILD):
             self.assertNotIn("runner.environment", text)
             self.assertNotIn("shepherd-release", text)
@@ -50,7 +50,7 @@ class CIRunnerTests(unittest.TestCase):
             labels = re.findall(r"(?m)^\s+runs-on: (\S+)$", text)
             self.assertTrue(labels or text is ACTION)
             for label in labels:
-                self.assertRegex(label, r"^(ubuntu-latest|macos-26|xcode-27)$")
+                self.assertRegex(label, r"^(blacksmith-2vcpu-ubuntu-2404|blacksmith-6vcpu-macos-26|blacksmith-6vcpu-macos-27)$")
 
     def test_cache_writes_are_pr_scoped_or_trusted_branch_events_only(self):
         save = ACTION.split("- name: Save the hosted build", 1)[1]
