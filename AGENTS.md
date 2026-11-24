@@ -45,8 +45,15 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Branch from `nightly` (`feat/…`, `fix/…`), open the PR into `nightly`. Conventional commits
   (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). No AI attribution in commits or PR bodies.
-- Platform parity: a user-facing change ships on the Mac app and the iPhone and iPad client (`App/iOS`)
-  in the same PR, unless the user scopes it to one. Say in the PR what each platform got.
+- A change ends merged into `nightly`, not at an open PR, unless the user says to hold it. Open it
+  ready for review (never a draft): the repo then squash auto-merges it. Confirm it merged; if
+  auto-merge didn't fire, `gh pr merge --squash`. GitHub deletes the branch; remove your worktree.
+- Each merge into `nightly` publishes a Shepherd Nightly build. That is the normal end of a task,
+  not a release. When landing several PRs at once, merge them together rather than spread out.
+  TestFlight, `master` and release tags only when the user asks ([docs/releases.md](docs/releases.md)).
+- Platform parity: a user-facing change ships on the Mac app and the iPhone, iPhone Duo and iPad
+  client (`App/iOS`) in the same PR, unless the user scopes it to one. Say in the PR what each
+  platform got.
 - Start an authorized change without a separate issue or plan. Read the affected code and relevant
   doc sections; ask only when scope or a consent boundary below is unresolved.
 - Reuse tests that protect the affected behavior; add or extend coverage for new behavior or a
@@ -70,6 +77,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## UI changes
 
+- New UI with no design yet: draw it as a board in Shepherd Design (two or three options when the
+  shape is unclear) and get the user's approval before writing app code.
 - The design the user gives (image, board, words) is the spec and outranks every doc here. Build
   what it draws; a difference from it is the user's call, so list each one under **Departures**
   in the PR and your final message (`none` counts). Save the image as `docs/design/boards/<Name>.png`. The repo is public: fixtures, mockups and images use made-up names (`acme-web`), never the user's projects, paths or tasks.
