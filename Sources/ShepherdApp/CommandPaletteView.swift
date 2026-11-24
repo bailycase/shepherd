@@ -5,10 +5,11 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// The ⌘K palette (Composer board, `.shCommandPalette`): a 620pt card 18% from the top over the
-/// scrim, capped to the window. A 44pt search row with All · Commands · Agents scopes, then
-/// results under mono caps headers — Commands, This thread, Subagents, and Agents/Spaces once
-/// there is a query. Rows show an icon, the label, dim context, and the real shortcut.
+/// The ⌘K palette (GXPalette, `.shCommandPalette`): a 680pt card 112pt from the top over the
+/// scrim, capped to the window. A 58pt search row with All · Commands · Agents scopes, then
+/// results under headers — Commands, This thread, Subagents, and Agents/Spaces once
+/// there is a query. Rows show an icon tile, the label, dim context, and the real shortcut; the
+/// footer names the row ↵ runs.
 ///
 /// Queries of 3+ characters also search agents' session transcripts in the background
 /// (bounded tail scan, debounced), so a thread is findable by remembered conversation text;
@@ -85,11 +86,13 @@ struct PaletteCard: View {
     var body: some View {
         SHPaletteCard {
             SHPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $fieldFocused, submit: runSelected) {
-                SHSegmentedPicker("Scope", selection: $scope, options: PaletteItem.Scope.allCases.map { ($0, $0.title) }, size: .s)
+                SHPaletteScope("Scope", selection: $scope, options: PaletteItem.Scope.allCases.map { ($0, $0.title) })
                     .shHelp("Switch scope", shortcut: "⇥")
             }
         } results: {
             resultsList
+        } footer: {
+            SHPaletteFooter(runs: results.rows.indices.contains(highlight.index) ? results.rows[highlight.index].title : nil)
         }
         // Rows arrive, leave, and reorder as the query or scope changes, and the card follows
         // their height; moving the highlight (↑↓, hover) changes no row, so it lands at once.

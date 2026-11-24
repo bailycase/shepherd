@@ -184,6 +184,8 @@ private struct PaletteSpecimen: View {
                 SHPaletteRow("New agent", systemImage: "plus", shortcut: "⌘N", highlighted: true) {}
                 SHPaletteRow("Settings…", systemImage: "gearshape", shortcut: "⌘,") {}
             }
+        } footer: {
+            SHPaletteFooter(runs: "New agent")
         }
         .frame(width: SHPaletteMetrics.width)
     }
