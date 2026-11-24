@@ -450,11 +450,15 @@ struct PaneTreeView: View {
                         }
                     }
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .terminalCardClip(leaf.pane.id != thread.paneID)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
+                        // The terminals draw over the card; the thread under it.
+                        .zIndex(leaf.pane.id == thread.paneID ? 0 : 2)
                 }
+                TerminalPanelCard(geometry: geometry).zIndex(1)
                 LocalFoldedThreadChrome(geometry: geometry, threadTitle: thread.agentName, live: thread.live,
                                         restore: { [vm] in vm.toggleTerminalMaximized() })
                 if let bar = geometry.tabBar {
@@ -1058,11 +1062,14 @@ private struct RemotePaneTreeView: View {
                         }
                     }
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .terminalCardClip(leaf.pane.id != thread)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
+                        .zIndex(leaf.pane.id == thread ? 0 : 2)
                 }
+                TerminalPanelCard(geometry: geometry).zIndex(1)
                 TerminalPanelChrome(geometry: geometry, threadTitle: model.thread?.agentName ?? "",
                                     threadState: model.foldedState ?? .idle,
                                     restore: { [vm] in vm.toggleTerminalMaximized() })
