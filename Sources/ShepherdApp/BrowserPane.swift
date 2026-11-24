@@ -44,6 +44,14 @@ struct BrowserPane: View {
                 if page.hasPage {
                     BrowserPageArea(vm: vm, session: page)
                         .id(page.tabID)
+                        // The page is a card 8pt in from the pane's sides (GXPaneBrowser's `.web`).
+                        .clipShape(RoundedRectangle(cornerRadius: SHBrowserMetrics.pageRadius))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: SHBrowserMetrics.pageRadius)
+                                .strokeBorder(Color.sh.lineSubtle, lineWidth: 1)
+                                .allowsHitTesting(false)
+                        }
+                        .padding(.horizontal, SHBrowserMetrics.pageInset)
                 } else {
                     empty(page)
                 }
@@ -336,22 +344,26 @@ private extension CGPoint {
     var size: CGSize { CGSize(width: x, height: y) }
 }
 
-/// The console drawer (PaneBrowser): the bar, then the lines while open, a lazy list that
-/// follows the newest line.
+/// The console drawer (GXPaneBrowser's `.cons`): a card 8pt in from the page and the pane's edge with the
+/// bar, then the lines while open, a lazy list that follows the newest line.
 struct BrowserConsoleDrawer: View {
     let console: BrowserConsoleLog
     let open: Bool
     let toggle: () -> Void
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: SHBrowserMetrics.pageRadius)
         VStack(spacing: 0) {
             SHConsoleBar(network: console.network, warnings: console.warnings, open: open, toggle: toggle)
             if open {
                 BrowserConsoleLines(lines: console.lines)
-                    .frame(height: SHBrowserMetrics.consoleListHeight)
-                    .background(Color.sh.bgBase)
+                    .frame(height: min(CGFloat(console.lines.count) * SHBrowserMetrics.consoleLineHeight + SH.Space.m,
+                                       SHBrowserMetrics.consoleListHeight))
             }
         }
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(Color.sh.lineSubtle, lineWidth: 1).allowsHitTesting(false) }
+        .padding(SHBrowserMetrics.pageInset)
     }
 }
 
@@ -366,7 +378,6 @@ struct BrowserConsoleLines: View, Equatable {
                     SHConsoleRow(line).equatable()
                 }
             }
-            .padding(.top, SH.Space.xs)
             .padding(.bottom, SH.Space.m)
         }
         .defaultScrollAnchor(.bottom)

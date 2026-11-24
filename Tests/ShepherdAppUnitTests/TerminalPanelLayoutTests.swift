@@ -39,9 +39,14 @@ struct TerminalPanelGeometryTests {
     @Test func theThreadSitsOverThePanelWhoseSelectedTabShowsItsTerminal() throws {
         let g = geometry()
         #expect(g.thread == CGRect(x: 0, y: 0, width: 1000, height: 570))
-        #expect(g.tabBar == CGRect(x: 0, y: 570, width: 1000, height: SHTerminalMetrics.tabBarHeight))
-        let top = 570 + SHTerminalMetrics.tabBarHeight
-        #expect(g.content == CGRect(x: 0, y: top, width: 1000, height: 900 - top))
+        // The panel is a card inset in its room (GXTerminal): the strip across its top, the terminal under it.
+        let inset = SHTerminalMetrics.cardInsets
+        let card = CGRect(x: inset.leading, y: 570 + inset.top, width: 1000 - inset.leading - inset.trailing,
+                          height: 330 - inset.top - inset.bottom)
+        #expect(g.card == card)
+        #expect(g.tabBar == CGRect(x: card.minX, y: card.minY, width: card.width, height: SHTerminalMetrics.tabBarHeight))
+        let top = card.minY + SHTerminalMetrics.tabBarHeight
+        #expect(g.content == CGRect(x: card.minX, y: top, width: card.width, height: card.maxY - top))
         #expect(g.tabs.map(\.id) == [shell.id, psql.id])
         // One terminal a tab: it fills the panel's content, with no header and no divider.
         let shellLeaf = try leaf(shell, g)
@@ -63,7 +68,7 @@ struct TerminalPanelGeometryTests {
     @Test func aHiddenPanelGivesTheThreadTheLayoutAndKeepsTheTerminalsSized() throws {
         let hidden = geometry(shown: false), shown = geometry()
         #expect(hidden.thread == CGRect(x: 0, y: 0, width: 1000, height: 900))
-        #expect(hidden.tabBar == nil && hidden.content == nil)
+        #expect(hidden.tabBar == nil && hidden.content == nil && hidden.card == nil)
         #expect(try !leaf(shell, hidden).shown)
         #expect(try leaf(shell, hidden).rect == leaf(shell, shown).rect)
     }
@@ -72,8 +77,9 @@ struct TerminalPanelGeometryTests {
         let g = geometry(maximized: true)
         // The thread keeps one line above the strip (TerminalStates).
         #expect(g.fold == CGRect(x: 0, y: 0, width: 1000, height: SHTerminalMetrics.foldedThreadHeight))
-        #expect(g.tabBar?.minY == SHTerminalMetrics.foldedThreadHeight)
-        #expect(g.content?.height == 900 - SHTerminalMetrics.foldedThreadHeight - SHTerminalMetrics.tabBarHeight)
+        let inset = SHTerminalMetrics.cardInsets
+        #expect(g.tabBar?.minY == SHTerminalMetrics.foldedThreadHeight + inset.top)
+        #expect(g.content?.height == 900 - SHTerminalMetrics.foldedThreadHeight - inset.top - inset.bottom - SHTerminalMetrics.tabBarHeight)
         #expect(geometry().fold == nil && geometry(shown: false, maximized: true).fold == nil)
         let threadLeaf = try leaf(thread, g)
         #expect(!threadLeaf.shown && threadLeaf.rect.height == 570)
