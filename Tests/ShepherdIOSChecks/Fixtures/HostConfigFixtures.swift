@@ -18,6 +18,18 @@ extension FixtureCatalog {
             // Tools' Extensions: the pi extensions added in Shepherd or copied from the host's pi, each with its switch.
             FixtureScreen(name: "settings-extensions", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
                           prepare: { _ in await TriggerFlowCheck.scrollDown(holding: nil) }),
+            // Its two dialogs: Add from a Git repository, and Remove…'s confirmation.
+            FixtureScreen(name: "settings-extensions-add", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
+                          prepare: { app in
+                              await TriggerFlowCheck.scrollDown(holding: nil)
+                              SettingsStore.of(app.hosts).addingExtension = true
+                          }),
+            FixtureScreen(name: "settings-extensions-remove", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
+                          prepare: { app in
+                              await TriggerFlowCheck.scrollDown(holding: nil)
+                              SettingsStore.of(app.hosts).removingExtension = HostExtension(
+                                  id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "", on: true, added: true)
+                          }),
             FixtureScreen(name: "settings-mcp-editor", hosts: FixtureData.configuredHosts(), routes: [.settings(.tools)], tab: .settings,
                           prepare: { app in
                               SettingsStore.of(app.hosts).mcpEditor = MCPEditor(replacing: "postgres", json: FixtureData.postgresJSON)

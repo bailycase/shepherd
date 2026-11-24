@@ -12,9 +12,7 @@ import ShepherdRemote
 /// host that doesn't serve them.
 struct PiExtensionSections: View {
     let store: SettingsStore
-    @State private var addingGit = false
     @State private var gitURL = ""
-    @State private var removing: HostExtension?
     /// The last change's failure, shown here rather than at the top of the page.
     @State private var problem: String?
 
@@ -50,7 +48,7 @@ struct PiExtensionSections: View {
                                         .toggleStyle(.shSwitch)
                                         .labelsHidden()
                                         Menu {
-                                            Button("Remove…", role: .destructive) { removing = item }
+                                            Button("Remove…", role: .destructive) { store.removingExtension = item }
                                         } label: {
                                             Image(systemName: "ellipsis.circle")
                                                 .font(.sh(.ui))
@@ -67,7 +65,7 @@ struct PiExtensionSections: View {
                     }
                 }
                 HStack(spacing: SH.Space.l) {
-                    Button("Add from Git…") { gitURL = ""; addingGit = true }
+                    Button("Add from Git…") { gitURL = ""; store.addingExtension = true }
                         .buttonStyle(.sh(.secondary))
                         .disabled(busy)
                     if busy { ProgressView().controlSize(.small) }
@@ -75,7 +73,7 @@ struct PiExtensionSections: View {
                 SettingsFootnote("Extensions run with your account’s access on \(host.name). Providers they add appear in Models ▸ Sign-in; agents load them when they start or on /reload.")
             }
             .task(id: Load(host: host.id, generation: store.refreshes)) { await config.refresh(.extensions, on: host) }
-            .alert("Add from a Git repository", isPresented: $addingGit) {
+            .alert("Add from a Git repository", isPresented: Binding(get: { store.addingExtension }, set: { store.addingExtension = $0 })) {
                 TextField("https://github.com/acme/pi-login", text: $gitURL)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
@@ -89,8 +87,9 @@ struct PiExtensionSections: View {
             } message: {
                 Text("An https:// or ssh address. \(host.name) clones it with its Git sign-in and switches it on. Its npm dependencies must be committed with it.")
             }
-            .confirmationDialog("Remove \(removing?.name ?? "this extension") from \(host.name)?", isPresented: Binding(
-                get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { item in
+            .confirmationDialog("Remove \(store.removingExtension?.name ?? "this extension") from \(host.name)?", isPresented: Binding(
+                get: { store.removingExtension != nil }, set: { if !$0 { store.removingExtension = nil } }), titleVisibility: .visible,
+                presenting: store.removingExtension) { item in
                 Button("Remove", role: .destructive) { run(.extensionRemove(destination: item.id), on: host) }
             } message: { _ in
                 Text("New threads start without it; running ones keep it until /reload.")
