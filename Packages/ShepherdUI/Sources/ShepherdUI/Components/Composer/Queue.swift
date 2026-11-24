@@ -813,11 +813,13 @@ public struct SHQueueEditor: View {
                 .onKeyPress(.escape) { onCancel(); return .handled }
                 .accessibilityLabel("Edit queued message \(number)")
             HStack(spacing: SHQueueMetrics.macEditorActions) {
+                // Text words with room to hit: padded above and below, never shrunk to the glyphs.
                 Button("Cancel", action: onCancel).buttonStyle(.plain).foregroundStyle(sh.textSecondary)
-                Button("Save", action: onSave).buttonStyle(.plain).fontWeight(.medium).foregroundStyle(sh.textPrimary)
+                    .font(.sh(.caption)).padding(.vertical, SH.Space.xs).contentShape(Rectangle())
+                Button("Save", action: onSave).buttonStyle(.plain).foregroundStyle(sh.textPrimary)
+                    .font(.sh(.caption, weight: .medium)).padding(.vertical, SH.Space.xs).contentShape(Rectangle())
                     .disabled(!canSave)
             }
-            .font(.sh(.caption))
         }
         .padding(SHQueueMetrics.macEditorPadding)
         .shBorder(sh.textTertiary, in: box)
@@ -929,6 +931,7 @@ public struct SHQueueDeletedRow: View {
             #if os(macOS)
             // Undo is ink, as the board draws it.
             Button("Undo", action: onUndo).buttonStyle(.plain).font(Self.undoFont).foregroundStyle(sh.textPrimary)
+                .padding(.vertical, SH.Space.xs).contentShape(Rectangle())
             #else
             Button("Undo", action: onUndo).buttonStyle(.shLink(font: Self.undoFont))
             #endif

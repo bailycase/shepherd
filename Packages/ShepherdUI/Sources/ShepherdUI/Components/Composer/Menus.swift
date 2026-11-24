@@ -19,6 +19,17 @@ public struct SHMenuHeader: View {
 
     public var body: some View {
         HStack(spacing: SH.Space.m) {
+            #if os(macOS)
+            // The boards' `.mh`: the section in 12 `textTertiary`, sentence case, its count the same.
+            Text(title)
+                .font(.sh(.caption))
+                .foregroundStyle(.sh.textTertiary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            if let trailing {
+                Text(trailing).font(.sh(.caption)).foregroundStyle(.sh.textTertiary).monospacedDigit()
+            }
+            #else
             Text(title)
                 .font(.shMono(10, .medium))
                 .textCase(.uppercase)
@@ -29,6 +40,7 @@ public struct SHMenuHeader: View {
             if let trailing {
                 Text(trailing).font(.shMono(11)).foregroundStyle(.sh.textTertiary).monospacedDigit()
             }
+            #endif
         }
         .padding(.horizontal, inset)
         .frame(height: SHComposerMetrics.menuHeaderHeight)
@@ -61,6 +73,15 @@ struct SHMenuRow<Label: View>: View {
     let onHover: () -> Void
     @ViewBuilder let label: () -> Label
 
+    /// The highlighted row's wash: the redesign's `bgSelected` on the Mac, `runningTint` elsewhere.
+    @MainActor private static var highlightFill: Color {
+        #if os(macOS)
+        .sh.bgSelected
+        #else
+        .sh.runningTint
+        #endif
+    }
+
     var body: some View {
         #if DEBUG
         let _ = SHMenuDiagnostics.rowBodies += 1
@@ -69,7 +90,7 @@ struct SHMenuRow<Label: View>: View {
             .padding(padding)
             .frame(minHeight: height)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(highlighted ? highlight ?? Color.sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .background(highlighted ? highlight ?? Self.highlightFill : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
             .onTapGesture(perform: action)
             .onHover { if $0 { onHover() } }
@@ -286,7 +307,7 @@ struct SHSlashRow: View, Equatable {
 
     var body: some View {
         let sh = Color.sh
-        SHMenuRow(highlighted: highlighted, spacing: SH.Space.l, padding: EdgeInsets(top: 0, leading: SH.Space.l, bottom: 0, trailing: SH.Space.l),
+        SHMenuRow(highlighted: highlighted, spacing: Self.spacing, padding: Self.padding,
                   height: SHComposerMetrics.slashRowHeight, action: { choose(command) }, onHover: { hover(index) }) {
             // The whole command on one line: the description gives way first.
             name
@@ -296,17 +317,41 @@ struct SHSlashRow: View, Equatable {
             Text(command.description ?? "").font(.shSans(13)).foregroundStyle(sh.textSecondary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(macOS)
+            if let tag = command.tag { Text(tag).font(.sh(.caption)).foregroundStyle(sh.textTertiary).fixedSize() }
+            #else
             if let tag = command.tag { SHTag(tag) }
+            #endif
             if let status = command.status {
                 Text(status.text).font(.sh(.caption)).foregroundStyle(Self.color(status.tone)).lineLimit(1).fixedSize()
             }
             if highlighted {
+                #if os(macOS)
+                Text("↵").font(.sh(.caption)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
+                #else
                 Text("⏎").font(.shMono(11)).foregroundStyle(sh.running).accessibilityHidden(true)
+                #endif
             }
         }
         .help(command.lead.map { $0 + " " + command.name } ?? "/" + command.name + (command.arguments.map { " " + $0 } ?? ""))
         .accessibilityLabel((command.lead.map { $0 + " " + command.name } ?? "/\(command.name)") + (command.description.map { ", \($0)" } ?? "")
                             + (command.status.map { ", \($0.text)" } ?? ""))
+    }
+
+    /// The boards' `.mi`: 10pt between parts and 8pt at the sides; touch and the old menu keep 12.
+    private static var spacing: CGFloat {
+        #if os(macOS)
+        10
+        #else
+        SH.Space.l
+        #endif
+    }
+    private static var padding: EdgeInsets {
+        #if os(macOS)
+        EdgeInsets(top: 0, leading: SH.Space.m, bottom: 0, trailing: SH.Space.m)
+        #else
+        EdgeInsets(top: 0, leading: SH.Space.l, bottom: 0, trailing: SH.Space.l)
+        #endif
     }
 
     static func color(_ tone: SHSlashCommand.Status.Tone) -> Color {
@@ -449,6 +494,8 @@ public struct SHModelPicker: View {
     let shortcut: String?
     let onChoose: (SHModelOption) -> Void
     let onClose: () -> Void
+    /// How a section's name reads in its header ("openai" as "OpenAI"); the list keeps the id.
+    var headerName: (String) -> String = { $0 }
     @FocusState private var searching: Bool
     /// The model the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: Int?
@@ -474,9 +521,16 @@ public struct SHModelPicker: View {
                   shortcut: shortcut, onChoose: onChoose, onClose: onClose)
     }
 
+    /// Names a section's header with `name` instead of its id.
+    public func headerNames(_ name: @escaping (String) -> String) -> Self {
+        var picker = self
+        picker.headerName = name
+        return picker
+    }
+
     /// The list's height limit: the board's 360pt, or what `maxHeight` leaves under the search.
     static func listMaxHeight(in height: CGFloat?) -> CGFloat {
-        let chrome = SHComposerMetrics.modelSearchHeight + 2 * SH.Space.xs
+        let chrome = SHComposerMetrics.modelSearchHeight + 2 * SHComposerMetrics.modelListInset
         return max(SHComposerMetrics.modelRowHeight, min(SHComposerMetrics.modelPickerMaxHeight, (height ?? .infinity) - chrome))
     }
 
@@ -504,10 +558,18 @@ public struct SHModelPicker: View {
                         .onKeyPress(.escape) { onClose(); return .handled }
                         .accessibilityLabel("Search models")
                     if let shortcut {
+                        #if os(macOS)
+                        Text(shortcut).font(.sh(.caption)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
+                        #else
                         Text(shortcut).font(.shMono(11)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
+                        #endif
                     }
                 }
+                #if os(macOS)
+                .padding(.horizontal, 14)
+                #else
                 .padding(.horizontal, SH.Space.m)
+                #endif
                 .frame(height: SHComposerMetrics.modelSearchHeight)
                 .overlay(alignment: .bottom) { SHHairline() }
                 ScrollView {
@@ -523,7 +585,7 @@ public struct SHModelPicker: View {
                             .shTransition(.content)
                         }
                         ForEach(list.rows) { row in
-                            SHModelListRow(row: row, highlighted: row.position == selection, choose: onChoose, hover: { position in
+                            SHModelListRow(row: row, highlighted: row.position == selection, headerName: headerName, choose: onChoose, hover: { position in
                                 guard position != selection else { return }
                                 pointed = position
                                 selection = position
@@ -537,7 +599,7 @@ public struct SHModelPicker: View {
                 .modifier(SHMenuListStartsAtTop(top: top, proxy: proxy, list: listMotion))
                 .frame(height: height)
                 .padding(.horizontal, SH.Space.s)
-                .padding(.vertical, SH.Space.xs)
+                .padding(.vertical, SHComposerMetrics.modelListInset)
                 .onChange(of: selection) { _, position in
                     // Each pointer move is seen once, so a later ↑↓ back to that row still shows it.
                     defer { pointed = nil }
@@ -580,6 +642,7 @@ public struct SHModelPicker: View {
 struct SHModelListRow: View, Equatable {
     let row: SHModelList.Row
     let highlighted: Bool
+    let headerName: (String) -> String
     let choose: (SHModelOption) -> Void
     let hover: (Int) -> Void
 
@@ -590,9 +653,38 @@ struct SHModelListRow: View, Equatable {
         VStack(spacing: 0) {
             switch row.kind {
             case .header(let title):
-                SHMenuHeader(title, inset: SH.Space.m + SH.Space.xxs)
+                SHMenuHeader(headerName(title), inset: SH.Space.m + SH.Space.xxs)
                     .padding(.top, SHComposerMetrics.modelSectionGap)
             case .option(let option, let position):
+                #if os(macOS)
+                // The boards' `.mi.two`: a 14pt ink check, the id in mono over its levels (`textSecondary`), the context size
+                // in 12 `textTertiary` at the trailing top; 7pt over 8, radius 7. A level list that runs long truncates.
+                SHMenuRow(highlighted: highlighted, alignment: .top, padding: EdgeInsets(top: 7, leading: SH.Space.m, bottom: 7, trailing: SH.Space.m),
+                          height: SHComposerMetrics.modelRowHeight, action: { choose(option) }, onHover: { hover(position) }) {
+                    Image(systemName: "checkmark").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textPrimary)
+                        .frame(width: 14)
+                        .opacity(option.isCurrent ? 1 : 0)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(option.title).font(.shMono(SHComposerMetrics.modelIdSize)).foregroundStyle(sh.textPrimary)
+                            .lineLimit(1).truncationMode(.middle)
+                        if let subtitle = option.subtitle {
+                            Text(subtitle).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if option.fast {
+                        Text("fast").font(.sh(.caption)).foregroundStyle(sh.textTertiary).fixedSize()
+                    }
+                    if let note = option.note {
+                        Text(note).font(.sh(.caption)).foregroundStyle(sh.textTertiary).fixedSize()
+                    }
+                }
+                .help(option.id)
+                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : "") + (option.fast ? ", offers Fast" : "")
+                    + (option.subtitle.map { ", \($0)" } ?? ""))
+                #else
                 SHMenuRow(highlighted: highlighted, padding: EdgeInsets(top: 0, leading: SH.Space.m + SH.Space.xxs, bottom: 0, trailing: SH.Space.m + SH.Space.xxs),
                           height: SHComposerMetrics.modelRowHeight, action: { choose(option) }, onHover: { hover(position) }) {
                     Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(sh.running)
@@ -618,6 +710,7 @@ struct SHModelListRow: View, Equatable {
                 .help(option.id)
                 .accessibilityLabel(option.id + (option.isCurrent ? ", current" : "") + (option.fast ? ", offers Fast" : "")
                     + (option.subtitle.map { ", \($0)" } ?? ""))
+                #endif
             }
         }
     }

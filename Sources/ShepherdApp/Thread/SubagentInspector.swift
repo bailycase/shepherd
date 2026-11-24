@@ -197,7 +197,7 @@ private struct SubagentRunInspector: View {
                         Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
                     }
                     .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .regular)))
-                    .padding(.horizontal, SH.Space.xs)
+                    .padding(.horizontal, SH.Space.xs).padding(.vertical, SH.Space.xs)
                     .disabled(!canAct)
                     .help("Pause before the next model request; current tools finish normally")
                 }
@@ -206,7 +206,7 @@ private struct SubagentRunInspector: View {
                     .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .regular)))
                     .disabled(!canAct)
                     .accessibilityLabel("Stop \(role)")
-                    .padding(.horizontal, SH.Space.xs)
+                    .padding(.horizontal, SH.Space.xs).padding(.vertical, SH.Space.xs)
             }
             if let select, let position, siblings.count > 1 {
                 Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
@@ -497,6 +497,7 @@ private struct SubagentRunInspector: View {
                 Spacer(minLength: SH.Space.s)
                 Button(words.verb) { send() }
                     .buttonStyle(.shLink(color: canSend ? sh.textPrimary : sh.textSecondary, font: .sh(.ui, weight: .regular)))
+                    .padding(.vertical, SH.Space.xs)
                     .disabled(!canSend)
                     .help(words.help ?? "")
             }

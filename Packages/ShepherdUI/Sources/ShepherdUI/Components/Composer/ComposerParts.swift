@@ -33,18 +33,43 @@ public enum SHComposerMetrics {
     public static let branchCount: CGFloat = 10.5
     public static let fieldMaxLines = 8
     /// Menus: 28pt rows under a 24pt section header, in a 6pt-padded popover.
+    #if os(macOS)
+    /// The redesign's menus (`.mi`, `.mh`): 30pt rows under a 26pt header.
+    public static let menuRowHeight: CGFloat = 30
+    public static let menuHeaderHeight: CGFloat = 26
+    #else
     public static let menuRowHeight: CGFloat = 28
     public static let menuHeaderHeight: CGFloat = 24
+    #endif
     public static let menuMaxRows = 8
     /// The slash menu (SlashMenu board) spans the composer card: 36pt rows with 12pt sides, the
     /// command in a column at least 150pt wide.
+    #if os(macOS)
+    public static let slashRowHeight: CGFloat = 30
+    /// The board sets each description right after its command, not in a column.
+    public static let slashNameWidth: CGFloat = 0
+    #else
     public static let slashRowHeight: CGFloat = 36
     public static let slashNameWidth: CGFloat = 150
+    #endif
     /// The model picker (ModelPicker board): 380pt, two-line 40pt rows, sections 4pt apart.
+    #if os(macOS)
+    /// The redesign's picker (GXModel): 360pt, a 38pt search row, 52pt rows (a check, the id over its levels, the context
+    /// size), sections butted together, the list 6pt in from the card.
+    public static let modelPickerWidth: CGFloat = 360
+    public static let modelRowHeight: CGFloat = 52
+    public static let modelSectionGap: CGFloat = 0
+    public static let modelSearchHeight: CGFloat = 38
+    public static let modelListInset: CGFloat = SH.Space.s
+    /// The model id in mono (the board's 12.5).
+    public static let modelIdSize: CGFloat = 12.5
+    #else
     public static let modelPickerWidth: CGFloat = 380
     public static let modelRowHeight: CGFloat = 40
     public static let modelSectionGap: CGFloat = 4
     public static let modelSearchHeight: CGFloat = 30
+    public static let modelListInset: CGFloat = SH.Space.xs
+    #endif
     public static let modelPickerMaxHeight: CGFloat = 360
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
