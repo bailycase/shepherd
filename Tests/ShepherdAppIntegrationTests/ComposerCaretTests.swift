@@ -23,8 +23,7 @@ struct ComposerCaretTests {
         let field = ComposerTextField.Field(frame: container.bounds)
         container.addSubview(field)
         let light = ComposerTextField.Style(appearance: .light, scale: 1, text: .sh.textPrimary,
-            placeholderColor: .sh.textTertiary, caret: .sh.textPrimary, placeholder: "Light", lineSpacing: 0,
-            size: SHTextStyle.body.size)
+            placeholderColor: .sh.textTertiary, caret: .sh.textPrimary, placeholder: "Light", lineSpacing: 0)
         var dark = light
         dark.appearance = .dark
         dark.scale = 1.3
