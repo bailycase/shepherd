@@ -8,6 +8,8 @@ import ShepherdSessions
 /// one registers appears in Settings ▸ Models' Sign-in. Every agent loads the ones that are on.
 struct ExtensionsSettingsGroup: View {
     let model: YourPiModel
+    /// Its `id` on the Tools page, for `settingsScrollTarget`.
+    static let scrollID = "settings.extensions"
     @State private var addingGit = false
     @State private var gitURL = ""
 
@@ -35,6 +37,7 @@ struct ExtensionsSettingsGroup: View {
                              remove: { Task { await model.removeExtension(item.copy.destination) } })
             }
         }
+        .id(Self.scrollID)
         .alert("Add from a Git repository", isPresented: $addingGit) {
             TextField("https://github.com/acme/pi-login", text: $gitURL)
             Button("Add") {

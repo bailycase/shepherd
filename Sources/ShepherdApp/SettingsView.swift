@@ -191,7 +191,10 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .keyboard: KeyboardSettings(vm: vm)
         case .models: ModelsSettings(pi: vm.pi, yourPi: vm.yourPi, auth: vm.piAuth, settings: vm.settings,
-                                     openYourPi: { vm.settingsSection = .fromYourPi }, openExtensions: { vm.settingsSection = .tools })
+                                     openYourPi: { vm.settingsSection = .fromYourPi }, openExtensions: {
+                                         vm.settingsSection = .tools
+                                         vm.settingsScrollTarget = ExtensionsSettingsGroup.scrollID
+                                     })
         case .fromYourPi: FromYourPiSettings(model: vm.yourPi) { vm.settingsSection = .tools }
         case .agents: AgentSettings(pi: vm.pi, settings: vm.settings, profiles: vm.subagentDefinitions.definitions.map(\.name)) { vm.settingsSection = .subagents }
         case .subagents: SubagentsSettings(model: vm.subagentDefinitions, settings: vm.settings)
@@ -238,6 +241,7 @@ struct SettingsView: View {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     Group { page }
                         .shTransition(.content)
@@ -255,6 +259,14 @@ struct SettingsView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .shTransition(.content)
+                // A link into another page's group (Sign-in's Add a provider): after the page lays out.
+                .task(id: vm.settingsScrollTarget) {
+                    guard let target = vm.settingsScrollTarget else { return }
+                    await Task.yield()
+                    withAnimation(SH.Motion.content.animation(reduceMotion: false)) { proxy.scrollTo(target, anchor: .top) }
+                    vm.settingsScrollTarget = nil
+                }
+                }
             }
         }
         .shAnimation(.content, value: vm.settingsSection == .projects && vm.projects.selected != nil)

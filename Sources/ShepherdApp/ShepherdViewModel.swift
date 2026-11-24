@@ -540,6 +540,8 @@ final class ShepherdViewModel {
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .general
+    /// A group the Settings page scrolls to once it shows (its view's `id`), then nil.
+    var settingsScrollTarget: String?
     @ObservationIgnored var madeProjects: ProjectsModel?
     @ObservationIgnored var madeLogicalProjects: LogicalProjectsModel?
     /// The Project whose page or settings the main column shows (ProjectLead boards). Ephemeral.
