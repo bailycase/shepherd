@@ -1375,6 +1375,9 @@ public struct ChildResultSummary: Codable, Hashable, Sendable {
 /// App → children extension: drive one native child run. Mirrors the tool functions.
 public enum ChildCommandAction: String, Codable, Hashable, Sendable { case message, cancel, resume, pause, `continue` }
 
+/// Git-visible uncommitted work in a local checkout, not work attributed to a thread.
+public enum PeerCheckoutStatus: String, Codable, Hashable, Sendable { case clean, dirty, unknown }
+
 /// One top-level agent thread as reported to peers (agent_list).
 public struct AgentPeerInfo: Codable, Hashable, Sendable {
     public var id: AgentID
@@ -1390,9 +1393,12 @@ public struct AgentPeerInfo: Codable, Hashable, Sendable {
     public var lastActiveAt: Double?
     /// Whether the thread is waiting on a person's answer. Nil from an older host.
     public var asking: Bool?
+    /// A point-in-time checkout observation. Only the detailed list supplies it; older hosts omit it.
+    public var checkoutStatus: PeerCheckoutStatus?
 
     public init(id: AgentID, name: String, status: String, cwd: String, isSelf: Bool,
-                space: String? = nil, lastActiveAt: Double? = nil, asking: Bool? = nil) {
+                space: String? = nil, lastActiveAt: Double? = nil, asking: Bool? = nil,
+                checkoutStatus: PeerCheckoutStatus? = nil) {
         self.id = id
         self.name = name
         self.status = status
@@ -1401,6 +1407,7 @@ public struct AgentPeerInfo: Codable, Hashable, Sendable {
         self.space = space
         self.lastActiveAt = lastActiveAt
         self.asking = asking
+        self.checkoutStatus = checkoutStatus
     }
 }
 

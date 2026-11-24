@@ -37,6 +37,15 @@ struct AgentListBoundsTests {
         #expect(list.rows.count == 70 && list.omitted == 0)
         #expect(list.rows.allSatisfy { $0.name == Self.nasty }, "unchanged on purpose: the default reply is what nightly sends")
         #expect(SessionServer.peerInfos(in: state, sender: state.agents[0].id) == list.rows)
+        #expect(list.directories.isEmpty, "the plain list supplies no probe paths")
+    }
+
+    @Test func aStaleAgentPaneIDDoesNotUseAnotherPaneForCheckoutStatus() {
+        var state = Self.state(threads: 1)
+        state.agents[0].paneID = PaneID()
+        let list = SessionServer.peerList(in: state, sender: state.agents[0].id, details: true)
+        #expect(list.rows.map(\.cwd) == [""])
+        #expect(list.directories == [""])
     }
 
     @Test func everyTextOfTheDetailedListIsOneShortLine() throws {
