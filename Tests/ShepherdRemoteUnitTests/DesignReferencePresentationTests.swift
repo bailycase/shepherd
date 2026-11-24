@@ -168,6 +168,17 @@ struct DesignMentionTests {
         #expect(DesignReferencePresentation.showLatest(moved) == "Show v14" && DesignReferencePresentation.showLatest(.deleted) == nil)
     }
 
+    @Test(arguments: [
+        (DesignReferencePayload.Proposal(kind: .draft), "Drew a board", "Draft"),
+        (DesignReferencePayload.Proposal(kind: .change), "Changed", "From revision 13"),
+        (DesignReferencePayload.Proposal(kind: .draft, state: .added), "Drew a board", "Added to the design"),
+        (DesignReferencePayload.Proposal(kind: .change, state: .added), "Changed", "Applied to the design"),
+        (DesignReferencePayload.Proposal(kind: .change, state: .discarded), "Changed", "Discarded"),
+    ])
+    func theMacCardHeadSaysWhatTheAgentDid(proposal: DesignReferencePayload.Proposal, label: String, tag: String) {
+        #expect(DesignReferencePresentation.boardHeader(proposal, revision: 13) == .init(label: label, tag: tag))
+    }
+
     @Test func theMacCardNamesWhatTheAgentDidAndWhereTheBoardStands() throws {
         let reference = try #require(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"), revision: 13))
         var payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: reference, design: "Checkout redesign",
@@ -178,9 +189,6 @@ struct DesignMentionTests {
         payload.proposal = .init(kind: .draft)
         let draft = DesignReferencePresentation.boardFooter(payload, board: "A · Funnel first")
         #expect(draft.title == "A · Funnel first" && draft.meta == ["Draft for Checkout redesign", "560 × 410"])
-        #expect(DesignReferencePresentation.boardHeader(.init(kind: .draft), revision: 13) == .init(label: "Drew a board", tag: "Draft"))
-        #expect(DesignReferencePresentation.boardHeader(.init(kind: .change), revision: 13) == .init(label: "Changed", tag: "From revision 13"))
-        #expect(DesignReferencePresentation.boardHeader(.init(kind: .change, state: .added), revision: 13).tag == "Applied to the design")
         let moved = DesignReferenceFreshness.updatedSince(latest: 15, changes: [])
         #expect(DesignReferencePresentation.boardNote(moved, shown: 13) == "Changed since. This is revision 13; the board is at 15.")
         #expect(DesignReferencePresentation.boardNote(.current, shown: 13) == nil)

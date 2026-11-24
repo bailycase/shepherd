@@ -119,7 +119,7 @@ public struct SHBoardCard<Actions: View>: View {
             }
             .frame(width: box.width, height: box.height)
             .clipShape(RoundedRectangle(cornerRadius: M.pictureRadius))
-            .shadow(color: .black.opacity(M.pictureShadow), radius: M.pictureShadowRadius, y: M.pictureShadowOffset)
+            .background { SHBoardPictureShadow() }
             Group {
                 if let open {
                     Button(action: open) { drawn }.buttonStyle(.plain).shFocusRing(radius: M.pictureRadius)
@@ -313,6 +313,17 @@ public struct SHBoardFooterLine<Actions: View>: View {
 }
 
 #if os(macOS)
+/// The board picture's 1pt shadow, cast by a fill under it so the picture itself isn't a shadow
+/// caster (it is covered by the picture, so the fill's color never shows).
+private struct SHBoardPictureShadow: View {
+    var body: some View {
+        let M = SHBoardCardMetrics.self
+        RoundedRectangle(cornerRadius: M.pictureRadius)
+            .fill(Color.sh.bgRaised)
+            .shadow(color: .black.opacity(M.pictureShadow), radius: M.pictureShadowRadius, y: M.pictureShadowOffset)
+    }
+}
+
 /// A board card's action as GXBoardShown draws it: text, no pill; the main one in 13 medium
 /// ink, a quiet one (Discard, Open in design beside a stronger link) in secondary. A hover
 /// fill shows it is a button.
@@ -428,7 +439,7 @@ public struct SHBoardPane<Actions: View>: View {
                     }
                     .frame(width: drawn.width, height: drawn.height)
                     .clipShape(RoundedRectangle(cornerRadius: M.pictureRadius))
-                    .shadow(color: .black.opacity(M.pictureShadow), radius: M.pictureShadowRadius, y: M.pictureShadowOffset)
+                    .background { SHBoardPictureShadow() }
                     .padding(M.panePadding)
                     .frame(minWidth: canvas.width, minHeight: canvas.height)
                 }
@@ -455,13 +466,15 @@ public struct SHBoardPane<Actions: View>: View {
         return HStack(spacing: 0) {
             Button { zoom = M.zoomed(scale, by: -1) } label: { Image(systemName: "minus") }
                 .buttonStyle(.shIcon).help("Zoom out").accessibilityLabel("Zoom out").disabled(scale <= M.zoomRange.lowerBound)
-            Text("\(Int((scale * 100).rounded()))%")
-                .font(.shMono(M.metaSize))
-                .foregroundStyle(sh.textTertiary)
-                .monospacedDigit()
-                .frame(minWidth: M.zoomLabelWidth)
-                .onTapGesture { zoom = nil }
-                .help("Fit")
+            Button { zoom = nil } label: {
+                Text("\(Int((scale * 100).rounded()))%")
+                    .font(.shMono(M.metaSize))
+                    .foregroundStyle(sh.textTertiary)
+                    .monospacedDigit()
+                    .frame(minWidth: M.zoomLabelWidth, minHeight: SH.Height.controlM)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("Fit").accessibilityLabel("Fit the board")
             Button { zoom = M.zoomed(scale, by: 1) } label: { Image(systemName: "plus") }
                 .buttonStyle(.shIcon).help("Zoom in").accessibilityLabel("Zoom in").disabled(scale >= M.zoomRange.upperBound)
         }
