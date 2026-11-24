@@ -66,7 +66,8 @@ struct ShellLayoutTests {
 
     @Test(arguments: [
         // column, preferred → mode, pane width, thread width
-        (1207.0, nil as Double?, ShellLayout.PaneMode.docked, 600.0, 606.0),
+        (1207.0, nil as Double?, ShellLayout.PaneMode.docked, 603.5, 602.5),
+        (1600.0, nil, .docked, 720.0, 879.0),
         (1207.0, 900.0, .docked, 603.5, 602.5),
         (1207.0, 100.0, .docked, 380.0, 826.0),
         (881.0, nil, .docked, 440.5, 439.5),
@@ -74,7 +75,7 @@ struct ShellLayoutTests {
         (781.0, nil, .docked, 380.0, 400.0),
         (960.0, 700.0, .docked, 480.0, 479.0),
         // Narrower, the pane overlays the thread instead of squeezing it.
-        (780.0, nil, .overlay, 600.0, 780.0),
+        (780.0, nil, .overlay, 720.0, 780.0),
         (720.0, 480.0, .overlay, 480.0, 720.0),
         // The overlaid pane and its 1pt edge fit the column exactly.
         (300.0, nil, .overlay, 299.0, 300.0),
@@ -100,7 +101,7 @@ struct ShellLayoutTests {
         let project = RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults)
         #expect(thread.width == 0 && project.width == 0, "both start at their defaults")
         #expect(ShellLayout.rightPane(containerWidth: 1368, preferredWidth: project.width, defaultWidth: project.defaultWidth).width == 479)
-        #expect(ShellLayout.rightPane(containerWidth: 1368, preferredWidth: thread.width, defaultWidth: thread.defaultWidth).width == 600)
+        #expect(ShellLayout.rightPane(containerWidth: 1600, preferredWidth: thread.width, defaultWidth: thread.defaultWidth).width == 720)
         project.width = 620
         #expect(thread.width == 0, "dragging the Project pane leaves a thread's pane alone")
         #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults).width == 620,
@@ -111,12 +112,12 @@ struct ShellLayoutTests {
                 "a width under the minimum restores the default")
     }
 
-    /// A thread's side pane under its handle's drag path: the 600 default until a drag, the pointer's place deciding the width,
+    /// A thread's side pane under its handle's drag path: the 720 default until a drag, the pointer's place deciding the width,
     /// clamped to 380...half the column while previewing and when let go, and only letting go saves it, under the thread's own key.
     @Test func aThreadPaneDragPreviewsWithinItsBoundsAndSavesOnlyWhenLetGo() {
         let defaults = ScratchDefaults()
         let state = RightPaneState(defaults: defaults)
-        #expect(RightPaneDrag.layout(nil, state: state, containerWidth: 1440).width == 600)
+        #expect(RightPaneDrag.layout(nil, state: state, containerWidth: 1440).width == 720)
         for (pointer, preview) in [(900.0, 540.0), (300, 720), (1200, 380)] as [(CGFloat, CGFloat)] {
             #expect(RightPaneDrag.layout(RightPaneDrag(pointerX: pointer, containerWidth: 1440), state: state, containerWidth: 1440).width == preview)
         }

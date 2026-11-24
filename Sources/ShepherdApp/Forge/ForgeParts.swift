@@ -98,13 +98,15 @@ struct ForgeActivityRow: View, Equatable {
     let now: Date
     /// A review shows its line comments, each under its file, line and hunk (the side pane's PRPane).
     var lineComments = false
+    /// Drawn as the side pane's Activity (GXPanePR): events are plain rows, words sit in an outlined box.
+    var pane = false
 
     var body: some View {
         let line = ForgePresentation.line(event, viewer: viewer)
         let age = ForgePresentation.age(event.at, now: now)
         Group {
             if lineComments, case .reviewed(let state, let body, let comments) = event.kind, !body.isEmpty || !comments.isEmpty {
-                ForgeReviewCard(event: event, state: state, words: body, comments: comments, you: isViewer, age: age)
+                ForgeReviewCard(event: event, state: state, words: body, comments: comments, you: isViewer, age: age, pane: pane)
             } else if let body = Self.words(event) {
                 VStack(alignment: .leading, spacing: SH.Space.s) {
                     HStack(spacing: SH.Space.m) {
@@ -126,24 +128,29 @@ struct ForgeActivityRow: View, Equatable {
                 .padding(SH.Space.l)
             } else {
                 HStack(spacing: SH.Space.m) {
-                    Image(systemName: glyph).font(.sh(.caption)).foregroundStyle(glyphColor).frame(width: AppLayout.forgeRowAvatar)
-                    Text("\(Text(line.actor).fontWeight(.semibold).foregroundStyle(Color.sh.textPrimary)) \(line.text)")
+                    Image(systemName: glyph).font(.sh(.caption)).foregroundStyle(glyphColor)
+                        .frame(width: pane ? AppLayout.prPaneEventGlyph : AppLayout.forgeRowAvatar)
+                    Text("\(Text(line.actor).font(.sh(.ui, weight: pane ? .medium : .semibold)).foregroundStyle(Color.sh.textPrimary)) \(line.text)")
                         .font(.sh(.ui, weight: .regular))
                         .foregroundStyle(Color.sh.textSecondary)
                         .lineLimit(2)
                     Spacer(minLength: SH.Space.m)
                     Text(age).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
-                .padding(.horizontal, SH.Space.l)
-                .frame(minHeight: SH.Height.controlL + SH.Space.xxs)
+                .padding(.horizontal, pane ? 0 : SH.Space.l)
+                .frame(minHeight: pane ? AppLayout.prPaneEventHeight : SH.Height.controlL + SH.Space.xxs)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard()
+        .modifier(ForgeEventBox(pane: pane, plain: Self.words(event) == nil && !(lineComments && isReviewWithComments)))
         .accessibilityElement(children: .combine)
     }
 
     private var isViewer: Bool { viewer.map { $0.caseInsensitiveCompare(event.actor) == .orderedSame } ?? false }
+
+    private var isReviewWithComments: Bool {
+        if case .reviewed(_, let body, let comments) = event.kind { !body.isEmpty || !comments.isEmpty } else { false }
+    }
 
     /// A comment's or a review's words, if it said any.
     static func words(_ event: ForgeEvent) -> String? {
@@ -178,6 +185,21 @@ struct ForgeActivityRow: View, Equatable {
     }
 }
 
+/// An Activity entry's box: a raised card on the page; in the side pane an outlined box around words and none around a plain event.
+private struct ForgeEventBox: ViewModifier {
+    let pane: Bool
+    let plain: Bool
+
+    func body(content: Content) -> some View {
+        if pane {
+            content.shBorder(plain ? .clear : Color.sh.lineSubtle, radius: AppLayout.prPaneBoxRadius)
+                .padding(.vertical, plain ? 0 : SH.Space.xs)
+        } else {
+            content.shCard()
+        }
+    }
+}
+
 /// A review with its words and line comments (PRPane): who and what they asked, then each
 /// comment's file and line, the hunk's last lines and the words.
 private struct ForgeReviewCard: View {
@@ -187,6 +209,7 @@ private struct ForgeReviewCard: View {
     let comments: [ForgeLineComment]
     let you: Bool
     let age: String
+    var pane = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -230,7 +253,7 @@ private struct ForgeReviewCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard()
+        .modifier(ForgeEventBox(pane: pane, plain: false))
         .accessibilityElement(children: .combine)
     }
 

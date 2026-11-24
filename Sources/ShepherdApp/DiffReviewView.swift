@@ -227,7 +227,7 @@ struct ReviewPaneContent: View {
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(phases: .down) { press in handle(press) }
-        .background(Color.sh.bgWindow)
+        .background(SHPaneSurface.fill)
         .modifier(RevertConfirmation(model: model))
         .modifier(CommitSheetPresenter(model: model))
         // The side pane's ⋯ menu folds and unfolds this pane's files.
@@ -368,7 +368,7 @@ private struct ChangesToolbar: View, Equatable {
         .padding(.leading, SH.Space.l)
         .padding(.trailing, 10)
         .frame(height: SHChangesMetrics.toolbarHeight)
-        .background(Color.sh.bgWindow)
+        .background(SHPaneSurface.fill)
         .overlay(alignment: .bottom) { SHHairline() }
     }
 
@@ -512,8 +512,10 @@ private struct ReviewFileStrip: View {
     let touchedPaths: Set<String>
 
     var body: some View {
-        SHFileStrip(items, selection: model.currentFile, animatesSelection: !model.movedByKey) { model.select($0) }
-            .overlay(alignment: .bottom) { SHHairline() }
+        SHFileRows(items, selection: model.currentFile) { model.select($0) }
+            .padding(.horizontal, AppLayout.changesFileRowsInset)
+            .padding(.vertical, SH.Space.m)
+            .background(SHPaneSurface.fill)
     }
 
     private var items: [SHFileStrip.Item] {
