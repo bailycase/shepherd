@@ -3,21 +3,34 @@
     <channel>
         <title>Shepherd</title>
         <item>
+            <title>0.2.1</title>
+            <pubDate>Tue, 24 Nov 2026 19:50:51 +0000</pubDate>
+            <link>https://github.com/shepherd-app/shepherd</link>
+            <sparkle:version>894</sparkle:version>
+            <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/shepherd-app/shepherd/releases/download/v0.2.1/Shepherd.dmg" length="229228050" type="application/octet-stream" sparkle:edSignature="6+I+RH9rUnIEXZ4WFgtVCAHrSHaKGd2tV/JLiMOUCGI0cnqC9ZTyY44ltTija7Vpki4+jAJXX/LohNAQRMPkBQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/shepherd-app/shepherd/releases/download/v0.2.1/Shepherd894-35.delta" sparkle:deltaFrom="35" length="79093914" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="R0oo7A4Ek0DBo/d+8Nndged6X+QdNCT3YFImySLsdLnhMLYW5dTAi2/BCM1pnhjtxk3Kurl7LB2l3UBvxz76Bw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.1.0-beta.6</title>
-            <pubDate>Tue, 24 Nov 2026 19:38:41 +0000</pubDate>
+            <pubDate>Tue, 24 Nov 2026 19:50:52 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:version>35</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/shepherd-app/shepherd/releases/download/v0.1.0-beta.6/Shepherd.dmg" length="18749293" type="application/octet-stream" sparkle:edSignature="NQEVwSKBpEx3uvWe9xpEObgNdnUhmINz6UC6pp+Yaquh1g4w6ssrnZx/CYzIsK1u/bCLCOL0q8OoiyE+1IiRAA=="/>
             <sparkle:deltas>
-                <enclosure url="https://github.com/shepherd-app/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-33.delta" sparkle:deltaFrom="33" length="1146822" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="2sThLfsr6OYxj4PqP1UIPWnb5uE+mzGXmBc61ZUhO4icO60slTXCSva12ob/liYsBN/C+fKHC+L5EcSRoo6OBA=="/>
+                <enclosure url="https://github.com/shepherd-app/shepherd/releases/download/v0.2.1/Shepherd35-33.delta" sparkle:deltaFrom="33" length="1146822" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="2sThLfsr6OYxj4PqP1UIPWnb5uE+mzGXmBc61ZUhO4icO60slTXCSva12ob/liYsBN/C+fKHC+L5EcSRoo6OBA=="/>
             </sparkle:deltas>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
         </item>
         <item>
             <title>0.1.0-beta.5</title>
-            <pubDate>Tue, 24 Nov 2026 19:38:42 +0000</pubDate>
+            <pubDate>Tue, 24 Nov 2026 19:50:52 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:version>33</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.5</sparkle:shortVersionString>
@@ -27,7 +40,7 @@
         </item>
         <item>
             <title>0.1.0-beta.4</title>
-            <pubDate>Tue, 24 Nov 2026 19:38:43 +0000</pubDate>
+            <pubDate>Tue, 24 Nov 2026 19:50:53 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:version>31</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.4</sparkle:shortVersionString>
