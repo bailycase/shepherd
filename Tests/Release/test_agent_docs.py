@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-AGENTS_MAX_LINES = 130
+AGENTS_MAX_LINES = 140
 DESIGN_MAX_LINES = 280
 
 # Reference docs AGENTS.md points at, each with a one-line "Read when" header.

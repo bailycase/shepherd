@@ -34,4 +34,6 @@ cat > "$out" <<PLIST
 </dict>
 </plist>
 PLIST
-/usr/bin/plutil -lint "$out" >/dev/null
+# plutil is macOS-only; the release preflight runs these scripts on Linux, where Tests/Release
+# parses the plist itself.
+if [[ -x /usr/bin/plutil ]]; then /usr/bin/plutil -lint "$out" >/dev/null; fi
