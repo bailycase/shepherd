@@ -10,10 +10,13 @@ extension View {
     /// The boards' `lift`: a close 1pt shadow and a soft 20pt one under a card's fill. Cast by the
     /// fill shape, never the content, so a scrolling card does not redraw it per layer.
     public func shLift<S: Shape>(_ shape: S, fill: Color? = nil) -> some View {
+        // Each shadow cast by a fill of its own: stacked on one fill, the outer shadow is cast from a layer with a child,
+        // which Core Animation redraws from its whole subtree.
         background {
-            shape.fill(fill ?? .sh.bgRaised)
-                .shadow(color: .sh.liftNear, radius: SHLift.nearRadius, y: SHLift.nearOffset)
-                .shadow(color: .sh.liftFar, radius: SHLift.farRadius, y: SHLift.farOffset)
+            ZStack {
+                shape.fill(fill ?? .sh.bgRaised).shadow(color: .sh.liftFar, radius: SHLift.farRadius, y: SHLift.farOffset)
+                shape.fill(fill ?? .sh.bgRaised).shadow(color: .sh.liftNear, radius: SHLift.nearRadius, y: SHLift.nearOffset)
+            }
         }
     }
 
