@@ -67,7 +67,10 @@ extension AppLayout {
     static let headerPadding: CGFloat = SHToolbarMetrics.leadingPadding
 
     // Side pane (its tabs, or the subagent inspector over them; PaneStates)
-    static let paneDefaultWidth: CGFloat = 600
+    /// The boards' pane (`.pane.w`) is 720 wide.
+    static let paneDefaultWidth: CGFloat = 720
+    /// The thread's pane is a card (GXSidePane): 8pt from the thread before it and from the window's top, bottom and trailing edges.
+    static let paneCardEdge: CGFloat = SHSidePaneMetrics.cardGap + SHSidePaneMetrics.cardInset
     /// Under 480 the tab strip drops its labels (`SHSidePaneMetrics.labelsMinWidth`).
     static let paneMinWidth: CGFloat = 380
     static let paneMaxFraction: CGFloat = 0.5
@@ -83,6 +86,8 @@ extension AppLayout {
     /// The Changes tab's bar under the pane's tabs: scope and totals, Local | PR (Review board).
     static let changesBarHeight: CGFloat = 40
     static let changesBarLeadingPadding: CGFloat = 14
+    /// The Changes tab's file rows sit 12pt in from the pane's sides (the boards' `.pbody`).
+    static let changesFileRowsInset: CGFloat = SH.Space.l
     /// The thread keeps at least this beside a docked pane; narrower, the pane overlays it.
     static let threadMinWidth: CGFloat = 400
 
@@ -151,21 +156,20 @@ enum ShellLayout {
     /// pane overlays the thread and, with its 1pt edge, never exceeds the column. Nothing is
     /// ever negative.
     static func rightPane(containerWidth: CGFloat, preferredWidth: CGFloat?,
-                          defaultWidth: CGFloat = AppLayout.paneDefaultWidth) -> Pane {
+                          defaultWidth: CGFloat = AppLayout.paneDefaultWidth, edge: CGFloat = AppLayout.dividerWidth) -> Pane {
         let total = max(0, containerWidth)
         let preferred = max(preferredWidth.flatMap { $0 > 0 ? $0 : nil } ?? defaultWidth, AppLayout.paneMinWidth)
-        if total >= paneDockThreshold {
-            let edge = AppLayout.dividerWidth
+        if total >= paneDockThreshold + edge - AppLayout.dividerWidth {
             let widest = max(AppLayout.paneMinWidth, min(total * AppLayout.paneMaxFraction, total - edge - AppLayout.threadMinWidth))
             let width = min(preferred, widest)
             return Pane(mode: .docked, width: width, contentWidth: total - edge - width)
         }
-        return Pane(mode: .overlay, width: min(preferred, max(0, total - AppLayout.dividerWidth)), contentWidth: total)
+        return Pane(mode: .overlay, width: min(preferred, max(0, total - edge)), contentWidth: total)
     }
 
     /// The widest the side pane may be beside a column this wide: half of it where it docks
     /// (PaneStates: double-click the divider for half the window), never taking the thread's 400.
-    static func widestRightPane(containerWidth: CGFloat) -> CGFloat {
-        rightPane(containerWidth: containerWidth, preferredWidth: .greatestFiniteMagnitude).width
+    static func widestRightPane(containerWidth: CGFloat, edge: CGFloat = AppLayout.dividerWidth) -> CGFloat {
+        rightPane(containerWidth: containerWidth, preferredWidth: .greatestFiniteMagnitude, edge: edge).width
     }
 }

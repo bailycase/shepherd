@@ -322,9 +322,12 @@ private struct SHDiffLineDrawing: View {
         let bar = SHDiffMetrics.barWidth
         let number = SHDiffMetrics.numberWidth
         let midY = min(size.height, SHDiffMetrics.lineHeight) / 2
+        #if !os(macOS)
+        // The Mac's diff has no gutter bar (GXSidePane): the tint and the sign carry the change.
         if line.kind != .context {
             context.fill(Path(CGRect(x: 0, y: 0, width: bar, height: size.height)), with: .color(line.kind == .added ? sh.done : sh.failed))
         }
+        #endif
         for (index, value) in numbers.enumerated() {
             if let value {
                 let text = context.resolve(Text(String(value)).font(.shMono(10.5)).foregroundStyle(sh.textTertiary))
@@ -573,6 +576,6 @@ private struct SHDiffRowView<Note: Equatable, Annotation: View>: View, Equatable
                     .overlay(alignment: .bottom) { SHHairline() }
             }
         }
-        .background(Color.sh.bgWindow)
+        .background(SHPaneSurface.fill)
     }
 }

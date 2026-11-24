@@ -50,7 +50,7 @@ struct FilesTab: View {
             }
             .coordinateSpace(name: coordSpace)
         }
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .overlay(alignment: .topLeading) {
             if !showTree && model.selectedPath == nil {
                 Button { showTree = true } label: {
@@ -134,7 +134,7 @@ struct FilesTab: View {
 
     private var fileTabStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
+            HStack(spacing: SH.Space.xxs) {
                 ForEach(model.openTabs) { tab in
                     FileTabView(
                         tab: tab,
@@ -150,8 +150,9 @@ struct FilesTab: View {
                 }
             }
         }
+        .padding(.horizontal, SH.Space.m)
         .frame(height: AppLayout.Files.tabHeight)
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .overlay(alignment: .bottom) {
             Color.sh.lineSubtle.frame(height: 1)
         }
@@ -172,7 +173,7 @@ struct FilesTab: View {
 
 // MARK: - File tab
 
-/// One open file: its name, then a lantern dot while it has unsaved edits, a spinner while the
+/// One open file: its name, then a dot while it has unsaved edits, a spinner while the
 /// agent edits it, else its close button (shown on hover for the first two too).
 private struct FileTabView: View {
     let tab: OpenFileTab
@@ -191,9 +192,12 @@ private struct FileTabView: View {
                         .font(.system(size: AppLayout.Files.treeFileIconSize))
                         .foregroundStyle(Color.sh.textTertiary)
                     Text(tab.name)
-                        .font(.sh(.code))
+                        .font(.sh(.ui, weight: .regular))
                         .foregroundStyle(isActive ? Color.sh.textPrimary : Color.sh.textSecondary)
                         .lineLimit(1)
+                    if agentWorking {
+                        Text("Agent editing").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -214,24 +218,17 @@ private struct FileTabView: View {
                         .accessibilityLabel("The agent is editing \(tab.name)")
                 } else {
                     Circle()
-                        .fill(Color.sh.lantern)
+                        .fill(Color.sh.textPrimary)
                         .frame(width: AppLayout.Files.dirtyDotSize, height: AppLayout.Files.dirtyDotSize)
                         .accessibilityLabel("Unsaved changes")
                 }
             }
             .frame(width: AppLayout.Files.tabCloseSize, height: AppLayout.Files.tabCloseSize)
         }
-        .padding(.horizontal, SH.Space.m)
-        .frame(height: AppLayout.Files.tabHeight)
-        .background(isActive ? Color.sh.bgBase : Color.clear)
-        .overlay(alignment: .top) {
-            if isActive {
-                Color.sh.lantern.frame(height: AppLayout.Files.activeTabRule)
-            }
-        }
-        .overlay(alignment: .trailing) {
-            Color.sh.lineSubtle.frame(width: 1)
-        }
+        .padding(.leading, AppLayout.Files.tabLeading)
+        .padding(.trailing, AppLayout.Files.tabTrailing)
+        .frame(height: AppLayout.Files.tabChipHeight)
+        .background(isActive ? Color.sh.bgSelected : hovering ? Color.sh.bgHover : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
     }
 }
@@ -294,13 +291,16 @@ private struct FileViewerContent: View {
             viewerToolbar
             if editable, let edit {
                 Button("Revert") { model.revert() }
-                    .buttonStyle(SHButtonStyle(.ghost, size: .s))
+                    .buttonStyle(PaneWordButtonStyle(emphasis: false))
                     .disabled(!edit.isDirty)
                     .help("Drop unsaved edits")
                 Button { Task { await model.save() } } label: {
-                    SHButtonTitle("Save", chord: KeybindingsStore.shared.display(.saveProjectFile))
+                    HStack(spacing: SH.Space.xs) {
+                        Text("Save")
+                        Text(KeybindingsStore.shared.display(.saveProjectFile)).foregroundStyle(Color.sh.textTertiary)
+                    }
                 }
-                .buttonStyle(SHButtonStyle(.secondary, size: .s))
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
                 .disabled(!edit.isDirty || edit.conflict != nil || model.saving)
                 .accessibilityLabel("Save")
             }
@@ -319,11 +319,9 @@ private struct FileViewerContent: View {
             .focusEffectDisabled()
         }
         .frame(height: AppLayout.Files.headerHeight)
-        .padding(.horizontal, SH.Space.l)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .bottom) {
-            Color.sh.lineSubtle.frame(height: 1)
-        }
+        .padding(.leading, SH.Space.xl)
+        .padding(.trailing, SH.Space.m)
+        .background(Color.sh.bgRaised)
     }
 
     @ViewBuilder
@@ -369,43 +367,35 @@ private struct FileViewerContent: View {
         }
     }
 
-    /// "src › components › Checkout.tsx", the folders of the path within the tree's root.
+    /// "src/components/**Checkout.tsx**" (GXPaneFiles `.pth`): the folders within the tree's root quiet, the file's name plain.
     private var breadcrumb: some View {
-        let parts = relativePath(path, root: model.rootPath).split(separator: "/").map(String.init)
-        return HStack(spacing: SH.Space.s) {
-            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
-                if index > 0 {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: AppLayout.Files.treeChevronSize, weight: .semibold))
-                        .foregroundStyle(Color.sh.textTertiary)
-                }
-                Text(part)
-                    .font(.sh(.code))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .layoutPriority(index == parts.count - 1 ? 1 : 0)
-            }
-        }
-        .lineLimit(1)
-        .truncationMode(.head)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(relativePath(path, root: model.rootPath))
+        let relative = relativePath(path, root: model.rootPath)
+        let name = (relative as NSString).lastPathComponent
+        let folders = relative.dropLast(name.count)
+        return Text("\(Text(String(folders)).foregroundStyle(Color.sh.textTertiary))\(Text(name).foregroundStyle(Color.sh.textPrimary))")
+            .font(.sh(.mono))
+            .lineLimit(1)
+            .truncationMode(.head)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(relative)
     }
 
     /// The marks' legend (an editable file), then the caret, the language and the indentation.
     private var statusBar: some View {
         HStack(spacing: SH.Space.l) {
             if editable {
-                legend("yours, unsaved", color: Color.sh.lantern)
-                legend("changed by the agent", color: Color.sh.running)
+                legend("Yours, unsaved", color: Color.sh.textPrimary)
+                legend("Changed by the agent", color: Color.sh.textTertiary)
             }
             Spacer()
-            Text([cursor.label, fileExtension(path)?.uppercased(), edit?.indentation]
-                    .compactMap { $0 }.joined(separator: " \u{00B7} "))
-                .lineLimit(1)
+            HStack(spacing: SH.Space.l) {
+                ForEach([cursor.label, fileExtension(path)?.uppercased(), edit?.indentation].compactMap { $0 }, id: \.self) { Text($0) }
+            }
+            .lineLimit(1)
         }
-        .font(.sh(.micro))
+        .font(.sh(.caption))
         .foregroundStyle(Color.sh.textTertiary)
-        .padding(.horizontal, SH.Space.l)
+        .padding(.horizontal, SH.Space.xl)
         .frame(height: AppLayout.Files.statusBarHeight)
         .overlay(alignment: .top) {
             Color.sh.lineSubtle.frame(height: 1)
@@ -773,7 +763,7 @@ private final class FilesScrollView: NSScrollView {
 
 /// Native find stays in the viewer's responder chain, without a window-wide key monitor.
 /// Draws the gutter: line numbers, and a bar beside each line changed since the last save
-/// (lantern, with its tint across the line) or by the agent (running).
+/// (ink, with a faint fill across the line) or by the agent (grey).
 private final class FilesTextView: NSTextView {
     private var lineStarts = [0]
     private var gutterWidth: CGFloat = 0
@@ -860,7 +850,7 @@ private final class FilesTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard !unsavedLines.isEmpty else { return }
-        NSColor(Color.sh.lanternTint).setFill()
+        NSColor(Color.sh.bgHover).setFill()
         for line in visibleLines() where unsavedLines.contains(line.index) {
             NSRect(x: visibleRect.minX, y: line.rect.minY, width: visibleRect.width, height: line.rect.height).fill()
         }
@@ -879,7 +869,7 @@ private final class FilesTextView: NSTextView {
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSBezierPath(rect: gutter.intersection(dirtyRect)).addClip()
         if !unsavedLines.isEmpty {
-            NSColor(Color.sh.lanternTint).setFill()
+            NSColor(Color.sh.bgHover).setFill()
             for line in visibleLines() where unsavedLines.contains(line.index) {
                 NSRect(x: gutter.minX, y: line.rect.minY, width: gutter.width, height: line.rect.height).fill()
             }
@@ -889,8 +879,8 @@ private final class FilesTextView: NSTextView {
             let number = "\(line.index + 1)" as NSString
             let size = number.size(withAttributes: attributes)
             number.draw(at: NSPoint(x: gutter.maxX - size.width - SH.Space.s, y: line.rect.minY), withAttributes: attributes)
-            let mark: Color? = unsavedLines.contains(line.index) ? Color.sh.lantern
-                : agentLines.contains(line.index) ? Color.sh.running : nil
+            let mark: Color? = unsavedLines.contains(line.index) ? Color.sh.textPrimary
+                : agentLines.contains(line.index) ? Color.sh.textTertiary : nil
             if let mark {
                 NSColor(mark).setFill()
                 NSRect(x: gutter.maxX - AppLayout.Files.markWidth, y: line.rect.minY,
@@ -1028,7 +1018,7 @@ private struct FileTreeContent: View {
             treeBody
             treeFooter
         }
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
     }
 
     private var treeHeader: some View {
@@ -1037,13 +1027,12 @@ private struct FileTreeContent: View {
                 .font(.shSans(AppLayout.Files.spaceNameFontSize, .semibold))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
-            Spacer()
             Text(abbreviatedPath(model.rootPath))
-                .font(.sh(.micro))
+                .font(.sh(.mono))
                 .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(maxWidth: AppLayout.Files.pathMaxWidth, alignment: .trailing)
+            Spacer(minLength: 0)
             if model.selectedPath == nil {
                 Button(action: hideTree) {
                     Image(systemName: "sidebar.left")
@@ -1058,6 +1047,7 @@ private struct FileTreeContent: View {
         .frame(height: AppLayout.Files.spaceHeaderHeight)
         .padding(.horizontal, SH.Space.m)
         .padding(.leading, SH.Space.xs)
+        .padding(.top, SH.Space.m)
     }
 
     private var filterField: some View {
@@ -1073,13 +1063,9 @@ private struct FileTreeContent: View {
         }
         .frame(height: AppLayout.Files.filterHeight)
         .padding(.horizontal, SH.Space.m)
-        .background(Color.clear)
-        .overlay(
-            RoundedRectangle(cornerRadius: SH.Radius.m)
-                .stroke(Color.sh.lineSubtle, lineWidth: 1)
-        )
+        .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .padding(.horizontal, SH.Space.m)
-        .padding(.bottom, SH.Space.xs)
+        .padding(.bottom, SH.Space.s)
     }
 
     private var treeBody: some View {
@@ -1204,7 +1190,13 @@ private struct FileTreeRow: View, Equatable {
                         .font(.system(size: AppLayout.Files.treeChevronSize, weight: .semibold))
                         .foregroundStyle(Color.sh.textTertiary)
                         .frame(width: AppLayout.Files.treeIconSize, height: AppLayout.Files.treeIconSize)
+                    Image(systemName: "folder")
+                        .font(.system(size: AppLayout.Files.treeFileIconSize))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .frame(width: AppLayout.Files.treeIconSize, height: AppLayout.Files.treeIconSize)
                 } else {
+                    // Under the folders' chevron column, so a file's glyph lines up with a folder's.
+                    Color.clear.frame(width: AppLayout.Files.treeIconSize, height: AppLayout.Files.treeIconSize)
                     Image(systemName: fileIcon(for: node.name))
                         .font(.system(size: AppLayout.Files.treeFileIconSize))
                         .foregroundStyle(Color.sh.textTertiary)

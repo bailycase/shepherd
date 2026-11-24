@@ -182,12 +182,30 @@ struct FilesPreviewTests {
         return (root.deletingLastPathComponent(), model, checkout)
     }
 
+    /// The pane card of GXPaneFiles and GXPaneFilesEdit: 720 wide, 8pt in from the window.
+    private func paneCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(width: AppLayout.paneDefaultWidth, height: 884)
+            .shCard(lift: true)
+            .padding(SHSidePaneMetrics.cardInset)
+            .background(Color.sh.bgWindow)
+    }
+
     @Test func paneFilesEditing() async throws {
         let (root, model, _) = try await editingFixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        try await Preview.render("files-editing", size: CGSize(width: 760, height: 700),
+        try await Preview.render("files-editing", size: CGSize(width: 736, height: 900),
                                  ready: { highlightingReady(prefix: "export function") }) {
-            FilesTab(model: model, agentPath: "src/components/PromoField.tsx")
+            paneCard { FilesTab(model: model, agentPath: "src/components/PromoField.tsx") }
+        }
+    }
+
+    /// GXPaneFiles: the tree and a file the thread added, its changed lines marked.
+    @Test func paneFilesReading() async throws {
+        let (root, model) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await Preview.render("files-pane", size: CGSize(width: 736, height: 900), ready: { highlightingReady() }) {
+            paneCard { FilesTab(model: model) }
         }
     }
 
@@ -196,9 +214,9 @@ struct FilesPreviewTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try "// rewritten by the agent\n".write(to: checkout, atomically: true, encoding: .utf8)
         await model.checkDisk()
-        try await Preview.render("files-conflict", size: CGSize(width: 760, height: 700),
+        try await Preview.render("files-conflict", size: CGSize(width: 736, height: 900),
                                  ready: { highlightingReady(prefix: "export function") }) {
-            FilesTab(model: model)
+            paneCard { FilesTab(model: model) }
         }
     }
 }

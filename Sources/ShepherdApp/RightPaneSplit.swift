@@ -28,7 +28,10 @@ final class RightPaneState {
     var width: CGFloat {
         didSet { defaults.set(Double(width), forKey: widthKey) }
     }
-    /// The width before the user resizes (a thread's 600; a Project page's 480 box less its divider).
+    /// What a thread's pane card takes from the column beside the thread (its width and edge), published by the
+    /// layout on screen; 0 while none shows. The toolbar ends where it begins (GXSidePane).
+    var reserved: CGFloat = 0
+    /// The width before the user resizes (a thread's 720; a Project page's 480 box less its divider).
     let defaultWidth: CGFloat
     @ObservationIgnored private let widthKey: String
     @ObservationIgnored private let defaults: UserDefaults
@@ -90,22 +93,32 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     let showPane: Bool
     /// The pane over the whole layout (ChangesWide): the thread stays mounted under it, hidden.
     var maximized = false
+    /// The pane is a card beside the thread, 8pt in from the window's top, bottom and trailing edges and from the thread
+    /// (a thread's, GXSidePane); else a full-height column behind a 1pt divider (a Project page's).
+    var card = false
+    /// The layout is on screen: only it tells the toolbar how much of the column the card takes.
+    var publishesReserve = false
     @ViewBuilder let content: () -> Content
     @ViewBuilder let pane: () -> Pane
+    /// The toolbar's height, over the top of the column (a thread's card runs up beside it): the thread starts under it.
+    @Environment(\.workspaceTopInset) private var topInset
     /// The drag under way at the handle: only this split previews it, so hidden layouts never follow it frame by frame.
     @State private var drag: RightPaneDrag?
 
     var body: some View {
         GeometryReader { geo in
             let total = geo.size.width
-            let layout = RightPaneDrag.layout(drag, state: state, containerWidth: total)
+            let edge = card ? AppLayout.paneCardEdge : AppLayout.dividerWidth
+            let layout = RightPaneDrag.layout(drag, state: state, containerWidth: total, edge: edge)
             let docked = layout.mode == .docked
             let covers = showPane && maximized
-            let paneWidth = covers ? total : layout.width
+            let paneWidth = covers ? total - (card ? AppLayout.paneCardEdge : 0) : layout.width
             let contentWidth = showPane && docked && !covers ? layout.contentWidth : total
+            let reserve = card && showPane && !covers ? layout.width + edge : 0
             // The thread stays the first child in both modes, so opening a pane never remounts it.
             ZStack(alignment: .topLeading) {
                 content()
+                    .padding(.top, card ? topInset : 0)
                     .frame(width: contentWidth, height: geo.size.height)
                     // Maximized, the thread is hidden, never unmounted: restoring is a flip.
                     .opacity(covers ? 0 : 1)
@@ -117,15 +130,33 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                     .animation(nil, value: showPane)
                 if showPane {
                     HStack(spacing: 0) {
-                        if !covers { handle(total: total, width: layout.width) }
-                        pane()
-                            .frame(width: paneWidth, height: geo.size.height)
-                            .clipped()
+                        if !covers { handle(total: total, width: layout.width, edge: edge) }
+                        if card {
+                            // The card: raised, rounded and lifted (the boards' `.pane`), the toolbar's row inside it.
+                            let shape = RoundedRectangle(cornerRadius: SH.Radius.xl)
+                            pane()
+                                .frame(width: paneWidth, height: geo.size.height - 2 * SHSidePaneMetrics.cardInset)
+                                .shCard(lift: true)
+                                .shFloatCardShadow(shape, floating: !docked && !covers)
+                                .padding(.vertical, SHSidePaneMetrics.cardInset)
+                                .padding(.leading, covers ? SHSidePaneMetrics.cardGap : 0)
+                                .padding(.trailing, SHSidePaneMetrics.cardInset)
+                        } else {
+                            pane()
+                                .frame(width: paneWidth, height: geo.size.height)
+                                .clipped()
+                        }
                     }
-                    .shFloatBackground(Color.sh.bgWindow, floating: !docked && !covers)
-                    .offset(x: covers ? 0 : max(0, total - layout.width - AppLayout.dividerWidth))
+                    .shFloatBackground(card ? Color.clear : Color.sh.bgWindow, floating: !card && !docked && !covers)
+                    .offset(x: covers ? 0 : max(0, total - layout.width - edge))
                     .shTransition(.pane, edge: .trailing)
                 }
+            }
+            .onChange(of: reserve, initial: true) { _, new in
+                if publishesReserve, state.reserved != new { state.reserved = new }
+            }
+            .onChange(of: publishesReserve) { _, now in
+                if now { state.reserved = reserve }
             }
             .shAnimation(.pane, value: showPane)
             .shAnimation(.pane, value: covers)
@@ -135,22 +166,24 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
 
     /// The pane's leading edge and drag handle (adjustable with VoiceOver); a double-click takes
     /// the pane to half the column.
-    private func handle(total: CGFloat, width: CGFloat) -> some View {
-        Color.sh.lineSubtle
-            .frame(width: AppLayout.dividerWidth)
+    private func handle(total: CGFloat, width: CGFloat, edge: CGFloat) -> some View {
+        // A card's handle is the clear gap before it (the boards draw no divider).
+        (card ? Color.clear : Color.sh.lineSubtle)
+            .frame(width: card ? SHSidePaneMetrics.cardGap : AppLayout.dividerWidth)
             .overlay {
                 Color.clear
                     .frame(width: AppLayout.resizeHandleWidth)
                     .contentShape(Rectangle())
                     .pointerStyle(.columnResize)
                     .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("right-pane"))
-                        .onChanged { drag = RightPaneDrag(pointerX: $0.location.x, containerWidth: total) }
+                        .onChanged { drag = RightPaneDrag(pointerX: $0.location.x, containerWidth: total,
+                                                                pointerOffset: card ? RightPaneDrag.cardPointerOffset : 0) }
                         .onEnded { _ in
-                            drag?.end(in: state, containerWidth: total)
+                            drag?.end(in: state, containerWidth: total, edge: edge)
                             drag = nil
                         })
                     // Double-click: as wide as the pane goes, half the column (PaneStates).
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { state.width = ShellLayout.widestRightPane(containerWidth: total) })
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { state.width = ShellLayout.widestRightPane(containerWidth: total, edge: edge) })
             }
             .zIndex(1)
             .accessibilityElement()
@@ -159,7 +192,7 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             .accessibilityAdjustableAction { direction in
                 let step: CGFloat = direction == .increment ? AppLayout.paneAdjustStep : direction == .decrement ? -AppLayout.paneAdjustStep : 0
                 state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step,
-                                                    defaultWidth: state.defaultWidth).width
+                                                    defaultWidth: state.defaultWidth, edge: edge).width
             }
     }
 }
@@ -170,18 +203,22 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
 struct RightPaneDrag: Equatable {
     let width: CGFloat
 
-    init(pointerX: CGFloat, containerWidth: CGFloat) {
-        width = containerWidth - pointerX
+    /// What lies right of the pointer and is not the pane: a card's inset and half its gap (the handle is the gap's middle).
+    static let cardPointerOffset = SHSidePaneMetrics.cardInset + SHSidePaneMetrics.cardGap / 2
+
+    init(pointerX: CGFloat, containerWidth: CGFloat, pointerOffset: CGFloat = 0) {
+        width = containerWidth - pointerX - pointerOffset
     }
 
     /// The split's layout: the drag's width while one is under way, else the saved one, within the split's bounds.
-    @MainActor static func layout(_ drag: RightPaneDrag?, state: RightPaneState, containerWidth: CGFloat) -> ShellLayout.Pane {
-        ShellLayout.rightPane(containerWidth: containerWidth, preferredWidth: drag?.width ?? state.width, defaultWidth: state.defaultWidth)
+    @MainActor static func layout(_ drag: RightPaneDrag?, state: RightPaneState, containerWidth: CGFloat,
+                                  edge: CGFloat = AppLayout.dividerWidth) -> ShellLayout.Pane {
+        ShellLayout.rightPane(containerWidth: containerWidth, preferredWidth: drag?.width ?? state.width, defaultWidth: state.defaultWidth, edge: edge)
     }
 
     /// Letting go: the width the layout drew for the drag, saved (and persisted) as the pane's.
-    @MainActor func end(in state: RightPaneState, containerWidth: CGFloat) {
-        state.width = Self.layout(self, state: state, containerWidth: containerWidth).width
+    @MainActor func end(in state: RightPaneState, containerWidth: CGFloat, edge: CGFloat = AppLayout.dividerWidth) {
+        state.width = Self.layout(self, state: state, containerWidth: containerWidth, edge: edge).width
     }
 }
 
@@ -206,4 +243,21 @@ struct RightPaneSlot<Content: View>: View {
         ZStack { content() }
             .shAnimation(.content, value: showing)
     }
+}
+
+extension EnvironmentValues {
+    /// The toolbar's height over the top of the workspace, where a thread's pane card runs up beside the toolbar and the thread
+    /// starts under it (`RightPaneSplit`); 0 where the column starts under the toolbar.
+    @Entry var workspaceTopInset: CGFloat = 0
+}
+
+extension View {
+    /// Starts under the toolbar, as a layout without a pane card does (`workspaceTopInset`).
+    func underWorkspaceToolbar() -> some View { modifier(UnderWorkspaceToolbar()) }
+}
+
+private struct UnderWorkspaceToolbar: ViewModifier {
+    @Environment(\.workspaceTopInset) private var inset
+
+    func body(content: Content) -> some View { content.padding(.top, inset) }
 }

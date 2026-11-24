@@ -66,7 +66,7 @@ struct SidePaneView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
     }
 
     @ViewBuilder
@@ -173,5 +173,21 @@ enum SidePaneTabs {
             return SHSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
                                  badge: tab == .pullRequest ? pullRequest.map { "#\($0)" } : nil, news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay)
         }
+    }
+}
+
+/// A pane action as words (GXPanePR `.lk`, GXPaneFilesEdit's Revert and Save): the lead one in `textPrimary` medium, the other quiet; dimmer while it can't act.
+struct PaneWordButtonStyle: ButtonStyle {
+    let emphasis: Bool
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.sh(.ui, weight: emphasis ? .medium : .regular))
+            .foregroundStyle(emphasis ? Color.sh.textPrimary : Color.sh.textSecondary)
+            .opacity(enabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
+            .padding(.horizontal, SH.Space.s)
+            .frame(minHeight: SH.Height.controlM)
+            .contentShape(Rectangle())
     }
 }

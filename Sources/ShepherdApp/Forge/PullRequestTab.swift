@@ -5,9 +5,9 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The side pane's Pull request tab (PRPane, PRPaneMerged): the thread branch's pull request,
-/// drawn from the Issues & PRs page's pieces. Open: its tag, title and byline over Overview,
-/// Files and Checks, the rail beside them. Merged: a title bar over the description and its
-/// Activity, opened at the end. A footer says what stands in the way, or what is left, with its actions.
+/// drawn from the Issues & PRs page's pieces. A head row (state, number, link buttons), then the title and byline over
+/// Overview, Files and Checks with the rail beside them, merged or not. A footer says
+/// what stands in the way, or what is left, with its actions.
 struct PullRequestTab: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
@@ -17,23 +17,19 @@ struct PullRequestTab: View {
         VStack(spacing: 0) {
             ForgeBanners(vm: vm, store: store)
             if let detail = store.pullRequest {
-                if detail.state == .merged {
-                    PullRequestTitleBar(detail: detail)
-                    PullRequestOverview(vm: vm, store: store, detail: detail, header: false)
-                } else {
-                    switch store.tab {
-                    case .summary:
-                        PullRequestOverview(vm: vm, store: store, detail: detail, header: true)
-                    case .changes, .checks:
-                        PullRequestHeader(store: store, detail: detail)
-                            .padding(.horizontal, SH.Space.xxl)
-                            .padding(.top, SH.Space.xl)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if store.tab == .changes {
-                            ForgeChangesTab(vm: vm, store: store, detail: detail)
-                        } else {
-                            ForgeChecksTab(vm: vm, store: store, detail: detail)
-                        }
+                PullRequestHead(store: store, detail: detail)
+                switch store.tab {
+                case .summary:
+                    PullRequestOverview(vm: vm, store: store, detail: detail)
+                case .changes, .checks:
+                    PullRequestHeader(store: store, detail: detail)
+                        .padding(.leading, AppLayout.prPaneColumnLeading)
+                        .padding(.trailing, AppLayout.prPaneColumnTrailing)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if store.tab == .changes {
+                        ForgeChangesTab(vm: vm, store: store, detail: detail)
+                    } else {
+                        ForgeChecksTab(vm: vm, store: store, detail: detail)
                     }
                 }
                 PullRequestFooter(vm: vm, store: store, detail: detail, agentID: agentID)
@@ -47,45 +43,66 @@ struct PullRequestTab: View {
     }
 }
 
-/// The open state's head: tag and "payments #31", the title, the byline, then the tabs.
+/// The head row (GXPanePR `.prh`): the state in a quiet pill, "payments #31", then Copy link and Open on GitHub.
+private struct PullRequestHead: View {
+    @Bindable var store: ForgeStore
+    let detail: PullRequestDetail
+
+    var body: some View {
+        HStack(spacing: SH.Space.m) {
+            Text(ForgePresentation.badge(detail.state).label)
+                .font(.sh(.caption, weight: .medium))
+                .foregroundStyle(Color.sh.textPrimary)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.xxs)
+                .background(Color.sh.bgSelected, in: RoundedRectangle(cornerRadius: AppLayout.prPaneBoxRadius))
+            Text("\(detail.summary.ref.repoName) #\(detail.summary.ref.number)")
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(Color.sh.textTertiary)
+            Spacer(minLength: SH.Space.m)
+            ForgeItemButtons(store: store, ref: detail.ref, pins: false)
+        }
+        .padding(.leading, AppLayout.prPaneColumnLeading)
+        .padding(.trailing, SH.Space.m)
+        .frame(height: AppLayout.prPaneHeadHeight)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// The title, the byline and the tabs under them with a rule (GXPanePR `.prmain h2`, `.prm`, `.seg2`).
 private struct PullRequestHeader: View {
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail
 
     var body: some View {
         let summary = detail.summary
-        let badge = ForgePresentation.badge(detail.state)
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(spacing: SH.Space.s) {
-                ForgeStateTag(label: badge.label, tone: badge.tone, symbol: ForgeSymbol.pullRequest)
-                Text("\(summary.ref.repoName) #\(summary.ref.number)").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+            ForgeTitle(title: summary.title, editable: detail.state != .merged, font: .shSans(AppLayout.prPaneTitleSize, .semibold)) {
+                await store.perform(.editTitle(ref: summary.ref, title: $0))
             }
-            ForgeTitle(title: summary.title, editable: true) { await store.perform(.editTitle(ref: summary.ref, title: $0)) }
-            ForgeByline(author: summary.author, you: isViewer(summary.author), verb: "opened",
-                        age: ForgePresentation.ago(detail.createdAt, now: store.now()), branches: (summary.headRef, summary.baseRef))
-            ForgeTabs(store: store, detail: detail, pane: true).padding(.top, SH.Space.s)
+            byline
+            ForgeTabs(store: store, detail: detail, pane: true)
+                .padding(.top, SH.Space.m)
+                .padding(.bottom, SH.Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) { SHHairline() }
         }
     }
 
-    private func isViewer(_ login: String) -> Bool { detail.viewer.map { $0.caseInsensitiveCompare(login) == .orderedSame } ?? false }
-}
-
-/// The merged state's bar (PRPaneMerged): its tag, the title and the number, over the page.
-private struct PullRequestTitleBar: View {
-    let detail: PullRequestDetail
-
-    var body: some View {
-        let badge = ForgePresentation.badge(detail.state)
-        HStack(spacing: SH.Space.m) {
-            ForgeStateTag(label: badge.label, tone: badge.tone, symbol: ForgeSymbol.merge)
-            Text(detail.summary.title).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-            Text("#\(detail.ref.number)").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, SH.Space.xxl)
-        .frame(height: AppLayout.prPaneTitleBarHeight)
-        .overlay(alignment: .bottom) { SHHairline() }
-        .accessibilityElement(children: .combine)
+    /// "baily opened this 2h ago, agent/refund-events into main", or "baily merged agent/refund-events into main 2 days ago".
+    private var byline: some View {
+        let summary = detail.summary
+        let age = ForgePresentation.ago(detail.createdAt, now: store.now())
+        let head = Text(summary.headRef).font(.sh(.mono)), base = Text(summary.baseRef).font(.sh(.mono))
+        let who = Text(summary.author).foregroundStyle(Color.sh.textPrimary)
+        let line = detail.state == .merged
+            ? Text("\(who) merged \(head) into \(base) \(age)")
+            : Text("\(who) opened this \(age), \(head) into \(base)")
+        return line
+            .font(.sh(.caption))
+            .foregroundStyle(Color.sh.textSecondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -95,10 +112,7 @@ private struct PullRequestOverview: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail
-    /// The open state's head and tabs lead the column; the merged state has its title bar instead.
-    let header: Bool
     @State private var wide = true
-    @State private var position = ScrollPosition()
 
     var body: some View {
         // Wide, the rail stands beside the column and keeps its place while the column scrolls
@@ -109,19 +123,16 @@ private struct PullRequestOverview: View {
                     column
                     if !wide { PullRequestRail(vm: vm, detail: detail) }
                 }
-                .padding(.vertical, SH.Space.xl)
-                .padding(.leading, SH.Space.xxl)
-                .padding(.trailing, wide ? 0 : SH.Space.xxl)
+                .padding(.bottom, SH.Space.xl)
+                .padding(.leading, AppLayout.prPaneColumnLeading)
+                .padding(.trailing, wide ? AppLayout.prPaneColumnTrailing : AppLayout.prPaneColumnLeading)
             }
-            .scrollPosition($position)
-            // Merged, the page opens on its Activity (PRPaneMerged), once the rows have their heights.
-            .task(id: detail.ref) { if !header { position.scrollTo(edge: .bottom) } }
             if wide {
                 ScrollView(.vertical) {
-                    PullRequestRail(vm: vm, detail: detail).padding(.vertical, SH.Space.xl)
+                    PullRequestRail(vm: vm, detail: detail).padding(.bottom, SH.Space.xl)
                 }
                 .frame(width: AppLayout.prPaneRailWidth)
-                .padding(.trailing, SH.Space.xxl)
+                .padding(.trailing, SH.Space.xl)
             }
         }
         .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.prPaneTwoColumnMinWidth } action: { wide = $0 }
@@ -129,10 +140,9 @@ private struct PullRequestOverview: View {
 
     private var column: some View {
         VStack(alignment: .leading, spacing: SH.Space.l) {
-            if header { PullRequestHeader(store: store, detail: detail) }
+            PullRequestHeader(store: store, detail: detail)
             if !store.bodyProse.isEmpty { Prose(prose: store.bodyProse, maxWidth: AppLayout.forgeContentWidth) }
-            SHHairline()
-            ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest, lineComments: true)
+            ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest, lineComments: true, pane: true)
             PullRequestCommentCard(store: store, viewer: detail.viewer)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -246,8 +256,8 @@ private struct PullRequestRail: View {
     private func isViewer(_ login: String) -> Bool { detail.viewer.map { $0.caseInsensitiveCompare(login) == .orderedSame } ?? false }
 }
 
-/// The footer: what stands in the way or what is left, then Send feedback to agent and Merge
-/// (open), Ready for review (draft), Reopen (closed), or Delete branch and Remove worktree (merged).
+/// The footer (GXPanePR `.prf`): what stands in the way or what is left in words, then its actions as words: Send feedback to
+/// agent and Squash and merge (open), Ready for review (draft), Reopen (closed), or Delete branch and Remove worktree (merged).
 private struct PullRequestFooter: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
@@ -256,25 +266,23 @@ private struct PullRequestFooter: View {
 
     var body: some View {
         let status = ForgePresentation.paneStatus(detail)
-        let line = HStack(spacing: SH.Space.s) {
-            Image(systemName: glyph(status.tone)).font(.sh(.ui)).foregroundStyle(status.tone.color)
-            Text(status.text).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        // A narrow pane puts the buttons under the line rather than truncate them.
+        let line = Text(status.text).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        // A narrow pane puts the words under the line rather than truncate them.
         ViewThatFits(in: .horizontal) {
             HStack(spacing: SH.Space.s) {
                 line.frame(maxWidth: .infinity, alignment: .leading)
                 actions.fixedSize()
             }
-            VStack(alignment: .leading, spacing: SH.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 line
                 HStack(spacing: SH.Space.s) { actions }.fixedSize()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, SH.Space.xxl)
-        .padding(.vertical, SH.Space.m)
+        .padding(.leading, AppLayout.prPaneColumnLeading)
+        .padding(.trailing, SH.Space.m)
+        .frame(minHeight: AppLayout.prPaneFooterHeight)
         .overlay(alignment: .top) { SHHairline() }
         .disabled(store.working)
     }
@@ -284,34 +292,28 @@ private struct PullRequestFooter: View {
         switch detail.state {
         case .open:
             Button("Send feedback to agent") { vm.sendPullRequestFeedback(store, to: agentID) }
-                .buttonStyle(.sh(.secondary))
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
                 .disabled(ForgePresentation.reviewFeedback(detail).isEmpty)
                 .help("Send what reviewers asked to this thread")
-            Button { vm.forgeMerge(store: store) } label: {
-                Label(ForgePresentation.title(store.mergeOptions.method), systemImage: ForgeSymbol.merge)
-            }
-            .buttonStyle(.sh(.secondary))
-            .disabled(!detail.blockers.isEmpty)
-            .help(ForgePresentation.blockerSentence(detail.blockers) ?? ForgePresentation.title(store.mergeOptions.method))
+            Button(ForgePresentation.title(store.mergeOptions.method)) { vm.forgeMerge(store: store) }
+                .buttonStyle(PaneWordButtonStyle(emphasis: false))
+                .disabled(!detail.blockers.isEmpty)
+                .help(ForgePresentation.blockerSentence(detail.blockers) ?? ForgePresentation.title(store.mergeOptions.method))
         case .draft:
-            Button("Ready for review") { Task { await store.perform(.setDraft(ref: ref, draft: false)) } }.buttonStyle(.sh(.secondary))
+            Button("Ready for review") { Task { await store.perform(.setDraft(ref: ref, draft: false)) } }
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
         case .closed:
-            Button("Reopen") { Task { await store.perform(.setOpen(ref: ref, open: true)) } }.buttonStyle(.sh(.secondary))
+            Button("Reopen") { Task { await store.perform(.setOpen(ref: ref, open: true)) } }
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
         case .merged:
             if !detail.headBranchDeleted, !detail.deletesBranchOnMerge {
-                Button("Delete branch") { Task { await store.perform(.deleteBranch(ref: ref)) } }.buttonStyle(.sh(.secondary))
+                Button("Delete branch") { Task { await store.perform(.deleteBranch(ref: ref)) } }
+                    .buttonStyle(PaneWordButtonStyle(emphasis: true))
             }
             if detail.summary.thread?.worktreePath != nil {
-                Button("Remove worktree") { vm.forgeRemoveWorktree(store: store) }.buttonStyle(.sh(.secondary))
+                Button("Remove worktree") { vm.forgeRemoveWorktree(store: store) }
+                    .buttonStyle(PaneWordButtonStyle(emphasis: false))
             }
-        }
-    }
-
-    private func glyph(_ tone: ForgeTone) -> String {
-        switch tone {
-        case .merged: ForgeSymbol.merge
-        case .done: SHGlyph.resolved.symbolName
-        default: "exclamationmark.circle"
         }
     }
 }
