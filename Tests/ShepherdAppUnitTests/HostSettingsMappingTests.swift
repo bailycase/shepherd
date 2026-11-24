@@ -26,7 +26,7 @@ struct HostSettingsMappingTests {
         #expect(!settings.goalCrossProviderEvaluation && settings.goalsEnabled, "the legacy checker consent is always off")
         #expect(settings.worktreeBase == .head)
         #expect(!settings.mergePRAutomatically && settings.mergeMethod == .squash, "the removed Finalize's settings read as their defaults")
-        #expect(settings.bundledExtensions.map(\.id) == ["panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "designReferences", "context", "deferTools", "codemode"])
+        #expect(settings.bundledExtensions.map(\.id) == ["panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "usage", "designReferences", "context", "deferTools", "codemode"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // The extension keeps its stored id; it reads as terminals to the user.

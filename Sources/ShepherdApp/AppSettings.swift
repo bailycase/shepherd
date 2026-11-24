@@ -99,6 +99,7 @@ final class AppSettings {
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
         static let piMCPExtension = "shepherd.pi.extension.mcp"
         static let piBrowserExtension = "shepherd.pi.extension.browser"
+        static let piUsageExtension = "shepherd.pi.extension.usage"
         static let piDesignReferences = "shepherd.pi.extension.designReferences"
         static let childConcurrency = "shepherd.pi.children.concurrency"
         static let childModel = "shepherd.pi.children.model"
@@ -142,7 +143,7 @@ final class AppSettings {
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, defaultServiceTier, textGenerationModel, visionModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, threadsStartThreads, subThreadPlace, codemode, compactAtPercent, shellPath, editor, editorsByType,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
-            piMCPExtension, piBrowserExtension, piDesignReferences,
+            piMCPExtension, piBrowserExtension, piUsageExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarKeepIdleDays,
@@ -390,6 +391,12 @@ final class AppSettings {
     /// their thread's own Browser page. A design's agent never does.
     var piBrowserExtension: Bool {
         didSet { store.set(piBrowserExtension, forKey: Key.piBrowserExtension) }
+    }
+
+    /// Settings ▸ Tools ▸ Built in ▸ Subscription usage: Sign-in loads `shepherd-usage.mjs`, which
+    /// reads Anthropic's and OpenAI Codex's limits with the signed-in token. Agents never load it.
+    var piUsageExtension: Bool {
+        didSet { store.set(piUsageExtension, forKey: Key.piUsageExtension) }
     }
 
     var childConcurrency: Int {
@@ -873,6 +880,7 @@ final class AppSettings {
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
         piBrowserExtension = store.object(forKey: Key.piBrowserExtension) as? Bool ?? true
+        piUsageExtension = store.object(forKey: Key.piUsageExtension) as? Bool ?? true
         piDesignReferences = store.object(forKey: Key.piDesignReferences) as? Bool ?? true
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
@@ -1000,6 +1008,7 @@ final class AppSettings {
         piNativeSubagents = true
         piMCPExtension = true
         piBrowserExtension = true
+        piUsageExtension = true
         piDesignReferences = true
         childConcurrency = 4
         childModel = ""
@@ -1143,7 +1152,7 @@ final class AppSettings {
         take(\.deferTools), take(\.threadsStartThreads), take(\.subThreadPlace), take(\.codemode), take(\.compactAtPercent), take(\.uiDensity), take(\.uiTextScale),
         take(\.sidebarWidth), take(\.sidebarRowDensity), take(\.sidebarStyle),
         take(\.sidebarKeepIdleDays), take(\.piPanesExtension), take(\.piReviewExtension), take(\.subagentDisplay),
-        take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piDesignReferences),
+        take(\.piNativeSubagents), take(\.piMCPExtension), take(\.piBrowserExtension), take(\.piUsageExtension), take(\.piDesignReferences),
         take(\.childConcurrency), take(\.childModel), take(\.childThinking), take(\.childContext), take(\.shellPath),
         take(\.editor), take(\.editorsByType), take(\.filesWordWrap), take(\.filesMarkdownPreview), take(\.worktreeBaseMode),
         take(\.worktreeFetchBeforeCreate), take(\.worktreeGeneratePRDescription), take(\.worktreeCloseOnMerge),

@@ -19,7 +19,7 @@ struct PiSignInSessionTests {
 
     static func session(_ provider: String, key: Bool = false, origin: PiSignInSession.Origin = .settings,
                         pickedUp: Int = 0) -> (PiSignInSession, PiAuthStore, Recorder) {
-        let store = PiAuthStore(pi: PiSetup.app, bridge: { throw NoBridge() })
+        let store = PiAuthStore(pi: PiSetup.app, bridge: { _ in throw NoBridge() })
         let recorder = Recorder()
         store.openURL = { recorder.opened.append($0) }
         store.copy = { recorder.copied.append($0) }

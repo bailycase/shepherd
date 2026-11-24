@@ -43,6 +43,9 @@ struct ExtensionsSettings: View {
             SettingsRow(title: "Browser", subtitle: "Screenshots and clicks") {
                 SettingsSwitch(label: "Browser tools", isOn: $settings.piBrowserExtension)
             }
+            SettingsRow(title: "Subscription usage", subtitle: "Anthropic and OpenAI Codex limits in Sign-in") {
+                SettingsSwitch(label: "Subscription usage", isOn: $settings.piUsageExtension)
+            }
             if settings.designToolEnabled {
                 SettingsRow(title: "Design references") {
                     SettingsSwitch(label: "Design references", isOn: $settings.piDesignReferences)

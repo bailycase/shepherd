@@ -36,7 +36,7 @@ struct PiSignInFlowTests {
             var environment = ProcessInfo.processInfo.environment
             environment["FAKE_PI_CONTROL"] = control.path
             let files = pi.files
-            let store = PiAuthStore(pi: pi, bridge: {
+            let store = PiAuthStore(pi: pi, bridge: { _ in
                 PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: sdk, home: files),
                                environment: environment)
             })
@@ -102,6 +102,34 @@ struct PiSignInFlowTests {
         try await eventuallyOnMain("the agent to leave Needs you") { vm.notSignedIn[id] == nil }
         #expect(auth.needed.isEmpty)
         #expect((try setup.stored()["anthropic"] as? [String: Any])?["type"] as? String == "oauth")
+    }
+
+    /// Usage comes from provider extensions, through the bridge: the signed-in account's, and each
+    /// saved account's with its own stored credential. A saved account's reading and email are kept
+    /// with it; one the extension has nothing for keeps what it last read.
+    @Test func everyAccountsUsageComesFromItsExtensionAndIsSaved() async throws {
+        let f = try Setup()
+        defer { f.remove() }
+        let live = 4_000_000_000_000.0
+        func oauth(_ token: String, expires: Double = live) -> [String: Any] { ["type": "oauth", "access": token, "refresh": "r", "expires": expires] }
+        try FileManager.default.createDirectory(at: f.pi.home, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["anthropic": oauth("tok-a")]).write(to: f.pi.home.appendingPathComponent("auth.json"))
+        try JSONSerialization.data(withJSONObject: ["anthropic": ["active": "a", "accounts": [
+            ["id": "a", "name": "Account 1", "credential": oauth("old")],
+            ["id": "b", "name": "Account 2", "credential": oauth("tok-b")],
+            ["id": "c", "name": "Account 3", "credential": oauth("tok-c", expires: 1),
+             "usage": [["name": "5-hour", "used": 7.0]], "usageAt": 1.0],
+        ]]]).write(to: f.pi.home.appendingPathComponent(PiAccounts.fileName))
+        try Data(#"{"tok-a":11,"tok-b":22}"#.utf8).write(to: f.control.appendingPathComponent("usage.json"))
+
+        let store = try f.store()
+        await store.refreshUsage()
+
+        #expect(store.usage["anthropic"]?.first?.usedPercent == 11) // the signed-in token, tok-a
+        let accounts = try #require(PiAccounts(home: f.pi.files).lists()["anthropic"]?.accounts)
+        #expect(accounts.map { $0.usage.first?.usedPercent } == [11, 22, 7])
+        #expect(accounts.map { $0.email } == ["tok-a@x.co", "tok-b@x.co", nil])
+        #expect(accounts[2].usageAt == Date(timeIntervalSince1970: 1))
     }
 
     @Test func anOldSuccessfulKeyCheckNeverEnablesSaveWhileTheReplacementIsUnchecked() async throws {

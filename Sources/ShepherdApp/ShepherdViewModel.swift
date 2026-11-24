@@ -745,6 +745,7 @@ final class ShepherdViewModel {
         self.installThemeMarker = themeInstaller
         self.yourPi = yourPi ?? YourPiModel(pi: pi)
         self.piAuth = piAuth ?? PiAuthStore(pi: pi)
+        self.piAuth.bundledUsage = { [settings = self.settings] in settings.piUsageExtension }
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil

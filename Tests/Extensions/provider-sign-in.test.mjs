@@ -42,7 +42,7 @@ export default pi => {
 };`;
 }
 
-async function bridge(t, sdk, { source = provider(), disabled = false, auth = {}, added = false } = {}) {
+async function bridge(t, sdk, { source = provider(), disabled = false, auth = {}, added = false, extras = [], env = {} } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-signin-")));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const home = path.join(dir, "home"), workspace = path.join(dir, "workspace");
@@ -59,9 +59,9 @@ async function bridge(t, sdk, { source = provider(), disabled = false, auth = {}
   fs.writeFileSync(path.join(workspace, ".pi", "extensions", "untrusted.ts"), `throw Error("Workspace extension must not load");`);
   fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ extensions: added ? [addedPath] : disabled ? ["-extensions/fixture.ts"] : [] }));
   fs.writeFileSync(path.join(home, "auth.json"), JSON.stringify(auth));
-  const child = spawn(process.execPath, [script, path.join(pkg, sdk), home], {
+  const child = spawn(process.execPath, [script, path.join(pkg, sdk), home, ...extras], {
     cwd: workspace, stdio: ["pipe", "pipe", "pipe"],
-    env: { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" },
+    env: { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...env },
   });
   t.after(() => child.kill("SIGKILL"));
   let output = "", stderr = "", pending = "";
@@ -243,6 +243,43 @@ pi.registerProvider("fixture-gateway", { baseUrl: "http://127.0.0.1:9/v1", api: 
     assert.deepEqual(byProvider.deepseek, { provider: "deepseek", windows: [], balance: { amount: 110, currency: "CNY" } });
     // Nothing of a credential or a hook's error leaves the bridge.
     assert.doesNotMatch(b.output(), /fixture-access-not-a-secret|sk-fixture|fixture-groq-private-detail/);
+    await b.close();
+  });
+
+  test(`${sdk}: saved accounts are asked with their own stored credential, and an email comes back`, { timeout: 30000 }, async t => {
+    const hooks = `
+  fixture.usage = async auth => ({ windows: [{ name: "Week", usedPercent: auth.apiKey === "tok-b" ? 22 : 11 }],
+    email: auth.credential.access + "@example.com" });
+`;
+    const b = await bridge(t, sdk, {
+      source: provider().replace("  pi.registerProvider(fixture);", hooks + "  pi.registerProvider(fixture);"),
+      auth: { "fixture-login": { type: "oauth", access: "tok-a", refresh: "r", expires: Date.now() + 3600000 } },
+    });
+    b.send({ type: "usage", accounts: [
+      { provider: "fixture-login", id: "b", credential: { type: "oauth", access: "tok-b", refresh: "r", expires: 1 } },
+      { provider: "no-such-provider", id: "c", credential: { type: "oauth", access: "tok-c" } },
+    ] });
+    const { usage } = await b.reply("usage", () => true, 20000);
+    const byAccount = Object.fromEntries(usage.map(entry => [entry.account ?? "active", entry]));
+    assert.deepEqual(Object.keys(byAccount).sort(), ["active", "b"]);
+    assert.equal(byAccount.active.windows[0].usedPercent, 11);
+    assert.equal(byAccount.active.email, "tok-a@example.com");
+    // A saved account's credential is passed as stored: expired, it is not refreshed.
+    assert.equal(byAccount.b.windows[0].usedPercent, 22);
+    assert.equal(byAccount.b.email, "tok-b@example.com");
+    await b.close();
+  });
+
+  test(`${sdk}: Shepherd's bundled usage extension loads beside the home's and reports nothing without a live token`, { timeout: 30000 }, async t => {
+    const extension = fileURLToPath(new URL("../../Extensions/shepherd-usage.mjs", import.meta.url));
+    const b = await bridge(t, sdk, { extras: [extension], env: { SHEPHERD_USAGE_EXTENSION: "1" },
+      auth: { anthropic: { type: "oauth", access: "tok", refresh: "r", expires: 1 } } });
+    b.send({ type: "providers" });
+    const { extensions } = await b.reply("extensions");
+    assert.ok(extensions.some(e => e.path.endsWith("shepherd-usage.mjs")), "loaded as an extension");
+    await b.reply("providers");
+    b.send({ type: "usage", accounts: [{ provider: "anthropic", id: "x", credential: { type: "oauth", access: "old", expires: 1 } }] });
+    assert.deepEqual((await b.reply("usage", () => true, 20000)).usage, []);
     await b.close();
   });
 

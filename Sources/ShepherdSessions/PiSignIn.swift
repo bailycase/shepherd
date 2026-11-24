@@ -53,14 +53,20 @@ public enum PiSignInCommand: Equatable, Sendable {
     /// Whether a key works, with the smallest request pi can make; with no `key`, whether the
     /// provider's stored login does (a stale OAuth token is refreshed on the way).
     case check(id: String, provider: String, key: PiKeyInput?)
-    /// Each provider extension's usage and balance (`usage(auth)` or the "shepherd:usage" event).
-    case usage
+    /// Each provider extension's usage and balance (`usage(auth)` or the "shepherd:usage" event):
+    /// the signed-in account's, and each saved account's in `accounts` with its stored credential.
+    case usage(accounts: [PiSavedCredential] = [])
 
     /// One JSON line, newline included.
     public var line: Data {
         var object: [String: String]
         switch self {
         case .providers: object = ["type": "providers"]
+        case .usage(let accounts) where !accounts.isEmpty:
+            let list = accounts.map { ["provider": $0.provider, "id": $0.id, "credential": $0.credential] as [String: Any] }
+            var data = (try? JSONSerialization.data(withJSONObject: ["type": "usage", "accounts": list] as [String: Any], options: [.sortedKeys])) ?? Data()
+            data.append(0x0A)
+            return data
         case .usage: object = ["type": "usage"]
         case .login(let provider, let method, let flow):
             object = ["type": "login", "provider": provider, "method": method.rawValue, "flow": flow.rawValue]
@@ -176,24 +182,49 @@ public struct PiBalance: Codable, Equatable, Sendable {
     }
 }
 
-/// One provider's usage from its extension: limit windows (as `PiUsage` reads Anthropic's) and a balance.
+/// A saved account that isn't active, sent to the bridge so a usage hook can ask about it.
+public struct PiSavedCredential: @unchecked Sendable, Equatable {
+    public var provider: String
+    public var id: String
+    /// As `PiAccounts` stores it: pi's credential object.
+    public var credential: [String: Any]
+
+    public init(provider: String, id: String, credential: [String: Any]) {
+        self.provider = provider
+        self.id = id
+        self.credential = credential
+    }
+
+    public static func == (a: Self, b: Self) -> Bool {
+        a.provider == b.provider && a.id == b.id && NSDictionary(dictionary: a.credential).isEqual(to: b.credential)
+    }
+}
+
+/// One provider's usage from its extension: limit windows and a balance, for the signed-in account
+/// (`account` nil) or a saved one, and the account's email when the provider said it.
 public struct PiProviderUsage: Decodable, Equatable, Sendable {
     public var provider: String
+    public var account: String?
     public var windows: [PiUsageWindow]
     public var balance: PiBalance?
+    public var email: String?
 
-    public init(provider: String, windows: [PiUsageWindow] = [], balance: PiBalance? = nil) {
+    public init(provider: String, account: String? = nil, windows: [PiUsageWindow] = [], balance: PiBalance? = nil, email: String? = nil) {
         self.provider = provider
+        self.account = account
         self.windows = windows
         self.balance = balance
+        self.email = email
     }
 
     private struct Window: Decodable { var name: String; var usedPercent: Double; var resetsAt: Double? }
-    private enum CodingKeys: String, CodingKey { case provider, windows, balance }
+    private enum CodingKeys: String, CodingKey { case provider, account, windows, balance, email }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         provider = try c.decode(String.self, forKey: .provider)
+        account = try c.decodeIfPresent(String.self, forKey: .account)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
         windows = (try c.decodeIfPresent([Window].self, forKey: .windows) ?? []).map {
             PiUsageWindow(name: $0.name, usedPercent: min(100, max(0, $0.usedPercent)),
                           resetsAt: $0.resetsAt.map { Date(timeIntervalSince1970: $0 / 1000) })
@@ -323,11 +354,13 @@ extension PiLaunch {
     /// key's variable and the user's proxy settings are there), with the shell's pi, jiti and
     /// Node settings dropped and Shepherd's pi home pinned, in the home: `$0` is the script, `$1`
     /// pi's SDK (the engine's `dist/bundle/index.js`), `$2` the home.
-    public static func signInBridge(node: PiEngine.Program, script: String, sdk: String, home: PiHome) -> Line {
+    /// `extensions`: Shepherd's own extensions the bridge loads beside the home's (`PiSignInScript.usageExtension`).
+    public static func signInBridge(node: PiEngine.Program, script: String, sdk: String, home: PiHome, extensions: [String] = []) -> Line {
         Line(script: clearedEnvironment(home: home)
-                + "export PI_CODING_AGENT_DIR=\(quoted(home.directory.path)) PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0; "
-                + "cd -- \(quoted(home.directory.path)) && exec \(word(node)) \"$0\" \"$1\" \"$2\"",
-             positional: [script, sdk, home.directory.path])
+                + "export PI_CODING_AGENT_DIR=\(quoted(home.directory.path)) PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0"
+                + (extensions.isEmpty ? "" : " SHEPHERD_USAGE_EXTENSION=1") + "; "
+                + "cd -- \(quoted(home.directory.path)) && exec \(word(node)) \"$0\" \"$@\"",
+             positional: [script, sdk, home.directory.path] + extensions)
     }
 }
 
@@ -422,12 +455,14 @@ public final class PiSignInBridge: @unchecked Sendable {
 /// The installed bridge script.
 public enum PiSignInScript {
     public static let fileName = "shepherd-sign-in.mjs"
+    /// Anthropic's and OpenAI Codex's usage, a provider extension shipped with Shepherd (Settings ▸ Tools ▸ Built in).
+    public static let usageExtension = "shepherd-usage.mjs"
 
-    /// Writes the script into `directory` when it differs, and returns its path.
-    public static func install(in directory: URL) throws -> URL {
+    /// Writes the script (or another of Shepherd's, `name`) into `directory` when it differs, and returns its path.
+    public static func install(in directory: URL, name: String = fileName) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent(fileName)
-        let data = Data(source.utf8)
+        let url = directory.appendingPathComponent(name)
+        let data = Data(EmbeddedExtensions.source(name).utf8)
         if (try? Data(contentsOf: url)) != data { try data.write(to: url, options: .atomic) }
         return url
     }

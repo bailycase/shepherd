@@ -93,7 +93,7 @@ struct ExtensionSignInEngineTests {
         var environment = ProcessInfo.processInfo.environment
         environment["HOME"] = user.path
         let files = pi.files
-        let auth = PiAuthStore(pi: pi, bridge: {
+        let auth = PiAuthStore(pi: pi, bridge: { _ in
             PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(engine.node.path), script: script.path, sdk: sdk, home: files),
                            environment: environment)
         })

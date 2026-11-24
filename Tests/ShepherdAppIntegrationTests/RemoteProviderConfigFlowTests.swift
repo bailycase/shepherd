@@ -89,7 +89,7 @@ struct RemoteProviderConfigFlowTests {
         // The second key: a variable the login shell sets, as Settings' key form allows.
         environment["REMOTE_TEST_DEEPSEEK_KEY"] = FakePiSDK.goodKey
         let files = pi.files
-        let auth = PiAuthStore(pi: pi, bridge: {
+        let auth = PiAuthStore(pi: pi, bridge: { _ in
             PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: FakePiSDK.path, home: files),
                            environment: environment)
         })

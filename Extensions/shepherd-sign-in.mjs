@@ -1,6 +1,9 @@
 // Shepherd's sign-in bridge. Not an extension: the app runs it with the engine's node, in a login
 // shell, as `node shepherd-sign-in.mjs <pi sdk> <pi home>`, for Settings ▸ Pi ▸ Sign-in's sheet.
 //
+// `node shepherd-sign-in.mjs <pi sdk> <pi home> [extension…]`: extensions after the home are Shepherd's
+// own it loads beside the home's (shepherd-usage.mjs).
+//
 // It runs pi's own login (`ModelRuntime.login`) against Shepherd's pi home, never the user's, and
 // passes pi's prompts and events to the app as JSON lines. The credential goes from pi straight
 // into the home's auth.json: nothing of it is written to stdout or stderr. One process per sheet.
@@ -11,7 +14,9 @@
 //   {"type":"answer","id":"p1","value":"…"}      a prompt's answer (a key, a pasted code)
 //   {"type":"cancel"}                            ends the login under way
 //   {"type":"providers"}                         lists interactive provider auth methods
-//   {"type":"usage"}                             asks each provider extension that reports usage (see below)
+//   {"type":"usage","accounts"?:[{"provider":…,"id":…,"credential":{…}}]}
+//                                                asks each provider extension that reports usage (see below), for
+//                                                the signed-in account and each saved account listed
 //   {"type":"logout","provider":"anthropic"}     removes Shepherd's credential for it
 //   {"type":"check","id":"c1","provider":"deepseek","key":"…"} or {…,"variable":"DEEPSEEK_API_KEY"}
 //   ({"type":"check","id":"c2","provider":"anthropic"} alone checks the home's stored login for it)
@@ -28,23 +33,27 @@
 //   {"type":"failed","code":"cancelled"|"portBusy"|"unknownProvider"|"other","reason":…,"port"?}
 //   {"type":"checked","id":…,"result":"works"|"rejected"|"unreachable"|"unset","reason"?,"models"?}
 //   {"type":"loggedOut","provider":…}
-//   {"type":"usage","usage":[{"provider":…, "windows":[{"name":…,"usedPercent":0–100,"resetsAt"?:ms}], "balance"?:{"amount":n,"currency":…,"label"?:…}}]}
+//   {"type":"usage","usage":[{"provider":…, "account"?:id, "windows":[{"name":…,"usedPercent":0–100,"resetsAt"?:ms}],
+//     "balance"?:{"amount":n,"currency":…,"label"?:…}, "email"?:…}]}
 //
 // Usage, a Shepherd convention pi itself doesn't read: a provider an extension registers may have
 // `usage(auth)`, or an extension may report for a provider it doesn't own (a built-in's key) with
 // `pi.events.emit("shepherd:usage", { provider: "deepseek", usage(auth) {…} })`. `auth` is pi's
-// resolved request auth for the provider ({ apiKey, headers }, refreshed as a request would be). It
-// returns { windows?: [{ name, usedPercent, resetsAt? }], balance?: { amount, currency, label? } }.
+// resolved request auth for the provider ({ apiKey, headers }, refreshed as a request would be) and
+// the stored `credential`; for a saved account that isn't active, its stored credential as it is
+// (never refreshed) with `apiKey` its token or key. It returns { windows?: [{ name, usedPercent,
+// resetsAt? }], balance?: { amount, currency, label? }, email? }.
 // Only those numbers and short words leave this process; a hook that throws or takes over
 // USAGE_TIMEOUT_MS reports nothing.
 //
 // It exits when stdin closes, and never throws: every failure is a line.
+import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { pathToFileURL } from "node:url";
 
-const [sdkPath, home] = process.argv.slice(2);
+const [sdkPath, home, ...shepherdExtensions] = process.argv.slice(2);
 
 /** The callback ports pi's browser sign-ins listen on, checked before the browser opens. */
 const CALLBACK_PORTS = { anthropic: 53692, "openai-codex": 1455, radius: 1456 };
@@ -108,6 +117,7 @@ async function modelRuntime() {
     const loader = new sdk.DefaultResourceLoader({
       cwd: home, agentDir: home, settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }), eventBus,
       noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      additionalExtensionPaths: shepherdExtensions,
     });
     await loader.reload();
     const loaded = loader.getExtensions();
@@ -150,7 +160,7 @@ async function modelRuntime() {
 }
 
 /** One hook's answer, reduced to numbers and short words; undefined when it gave nothing usable. */
-export function usageReport(provider, answer, secrets = []) {
+export function usageReport(provider, answer, secrets = [], account) {
   if (!answer || typeof answer !== "object") return undefined;
   const word = (value, max) => clean(String(value ?? ""), secrets).slice(0, max);
   const windows = (Array.isArray(answer.windows) ? answer.windows : []).slice(0, 4).flatMap(window => {
@@ -167,11 +177,36 @@ export function usageReport(provider, answer, secrets = []) {
     const label = word(answer.balance.label, 40);
     balance = { amount, currency, ...(label ? { label } : {}) };
   }
+  const email = typeof answer.email === "string" && /^[^\s@]+@[^\s@]+$/.test(answer.email) && answer.email.length <= 120
+    ? answer.email : undefined;
   if (!windows.length && !balance) return undefined;
-  return { provider, windows, ...(balance ? { balance } : {}) };
+  return { provider, ...(account ? { account } : {}), windows, ...(balance ? { balance } : {}), ...(email ? { email } : {}) };
 }
 
-async function reportUsage() {
+/** A hook's answer within USAGE_TIMEOUT_MS, reduced by `usageReport`; undefined on any failure. */
+async function askHook(hook, provider, auth, account) {
+  const secrets = [auth.apiKey, auth.credential?.access, auth.credential?.refresh, auth.credential?.key,
+    ...Object.values(auth.headers ?? {})].filter(value => typeof value === "string" && value.length >= 4);
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("timed out")), USAGE_TIMEOUT_MS); });
+  try {
+    return usageReport(provider, await Promise.race([hook(auth), timeout]), secrets, account);
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function storedCredential(provider) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8"))[provider];
+  } catch {
+    return undefined;
+  }
+}
+
+async function reportUsage(message) {
   let models;
   try {
     models = await modelRuntime();
@@ -179,22 +214,23 @@ async function reportUsage() {
     send({ type: "usage", usage: [] });
     return;
   }
-  const reports = await Promise.all([...usageHooks].map(async ([provider, hook]) => {
+  const active = [...usageHooks].map(async ([provider, hook]) => {
     try {
       const resolved = await models.getAuth(provider);
       if (!resolved?.auth) return undefined;
-      let timer;
-      const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("timed out")), USAGE_TIMEOUT_MS); });
-      try {
-        const secrets = [resolved.auth.apiKey, ...Object.values(resolved.auth.headers ?? {})].filter(value => typeof value === "string" && value.length >= 4);
-        return usageReport(provider, await Promise.race([hook({ ...resolved.auth }), timeout]), secrets);
-      } finally {
-        clearTimeout(timer);
-      }
+      // Read after getAuth, which refreshes an expired sign-in into auth.json.
+      return await askHook(hook, provider, { ...resolved.auth, credential: storedCredential(provider) });
     } catch {
       return undefined;
     }
-  }));
+  });
+  const saved = (Array.isArray(message.accounts) ? message.accounts : []).map(account => {
+    const hook = usageHooks.get(account?.provider);
+    const credential = account?.credential;
+    if (!hook || typeof account.id !== "string" || !credential || typeof credential !== "object") return undefined;
+    return askHook(hook, account.provider, { apiKey: credential.access ?? credential.key, headers: {}, credential }, account.id);
+  });
+  const reports = await Promise.all([...active, ...saved]);
   // A refreshed sign-in is saved before the answer, so it is never lost when the bridge exits.
   await Promise.resolve(models.settleCredentialWrites?.()).catch(() => {});
   send({ type: "usage", usage: reports.filter(Boolean) });
@@ -405,7 +441,7 @@ function handle(line) {
       void listProviders();
       break;
     case "usage":
-      void reportUsage();
+      void reportUsage(message);
       break;
     case "cancel":
       login?.abort();

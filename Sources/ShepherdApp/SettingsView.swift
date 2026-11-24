@@ -435,7 +435,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fromYourPi: ["Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
                            "Instructions", "Skills", "Prompts", "Themes", "Extensions"]
         case .tools: ["Add server", "Import…", "Also use a repo’s .mcp.json",
-                      "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Design references",
+                      "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Subscription usage", "Design references",
                       "Extensions", "Commands in the / menu"]
         case .piSlashCommands: ["Off", "Extensions", "Prompt templates", "Skills"]
         case .apps: ["Add app", "On this Mac", "Run", "Quick action"]
@@ -504,6 +504,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                       "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"],
                       "Terminals and agent tools": ["panes", "notifications", "automations"],
                       "Diff review": ["review_diff"], "MCP servers": ["tool search"], "Browser": ["screenshots"],
+                      "Subscription usage": ["limits", "anthropic", "codex"],
                       "Design references": ["design_get"],
                       "Commands in the / menu": ["slash", "/ menu", "command", "composer"]]
         case .piSlashCommands: ["Off": ["slash", "/ menu", "command", "composer", "hide", "hidden", "turn off", "turned off", "switch", "disabled"],

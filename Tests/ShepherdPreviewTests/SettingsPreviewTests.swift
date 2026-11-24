@@ -117,13 +117,12 @@ struct SettingsPreviewTests {
         let script = try PiSignInScript.install(in: workspace.dir)
         var environment = ProcessInfo.processInfo.environment
         environment["FAKE_PI_CONTROL"] = workspace.dir.path
-        let auth = PiAuthStore(pi: pi, bridge: {
+        let auth = PiAuthStore(pi: pi, bridge: { _ in
             PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: FakePiSDK.path, home: pi.files),
                            environment: environment)
         })
         auth.openURL = { _ in }
         auth.copy = { _ in }
-        auth.readUsage = { _ in [:] }
         let yours = YourPiModel(pi: pi)
         await auth.refreshProviders()
         await yours.refresh()
@@ -803,7 +802,6 @@ struct SettingsPreviewTests {
         #expect(auth.accounts.count == 3)
         #expect(auth.accounts["anthropic"]?.accounts.first?.usage.count == 3)
         // The fixture's readings stand in for the read: the page shows what each account saved.
-        auth.readUsage = { _ in [:] }
         workspace.vm.settingsSection = .models
         try await Preview.renderMatrix("settings-pi-sign-in-accounts", size: CGSize(width: 1280, height: 2200)) {
             SettingsView(vm: workspace.vm)

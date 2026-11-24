@@ -214,7 +214,7 @@ extension HostStores {
         guard try await providerMethods(provider, method: .apiKey).keyForm == true else {
             throw RemoteCreateAgentError("This provider needs interactive sign-in. Update Shepherd on this device.")
         }
-        let bridge = try piAuth.bridge()
+        let bridge = try piAuth.bridge(false)
         defer { bridge.close() }
         let watchdog = Task {
             try? await Task.sleep(for: HostConfigMapping.keyTimeout)
@@ -408,7 +408,7 @@ final class RemoteSignIns {
                        method: PiSignInMethod = .oauth) throws -> HostSignInProgress {
         let run = try begin(key: "provider:" + subscription.id, name: subscription.name)
         let bridge: PiSignInBridge
-        do { bridge = try auth.bridge() } catch {
+        do { bridge = try auth.bridge(false) } catch {
             runs[run.progress.id] = nil
             throw RemoteCreateAgentError(String(describing: error))
         }

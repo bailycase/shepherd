@@ -56,7 +56,10 @@ final class PiAuthStore {
     /// Sign-ins changed (a sign-in, a sign-out): Settings reads both sides again.
     @ObservationIgnored var onChanged: (() -> Void)?
     @ObservationIgnored let pi: PiSetup
-    @ObservationIgnored let bridge: @MainActor () throws -> PiSignInBridge
+    /// A bridge run; `usage` loads Shepherd's own usage extension beside the home's (only a usage read asks).
+    @ObservationIgnored let bridge: @MainActor (_ usage: Bool) throws -> PiSignInBridge
+    /// Whether Settings ▸ Tools ▸ Built in has Shepherd's Anthropic and Codex usage on.
+    @ObservationIgnored var bundledUsage: @MainActor () -> Bool = { true }
     @ObservationIgnored var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     @ObservationIgnored var copy: (String) -> Void = { text in
         NSPasteboard.general.clearContents()
@@ -66,9 +69,9 @@ final class PiAuthStore {
     /// A fixed provider list (previews) is never listed again, nor its usage read, as `YourPiModel`'s fixed survey isn't read again.
     @ObservationIgnored private let fixedProviders: Bool
 
-    init(pi: PiSetup, bridge: (@MainActor () throws -> PiSignInBridge)? = nil, providers: [PiSignInProvider]? = nil) {
+    init(pi: PiSetup, bridge: (@MainActor (_ usage: Bool) throws -> PiSignInBridge)? = nil, providers: [PiSignInProvider]? = nil) {
         self.pi = pi
-        self.bridge = bridge ?? { try PiAuthStore.appBridge(pi) }
+        self.bridge = bridge ?? { try PiAuthStore.appBridge(pi, usage: $0) }
         self.providers = providers
         fixedProviders = providers != nil
     }
@@ -80,11 +83,14 @@ final class PiAuthStore {
 
     /// The bridge on the engine's node, with pi's SDK from the engine's package, installed beside
     /// Shepherd's other scripts in the support folder.
-    static func appBridge(_ pi: PiSetup) throws -> PiSignInBridge {
+    static func appBridge(_ pi: PiSetup, usage: Bool = false) throws -> PiSignInBridge {
         guard let package = pi.engine.packageDirectory else { throw NoSDK() }
-        let script = try PiSignInScript.install(in: ShepherdPaths.supportDirectory())
+        let support = try ShepherdPaths.supportDirectory()
+        let script = try PiSignInScript.install(in: support)
+        let extensions = usage ? [try PiSignInScript.install(in: support, name: PiSignInScript.usageExtension).path] : []
         let sdk = URL(fileURLWithPath: package).appendingPathComponent(BundledPiEngine.libraryPath).path
-        return PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files))
+        return PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files,
+                                                          extensions: extensions))
     }
 
     /// Refresh when Sign-in opens or provider resources change. Concurrent readers share one subprocess.
@@ -95,7 +101,7 @@ final class PiAuthStore {
             guard let self else { return }
             if let problem = await readyHome() { providersProblem = problem; return }
             do {
-                let bridge = try bridge()
+                let bridge = try bridge(false)
                 defer { bridge.close() }
                 let watchdog = Task {
                     try? await Task.sleep(for: .seconds(20))
@@ -213,7 +219,7 @@ final class PiAuthStore {
             failure = problem
         } else {
             do {
-                let bridge = try bridge()
+                let bridge = try bridge(false)
                 bridge.send(.logout(provider: provider))
                 failure = await Self.outcome(of: bridge, provider: provider)
                 bridge.close()
@@ -237,7 +243,7 @@ final class PiAuthStore {
     /// back `invalid_grant`). Returns the providers that failed with the provider's reason, and
     /// marks each one expired so Sign-in says so. A bridge that can't run checks nothing.
     func checkLogins(_ providers: [String]) async -> [String: String] {
-        guard !providers.isEmpty, await readyHome() == nil, let bridge = try? bridge() else { return [:] }
+        guard !providers.isEmpty, await readyHome() == nil, let bridge = try? bridge(false) else { return [:] }
         defer { bridge.close() }
         for provider in providers { bridge.send(.check(id: provider, provider: provider, key: nil)) }
         var broken: [String: String] = [:]
@@ -277,16 +283,28 @@ final class PiAuthStore {
         accounts = await Task.detached { store.lists() }.value
     }
 
-    /// Asks each signed-in subscription that reports usage how much is used.
-    /// Each saved account's usage is saved with it, so the account list reads again after.
+    /// Asks every provider extension that reports usage (Shepherd's own Anthropic and Codex one
+    /// among them, when on) about the signed-in account and each saved one. A saved account's reading
+    /// and email are saved with it, so one whose token has expired still shows what it last read.
     func refreshUsage() async {
         guard !fixedProviders else { return }
-        async let fromExtensions = extensionUsage()
-        var next = await readUsage(pi.files)
+        let accounts = PiAccounts(home: pi.files)
+        let lists = accounts.lists()
+        let saved = lists.keys.sorted().flatMap { provider in
+            accounts.inactiveCredentials(provider).map { PiSavedCredential(provider: provider, id: $0.id, credential: $0.credential) }
+        }
+        var next: [String: [PiUsageWindow]] = [:]
         var balances: [String: PiBalance] = [:]
-        for report in await fromExtensions {
-            if !report.windows.isEmpty { next[report.provider] = report.windows }
-            if let balance = report.balance { balances[report.provider] = balance }
+        for report in await extensionUsage(saved) {
+            if report.account == nil {
+                if !report.windows.isEmpty { next[report.provider] = report.windows }
+                if let balance = report.balance { balances[report.provider] = balance }
+                if lists[report.provider] == nil { continue }
+            }
+            if !report.windows.isEmpty {
+                let known = lists[report.provider]?.accounts.first { $0.id == (report.account ?? lists[report.provider]?.active) }?.email
+                try? accounts.saveUsage(report.provider, report.account, report.windows, email: known == nil ? report.email : nil)
+            }
         }
         if usage != next { usage = next }
         if self.balances != balances { self.balances = balances }
@@ -295,8 +313,8 @@ final class PiAuthStore {
     }
 
     /// What provider extensions report, through the bridge (`PiSignInCommand.usage`); none in previews.
-    private func extensionUsage() async -> [PiProviderUsage] {
-        guard await readyHome() == nil, let bridge = try? bridge() else { return [] }
+    private func extensionUsage(_ saved: [PiSavedCredential]) async -> [PiProviderUsage] {
+        guard await readyHome() == nil, let bridge = try? bridge(bundledUsage()) else { return [] }
         defer { bridge.close() }
         // Each hook has 10 s in the bridge; loading the extensions comes first.
         let watchdog = Task {
@@ -304,15 +322,11 @@ final class PiAuthStore {
             if !Task.isCancelled { bridge.close() }
         }
         defer { watchdog.cancel() }
-        bridge.send(.usage)
+        bridge.send(.usage(accounts: saved))
         for await reply in bridge.replies {
             if case .usage(let reports) = reply { return reports }
         }
         return []
-    }
-
-    @ObservationIgnored var readUsage: (PiHome) async -> [String: [PiUsageWindow]] = { home in
-        await Task.detached { await PiUsage.read(home: home) }.value
     }
 
     /// Signs another account in beside the one there: the current one is saved first.
@@ -534,7 +548,7 @@ final class PiSignInSession: Identifiable {
     private func run(_ override: PiSignInFlow?) {
         guard let store else { return }
         do {
-            let bridge = try store.bridge()
+            let bridge = try store.bridge(false)
             self.bridge = bridge
             reader = Task { [weak self] in
                 for await reply in bridge.replies {

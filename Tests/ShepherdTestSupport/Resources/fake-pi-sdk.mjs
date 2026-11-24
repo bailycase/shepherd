@@ -105,8 +105,31 @@ async function keyLogin(interaction) {
 export const SettingsManager = { create: () => ({}) };
 // Extensions as pi's loader records them: `FAKE_PI_CONTROL/extensions.json`, when a test writes it,
 // lists each one's path, the providers it registers (by id, from `providers` above) and what else.
+// `FAKE_PI_CONTROL/usage.json`, when a test writes it, maps a token to the percent an extension's
+// "shepherd:usage" hook reports for Anthropic (as Shepherd's bundled usage extension would), with
+// the email `<token>@x.co`; a token not in it reports nothing.
+export function createEventBus() {
+  const handlers = new Map();
+  return {
+    on(channel, handler) { handlers.set(channel, [...(handlers.get(channel) ?? []), handler]); return () => {}; },
+    emit(channel, data) { for (const handler of handlers.get(channel) ?? []) handler(data); },
+  };
+}
+
 export class DefaultResourceLoader {
-  async reload() {}
+  constructor(options = {}) {
+    this.eventBus = options.eventBus;
+  }
+
+  async reload() {
+    let percents;
+    try { percents = JSON.parse(fs.readFileSync(path.join(control, "usage.json"), "utf8")); } catch { return; }
+    this.eventBus?.emit("shepherd:usage", { provider: "anthropic", async usage(auth) {
+      const percent = percents[auth.credential?.access];
+      return percent === undefined ? undefined
+        : { windows: [{ name: "5-hour", usedPercent: percent }], email: `${auth.credential.access}@x.co` };
+    } });
+  }
   getExtensions() {
     let listed = [];
     try { listed = JSON.parse(fs.readFileSync(path.join(control, "extensions.json"), "utf8")); } catch {}
@@ -140,6 +163,12 @@ export class ModelRuntime {
 
   getProvider(id) {
     return providers[id];
+  }
+
+  async getAuth(id) {
+    let stored;
+    try { stored = JSON.parse(fs.readFileSync(this.authPath, "utf8"))[id]; } catch {}
+    return stored && { auth: { apiKey: stored.access ?? stored.key, headers: {} } };
   }
 
   getProviders() {

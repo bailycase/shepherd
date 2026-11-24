@@ -15,7 +15,9 @@ struct PiSignInProtocolTests {
 
     static let commands: [Command] = [
         Command(command: .providers, json: #"{"type":"providers"}"#),
-        Command(command: .usage, json: #"{"type":"usage"}"#),
+        Command(command: .usage(), json: #"{"type":"usage"}"#),
+        Command(command: .usage(accounts: [PiSavedCredential(provider: "anthropic", id: "b", credential: ["access": "tok-b", "type": "oauth"])]),
+                json: #"{"accounts":[{"credential":{"access":"tok-b","type":"oauth"},"id":"b","provider":"anthropic"}],"type":"usage"}"#),
         Command(command: .login(provider: "anthropic", method: .oauth, flow: .browser),
                 json: #"{"flow":"browser","method":"oauth","provider":"anthropic","type":"login"}"#),
         Command(command: .login(provider: "deepseek", method: .apiKey, flow: .device),
@@ -53,10 +55,11 @@ struct PiSignInProtocolTests {
         Reply(json: #"{"type":"extensionFailed"}"#, reply: nil),
         Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts","providers":["acme"],"tools":[],"commands":["acme-usage"],"events":[],"shortcuts":["ctrl+x"],"flags":[],"renderers":1}]}"#,
               reply: .extensions([PiExtensionInventory(path: "/h/x.ts", providers: ["acme"], commands: ["acme-usage"], shortcuts: ["ctrl+x"], renderers: 1)])),
-        Reply(json: #"{"type":"usage","usage":[{"provider":"deepseek","windows":[{"name":"Month","usedPercent":120,"resetsAt":1800000000000}],"balance":{"amount":110,"currency":"CNY"}},{"provider":"acme","windows":[]}]}"#,
+        Reply(json: #"{"type":"usage","usage":[{"provider":"deepseek","windows":[{"name":"Month","usedPercent":120,"resetsAt":1800000000000}],"balance":{"amount":110,"currency":"CNY"}},{"provider":"acme","windows":[]},{"provider":"anthropic","account":"b","windows":[],"email":"b@example.com"}]}"#,
               reply: .usage([PiProviderUsage(provider: "deepseek", windows: [PiUsageWindow(name: "Month", usedPercent: 100, resetsAt: Date(timeIntervalSince1970: 1_800_000_000))],
                                              balance: PiBalance(amount: 110, currency: "CNY")),
-                             PiProviderUsage(provider: "acme")])),
+                             PiProviderUsage(provider: "acme"),
+                             PiProviderUsage(provider: "anthropic", account: "b", email: "b@example.com")])),
         // An older bridge's inventory without some lists reads them as empty.
         Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts"}]}"#, reply: .extensions([PiExtensionInventory(path: "/h/x.ts")])),
         Reply(json: #"{"type":"event","event":{"type":"auth_url","url":"https://claude.ai/oauth/authorize?x=1","instructions":"Complete login"}}"#,
@@ -114,7 +117,7 @@ struct PiSignInProtocolTests {
         #expect(line.argv.prefix(3) == ["/bin/zsh", "-l", "-c"])
         #expect(line.script == PiLaunchTests.clearing
             + "export PI_CODING_AGENT_DIR='/Users/me/Library/Application Support/Shepherd/pi' PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0; "
-            + "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec '/A/Helpers/node' \"$0\" \"$1\" \"$2\"")
+            + "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec '/A/Helpers/node' \"$0\" \"$@\"")
         #expect(line.positional == ["/S/shepherd-sign-in.mjs", "/A/pi-engine/dist/bundle/index.js", "/Users/me/Library/Application Support/Shepherd/pi"])
     }
 }

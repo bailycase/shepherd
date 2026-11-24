@@ -196,8 +196,12 @@ refreshed as a request would be). The hook returns `{ windows?: [{ name, usedPer
 balance?: { amount, currency, label? } }`. The bridge keeps at most four windows, clamps percentages
 to 0–100, cuts words short, masks the provider's own key out of them, and drops a hook that throws
 or takes more than 10 seconds. Sign-in reads usage when it opens; a paired device's provider list
-reads it again once it is five minutes old. An extension's windows replace Shepherd's own reading
-for that provider (Anthropic, OpenAI Codex). Rows show the fullest window and the balance
+reads it again once it is five minutes old. Shepherd reads no provider's usage itself: Anthropic's and OpenAI Codex's come from
+`Extensions/shepherd-usage.mjs`, a provider extension like any other that only the bridge loads
+(Settings ▸ Tools ▸ Built in ▸ Subscription usage; `SHEPHERD_USAGE_EXTENSION=1` switches it on). A
+usage request also lists each saved account that isn't active (`accounts`); the hook gets that
+account's stored credential as it is, never refreshed, and a reading and `email` it returns are
+saved with the account. Rows show the fullest window and the balance
 ("Credit $18.40"); a three-letter ISO currency is formatted as money, any other unit as a number and its word.
 
 Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
