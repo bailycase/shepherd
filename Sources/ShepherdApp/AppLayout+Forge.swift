@@ -49,8 +49,17 @@ extension AppLayout {
     /// The side pane's Pull request tab (PRPane, PRPaneMerged): its 220 rail beside the column
     /// once the pane is wide enough for both, the merged state's 40 title bar, and a line
     /// comment's hunk (its last lines).
-    static let prPaneRailWidth: CGFloat = 220
+    static let prPaneRailWidth: CGFloat = 200
     static let prPaneTwoColumnMinWidth: CGFloat = 600
-    static let prPaneTitleBarHeight: CGFloat = 40
     static let prPaneHunkLines = 2
+    /// GXPanePR: the head row (state, number, link buttons), the plain event rows, the outlined boxes, the footer and the title.
+    static let prPaneHeadHeight: CGFloat = 42
+    static let prPaneEventHeight: CGFloat = 32
+    static let prPaneEventGlyph: CGFloat = 18
+    static let prPaneBoxRadius: CGFloat = 10
+    static let prPaneFooterHeight: CGFloat = 46
+    static let prPaneTabHeight: CGFloat = 26
+    static let prPaneTitleSize: CGFloat = 20
+    static let prPaneColumnLeading: CGFloat = 18
+    static let prPaneColumnTrailing: CGFloat = 22
 }
