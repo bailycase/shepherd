@@ -34,27 +34,26 @@ struct AppLayoutTests {
 
     @Test func densityLeavesFixedSizesAlone() {
         withDensity(1.3) {
-            #expect(AppLayout.threadMaxWidth == 820)
+            #expect(AppLayout.threadMaxWidth == 720)
             #expect(AppLayout.headerHeight == 44)
         }
     }
 
-    @Test func proseIsNarrowerThanTheThreadColumn() {
+    @Test func proseFillsTheThreadColumnAndBubblesAreNarrower() {
         #expect(AppLayout.userMaxWidth < AppLayout.proseMaxWidth)
-        #expect(AppLayout.proseMaxWidth < AppLayout.threadMaxWidth)
+        #expect(AppLayout.proseMaxWidth == AppLayout.threadMaxWidth)
     }
 
-    /// The Navigation board's column ("thread column · max 820 · prose 640"), with the Thread
-    /// board's 640pt prose measure and 600pt bubbles.
-    @Test func theThreadColumnIsTheBoards820PointsWithItsProseMeasure() {
-        #expect(AppLayout.threadMaxWidth == 820)
-        #expect(AppLayout.proseMaxWidth == SHThreadMetrics.proseMeasure && AppLayout.proseMaxWidth == 640)
-        #expect(AppLayout.userMaxWidth == SHThreadMetrics.bubbleMaxWidth && AppLayout.userMaxWidth == 600)
+    /// The redesign boards' `.col`: 720pt, prose across all of it, 560pt bubbles.
+    @Test func theThreadColumnIsTheBoards720Points() {
+        #expect(AppLayout.threadMaxWidth == 720)
+        #expect(AppLayout.proseMaxWidth == SHThreadMetrics.proseMeasure && AppLayout.proseMaxWidth == 720)
+        #expect(AppLayout.userMaxWidth == SHThreadMetrics.bubbleMaxWidth && AppLayout.userMaxWidth == 560)
     }
 
-    /// A thread keeps its 32pt gutters only while the widest column fits between them (820 +
-    /// 2 × 32 = 884); narrower, it keeps its column and drops to 16pt gutters.
-    @Test(arguments: [(1180.0, 32.0), (884.0, 32.0), (883.0, 16.0), (606.0, 16.0), (0.0, 16.0)])
+    /// A thread keeps its 32pt gutters only while the widest column fits between them (720 +
+    /// 2 × 32 = 784); narrower, it keeps its column and drops to 16pt gutters.
+    @Test(arguments: [(1180.0, 32.0), (784.0, 32.0), (783.0, 16.0), (606.0, 16.0), (0.0, 16.0)])
     func aNarrowThreadKeepsItsColumnAndDropsToCompactGutters(width: Double, gutter: Double) {
         #expect(AppLayout.threadGutter(width: CGFloat(width)) == CGFloat(gutter))
     }

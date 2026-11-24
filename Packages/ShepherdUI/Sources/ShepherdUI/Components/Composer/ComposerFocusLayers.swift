@@ -97,7 +97,7 @@ final class SHComposerFocusView: NSView {
         drawn.frame = bounds
         // The line follows the card's corners. The ring is the shape this layer replaced: a rounded rectangle of the
         // card's radius and the ring's width, inset by minus the ring's width, which grows the radius by it again.
-        drawn.cornerRadius = part == .line ? SH.Radius.m : SH.Radius.m + 2 * SHComposerMetrics.focusRing
+        drawn.cornerRadius = part == .line ? SHComposerMetrics.radius : SHComposerMetrics.radius + 2 * SHComposerMetrics.focusRing
     }
 }
 

@@ -49,7 +49,7 @@ struct ComposerFocusLayersTests {
         let ring = SHComposerMetrics.focusRing
         let frame = CGRect(origin: .zero, size: Self.card.insetBy(dx: -ring, dy: -ring).size)
         // The shape was behind the card: a rounded rectangle of the card's radius and the ring's width, inset by minus the ring's width.
-        let was = RoundedRectangle(cornerRadius: SH.Radius.m + ring).inset(by: -ring)
+        let was = RoundedRectangle(cornerRadius: SHComposerMetrics.radius + ring).inset(by: -ring)
             .path(in: CGRect(origin: CGPoint(x: ring, y: ring), size: Self.card.size)).cgPath
         #expect(Self.largestDifference(of: .ring, from: was, in: frame) <= Self.tolerance)
     }
@@ -57,7 +57,7 @@ struct ComposerFocusLayersTests {
     @Test func theLineDrawsWhatTheCardsBorderDrew() {
         // `shBorder`: the card's rounded rectangle inset by half a hairline, stroked a hairline wide.
         let width = SH.hairline(1)
-        let was = RoundedRectangle(cornerRadius: SH.Radius.m).inset(by: width / 2).path(in: Self.card)
+        let was = RoundedRectangle(cornerRadius: SHComposerMetrics.radius).inset(by: width / 2).path(in: Self.card)
             .strokedPath(StrokeStyle(lineWidth: width)).cgPath
         #expect(Self.largestDifference(of: .line, from: was, in: Self.card) <= Self.tolerance)
     }

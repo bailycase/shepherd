@@ -37,10 +37,19 @@ public enum SHThreadMetrics {
     public static let sentCommandTextHeight: CGFloat = 220
     /// The fade over the foot of an opened sent command's text.
     public static let sentCommandFade: CGFloat = 48
-    /// The changes card (ChangesCard): rows 30pt, a 30pt tile, radius 10.
-    public static let changesRowHeight: CGFloat = touchable(30)
+    /// The changes card (the boards' `.ed`): rows 28pt, 14pt in from its sides, columns 14pt apart, radius 14, and a
+    /// file's bar 4pt tall in a 56pt column.
+    public static let changesRowHeight: CGFloat = touchable(28)
     public static let changesTile: CGFloat = 30
+    #if os(macOS)
+    public static let changesRadius: CGFloat = SH.Radius.xl
+    #else
     public static let changesRadius: CGFloat = 10
+    #endif
+    public static let changesInset: CGFloat = 14
+    public static let changesColumnGap: CGFloat = 14
+    public static let changesBarWidth: CGFloat = 56
+    public static let changesBarHeight: CGFloat = 4
     /// Files the card lists before "N more", and how many more each click of it lists.
     public static let changesShownFiles = 3
     public static let changesMoreFiles = 10
@@ -52,9 +61,14 @@ public enum SHThreadMetrics {
     /// A live line's clock, in mono (LiveText, ResponseVisibility › A).
     public static let liveClock: CGFloat = 11
     public static let codeCopyButton: CGFloat = 22
+    /// Your bubble's widest, and the agent's prose measure: the redesign's 560 and the whole 720pt column on the Mac.
+    #if os(macOS)
+    public static let bubbleMaxWidth: CGFloat = 560
+    public static let proseMeasure: CGFloat = 720
+    #else
     public static let bubbleMaxWidth: CGFloat = 600
-    /// Agent prose measure.
     public static let proseMeasure: CGFloat = 640
+    #endif
     /// A list item's text starts this far in; its marker sits right-aligned before it.
     public static let listIndent: CGFloat = 20
     /// The rule quotes, expanded thinking, and notes sit on.
@@ -104,17 +118,20 @@ public struct SHDiffStat: View {
     let added: Int
     let removed: Int
     let font: Font?
+    let hidesZero: Bool
 
-    public init(added: Int, removed: Int, font: Font? = nil) {
+    /// `hidesZero` leaves out a side with nothing on it ("+31", not "+31 −0"), as the changes card's rows do.
+    public init(added: Int, removed: Int, font: Font? = nil, hidesZero: Bool = false) {
         self.added = added
         self.removed = removed
         self.font = font
+        self.hidesZero = hidesZero
     }
 
     public var body: some View {
         HStack(spacing: SH.Space.s) {
-            Text("+\(added)").foregroundStyle(.sh.done)
-            Text("\u{2212}\(removed)").foregroundStyle(.sh.failed)
+            if !hidesZero || added > 0 || removed == 0 { Text("+\(added)").foregroundStyle(.sh.done) }
+            if !hidesZero || removed > 0 { Text("\u{2212}\(removed)").foregroundStyle(.sh.failed) }
         }
         .font(font ?? .sh(.mono))
         .monospacedDigit()

@@ -790,7 +790,7 @@ struct Composer: View, Equatable {
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
-        return SHComposer(isFocused: focused) {
+        return SHComposer(isFocused: focused, layout: .inline) {
             // Design references sit first, above the words (DesignReferenceChip(ref)).
             ForEach(store.attachedReferences) { attached in
                 ComposerReferenceChip(attached: attached, references: references) { store.detachReference(attached.id) }
@@ -807,11 +807,13 @@ struct Composer: View, Equatable {
                     .help(file.path)
                     .shTransition(.list, edge: .leading)
             }
+        } leading: {
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store, part: .leading).equatable()
         } field: {
             ComposerFieldHost(store: store) { field }.shEntrance(.content)
         } controls: {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store,
-                             dismissal: dismissal).equatable()
+                             dismissal: dismissal, part: .trailing).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
     }
@@ -1409,12 +1411,65 @@ struct ComposerControls: View, Equatable {
     /// Marks the controls that open a menu, so a click on one is its own and never a click away.
     /// A constant of the composer, outside `==`.
     var dismissal: ComposerMenuDismissal? = nil
+    /// Which of the row it draws: all of it, or the thread card's attach plus before the words and the rest after them.
+    var part: Part = .all
+
+    enum Part { case all, leading, trailing }
 
     @Environment(\.shComposerSize) private var size
 
-    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
+    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store && a.part == b.part }
 
     var body: some View {
+        if part == .leading {
+            attachButton
+        } else {
+            row
+        }
+    }
+
+    /// The boards' `.plus`: a 30pt round button before the words.
+    @ViewBuilder private var attachButton: some View {
+        if model.canAttach {
+            Button(action: actions.attach) { Image(systemName: "plus").font(.system(size: SHComposerMetrics.sendGlyph + 2)) }
+                .buttonStyle(.shIcon(size: SHComposerMetrics.actionSize, round: true))
+                .disabled(model.attachFull)
+                .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
+                .accessibilityLabel("Attach file")
+        }
+    }
+
+    @ViewBuilder private var row: some View {
+        if part == .trailing {
+            // After the words on the thread card's line: only as wide as it is, so the words take the rest.
+            HStack(spacing: SH.Space.xxs) {
+                ViewThatFits(in: .horizontal) {
+                    chips(compact: size == .compact, startingLabel: true)
+                    chips(compact: true, startingLabel: false)
+                }
+                .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
+                meterAndPrimary
+            }
+            .fixedSize()
+        } else {
+            fullRow
+        }
+    }
+
+    private var meterAndPrimary: some View {
+        HStack(spacing: SH.Space.s) {
+            ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                .equatable()
+                .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                        - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                } action: { actions.meterInset($0) }
+            primary
+        }
+    }
+
+    private var fullRow: some View {
         ComposerControlsMinimum {
             HStack(spacing: SH.Space.xxs) {
                 ViewThatFits(in: .horizontal) {
@@ -1427,16 +1482,7 @@ struct ComposerControls: View, Equatable {
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
                 .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
                 // The ring and Send keep their place outside the fitting candidates.
-                HStack(spacing: SH.Space.s) {
-                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
-                        .equatable()
-                        .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
-                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
-                        } action: { actions.meterInset($0) }
-                    primary
-                }
+                meterAndPrimary
             }
         }
     }
@@ -1444,7 +1490,7 @@ struct ComposerControls: View, Equatable {
     private func chips(compact: Bool, startingLabel: Bool) -> some View {
         let _ = SHRenderProbe.tick("composer.chips")
         return HStack(spacing: SH.Space.xxs) {
-            if model.canAttach {
+            if model.canAttach, part == .all {
                 Button(action: actions.attach) { Image(systemName: "paperclip") }
                     .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
                     .disabled(model.attachFull)
@@ -1452,7 +1498,7 @@ struct ComposerControls: View, Equatable {
                     .accessibilityLabel("Attach file")
             }
             modelChip(compact: compact)
-            Spacer(minLength: SH.Space.m)
+            if part == .all { Spacer(minLength: SH.Space.m) }
             if model.startingShown { startingIndicator(label: startingLabel).shTransition(.content) }
             if let hooks = model.hooks { HookComposerGlyph(indicator: hooks, open: actions.hooks) }
         }

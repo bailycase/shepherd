@@ -171,8 +171,12 @@ public struct SHIconButtonStyle: ButtonStyle {
     let size: CGFloat
     let tint: Color?
     let hoverFill: Color?
+    /// A circle rather than the rounded square (the composer's attach plus).
+    let round: Bool
 
-    public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil, hoverFill: Color? = nil) {
+    public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil, hoverFill: Color? = nil,
+                round: Bool = false) {
+        self.round = round
         self.bordered = bordered
         self.isOn = isOn
         self.size = size
@@ -190,8 +194,8 @@ extension ButtonStyle where Self == SHIconButtonStyle {
     public static var shIcon: SHIconButtonStyle { SHIconButtonStyle() }
 
     public static func shIcon(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil,
-                              hoverFill: Color? = nil) -> SHIconButtonStyle {
-        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill)
+                              hoverFill: Color? = nil, round: Bool = false) -> SHIconButtonStyle {
+        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill, round: round)
     }
 }
 
@@ -213,7 +217,7 @@ private struct SHIconButton: View {
         let foreground: Color = style.tint ?? (style.isOn || active ? sh.textPrimary : sh.textSecondary)
         let fill: Color = style.isOn ? sh.bgSelected : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
         // The boards' icon button: a rounded square (radius 7), not a circle.
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
+        let shape = RoundedRectangle(cornerRadius: style.round ? side / 2 : SH.Radius.s)
         configuration.label
             .font(.system(size: 14, weight: .regular))
             .symbolRenderingMode(.monochrome)
@@ -227,7 +231,7 @@ private struct SHIconButton: View {
             .shAnimation(.hover, value: hovering)
             // A pane toggle lights up however its pane opened (a menu, a shortcut, an agent).
             .shComponentAnimation(.hover, value: style.isOn)
-            .shFocusRing(radius: SH.Radius.s)
+            .shFocusRing(radius: style.round ? side / 2 : SH.Radius.s)
     }
 }
 

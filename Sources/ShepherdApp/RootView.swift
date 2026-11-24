@@ -310,6 +310,8 @@ struct WorkspaceHeaderView: View {
     var showSidebar: (() -> Void)?
 
     private var keys: KeybindingsStore { vm.keybindings }
+    /// New thread leads with Show sidebar while the sidebar is not docked (GXSidebarHidden).
+    private var newThread: (() -> Void)? { showSidebar == nil ? nil : { vm.openDestination(.newThread) } }
 
     var body: some View {
         Group {
@@ -317,7 +319,7 @@ struct WorkspaceHeaderView: View {
                let connection = vm.remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
-                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
+                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar, newThread: newThread)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: Export draws here from this Mac's synced copy.
                     let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
@@ -378,7 +380,7 @@ struct WorkspaceHeaderView: View {
                     // one agent's chip and pane button into another's.
                     .id(agent.id)
             } else {
-                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
+                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar, newThread: newThread)
             }
         }
         .contentShape(Rectangle())
@@ -404,6 +406,7 @@ struct WorkspaceHeaderView: View {
         let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
+                            newThread: newThread,
                             branch: branch, directory: directory,
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
