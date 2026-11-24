@@ -292,44 +292,28 @@ private struct PullRequestFooter: View {
         switch detail.state {
         case .open:
             Button("Send feedback to agent") { vm.sendPullRequestFeedback(store, to: agentID) }
-                .buttonStyle(PullRequestWordStyle(emphasis: true))
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
                 .disabled(ForgePresentation.reviewFeedback(detail).isEmpty)
                 .help("Send what reviewers asked to this thread")
             Button(ForgePresentation.title(store.mergeOptions.method)) { vm.forgeMerge(store: store) }
-                .buttonStyle(PullRequestWordStyle(emphasis: false))
+                .buttonStyle(PaneWordButtonStyle(emphasis: false))
                 .disabled(!detail.blockers.isEmpty)
                 .help(ForgePresentation.blockerSentence(detail.blockers) ?? ForgePresentation.title(store.mergeOptions.method))
         case .draft:
             Button("Ready for review") { Task { await store.perform(.setDraft(ref: ref, draft: false)) } }
-                .buttonStyle(PullRequestWordStyle(emphasis: true))
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
         case .closed:
             Button("Reopen") { Task { await store.perform(.setOpen(ref: ref, open: true)) } }
-                .buttonStyle(PullRequestWordStyle(emphasis: true))
+                .buttonStyle(PaneWordButtonStyle(emphasis: true))
         case .merged:
             if !detail.headBranchDeleted, !detail.deletesBranchOnMerge {
                 Button("Delete branch") { Task { await store.perform(.deleteBranch(ref: ref)) } }
-                    .buttonStyle(PullRequestWordStyle(emphasis: true))
+                    .buttonStyle(PaneWordButtonStyle(emphasis: true))
             }
             if detail.summary.thread?.worktreePath != nil {
                 Button("Remove worktree") { vm.forgeRemoveWorktree(store: store) }
-                    .buttonStyle(PullRequestWordStyle(emphasis: false))
+                    .buttonStyle(PaneWordButtonStyle(emphasis: false))
             }
         }
-    }
-}
-
-/// A footer action as words (GXPanePR `.lk`): the lead one in `textPrimary` medium, the other quiet; dimmer while it can't act.
-private struct PullRequestWordStyle: ButtonStyle {
-    let emphasis: Bool
-    @Environment(\.isEnabled) private var enabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.sh(.ui, weight: emphasis ? .medium : .regular))
-            .foregroundStyle(emphasis ? Color.sh.textPrimary : Color.sh.textSecondary)
-            .opacity(enabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
-            .padding(.horizontal, SH.Space.s)
-            .frame(minHeight: SH.Height.controlM)
-            .contentShape(Rectangle())
     }
 }
