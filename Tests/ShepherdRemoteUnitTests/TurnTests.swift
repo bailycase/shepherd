@@ -222,6 +222,25 @@ struct TurnTests {
         #expect(kinds.contains("note:Image attached"))
     }
 
+    /// Pictures several tools returned (one render after another) gather under their stretch's one line, never splitting it.
+    @Test func aStretchsToolImagesGatherUnderItsOneLine() {
+        var first = F.tool("board_render", args: #"{"path":"A.dc.html"}"#, id: "e-1", callID: "1")
+        first.blocks = [Self.named("t|0|aaaaaaaaaaaaaaaa")]
+        var second = F.tool("board_render", args: #"{"path":"B.dc.html"}"#, id: "e-2", callID: "2")
+        second.blocks = [Self.named("t|1|bbbbbbbbbbbbbbbb")]
+        let items = nativeTurnPresentation([first, second, F.tool("design_check", args: "{}", id: "e-3", callID: "3"), F.assistant("Drawn.")],
+                                           live: false).items
+        let kinds = items.map { item -> String in
+            switch item {
+            case .activity(_, let bursts): "lines:" + bursts.map { "\($0.calls.count)" }.joined(separator: "+")
+            case .images(_, let images): "images:\(images.count)"
+            case .prose: "prose"
+            default: "other"
+            }
+        }
+        #expect(kinds == ["lines:3", "images:2", "prose"])
+    }
+
     // MARK: The neutral count (ThreadImagesSent, ThreadImagesReceived)
 
     /// The count line's words are `nativeCount(n, "image")`: "1 image", "2 images", never a verb, never a name. It is built from the images the host

@@ -161,6 +161,8 @@ public func nativeTurnPresentation(
         case tool(NativeThreadMessage)
         case note(String)
         case images([NativeImageRef])
+        /// What a tool returned: drawn under its stretch's line, so a render never splits the stretch.
+        case toolImages([NativeImageRef])
         case goalRecord(String)
         case hook(NativeHookRow)
         /// Consecutive failed requests: pi's automatic retries of one.
@@ -205,7 +207,7 @@ public func nativeTurnPresentation(
         if message.toolName != nil || message.role == "toolResult" {
             raw.append(.tool(message))
             let refs = message.blocks.compactMap(\.image)
-            if !refs.isEmpty { raw.append(.images(refs)) }
+            if !refs.isEmpty { raw.append(.toolImages(refs)) }
             continue
         }
         if message.role == "assistant", message.status == "error" {
@@ -274,6 +276,7 @@ public func nativeTurnPresentation(
     var stretchThinking: [(text: String, seconds: Double?, message: String)] = []
     var stretchCalls: [NativeActivityCall] = []
     var stretchItems: [NativeTurnPresentation.Item] = []
+    var stretchImages: [NativeImageRef] = []
     func flushCalls() {
         let bursts = nativeActivityBursts(stretchCalls)
         if let first = bursts.first { stretchItems.append(.activity(id: "activity:" + first.id, bursts: bursts)) }
@@ -295,8 +298,10 @@ public func nativeTurnPresentation(
             }
         }
         items += stretchItems
+        if !stretchImages.isEmpty { items.append(.images(id: nextID("images"), images: stretchImages)) }
         stretchThinking = []
         stretchItems = []
+        stretchImages = []
     }
 
     /// The record's lines: "Started" once, at the first spawn; "finished" once, after it.
@@ -356,6 +361,8 @@ public func nativeTurnPresentation(
         case .images(let refs):
             flushStretch()
             items.append(.images(id: nextID("images"), images: refs))
+        case .toolImages(let refs):
+            stretchImages += refs
         case .error(let tries):
             flushStretch()
             items.append(.error(id: nextID("error"), error: errors.error(tries), final: false, folded: true))

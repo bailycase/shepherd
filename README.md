@@ -22,8 +22,8 @@ coherent over covering every use case.
   Start an agent with ⌘N and describe the task. It names itself from your prompt and reports
   whether it is working, blocked on you, or done.
 - **Native threads.** Each agent is `pi --mode rpc` behind a SwiftUI thread:
-  - activity lines: one quiet line per burst of tool work ("Explored 7 files", "Ran tests · 17
-    passed") that expands to its calls and their output
+  - activity lines: one line per stretch of tool work, live while it runs and a recap when it
+    ends ("Explored 7 files, edited 2 files and ran tests"), that expands to its calls and their output
   - a changes card at the end of every turn that edited files, one click from the review pane
   - timed thinking
   - questions answered in place

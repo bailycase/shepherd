@@ -136,36 +136,47 @@ struct ActivityTests {
 
     // MARK: Bursts
 
-    @Test func consecutiveCallsOfOneKindMergeIntoOneLine() {
+    /// The calls between two pieces of prose are one line (ToolFeed › A): each kind of work in the order it began.
+    @Test func aStretchOfCallsIsOneLineNamingEachKindOfWork() {
         let bursts = nativeActivityBursts([call("read", ["path": "a"]), call("grep", ["pattern": "x"]), call("ls"),
                                            edit("a", added: 1, removed: 0), edit("b", added: 2, removed: 1),
-                                           bash("swift test"), bash("swift build")])
-        #expect(bursts.map(\.kind) == [.explore, .edit, .run])
-        #expect(bursts.map(\.calls.count) == [3, 2, 2])
+                                           bash("swift test"), bash("swift build"), call("read", ["path": "b"])])
+        #expect(bursts.count == 1 && bursts[0].calls.count == 8)
+        #expect(bursts[0].label == "Explored 4 files, edited 2 files and ran tests and a build")
+        #expect(bursts[0].meta == "8 actions")
+        #expect(bursts[0].kind == .explore, "the glyph follows the last call")
     }
 
-    @Test func otherToolsMergeOnlyWithTheSameTool() {
-        let bursts = nativeActivityBursts([call("web_fetch", ["url": "a"]), call("web_fetch", ["url": "b"]), call("notify", ["message": "hi"])])
-        #expect(bursts.map(\.calls.count) == [2, 1])
-        #expect(bursts.map(\.label) == ["Used web_fetch 2 times", "Used notify"])
+    @Test func oneKindOfWorkKeepsItsOwnWords() {
+        let bursts = nativeActivityBursts([call("web_fetch", ["url": "https://a.dev/x"]), call("web_fetch", ["url": "https://b.dev/y"])])
+        #expect(bursts.map(\.label) == ["Read 2 pages"])
+        #expect(nativeActivityBursts([call("notify", ["title": "Done"])]).map(\.label) == ["Notified you: “Done”"])
     }
 
-    @Test func aFailedCallStandsAloneAndEndsTheBurst() {
-        let bursts = nativeActivityBursts([bash("swift test"), bash("swift test", output: "Command exited with code 1", error: true),
-                                           bash("swift test", output: "Command exited with code 1", error: true), bash("swift build")])
-        #expect(bursts.map(\.state) == [.done, .failed, .failed, .done])
+    /// A failure the work went on from is counted and its call stays red among the calls; one the stretch ends on fails the line.
+    @Test func aFailureTheWorkWentOnFromIsCountedAndOneItEndsOnFailsTheLine() {
+        let failing = bash("swift test", output: "Command exited with code 1", error: true)
+        let recovered = nativeActivityBursts([bash("swift test", output: "Command exited with code 1", error: true), bash("swift test"), edit("a", added: 1, removed: 0)])
+        #expect(recovered.map(\.state) == [.done])
+        #expect(recovered[0].meta == "3 actions · 1 retry")
+        #expect(recovered[0].calls[0].failed)
+        let other = nativeActivityBursts([call("read", ["path": "gone"], output: "no such file", error: true), edit("a", added: 1, removed: 0)])
+        #expect(other[0].label == "Edited 1 file" && other[0].meta == "+1 \u{2212}0 · 1 failed")
+        let ended = nativeActivityBursts([bash("git status"), failing])
+        #expect(ended.map(\.state) == [.failed])
+        #expect((ended[0].label, ended[0].meta) == ("Ran tests", "swift test · exit 1 · 2 actions"))
     }
 
-    /// A call the user's Stop interrupted (the host's `aborted`) reads as stopped, not failed,
-    /// and stands alone so its word stays visible.
+    /// A call the user's Stop interrupted (the host's `aborted`) reads as stopped, not failed.
     @Test func aStoppedCallReadsStoppedNotFailed() {
         let stopped = call("bash", ["command": "sleep 40"], output: "Command aborted", error: true, status: "aborted", start: 1_000, end: 8_500)
         #expect(!stopped.failed && stopped.stopped && stopped.stat == "stopped")
-        let bursts = nativeActivityBursts([bash("ls"), stopped])
-        #expect(bursts.map(\.state) == [.done, .done])
-        #expect(bursts.map(\.calls.count) == [1, 1])
-        #expect((bursts[1].label, bursts[1].meta) == ("Ran a command", "sleep 40 · stopped · 7.5s"))
-        #expect(bursts[1].accessibilityLabel.hasSuffix("stopped"))
+        let alone = nativeActivityBurst([stopped])
+        #expect(alone.state == .done)
+        #expect((alone.label, alone.meta) == ("Ran a command", "sleep 40 · stopped · 7.5s"))
+        #expect(alone.accessibilityLabel.hasSuffix("stopped"))
+        let after = nativeActivityBursts([bash("ls"), stopped])
+        #expect(after.count == 1 && after[0].label == "Ran a command" && after[0].meta.hasPrefix("sleep 40 · stopped · 2 actions"))
     }
 
     /// A stopped build or edit claims nothing it may not have done.
@@ -177,12 +188,24 @@ struct ActivityTests {
         #expect(nativeTurnChanges([write]) == nil)
     }
 
-    @Test func onlyTheRunningCallIsLiveAndItNamesItsCommand() {
-        let bursts = nativeActivityBursts([bash("git commit -m x"), call("bash", ["command": "git push origin main"], output: "a\nb", status: "running", start: 1_000)])
-        #expect(bursts.map(\.state) == [.done, .running])
-        let live = bursts[1]
-        #expect((live.label, live.meta, live.startedAt, live.tail) == ("Pushing", "git push origin main", 1_000, ["a", "b"]))
+    /// While a call runs the line is live: it says what that call is doing, which step it is, and its elapsed time counts from
+    /// the stretch's start.
+    @Test func theRunningCallMakesTheWholeLineLive() {
+        let bursts = nativeActivityBursts([call("bash", ["command": "git commit -m x"], start: 500, end: 900),
+                                           call("bash", ["command": "git push origin main"], output: "a\nb", status: "running", start: 1_000)])
+        #expect(bursts.map(\.state) == [.running])
+        let live = bursts[0]
+        #expect((live.label, live.meta, live.startedAt, live.tail) == ("Pushing", "git push origin main · step 2", 500, ["a", "b"]))
         #expect(!live.expandable)
+        let alone = nativeActivityBurst([call("bash", ["command": "ls"], status: "running", start: 1_000)])
+        #expect(alone.meta == "ls" && alone.startedAt == 1_000)
+    }
+
+    /// Calls with cards of their own keep their own lines; reads of a design piece keep their "Looked at" line.
+    @Test func callsWithCardsOfTheirOwnStandAlone() {
+        let proposal = call("markup_propose", ["proposals": [["text": "a"]]])
+        let bursts = nativeActivityBursts([bash("ls"), proposal, bash("pwd")])
+        #expect(bursts.map(\.calls.count) == [1, 1, 1])
     }
 
     @Test(arguments: [
@@ -413,7 +436,7 @@ struct ActivityTests {
         #expect(read.map(\.label) == ["Explored 3 files"])
         #expect(read[0].calls.map(\.detail) == ["design systems", "ds/acme-web", "web/static/tokens.css"])
         let wrote = nativeActivityBursts([call("system_write", ["namespace": "acme-web"], output: "Wrote acme-web · revision 1")])
-        #expect(wrote.map(\.label) == ["Used system"] && wrote[0].calls.map(\.detail) == ["acme-web"])
+        #expect(wrote.map(\.label) == ["Wrote the system acme-web"] && wrote[0].calls.map(\.detail) == ["acme-web"])
     }
 
     @Test func aRunningOrFailedDrawingSaysSo() {
@@ -513,7 +536,7 @@ struct TurnPresentationTests {
             F.assistant("Done."),
         ]
         let presentation = nativeTurnPresentation(messages, live: false)
-        #expect(kinds(presentation) == ["thinking", "prose", "thinking", "lines:2+1", "prose"])
+        #expect(kinds(presentation) == ["thinking", "prose", "thinking", "lines:3", "prose"])
         guard case .thinking(_, let text, _, _, _, _) = presentation.items[2] else { Issue.record("no folded thinking"); return }
         #expect(text == "next\n\nthen")
     }
@@ -589,23 +612,27 @@ struct TurnPresentationTests {
 
     @Test func aRunningCallEndsTheLiveTurnOnItsOwnLine() {
         let presentation = nativeTurnPresentation([tool("read", "r"), tool("bash", "b", status: "running")], live: true)
-        #expect(kinds(presentation) == ["lines:1+1"] && presentation.changes == nil)
+        #expect(kinds(presentation) == ["lines:2"] && presentation.changes == nil)
         guard case .activity(_, let bursts)? = presentation.items.last else { Issue.record("no lines"); return }
-        #expect(bursts.map(\.state) == [.done, .running])
+        #expect(bursts.map(\.state) == [.running])
         #expect(!presentation.betweenTools, "the running call is what moves")
     }
 
-    /// SHThread, ToolRows: one quiet line per burst, in the order the work took, with no line
-    /// that folds them. A failure stays its own red line; the running call is live in place.
-    @Test func aStretchIsItsBurstLinesInOrder() {
+    /// ToolFeed › A: a stretch is one line. While a call runs it is the live line, naming that call and its step; once the
+    /// stretch ends it is the recap, with the failure the work went on from counted.
+    @Test func aStretchIsOneLiveLineThenItsRecap() {
         let messages = [tool("read", "a"), tool("read", "b"), tool("edit", "c"),
                         F.tool("bash", args: #"{"command":"swift test"}"#, output: "Command exited with code 1", error: true, id: "e-t", callID: "t"),
                         tool("bash", "l"), tool("bash", "p", status: "running")]
         let presentation = nativeTurnPresentation(messages, live: true)
-        #expect(kinds(presentation) == ["lines:2+1+1+1+1"])
+        #expect(kinds(presentation) == ["lines:6"])
         guard case .activity(_, let bursts)? = presentation.items.first else { Issue.record("no lines"); return }
-        #expect(bursts.map(\.label) == ["Explored 2 files", "Edited 1 file", "Ran tests", "Ran a command", "Running"])
-        #expect(bursts.map(\.state) == [.done, .done, .failed, .done, .running])
+        #expect(bursts.map(\.label) == ["Running"] && bursts.map(\.state) == [.running])
+        #expect(bursts[0].meta.hasSuffix("step 6"))
+        let finished = nativeTurnPresentation(Array(messages.dropLast()) + [F.assistant("Done.")], live: false)
+        guard case .activity(_, let recap)? = finished.items.first else { Issue.record("no lines"); return }
+        #expect(recap.map(\.label) == ["Explored 2 files, edited 1 file and ran a command"])
+        #expect(recap.map(\.meta) == ["5 actions · 1 failed"])
     }
 
     /// LiveText: only one thing moves. With no call running, no thinking streaming and no reply
