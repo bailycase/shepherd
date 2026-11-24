@@ -2613,8 +2613,7 @@ struct ListPerformanceTests {
         // The card's lift is two shadows (near and far) on its fill, besides the floating one.
         #expect(shadows.count == (floating ? 1 : 0) + (card ? 2 : 0), "\(shadows.map(\.layer))")
         #expect(headers.count == 1, "\(headers.map(\.layer))")
-        // The lift's far shadow wraps the fill and its near shadow (two layers), never the content.
-        #expect(all.allSatisfy { $0.subtree <= (card ? 2 : 1) }, "a shadow over the pane's content: \(all.map(\.subtree))")
+        #expect(all.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(all.map(\.subtree))")
     }
 
     /// The sidebar overlaid on a narrow window casts its shadow from its fill alone: on the
