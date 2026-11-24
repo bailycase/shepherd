@@ -185,7 +185,12 @@
     at most 256 KiB, only while the file still holds `expected` (the text the client edited from):
     answered `.fileWrite(.saved)`, `.changed(text)` with the host's text and nothing written (the
     Mac editor's conflict), or `.failed(message)`. It never creates a file. A client of a host
-    without it keeps Files read-only
+    without it keeps Files read-only. Behind `files.create.v1`, `.fileCreate(path:text:)` makes a new
+    UTF-8 file (at most 256 KiB) in a folder that exists inside the thread's folder, never over a
+    name already taken, answered `.fileWrite(.saved)` or `.failed(message)`, and each listed entry
+    carries its modification time (`modified`). The iPhone's Files location (`App/FilesProvider`)
+    uses both: the time is how Files sees a file changed, and a create keeps a phone's conflicting
+    save beside the file as "name (iPhone).ext"
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`; an empty `spaceID` behind
     `agent.create.noSpace.v1` starts a thread with no space, in a folder of its own, and asks for

@@ -39,8 +39,12 @@ struct HostTokens {
     }
 }
 
+/// The app writes host tokens into the app group's access group, so its Files extension (`FileProviderExtension`)
+/// reaches the same Macs; reads search every group the process has.
 enum HostKeychain {
     static let service = "com.bailycase.shepherd.ios.remote"
+    /// The app group, which iOS also takes as a Keychain access group.
+    static let accessGroup = "group.com.bailycase.shepherd.ios"
     /// This device's fleet identity (id and token).
     static let deviceAccount = "device-identity"
 
@@ -66,15 +70,30 @@ enum HostKeychain {
     }
 
     static func save(_ token: String, account: String) throws {
-        let attributes: [String: Any] = [
+        var attributes: [String: Any] = [
             kSecValueData as String: Data(token.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessGroup as String: accessGroup,
         ]
-        var status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            status = SecItemAdd(query(account).merging(attributes) { _, new in new } as CFDictionary, nil)
+        var status = upsert(account, attributes)
+        if status == errSecMissingEntitlement {
+            // A build signed without the app group (an unsigned simulator run) keeps the token to itself.
+            attributes[kSecAttrAccessGroup as String] = nil
+            status = upsert(account, attributes)
         }
         guard status == errSecSuccess else { throw failure(status) }
+    }
+
+    private static func upsert(_ account: String, _ attributes: [String: Any]) -> OSStatus {
+        let status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
+        guard status == errSecItemNotFound else { return status }
+        return SecItemAdd(query(account).merging(attributes) { _, new in new } as CFDictionary, nil)
+    }
+
+    /// Moves a token saved before the extension existed into the shared group. Nothing happens to one already there
+    /// or to a missing one.
+    static func share(account: String) {
+        _ = SecItemUpdate(query(account) as CFDictionary, [kSecAttrAccessGroup as String: accessGroup] as CFDictionary)
     }
 
     static func remove(account: String) throws {

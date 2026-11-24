@@ -955,6 +955,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .devServers: RemoteProtocol.browserTunnelCapability
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .fileWrite: RemoteProtocol.filesWriteCapability
+        case .fileCreate: RemoteProtocol.filesCreateCapability
         case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch:
             query.changesCwd == nil ? RemoteProtocol.changesCapability : RemoteProtocol.changesCwdCapability
         case .changesUndoTurn, .changesRedoTurn:
@@ -1034,6 +1035,18 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         guard case .fileWrite(let result) = try await filesQuery(agentID: agentID, query: .fileWrite(path: path, text: text, expected: expected)) else {
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected save reply")
+        }
+        return result
+    }
+
+    /// Creates a new file holding `text` in a folder of the thread's folder on the host, never over one that exists
+    /// (`filesCreateCapability`).
+    public func createFile(agentID: AgentID, path: String, text: String) async throws -> ThreadFileSaveResult {
+        guard supports(.filesCreate) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Creating files needs a newer Shepherd on the host.")
+        }
+        guard case .fileWrite(let result) = try await filesQuery(agentID: agentID, query: .fileCreate(path: path, text: text)) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected create reply")
         }
         return result
     }

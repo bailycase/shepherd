@@ -15,13 +15,16 @@ public struct ThreadFileEntry: Codable, Hashable, Sendable {
     public var symlink: Bool?
     /// The entry could not be opened (permissions); its siblings still list.
     public var error: String?
+    /// When it last changed, seconds since 1970; nil from a host older than `files.create.v1`.
+    public var modified: Double?
 
-    public init(name: String, kind: Kind, size: Int64? = nil, symlink: Bool = false, error: String? = nil) {
+    public init(name: String, kind: Kind, size: Int64? = nil, symlink: Bool = false, error: String? = nil, modified: Double? = nil) {
         self.name = name
         self.kind = kind
         self.size = size
         self.symlink = symlink ? true : nil
         self.error = error
+        self.modified = modified
     }
 
     public var isDirectory: Bool { kind == .directory }
@@ -182,6 +185,43 @@ public enum ThreadFileSystem {
         }
     }
 
+    /// A remote create of `relative` in `root` (`RemoteAgentQuery.fileCreate`): a new UTF-8 file holding `text`, in a
+    /// folder that exists inside the root. Never replaces anything: a name already taken fails.
+    public static func create(_ relative: String, in root: String, text: String) -> ThreadFileSaveResult {
+        guard text.utf8.count <= ThreadFilesLimits.readBytes else {
+            return .failed(ThreadFileError.tooLarge(Int64(text.utf8.count)).localizedDescription)
+        }
+        let name = (relative as NSString).lastPathComponent
+        guard !name.isEmpty, name != ".", name != "..", !relative.hasSuffix("/") else {
+            return .failed(ThreadFileError.invalidPath.localizedDescription)
+        }
+        switch resolve((relative as NSString).deletingLastPathComponent, in: root) {
+        case .failure(let error): return .failed(error.localizedDescription)
+        case .success(let folder):
+            guard let realRoot = canonicalRealpath(root) else { return .failed(ThreadFileError.notFound.localizedDescription) }
+            let dirFd = open(folder, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            guard dirFd >= 0 else { return .failed(String(cString: strerror(errno))) }
+            defer { close(dirFd) }
+            var dirPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+            guard fcntl(dirFd, F_GETPATH, &dirPath) == 0 else { return .failed("Cannot resolve fd path") }
+            guard isContained(String(cString: dirPath), in: realRoot) else { return .failed(ThreadFileError.outsideRoot.localizedDescription) }
+            let fd = openat(dirFd, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o644)
+            guard fd >= 0 else {
+                return .failed(errno == EEXIST ? "A file with that name already exists." : String(cString: strerror(errno)))
+            }
+            defer { close(fd) }
+            let bytes = Array(text.utf8)
+            var written = 0
+            while written < bytes.count {
+                let n = bytes.withUnsafeBufferPointer { pwrite(fd, $0.baseAddress! + written, $0.count - written, off_t(written)) }
+                if n < 0, errno == EINTR { continue }
+                guard n > 0 else { return .failed(String(cString: strerror(errno))) }
+                written += n
+            }
+            return .saved
+        }
+    }
+
     /// Writes `text` over the regular file at `path` inside `resolvedRoot`, in place (its inode,
     /// mode and links stay), only when it still reads as `expected`. The descriptor is checked
     /// the way `read` checks one: regular, and inside the root by F_GETPATH; a file over `maxSize`
@@ -230,6 +270,8 @@ public enum ThreadFileSystem {
         }
         return .saved
     }
+
+    static func seconds(_ time: timespec) -> Double { Double(time.tv_sec) + Double(time.tv_nsec) / 1_000_000_000 }
 
     /// The first entries that fit a reply: `listedEntries`, and names whose JSON (every escape
     /// counted) fits `listingBytes`.
@@ -380,7 +422,7 @@ public enum ThreadFileSystem {
                 // still goes through the descriptor-validated read boundary.
                 entries.append(ThreadFileEntry(name: name, kind: kind == S_IFDIR ? .directory : .file,
                                                size: kind == S_IFREG ? Int64(lst.st_size) : nil, symlink: isSymlink,
-                                               error: String(cString: strerror(errno))))
+                                               error: String(cString: strerror(errno)), modified: Self.seconds(lst.st_mtimespec)))
                 continue
             }
             defer { close(target) }
@@ -394,7 +436,7 @@ public enum ThreadFileSystem {
             guard isContained(canonical, in: resolvedRoot) else { continue }
             if isDir && ancestors.contains(canonical) { continue }
             entries.append(ThreadFileEntry(name: name, kind: isDir ? .directory : .file, size: isDir ? nil : Int64(st.st_size),
-                                           symlink: isSymlink))
+                                           symlink: isSymlink, modified: Self.seconds(st.st_mtimespec)))
         }
 
         entries.sort { a, b in

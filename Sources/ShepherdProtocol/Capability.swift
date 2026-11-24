@@ -48,6 +48,7 @@ public struct Capability: RawRepresentable, Hashable, Sendable {
     public static let designs = Capability("designs.v1")
     public static let files = Capability("files.v1")
     public static let filesWrite = Capability("files.write.v1")
+    public static let filesCreate = Capability("files.create.v1")
     public static let fleet = Capability("fleet.v1")
     public static let fleetCheck = Capability("fleet.check.v1")
     public static let fleetDevices = Capability("fleet.devices.v1")
