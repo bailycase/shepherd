@@ -2619,6 +2619,7 @@ struct ListPerformanceTests {
 
     /// The sidebar overlaid on a narrow window casts its shadow from its fill alone: on the
     /// sidebar itself, Core Animation redrew the shadow from the scrolling list on every step.
+    /// The cards' lift shadows (the composer's, the branch card's) are cast from fills alone too.
     @Test func theOverlaidSidebarCastsItsShadowFromItsFillAlone() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -2630,16 +2631,18 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
             return vm.sidebarAutoHidden
         }
-        #expect(ListPerf.shadowedLayers(in: window).isEmpty)
+        let cards = ListPerf.shadowedLayers(in: window)
+        #expect(cards.allSatisfy { $0.subtree == 1 }, "a card's shadow over its content: \(cards.map(\.subtree))")
 
         vm.toggleSidebar()
         try await eventuallyOnMain("the sidebar to overlay the workspace") {
             ListPerf.settle(window)
-            return vm.sidebarOverlayShown && !ListPerf.shadowedLayers(in: window).isEmpty
+            return vm.sidebarOverlayShown && ListPerf.shadowedLayers(in: window).count > cards.count
         }
 
         let shadows = ListPerf.shadowedLayers(in: window)
-        #expect(shadows.count == 1, "\(shadows.map(\.layer))")
+        // The overlaid sidebar's float is two shadows (near and far), each from a fill of its own.
+        #expect(shadows.count == cards.count + 2, "\(shadows.map(\.layer))")
         #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the sidebar's list: \(shadows.map(\.subtree))")
     }
 

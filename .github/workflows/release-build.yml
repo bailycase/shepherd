@@ -105,9 +105,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/CompilationCache.noindex
-          key: compile-nightly-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}
+          key: compile-nightly-batch-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}
           restore-keys: |
-            compile-nightly-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-
+            compile-nightly-batch-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-
 
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
@@ -157,6 +157,12 @@ jobs:
           SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_SENTRY_DSN }}
           COMPILATION_CACHE: ${{ env.CHANNEL == 'nightly' && 'YES' || 'NO' }}
         run: |
+          swift_settings=()
+          if [[ "$CHANNEL" == nightly ]]; then
+            # Set all three so SwiftPM's release defaults can't select whole-module mode.
+            # Keep -O and let Xcode replay cached compiler results at file granularity.
+            swift_settings=(SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_WHOLE_MODULE_OPTIMIZATION=NO SWIFT_COMPILATION_MODE=singlefile)
+          fi
           xcodebuild \
             -project Shepherd.xcodeproj \
             -scheme "$SCHEME" \
@@ -168,6 +174,7 @@ jobs:
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             COMPILATION_CACHE_ENABLE_CACHING="$COMPILATION_CACHE" \
+            "${swift_settings[@]}" \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             SHEPHERD_SENTRY_DSN="$SHEPHERD_SENTRY_DSN" \
