@@ -26,7 +26,7 @@ public enum MarkdownFixtures {
     /// (`image`, relative to the agent's folder) and a remote one, and a disclosure.
     public static func structureReply(image: String) -> String {
         """
-        The parser now covers what agents write. ~~Raw pipes~~ are gone,[^pipes] and bare links like https://github.com/bailycase/shepherd stay tappable.
+        The parser now covers what agents write. ~~Raw pipes~~ are gone,[^pipes] and bare links like https://github.com/shepherd-app/shepherd stay tappable.
 
         - [x] Parse GFM tables with alignment
         - [x] Nest lists to any depth

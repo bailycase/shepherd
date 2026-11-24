@@ -22,7 +22,7 @@ struct ExperimentsSettings: View {
     @State private var permissions = ComputerUsePermissions()
     @Bindable private var bindable: AppSettings
 
-    static let feedbackURL = URL(string: "https://github.com/bailycase/shepherd/issues/new?title=Suggested%20instructions%3A%20")!
+    static let feedbackURL = URL(string: "https://github.com/shepherd-app/shepherd/issues/new?title=Suggested%20instructions%3A%20")!
 
     init(model: SuggestionsModel, instructions: InstructionsModel, settings: AppSettings, page: Binding<ExperimentsPage?> = .constant(nil),
          openInstructions: @escaping () -> Void) {

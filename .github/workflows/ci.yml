@@ -1,8 +1,7 @@
 name: CI
 
 # Full Swift coverage runs in four isolated hosted lanes, serial within each lane.
-# Affected suites and UI diagnostics use one lane. Self-hosted remains opt-in only on a
-# resource-isolated Mac; separate accounts cannot contain build memory pressure.
+# Affected suites and UI diagnostics use one lane.
 # Diagnostics report `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
 #
 # There are no path filters here: a filtered-out workflow never reports the `CI` check, so the
@@ -126,39 +125,12 @@ jobs:
       max-parallel: 4
       matrix:
         lane: ${{ fromJSON(needs.plan.outputs.lanes) }}
-    # Native metadata fence, evaluated before checkout; plan outputs cannot grant local access.
-    # Custom label only: the runner has no default self-hosted/OS labels.
-    runs-on: >-
-      ${{ matrix.lane == 'selected' && vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.triggering_actor == github.actor &&
-          (github.actor_id == '19316389' || github.actor_id == '3370624') &&
-          github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
-          ((github.event_name == 'pull_request' &&
-            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
-            github.event.pull_request.head.repo.full_name == github.repository &&
-            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
-           (github.event_name == 'workflow_dispatch' &&
-            github.ref_type == 'branch' && github.event.inputs.diagnostics == 'ui')) &&
-          'shepherd-release' || 'macos-26' }}
+    runs-on: macos-26
     timeout-minutes: 60
-    env:
-      # Mask the built-in runner machine-name log, before any steps run.
-      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     steps:
-      - name: Require a logged-in build account for AppKit tests
-        if: runner.environment == 'self-hosted'
-        run: |
-          if ! launchctl print "gui/$(id -u)" > /dev/null 2>&1; then
-            echo '::error::UI tests need the build account logged into macOS. Leave its GUI session running; the runner must not log it in or move focus.'
-            exit 1
-          fi
-          if [ "$(launchctl managername 2>/dev/null)" != Aqua ]; then
-            echo '::error::UI tests must run inside the build account GUI session. A system service cannot access its pasteboard; use the per-user runner agent.'
-            exit 1
-          fi
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          clean: ${{ runner.environment != 'self-hosted' }}
           persist-credentials: false
       - uses: ./.github/actions/swift-build
         with:
@@ -169,13 +141,13 @@ jobs:
           python3 scripts/pi_engine.py stage
           echo "$PWD/.build/pi-engine/Helpers" >> "$GITHUB_PATH"
       - name: Check mobile sidebar routing with isolated loopback hosts
-        if: ${{ matrix.lane == 'other' && runner.environment != 'self-hosted' }}
+        if: ${{ matrix.lane == 'other' }}
         timeout-minutes: 5
         run: |
           set -o pipefail
           bash Tests/ShepherdIOSChecks/run.sh --sidebar-only 2>&1 | tee "$RUNNER_TEMP/mobile-sidebar-check.log"
           grep -Fxq 'SIDEBAR CHECK COMPLETE' "$RUNNER_TEMP/mobile-sidebar-check.log"
-      # Each lane gets its own hosted VM. Never run process/server/UI tests concurrently
+      # Each lane gets its own VM. Never run process/server/UI tests concurrently
       # within that VM: it exhausts resources and times out unrelated tests.
       - name: Run tests
         env:

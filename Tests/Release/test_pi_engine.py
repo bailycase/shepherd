@@ -963,11 +963,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("path: .build/pi-engine-cache", cache)
         self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
 
-    def test_derived_data_persists_locally_and_hosted_builds_start_clean(self):
+    def test_derived_data_is_not_cached_and_builds_start_clean(self):
         names = [title for title, _ in self.steps()]
         self.assertNotIn("Cache DerivedData", names)
         workflow = read(".github", "workflows", "release-build.yml")
-        self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", workflow)
+        self.assertNotIn("runner.environment", workflow)
+        self.assertNotIn("clean:", workflow)
         version = self.step("Xcode version")
         self.assertIn("xcrun --show-sdk-version", version)
         self.assertIn("git ls-files -s Sources Packages Package.swift Package.resolved", version)
