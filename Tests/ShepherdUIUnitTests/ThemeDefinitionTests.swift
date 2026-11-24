@@ -58,7 +58,12 @@ struct ThemeDefinitionTests {
     @Test(arguments: Variant.all)
     func terminalFollowsTheWindowSurface(_ variant: Variant) {
         let terminal = variant.value.terminal
+        #if os(macOS)
+        // The Mac's terminal sits in the panel's raised card.
+        #expect(HexColor(terminal.background) == HexColor(variant.colors.bgRaised))
+        #else
         #expect(HexColor(terminal.background) == HexColor(variant.colors.bgWindow))
+        #endif
         #expect(HexColor(terminal.foreground) == HexColor(variant.colors.textPrimary))
         #expect(HexColor(terminal.cursor) == HexColor(variant.colors.textPrimary))
     }

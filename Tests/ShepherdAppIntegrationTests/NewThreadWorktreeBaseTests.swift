@@ -252,8 +252,10 @@ extension NewThreadWorktreeBaseTests {
             // SwiftUI routes keys to the field's handlers one main-queue turn after AppKit makes it first responder.
             await Task.yield()
             window.layout()
-            // The rows after the space are Branch, then Base: two arrows reach Base.
-            for (characters, code) in [("\u{F701}", UInt16(125)), ("\u{F701}", UInt16(125)), ("\r", UInt16(36))] {
+            // The rows after the space are New Worktree…, Import Existing Worktree…, Branch, then Base: four arrows reach Base.
+            let rows = ["New Worktree…", "Import Existing Worktree…", "Branch: ", "Base branch: Default"]
+            let keys = rows.map { _ in ("\u{F701}", UInt16(125)) } + [("\r", UInt16(36))]
+            for (characters, code) in keys {
                 let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                         windowNumber: window.window.windowNumber, context: nil,
                                                         characters: characters, charactersIgnoringModifiers: characters,
@@ -263,8 +265,8 @@ extension NewThreadWorktreeBaseTests {
                 #expect(!window.window.isKeyWindow, "local key dispatch never takes the user's focus")
                 if code == 125 {
                     downs += 1
-                    let row = downs == 1 ? "Branch: " : "Base branch: Default"
-                    try await eventuallyOnMain("the arrow key to highlight \(downs == 1 ? "Branch" : "Base")") {
+                    let row = rows[downs - 1]
+                    try await eventuallyOnMain("the arrow key to highlight \(row)") {
                         window.layout()
                         return window.controls().contains { $0.label?.hasPrefix(row) == true && $0.isSelected }
                     }
@@ -309,9 +311,9 @@ extension NewThreadWorktreeBaseTests {
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         let window = OffscreenWindow(size: CGSize(width: 700, height: 520), dark: true, NewWorktreeSheet(vm: vm, space: space))
         defer { window.close() }
-        try await eventuallyOnMain("the base to resolve") { window.layout(); return window.controls().first { $0.label == "Create and open" }?.isEnabled == true }
+        try await eventuallyOnMain("the base to resolve") { window.layout(); return window.controls().first { $0.label == "Create" }?.isEnabled == true }
 
-        let link = try window.press("Choose…")
+        let link = try window.press("Choose base")
         #expect(link.frame.height >= 24, "the link is a real target: \(link)")
         // The picker is a popover: its own window, so read every window of the app.
         func rows() -> [AccessibilityNode] {
@@ -328,7 +330,7 @@ extension NewThreadWorktreeBaseTests {
             window.layout()
             return window.elements().contains { $0.value == "release" }
         }
-        try window.press("Create and open")
+        try window.press("Create")
         try await eventuallyOnMain("the agent to be made", timeout: .seconds(60)) { vm.state.agents.first != nil }
         #expect(vm.state.agents.first?.worktreeBase == "release")
         let branch = try #require(vm.state.agents.first?.worktreeBranch)

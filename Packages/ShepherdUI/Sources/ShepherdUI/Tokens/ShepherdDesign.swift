@@ -3,7 +3,7 @@ import Foundation
 // Shepherd Design, the only shipped theme: the redesign boards' palette (Apple's system greys,
 // orange for needs-you, ink for the primary action), translucent roles as #RRGGBBAA. Roles the
 // boards do not draw (running, the tints, syntax) keep the Foundations values, retuned to sit
-// on these greys. Terminal panes sit on bgWindow, with translucent selection colors flattened
+// on these greys. Terminal panes sit on bgWindow (bgRaised on the Mac, in the panel's card), with translucent selection colors flattened
 // onto it because Ghostty wants opaque colors.
 extension ThemeDefinition {
     public static let shepherdDesign = ThemeDefinition(
@@ -24,12 +24,15 @@ extension ThemeDefinition {
                 textPrimary: "#1d1d1f",
                 textSecondary: "#6e6e73",
                 textTertiary: "#a1a1a6",
-                textOnLantern: "#1a1206",
+                // The boards' light attention (--mac-attention), darkened from #FF9500 so a dot reads on the window;
+                // white on it now passes where the dark ink no longer does.
+                textOnLantern: "#ffffff",
                 primary: "#1d1d1f",
                 textOnPrimary: "#ffffff",
-                lantern: "#ff9500",
-                lanternText: "#945b00",
-                lanternTint: "#ff950021",
+                lantern: "#b55400",
+                // A touch darker than before so its words keep 4.5:1 on the darker tint.
+                lanternText: "#8a5300",
+                lanternTint: "#b5540021",
                 running: "#2f6fe0",
                 runningTint: "#2f6fe01a",
                 textOnRunning: "#ffffff",
@@ -102,11 +105,17 @@ extension ThemeVariant {
             let source = alpha.map { HexColor(red: color.red, green: color.green, blue: color.blue, alpha: $0) } ?? color
             return source.composited(over: window).hexString
         }
+        // On the Mac the terminal sits in the panel's raised card (GXTerminal), so it takes the card's fill.
+        #if os(macOS)
+        let terminalSurface = c.bgRaised
+        #else
+        let terminalSurface = c.bgWindow
+        #endif
         return ThemeVariant(
             colors: c,
             syntax: s,
             terminal: TerminalColors(
-                background: c.bgWindow,
+                background: terminalSurface,
                 foreground: c.textPrimary,
                 cursor: c.textPrimary,
                 selectionBackground: flat(c.running, alpha: selectionAlpha),

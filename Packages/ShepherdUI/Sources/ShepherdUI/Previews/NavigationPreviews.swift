@@ -125,7 +125,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
     SHPreviewBoth {
         SHPaletteCard {
             SHPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $focused, submit: {}) {
-                SHSegmentedPicker(selection: .constant(0), options: [(0, "All"), (1, "Commands"), (2, "Agents")], size: .s)
+                SHPaletteScope("Scope", selection: .constant(0), options: [(0, "All"), (1, "Commands"), (2, "Agents")])
             }
         } results: {
             VStack(alignment: .leading, spacing: 0) {
@@ -135,6 +135,8 @@ private let started = Date().addingTimeInterval(-41 * 60)
                 SHPaletteSectionHeader("Agents")
                 SHPaletteRow("Dock review pane", systemImage: "bubble.left", context: "running · 8m") {}
             }
+        } footer: {
+            SHPaletteFooter(runs: "New agent")
         }
         .frame(width: SHPaletteMetrics.width)
     }

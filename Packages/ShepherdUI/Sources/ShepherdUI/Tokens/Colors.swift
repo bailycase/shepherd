@@ -95,6 +95,8 @@ public final class SHPalette: Sendable {
     public let liftFar: Color
     /// Behind the command palette: black at 30% in both appearances (Composer board).
     public let scrim: Color
+    /// Behind the Mac command palette (GXPalette): black at 6% (light) / 30% (dark).
+    public let paletteScrim: Color
     /// Behind the Export sheet and an open image: black at 55% in both appearances (DZExport).
     public let sheetScrim: Color
     /// Behind the Settings modal: black at 18% (light) / 45% (dark) (SettingsModal).
@@ -235,6 +237,7 @@ public final class SHPalette: Sendable {
         liftFar = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.05), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0))
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
         scrim = Color(light: scrimBlack, dark: scrimBlack)
+        paletteScrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.06), dark: scrimBlack)
         let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
         sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
         modalScrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.18), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.45))
