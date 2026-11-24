@@ -19,10 +19,22 @@ struct BranchCardModel: Equatable {
     /// A worktree Shepherd made: Change Base… applies.
     var worktree: Bool
     var directory: String?
-    var others: [BranchCardOther]
+    var others: [BranchCardOther] {
+        didSet { asking = Self.asking(in: others) }
+    }
+    /// How many of the other branches' threads wait on the person, counted when `others` is set, not each time the card draws.
+    private(set) var asking: Int
 
-    /// How many of the other branches' threads wait on the person.
-    var asking: Int { others.reduce(0) { $0 + ($1.state == .attention ? 1 : 0) } }
+    init(space: String, branch: String, worktree: Bool, directory: String?, others: [BranchCardOther]) {
+        self.space = space
+        self.branch = branch
+        self.worktree = worktree
+        self.directory = directory
+        self.others = others
+        asking = Self.asking(in: others)
+    }
+
+    private static func asking(in others: [BranchCardOther]) -> Int { others.reduce(0) { $0 + ($1.state == .attention ? 1 : 0) } }
 }
 
 /// Another thread's branch in the same space.
@@ -151,6 +163,36 @@ extension ShepherdViewModel {
         }
         guard let space else { throw ChangesError(ChangesError.invalid, "No checkout to read.") }
         return try await remoteHosts.creationBranches(hostID: host.id, spaceID: space)
+    }
+
+    /// The card of a thread running on another Mac (GXRemote): its branch and that host's other threads on theirs. This Mac can't read
+    /// that checkout's git, so it has no numbers and no actions beyond Show Changes and Copy Branch Name.
+    func remoteBranchCardStore(for ref: RemoteAgentRef) -> BranchCardStore {
+        if let store = remoteBranchCardStores[ref] { return store }
+        let store = BranchCardStore(handle: BranchCardHandle(agentID: ref.agentID, card: { [weak self] in self?.remoteBranchCard(ref) },
+                                                             load: { _ in BranchCardStatus(git: BranchCardGit()) },
+                                                             perform: { [weak self] action in self?.performRemoteBranchCard(action, on: ref) }))
+        remoteBranchCardStores[ref] = store
+        return store
+    }
+
+    private func remoteBranchCard(_ ref: RemoteAgentRef) -> BranchCardModel? {
+        guard let connection = remoteHosts.allConnections.first(where: { $0.id == ref.hostID }),
+              let agent = connection.state.agents.first(where: { $0.id == ref.agentID }), let label = AgentBranchLabel(agent: agent) else { return nil }
+        return BranchCardModel(space: connection.state.spaces.first { $0.id == agent.spaceID }?.name ?? "", branch: label.branch, worktree: false,
+                               directory: nil, others: BranchCardModel.others(of: agent, in: connection.state.agents))
+    }
+
+    private func performRemoteBranchCard(_ action: BranchCardAction, on ref: RemoteAgentRef) {
+        switch action {
+        case .showChanges: openRemoteReview(ref, path: nil)
+        case .copyBranch:
+            guard let branch = remoteBranchCard(ref)?.branch else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(branch, forType: .string)
+        case .select(let other): selectSidebarRow(.remote(RemoteAgentRef(hostID: ref.hostID, agentID: other)))
+        default: break
+        }
     }
 
     /// The agent the card is for, and the workspace it is listed in.

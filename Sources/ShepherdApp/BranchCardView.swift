@@ -20,6 +20,8 @@ struct BranchCardDock: ViewModifier {
     /// the store instead, so the count is no input of the layout.
     var changedFiles = 0
     let active: Bool
+    /// The Mac the thread runs on, for a thread on another one: its card is read-only (GXRemote).
+    var runsOn: String?
     @State private var wide = true
 
     func body(content: Content) -> some View {
@@ -28,7 +30,7 @@ struct BranchCardDock: ViewModifier {
             .padding(.trailing, docked ? AppLayout.branchCardColumn : 0)
             .overlay(alignment: .topTrailing) {
                 if let store, let branch {
-                    BranchCardOverlay(store: store, branch: branch, active: active, wide: wide)
+                    BranchCardOverlay(store: store, branch: branch, active: active, wide: wide, runsOn: runsOn)
                 }
             }
             .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
@@ -60,6 +62,8 @@ struct BranchCardOverlay: View {
     let active: Bool
     /// The thread docks the whole card (`BranchCardDock`); else it folds to one row.
     let wide: Bool
+    /// A thread on another Mac: the card names that Mac and offers only what this Mac can do (`BranchCardView.runsOn`).
+    var runsOn: String?
     @State private var hovering = false
     @State private var pinnedOpen = false
     /// Switch branch and Change base open the Branch picker under the card's branch.
@@ -68,11 +72,12 @@ struct BranchCardOverlay: View {
     enum Picking { case branch, base }
 
     /// `picking` opens the card with a picker already out (previews).
-    init(store: BranchCardStore, branch: String, active: Bool, wide: Bool, picking: Picking? = nil) {
+    init(store: BranchCardStore, branch: String, active: Bool, wide: Bool, runsOn: String? = nil, picking: Picking? = nil) {
         self.store = store
         self.branch = branch
         self.active = active
         self.wide = wide
+        self.runsOn = runsOn
         _picking = State(initialValue: picking)
     }
 
@@ -82,7 +87,7 @@ struct BranchCardOverlay: View {
                 if wide || hovering || pinnedOpen || picking != nil {
                     // The picker opens under the card's branch row, over the rest of the card (GXBranchPicker).
                     ZStack(alignment: .topTrailing) {
-                        BranchCardView(card: card, status: store.status) { action in
+                        BranchCardView(card: card, status: runsOn == nil ? store.status : nil, runsOn: runsOn) { action in
                             switch action {
                             case .pickBranch: picking = picking == .branch ? nil : .branch
                             case .pickBase: picking = .base
@@ -98,7 +103,7 @@ struct BranchCardOverlay: View {
                         }
                     }
                 } else {
-                    Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: store.status?.git) }
+                    Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: runsOn == nil ? store.status?.git : nil) }
                         .buttonStyle(.plain)
                         .help("\(card.branch): show the branch card")
                 }
@@ -183,16 +188,22 @@ struct BranchCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: SH.Space.m) {
-                Button { perform(.pickBranch) } label: {
-                    HStack(spacing: SH.Space.xs) {
-                        Text(card.branch).font(.sh(.mono, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
-                            .lineLimit(1).truncationMode(.middle)
-                        SHChipChevron()
+                // Another Mac's checkout is read there: this Mac can't switch it.
+                if runsOn == nil {
+                    Button { perform(.pickBranch) } label: {
+                        HStack(spacing: SH.Space.xs) {
+                            Text(card.branch).font(.sh(.mono, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                                .lineLimit(1).truncationMode(.middle)
+                            SHChipChevron()
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .help("Switch branch")
+                } else {
+                    Text(card.branch).font(.sh(.mono, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        .lineLimit(1).truncationMode(.middle)
                 }
-                .buttonStyle(.plain)
-                .help("Switch branch")
                 Spacer(minLength: SH.Space.m)
                 if let git = status?.git {
                     Button { perform(.showChanges) } label: { SHDiffStat(added: git.additions, removed: git.deletions, font: .sh(.caption)) }
@@ -274,6 +285,16 @@ struct BranchCardView: View {
     }
 
     @ViewBuilder private var menu: some View {
+        if runsOn != nil {
+            Button("Show Changes") { perform(.showChanges) }
+            Divider()
+            Button("Copy Branch Name") { perform(.copyBranch) }
+        } else {
+            localMenu
+        }
+    }
+
+    @ViewBuilder private var localMenu: some View {
         let git = status?.git
         Button("Commit…") { perform(.commit) }
         Button(Self.pushTitle(git?.ahead ?? 0)) { perform(.push) }.disabled(git == nil || git?.ahead == 0)

@@ -79,3 +79,43 @@ struct FleetMoveMenuItems: View {
         }
     }
 }
+
+/// The menu behind "on mini ⌄" in a thread's title (GXRemote): where the thread runs, a row to move it to each other Mac of the fleet (the
+/// ones that can't take it greyed out with why), and the thread that sent it. Plain values in; what a row does is the caller's.
+struct RemoteThreadMenu: View {
+    let host: String
+    /// "Moved from This Mac · 14:02", after a move.
+    var movedFrom: String?
+    var online = true
+    /// The Macs it could move to; empty where it can't move (no fleet, a host that can't, a thread that isn't an ordinary one).
+    var targets: [FleetMoveMenu.Target] = []
+    /// A move of this thread is going or waits.
+    var busy = false
+    var sender: String?
+    var openSender: (() -> Void)?
+    let moveTo: (FleetMoveMenu.Target) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        SHPopMenu(width: AppLayout.remoteMenuWidth) {
+            SHPopMenuHeader(online ? "Running on \(host)" : "Running on \(host) · offline")
+            if let movedFrom { SHPopMenuHeader(movedFrom) }
+            ForEach(targets) { target in
+                SHPopMenuRow("Move to \(target.name)", trailing: target.enabled ? nil : target.note, enabled: target.enabled && !busy) {
+                    close()
+                    moveTo(target)
+                }
+                .help(target.enabled ? "\(target.note). \(FleetMoveMenu.footnote)" : target.note)
+                .accessibilityLabel(target.accessibilityLabel)
+            }
+            if let sender {
+                if !targets.isEmpty { SHPopMenuSeparator() }
+                SHPopMenuRow(sender, prefix: "Sent by", chevron: true, enabled: openSender != nil) {
+                    close()
+                    openSender?()
+                }
+                .help(openSender == nil ? "That thread isn’t on a Mac this one can see" : "Open \(sender)")
+            }
+        }
+    }
+}

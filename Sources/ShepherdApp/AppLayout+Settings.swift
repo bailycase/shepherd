@@ -268,6 +268,8 @@ extension AppLayout {
     /// branch row, which is this tall.
     static let branchPickerWidth: CGFloat = 330
     static let branchPickerListMaxHeight: CGFloat = 300
+    /// The menu behind a remote thread's "on mini" (GXRemote).
+    static let remoteMenuWidth: CGFloat = 280
     static let branchCardHeaderHeight: CGFloat = 44
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280

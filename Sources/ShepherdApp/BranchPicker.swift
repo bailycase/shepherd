@@ -90,13 +90,14 @@ struct BranchPickerMenu: View {
     var fetch: (() async throws -> Void)?
     let close: () -> Void
     @State private var list: BranchPickerList?
+    /// The list's rows for the query, made when either changes rather than on every draw.
+    @State private var rows: [BranchPickerList.Row] = []
     @State private var failure: String?
     @State private var query = ""
     @State private var fetching = false
     @FocusState private var searching: Bool
 
     var body: some View {
-        let rows = list?.rows(query: query, moves: move != nil) ?? []
         SHPopMenu(width: AppLayout.branchPickerWidth) {
             SHPopMenuSearch(text: $query, prompt: prompt, isFocused: $searching,
                             onSubmit: { if let row = rows.first(where: { $0.pick != .none }) { pick(row) } }, onEscape: close)
@@ -134,14 +135,17 @@ struct BranchPickerMenu: View {
             }
         }
         .task { searching = true; await reload() }
+        .onChange(of: query) { remake() }
     }
+
+    private func remake() { rows = list?.rows(query: query, moves: move != nil) ?? [] }
 
     private func pick(_ row: BranchPickerList.Row) {
         if case .move(let path) = row.pick { move?(row.name, path) } else { choose(row.name) }
     }
 
     private func reload() async {
-        do { list = try await load(); failure = nil }
+        do { list = try await load(); failure = nil; remake() }
         catch { failure = (error as? ChangesError)?.message ?? ActionError.describe(error) }
     }
 }

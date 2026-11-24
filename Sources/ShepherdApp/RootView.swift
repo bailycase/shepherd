@@ -338,10 +338,11 @@ struct WorkspaceHeaderView: View {
                     let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),
                                  project: space ?? connection.config.name, title: vm.presentedThreadName(.remote(remote), hostName: agent.name),
-                                 branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
+                                 branch: nil, directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
                                  pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil, row: .remote(remote),
-                                 fleet: vm.fleetSurface(for: agent, onRemote: connection.config.name, hostID: connection.id), online: connection.phase == .connected)
+                                 fleet: vm.fleetSurface(for: agent, onRemote: connection.config.name, hostID: connection.id), online: connection.phase == .connected,
+                                 remoteHost: connection.config.name)
                         .id(remote)
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent),
@@ -402,7 +403,7 @@ struct WorkspaceHeaderView: View {
     private func threadHeader(store: NativeThreadStore, owner: SidePaneOwner, project: String, title: String,
                               branch: AgentBranchLabel?, directory: String?, showChanges: @escaping () -> Void,
                               rename: @escaping () -> Void, pin: SidebarRowID?, row: SidebarRowID, apps: QuickApps? = nil,
-                              fleet: FleetThreadSurface? = nil, online: Bool = true) -> EquatableView<ThreadHeader> {
+                              fleet: FleetThreadSurface? = nil, online: Bool = true, remoteHost: String? = nil) -> EquatableView<ThreadHeader> {
         let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
@@ -414,7 +415,7 @@ struct WorkspaceHeaderView: View {
                             muted: muted, toggleMute: muted == nil ? nil : { vm.togglePushMuted(row) },
                             move: vm.fleetMoveHeader(for: row), moveTo: { vm.requestFleetMove(row, to: $0) },
                             sentBy: fleet?.sentBy, sentByOnline: online,
-                            openSender: fleet?.sender.map { row in { vm.selectSidebarRow(row) } },
+                            openSender: fleet?.sender.map { row in { vm.selectSidebarRow(row) } }, remoteHost: remoteHost,
                             apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },
                             restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()
