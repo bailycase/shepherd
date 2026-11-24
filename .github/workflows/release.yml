@@ -55,12 +55,12 @@ on:
 permissions:
   contents: write
 
-# New Nightly runs cancel superseded releases instead of waiting behind stale builds.
-# TestFlight queues separately without cancellation so uploads can finish and retire older builds.
-# Tagged releases also keep running; appcast publication retains its separate serialization lock.
+# Nightly batches pushes: a running release always finishes, and pushes during it collapse into
+# one pending run (GitHub replaces a pending run with a newer one) that ships the latest commit.
+# Cancelling instead would bill a macOS build for every push. TestFlight queues separately.
 concurrency:
   group: release-${{ github.ref }}${{ inputs.testflight && '-testflight' || '' }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/nightly' && !inputs.testflight }}
+  cancel-in-progress: false
 
 jobs:
   plan:
