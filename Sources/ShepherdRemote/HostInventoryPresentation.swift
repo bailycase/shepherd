@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-/// Settings ▸ MCP, Subagents, Sign-in and Spaces on the iPhone and the iPad: each row's words and
+/// Settings ▸ MCP, Subagents, Sign-in, Extensions and Spaces on the iPhone and the iPad: each row's words and
 /// tone from a host's inventory, as the Mac's pages say them. Pure, so it has a unit test.
 public enum HostInventoryPresentation {
     /// A row's tone, named as an `AgentState` raw value so this module needs no ShepherdUI:
@@ -151,6 +151,13 @@ public enum HostInventoryPresentation {
     public static func providersGuidance(host: String) -> String {
         "Sign in, sign out, add an API key or switch accounts in Settings ▸ Sign-in on \(host). Keys and tokens stay there."
     }
+
+    // MARK: Extensions
+
+    /// The row's line: pi's reason while the extension is left out of launches, else where it came from.
+    public static func extensionLine(_ item: HostExtension) -> String { item.failure ?? item.subtitle }
+
+    public static func tone(_ item: HostExtension) -> Tone { item.failure != nil ? .failed : item.on ? .done : .idle }
 
     // MARK: Spaces
 

@@ -239,6 +239,7 @@ struct ExtensionSections: View {
                 }
                 SettingsFootnote("New threads follow a change; running ones keep theirs until they restart. Status and session tracking are always on.")
             }
+            PiExtensionSections(store: store)
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
                 SettingsSection("How the agent uses them") {
                     SHListCard {

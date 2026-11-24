@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 
 // A host's inventory as a client reads it (Settings on the iPhone and the iPad): its MCP servers
-// and their status, its subagent profiles, and its providers' sign-in state. Read-only: what the
-// Mac's Settings ▸ MCP, Subagents and Sign-in show, never a secret. Changes go through
+// and their status, its subagent profiles, its providers' sign-in state and its pi extensions.
+// Read-only: what the Mac's Settings ▸ MCP, Subagents, Sign-in and Tools ▸ Extensions show, never a secret. Changes go through
 // `RemoteRequest.hostConfig` (HostConfig.swift).
 // The host's GUI answers (`SessionServer.onRemoteHostInventory`); a headless host has none.
 
@@ -18,6 +18,9 @@ public enum RemoteHostInventoryRequest: Codable, Hashable, Sendable {
     case subagent(file: String)
     /// The host's providers and whether each is signed in (Settings ▸ Sign-in).
     case providers
+    /// The pi extensions in the host's pi home (Settings ▸ Tools ▸ Extensions), with their switches
+    /// (`RemoteProtocol.hostExtensionsCapability`).
+    case extensions
 }
 
 /// A host's answer: the shape named by the request.
@@ -26,6 +29,31 @@ public enum RemoteHostInventoryResult: Codable, Hashable, Sendable {
     case subagents([HostSubagentProfile])
     case subagent(HostSubagentProfileText)
     case providers([HostProviderStatus])
+    case extensions([HostExtension])
+}
+
+/// One pi extension of a host, as Settings ▸ Tools ▸ Extensions lists it. Never its code or a
+/// credential in its source address.
+public struct HostExtension: Codable, Hashable, Sendable, Identifiable {
+    /// Its copy's place in the host's pi home ("your-extensions/added/acme-login"): what a change names.
+    public var id: String
+    public var name: String
+    /// Where it came from, in the Mac's words ("Added from https://github.com/acme/pi-login · Signs in to Acme").
+    public var subtitle: String
+    public var on: Bool
+    /// Switched on but left out of launches: pi's reason.
+    public var failure: String?
+    /// Added in Shepherd (a file, folder or Git repository), rather than copied from the host's own pi.
+    public var added: Bool
+
+    public init(id: String, name: String, subtitle: String, on: Bool, failure: String? = nil, added: Bool = false) {
+        self.id = id
+        self.name = name
+        self.subtitle = subtitle
+        self.on = on
+        self.failure = failure
+        self.added = added
+    }
 }
 
 /// One of a host's MCP servers, as its Settings row shows it.

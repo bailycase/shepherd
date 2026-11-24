@@ -384,7 +384,7 @@ enum RemoteSamples {
                                 note: "connection refused", signIn: "DATABASE_URI", tools: nil, enabled: true),
                   HostMCPServer(name: "old", kind: .remote, endpoint: "https://example.invalid/mcp", status: .off, enabled: false)],
         configPath: "~/Library/Application Support/Shepherd/pi/mcp.json", problem: nil, checkedAt: 1_700_000_000)
-    static let inventoryRequests: [RemoteHostInventoryRequest] = [.mcp, .subagents, .subagent(file: "team/scout.md"), .providers]
+    static let inventoryRequests: [RemoteHostInventoryRequest] = [.mcp, .subagents, .subagent(file: "team/scout.md"), .providers, .extensions]
     static let inventoryResults: [RemoteHostInventoryResult] = [
         .mcp(mcpInventory),
         .mcp(HostMCPInventory(servers: [], configPath: "~/mcp.json", problem: "mcp.json line 12 isn\u{2019}t valid JSON")),
@@ -396,6 +396,14 @@ enum RemoteSamples {
                     HostProviderStatus(id: "local", name: "local", badge: "Custom", auth: .noKey, detail: "http://localhost:11434"),
                     HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .notSignedIn,
                                        signIn: HostProviderSignIn(id: "acme", name: "Acme", oauth: "Acme account", apiKey: "Acme key", keyForm: false))]),
+        .extensions(hostExtensions),
+    ]
+    static let hostExtensions = [
+        HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://github.com/acme/pi-login · Signs in to Acme",
+                      on: true, added: true),
+        HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from ~/code/acme-tools", on: true,
+                      failure: "Cannot find module 'acme-sdk'", added: true),
+        HostExtension(id: "your-extensions/review.ts", name: "review", subtitle: "From your pi · extensions/review.ts", on: false),
     ]
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
@@ -431,6 +439,9 @@ enum RemoteSamples {
         .providerAccount(provider: "anthropic", action: .add), .providerAccount(provider: "deepseek", action: .addKey("$DEEPSEEK_API_KEY")),
         .signIn(id: op, action: .poll), .signIn(id: op, action: .complete("code#state")), .signIn(id: op, action: .cancel),
         .signIn(id: op, action: .complete("west", promptID: "p1")),
+        .extensionSetEnabled(destination: "your-extensions/added/acme-login", on: false),
+        .extensionRemove(destination: "your-extensions/added/acme-login"),
+        .extensionAddGit(url: "https://github.com/acme/pi-login"),
     ]
     static let configResults: [RemoteHostConfigResult] = [
         .mcp(mcpInventory), .mcpEntry(json: #"{"mcpServers":{"github":{"url":"https://x"}}}"#),
@@ -449,6 +460,7 @@ enum RemoteSamples {
         .signIn(HostSignInProgress(id: op, phase: .waiting, name: "Acme",
                                   prompt: HostSignInPrompt(id: "p2", kind: .select, message: "Region",
                                                           options: [.init(id: "west", label: "West")]))),
+        .extensions(hostExtensions),
     ]
 
     static let skillSource = SkillSource(repo: "anthropics/skills", path: "skills/pdf", commit: "3f2a91c0", committedAt: 1_700_000_000)
@@ -1569,7 +1581,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.designToolExperimentCapability,
             RemoteProtocol.computerUseExperimentCapability,
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostSettingsCloseOnMergeCapability, RemoteProtocol.hostSettingsBackgroundServiceCapability,
-            RemoteProtocol.hostConfigCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
+            RemoteProtocol.hostConfigCapability, RemoteProtocol.hostExtensionsCapability, RemoteProtocol.hooksCapability, RemoteProtocol.appsCapability, RemoteProtocol.appsV2Capability, RemoteProtocol.agentRestartCapability, RemoteProtocol.completionSeenCapability,
             RemoteProtocol.pushMuteCapability,
             RemoteProtocol.automationTriggersCapability, RemoteProtocol.forgeCapability, RemoteProtocol.forgeBrowseCapability,
             // Offered whenever the host's fleet service runs, which is every host that started (SessionServer.startFleet).
@@ -1633,6 +1645,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsCloseOnMergeCapability == "hostSettings.closeOnMerge.v1")
         #expect(RemoteProtocol.hostSettingsBackgroundServiceCapability == "hostSettings.backgroundService.v1")
         #expect(RemoteProtocol.hostConfigCapability == "hostConfig.v1")
+        #expect(RemoteProtocol.hostExtensionsCapability == "hostExtensions.v1")
         #expect(RemoteProtocol.designToolExperimentCapability == "experiments.designTool.v1")
         #expect(RemoteProtocol.computerUseExperimentCapability == "experiments.computerUse.v1")
         #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))

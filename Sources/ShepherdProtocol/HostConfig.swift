@@ -1,7 +1,7 @@
 import Foundation
 
 // A host's configuration as a client changes it (Settings on the iPhone, the iPad and another
-// Mac): its MCP servers, its subagent profiles, and its providers' sign-ins. The host's GUI does
+// Mac): its MCP servers, its subagent profiles, its providers' sign-ins and its pi extensions. The host's GUI does
 // the work as its own Settings would (`SessionServer.onRemoteHostConfig`); a headless host has
 // none. Secrets a client sends (an MCP secret, an API key, a pasted sign-in code) go one way:
 // a reply never carries one, only the state the host's Settings row shows.
@@ -48,6 +48,16 @@ public enum RemoteHostConfigRequest: Codable, Hashable, Sendable {
     /// One of a provider's saved accounts (Settings ▸ Sign-in's account rows). Answers `.providers`,
     /// or `.signIn` for `add`.
     case providerAccount(provider: String, action: HostProviderAccountAction)
+
+    /// Switches a pi extension on or off (on also tries a failed one again), by `HostExtension.id`.
+    /// New agents load it, running ones on `/reload`. Answers `.extensions`
+    /// (`RemoteProtocol.hostExtensionsCapability`).
+    case extensionSetEnabled(destination: String, on: Bool)
+    /// Removes an extension's copy from the host's pi home. Answers `.extensions`.
+    case extensionRemove(destination: String)
+    /// The host clones a Git repository (https, ssh, `git@host:owner/repo` or file) with its own Git
+    /// sign-in and adds what it holds, switched on. Answers `.extensions`.
+    case extensionAddGit(url: String)
 
     /// A sign-in under way (`mcpSignIn`, `providerSignIn`). Answers `.signIn`.
     case signIn(id: UUID, action: HostSignInAction)
@@ -166,5 +176,6 @@ public enum RemoteHostConfigResult: Codable, Hashable, Sendable {
     case subagents([HostSubagentProfile])
     case subagent(HostSubagentProfileText)
     case providers([HostProviderStatus])
+    case extensions([HostExtension])
     case signIn(HostSignInProgress)
 }

@@ -2,7 +2,7 @@ import Foundation
 import ShepherdProtocol
 
 extension RemoteHostClient {
-    /// Reads the host's MCP servers, subagent profiles or providers (Settings on the iPhone and
+    /// Reads the host's MCP servers, subagent profiles, providers or extensions (Settings on the iPhone and
     /// the iPad), read-only. A host without `hostInventoryCapability` has none to share: this
     /// throws `update_required` before sending anything.
     public func hostInventory(_ request: RemoteHostInventoryRequest) async throws -> RemoteHostInventoryResult {
@@ -10,6 +10,9 @@ extension RemoteHostClient {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to see its MCP servers, subagents and sign-ins from here."
             )
+        }
+        if request == .extensions, !supports(.hostExtensions) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to see its extensions from here.")
         }
         // Listing MCP servers connects every one of them on the host.
         let timeout: TimeInterval = request == .mcp ? 120 : RemoteHostClient.requestTimeout

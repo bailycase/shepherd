@@ -81,4 +81,14 @@ struct HostInventoryPresentationTests {
         #expect(P.accountLine(HostProviderAccount(id: "b", name: "home", active: false, limitedUntil: 500), now: now) == "Saved")
         #expect(P.accountLine(HostProviderAccount(id: "b", name: "home", active: false, limitedUntil: 5_000), now: now).hasPrefix("Limited until"))
     }
+
+    @Test func anExtensionRowSaysWhyItIsLeftOutOrWhereItCameFrom() {
+        let fine = HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://example.invalid/acme/pi-login", on: true, added: true)
+        let broken = HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added", on: true, failure: "Cannot find module", added: true)
+        #expect(P.extensionLine(fine) == "Added from https://example.invalid/acme/pi-login" && P.tone(fine) == .done)
+        var off = fine
+        off.on = false
+        #expect(P.tone(off) == .idle)
+        #expect(P.extensionLine(broken) == "Cannot find module" && P.tone(broken) == .failed)
+    }
 }

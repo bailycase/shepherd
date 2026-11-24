@@ -71,6 +71,7 @@ public struct Capability: RawRepresentable, Hashable, Sendable {
     public static let hooks = Capability("hooks.v1")
     public static let hostConfig = Capability("hostConfig.v1")
     public static let hostDrain = Capability("host.drain.v1")
+    public static let hostExtensions = Capability("hostExtensions.v1")
     public static let hostInventory = Capability("hostInventory.v1")
     public static let hostSettings = Capability("hostSettings.v1")
     public static let hostSettingsAgentDefaults = Capability("hostSettings.agentDefaults.v1")

@@ -140,9 +140,40 @@ extension HostStores {
             }
             if let problem = piAuth.problems[provider] { throw RemoteCreateAgentError(problem) }
             return .providers(await hostProviders())
+        case .extensionSetEnabled(let destination, let on):
+            try await requireExtension(destination)
+            let row = YourPiModel.extensionRowID(destination)
+            await yourPi.setExtension(destination, on: on)
+            return try await extensionsAfter(row)
+        case .extensionRemove(let destination):
+            try await requireExtension(destination)
+            let row = YourPiModel.extensionRowID(destination)
+            await yourPi.removeExtension(destination)
+            return try await extensionsAfter(row)
+        case .extensionAddGit(let url):
+            let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.utf8.count <= HostConfigMapping.maxURLBytes else {
+                throw RemoteCreateAgentError("Enter a Git repository address.")
+            }
+            await yourPi.addExtension(.git(trimmed))
+            return try await extensionsAfter(YourPiModel.addExtensionRow)
         case .signIn(let id, let action):
             return .signIn(try await remoteSignIns.act(id, action))
         }
+    }
+
+    /// An extension the host has a copy of, as Settings lists it: a client names it by `HostExtension.id`.
+    private func requireExtension(_ destination: String) async throws {
+        await yourPi.refresh()
+        guard yourPi.survey?.extensions.contains(where: { $0.copy.destination == destination }) == true else {
+            throw RemoteCreateAgentError("This Mac has no extension by that name.")
+        }
+    }
+
+    /// The extensions after a change, or the reason the Mac's row shows for why it failed.
+    private func extensionsAfter(_ row: String) async throws -> RemoteHostConfigResult {
+        if let problem = yourPi.problems[row] { throw RemoteCreateAgentError(problem) }
+        return .extensions(await hostExtensions())
     }
 
     private func providerMethods(_ provider: String, method: PiSignInMethod) async throws -> PiSignInProvider {
@@ -221,6 +252,9 @@ extension HostStores {
 @MainActor
 enum HostConfigMapping {
     static let keyTimeout: Duration = .seconds(60)
+
+    /// The longest address a client may ask the host to clone.
+    static let maxURLBytes = 2048
 
     /// What a remote read shows in place of a value written literally into the host's file.
     static let mask = "••••••••"

@@ -365,6 +365,7 @@ struct SubagentProfileScreen: View {
 /// Settings ▸ Models, first: each provider of the host's pi and whether it is signed in; never a value.
 struct ProviderSections: View {
     let store: SettingsStore
+    @Environment(MobileNavigator.self) private var navigator
     @State private var keyFor: String?
     /// The key form adds a key beside the saved one (Add key) rather than replacing it.
     @State private var addingKey = false
@@ -433,20 +434,29 @@ struct ProviderSections: View {
                         }
                     }
                 }
-                if editable, !page.addableKeys.isEmpty {
-                    Menu("Add an API key") {
-                        ForEach(page.addableKeys) { provider in
-                            Button(provider.name) {
-                                if provider.signIn?.keyForm == false {
-                                    Task { await config.perform(.providerSignIn(provider: provider.id, method: .apiKey), on: host) }
-                                } else {
-                                    addingKey = false
-                                    keyFor = provider.id
+                if editable, !page.addableKeys.isEmpty || config.servesExtensions(host) {
+                    HStack(spacing: SH.Space.l) {
+                        if !page.addableKeys.isEmpty {
+                            Menu("Add an API key") {
+                                ForEach(page.addableKeys) { provider in
+                                    Button(provider.name) {
+                                        if provider.signIn?.keyForm == false {
+                                            Task { await config.perform(.providerSignIn(provider: provider.id, method: .apiKey), on: host) }
+                                        } else {
+                                            addingKey = false
+                                            keyFor = provider.id
+                                        }
+                                    }
                                 }
                             }
+                            .buttonStyle(.sh(.secondary))
+                        }
+                        if config.servesExtensions(host) {
+                            // Providers come from extensions, added in Settings ▸ Tools.
+                            Button("Add a provider") { navigator.open(.settings(.tools)) }
+                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                         }
                     }
-                    .buttonStyle(.sh(.secondary))
                 }
                 if providers.isEmpty {
                     SettingsFootnote("\(host.name) has no sign-ins yet.")

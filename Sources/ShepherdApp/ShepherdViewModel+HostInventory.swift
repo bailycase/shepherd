@@ -5,7 +5,7 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-/// The stores Settings ▸ MCP, Subagents and Sign-in read and change, served to remote clients
+/// The stores Settings ▸ MCP, Subagents, Sign-in and Tools ▸ Extensions read and change, served to remote clients
 /// (`RemoteRequest.hostInventory` and `.hostConfig`) by the app or by the headless host.
 @MainActor
 struct HostStores {
@@ -76,7 +76,15 @@ struct HostStores {
             return .subagent(HostSubagentProfileText(file: opened.file, text: opened.text, fingerprint: opened.fingerprint))
         case .providers:
             return .providers(await hostProviders())
+        case .extensions:
+            return .extensions(await hostExtensions())
         }
+    }
+
+    /// Settings ▸ Tools ▸ Extensions' rows, read afresh, as a client sees them.
+    func hostExtensions() async -> [HostExtension] {
+        await yourPi.refresh()
+        return (yourPi.survey?.extensions ?? []).map(HostInventoryMapping.hostExtension)
     }
 
     /// Settings ▸ Sign-in's rows, read afresh, as a client sees them.
@@ -139,6 +147,11 @@ enum HostInventoryMapping {
         case .unverified: "Not checked yet"
         case .none: nil
         }
+    }
+
+    static func hostExtension(_ item: YourPiExtensionRow) -> HostExtension {
+        HostExtension(id: item.copy.destination, name: item.copy.name, subtitle: ExtensionsText.subtitle(item), on: item.on,
+                      failure: item.failure, added: YourPiImport.isAdded(item.copy.destination))
     }
 
     static func profile(_ definition: SubagentDefinitionsStore.Definition) -> HostSubagentProfile {
