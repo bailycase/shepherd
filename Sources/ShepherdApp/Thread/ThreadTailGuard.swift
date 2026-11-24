@@ -157,7 +157,15 @@ final class ThreadTailGuard {
 
     private var hasRows: Bool { !rowIDs.isEmpty }
     // A cached lazy-stack marker cannot override geometry that puts the answer below view.
-    private var tailInView: Bool { visible.contains(bottomID) && distance <= Self.band }
+    private var tailInView: Bool { visible.contains(bottomID) && distance <= Self.band && !endOutOfView }
+
+    /// The end of the document is farther below the clip view than the composer's inset, by AppKit's own measure: the bottom marker
+    /// is out of view whatever SwiftUI's cached targets and scroll geometry say. SwiftUI applies an offset to the clip view that its
+    /// own geometry never reports (a lazy stack that joins above the tail), reads distance 0 for good, and no event comes to check.
+    private var endOutOfView: Bool {
+        guard let scroll = scrollView(), let gap = endDistance(of: scroll) else { return false }
+        return gap > Double(scroll.contentInsets.bottom) + Self.slack
+    }
     /// Cached IDs, including current rows, need physical placement evidence in the production view.
     /// A weak/dead/missing marker cannot prove content, nor can one in another or hidden transcript.
     var rowsInView: Bool {
@@ -176,7 +184,7 @@ final class ThreadTailGuard {
 
     /// No content in view, the tail missing from it while the thread follows it from afar, or a
     /// thread that was just repaired resting short of its end.
-    private var strayed: Bool { !rowsInView || (following && !tailInView && distance > Self.band) || shortOfTheTail }
+    private var strayed: Bool { !rowsInView || (following && !tailInView && (distance > Self.band || endOutOfView)) || shortOfTheTail }
 
     /// A repaired, following thread whose marker is in view and that rests short of the end of its
     /// document (`shortfall`).
@@ -270,6 +278,17 @@ final class ThreadTailGuard {
             suspect(quiet: Self.recheck)
         }
         SHRenderProbe.tick("thread.tailRepair")
+        // The end of the document is where the tail's rows are (they are laid out for real, not estimated), so a thread that follows its
+        // tail and rests short of it goes there first, and not through the estimates of the lazy stack above it.
+        if following, endOutOfView, !userScrolling, ContinuousClock.now >= readerUntil, let scroll = scrollView() {
+            let clip = scroll.contentView
+            var bounds = clip.bounds
+            bounds.origin.y = (scroll.documentView?.bounds.height ?? 0) - bounds.height + scroll.contentInsets.bottom
+            ThreadScrollTrace.write("thread.write.M7", "guard.end", in: scroll)
+            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+            scroll.reflectScrolledClipView(clip)
+            try? await Task.sleep(for: Self.stepWait)
+        }
         if !rowsInView { await walk(by: -1, until: { self.rowsInView }, doubling: true) }
         guard following else { return }
         // A cached clear marker is not a landing if the walk found no content.
@@ -402,6 +421,8 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
 
     func updateNSView(_ view: Finder, context: Context) {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
+        view.guardian = guardian
+        view.observeClip()
         #if DEBUG
         view.measuredHistory = measuredHistory
         historyAnchor?.measuredHistory = measuredHistory
@@ -411,7 +432,29 @@ struct ThreadScrollViewFinder: NSViewRepresentable {
     }
 
     final class Finder: NSView {
+        weak var guardian: ThreadTailGuard?
+        private weak var observedClip: NSClipView?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observeClip()
+        }
+
+        /// The clip view moves without SwiftUI's geometry saying so (`ThreadTailGuard.endOutOfView`): every move is a reason to look again.
+        func observeClip() {
+            let clip = window == nil ? nil : enclosingScrollView?.contentView
+            guard clip !== observedClip else { return }
+            let center = NotificationCenter.default
+            if let observedClip { center.removeObserver(self, name: NSView.boundsDidChangeNotification, object: observedClip) }
+            observedClip = clip
+            if let clip {
+                clip.postsBoundsChangedNotifications = true
+                center.addObserver(self, selector: #selector(clipMoved), name: NSView.boundsDidChangeNotification, object: clip)
+            }
+        }
+
+        @objc private func clipMoved() { guardian?.suspect() }
 
         #if DEBUG
         weak var measuredHistory: ThreadMeasuredHistory?
