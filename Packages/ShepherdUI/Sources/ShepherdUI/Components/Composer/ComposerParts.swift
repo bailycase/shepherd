@@ -162,9 +162,10 @@ public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>:
         // As the card eases to a new height (a question taking the field's place, attachments
         // arriving), what it holds is revealed by its edge rather than drawn outside it.
         .clipShape(shape)
-        .shLift(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the card as it grows.
+        // Inside the lift, so the ring is drawn over the card's shadow rather than under it.
         .modifier(SHComposerFocus(isFocused: isFocused))
+        .shLift(shape)
     }
 
     private var chips: some View {
