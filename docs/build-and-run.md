@@ -4,8 +4,8 @@
 
 There is deliberately no Makefile or Taskfile. One Xcode project at the repo root runs the apps,
 and plain SwiftPM drives everything else. For package changes, start with
-[focused local validation](testing.md#local-validation): `swift test --filter '<suite or test>'`
-builds before running. Use `swift build` only for a compile-only check, not before a test run.
+[focused local validation](testing.md#local-validation): `scripts/check.py <TestTarget> '<filter>'`
+builds that one test target and runs it; `--build-only` is the compile-only check.
 Build the app when validating launcher, bundled resources, Xcode configuration or app-only behavior;
 a package check and an Xcode build are not both required for every change.
 
