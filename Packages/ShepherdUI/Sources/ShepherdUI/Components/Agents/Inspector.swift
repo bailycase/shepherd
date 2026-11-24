@@ -26,6 +26,26 @@ public struct SHInspectorHeader<Trailing: View>: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The boards' `.iph`: the title in `ui` semibold over its facts in `caption`, no glyph; its actions on the right.
+        HStack(alignment: .top, spacing: SH.Space.m) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
+                    .accessibilityAddTraits(.isHeader)
+                Text("\(Text(meta))\(Text(accentText).foregroundStyle(state.textColor))\(Text(position.map { " · \($0)" } ?? ""))")
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .help(meta + accentText)
+            }
+            .accessibilityElement(children: .combine)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: SH.Space.xs) { trailing() }
+        }
+        .padding(EdgeInsets(top: SH.Space.l, leading: 14, bottom: 10, trailing: SH.Space.m))
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .top)
+        #else
         HStack(spacing: SH.Space.m) {
             SHBranchGlyph(state, size: 13)
             VStack(alignment: .leading, spacing: 1) {
@@ -47,6 +67,7 @@ public struct SHInspectorHeader<Trailing: View>: View {
         .padding(.trailing, SH.Space.s)
         .frame(maxWidth: .infinity, minHeight: minHeight)
         .overlay(alignment: .bottom) { SHHairline() }
+        #endif
     }
 
     private var accentText: String {
@@ -84,7 +105,7 @@ public struct SHRunBrief<Files: View>: View {
                 SHBriefLabel(text: "Goal")
                 Spacer(minLength: SH.Space.m)
                 if let note {
-                    Text(note).font(.shMono(10.5)).foregroundStyle(sh.textTertiary).monospacedDigit().lineLimit(1)
+                    Text(note).font(Self.noteFont).foregroundStyle(sh.textTertiary).monospacedDigit().lineLimit(1)
                         .shContentTransition(.numeric())
                 }
             }
@@ -110,10 +131,27 @@ public struct SHRunBrief<Files: View>: View {
             }
         }
         .shAnimation(.disclosure, value: result != nil)
+        #if os(macOS)
+        // The boards' `.igoal`: 14pt in, 8pt over and 10pt under, a hairline beneath, on the pane's own fill.
+        .padding(.top, SH.Space.m)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) { SHHairline() }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #else
         .padding(.vertical, 10)
         .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(sh.bgSunken)
+        #endif
+    }
+
+    @MainActor private static var noteFont: Font {
+        #if os(macOS)
+        .sh(.caption)
+        #else
+        .shMono(10.5)
+        #endif
     }
 }
 

@@ -213,6 +213,8 @@ struct ModelPicker: View, Equatable {
     var body: some View {
         SHModelPicker(query: $state.query, list: state.list, loading: state.loading, selection: $state.selection, maxHeight: maxHeight,
                       shortcut: KeybindingsStore.shared.display(.modelPicker), onChoose: { choose($0.id) }, onClose: close)
+            // The board's headers are the providers' names: Anthropic, OpenAI.
+            .headerNames { $0 == "Recent" ? $0 : NativeTurnError.providerName($0) }
     }
 }
 

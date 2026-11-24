@@ -42,7 +42,7 @@ extension ThemeDefinition {
                 failedTint: "#d9302517"
             ),
             syntax: SyntaxColors(
-                keyword: "#8a3fb5", type: "#1a7f55", string: "#9a6400", number: "#2f6fe0",
+                keyword: "#9b3ba6", type: "#1a7f55", string: "#2d6a9f", number: "#2f6fe0",
                 function: "#2a62c9", comment: "#a1a1a6",
                 variable: "#1d1d1f", operators: "#6e6e73", punctuation: "#6e6e73"
             ),
@@ -83,7 +83,7 @@ extension ThemeDefinition {
                 failedTint: "#ff69611f"
             ),
             syntax: SyntaxColors(
-                keyword: "#d7a6ff", type: "#7ee0b5", string: "#e8c07a", number: "#9ec2ff",
+                keyword: "#d49be6", type: "#7ee0b5", string: "#86b7e6", number: "#9ec2ff",
                 function: "#8fc1ff", comment: "#6e6e73",
                 variable: "#f2f2f4", operators: "#a1a1a6", punctuation: "#a1a1a6"
             ),

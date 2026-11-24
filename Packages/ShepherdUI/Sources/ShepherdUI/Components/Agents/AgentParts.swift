@@ -62,11 +62,18 @@ struct SHBriefLabel: View {
     var color: Color?
 
     var body: some View {
+        #if os(macOS)
+        Text(text)
+            .font(.sh(.caption))
+            .foregroundStyle(color ?? .sh.textTertiary)
+            .accessibilityAddTraits(.isHeader)
+        #else
         Text(text)
             .font(.shMono(10))
             .textCase(.uppercase)
             .tracking(0.5)
             .foregroundStyle(color ?? .sh.textTertiary)
             .accessibilityAddTraits(.isHeader)
+        #endif
     }
 }
