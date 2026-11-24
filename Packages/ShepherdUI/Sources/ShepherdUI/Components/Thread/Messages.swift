@@ -123,7 +123,11 @@ public struct SHUserBubble<Leading: View>: View {
                 }
                 if title != nil || !text.isEmpty {
                     VStack(alignment: .leading, spacing: SH.Space.xs) {
+                        #if os(macOS)
+                        if let title { line(title, weight: .regular) } // the redesign's answer is one plain line
+                        #else
                         if let title { line(title, weight: .semibold) }
+                        #endif
                         if !text.isEmpty { line(text, weight: nil) }
                     }
                 }

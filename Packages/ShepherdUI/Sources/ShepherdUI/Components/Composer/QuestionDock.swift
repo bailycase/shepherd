@@ -76,6 +76,41 @@ public enum SHQuestionDockMetrics {
     public static let hiddenTrailing: CGFloat = SH.Space.m
 }
 
+#if os(macOS)
+/// The Mac dock as the redesign's GXQuestion draws it: a raised card (radius 14, `lift`) with a
+/// lantern dot and the question in 14 semibold, rows 9pt at radius 9 with a 20pt key chip, and
+/// Skip and Answer as 30pt pills.
+public enum SHQuestionBoardMetrics {
+    public static let padding = EdgeInsets(top: 14, leading: SH.Space.m, bottom: 10, trailing: SH.Space.m)
+    /// The head: 10pt between its parts, 10pt trailing and 12pt leading inside the card's padding.
+    public static let headSpacing: CGFloat = 10
+    public static let headInset = EdgeInsets(top: 0, leading: SH.Space.l, bottom: 0, trailing: 10)
+    public static let dot: CGFloat = 7
+    public static let dotTop: CGFloat = 7
+    public static let headChevron: CGFloat = 10
+    /// Rows: 9pt over 10pt, parts 12pt apart, 2pt between rows, radius 9.
+    public static let rowPadding = EdgeInsets(top: 9, leading: 10, bottom: 9, trailing: 10)
+    public static let rowSpacing: CGFloat = SH.Space.l
+    public static let rowRadius: CGFloat = 9
+    public static let optionsTop: CGFloat = SH.Space.m
+    /// The key chip: 20pt, radius 6, mono 11.
+    public static let chip: CGFloat = 20
+    public static let chipRadius: CGFloat = SH.Radius.s - 1
+    public static let chipSize: CGFloat = 11
+    /// The title's 1pt drop and the "Recommended" tag's 8pt lead.
+    public static let bodyTop: CGFloat = 1
+    public static let recommendedLead: CGFloat = SH.Space.m
+    /// Skip and Answer: 30pt pills, 12pt and 14pt at the sides, 6pt apart; the footer 6pt under the rows.
+    public static let buttonHeight: CGFloat = 30
+    public static let skipPadding: CGFloat = SH.Space.l
+    public static let answerPadding: CGFloat = 14
+    public static let footerTop: CGFloat = SH.Space.s
+    public static let footerInset: CGFloat = SH.Space.xs
+    /// The hidden line's height.
+    public static let hiddenHeight: CGFloat = 46
+}
+#endif
+
 /// The dock's shape (QuestionStates › Kinds of question).
 public enum SHQuestionDockKind: Equatable, Sendable {
     case choice
@@ -180,12 +215,17 @@ struct SHQuestionCardChrome: ViewModifier {
 struct SHQuestionCardFill: View {
     var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        let board = RoundedRectangle(cornerRadius: SH.Radius.xl)
+        Color.clear.shLift(board).shBorder(sh.lineSubtle, in: board).allowsHitTesting(false)
+        #else
         let shape = RoundedRectangle(cornerRadius: SHQuestionDockMetrics.radius)
         shape.fill(sh.bgRaised)
             .shBorder(sh.lineStrong, in: shape)
             .overlay(alignment: .leading) { sh.lantern.frame(width: SHQuestionDockMetrics.edge) }
             .clipShape(shape)
             .allowsHitTesting(false)
+        #endif
     }
 }
 
@@ -223,7 +263,27 @@ public struct SHQuestionDock: View {
         self.hide = hide
     }
 
-    public var body: some View {
+    @ViewBuilder private var dockContent: some View {
+        #if os(macOS)
+        VStack(alignment: .leading, spacing: 0) {
+            SHQuestionHead(count: content.count, question: content.question, hideHelp: "Hide the question (\(keys.hide))", hide: hide)
+            if let details = content.details {
+                SHQuestionDetails(details).padding(SHQuestionBoardMetrics.headInset).padding(.top, SH.Space.s)
+            }
+            if let message = content.message { messageBlock(message).padding(.horizontal, SHQuestionBoardMetrics.headInset.leading).padding(.top, SH.Space.m) }
+            Group {
+                switch content.kind {
+                case .choice: options
+                case .yesNo: yesNo
+                case .open: openField
+                }
+            }
+            .padding(.top, SHQuestionBoardMetrics.optionsTop)
+            .disabled(!enabled)
+            if content.showsAnswer || content.notice != nil { footer }
+        }
+        .padding(SHQuestionBoardMetrics.padding)
+        #else
         VStack(alignment: .leading, spacing: SH.Space.l) {
             SHQuestionHead(count: content.count, question: content.question, hideHelp: "Hide the question (\(keys.hide))", hide: hide)
             if let details = content.details { SHQuestionDetails(details) }
@@ -239,7 +299,12 @@ public struct SHQuestionDock: View {
             if content.showsAnswer || content.notice != nil { footer }
         }
         .padding(SHQuestionDockMetrics.padding)
-        .shQuestionCard()
+        #endif
+    }
+
+    public var body: some View {
+        dockContent
+            .shQuestionCard()
         .shAnimation(.hover, value: selection.picked)
         // Options and words are one answer: the newer one replaces the other, from a click, a key or typing.
         .onChange(of: selection) { old, new in
@@ -265,16 +330,25 @@ public struct SHQuestionDock: View {
 
     // MARK: Choice
 
+    /// The rows hang into the card's padding on touch and the old Mac card; the redesign's card pads for them.
+    private static var optionsHang: CGFloat {
+        #if os(macOS)
+        0
+        #else
+        -SH.Space.m
+        #endif
+    }
+
     @ViewBuilder private var options: some View {
         if content.options.count > SHQuestionDockMetrics.scrollingOptions {
             ScrollView {
                 LazyVStack(spacing: SH.Space.xxs) { optionRows }
             }
             .frame(height: SHQuestionDockMetrics.optionsMaxHeight)
-            .padding(.horizontal, -SH.Space.m)
+            .padding(.horizontal, Self.optionsHang)
         } else {
             VStack(spacing: SH.Space.xxs) { optionRows }
-                .padding(.horizontal, -SH.Space.m)
+                .padding(.horizontal, Self.optionsHang)
         }
     }
 
@@ -371,8 +445,13 @@ public struct SHQuestionDock: View {
                     .help("Answer (\(keys.answer))")
             }
         }
+        #if os(macOS)
+        .padding(.top, SHQuestionBoardMetrics.footerTop)
+        .padding(.horizontal, SHQuestionBoardMetrics.footerInset)
+        #else
         .padding(.top, SH.Space.l)
         .overlay(alignment: .top) { SHHairline() }
+        #endif
     }
 
     /// "[1]–[N] pick  [↩] answer": the dock's keys, which work while its thread has the keyboard.
@@ -548,6 +627,9 @@ public struct SHQuestionRadioRow: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHQuestionDockMetrics.self
+        #if os(macOS)
+        macRow
+        #else
         Button(action: pick) {
             HStack(alignment: .top, spacing: M.rowSpacing) {
                 SHQuestionRadio(picked: picked)
@@ -579,7 +661,53 @@ public struct SHQuestionRadioRow: View {
         .accessibilityValue(option.detail ?? "")
         .accessibilityHint(option.recommended ? "Recommended" : "")
         .accessibilityAddTraits(picked ? .isSelected : [])
+        #endif
     }
+
+    #if os(macOS)
+    /// The redesign's row: a 20pt key chip, the title in 14 with "Recommended" after it in 12
+    /// `textTertiary`, the description under it in 12 `textSecondary`. Picked lights the row
+    /// `bgSelected` and fills the chip with ink; the pointer lights it `bgHover`.
+    private var macRow: some View {
+        let sh = Color.sh
+        let B = SHQuestionBoardMetrics.self
+        let shape = RoundedRectangle(cornerRadius: B.rowRadius)
+        return Button(action: pick) {
+            HStack(alignment: .top, spacing: B.rowSpacing) {
+                SHQuestionKeyChip(number: option.number, on: picked)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    macTitle.fixedSize(horizontal: false, vertical: true)
+                    if let detail = option.detail {
+                        Text(detail).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .multilineTextAlignment(.leading)
+                .padding(.top, B.bodyTop)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(B.rowPadding)
+            .background(picked ? sh.bgSelected : hovering ? sh.bgHover : .clear, in: shape)
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
+        .help("\(option.title) (\(option.number))")
+        .accessibilityLabel(option.title)
+        .accessibilityValue(option.detail ?? "")
+        .accessibilityHint(option.recommended ? "Recommended" : "")
+        .accessibilityAddTraits(picked ? .isSelected : [])
+    }
+
+    private var macTitle: Text {
+        let sh = Color.sh
+        let title = Text(option.title).foregroundStyle(sh.textPrimary)
+        guard option.recommended else { return title.font(.sh(.body)) }
+        let tag = Text("Recommended").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+        return Text("\(title)\u{2002}\(tag)").font(.sh(.body))
+    }
+    #endif
 
     /// The title, then "Recommended" inline after it, wrapping with it.
     private var title: Text {
@@ -612,6 +740,31 @@ public struct SHQuestionTextRow: View {
         let sh = Color.sh
         let M = SHQuestionDockMetrics.self
         let typed = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        #if os(macOS)
+        let B = SHQuestionBoardMetrics.self
+        let shape = RoundedRectangle(cornerRadius: B.rowRadius)
+        HStack(alignment: .top, spacing: B.rowSpacing) {
+            if let number { SHQuestionKeyChip(number: number, on: typed) }
+            TextField(text: $text, prompt: Text(Self.placeholder).foregroundStyle(sh.textTertiary), axis: .vertical) {
+                Text(Self.placeholder)
+            }
+            .lineLimit(1...6)
+            .textFieldStyle(.plain)
+            .font(.sh(.body))
+            .foregroundStyle(sh.textPrimary)
+            .tint(sh.lantern)
+            .focused(focus, equals: .text)
+            .padding(.top, B.bodyTop)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("Something else")
+        }
+        .padding(B.rowPadding)
+        .background(typed ? sh.bgSelected : hovering ? sh.bgHover : .clear, in: shape)
+        .contentShape(shape)
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
+        .onTapGesture { focus.wrappedValue = .text }
+        #else
         HStack(alignment: .top, spacing: M.rowSpacing) {
             SHQuestionRadio(picked: typed)
             TextField(text: $text, prompt: Text(Self.placeholder).foregroundStyle(sh.textTertiary), axis: .vertical) {
@@ -640,8 +793,30 @@ public struct SHQuestionTextRow: View {
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .onTapGesture { focus.wrappedValue = .text }
+        #endif
     }
 }
+
+#if os(macOS)
+/// A row's key: a 20pt rounded square on a `lineSubtle` line holding its number in mono 11,
+/// filled with ink once picked.
+struct SHQuestionKeyChip: View {
+    let number: Int
+    let on: Bool
+
+    var body: some View {
+        let sh = Color.sh
+        let B = SHQuestionBoardMetrics.self
+        let shape = RoundedRectangle(cornerRadius: B.chipRadius)
+        Text("\(number)").font(.shMono(B.chipSize)).monospacedDigit()
+            .foregroundStyle(on ? sh.textOnPrimary : sh.textSecondary)
+            .frame(width: B.chip, height: B.chip)
+            .background(on ? sh.primary : sh.bgRaised, in: shape)
+            .shBorder(on ? .clear : sh.lineSubtle, in: shape)
+            .accessibilityHidden(true)
+    }
+}
+#endif
 
 /// A key in the footer's hints: smaller than `SHKeycap` (the board's inline caps).
 struct SHQuestionKeycap: View {
@@ -682,6 +857,22 @@ private struct SHQuestionDockButton: View {
         let fill: Color = primary
             ? (pressed ? sh.primaryPressed : hovering && enabled ? sh.primaryHover : sh.primary)
             : (pressed ? sh.bgSelected : hovering && enabled ? sh.bgHover : .clear)
+        #if os(macOS)
+        let B = SHQuestionBoardMetrics.self
+        let pill = Capsule()
+        configuration.label
+            .font(.sh(.ui))
+            .lineLimit(1)
+            .foregroundStyle(primary ? sh.textOnPrimary : hovering && enabled ? sh.textPrimary : sh.textSecondary)
+            .padding(.horizontal, primary ? B.answerPadding : B.skipPadding)
+            .frame(height: B.buttonHeight)
+            .background(fill, in: pill)
+            .shEnabledOpacity(enabled)
+            .contentShape(pill)
+            .onHover { hovering = $0 }
+            .shAnimation(.hover, value: hovering)
+            .shFocusRing(radius: B.buttonHeight / 2)
+        #else
         configuration.label
             .font(.shSans(M.buttonSize, primary ? .semibold : .regular))
             .lineLimit(1)
@@ -694,6 +885,7 @@ private struct SHQuestionDockButton: View {
             .onHover { hovering = $0 }
             .shAnimation(.hover, value: hovering)
             .shFocusRing(radius: M.controlRadius)
+        #endif
     }
 }
 
@@ -734,9 +926,16 @@ extension View {
     func shQuestionOptionChrome(picked: Bool) -> some View {
         let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        #if os(macOS)
+        // The redesign picks with `bgSelected` and ink, as its rows do.
+        return background(picked ? sh.bgSelected : .clear, in: shape)
+            .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+            .contentShape(shape)
+        #else
         return background(picked ? sh.lanternTint : sh.bgWindow, in: shape)
             .shBorder(picked ? sh.lantern : sh.lineSubtle, radius: SH.Radius.m)
             .contentShape(shape)
+        #endif
     }
 }
 
@@ -754,10 +953,18 @@ public struct SHQuestionDockHidden: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        SHQuestionHiddenLine(question: question, showHelp: "Show the question (\(keys.hide))", show: show)
+            .padding(.leading, SHQuestionBoardMetrics.headInset.leading + SHQuestionBoardMetrics.padding.leading)
+            .padding(.trailing, SHQuestionDockMetrics.hiddenTrailing)
+            .frame(height: SHQuestionBoardMetrics.hiddenHeight)
+            .shQuestionCard()
+        #else
         SHQuestionHiddenLine(question: question, showHelp: "Show the question (\(keys.hide))", show: show)
             .padding(.leading, SHQuestionDockMetrics.hiddenLeading)
             .padding(.trailing, SHQuestionDockMetrics.hiddenTrailing)
             .frame(height: SHQuestionDockMetrics.hiddenHeight)
             .shQuestionCard()
+        #endif
     }
 }
