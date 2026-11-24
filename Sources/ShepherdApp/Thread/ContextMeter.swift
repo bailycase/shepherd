@@ -77,19 +77,30 @@ extension SHContextDetailsModel {
             case nil: nil
             }
         }
+        // The Mac's words (GXContext, GXContextFull): "claude-opus, 200K", "Compacts on its own at 184k",
+        // "Instructions, AGENTS.md" with the file in mono, "The agent compacts on its own".
+        let meta = details.meta.map { meta in
+            var words = meta.components(separatedBy: " · ")
+            if words.count > 1, words[words.count - 1].hasSuffix("k") { words[words.count - 1] = words[words.count - 1].uppercased() }
+            return words.joined(separator: ", ")
+        }
+        let instructionsPrefix = "Instructions · "
         self.init(
-            variant: variant, title: details.title, meta: details.meta, total: details.total, ofWindow: details.ofWindow,
+            variant: variant, title: details.title, meta: meta, total: details.total, ofWindow: details.ofWindow,
             trailing: details.trailing, segments: details.segments.map { Segment(part: part($0.part), fraction: $0.fraction) },
-            mark: details.mark, markLabel: details.markLabel,
+            mark: details.mark, markLabel: details.autoCompactText.map { "Compacts on its own at \($0)" },
             rows: details.rows.map { row in
-                Row(part: part(row.part) ?? .system, label: row.label, value: row.value,
-                    children: row.children.map { Child(label: $0.label, value: $0.value) })
+                let named = row.label.hasPrefix(instructionsPrefix)
+                return Row(part: part(row.part) ?? .system, label: named ? "Instructions" : row.label, value: row.value,
+                           children: row.children.map { Child(label: $0.label, value: $0.value) },
+                           detail: named ? String(row.label.dropFirst(instructionsPrefix.count)) : nil)
             },
             free: details.free,
             items: details.largest.map { item in
                 Item(id: item.entryID, kind: ItemKind(item.kind), label: item.label, value: item.value)
             },
-            note: details.note, emphasis: details.emphasis, footnote: details.footnote, showsSummary: details.summaryEntryID != nil,
+            note: details.note?.replacingOccurrences(of: "The agent will compact on its own", with: "The agent compacts on its own"),
+            emphasis: details.emphasis, footnote: details.footnote, showsSummary: details.summaryEntryID != nil,
             compactOffered: details.compactOffered)
     }
 }
@@ -153,13 +164,24 @@ struct CompactionItem: View {
     @Environment(\.compactionExpansion) private var expansion
     @State private var ownExpanded = false
 
+    /// GXCompacted says the sizes in words ("Compacted automatically, 184k to 23k"); a size alone
+    /// (while it runs) stays beside the title.
+    private static func words(_ row: NativeCompactionRow) -> String {
+        guard let tokens = row.tokens, tokens.contains("→") else { return row.title }
+        return row.title + ", " + tokens.replacingOccurrences(of: " → ", with: " to ")
+    }
+
+    private static func sizes(_ row: NativeCompactionRow) -> String? {
+        row.tokens?.contains("→") == true ? nil : row.tokens
+    }
+
     private var expanded: Bool { expansion?.isExpanded(row.id) ?? ownExpanded }
 
     var body: some View {
         let open = expanded && !row.sections.isEmpty
         VStack(alignment: .leading, spacing: SHCompactionMetrics.openGap) {
             SHCompactionDivider(
-                title: row.title, tokens: row.tokens,
+                title: Self.words(row), tokens: Self.sizes(row),
                 tone: SHCompactionDivider.Tone(row.tone),
                 running: row.running, expanded: row.sections.isEmpty ? nil : open, help: row.error) {
                 if let expansion { expansion.toggle(row.id) } else { ownExpanded.toggle() }
