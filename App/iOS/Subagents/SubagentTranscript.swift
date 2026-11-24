@@ -311,6 +311,7 @@ struct SubagentActivityLine: View {
         case .checked: .checked
         case .lookedAt: .lookedAtDesign
         case .browser: .browser
+        case .computer: .computer
         case .other: .other
         }
     }

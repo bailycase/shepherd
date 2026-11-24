@@ -1,8 +1,8 @@
 import Foundation
 import ShepherdProtocol
 
-// Activity lines (SHThread, ToolRows): a turn's tool calls as one quiet line per burst of work,
-// consecutive calls of one kind merged, with the calls behind it. Pure derivations: every string
+// Activity lines (ToolFeed › A · One live line): a turn's tool calls as one line per stretch of work between prose, live while
+// a call runs and a recap once they finish, with the calls behind it. Pure derivations: every string
 // a line, its calls, or the turn's changes card shows is built here once per turn, never in a
 // view body.
 
@@ -285,7 +285,9 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
         /// An agent's `browser_*` tools on its thread's Browser page ("Opened localhost:5173 in
         /// Browser", "Clicked “Pay $148.00”"); consecutive calls of one tool merge.
         case browser
-        /// Any other tool; consecutive calls of the same tool merge.
+        /// An agent's computer use tools on this Mac's apps ("Clicked “More options”", "5 actions in Safari").
+        case computer
+        /// Any other tool.
         case other
     }
 
@@ -330,6 +332,8 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     /// nil when no system was found.
     public var system: String?
     public var offSystem: Int?
+    /// For a computer use call: the app it named, when it named one ("Safari").
+    public var app: String?
     /// For a design_get: the reference it read and what of it.
     public var designRef: String?
     public var designAspect: DesignReferenceAspect?
@@ -364,6 +368,8 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public static let tailLines = 3
 
     public var failed: Bool { state == .failed }
+    /// The detail as a line's words name it: nil when there is none.
+    var subject: String? { detail.isEmpty ? nil : detail }
     public var running: Bool { state == .running }
     public var expandable: Bool { outputLineCount > 0 }
 
@@ -418,6 +424,7 @@ extension NativeActivityCall {
         self.offSystem = nil
         self.designRef = nil
         self.designAspect = nil
+        self.app = nil
         self.failure = failed ? (firstLine.isEmpty ? nil : String(firstLine.prefix(60))) : nil
         self.stopped = stopped
         self.startedAt = message.startedAt
@@ -672,6 +679,15 @@ extension NativeActivityCall {
             default:
                 detail = ""
             }
+        case _ where NativeComputerActivity.isTool(name):
+            kind = .computer
+            app = NativeComputerActivity.app(name, args)
+            let named = running || failed ? nil : NativeComputerActivity.subject(fromResult: output)
+            detail = NativeComputerActivity.detail(name, args, subject: named)
+        case _ where NativeToolWords.words(name) != nil:
+            kind = .other
+            detail = NativeToolWords.subject(name, args) ?? ""
+            isPath = name == "board_interact"
         case NativeMCPActivity.searchTool:
             kind = .other
             label = "search"
@@ -713,31 +729,36 @@ extension NativeActivityCall {
 
 // MARK: Bursts
 
-/// One activity line: consecutive calls of one kind, or one failed call (failures never merge,
-/// so each stays visible), or the one call that is running now.
+/// One activity line: the calls between two pieces of prose (ToolFeed › A · One live line). While one of them runs it is the
+/// thread's live line, saying what that call is doing; when they finish it is their recap, built from the calls' own arguments
+/// and results. A call that failed before the work went on is counted ("1 retry") and drawn red among the calls; a stretch that
+/// ends on a failure is a failed line.
 public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     public enum State: Equatable, Sendable { case done, failed, running }
 
     /// The first call's id: stable while calls join the burst.
     public var id: String
+    /// The glyph's kind: the running call's, else the last call's.
     public var kind: NativeActivityCall.Kind
     public var state: State
     public var calls: [NativeActivityCall]
-    /// "Explored 7 files", "Ran tests and a build", "Building".
+    /// "Explored 7 files", "Explored 3 files and edited 2 files", "Running tests".
     public var label: String
-    /// "read 5 · search 2 · 0.9s"; for a running line, the command or path.
+    /// "read 5 · search 2 · 0.9s", "5 actions · 1 retry · 5.2s"; for a running line, the call's command or path and its step.
     public var meta: String
     /// "Explored 7 files, read 5, search 2, 0.9s, done"
     public var accessibilityLabel: String
 
-    /// The running call's start (ms since epoch), for its elapsed time.
-    public var startedAt: Double? { state == .running ? calls.first?.startedAt : nil }
-    /// A running call's last output lines.
-    public var tail: [String] { state == .running ? calls.first?.tail ?? [] : [] }
+    /// The call that is running now, when one is.
+    public var runningCall: NativeActivityCall? { state == .running ? calls.last(where: \.running) : nil }
+    /// When the line's work began (ms since epoch), for its elapsed time while it runs.
+    public var startedAt: Double? { state == .running ? calls.first?.startedAt ?? runningCall?.startedAt : nil }
+    /// The running call's last output lines.
+    public var tail: [String] { runningCall?.tail ?? [] }
     /// A call the model is still writing: "18 KB received" of its arguments. Nothing is on disk
     /// until the call runs.
     public var received: String? {
-        guard state == .running, let bytes = calls.first?.argumentBytes else { return nil }
+        guard let bytes = runningCall?.argumentBytes else { return nil }
         return nativeReceivedText(bytes)
     }
     public var expandable: Bool { state != .running }
@@ -748,22 +769,22 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     }
 }
 
-/// Merge consecutive calls of one kind into bursts. A failed, stopped, or running call each
-/// stands alone; other tools merge only with the same tool.
+/// The calls of one stretch as lines: every call joins one line, except that a call with a card of its own (a typed Project
+/// reference, a plan, a board card) stands alone, and reads of a design piece keep their own "Looked at" line.
 public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivityBurst] {
     // A board written again later in the run keeps one card, the last write's: an earlier write's card gives way to its line.
     var calls = calls
     for index in calls.indices where calls[index].designBoard != nil && calls[index].board != nil {
         if calls[(index + 1)...].contains(where: { $0.board == calls[index].board && $0.designBoard != nil }) { calls[index].designBoard = nil }
     }
+    // The iPad design chat draws markup proposals as cards of their own (`NativeMarkupProposals`), so their call keeps its line.
+    func ownsCard(_ call: NativeActivityCall) -> Bool {
+        call.projectAction != nil || call.projectPlan != nil || call.designBoard != nil || call.name == "markup_propose"
+    }
     var groups: [[NativeActivityCall]] = []
     for call in calls {
-        // Each typed Project reference or explicit plan update owns its own card.
-        // So does each board card.
-        if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil, call.designBoard == nil,
-           let last = groups.last?.last, last.state == .done, !last.stopped,
-           last.projectAction == nil, last.projectPlan == nil, last.designBoard == nil, last.kind == call.kind,
-           (call.kind != .other && call.kind != .browser) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
+        if !ownsCard(call), let last = groups.last?.last, !ownsCard(last),
+           (call.kind == .lookedAt) == (last.kind == .lookedAt), call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
         } else {
             groups.append([call])
@@ -772,44 +793,92 @@ public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivi
     return groups.map(nativeActivityBurst)
 }
 
-/// One burst's words, from its calls.
+/// One line's words, from its calls.
 public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivityBurst {
     let first = calls[0]
-    let state: NativeActivityBurst.State = first.running ? .running : calls.contains(where: \.failed) ? .failed : .done
+    let running = calls.lastIndex(where: \.running)
+    let last = calls[calls.count - 1]
+    let state: NativeActivityBurst.State = running != nil ? .running : last.failed ? .failed : .done
     let label: String
     var meta: [String] = []
+    var kind = last.kind
     switch state {
     case .running:
-        label = nativeRunningLabel(first)
-        meta = [first.detail]
+        let index = running ?? 0
+        let call = calls[index]
+        kind = call.kind
+        label = nativeRunningLabel(call)
+        meta = [call.detail]
+        if calls.count > 1 { meta.append("step \(index + 1)") }
     case .failed:
-        label = failedLabel(first)
-        if first.kind == .run {
-            meta = [first.commandHead ?? first.detail, first.stat ?? "failed"]
-        } else if first.kind == .subagents {
+        label = failedLabel(last)
+        if last.kind == .run {
+            meta = [last.commandHead ?? last.detail, last.stat ?? "failed"]
+        } else if last.kind == .subagents {
             // The reason is the whole story of a refused start; the task it was for is in the call.
-            meta = [first.failure ?? "failed"]
+            meta = [last.failure ?? "failed"]
         } else {
-            meta = [first.isPath ? (first.detail as NSString).lastPathComponent : first.detail, first.failure ?? "failed"]
+            meta = [last.isPath ? (last.detail as NSString).lastPathComponent : last.detail, last.failure ?? "failed"]
         }
+        if calls.count > 1 { meta.append(nativeCount(calls.count, "action")) }
         if let seconds = wallSeconds(calls) { meta.append(nativeDurationText(seconds)) }
-    case .done where first.stopped:
-        label = stoppedLabel(first)
-        meta = [first.kind == .run ? first.commandHead ?? first.detail
-                : first.isPath ? (first.detail as NSString).lastPathComponent : first.detail, "stopped"]
+    case .done where last.stopped:
+        label = stoppedLabel(last)
+        meta = [last.kind == .run ? last.commandHead ?? last.detail
+                : last.isPath ? (last.detail as NSString).lastPathComponent : last.detail, "stopped"]
+        if calls.count > 1 { meta.append(nativeCount(calls.count, "action")) }
         if let seconds = wallSeconds(calls) { meta.append(nativeDurationText(seconds)) }
     case .done:
-        (label, meta) = doneWords(calls)
+        (label, meta) = stretchWords(calls)
     }
     meta = meta.filter { !$0.isEmpty }
     let word = switch state {
-    case .done: first.stopped ? "stopped" : "done"
+    case .done: last.stopped ? "stopped" : "done"
     case .failed: "failed"
     case .running: "running"
     }
-    return NativeActivityBurst(id: first.id, kind: first.kind, state: state, calls: calls, label: label,
+    return NativeActivityBurst(id: first.id, kind: kind, state: state, calls: calls, label: label,
                                meta: meta.joined(separator: " · "),
                                accessibilityLabel: ([label] + meta + [word]).joined(separator: ", "))
+}
+
+/// A finished stretch: each kind of work it did in the order it began, joined ("Explored 3 files and edited 2 files"); one kind
+/// keeps that kind's own words and meta. Calls that failed along the way are left out of the words and counted: a retry when the
+/// same tool (and, for a command, the same kind of command) ran again after it, else a failure.
+private func stretchWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
+    let finished = calls.filter { !$0.failed && !$0.stopped }
+    var setbacks: [String] = []
+    let failures = calls.indices.filter { calls[$0].failed || calls[$0].stopped }
+    // A command retries a command of its class ("swift test" after a failed "swift test"), not any shell call.
+    let retries = failures.count { index in
+        calls[(index + 1)...].contains { $0.name == calls[index].name && $0.commandClasses == calls[index].commandClasses }
+    }
+    if retries > 0 { setbacks.append(nativeCount(retries, "retry", "retries")) }
+    if failures.count > retries { setbacks.append("\(failures.count - retries) failed") }
+
+    // Calls of one kind group wherever they fall; other tools group by tool, since their words name it.
+    var order: [String] = []
+    var groups: [String: [NativeActivityCall]] = [:]
+    for call in finished {
+        let key = call.kind == .other || call.kind == .browser ? "\(call.kind.rawValue):\(call.name)" : call.kind.rawValue
+        if groups[key] == nil { order.append(key) }
+        groups[key, default: []].append(call)
+    }
+    let words = order.compactMap { groups[$0] }.map(doneWords)
+    guard words.count > 1 else {
+        let (label, meta) = words.first ?? ("Worked", [])
+        // The duration stays last.
+        if !setbacks.isEmpty, let duration = wallSeconds(calls).map({ nativeDurationText($0) }), meta.last == duration {
+            return (label, meta.dropLast() + setbacks + [duration])
+        }
+        return (label, meta + setbacks)
+    }
+    let labels = words.enumerated().map { $0.offset == 0 ? $0.element.0 : lowercasedFirst($0.element.0) }
+    return (nativeJoinedList(labels), [nativeCount(calls.count, "action")] + setbacks + [wallSeconds(calls).map { nativeDurationText($0) }].compactMap { $0 })
+}
+
+private func lowercasedFirst(_ text: String) -> String {
+    text.prefix(1).lowercased() + text.dropFirst()
 }
 
 /// Why a `shepherd_child_start` was refused, from the first sentence of its error ("Unknown agent
@@ -843,8 +912,10 @@ func nativeRunningLabel(_ call: NativeActivityCall) -> String {
     case .checked: return "Checking the boards"
     case .lookedAt: return "Looking at a design"
     case .browser: return NativeBrowserActivity.running(tool: call.name, subject: call.detail.isEmpty ? nil : call.detail)
+    case .computer: return NativeComputerActivity.running(call)
     case .other:
         if NativeProjectToolActivity.isTool(call.name) { return NativeProjectToolActivity.running(call.name, subject: call.detail) }
+        if let words = NativeToolWords.words(call.name) { return words.running(call.subject) }
         return NativeMCPActivity.running(call.name, tool: call.label) ?? "Running \(call.label)"
     }
 }
@@ -878,8 +949,10 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
     case .checked: return "Check failed"
     case .lookedAt: return "Couldn’t read the design"
     case .browser: return NativeBrowserActivity.failed(tool: call.name)
+    case .computer: return NativeComputerActivity.failed(call)
     case .other:
         if NativeProjectToolActivity.isTool(call.name) { return NativeProjectToolActivity.failed(call.name) }
+        if let words = NativeToolWords.words(call.name) { return words.failed(call.subject) }
         return NativeMCPActivity.failed(call.name, tool: call.label) ?? "\(call.label) failed"
     }
 }
@@ -907,8 +980,10 @@ private func stoppedLabel(_ call: NativeActivityCall) -> String {
     case .checked: return "Check stopped"
     case .lookedAt: return "Design read stopped"
     case .browser: return NativeBrowserActivity.stopped(tool: call.name)
+    case .computer: return NativeComputerActivity.done(call) + ", stopped"
     case .other:
         if NativeProjectToolActivity.isTool(call.name) { return NativeProjectToolActivity.stopped(call.name) }
+        if let words = NativeToolWords.words(call.name) { return words.done(call.subject) + ", stopped" }
         return NativeMCPActivity.stopped(call.name, tool: call.label) ?? "\(call.label) stopped"
     }
 }
@@ -960,9 +1035,14 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
             return (NativeBrowserActivity.done(tool: first.name, subject: first.detail.isEmpty ? nil : first.detail), [duration].compactMap { $0 })
         }
         return (NativeBrowserActivity.merged(tool: first.name, count: calls.count), [duration].compactMap { $0 })
+    case .computer:
+        return NativeComputerActivity.done(calls, duration: duration)
     case .other:
         if let words = NativeProjectToolActivity.done(calls, duration: duration) { return words }
         if let words = NativeMCPActivity.done(calls, duration: duration) { return words }
+        if let words = NativeToolWords.words(first.name) {
+            return (calls.count == 1 ? words.done(first.subject) : words.merged(calls.count), [duration].compactMap { $0 })
+        }
         let label = calls.count == 1 ? "Used \(first.label)" : "Used \(first.label) \(calls.count) times"
         return (label, (calls.count == 1 ? [first.detail] : []) + [duration].compactMap { $0 })
     }

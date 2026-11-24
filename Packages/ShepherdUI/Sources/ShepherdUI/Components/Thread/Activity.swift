@@ -1,22 +1,23 @@
 import SwiftUI
 
-// Tool activity (SHThread, ToolRows, LiveText): one quiet line per burst of work, its calls on a
+// Tool activity (ToolFeed › A · One live line): one line per stretch of work, its calls on a
 // hairline rail, and the changes card that ends a turn with edits.
 
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
 /// with a hover fill that expands the burst into its calls. A failed burst turns `failed` and
-/// stays visible. A live one is the thread's live indicator (LiveText): the tool's own glyph in
-/// `textSecondary`, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time
-/// in mono 11 `textTertiary`, and its last output lines. Nothing spins.
+/// stays visible. A live one is the thread's live indicator (ToolFeed › A · One live line): the running spinner where the glyph
+/// goes, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time in mono 11 `textTertiary`, and its last
+/// output lines.
 public struct SHActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
     /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
     /// acme-web"): the nib and the shield. `lookedAtDesign` is a thread reading a design piece it
     /// was sent ("Looked at Checkout funnel dashboard › A · Funnel first"): the nib too. `browser`
-    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `images` is the neutral count of the
+    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `computer` is an agent
+    /// working this Mac's apps ("5 actions in Safari"): the pointer. `images` is the neutral count of the
     /// images a message or a tool result carries ("2 images", ThreadImagesSent and ThreadImagesReceived): the `photo` glyph.
-    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, images, other }
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, computer, images, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -86,6 +87,7 @@ public struct SHActivityLine: View {
         case .drew, .lookedAtDesign: "pencil.tip"
         case .checked: "checkmark.shield"
         case .browser: "globe"
+        case .computer: "cursorarrow"
         case .images: "photo"
         case .other: "wrench.adjustable"
         }
@@ -147,14 +149,13 @@ public struct SHActivityLine: View {
         .frame(minHeight: SHThreadMetrics.activityHeight)
     }
 
-    /// The running call (LiveText): its own glyph, still, in `textSecondary`; the verb and the
+    /// The running call (ToolFeed › A): the running spinner in the glyph's place (still under Reduce Motion); the verb and the
     /// command shimmer; the clock ticks beside them in tertiary.
     private func liveHeader(since: Date?) -> some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(sh.textSecondary)
+            ProgressView()
+                .progressViewStyle(.shSpinner(size: SHThreadMetrics.activityIcon))
                 .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
             SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
                 Text(label).font(.sh(.ui, weight: .regular))

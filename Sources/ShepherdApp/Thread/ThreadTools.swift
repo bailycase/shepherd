@@ -141,6 +141,7 @@ struct ActivityLineView: View, Equatable {
         case .checked: .checked
         case .lookedAt: .lookedAtDesign
         case .browser: .browser
+        case .computer: .computer
         case .other: .other
         }
     }
@@ -209,7 +210,8 @@ private struct ActivityCallDetails: View {
                 id: id, label: script ? "script" : "input", detail: script ? "JavaScript" : call.name,
                 output: Array(lines.prefix(NativeActivityCall.outputHeadLines)),
                 moreLines: max(0, lines.count - NativeActivityCall.outputHeadLines),
-                accessibilityLabel: "\(call.name) \(script ? "script" : "arguments")")
+                // A line holds a stretch's calls, often several of one tool: the detail tells their inputs apart.
+                accessibilityLabel: script ? "\(call.name) script" : "\(call.name) arguments" + (call.detail.isEmpty ? "" : ", \(call.detail)"))
             texts[id] = text
         }
         inputRows = inputs
