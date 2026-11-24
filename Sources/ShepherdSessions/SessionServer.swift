@@ -7132,6 +7132,10 @@ public final class SessionServer: @unchecked Sendable {
             reply(.error(id: requestID, code: "unavailable", message: "The viewer showing this browser does not support tabs. Update that viewer or release its browser claim."), to: client)
             return true
         }
+        guard !request.shows || owner.clientCapabilities.contains(RemoteProtocol.browserShowCapability) else {
+            reply(.error(id: requestID, code: "unavailable", message: "The Shepherd showing this browser can't bring it into view. Tell the user to open the Browser tab."), to: client)
+            return true
+        }
         nextDriveToken += 1
         let token = nextDriveToken
         func address(_ request: BrowserRequest) -> String? {

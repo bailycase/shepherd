@@ -11,13 +11,7 @@ struct BrowserAgentComponentTests {
         #expect(SHBrowserAgentMetrics.pointerWidth == 18)
         #expect(SHBrowserAgentMetrics.cardInset == 12, "12pt from the pane's sides, under the toolbar")
         #expect(SHBrowserAgentMetrics.cardGlyph == 12)
-        #expect(SHBrowserAgentMetrics.tabTipWidth == 300)
         #expect(SHBrowserAgentMetrics.cardLeading == 12 && SHBrowserAgentMetrics.cardOther == 8, "padding 8, 12 on the leading side")
-    }
-
-    @Test(arguments: [(0.0, "0s"), (10.4, "10s"), (59.9, "59s"), (60.0, "1m"), (125.0, "2m"), (3599.0, "59m"), (3600.0, "1h"), (7300.0, "2h"), (-4.0, "0s")])
-    func theTipsAgeReadsInTheLargestWholeUnit(seconds: Double, expected: String) {
-        #expect(SHPaneTabTip.age(seconds: seconds) == expected)
     }
 
     @Test func theArrowsTipIsWhereTheGlyphIsPlaced() {
@@ -29,10 +23,7 @@ struct BrowserAgentComponentTests {
         #expect(scaled.minX == 4 && scaled.maxY == 34, "it scales with its box")
     }
 
-    @Test func aTabCarriesItsTipOnlyWhenGivenOne() {
-        let tip = SHSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date(timeIntervalSince1970: 1))
-        #expect(SHSidePaneTab(id: "browser", title: "Browser", systemImage: "globe", news: true, tip: tip).tip == tip)
-        #expect(SHSidePaneTab(id: "changes", title: "Changes", systemImage: "x").tip == nil)
+    @Test func browserActivityHasItsOwnKind() {
         #expect(SHActivityLine.Kind.browser != .other)
     }
 }

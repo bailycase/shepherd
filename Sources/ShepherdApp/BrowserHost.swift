@@ -370,7 +370,8 @@ final class BrowserSession {
         didSet { if dark != oldValue { applyAppearance() } }
     }
     var menuOpen = false
-    var consoleOpen = true
+    /// The console drawer starts closed: its bar shows the counts, a click opens it.
+    var consoleOpen = false
     /// ⌘L asks the address field for the keyboard; it counts, so each press asks again.
     private(set) var addressFocusRequests = 0
     /// Start ran a dev server that isn't answering yet.
@@ -386,8 +387,6 @@ final class BrowserSession {
     private(set) var agentOverlay: BrowserAgentOverlay?
     /// The user took the page over: the agent's actions are refused until they message the thread.
     private(set) var userHasControl = false
-    /// What the header's button and the tab's tip say the agent opened, and when.
-    private(set) var openedByAgent: (url: URL, at: Date)?
 
     @ObservationIgnored let console = BrowserConsoleLog()
     @ObservationIgnored private(set) var webView: WKWebView?
@@ -696,11 +695,6 @@ final class BrowserSession {
         presence.handBack()
         if userHasControl { userHasControl = false }
         syncOverlay()
-    }
-
-    /// The agent opened a page: the header's button and the Browser tab say so until it is looked at.
-    func noteAgentOpened(_ url: URL) {
-        openedByAgent = (url, Date())
     }
 
     private func syncOverlay() {

@@ -133,7 +133,7 @@ extension BrowserSession {
 
     private func dispatch(_ request: BrowserRequest) async -> BrowserStep {
         switch request {
-        case .tabs, .newTab, .selectTab, .closeTab, .tab:
+        case .tabs, .newTab, .selectTab, .closeTab, .tab, .show:
             return .fail(code: "invalid", message: "Tab management must run through the thread's tab collection.")
         case .open(let text, _): return await open(text)
         case .read(let selector, let maxChars): return await read(selector: selector, maxChars: maxChars)
@@ -561,7 +561,7 @@ enum BrowserRequestCheck {
             if UUID(uuidString: id) == nil { return "Invalid tab ID." }
         case .newTab(let url, _):
             if let url, url.isEmpty { return BrowserURLPolicy.Refusal.empty.message }
-        case .read, .screenshot, .console, .back, .forward, .reload, .tabs:
+        case .read, .screenshot, .console, .back, .forward, .reload, .tabs, .show:
             break
         }
         return nil

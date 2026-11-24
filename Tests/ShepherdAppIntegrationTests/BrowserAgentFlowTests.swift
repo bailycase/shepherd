@@ -51,7 +51,7 @@ struct BrowserAgentFlowTests {
         return app
     }
 
-    @Test func anAgentOpensAPageInItsOwnThreadAndNothingElseMoves() async throws {
+    @Test func anAgentOpensAPageInItsOwnThreadAndShowsItOnlyWhenItAsks() async throws {
         let app = try harness()
         defer { app.stop() }
         let web = try TinyWebServer(pages: BrowserAgentTests.pages)
@@ -71,14 +71,18 @@ struct BrowserAgentFlowTests {
         let page = try #require(vm.browsers.existing(mine.agent.id))
         #expect(page.pageURLString == web.origin + "/checkout")
         #expect(vm.browsers.existing(other.agent.id) == nil, "the other thread has no page")
-        // Nothing opens by itself: the tab and the header's button take pi's dot.
+        // Opening a page shows nothing: no pane, no dot, no tip.
         let owner = SidePaneOwner.local(mine.agent.id)
-        #expect(!vm.subagentInspector.open.contains(owner) && vm.subagentInspector.news[owner] == [.browser])
-        #expect(vm.sidePaneButton(for: owner).news == "Agent opened a page in Browser")
+        #expect(!vm.subagentInspector.open.contains(owner) && vm.subagentInspector.news[owner] == nil)
+        #expect(vm.sidePaneButton(for: owner).news == nil)
+
+        // browser_show opens the thread's pane on its Browser tab; the user stays in their thread.
+        let shown = try await connection.text(.show)
+        #expect(shown.contains(page.tabID.uuidString))
+        #expect(vm.subagentInspector.open.contains(owner) && vm.subagentInspector.tab(for: owner) == .browser)
+        #expect(!vm.subagentInspector.open.contains(.local(other.agent.id)), "only the agent's own thread")
         #expect(vm.selectedAgentID == other.agent.id, "the user stays where they were")
         #expect(app.server.state.tabs.map(\.layout) == layouts, "the layout is untouched")
-        let tip = SidePaneTabs.tip(opened: page.openedByAgent)
-        #expect(tip?.text == "127.0.0.1:\(web.port)/checkout")
         page.close()
     }
 

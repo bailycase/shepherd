@@ -185,7 +185,7 @@ struct ExtensionMessageTests {
         .back(note: nil), .forward(note: "going forward"), .reload(note: nil),
         .tabs, .newTab(url: "about:blank", note: "separate page"),
         .selectTab(id: "00000000-0000-0000-0000-000000000001"), .closeTab(id: "00000000-0000-0000-0000-000000000001"),
-        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)),
+        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)), .show,
     ]
 
     @Test func samplesCoverEveryCase() {

@@ -24,13 +24,15 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
         }
     }
 
-    public var opensPage: Bool {
+    /// `show`, on the agent's target tab or a named one.
+    public var shows: Bool {
         switch self {
-        case .open, .newTab: true
-        case .tab(_, let request): request.opensPage
+        case .show: true
+        case .tab(_, let request): request.shows
         default: false
         }
     }
+
     /// Load a page (http, https or about:blank) and wait for it to finish.
     case open(url: String, note: String?)
     /// A text snapshot of the page (or of `selector`'s element) with a ref for every element the
@@ -56,6 +58,9 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
     case back(note: String?)
     case forward(note: String?)
     case reload(note: String?)
+    /// Bring the thread's Browser into view: the side pane opens on its Browser tab, and the agent's
+    /// target tab (or the one named) becomes the tab on screen. The page is not touched.
+    case show
 
     /// Caps on what a request may carry.
     public static let maxTextLength = 20_000
@@ -72,7 +77,7 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
 
     /// The wire name of the action.
     public enum Action: String, Codable, CaseIterable, Sendable {
-        case open, read, click, type, press, scroll, wait, screenshot, console, eval, back, forward, reload
+        case open, read, click, type, press, scroll, wait, screenshot, console, eval, back, forward, reload, show
         case tabs, newTab, selectTab, closeTab, tab
     }
 
@@ -96,6 +101,7 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
         case .back: .back
         case .forward: .forward
         case .reload: .reload
+        case .show: .show
         }
     }
 
@@ -107,16 +113,16 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
             note
         case .newTab(_, let note): note
         case .tab(_, let request): request.note
-        case .read, .wait, .screenshot, .console, .tabs, .selectTab, .closeTab:
+        case .read, .wait, .screenshot, .console, .tabs, .selectTab, .closeTab, .show:
             nil
         }
     }
 
-    /// Reading, waiting, screenshots and the console still work after the user takes over; every
+    /// Reading, waiting, screenshots, the console and showing still work after the user takes over; every
     /// other action is refused (`taken_over`).
     public var isObservation: Bool {
         switch self {
-        case .read, .wait, .screenshot, .console, .tabs: true
+        case .read, .wait, .screenshot, .console, .tabs, .show: true
         case .tab(_, let request): request.isObservation
         case .open, .click, .type, .press, .scroll, .eval, .back, .forward, .reload, .newTab, .selectTab, .closeTab: false
         }
@@ -171,6 +177,8 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
             self = .forward(note: note)
         case .reload:
             self = .reload(note: note)
+        case .show:
+            self = .show
         }
     }
 
@@ -219,7 +227,7 @@ public indirect enum BrowserRequest: Codable, Hashable, Sendable {
             if clear { try c.encode(true, forKey: .clear) }
         case .eval(let expression, _):
             try c.encode(expression, forKey: .expression)
-        case .back, .forward, .reload:
+        case .back, .forward, .reload, .show:
             break
         }
     }
