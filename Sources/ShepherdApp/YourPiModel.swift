@@ -101,7 +101,7 @@ final class YourPiModel {
         onExtensionsChanged?()
     }
 
-    /// The row an add's problem shows on (Settings ▸ Models ▸ Extensions).
+    /// The row an add's problem shows on (Settings ▸ Tools ▸ Extensions).
     static let addExtensionRow = "extensions:add"
 
     /// Adds an extension from a file or folder on this Mac, or a Git repository URL, switched on.

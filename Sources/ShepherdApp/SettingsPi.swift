@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdUI
 import ShepherdSessions
 
-/// Settings ▸ Models: sign-in, the extensions that add providers, the model defaults, Shepherd's own pi, and a way into the pi in
+/// Settings ▸ Models: sign-in, the model defaults, Shepherd's own pi, and a way into the pi in
 /// your terminal. The bundled extensions are on Settings ▸ Tools, native subagents on Settings ▸ Agents.
 struct ModelsSettings: View {
     /// Shepherd's pi on this Mac: its version and home.
@@ -13,6 +13,8 @@ struct ModelsSettings: View {
     var settings: AppSettings? = nil
     /// Opens Settings ▸ Your pi.
     var openYourPi: () -> Void = {}
+    /// Opens Settings ▸ Tools' extensions (Sign-in's Add a provider).
+    var openExtensions: (() -> Void)? = nil
 
     private var yourPiHint: String {
         if yourPi.survey?.stateProblem != nil { return "Import history unavailable" }
@@ -22,8 +24,7 @@ struct ModelsSettings: View {
 
     var body: some View {
         SettingsPage(title: "Models") {
-            PiSignInSettings(yourPi: yourPi, auth: auth)
-            ExtensionsSettingsGroup(model: yourPi)
+            PiSignInSettings(yourPi: yourPi, auth: auth, openExtensions: openExtensions)
             AgentModelGroups(pi: pi, settings: settings)
             SettingsGroup(title: "Shepherd’s pi") {
                 PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",

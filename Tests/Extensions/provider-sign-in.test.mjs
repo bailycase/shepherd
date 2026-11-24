@@ -47,7 +47,7 @@ async function bridge(t, sdk, { source = provider(), disabled = false, auth = {}
   const home = path.join(dir, "home"), workspace = path.join(dir, "workspace");
   fs.mkdirSync(path.join(home, "extensions"), { recursive: true });
   fs.mkdirSync(path.join(workspace, ".pi", "extensions"), { recursive: true });
-  // `added`: where Settings ▸ Models ▸ Extensions puts an extension, loaded by its absolute path in settings.
+  // `added`: where Settings ▸ Tools ▸ Extensions puts an extension, loaded by its absolute path in settings.
   const addedPath = path.join(home, "your-extensions", "added", "fixture.ts");
   if (added) {
     fs.mkdirSync(path.dirname(addedPath), { recursive: true });

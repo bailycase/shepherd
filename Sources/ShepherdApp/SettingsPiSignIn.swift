@@ -8,6 +8,8 @@ import ShepherdSessions
 struct PiSignInSettings: View {
     let yourPi: YourPiModel
     let auth: PiAuthStore
+    /// Opens Settings ▸ Tools, where extensions that add providers are added. Nil hides the link.
+    var openExtensions: (() -> Void)? = nil
     @State private var renaming: Renaming?
     @State private var newName = ""
 
@@ -29,7 +31,9 @@ struct PiSignInSettings: View {
                                                    enabled: yourPi.survey?.folder != nil && !yourPi.busy.contains(YourPiModel.rowID(.logins)),
                                                    help: yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.") {
                                   Task { await yourPi.reimport(.logins) }
-                              }]) {
+                              }] + (openExtensions.map { open in
+                                  [SettingsLink("Add a provider", help: "Providers come from extensions, added in Settings ▸ Tools.", action: open)]
+                              } ?? [])) {
                     ForEach(page.subscriptions) { row in
                         providerRow(row).id(row.id)
                     }

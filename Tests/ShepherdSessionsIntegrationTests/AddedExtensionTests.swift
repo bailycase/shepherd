@@ -3,7 +3,7 @@ import Testing
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Extensions added in Shepherd (Settings ▸ Models ▸ Extensions), with no pi of the user's at all:
+/// Extensions added in Shepherd (Settings ▸ Tools ▸ Extensions), with no pi of the user's at all:
 /// a file, a folder or a Git repository is copied into the home, switched on (its path in
 /// settings.json `extensions`), and removed again without a trace.
 @Suite("Adding extensions in Shepherd", .integrationTimeLimit)

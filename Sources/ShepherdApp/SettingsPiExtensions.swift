@@ -3,9 +3,9 @@ import SwiftUI
 import ShepherdUI
 import ShepherdSessions
 
-/// Settings ▸ Models ▸ Extensions: the pi extensions Shepherd's pi loads, added here from a file,
+/// Settings ▸ Tools ▸ Extensions: the pi extensions Shepherd's pi loads, added here from a file,
 /// a folder or a Git repository, or copied from the user's own pi. Each has its switch; a provider
-/// one registers appears in Sign-in above. Every agent loads the ones that are on.
+/// one registers appears in Settings ▸ Models' Sign-in. Every agent loads the ones that are on.
 struct ExtensionsSettingsGroup: View {
     let model: YourPiModel
     @State private var addingGit = false
@@ -14,7 +14,7 @@ struct ExtensionsSettingsGroup: View {
     var body: some View {
         let extensions = model.survey?.extensions ?? []
         SettingsGroup(title: "Extensions",
-                      footnote: "Extensions run with your account’s access. Providers they add appear in Sign-in; agents load them when they start or on /reload.",
+                      footnote: "Extensions run with your account’s access. Providers they add appear in Models ▸ Sign-in; agents load them when they start or on /reload.",
                       links: [SettingsLink("Add…", menu: [
                           SettingsLink("File or folder…") { chooseFile() },
                           SettingsLink("From a Git repository…") { gitURL = ""; addingGit = true },

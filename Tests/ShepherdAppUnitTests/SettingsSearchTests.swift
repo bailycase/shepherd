@@ -100,8 +100,9 @@ struct SettingsSearchTests {
         ("re-import", .fromYourPi, ["Re-import all", "Logins", "Custom providers", "Default model", "Instructions",
                             "Skills", "Prompts", "Themes", "Extensions"]),
         ("CLAUDE.md", .fromYourPi, ["Instructions"]),
-        ("full access", .models, ["Extensions"]),
-        ("sign-in extension", .models, ["Extensions"]),
+        ("full access", .tools, ["Extensions"]),
+        ("sign-in extension", .models, ["Add a provider"]),
+        ("sign-in extension", .tools, ["Extensions"]),
         // Settings ▸ Slash commands.
         ("hide", .piSlashCommands, ["Off"]),
         ("registerCommand", .piSlashCommands, ["Extensions"]),

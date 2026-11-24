@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Extensions the person adds in Shepherd itself (Settings ▸ Models ▸ Extensions), from a file, a
+/// Extensions the person adds in Shepherd itself (Settings ▸ Tools ▸ Extensions), from a file, a
 /// folder or a Git repository, beside those copied from their own pi. Each is copied into
 /// `your-extensions/added/` and switched on, so it loads like any copied extension: by its absolute
 /// path in the home's settings.json `extensions`, synced across a fleet, and left out of launches

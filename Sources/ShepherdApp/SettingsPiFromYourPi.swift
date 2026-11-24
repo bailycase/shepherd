@@ -4,7 +4,7 @@ import ShepherdSessions
 import ShepherdRemote
 
 /// Settings ▸ Models ▸ Your pi (SettingsPiFromPi): a sub-page of Models. Where Shepherd’s copy came from, each item
-/// with how it stands and Re-import. The extensions it copies are switched in Settings ▸ Models ▸ Extensions.
+/// with how it stands and Re-import. The extensions it copies are switched in Settings ▸ Tools ▸ Extensions.
 struct FromYourPiSettings: View {
     let model: YourPiModel
     var openExtensions: () -> Void = {}
@@ -32,7 +32,7 @@ struct FromYourPiSettings: View {
                     reimportRow("Skills", hint: Self.countText(survey.copies(.skills).count, "skill"), item: .files(.skills))
                     reimportRow("Prompts", hint: Self.countText(survey.copies(.prompts).count, "template"), item: .files(.prompts))
                     reimportRow("Themes", hint: Self.countText(survey.copies(.themes).count, "theme"), item: .files(.themes))
-                    // Switched on and off with those added in Shepherd, in Settings ▸ Models ▸ Extensions.
+                    // Switched on and off with those added in Shepherd, in Settings ▸ Tools ▸ Extensions.
                     reimportRow("Extensions", hint: Self.countText(survey.copies(.extensions).filter { !YourPiImport.isAdded($0.destination) }.count, "extension"),
                                 item: .files(.extensions))
                 }
