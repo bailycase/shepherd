@@ -604,7 +604,7 @@ struct PaneLeafView: View, Equatable {
                 )
                 // Design references reach an ordinary thread only.
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
-                // Thread links in its prose and its @ picker (ThreadLinkA).
+                // Thread links in its prose and its # picker (ThreadLinkA).
                 .environment(\.shThreadLinks, vm.threadLinks)
                 .environment(\.threadLinkSelf, agentID.rawValue)
                 // Dispatches: what this thread sent, or where it came from (nil outside Fleet).

@@ -11,12 +11,14 @@ import ShepherdUI
 // into its own target too (its host threads' picker), so it stays free of AppKit and of anything
 // else in the Mac app.
 
-/// The @ mention being typed at the end of a draft: an "@" at the start or after whitespace, and
-/// what follows it on the same line.
+/// The mention being typed at the end of a draft: an "@" (a design) or a "#" (a thread to link) at
+/// the start or after whitespace, and what follows it on the same line.
 struct ComposerMention: Equatable {
-    /// What follows the "@". Declared first, so the synthesized == compares the typed word before
+    /// What follows the trigger. Declared first, so the synthesized == compares the typed word before
     /// the long prefix and stops there when they differ.
     var text: String
+    /// "@" picks a design piece, "#" links a thread.
+    var trigger: Character = "@"
     /// The draft before the "@", kept as a view of the draft so finding a mention costs the word
     /// being typed, not the draft.
     private let prefix: Substring
@@ -27,20 +29,20 @@ struct ComposerMention: Equatable {
     /// A mention runs at most this long; past it the draft is prose.
     static let maxLength = 160
 
-    /// The mention the draft ends in, or nil: an "@" that starts the draft or follows whitespace,
-    /// with no line break after it (an address like a@b.c is no mention). It walks back from the
-    /// end, no further than the longest mention reaches.
+    /// The mention the draft ends in, or nil: an "@" or "#" that starts the draft or follows
+    /// whitespace, with no line break after it (an address like a@b.c is no mention, nor is a
+    /// Markdown heading's "# "). It walks back from the end, no further than the longest mention reaches.
     static func token(in draft: String) -> ComposerMention? {
         var end = draft.endIndex
         var after = 0
         while end > draft.startIndex, after <= maxLength {
             let at = draft.index(before: end)
             let character = draft[at]
-            if character == "@" {
+            if character == "@" || character == "#" {
                 if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
                 let text = draft[end...]
                 guard text.first?.isWhitespace != true else { return nil }
-                return ComposerMention(text: String(text), prefix: draft[..<at])
+                return ComposerMention(text: String(text), trigger: character, prefix: draft[..<at])
             }
             if character.isNewline { return nil }
             end = at
@@ -50,7 +52,7 @@ struct ComposerMention: Equatable {
     }
 
     /// The draft with the mention written as `text` ("@Checkout funnel dashboard › ").
-    func draft(with text: String) -> String { String(prefix) + "@" + text }
+    func draft(with text: String) -> String { String(prefix) + String(trigger) + text }
 }
 
 /// Where the @ picker is: the designs, inside a design (its boards), or inside a board (its
@@ -128,8 +130,6 @@ struct MentionPickerContent: Equatable {
     var rows: [SHMentionRow] { sections.flatMap(\.rows) }
 
     static let searched = "Searches this Mac’s designs, pages, boards and elements."
-    /// What a search covered where only threads can be linked.
-    static let threadsSearched = "Searches the titles of your threads."
     static let thisMac = "this Mac"
 
     /// What a search covered: this Mac's designs, or a host's (a host thread's picker).
@@ -242,7 +242,7 @@ struct MentionPickerContent: Equatable {
                                 matched: words, state: link.state)
         }
         let typed = filter.trimmingCharacters(in: .whitespaces)
-        return (SHMentionSection(id: "threads", title: "Link a thread", trailing: typed.isEmpty ? nil : "@" + typed, rows: rows, caption: true),
+        return (SHMentionSection(id: "threads", title: "Link a thread", trailing: typed.isEmpty ? nil : "#" + typed, rows: rows, caption: true),
                 threads)
     }
 
@@ -345,9 +345,9 @@ struct MentionPickerState: Equatable {
     /// choose; the words typed meanwhile filter the rows once they arrive.
     /// `unavailable` is why no design can be attached where this picker is (a New thread project on
     /// another host): it opens on that note alone, reads nothing and lists nothing.
-    /// `threads` are the threads it may link ("Link a thread", first, at the top level only), less `excluding`, the composer's own
-    /// thread; `designs` is false where no design can be picked at all (the Design tool is off, or the host takes no references):
-    /// it lists threads alone.
+    /// A "#" mention lists `threads` instead ("Link a thread"), less `excluding`, the composer's own thread, and stays closed when
+    /// none match. `designs` is false where no design can be picked at all (the Design tool is off, or the host takes no
+    /// references): an "@" then opens nothing.
     mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading,
                          unavailable: String? = nil, now: Date = Date(), place: String = MentionPickerContent.thisMac,
                          threads: [SHThreadLink] = [], excluding: String? = nil, designs: Bool = true,
@@ -356,9 +356,28 @@ struct MentionPickerState: Equatable {
             close()
             return
         }
+        // "#" links a thread: it lists the threads that match, and stays closed when none do (an issue's "#123" opens nothing).
+        if mention.trigger == "#" {
+            guard let found = MentionPickerContent.threadSection(threads, filter: mention.text, excluding: excluding) else {
+                close()
+                return
+            }
+            if dismissed != nil { dismissed = nil }
+            scope = .designs
+            self.mention = mention
+            content = MentionPickerContent(sections: [found.section], threads: found.threads)
+            let ids = content.rows.map(\.id)
+            if highlighted.map({ !ids.contains($0) }) ?? true { highlighted = ids.first }
+            return
+        }
+        // "@" picks a design piece, only where one can be picked.
+        guard designs else {
+            close()
+            return
+        }
         if dismissed != nil { dismissed = nil }
         var filter = scope.filter(in: mention.text)
-        if designs, let catalog, filter == nil || scope == .designs || filter?.contains(MentionScope.separator) == true {
+        if let catalog, filter == nil || scope == .designs || filter?.contains(MentionScope.separator) == true {
             // The words may spell a design or a board (typed, pasted, a draft kept, or Back).
             let spelled = MentionScope.spelled(by: mention.text, in: catalog)
             if spelled != .designs || filter == nil {
@@ -371,9 +390,7 @@ struct MentionPickerState: Equatable {
             filter = mention.text
         }
         self.mention = mention
-        if !designs {
-            content = MentionPickerContent()
-        } else if let unavailable {
+        if let unavailable {
             content = MentionPickerContent()
             content.empty = .unavailable(unavailable)
         } else if let catalog {
@@ -381,14 +398,6 @@ struct MentionPickerState: Equatable {
         } else {
             content = MentionPickerContent()
             if case .failed(let reason) = stage { content.empty = .failed(reason: reason) } else { content.empty = .loading }
-        }
-        if scope == .designs, let found = MentionPickerContent.threadSection(threads, filter: filter ?? "", excluding: excluding) {
-            content.sections.insert(found.section, at: 0)
-            content.threads = found.threads
-            // A design search that found nothing yields to the threads it found.
-            if case .nothingMatches = content.empty { content.empty = nil }
-        } else if !designs {
-            content.empty = .nothingMatches(query: filter ?? "", searched: MentionPickerContent.threadsSearched)
         }
         let ids = content.rows.map(\.id)
         if highlighted.map({ !ids.contains($0) }) ?? true { highlighted = ids.first }

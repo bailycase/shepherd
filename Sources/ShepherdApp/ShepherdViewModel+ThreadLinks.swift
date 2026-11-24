@@ -24,7 +24,7 @@ extension ShepherdViewModel {
 }
 
 extension EnvironmentValues {
-    /// The agent whose thread this is: its composer's @ picker never offers to link it.
+    /// The agent whose thread this is: its composer's # picker never offers to link it.
     @Entry var threadLinkSelf: String? = nil
 }
 

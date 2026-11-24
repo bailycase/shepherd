@@ -7,7 +7,7 @@ import SwiftUI
 // a peek (`SHThreadPeek`) with Open thread and Copy link. A link that resolves to no known thread (stale, malformed, or half written
 // while a reply streams) is its plain words, never a link, and the scheme never reaches the system's opener (`SHProseLinkRouter`).
 
-/// One thread a link can name, as its chip, its peek and the composer's @ picker draw it.
+/// One thread a link can name, as its chip, its peek and the composer's # picker draw it.
 public struct SHThreadLink: Equatable, Sendable, Identifiable {
     /// The agent's id, as the link spells it.
     public var id: String
@@ -24,7 +24,7 @@ public struct SHThreadLink: Equatable, Sendable, Identifiable {
     public var progress: String?
     /// When it entered its status: a working or asking thread's elapsed time.
     public var since: Date?
-    /// When it was last active (ms since 1970): the @ picker lists the most recent first.
+    /// When it was last active (ms since 1970): the # picker lists the most recent first.
     public var activeAt: Double?
     /// The @ picker offers it (an ordinary thread, not a design's chat or a Project's coordinator).
     public var pickable: Bool
@@ -44,7 +44,7 @@ public struct SHThreadLink: Equatable, Sendable, Identifiable {
         self.pickable = pickable
     }
 
-    /// The link that names this thread, with its current title: what Copy link copies and the @ picker inserts.
+    /// The link that names this thread, with its current title: what Copy link copies and the # picker inserts.
     public var markdown: String { SHThreadLinks.markdown(title: title, id: id) }
 
     /// "orders-db · agent/pg17-orders".

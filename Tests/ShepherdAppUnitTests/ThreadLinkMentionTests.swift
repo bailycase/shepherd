@@ -5,7 +5,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The composer's @ picker linking a thread (ThreadLinkA): "Link a thread" lists the threads whose title holds what was typed, most
+/// The composer's # picker linking a thread (ThreadLinkA): "Link a thread" lists the threads whose title holds what was typed, most
 /// recently active first, the first one selected; choosing one puts its Markdown link in the message. And the table every chip and
 /// row is drawn from, as the hosts' agents give it.
 @Suite("Thread link mentions")
@@ -25,10 +25,10 @@ struct ThreadLinkMentionTests {
 
     @Test func typedWordsListTheMatchingThreadsMostRecentFirstWithTheFirstSelected() throws {
         var state = MentionPickerState()
-        state.update(draft: "Before you touch the orders tables, check @post", catalog: nil, threads: Self.threads, designs: false)
+        state.update(draft: "Before you touch the orders tables, check #post", catalog: nil, threads: Self.threads, designs: false)
         let section = try #require(state.content.sections.first)
         #expect(state.content.sections.count == 1)
-        #expect(section.title == "Link a thread" && section.caption && section.trailing == "@post")
+        #expect(section.title == "Link a thread" && section.caption && section.trailing == "#post")
         #expect(section.rows.map(\.title) == ["Migrate orders to Postgres 17", "Postgres pool sizing", "Upgrade PostCSS"],
                 "a design's chat is not offered, and the thread that doesn't match is left out")
         #expect(section.rows.map(\.subtitle) == ["orders-db", "payments-api", "web · mini"])
@@ -40,7 +40,7 @@ struct ThreadLinkMentionTests {
 
     @Test func choosingAThreadPutsItsLinkInTheMessage() throws {
         var state = MentionPickerState()
-        state.update(draft: "check @post", catalog: nil, threads: Self.threads, designs: false)
+        state.update(draft: "check #post", catalog: nil, threads: Self.threads, designs: false)
         let row = try #require(state.highlightedRow)
         #expect(state.choose(row) == .link(draft: "check [Migrate orders to Postgres 17](shepherd-thread://pg17) "))
         #expect(!state.isOpen, "the picker closes")
@@ -49,50 +49,40 @@ struct ThreadLinkMentionTests {
     /// The thread being written in never offers to link itself, whatever its id's case.
     @Test func theComposersOwnThreadIsLeftOut() {
         var state = MentionPickerState()
-        state.update(draft: "@post", catalog: nil, threads: Self.threads, excluding: "PG17", designs: false)
+        state.update(draft: "#post", catalog: nil, threads: Self.threads, excluding: "PG17", designs: false)
         #expect(state.content.rows.map(\.title) == ["Postgres pool sizing", "Upgrade PostCSS"])
         #expect(state.highlighted == MentionPickerContent.threadRowID("pool"), "the first row left is selected")
-        state.update(draft: "@", catalog: DesignReferenceThreadTests.catalog, stage: .rows, threads: [Self.pg], excluding: "pg17")
-        #expect(state.content.sections.map(\.title) == ["Designs"], "its own thread alone lists no section")
-        state.update(draft: "@migrate", catalog: nil, threads: [Self.pg], excluding: "pg17", designs: false)
-        #expect(state.content.rows.isEmpty && state.content.empty == .nothingMatches(query: "migrate", searched: MentionPickerContent.threadsSearched))
+        state.update(draft: "#migrate", catalog: nil, threads: [Self.pg], excluding: "pg17", designs: false)
+        #expect(!state.isOpen, "its own thread alone matches nothing")
     }
 
-    @Test func aBareAtListsTheMostRecentThreadsUpToTheLimit() {
+    @Test func aBareHashListsTheMostRecentThreadsUpToTheLimit() {
         var state = MentionPickerState()
         let many = (0..<10).map { SHThreadLink(id: "t\($0)", title: "Thread \($0)", state: .idle, location: "This Mac", activeAt: Double($0)) }
-        state.update(draft: "@", catalog: nil, threads: many, designs: false)
+        state.update(draft: "#", catalog: nil, threads: many, designs: false)
         #expect(state.content.rows.map(\.title) == ["Thread 9", "Thread 8", "Thread 7", "Thread 6", "Thread 5", "Thread 4"])
         #expect(state.content.sections.first?.trailing == nil, "nothing typed, nothing echoed")
     }
 
-    @Test func nothingMatchingSaysWhatItSearched() {
+    /// An issue number, a heading or a thread that isn't there opens nothing: "#" only opens on threads it can link.
+    @Test func aHashThatMatchesNoThreadStaysClosed() {
         var state = MentionPickerState()
-        state.update(draft: "@pricng", catalog: nil, threads: Self.threads, designs: false)
-        #expect(state.content.rows.isEmpty)
-        #expect(state.content.empty == .nothingMatches(query: "pricng", searched: MentionPickerContent.threadsSearched))
-        #expect(state.highlighted == nil)
+        for draft in ["see #123", "#pricng", "# Heading", "a#b"] {
+            state.update(draft: draft, catalog: nil, threads: Self.threads, designs: false)
+            #expect(!state.isOpen, "\(draft)")
+        }
     }
 
-    /// With designs too, the threads come first; a design search that found nothing gives way to the threads it found.
-    @Test func threadsLeadTheDesignsAndOutliveAnEmptyDesignSearch() {
+    /// "@" is the designs' and "#" the threads': neither lists the other.
+    @Test func atListsDesignsAndHashListsThreads() {
         var state = MentionPickerState()
         state.update(draft: "@", catalog: DesignReferenceThreadTests.catalog, stage: .rows, threads: [Self.pg])
-        #expect(state.content.sections.map(\.title) == ["Link a thread", "Designs"])
-        #expect(state.highlighted == MentionPickerContent.threadRowID("pg17"))
-        state.update(draft: "@migrate", catalog: DesignReferenceThreadTests.catalog, stage: .rows, threads: [Self.pg])
+        #expect(state.isOpen && !state.content.rows.contains { $0.kind == .thread })
+        state.update(draft: "#", catalog: DesignReferenceThreadTests.catalog, stage: .rows, threads: [Self.pg])
         #expect(state.content.sections.map(\.title) == ["Link a thread"])
-        #expect(state.content.empty == nil)
-    }
-
-    /// Inside a design the picker lists its boards alone.
-    @Test func noThreadsInsideADesign() throws {
-        var state = MentionPickerState()
-        state.update(draft: "@", catalog: DesignReferenceThreadTests.catalog, stage: .rows, threads: [Self.pg])
-        let design = try #require(state.content.rows.first { $0.kind == .design })
-        guard case .drill(let draft)? = state.choose(design) else { Issue.record("a design drills in"); return }
-        state.update(draft: draft, catalog: DesignReferenceThreadTests.catalog, stage: .rows, threads: [Self.pg])
-        #expect(!state.content.rows.contains { $0.kind == .thread })
+        #expect(state.content.rows.allSatisfy { $0.kind == .thread })
+        state.update(draft: "@", catalog: nil, threads: [Self.pg], designs: false)
+        #expect(!state.isOpen, "with no designs to pick, @ opens nothing")
     }
 
     /// The table: each agent's current title and status, where it runs, its project and branch, and the line the host keeps.

@@ -84,7 +84,7 @@ struct Composer: View, Equatable {
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
     @Environment(\.designReferences) private var references
-    /// The threads the @ picker can link (ThreadLinkA); nil where none resolve.
+    /// The threads the picker links on "#" (ThreadLinkA); nil where none resolve.
     @Environment(\.shThreadLinks) private var threadLinks
     /// This thread's own agent, left out of "Link a thread".
     @Environment(\.threadLinkSelf) private var threadLinkSelf
@@ -1176,7 +1176,8 @@ struct Composer: View, Equatable {
         updateMentions()
     }
 
-    /// Derives what the @ picker lists for the draft as it is; opening it reads this Mac's designs.
+    /// Derives what the picker lists for the draft as it is: "#" the threads to link, "@" the designs (opening it reads this
+    /// Mac's designs).
     private func updateMentions() {
         guard mentionsAvailable else { return }
         // A closed picker whose draft opens nothing would only close again: a prose key writes nothing.
@@ -1190,11 +1191,12 @@ struct Composer: View, Equatable {
         let wasOpen = mentions.isOpen, scope = mentions.scope
         // Opening reads the designs afresh: from this call the picker says it is loading, not what
         // the last opening ended with.
-        if mentions.opens(for: store.draft) { references.startCatalogRead() }
+        if mentions.opens(for: store.draft), ComposerMention.token(in: store.draft)?.trigger == "@" { references.startCatalogRead() }
         mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage, place: references.place,
                         threads: threads, excluding: threadLinkSelf) {
             references.rowPicture($0)
         }
+        guard mentions.mention?.trigger == "@" else { return }
         if mentions.isOpen, !wasOpen {
             referenceError = nil
             references.io.wantPictures(mentions.scope)

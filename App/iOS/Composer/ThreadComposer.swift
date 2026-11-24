@@ -34,7 +34,7 @@ struct ThreadComposer: View {
     @State private var focused = false
     /// The @ picker for the host's designs (`design.references.v1`), the Mac's picker rules.
     @State private var mentions = MentionPickerState()
-    /// The threads the @ picker can link (ThreadLinkA): the thread's own host's.
+    /// The threads the picker links on "#" (ThreadLinkA): the thread's own host's.
     @Environment(\.shThreadLinks) private var threadLinks
     /// Something is being dragged over the composer.
     @State private var dropTargeted = false
@@ -474,8 +474,8 @@ struct ThreadComposer: View {
                                appear: { id in if let item = mentions.content.items[id] { designs.wantMentionPicture(item, host: host) } })
     }
 
-    /// Follows the draft: open while it ends in an @ mention, on the host's threads to link and,
-    /// where the host takes references to its designs, its designs (never in a design's own chat).
+    /// Follows the draft: open while it ends in a "#" mention, on the host's threads to link, or an "@"
+    /// mention where the host takes references to its designs (never in a design's own chat).
     private func updateMentions(store: NativeThreadStore) {
         let designs = MobileDesigns.of(hosts)
         let threads = threadLinks.map { Array($0.links.values) } ?? []
@@ -488,7 +488,7 @@ struct ThreadComposer: View {
             return
         }
         let opening = mentions.opens(for: store.draft)
-        if opening, library.listing == nil { Task { await library.refresh() } }
+        if opening, library.listing == nil, ComposerMention.token(in: store.draft)?.trigger == "@" { Task { await library.refresh() } }
         let scope = mentions.scope
         let host = ref.host
         let version = designs.mentionPicturesVersion

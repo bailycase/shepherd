@@ -10,7 +10,7 @@ import Testing
 @testable import ShepherdApp
 
 /// Thread links (ThreadLinkA): the agent names other threads in its reply and each is a chip with its status and current title
-/// (and its Mac's tag when it runs on another); resting on one opens its peek; "@" in the composer offers "Link a thread". The
+/// (and its Mac's tag when it runs on another); resting on one opens its peek; "#" in the composer offers "Link a thread". The
 /// table is derived as the app derives it (`ThreadLinkTable`), from hosts' agents.
 extension ThreadPreviewTests {
     static let linkSize = CGSize(width: 1180, height: 760)
@@ -103,9 +103,9 @@ extension ThreadPreviewTests {
         try await renderLinks("thread-link-peek-asking", peek: Self.retentionThread)
     }
 
-    /// ThreadLinkA · mention: "@post" lists the threads it matches, the first selected.
+    /// ThreadLinkA · mention: "#post" lists the threads it matches, the first selected.
     @Test func threadLinkMention() async throws {
-        try await renderLinks("thread-link-mention", draft: "Before you touch the orders tables, check @post")
+        try await renderLinks("thread-link-mention", draft: "Before you touch the orders tables, check #post")
     }
 
     /// The message the @ picker wrote, sent: its thread links are chips (the gone one its words), the rest as typed, `**` included.

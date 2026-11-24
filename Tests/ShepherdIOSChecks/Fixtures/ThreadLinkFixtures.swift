@@ -6,7 +6,7 @@ import ShepherdUI
 
 extension FixtureCatalog {
     /// Thread links (ThreadLinkA) on the phone and iPad: the sent message links a thread, the reply names Studio's other threads as chips (a gone one is its words),
-    /// and "@" in the composer offers "Link a thread".
+    /// and "#" in the composer offers "Link a thread".
     static var threadLinks: [FixtureScreen] {
         let thread = FixtureData.ref(FixtureData.preview)
         return [
@@ -41,7 +41,7 @@ enum ThreadLinkFixture {
     @MainActor static func mention(_ app: MobileApp) async {
         let store = app.threads.store(for: F.ref(F.preview))
         await FixtureWindows.wait("the thread", seconds: 20) { !store.rows.isEmpty }
-        store.draft = "Before you touch the pane, check @re"
+        store.draft = "Before you touch the pane, check #re"
         try? await Task.sleep(for: .seconds(1))
     }
 }
