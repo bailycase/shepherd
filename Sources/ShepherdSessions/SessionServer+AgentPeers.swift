@@ -235,8 +235,15 @@ extension SessionServer {
         let shown = details ? Array(agents.prefix(detailedListMax)) : agents
         var directories: [String] = []
         let rows = shown.map { agent in
-            let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? ""
-            if details { directories.append(cwd) } // Use the raw cwd, not the clipped display label.
+            let layout = state.tabs.first { $0.id == agent.tabID }?.layout
+            let cwd: String
+            if details {
+                // A terminal may come first. An unresolved agent pane has no checkout to probe.
+                cwd = agent.paneID.flatMap { layout?.leaf(withID: $0)?.cwd } ?? ""
+                directories.append(cwd) // Use the raw cwd, not the clipped display label.
+            } else {
+                cwd = layout?.firstLeaf.cwd ?? ""
+            }
             let space = state.spaces.first { $0.id == agent.spaceID }?.name
             // A thread id decodes from any string; a detailed row prints one only if it is a UUID, else this placeholder.
             let wellFormed = UUID(uuidString: agent.id.rawValue) != nil

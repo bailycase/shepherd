@@ -276,6 +276,43 @@ struct ThreadHostingTests {
         #expect(h.server.state.agents.count == expected.count)
     }
 
+    @Test func detailedAgentListUsesTheAgentPaneNotTheFirstTerminal() async throws {
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let clean = try makeScratchRepo(), dirty = try makeScratchRepo()
+        try "pending work\n".write(to: dirty.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let space = Space(name: "acme-web", path: dirty.path)
+        try await h.server.addSpace(space)
+        let agentID = AgentID()
+        let terminal = LeafPane(cwd: clean.path)
+        let thread = LeafPane(cwd: dirty.path, agentID: agentID)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .split(
+            axis: .horizontal, ratio: 0.5, first: .leaf(terminal), second: .leaf(thread)))
+        var agent = Agent(id: agentID, name: "worker", spaceID: space.id, tabID: tab.id, paneID: thread.id, nameIsFinal: true)
+        try await h.server.addAgent(agent, withTab: tab)
+
+        func row(id: Int, details: Bool) async throws -> AgentPeerInfo {
+            let caller = try ExtensionClient(path: h.socketPath)
+            try caller.send(.listAgents(id: id, agentID: agentID, details: details))
+            let reply = try await caller.reply()
+            let rows: [AgentPeerInfo]
+            if case .agents(let replyID, let listed, _) = reply, replyID == id { rows = listed } else { rows = [] }
+            return try #require(rows.first { $0.id == agentID })
+        }
+
+        let plain = try await row(id: 1, details: false)
+        #expect(plain.cwd == clean.path && plain.checkoutStatus == nil)
+        let detailed = try await row(id: 2, details: true)
+        #expect(detailed.checkoutStatus == .dirty, "reported \(detailed.checkoutStatus?.rawValue ?? "none"); the first pane is a terminal in a different, clean checkout")
+        #expect(detailed.cwd == dirty.path)
+
+        agent.paneID = nil
+        try await h.server.updateAgent(agent)
+        let missing = try await row(id: 3, details: true)
+        #expect(missing.checkoutStatus == .unknown)
+        #expect(missing.cwd.isEmpty)
+    }
+
     /// agent_spawn with place worktree: a new branch from the starter's commit, in the same folder of the repository. A thread three deep
     /// starts none.
     @Test func aThreadStartsAnotherInANewWorktreeAndDepthStopsAChain() async throws {
