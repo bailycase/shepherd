@@ -86,6 +86,8 @@ extension AppLayout {
     /// The Changes tab's bar under the pane's tabs: scope and totals, Local | PR (Review board).
     static let changesBarHeight: CGFloat = 40
     static let changesBarLeadingPadding: CGFloat = 14
+    /// The Changes tab's file rows sit 12pt in from the pane's sides (the boards' `.pbody`).
+    static let changesFileRowsInset: CGFloat = SH.Space.l
     /// The thread keeps at least this beside a docked pane; narrower, the pane overlays it.
     static let threadMinWidth: CGFloat = 400
 

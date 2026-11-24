@@ -82,7 +82,7 @@ struct RootView: View {
                         leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                         showSidebar: docked ? nil : { vm.toggleSidebar() }
                     )
-                    .padding(.trailing, vm.sidePaneReserve)
+                    .modifier(PaneReserve(vm: vm))
                     // Over the workspace: the side-pane button's tip hangs below the toolbar.
                     .zIndex(1)
                 }
@@ -428,4 +428,12 @@ struct WorkspaceHeaderView: View {
                             restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()
     }
+}
+
+/// The toolbar ends where a thread's pane card begins. Its own modifier reads the card's width, so a drag of the card's handle
+/// reruns this and not the whole shell.
+private struct PaneReserve: ViewModifier {
+    var vm: ShepherdViewModel
+
+    func body(content: Content) -> some View { content.padding(.trailing, vm.sidePaneReserve) }
 }

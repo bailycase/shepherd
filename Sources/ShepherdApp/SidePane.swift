@@ -66,7 +66,7 @@ struct SidePaneView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
     }
 
     @ViewBuilder

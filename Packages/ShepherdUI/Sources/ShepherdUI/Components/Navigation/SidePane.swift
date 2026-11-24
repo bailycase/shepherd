@@ -30,6 +30,18 @@ public enum SHSidePaneMetrics {
     public static func showsLabels(width: CGFloat) -> Bool { width >= labelsMinWidth }
 }
 
+/// What the pane's content sits on: on the Mac the pane is a raised card, so its tabs paint `bgRaised`; elsewhere the review
+/// keeps the window's fill.
+public enum SHPaneSurface {
+    @MainActor public static var fill: Color {
+        #if os(macOS)
+        Color.sh.bgRaised
+        #else
+        Color.sh.bgWindow
+        #endif
+    }
+}
+
 // MARK: Branch chip
 
 /// The branch chip beside the thread's title (Main, QuestionAsk, TerminalSplit boards): where the
