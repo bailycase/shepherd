@@ -263,8 +263,10 @@ struct AgentLayoutView: View, Equatable {
         let sideTab = model.sideTab
         if let design = model.design, let thread, model.systemBuild {
             DesignSystemLayoutView(vm: vm, model: model, designID: design, thread: thread)
+                .underWorkspaceToolbar()
         } else if let design = model.design, let thread {
             DesignLayoutView(vm: vm, model: model, designID: design, thread: thread)
+                .underWorkspaceToolbar()
         } else {
             threadLayout(thread: thread, inspecting: inspecting, sideTab: sideTab)
         }
@@ -275,7 +277,7 @@ struct AgentLayoutView: View, Equatable {
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
         RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                       maximized: inspecting == nil && model.sideMaximized) {
+                       maximized: inspecting == nil && model.sideMaximized, card: true, publishesReserve: model.isVisible) {
             PaneTreeView(vm: vm, model: model)
         } pane: {
             if let thread {
@@ -946,9 +948,11 @@ struct RemoteAgentPaneContent: View, Equatable {
                 HostAwayBanner(name: host, lastSeen: lastSeen, thisMac: hostID == vm.remoteHosts.localHost?.id) {
                     vm.remoteHosts.reconnect(id: hostID)
                 }
+                .underWorkspaceToolbar()
                 .shTransition(.content)
             case .design(let design, let agent, let name, let threadPaneID):
                 RemoteDesignLayoutView(vm: vm, ref: design, agent: agent, agentName: name, threadPaneID: threadPaneID)
+                    .underWorkspaceToolbar()
                     .id(design.designID)
             case .layout(let model):
                 RemoteAgentLayoutView(vm: vm, model: model)
@@ -956,6 +960,7 @@ struct RemoteAgentPaneContent: View, Equatable {
                     .id(model.tab.id)
             case .placeholder(let text, let phase):
                 PanePlaceholder(text: text)
+                    .underWorkspaceToolbar()
                     .shTransition(.content)
                     .id(phase)
             }
@@ -982,12 +987,14 @@ private struct RemoteAgentLayoutView: View, Equatable {
         let inspecting = model.inspectingRunID
         let sideTab = model.sideTab
         VStack(spacing: 0) {
-            if let offline = model.offline {
-                FleetOfflineBannerView(banner: offline) { [vm, ref] in vm.remoteHosts.reconnect(id: ref.hostID) }
-            }
             RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                           maximized: inspecting == nil && model.sideMaximized) {
-                RemotePaneTreeView(vm: vm, model: model)
+                           maximized: inspecting == nil && model.sideMaximized, card: true, publishesReserve: model.isVisible) {
+                VStack(spacing: 0) {
+                    if let offline = model.offline {
+                        FleetOfflineBannerView(banner: offline) { [vm, ref] in vm.remoteHosts.reconnect(id: ref.hostID) }
+                    }
+                    RemotePaneTreeView(vm: vm, model: model)
+                }
             } pane: {
             if let thread = model.thread {
                 let store = vm.remoteThreadStores.store(for: ref)

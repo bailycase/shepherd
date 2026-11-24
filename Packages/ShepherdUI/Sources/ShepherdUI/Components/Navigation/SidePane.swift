@@ -19,6 +19,12 @@ public enum SHSidePaneMetrics {
     public static let tabGlyph: CGFloat = 14
     public static let tabPadding: CGFloat = 10
     public static let narrowTabPadding: CGFloat = 9
+    /// The thread's pane is a card (GXSidePane): this far from the thread before it, and from the window's top, bottom and trailing edges.
+    public static let cardGap: CGFloat = 8
+    public static let cardInset: CGFloat = 8
+    /// The strip's padding: 8pt before the first tab, 6pt after the buttons.
+    public static let stripLeading: CGFloat = 8
+    public static let stripTrailing: CGFloat = 6
 
     /// Whether a strip `width` wide shows its tabs' labels.
     public static func showsLabels(width: CGFloat) -> Bool { width >= labelsMinWidth }
@@ -225,7 +231,7 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
 
 /// The side pane's tab strip (`SidePaneTabs`, PaneStates, Review): 44pt so it lines up with the
 /// toolbar, tabs 2pt apart, then the pane's ⋯ menu and close. A tab is 28pt: its glyph, its
-/// label, and its count; the current one on `bgSelected`, semibold. A tab pi opened something
+/// label, and its count; the current one on `bgSelected`, medium. A tab pi opened something
 /// in carries a 6pt running dot. Under 480pt the labels drop; glyphs, counts and dots stay.
 public struct SHSidePaneTabs<Options: View>: View {
     let tabs: [SHSidePaneTab]
@@ -271,10 +277,11 @@ public struct SHSidePaneTabs<Options: View>: View {
                     .accessibilityLabel("Hide side pane")
             }
         }
-        .padding(.horizontal, SHSidePaneMetrics.tabPadding)
+        .padding(.leading, SHSidePaneMetrics.stripLeading)
+        .padding(.trailing, SHSidePaneMetrics.stripTrailing)
         .frame(height: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .overlay(alignment: .bottom) { SHHairline() }
         .onGeometryChange(for: Bool.self) { SHSidePaneMetrics.showsLabels(width: $0.size.width) } action: { showsLabels = $0 }
         .accessibilityElement(children: .contain)
@@ -296,18 +303,18 @@ public struct SHSidePaneTabs<Options: View>: View {
                         .font(.system(size: SHSidePaneMetrics.tabGlyph, weight: .medium))
                     if showsLabel {
                         Text(tab.title)
-                            .font(.sh(.ui, weight: isSelected ? .semibold : .medium))
+                            .font(.sh(.ui, weight: isSelected ? .medium : .regular))
                             .lineLimit(1)
                     }
                     if let count = tab.count {
                         Text("\(count)")
-                            .font(.sh(.micro, weight: .regular))
+                            .font(.sh(.caption))
                             .foregroundStyle(sh.textTertiary)
                             .shContentTransition(.numeric())
                     }
                     if let badge = tab.badge {
                         Text(badge)
-                            .font(.sh(.micro, weight: .regular))
+                            .font(.sh(.caption))
                             .foregroundStyle(sh.textTertiary)
                     }
                     if tab.news {

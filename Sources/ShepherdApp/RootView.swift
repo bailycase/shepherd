@@ -59,24 +59,33 @@ struct RootView: View {
                 .shTransition(.pane, edge: .leading)
             }
 
-            VStack(spacing: 0) {
+            // The toolbar rides over the column's top: a thread's pane card runs up beside it (GXSidePane), so the
+            // toolbar ends where the card begins and the workspace starts under it (`workspaceTopInset`).
+            let noticed = updater.nightlyMovedNoticePending
+            let toolbar = wide ? 0 : AppLayout.headerHeight
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    // Once, after an update moved this copy off the retired nightly channel. It
+                    // leaves at once: easing the column's height would relay out every mounted
+                    // layout on each frame.
+                    if noticed {
+                        Color.clear.frame(height: toolbar)
+                        NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
+                                           dismiss: { updater.dismissNightlyMovedNotice() })
+                    }
+                    WorkspaceView(vm: vm)
+                        .environment(\.workspaceTopInset, noticed ? 0 : toolbar)
+                }
                 if !wide {
                     WorkspaceHeaderView(
                         vm: vm,
                         leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                         showSidebar: docked ? nil : { vm.toggleSidebar() }
                     )
+                    .padding(.trailing, vm.sidePaneReserve)
                     // Over the workspace: the side-pane button's tip hangs below the toolbar.
                     .zIndex(1)
                 }
-                // Once, after an update moved this copy off the retired nightly channel. It
-                // leaves at once: easing the column's height would relay out every mounted
-                // layout on each frame.
-                if updater.nightlyMovedNoticePending {
-                    NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
-                                       dismiss: { updater.dismissNightlyMovedNotice() })
-                }
-                WorkspaceView(vm: vm)
             }
             // A page (New thread, Automations, Hosts) covers the whole column, toolbar included;
             // the layouts under it stay mounted and hidden, as when switching agents.
