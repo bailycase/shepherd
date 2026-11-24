@@ -222,7 +222,7 @@ struct SHProseListItemView<Code: SHProseCode>: View, Equatable {
                 SHProseFileLinks.prose(shown, root: fileRoot, actions: fileLinks).shText(.body, size: size).italic(voice == .quoted)
                     .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(shown, root: fileRoot, actions: fileLinks)))
             }
-        case .thinking: Text(text).font(SHThinking.font).italic().lineSpacing(SHThinking.lineSpacing)
+        case .thinking: Text(text).font(SHThinking.font).italic(SHThinking.italic).lineSpacing(SHThinking.lineSpacing)
         }
     }
 
@@ -232,7 +232,7 @@ struct SHProseListItemView<Code: SHProseCode>: View, Equatable {
             let text = Self.withoutThreadLinks(text)
             SHProseFileLinks.prose(text, root: fileRoot, actions: fileLinks).font(.sh(.headline, size: size)).lineSpacing(SHTextStyle.headline.lineSpacing(size))
                 .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
-        case .thinking: Text(text).font(SHThinking.headingFont).italic().lineSpacing(SHThinking.lineSpacing)
+        case .thinking: Text(text).font(SHThinking.headingFont).italic(SHThinking.italic).lineSpacing(SHThinking.lineSpacing)
         }
     }
 

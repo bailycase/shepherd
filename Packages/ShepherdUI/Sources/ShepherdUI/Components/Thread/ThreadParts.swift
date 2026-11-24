@@ -16,7 +16,16 @@ public enum SHThreadMetrics {
     /// nothing on it takes a tap.
     public static let liveHeight: CGFloat = 26
     /// A call row in an expanded line.
+    #if os(macOS)
+    /// The Mac's call rows are the board's 20pt lines 3pt apart, pressed over 24pt (the 2pt either side is taken back).
+    public static let callRowHeight: CGFloat = 20
+    static let callRowGap: CGFloat = 3
+    static let callRowPress: CGFloat = SH.Space.xxs
+    #else
     public static let callRowHeight: CGFloat = touchable(24)
+    static let callRowGap: CGFloat = 0
+    static let callRowPress: CGFloat = 0
+    #endif
     /// The calls list's kind column ("edit", "bash"), before it widens for longer names.
     public static let callLabelWidth: CGFloat = 32
     /// The most characters the kind column widens for ("shepherd_child_message"); a longer name
@@ -25,8 +34,13 @@ public enum SHThreadMetrics {
     /// The least room an activity line's meta gets (four mono 11 characters); with less it is not drawn.
     public static let activityMetaMinimum: CGFloat = 26
     /// The hairline rail sits under the line's icon; its rows start 16pt right of it.
+    #if os(macOS)
+    public static let railInset: CGFloat = stepsInset
+    public static let railPadding: CGFloat = stepsPadding
+    #else
     public static let railInset: CGFloat = 9
     public static let railPadding: CGFloat = 16
+    #endif
     /// A running call's output lines start under its label.
     public static let liveTailIndent: CGFloat = 21
     /// Mono 11 at the board's 1.6 line height.
@@ -47,6 +61,8 @@ public enum SHThreadMetrics {
     public static let changesRadius: CGFloat = 10
     #endif
     public static let changesInset: CGFloat = 14
+    /// The Mac's undone card: 12pt above, 14 below its one line.
+    static let undoneBottom: CGFloat = 14
     public static let changesColumnGap: CGFloat = 14
     public static let changesBarWidth: CGFloat = 56
     public static let changesBarHeight: CGFloat = 4
@@ -73,6 +89,20 @@ public enum SHThreadMetrics {
     public static let listIndent: CGFloat = 20
     /// The rule quotes, expanded thinking, and notes sit on.
     public static let ruleWidth: CGFloat = 2
+    /// What a disclosure opens (expanded thinking, a line's calls) sits on a rule: the Mac's board (GXExpanded) draws it 1pt in
+    /// `lineSubtle`, 5pt in from the line's edge with the words 14pt past it; elsewhere 2pt `lineStrong` and 12pt (thinking)
+    /// or the call rail's own inset.
+    #if os(macOS)
+    public static let stepsRuleWidth: CGFloat = 1
+    public static let stepsInset: CGFloat = 5
+    public static let stepsPadding: CGFloat = 14
+    @MainActor static func stepsRule(_ sh: SHPalette) -> Color { sh.lineSubtle }
+    #else
+    public static let stepsRuleWidth: CGFloat = ruleWidth
+    public static let stepsInset: CGFloat = 0
+    public static let stepsPadding: CGFloat = SH.Space.l
+    @MainActor static func stepsRule(_ sh: SHPalette) -> Color { sh.lineStrong }
+    #endif
     public static let attachmentHeight: CGFloat = 26
     public static let attachmentThumbnail: CGFloat = 20
     /// "From the queue"'s glyph.
