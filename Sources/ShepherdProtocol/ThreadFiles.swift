@@ -210,6 +210,12 @@ public enum ThreadFileSystem {
                 return .failed(errno == EEXIST ? "A file with that name already exists." : String(cString: strerror(errno)))
             }
             defer { close(fd) }
+            // The folder could have moved out of the root after its check: the new file is checked again, and taken back.
+            var filePath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+            guard fcntl(fd, F_GETPATH, &filePath) == 0, isContained(String(cString: filePath), in: realRoot) else {
+                unlinkat(dirFd, name, 0)
+                return .failed(ThreadFileError.outsideRoot.localizedDescription)
+            }
             let bytes = Array(text.utf8)
             var written = 0
             while written < bytes.count {

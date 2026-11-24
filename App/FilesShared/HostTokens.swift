@@ -18,7 +18,8 @@ struct HostTokens {
         save: { try HostKeychain.save($0, account: HostKeychain.account($1)) },
         remove: { try HostKeychain.remove(account: HostKeychain.account($0)) },
         readDevice: { try HostKeychain.read(account: HostKeychain.deviceAccount) },
-        saveDevice: { try HostKeychain.save($0, account: HostKeychain.deviceAccount) }
+        // The device's identity stays the app's own: the Files extension needs only each Mac's token.
+        saveDevice: { try HostKeychain.save($0, account: HostKeychain.deviceAccount, shared: false) }
     )
 
     /// Tokens held in memory for this process only.
@@ -69,14 +70,14 @@ enum HostKeychain {
         return token
     }
 
-    static func save(_ token: String, account: String) throws {
+    static func save(_ token: String, account: String, shared: Bool = true) throws {
         var attributes: [String: Any] = [
             kSecValueData as String: Data(token.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecAttrAccessGroup as String: accessGroup,
         ]
+        if shared { attributes[kSecAttrAccessGroup as String] = accessGroup }
         var status = upsert(account, attributes)
-        if status == errSecMissingEntitlement {
+        if status == errSecMissingEntitlement, shared {
             // A build signed without the app group (an unsigned simulator run) keeps the token to itself.
             attributes[kSecAttrAccessGroup as String] = nil
             status = upsert(account, attributes)

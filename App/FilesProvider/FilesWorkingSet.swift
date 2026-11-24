@@ -5,25 +5,31 @@ import ShepherdRemote
 /// How Files learns that something changed on a Mac. A replicated location hears of changes only through its working set,
 /// and a Mac sends no feed of them, so the extension keeps what it last told Files of each folder (child identifier →
 /// version) and lists again the folders someone is looking at: one Files shows, or one holding a document an app has
-/// open. The difference is the change. Looking at a folder asks for that pass (`presented`); so does the app coming to
-/// the front (`FilesLocationBridge`).
+/// open (the system keeps an enumerator open on each). The difference is the change. A pass runs when one opens, every
+/// `pollInterval` while any stays open, and when the app comes to the front (`FilesLocationBridge`).
 actor FilesWorkingSet {
     static let shared = FilesWorkingSet()
 
-    /// How long a folder someone looked at is still listed again on each pass.
+    /// How long a folder is still listed again after its last enumerator closed.
     static let watched: TimeInterval = 15 * 60
-    /// The least time between two passes a look asks for.
+    /// The least time between two passes an opened enumerator asks for.
     static let signalSpacing: TimeInterval = 2
+    /// How often a pass runs while Files or an app has something of the location open.
+    static let pollInterval: Duration = .seconds(30)
 
     private struct Saved: Codable {
         var anchor = 0
-        /// Folder identifier → its children's identifiers → their content versions.
+        /// Folder identifier → its children's identifiers → their versions.
         var folders: [String: [String: Data]] = [:]
     }
 
     private var saved: Saved
-    private var presented: [FilesLocation: Date] = [:]
+    /// Folders with an open enumerator, and how many.
+    private var open: [FilesLocation: Int] = [:]
+    /// Folders whose last enumerator closed, and when.
+    private var closed: [FilesLocation: Date] = [:]
     private var lastSignal = Date.distantPast
+    private var poll: Task<Void, Never>?
     private let url: URL?
 
     init() {
@@ -33,22 +39,55 @@ actor FilesWorkingSet {
         saved = url.flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode(Saved.self, from: $0) } ?? Saved()
     }
 
-    var anchor: NSFileProviderSyncAnchor { NSFileProviderSyncAnchor(Data(String(saved.anchor).utf8)) }
+    var anchor: NSFileProviderSyncAnchor { Self.anchor(saved.anchor) }
+
+    private static func anchor(_ value: Int) -> NSFileProviderSyncAnchor { NSFileProviderSyncAnchor(Data(String(value).utf8)) }
 
     /// Files was just given `items` as the children of `folder`.
-    func told(_ folder: FilesLocation, _ items: [FilesItem]) {
-        saved.folders[folder.identifier] = Self.versions(items)
+    func told(_ folder: FilesLocation, _ children: FilesChildren) {
+        saved.folders[folder.identifier] = Self.versions(children.items)
         save()
     }
 
-    /// Someone looks at `location` (a folder on screen, or a document an app holds open, which is watched through its
-    /// folder): it is listed again on the next passes, and a pass is asked for.
-    func presented(_ location: FilesLocation, domain: NSFileProviderDomain) {
+    /// An enumerator opened on `location` (a folder on screen, or a document an app holds open, which is watched through
+    /// its folder): it is listed again on each pass until a while after it closes.
+    func opened(_ location: FilesLocation, domain: NSFileProviderDomain) {
+        for folder in Set([location, location.parent]) {
+            open[folder, default: 0] += 1
+            closed[folder] = nil
+        }
         let now = Date()
-        presented[location] = now
-        presented[location.parent] = now
-        guard now.timeIntervalSince(lastSignal) > Self.signalSpacing else { return }
-        lastSignal = now
+        if now.timeIntervalSince(lastSignal) > Self.signalSpacing {
+            lastSignal = now
+            Self.signal(domain)
+        }
+        guard poll == nil else { return }
+        poll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.pollInterval)
+                guard let self, await self.watching else { break }
+                Self.signal(domain)
+            }
+            await self?.pollEnded()
+        }
+    }
+
+    func closedEnumerator(_ location: FilesLocation) {
+        for folder in Set([location, location.parent]) {
+            guard let count = open[folder] else { continue }
+            if count > 1 {
+                open[folder] = count - 1
+            } else {
+                open[folder] = nil
+                closed[folder] = Date()
+            }
+        }
+    }
+
+    private var watching: Bool { !open.isEmpty }
+    private func pollEnded() { poll = nil }
+
+    private static func signal(_ domain: NSFileProviderDomain) {
         NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { _ in }
     }
 
@@ -58,36 +97,43 @@ actor FilesWorkingSet {
         for identifier in saved.folders.keys {
             guard let folder = FilesLocation(identifier: identifier),
                   let children = try? await FilesCatalog.children(of: folder) else { continue }
-            saved.folders[identifier] = Self.versions(children)
-            items += children
+            saved.folders[identifier] = Self.versions(children.items)
+            items += children.items
         }
         save()
         return items
     }
 
-    /// What changed in the folders someone looked at lately since Files was last told of them.
-    func changes() async -> (updated: [FilesItem], deleted: [NSFileProviderItemIdentifier]) {
+    /// What changed in the folders someone looks at since `from`, Files' last anchor. Files asks from the anchor it last
+    /// took in: an older one means a delivery was lost, so it is told to start over (`all`) rather than miss a change.
+    func changes(from: NSFileProviderSyncAnchor) async throws -> (updated: [FilesItem], deleted: [NSFileProviderItemIdentifier]) {
+        guard from.rawValue == anchor.rawValue else { throw NSFileProviderError(.syncAnchorExpired) }
         let since = Date().addingTimeInterval(-Self.watched)
-        presented = presented.filter { $0.value > since }
+        closed = closed.filter { $0.value > since }
         var updated: [FilesItem] = []
         var deleted: [NSFileProviderItemIdentifier] = []
         var unreachable = Set<UUID>()
-        for folder in presented.keys {
+        for folder in Set(open.keys).union(closed.keys) {
             if let host = folder.hostID, unreachable.contains(host) { continue }
             let before = saved.folders[folder.identifier] ?? [:]
             do {
                 let children = try await FilesCatalog.children(of: folder)
-                let after = Self.versions(children)
-                updated += children.filter { before[$0.location.identifier] != after[$0.location.identifier] }
-                deleted += before.keys.filter { after[$0] == nil }.compactMap { FilesLocation(identifier: $0)?.itemIdentifier }
+                var after = Self.versions(children.items)
+                updated += children.items.filter { before[$0.location.identifier] != after[$0.location.identifier] }
+                if children.complete {
+                    deleted += before.keys.filter { after[$0] == nil }.compactMap { FilesLocation(identifier: $0)?.itemIdentifier }
+                } else {
+                    // Past the Mac's listing limit: what it left out is not known to be gone.
+                    after.merge(before) { listed, _ in listed }
+                }
                 saved.folders[folder.identifier] = after
             } catch let error as NSFileProviderError where error.code == .noSuchItem {
                 // The folder is gone from the Mac, and everything Files had in it.
                 deleted += before.keys.compactMap { FilesLocation(identifier: $0)?.itemIdentifier } + [folder.itemIdentifier]
                 saved.folders[folder.identifier] = nil
-                presented[folder] = nil
+                closed[folder] = nil
             } catch is FilesSource.NotFolder {
-                presented[folder] = nil
+                closed[folder] = nil
             } catch {
                 if let host = folder.hostID { unreachable.insert(host) }
             }
@@ -112,11 +158,15 @@ final class FilesEnumerator: NSObject, NSFileProviderEnumerator {
     /// nil: the working set.
     private let folder: FilesLocation?
 
-    init(_ folder: FilesLocation?) {
+    init(_ folder: FilesLocation?, domain: NSFileProviderDomain) {
         self.folder = folder
+        super.init()
+        if let folder { Task { await FilesWorkingSet.shared.opened(folder, domain: domain) } }
     }
 
-    func invalidate() {}
+    func invalidate() {
+        if let folder { Task { await FilesWorkingSet.shared.closedEnumerator(folder) } }
+    }
 
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
         let folder = folder
@@ -125,8 +175,9 @@ final class FilesEnumerator: NSObject, NSFileProviderEnumerator {
                 let items: [FilesItem]
                 if let folder {
                     do {
-                        items = try await FilesCatalog.children(of: folder)
-                        await FilesWorkingSet.shared.told(folder, items)
+                        let children = try await FilesCatalog.children(of: folder)
+                        await FilesWorkingSet.shared.told(folder, children)
+                        items = children.items
                     } catch is FilesSource.NotFolder {
                         // A document's own enumerator: it holds the document.
                         items = [try await FilesCatalog.item(folder)]
@@ -151,10 +202,14 @@ final class FilesEnumerator: NSObject, NSFileProviderEnumerator {
             return
         }
         Task {
-            let (updated, deleted) = await FilesWorkingSet.shared.changes()
-            if !updated.isEmpty { observer.didUpdate(updated) }
-            if !deleted.isEmpty { observer.didDeleteItems(withIdentifiers: deleted) }
-            observer.finishEnumeratingChanges(upTo: await FilesWorkingSet.shared.anchor, moreComing: false)
+            do {
+                let (updated, deleted) = try await FilesWorkingSet.shared.changes(from: anchor)
+                if !updated.isEmpty { observer.didUpdate(updated) }
+                if !deleted.isEmpty { observer.didDeleteItems(withIdentifiers: deleted) }
+                observer.finishEnumeratingChanges(upTo: await FilesWorkingSet.shared.anchor, moreComing: false)
+            } catch {
+                observer.finishEnumeratingWithError(error)
+            }
         }
     }
 

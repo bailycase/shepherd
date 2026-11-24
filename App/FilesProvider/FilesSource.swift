@@ -13,14 +13,23 @@ actor FilesSource {
     /// One live connection and the Mac's threads as it last said.
     final class Link: @unchecked Sendable {
         let client: RemoteHostClient
+        /// The pairing and token it was opened with: one the app changed or forgot is not used again.
+        let pairing: FilesSharedHost
+        let token: String
         private let lock = NSLock()
         private var latest: ShepherdState
         private var dropped = false
 
-        init(client: RemoteHostClient, state: ShepherdState) {
+        init(client: RemoteHostClient, pairing: FilesSharedHost, token: String, state: ShepherdState) {
             self.client = client
+            self.pairing = pairing
+            self.token = token
             latest = state
         }
+
+        /// The Mac takes saves and new files, and lists modification times (`files.create.v1`): without them, Files
+        /// can neither see every change nor keep a conflicting save, so its files are read only.
+        var writable: Bool { client.supports(.filesCreate) }
 
         var state: ShepherdState {
             get { lock.withLock { latest } }
@@ -39,9 +48,17 @@ actor FilesSource {
     func hosts() -> [FilesSharedHost] { FilesShared.read() }
 
     func link(_ host: UUID) async throws -> Link {
-        if let link = links[host], !link.isDropped { return link }
+        let pairing = FilesShared.read().first { $0.record.id == host }
+        let token = try? HostKeychain.read(account: HostKeychain.account(host))
+        if let link = links[host] {
+            if !link.isDropped, link.pairing == pairing, link.token == token { return link }
+            link.client.disconnect()
+            links[host] = nil
+        }
+        guard let pairing else { throw NSFileProviderError(.noSuchItem) }
+        guard let token, !token.isEmpty else { throw NSFileProviderError(.notAuthenticated) }
         if let pending = opening[host] { return try await pending.value }
-        let task = Task { try await Self.open(host) }
+        let task = Task { try await Self.open(pairing, token: token) }
         opening[host] = task
         defer { opening[host] = nil }
         let link = try await task.value
@@ -55,18 +72,14 @@ actor FilesSource {
     }
 
     /// The first of the Mac's routes that answers, as the app tries them (`MobileHosts.connect`).
-    private static func open(_ id: UUID) async throws -> Link {
-        guard let host = FilesShared.read().first(where: { $0.record.id == id }) else { throw NSFileProviderError(.noSuchItem) }
-        guard let token = try? HostKeychain.read(account: HostKeychain.account(id)), !token.isEmpty else {
-            throw NSFileProviderError(.notAuthenticated)
-        }
+    private static func open(_ host: FilesSharedHost, token: String) async throws -> Link {
         var failure = RemoteHostFailure(kind: .unreachable, detail: "no route")
         for route in host.record.routes {
             let client = RemoteHostClient()
             do {
                 let state = try await client.connect(host: route.host, port: route.port, token: token, clientName: "Shepherd Files",
                                                      capabilities: [RemoteProtocol.filesCapability], expectingHostID: host.expecting)
-                let link = Link(client: client, state: state)
+                let link = Link(client: client, pairing: host, token: token, state: state)
                 client.onStateChanged = { [weak link] in link?.state = $0 }
                 client.onDisconnected = { [weak link] _ in link?.isDropped = true }
                 return link
@@ -88,6 +101,8 @@ actor FilesSource {
     func threads(_ host: UUID) async throws -> [(agent: AgentID, name: String)] {
         FilesNames.threads(try await link(host).state.agents)
     }
+
+    func writable(_ host: UUID) async throws -> Bool { try await link(host).writable }
 
     func list(_ host: UUID, _ agent: AgentID, _ path: String) async throws -> ThreadFileListing {
         try await run(host) { try await $0.listFiles(agentID: agent, path: path, showHidden: false) }
