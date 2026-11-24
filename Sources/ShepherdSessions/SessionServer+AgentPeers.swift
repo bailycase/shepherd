@@ -66,10 +66,14 @@ extension SessionServer {
             }
             readingPeerCheckouts = true
             Task { @MainActor in
-                let statuses = await Task.detached(priority: .utility) { PeerCheckouts.read(list.directories) }.value
+                let observations = await Task.detached(priority: .utility) { PeerCheckouts.read(list.directories) }.value
                 readingPeerCheckouts = false
                 var rows = list.rows
-                for i in rows.indices { rows[i].checkoutStatus = statuses[list.directories[i]] ?? .unknown }
+                for i in rows.indices {
+                    let observation = observations[list.directories[i]] ?? .unknown
+                    rows[i].checkoutStatus = observation.status
+                    rows[i].commitsAheadOfLocalUpstream = observation.commitsAheadOfLocalUpstream
+                }
                 respond(.agents(rows, omitted: list.omitted))
             }
 

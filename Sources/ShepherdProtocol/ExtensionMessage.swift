@@ -1395,10 +1395,12 @@ public struct AgentPeerInfo: Codable, Hashable, Sendable {
     public var asking: Bool?
     /// A point-in-time checkout observation. Only the detailed list supplies it; older hosts omit it.
     public var checkoutStatus: PeerCheckoutStatus?
+    /// Detailed list only. Nil when unknown. The local upstream ref may be stale; this says nothing about publication.
+    public var commitsAheadOfLocalUpstream: Int?
 
     public init(id: AgentID, name: String, status: String, cwd: String, isSelf: Bool,
                 space: String? = nil, lastActiveAt: Double? = nil, asking: Bool? = nil,
-                checkoutStatus: PeerCheckoutStatus? = nil) {
+                checkoutStatus: PeerCheckoutStatus? = nil, commitsAheadOfLocalUpstream: Int? = nil) {
         self.id = id
         self.name = name
         self.status = status
@@ -1408,6 +1410,7 @@ public struct AgentPeerInfo: Codable, Hashable, Sendable {
         self.lastActiveAt = lastActiveAt
         self.asking = asking
         self.checkoutStatus = checkoutStatus
+        self.commitsAheadOfLocalUpstream = commitsAheadOfLocalUpstream
     }
 }
 

@@ -236,6 +236,9 @@ struct ThreadHostingTests {
         let (h, _, _) = try host()
         defer { h.stop() }
         let dirty = try makeScratchRepo(files: ["sub/tracked.txt": "base\n"])
+        try git(["branch", "base"], in: dirty)
+        try git(["branch", "--set-upstream-to=base"], in: dirty)
+        try git(["commit", "--allow-empty", "-qm", "one ahead"], in: dirty)
         let clean = h.dir.appendingPathComponent("linked-checkout")
         try git(["worktree", "add", "-q", "--detach", clean.path], in: dirty)
         let nonGit = try makeScratchDirectory("not-git")
@@ -259,12 +262,16 @@ struct ThreadHostingTests {
         let agentID = expected[0].0
         try caller.send(.listAgents(id: 1, agentID: agentID))
         guard case .agents(1, let plain, _) = try await caller.reply() else { Issue.record("plain list not served"); return }
-        #expect(plain.count == expected.count && plain.allSatisfy { $0.checkoutStatus == nil })
+        #expect(plain.count == expected.count && plain.allSatisfy { $0.checkoutStatus == nil && $0.commitsAheadOfLocalUpstream == nil })
         try caller.send(.listAgents(id: 2, agentID: agentID, details: true))
         let reply = try await caller.reply()
         guard case .agents(2, let detailed, _) = reply else { Issue.record("detailed list not served"); return }
         #expect(detailed.count == expected.count)
-        for (id, checkout) in expected { #expect(detailed.first { $0.id == id }?.checkoutStatus == checkout) }
+        for (id, checkout) in expected {
+            let row = try #require(detailed.first { $0.id == id })
+            #expect(row.checkoutStatus == checkout)
+            #expect(row.commitsAheadOfLocalUpstream == (checkout == .dirty ? 1 : nil))
+        }
         #expect(!String(decoding: try NDJSON.encode(reply), as: UTF8.self).contains(unexpected))
         #expect(h.server.state.agents.count == expected.count)
     }
