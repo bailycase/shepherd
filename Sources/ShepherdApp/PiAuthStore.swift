@@ -24,8 +24,14 @@ final class PiAuthStore {
     private(set) var signingOut: Set<String> = []
     /// Saved accounts by provider (`PiAccounts`): only providers with any.
     private(set) var accounts: [String: PiAccountList] = [:]
-    /// Subscription usage by provider (`PiUsage`), read when Sign-in opens.
-    private(set) var usage: [String: [PiUsageWindow]] = [:]
+    /// Usage by provider, read when Sign-in opens: subscriptions' own (`PiUsage`), and what provider
+    /// extensions report (theirs wins: the person installed it for that).
+    internal(set) var usage: [String: [PiUsageWindow]] = [:]
+    /// Prepaid balances provider extensions report, by provider.
+    internal(set) var balances: [String: PiBalance] = [:]
+    /// When usage was last read: a remote client's list reads it again once it is older than `usageMaxAge`.
+    @ObservationIgnored private(set) var usageReadAt: Date?
+    static let usageMaxAge: TimeInterval = 300
     /// Effective interactive methods from Pi, including enabled provider extensions. Set by
     /// `refreshProviders`; previews seed it.
     internal(set) var providers: [PiSignInProvider]?
@@ -57,7 +63,7 @@ final class PiAuthStore {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    /// A fixed provider list (previews) is never listed again, as `YourPiModel`'s fixed survey isn't read again.
+    /// A fixed provider list (previews) is never listed again, nor its usage read, as `YourPiModel`'s fixed survey isn't read again.
     @ObservationIgnored private let fixedProviders: Bool
 
     init(pi: PiSetup, bridge: (@MainActor () throws -> PiSignInBridge)? = nil, providers: [PiSignInProvider]? = nil) {
@@ -274,8 +280,35 @@ final class PiAuthStore {
     /// Asks each signed-in subscription that reports usage how much is used.
     /// Each saved account's usage is saved with it, so the account list reads again after.
     func refreshUsage() async {
-        usage = await readUsage(pi.files)
+        guard !fixedProviders else { return }
+        async let fromExtensions = extensionUsage()
+        var next = await readUsage(pi.files)
+        var balances: [String: PiBalance] = [:]
+        for report in await fromExtensions {
+            if !report.windows.isEmpty { next[report.provider] = report.windows }
+            if let balance = report.balance { balances[report.provider] = balance }
+        }
+        if usage != next { usage = next }
+        if self.balances != balances { self.balances = balances }
+        usageReadAt = Date()
         await refreshAccounts()
+    }
+
+    /// What provider extensions report, through the bridge (`PiSignInCommand.usage`); none in previews.
+    private func extensionUsage() async -> [PiProviderUsage] {
+        guard await readyHome() == nil, let bridge = try? bridge() else { return [] }
+        defer { bridge.close() }
+        // Each hook has 10 s in the bridge; loading the extensions comes first.
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(30))
+            if !Task.isCancelled { bridge.close() }
+        }
+        defer { watchdog.cancel() }
+        bridge.send(.usage)
+        for await reply in bridge.replies {
+            if case .usage(let reports) = reply { return reports }
+        }
+        return []
     }
 
     @ObservationIgnored var readUsage: (PiHome) async -> [String: [PiUsageWindow]] = { home in
@@ -521,7 +554,7 @@ final class PiSignInSession: Identifiable {
 
     func handle(_ reply: PiSignInReply) {
         switch reply {
-        case .ready, .providers, .extensionFailed, .extensions, .info, .progress:
+        case .ready, .providers, .extensionFailed, .extensions, .usage, .info, .progress:
             break
         case .authURL(let url, _):
             authURL = url

@@ -56,11 +56,19 @@ struct ExtensionSignInEngineTests {
           async refresh(credential) { return credential; },
           async toAuth(credential) { return { apiKey: credential.access }; },
         } },
+        async usage(auth) {
+          if (auth.apiKey !== "acme-access-not-a-secret") throw new Error("wrong token");
+          return { windows: [{ name: "Month", usedPercent: 42 }], balance: { amount: 18.4, currency: "USD", label: "Credit" } };
+        },
         getModels() { return []; },
         stream() { throw new Error("Sign-in must not request a completion"); },
         streamSimple() { throw new Error("Sign-in must not request a completion"); },
       });
       pi.registerCommand("acme-usage", { description: "Acme usage", handler() {} });
+      // A balance for a built-in provider this extension doesn't own (as a DeepSeek balance extension would).
+      pi.events.emit("shepherd:usage", { provider: "deepseek", async usage(auth) {
+        return auth.apiKey === "sk-fixture-deepseek" ? { balance: { amount: 110, currency: "CNY" } } : undefined;
+      } });
     };
     """#
 
@@ -121,6 +129,16 @@ struct ExtensionSignInEngineTests {
         let credential = try #require(stored?["acme"] as? [String: Any])
         #expect(credential["type"] as? String == "oauth" && credential["access"] as? String == "acme-access-not-a-secret")
         auth.closeSheet()
+
+        // Usage and balance from the extension's hooks: its own provider's, and DeepSeek's by its key.
+        var stored2 = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: pi.home.appendingPathComponent("auth.json"))) as? [String: Any])
+        stored2["deepseek"] = ["type": "api_key", "key": "sk-fixture-deepseek"]
+        try JSONSerialization.data(withJSONObject: stored2).write(to: pi.home.appendingPathComponent("auth.json"))
+        await auth.refreshUsage()
+        #expect(auth.usage["acme"] == [PiUsageWindow(name: "Month", usedPercent: 42, resetsAt: nil)])
+        #expect(auth.balances["acme"] == PiBalance(amount: 18.4, currency: "USD", label: "Credit"))
+        #expect(auth.balances["deepseek"] == PiBalance(amount: 110, currency: "CNY"))
+        #expect(PiSignInWords.balance(try #require(auth.balances["acme"]), locale: Locale(identifier: "en_US")) == "Credit $18.40")
 
         // Signed out of Shepherd's pi again.
         await auth.signOut("acme")

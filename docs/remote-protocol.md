@@ -353,7 +353,9 @@
     with the provider first; `$NAME` names a login-shell variable), sign out, an account sign-in,
     and the saved accounts (`providerAccount`: use, rename, remove, rotate, add another account, or `addKey` another
     key beside the saved one, as the host's own Add account does; their
-    ids are opaque and `HostProviderStatus.accountList` lists them once there are two). A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
+    ids are opaque and `HostProviderStatus.accountList` lists them once there are two).
+    `HostProviderStatus.usage` and `.balance` carry the host's last usage reading (limit windows, and a
+    balance a provider extension reports); older hosts send neither, and older clients ignore them. A sign-in (`mcpSignIn`, `providerSignIn`) runs on the host and answers
     `HostSignInProgress`: the page to open on the client, a device code, or that the host waits
     for `signIn(.complete)` with the code the page shows (a provider's pasted-code flow; nothing
     opens on the host) or, for an MCP server, the loopback address the browser ended on, which the

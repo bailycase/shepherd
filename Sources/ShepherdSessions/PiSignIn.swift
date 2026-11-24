@@ -53,12 +53,15 @@ public enum PiSignInCommand: Equatable, Sendable {
     /// Whether a key works, with the smallest request pi can make; with no `key`, whether the
     /// provider's stored login does (a stale OAuth token is refreshed on the way).
     case check(id: String, provider: String, key: PiKeyInput?)
+    /// Each provider extension's usage and balance (`usage(auth)` or the "shepherd:usage" event).
+    case usage
 
     /// One JSON line, newline included.
     public var line: Data {
         var object: [String: String]
         switch self {
         case .providers: object = ["type": "providers"]
+        case .usage: object = ["type": "usage"]
         case .login(let provider, let method, let flow):
             object = ["type": "login", "provider": provider, "method": method.rawValue, "flow": flow.rawValue]
         case .answer(let id, let value): object = ["type": "answer", "id": id, "value": value]
@@ -159,6 +162,46 @@ public struct PiExtensionInventory: Codable, Equatable, Sendable {
     }
 }
 
+/// A provider's prepaid balance as its extension reports it ("Credit", 18.40, "USD").
+public struct PiBalance: Codable, Equatable, Sendable {
+    public var amount: Double
+    /// An ISO 4217 code ("USD", "CNY") or the provider's own unit ("credits").
+    public var currency: String
+    public var label: String?
+
+    public init(amount: Double, currency: String, label: String? = nil) {
+        self.amount = amount
+        self.currency = currency
+        self.label = label
+    }
+}
+
+/// One provider's usage from its extension: limit windows (as `PiUsage` reads Anthropic's) and a balance.
+public struct PiProviderUsage: Decodable, Equatable, Sendable {
+    public var provider: String
+    public var windows: [PiUsageWindow]
+    public var balance: PiBalance?
+
+    public init(provider: String, windows: [PiUsageWindow] = [], balance: PiBalance? = nil) {
+        self.provider = provider
+        self.windows = windows
+        self.balance = balance
+    }
+
+    private struct Window: Decodable { var name: String; var usedPercent: Double; var resetsAt: Double? }
+    private enum CodingKeys: String, CodingKey { case provider, windows, balance }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decode(String.self, forKey: .provider)
+        windows = (try c.decodeIfPresent([Window].self, forKey: .windows) ?? []).map {
+            PiUsageWindow(name: $0.name, usedPercent: min(100, max(0, $0.usedPercent)),
+                          resetsAt: $0.resetsAt.map { Date(timeIntervalSince1970: $0 / 1000) })
+        }
+        balance = try? c.decodeIfPresent(PiBalance.self, forKey: .balance)
+    }
+}
+
 /// What the bridge says.
 public enum PiSignInReply: Equatable, Sendable {
     case ready
@@ -167,6 +210,8 @@ public enum PiSignInReply: Equatable, Sendable {
     case extensionFailed(path: String)
     /// What each loaded extension registered, just before `providers`.
     case extensions([PiExtensionInventory])
+    /// Usage and balance from the providers' extensions that report them.
+    case usage([PiProviderUsage])
     /// The browser sign-in's page: open it.
     case authURL(URL, instructions: String?)
     /// A device-code sign-in's code and where to enter it.
@@ -211,6 +256,7 @@ public enum PiSignInReply: Equatable, Sendable {
         var providers: [PiSignInProvider]?
         var path: String?
         var extensions: [PiExtensionInventory]?
+        var usage: [PiProviderUsage]?
     }
 
     /// One line of the bridge's stdout; nil for anything it doesn't say.
@@ -227,6 +273,8 @@ public enum PiSignInReply: Equatable, Sendable {
             return wire.path.flatMap { $0.isEmpty ? nil : .extensionFailed(path: $0) }
         case "extensions":
             return wire.extensions.map { .extensions($0) }
+        case "usage":
+            return .usage(wire.usage ?? [])
         case "event":
             guard let event = wire.event else { return nil }
             switch event.type {

@@ -1,6 +1,8 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdSessions
+import ShepherdRemote
+import ShepherdProtocol
 
 /// Settings ▸ Models ▸ Accounts (SettingsPiSignIn, SettingsPiSignInKeys):
 /// Subscriptions, API keys and Custom providers, each provider with its state and what to do
@@ -138,8 +140,9 @@ struct PiSignInSettings: View {
         parts += status.parts.map(\.text)
         if let list { parts.append("\(list.accounts.count) accounts") }
         else if row.auth.isSignedIn, let window = (auth.usage[row.id] ?? []).max(by: { $0.usedPercent < $1.usedPercent }) {
-            parts.append("\(Int(window.usedPercent.rounded()))% of the \(window.name.lowercased()) used")
+            parts.append(HostInventoryPresentation.usageWords(HostUsageWindow(name: window.name, usedPercent: window.usedPercent)))
         }
+        if row.auth.isSignedIn, let balance = auth.balances[row.id] { parts.append(PiSignInWords.balance(balance)) }
         if let source = row.source { parts.append("from \(source)") }
         return parts.joined(separator: " · ")
     }
@@ -267,6 +270,11 @@ private struct AddKeyRow: View {
 
 /// How a provider's sign-in reads: its dot, word and details.
 enum PiSignInWords {
+    /// "Credit $18.40": the remote client's words, so both read the same.
+    static func balance(_ balance: PiBalance, locale: Locale = .current) -> String {
+        HostInventoryPresentation.balanceWords(HostBalance(amount: balance.amount, currency: balance.currency, label: balance.label), locale: locale)
+    }
+
     /// "resets 3:40 PM" today, "resets Thu 3:40 PM" later. A window whose reset has passed (an
     /// old reading) is back to 0%.
     static func usage(_ windows: [PiUsageWindow], now: Date = Date()) -> [SHUsageWindow] {

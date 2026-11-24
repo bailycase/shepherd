@@ -15,6 +15,7 @@ struct PiSignInProtocolTests {
 
     static let commands: [Command] = [
         Command(command: .providers, json: #"{"type":"providers"}"#),
+        Command(command: .usage, json: #"{"type":"usage"}"#),
         Command(command: .login(provider: "anthropic", method: .oauth, flow: .browser),
                 json: #"{"flow":"browser","method":"oauth","provider":"anthropic","type":"login"}"#),
         Command(command: .login(provider: "deepseek", method: .apiKey, flow: .device),
@@ -52,6 +53,10 @@ struct PiSignInProtocolTests {
         Reply(json: #"{"type":"extensionFailed"}"#, reply: nil),
         Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts","providers":["acme"],"tools":[],"commands":["acme-usage"],"events":[],"shortcuts":["ctrl+x"],"flags":[],"renderers":1}]}"#,
               reply: .extensions([PiExtensionInventory(path: "/h/x.ts", providers: ["acme"], commands: ["acme-usage"], shortcuts: ["ctrl+x"], renderers: 1)])),
+        Reply(json: #"{"type":"usage","usage":[{"provider":"deepseek","windows":[{"name":"Month","usedPercent":120,"resetsAt":1800000000000}],"balance":{"amount":110,"currency":"CNY"}},{"provider":"acme","windows":[]}]}"#,
+              reply: .usage([PiProviderUsage(provider: "deepseek", windows: [PiUsageWindow(name: "Month", usedPercent: 100, resetsAt: Date(timeIntervalSince1970: 1_800_000_000))],
+                                             balance: PiBalance(amount: 110, currency: "CNY")),
+                             PiProviderUsage(provider: "acme")])),
         // An older bridge's inventory without some lists reads them as empty.
         Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts"}]}"#, reply: .extensions([PiExtensionInventory(path: "/h/x.ts")])),
         Reply(json: #"{"type":"event","event":{"type":"auth_url","url":"https://claude.ai/oauth/authorize?x=1","instructions":"Complete login"}}"#,

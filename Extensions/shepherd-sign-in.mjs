@@ -11,6 +11,7 @@
 //   {"type":"answer","id":"p1","value":"…"}      a prompt's answer (a key, a pasted code)
 //   {"type":"cancel"}                            ends the login under way
 //   {"type":"providers"}                         lists interactive provider auth methods
+//   {"type":"usage"}                             asks each provider extension that reports usage (see below)
 //   {"type":"logout","provider":"anthropic"}     removes Shepherd's credential for it
 //   {"type":"check","id":"c1","provider":"deepseek","key":"…"} or {…,"variable":"DEEPSEEK_API_KEY"}
 //   ({"type":"check","id":"c2","provider":"anthropic"} alone checks the home's stored login for it)
@@ -27,6 +28,15 @@
 //   {"type":"failed","code":"cancelled"|"portBusy"|"unknownProvider"|"other","reason":…,"port"?}
 //   {"type":"checked","id":…,"result":"works"|"rejected"|"unreachable"|"unset","reason"?,"models"?}
 //   {"type":"loggedOut","provider":…}
+//   {"type":"usage","usage":[{"provider":…, "windows":[{"name":…,"usedPercent":0–100,"resetsAt"?:ms}], "balance"?:{"amount":n,"currency":…,"label"?:…}}]}
+//
+// Usage, a Shepherd convention pi itself doesn't read: a provider an extension registers may have
+// `usage(auth)`, or an extension may report for a provider it doesn't own (a built-in's key) with
+// `pi.events.emit("shepherd:usage", { provider: "deepseek", usage(auth) {…} })`. `auth` is pi's
+// resolved request auth for the provider ({ apiKey, headers }, refreshed as a request would be). It
+// returns { windows?: [{ name, usedPercent, resetsAt? }], balance?: { amount, currency, label? } }.
+// Only those numbers and short words leave this process; a hook that throws or takes over
+// USAGE_TIMEOUT_MS reports nothing.
 //
 // It exits when stdin closes, and never throws: every failure is a line.
 import * as net from "node:net";
@@ -76,6 +86,9 @@ async function storedRuntime() {
 let runtime;
 /** What each installed extension registered (`extensions` reply): sent with every provider list. */
 let inventory = [];
+/** Usage hooks by provider id: a provider's own `usage`, or one reported on the "shepherd:usage" event. */
+const usageHooks = new Map();
+const USAGE_TIMEOUT_MS = 10000;
 async function modelRuntime() {
   return runtime ??= (async () => {
     const sdk = await import(pathToFileURL(sdkPath).href);
@@ -87,8 +100,13 @@ async function modelRuntime() {
     // runs session handlers, or loads a workspace's code into the global credential store. Pi's
     // own loader, registered here as `createAgentSessionServices` does, so each provider keeps
     // the extension that registered it (pi clears that record once it has registered them).
+    const eventBus = sdk.createEventBus?.();
+    // Before loading, so a hook reported while an extension loads is heard.
+    eventBus?.on("shepherd:usage", data => {
+      if (data && typeof data.provider === "string" && typeof data.usage === "function") usageHooks.set(data.provider, data.usage);
+    });
     const loader = new sdk.DefaultResourceLoader({
-      cwd: home, agentDir: home, settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }),
+      cwd: home, agentDir: home, settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }), eventBus,
       noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
     });
     await loader.reload();
@@ -105,8 +123,10 @@ async function modelRuntime() {
     };
     for (const { name, config, extensionPath } of loaded.runtime.pendingProviderRegistrations)
       register(extensionPath, name, () => models.registerProvider(name, config));
-    for (const { provider, extensionPath } of loaded.runtime.pendingNativeProviderRegistrations)
+    for (const { provider, extensionPath } of loaded.runtime.pendingNativeProviderRegistrations) {
       register(extensionPath, provider.id, () => models.registerNativeProvider(provider));
+      if (typeof provider.usage === "function") usageHooks.set(provider.id, provider.usage.bind(provider));
+    }
     loaded.runtime.pendingProviderRegistrations = [];
     loaded.runtime.pendingNativeProviderRegistrations = [];
     await models.refresh({ allowNetwork: false });
@@ -127,6 +147,57 @@ async function modelRuntime() {
     }));
     return models;
   })();
+}
+
+/** One hook's answer, reduced to numbers and short words; undefined when it gave nothing usable. */
+export function usageReport(provider, answer, secrets = []) {
+  if (!answer || typeof answer !== "object") return undefined;
+  const word = (value, max) => clean(String(value ?? ""), secrets).slice(0, max);
+  const windows = (Array.isArray(answer.windows) ? answer.windows : []).slice(0, 4).flatMap(window => {
+    const used = Number(window?.usedPercent);
+    const name = word(window?.name, 40);
+    if (!name || !Number.isFinite(used)) return [];
+    const resets = typeof window.resetsAt === "string" ? Date.parse(window.resetsAt) : Number(window?.resetsAt);
+    return [{ name, usedPercent: Math.min(100, Math.max(0, used)), ...(Number.isFinite(resets) && resets > 0 ? { resetsAt: resets } : {}) }];
+  });
+  let balance;
+  const amount = Number(answer.balance?.amount);
+  const currency = word(answer.balance?.currency, 12);
+  if (Number.isFinite(amount) && currency) {
+    const label = word(answer.balance.label, 40);
+    balance = { amount, currency, ...(label ? { label } : {}) };
+  }
+  if (!windows.length && !balance) return undefined;
+  return { provider, windows, ...(balance ? { balance } : {}) };
+}
+
+async function reportUsage() {
+  let models;
+  try {
+    models = await modelRuntime();
+  } catch {
+    send({ type: "usage", usage: [] });
+    return;
+  }
+  const reports = await Promise.all([...usageHooks].map(async ([provider, hook]) => {
+    try {
+      const resolved = await models.getAuth(provider);
+      if (!resolved?.auth) return undefined;
+      let timer;
+      const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("timed out")), USAGE_TIMEOUT_MS); });
+      try {
+        const secrets = [resolved.auth.apiKey, ...Object.values(resolved.auth.headers ?? {})].filter(value => typeof value === "string" && value.length >= 4);
+        return usageReport(provider, await Promise.race([hook({ ...resolved.auth }), timeout]), secrets);
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return undefined;
+    }
+  }));
+  // A refreshed sign-in is saved before the answer, so it is never lost when the bridge exits.
+  await Promise.resolve(models.settleCredentialWrites?.()).catch(() => {});
+  send({ type: "usage", usage: reports.filter(Boolean) });
 }
 
 function portFree(port) {
@@ -332,6 +403,9 @@ function handle(line) {
     }
     case "providers":
       void listProviders();
+      break;
+    case "usage":
+      void reportUsage();
       break;
     case "cancel":
       login?.abort();

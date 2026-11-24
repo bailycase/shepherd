@@ -260,10 +260,16 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
     public var rotate: Bool?
     /// Effective provider methods, absent from older hosts. Neither a credential nor an endpoint.
     public var signIn: HostProviderSignIn?
+    /// Its limit windows as the host last read them (a subscription's own, or its extension's); nil from an older host.
+    public var usage: [HostUsageWindow]?
+    /// A prepaid balance its extension reports.
+    public var balance: HostBalance?
 
     public init(id: String, name: String, badge: String, auth: Auth, detail: String? = nil, problem: String? = nil,
                 accounts: Int = 0, activeAccount: String? = nil, accountList: [HostProviderAccount]? = nil, rotate: Bool? = nil,
-                signIn: HostProviderSignIn? = nil) {
+                signIn: HostProviderSignIn? = nil, usage: [HostUsageWindow]? = nil, balance: HostBalance? = nil) {
+        self.usage = usage
+        self.balance = balance
         self.accountList = accountList
         self.rotate = rotate
         self.signIn = signIn
@@ -282,6 +288,33 @@ public struct HostProviderStatus: Codable, Hashable, Sendable, Identifiable {
         case .signedIn, .apiKey, .environment, .noKey: true
         case .expired, .notSignedIn, .signingIn: false
         }
+    }
+}
+
+/// One limit window of a provider's usage: "Week", 84% used, resetting then (seconds since 1970).
+public struct HostUsageWindow: Codable, Hashable, Sendable {
+    public var name: String
+    /// 0–100.
+    public var usedPercent: Double
+    public var resetsAt: Double?
+
+    public init(name: String, usedPercent: Double, resetsAt: Double? = nil) {
+        self.name = name
+        self.usedPercent = usedPercent
+        self.resetsAt = resetsAt
+    }
+}
+
+/// A prepaid balance: an amount in an ISO 4217 currency or the provider's own unit, with its word ("Credit").
+public struct HostBalance: Codable, Hashable, Sendable {
+    public var amount: Double
+    public var currency: String
+    public var label: String?
+
+    public init(amount: Double, currency: String, label: String? = nil) {
+        self.amount = amount
+        self.currency = currency
+        self.label = label
     }
 }
 

@@ -88,7 +88,11 @@ extension FixtureData {
                                                  HostProviderAccount(id: "a2", name: "personal", active: false)],
                                    rotate: true),
                 HostProviderStatus(id: "openai-codex", name: "OpenAI Codex", badge: "Subscription", auth: .notSignedIn, detail: "ChatGPT Plus or Pro"),
-                HostProviderStatus(id: "deepseek", name: "DeepSeek", badge: "API key", auth: .apiKey, detail: "$DEEPSEEK_API_KEY"),
+                HostProviderStatus(id: "deepseek", name: "DeepSeek", badge: "API key", auth: .apiKey, detail: "$DEEPSEEK_API_KEY",
+                                   balance: HostBalance(amount: 110, currency: "CNY")),
+                HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .signedIn, detail: "Acme account · from acme-login",
+                                   usage: [HostUsageWindow(name: "Month", usedPercent: 42)],
+                                   balance: HostBalance(amount: 18.4, currency: "USD", label: "Credit")),
             ])
         case .extensions:
             return .extensions([

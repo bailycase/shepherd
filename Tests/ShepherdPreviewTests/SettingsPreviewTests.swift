@@ -50,9 +50,12 @@ struct SettingsPreviewTests {
             copies[10].destination: [PiExtensionInventory(path: at(10), events: ["tool_call"], shortcuts: ["ctrl+shift+g"])],
         ]
         auth.providerOwners = ["acme": copies[11]]
+        // Usage and balances as provider extensions report them (and Anthropic's own).
+        auth.usage = ["anthropic": [PiUsageWindow(name: "Week", usedPercent: 41, resetsAt: nil)]]
+        auth.balances = ["deepseek": PiBalance(amount: 110, currency: "CNY"), "openai": PiBalance(amount: 18.4, currency: "USD", label: "Credit")]
         for section in [SettingsSection.tools, .models] {
             workspace.vm.settingsSection = section
-            try await Preview.render("settings-\(section.rawValue)-extension-support", size: CGSize(width: 1280, height: section == .tools ? 1400 : 1000)) {
+            try await Preview.render("settings-\(section.rawValue)-extension-support", size: CGSize(width: 1280, height: section == .tools ? 1400 : 1500)) {
                 SettingsView(vm: workspace.vm)
             }
         }

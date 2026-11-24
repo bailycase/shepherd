@@ -99,6 +99,9 @@ struct HostStores {
         await yourPi.refresh()
         await piAuth.refreshAccounts()
         await piAuth.refreshProviders()
+        // Usage asks the providers over the network: once per few minutes, however often a client lists.
+        if piAuth.usageReadAt.map({ Date().timeIntervalSince($0) > PiAuthStore.usageMaxAge }) ?? true { await piAuth.refreshUsage() }
+        let usage = piAuth.usage, balances = piAuth.balances
         let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
                                      needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts, providers: piAuth.providers,
@@ -106,7 +109,11 @@ struct HostStores {
         let rows = (page.subscriptions + page.apiKeys + page.customProviders).map { row in
             let methods = piAuth.providers?.first { $0.id == row.id }
                 ?? (piAuth.providers == nil ? nil : HostProviderSignIn(id: row.id, name: row.name))
-            return HostInventoryMapping.provider(row, signIn: methods)
+            var status = HostInventoryMapping.provider(row, signIn: methods)
+            status.usage = usage[row.id].map { $0.map { HostUsageWindow(name: $0.name, usedPercent: $0.usedPercent,
+                                                                       resetsAt: $0.resetsAt?.timeIntervalSince1970) } }
+            status.balance = balances[row.id].map { HostBalance(amount: $0.amount, currency: $0.currency, label: $0.label) }
+            return status
         }
         return rows + page.addable.map { id in
             HostProviderStatus(id: id, name: page.providerNames[id] ?? PiSignInCatalog.name(id), badge: "API key", auth: .notSignedIn,

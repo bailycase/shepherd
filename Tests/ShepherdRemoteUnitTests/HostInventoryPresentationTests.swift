@@ -54,10 +54,29 @@ struct HostInventoryPresentationTests {
         #expect(P.providerLine(expired) == "Expired · sign in again · Claude Pro or Max · 2 accounts · work")
         #expect(P.providerLine(key) == "API key · $OPENAI_API_KEY")
         #expect(P.providerLine(none) == "Not signed in")
+        var metered = key
+        metered.usage = [HostUsageWindow(name: "5-hour", usedPercent: 23), HostUsageWindow(name: "Week", usedPercent: 84.4)]
+        metered.balance = HostBalance(amount: 18.4, currency: "USD", label: "Credit")
+        let line = P.providerLine(metered)
+        #expect(line.hasPrefix("API key · 84% of the week used · Credit ") && line.hasSuffix(" · $OPENAI_API_KEY"))
+        var subscription = metered
+        subscription.auth = .signedIn
+        subscription.detail = "Acme account"
+        #expect(P.providerLine(subscription).hasPrefix("84% of the week used · Credit "), "the dot says signed in")
+        var signedOut = metered
+        signedOut.auth = .notSignedIn
+        #expect(P.providerLine(signedOut) == "Not signed in · $OPENAI_API_KEY", "an old reading isn’t shown once signed out")
         #expect(P.tone(.expired) == .attention && P.tone(.apiKey) == .done && P.tone(.notSignedIn) == .idle)
         #expect(P.providersValue([expired, key, none]) == "1 expired")
         #expect(P.providersValue([key, none]) == "1" && P.providersValue([none]) == "None")
         #expect(P.providersGuidance(host: "studio").contains("Settings ▸ Sign-in on studio"))
+    }
+
+    @Test func aBalanceIsMoneyInItsCurrencyOrAnAmountInTheProvidersUnit() {
+        let us = Locale(identifier: "en_US")
+        #expect(P.balanceWords(HostBalance(amount: 18.4, currency: "USD", label: "Credit"), locale: us) == "Credit $18.40")
+        #expect(P.balanceWords(HostBalance(amount: 110, currency: "cny"), locale: us) == "Balance CN¥110.00")
+        #expect(P.balanceWords(HostBalance(amount: 1200, currency: "credits"), locale: us) == "Balance 1,200 credits")
     }
 
     @Test func spaceRowsAndTrust() {

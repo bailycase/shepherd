@@ -73,7 +73,8 @@ async function bridge(t, sdk, { source = provider(), disabled = false, auth = {}
   });
   child.stderr.setEncoding("utf8").on("data", chunk => { stderr += chunk; });
   const send = message => child.stdin.write(JSON.stringify(message) + "\n");
-  const reply = (type, matches = () => true) => until(`bridge ${type}: ${stderr}`, () => replies.find(message => message.type === type && matches(message)), 15000);
+  const reply = (type, matches = () => true, timeout = 15000) =>
+    until(`bridge ${type}: ${stderr}`, () => replies.find(message => message.type === type && matches(message)), timeout);
   await reply("ready");
   return {
     home, send, reply,
@@ -204,6 +205,44 @@ pi.registerProvider("fixture-gateway", { baseUrl: "http://127.0.0.1:9/v1", api: 
     assert.deepEqual(fixture.flags, ["fixture-flag"]);
     assert.equal(fixture.renderers, 1);
     assert.deepEqual(fixture.events, ["session_start"]);
+    await b.close();
+  });
+
+  test(`${sdk}: providers report usage and balance through their own hook or the shepherd:usage event`, { timeout: 30000 }, async t => {
+    const hooks = `
+  fixture.usage = async auth => ({
+    windows: [{ name: "Month", usedPercent: 142, resetsAt: "2026-12-01T00:00:00Z" }, { name: "", usedPercent: 3 }, { name: "Day", usedPercent: "x" }],
+    balance: { amount: 18.4, currency: "USD", label: "Credit " + auth.apiKey },
+  });
+  pi.events.emit("shepherd:usage", { provider: "deepseek", async usage(auth) {
+    if (auth.apiKey !== "sk-fixture-deepseek") throw Error("wrong key " + auth.apiKey);
+    return { balance: { amount: "110.00", currency: "CNY" } };
+  } });
+  pi.events.emit("shepherd:usage", { provider: "groq", usage() { throw Error("fixture-groq-private-detail"); } });
+  pi.events.emit("shepherd:usage", { provider: "openai", usage() { return new Promise(() => {}); } });
+`;
+    const b = await bridge(t, sdk, {
+      source: provider().replace("  pi.registerProvider(fixture);", hooks + "  pi.registerProvider(fixture);"),
+      auth: {
+        "fixture-login": { type: "oauth", access: "fixture-access-not-a-secret", refresh: "r", expires: Date.now() + 3600000 },
+        deepseek: { type: "api_key", key: "sk-fixture-deepseek" },
+        groq: { type: "api_key", key: "sk-fixture-groq" },
+        openai: { type: "api_key", key: "sk-fixture-openai" },
+      },
+    });
+    const started = Date.now();
+    b.send({ type: "usage" });
+    const { usage } = await b.reply("usage", () => true, 20000);
+    assert.ok(Date.now() - started < 15000, "a hook that never answers is cut off");
+    const byProvider = Object.fromEntries(usage.map(entry => [entry.provider, entry]));
+    assert.deepEqual(Object.keys(byProvider).sort(), ["deepseek", "fixture-login"]);
+    assert.deepEqual(byProvider["fixture-login"].windows, [{ name: "Month", usedPercent: 100, resetsAt: Date.parse("2026-12-01T00:00:00Z") }]);
+    assert.equal(byProvider["fixture-login"].balance.amount, 18.4);
+    assert.equal(byProvider["fixture-login"].balance.currency, "USD");
+    assert.equal(byProvider["fixture-login"].balance.label, "Credit ••••", "the provider's own credential is masked out of its words");
+    assert.deepEqual(byProvider.deepseek, { provider: "deepseek", windows: [], balance: { amount: 110, currency: "CNY" } });
+    // Nothing of a credential or a hook's error leaves the bridge.
+    assert.doesNotMatch(b.output(), /fixture-access-not-a-secret|sk-fixture|fixture-groq-private-detail/);
     await b.close();
   });
 

@@ -169,6 +169,37 @@ methods from the home's enabled providers, without starting a conversation or ru
 event handlers. Sign-out uses Pi's credential store without loading extensions, so a broken
 extension cannot prevent removing a saved login.
 
+### Usage and balance from provider extensions
+
+Pi has no usage or balance API, so Shepherd adds a convention its sign-in bridge reads
+(`Extensions/shepherd-sign-in.mjs`, `{"type":"usage"}`). A provider an extension registers may
+have `usage(auth)`. An extension can also report for a provider it doesn't own, such as a
+built-in's API key, by emitting `shepherd:usage` while it loads. Pi itself ignores both.
+
+```ts
+export default pi => {
+  pi.events.emit("shepherd:usage", {
+    provider: "deepseek",
+    async usage(auth) {
+      const response = await fetch("https://api.deepseek.com/user/balance", {
+        headers: { Authorization: `Bearer ${auth.apiKey}` },
+      });
+      const info = (await response.json()).balance_infos?.[0];
+      return info && { balance: { amount: Number(info.total_balance), currency: info.currency } };
+    },
+  });
+};
+```
+
+`auth` is Pi's resolved request auth for the provider (`apiKey`, `headers`; an OAuth login is
+refreshed as a request would be). The hook returns `{ windows?: [{ name, usedPercent, resetsAt? }],
+balance?: { amount, currency, label? } }`. The bridge keeps at most four windows, clamps percentages
+to 0–100, cuts words short, masks the provider's own key out of them, and drops a hook that throws
+or takes more than 10 seconds. Sign-in reads usage when it opens; a paired device's provider list
+reads it again once it is five minutes old. An extension's windows replace Shepherd's own reading
+for that provider (Anthropic, OpenAI Codex). Rows show the fullest window and the balance
+("Credit $18.40"); a three-letter ISO currency is formatted as money, any other unit as a number and its word.
+
 Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
 client secrets and model credentials must use literal values or environment-variable references;
 Shepherd's own MCP translation also supports Keychain references. Explicit MCP stdio commands
