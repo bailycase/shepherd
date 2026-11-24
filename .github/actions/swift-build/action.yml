@@ -35,7 +35,7 @@ runs:
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
     # Hosted PR caches stay in their merge ref: later heads of that PR can reuse them,
-    # not its base or siblings. Build cache seeds nightly on trusted pushes for new PRs.
+    # not its base or siblings.
     - name: Restore dependency and build caches
       id: cache
       uses: actions/cache/restore@v4
