@@ -84,7 +84,13 @@ struct HostStores {
     /// Settings ▸ Tools ▸ Extensions' rows, read afresh, as a client sees them.
     func hostExtensions() async -> [HostExtension] {
         await yourPi.refresh()
-        return (yourPi.survey?.extensions ?? []).map(HostInventoryMapping.hostExtension)
+        await piAuth.refreshProviders()
+        let inventory = piAuth.extensionInventory, names = piAuth.providerNames
+        return (yourPi.survey?.extensions ?? []).map { item in
+            HostInventoryMapping.hostExtension(item, support: inventory[item.copy.destination].map {
+                PiExtensionSupport.make($0, scanned: item.terminalOnly)
+            }, names: names)
+        }
     }
 
     /// Settings ▸ Sign-in's rows, read afresh, as a client sees them.
@@ -95,7 +101,8 @@ struct HostStores {
         await piAuth.refreshProviders()
         let signingIn = piAuth.session.flatMap { $0.phase.isLive ? $0.provider : nil }
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: piAuth.expired,
-                                     needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts, providers: piAuth.providers)
+                                     needed: piAuth.needed, problems: piAuth.problems, accounts: piAuth.accounts, providers: piAuth.providers,
+                                     owners: piAuth.providerOwners)
         let rows = (page.subscriptions + page.apiKeys + page.customProviders).map { row in
             let methods = piAuth.providers?.first { $0.id == row.id }
                 ?? (piAuth.providers == nil ? nil : HostProviderSignIn(id: row.id, name: row.name))
@@ -149,9 +156,15 @@ enum HostInventoryMapping {
         }
     }
 
-    static func hostExtension(_ item: YourPiExtensionRow) -> HostExtension {
-        HostExtension(id: item.copy.destination, name: item.copy.name, subtitle: ExtensionsText.subtitle(item), on: item.on,
-                      failure: item.failure, added: YourPiImport.isAdded(item.copy.destination))
+    static func hostExtension(_ item: YourPiExtensionRow, support: PiExtensionSupport? = nil, names: [String: String] = [:]) -> HostExtension {
+        let state: HostExtension.Support? = switch ExtensionsText.state(item, support: support) {
+        case .works?: .works
+        case .partly?: .partly
+        case .failed?, nil: nil
+        }
+        return HostExtension(id: item.copy.destination, name: item.copy.name, subtitle: ExtensionsText.subtitle(item, support: support, names: names),
+                             on: item.on, failure: item.failure, added: YourPiImport.isAdded(item.copy.destination), support: state,
+                             supportDetail: state == nil ? nil : ExtensionsText.help(item, support: support))
     }
 
     static func profile(_ definition: SubagentDefinitionsStore.Definition) -> HostSubagentProfile {
@@ -184,6 +197,8 @@ enum HostInventoryMapping {
             default: "Subscription"
             }
         }
+        // Where it came from, as the Mac's row says it ("from acme-login").
+        if let source = row.source { detail = [detail, "from \(source)"].compactMap { $0 }.joined(separator: " · ") }
         return HostProviderStatus(id: row.id, name: row.name, badge: group, auth: auth, detail: detail, problem: row.problem,
                                   accounts: accounts?.accounts.count ?? 0,
                                   activeAccount: accounts.flatMap { list in list.accounts.count > 1 ? list.accounts.first { $0.id == list.active }?.title : nil },

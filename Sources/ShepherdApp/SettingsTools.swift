@@ -14,7 +14,7 @@ struct ToolsSettings: View {
     var body: some View {
         MCPSettings(vm: vm, store: store, initiallyExpanded: nil, title: "Tools") {
             ExtensionsSettings(settings: settings)
-            ExtensionsSettingsGroup(model: vm.yourPi)
+            ExtensionsSettingsGroup(model: vm.yourPi, auth: vm.piAuth)
             SettingsGroup(title: "Slash commands") {
                 SettingsDrillRow(title: "Commands in the / menu", subtitle: vm.slashCommands.presentation.summary,
                                  value: "Manage", action: manageSlashCommands)

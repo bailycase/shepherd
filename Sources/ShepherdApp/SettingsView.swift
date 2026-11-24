@@ -194,6 +194,9 @@ struct SettingsView: View {
                                      openYourPi: { vm.settingsSection = .fromYourPi }, openExtensions: {
                                          vm.settingsSection = .tools
                                          vm.settingsScrollTarget = ExtensionsSettingsGroup.scrollID
+                                     }, openExtension: { destination in
+                                         vm.settingsSection = .tools
+                                         vm.settingsScrollTarget = ExtensionsSettingsGroup.rowScrollID(destination)
                                      })
         case .fromYourPi: FromYourPiSettings(model: vm.yourPi) { vm.settingsSection = .tools }
         case .agents: AgentSettings(pi: vm.pi, settings: vm.settings, profiles: vm.subagentDefinitions.definitions.map(\.name)) { vm.settingsSection = .subagents }

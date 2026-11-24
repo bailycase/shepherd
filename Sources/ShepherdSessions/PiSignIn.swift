@@ -116,12 +116,57 @@ public enum PiKeyCheck: Equatable, Sendable {
     case unset(String)
 }
 
+/// What one loaded extension registered, as pi's loader recorded it: the providers it added (by
+/// id, the last registration of an id winning) and the rest of what it gave pi. Names only.
+public struct PiExtensionInventory: Codable, Equatable, Sendable {
+    /// The file pi loaded, as Shepherd's settings name it.
+    public var path: String
+    public var providers: [String]
+    public var tools: [String]
+    public var commands: [String]
+    /// The events it listens to (`session_start`, `tool_call`, …).
+    public var events: [String]
+    public var shortcuts: [String]
+    public var flags: [String]
+    /// Message, entry and tool renderers and markdown transformers: all drawn by pi's terminal UI.
+    public var renderers: Int
+
+    public init(path: String, providers: [String] = [], tools: [String] = [], commands: [String] = [], events: [String] = [],
+                shortcuts: [String] = [], flags: [String] = [], renderers: Int = 0) {
+        self.path = path
+        self.providers = providers
+        self.tools = tools
+        self.commands = commands
+        self.events = events
+        self.shortcuts = shortcuts
+        self.flags = flags
+        self.renderers = renderers
+    }
+
+    private enum CodingKeys: String, CodingKey { case path, providers, tools, commands, events, shortcuts, flags, renderers }
+
+    // A field an older bridge leaves out reads as none.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        providers = try c.decodeIfPresent([String].self, forKey: .providers) ?? []
+        tools = try c.decodeIfPresent([String].self, forKey: .tools) ?? []
+        commands = try c.decodeIfPresent([String].self, forKey: .commands) ?? []
+        events = try c.decodeIfPresent([String].self, forKey: .events) ?? []
+        shortcuts = try c.decodeIfPresent([String].self, forKey: .shortcuts) ?? []
+        flags = try c.decodeIfPresent([String].self, forKey: .flags) ?? []
+        renderers = try c.decodeIfPresent(Int.self, forKey: .renderers) ?? 0
+    }
+}
+
 /// What the bridge says.
 public enum PiSignInReply: Equatable, Sendable {
     case ready
     case providers([PiSignInProvider])
     /// An installed extension at this path didn't load while listing providers: it is skipped.
     case extensionFailed(path: String)
+    /// What each loaded extension registered, just before `providers`.
+    case extensions([PiExtensionInventory])
     /// The browser sign-in's page: open it.
     case authURL(URL, instructions: String?)
     /// A device-code sign-in's code and where to enter it.
@@ -165,6 +210,7 @@ public enum PiSignInReply: Equatable, Sendable {
         var models: [String]?
         var providers: [PiSignInProvider]?
         var path: String?
+        var extensions: [PiExtensionInventory]?
     }
 
     /// One line of the bridge's stdout; nil for anything it doesn't say.
@@ -179,6 +225,8 @@ public enum PiSignInReply: Equatable, Sendable {
             return .providers(providers)
         case "extensionFailed":
             return wire.path.flatMap { $0.isEmpty ? nil : .extensionFailed(path: $0) }
+        case "extensions":
+            return wire.extensions.map { .extensions($0) }
         case "event":
             guard let event = wire.event else { return nil }
             switch event.type {

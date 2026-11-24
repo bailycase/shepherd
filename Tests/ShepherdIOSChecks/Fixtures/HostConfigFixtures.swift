@@ -81,7 +81,11 @@ extension FixtureData {
         case .extensions:
             return .extensions([
                 HostExtension(id: "your-extensions/added/acme-login", name: "acme-login",
-                              subtitle: "Added from https://github.com/acme/pi-login · Signs in to Acme", on: true, added: true),
+                              subtitle: "Adds Acme sign-in, /acme-usage · Added from https://github.com/acme/pi-login", on: true, added: true,
+                              support: .works, supportDetail: "Everything it registered works in Shepherd."),
+                HostExtension(id: "your-extensions/added/acme-footer", name: "acme-footer",
+                              subtitle: "Adds 1 event hook · Not shown in Shepherd: footer or header · Added from ~/code/acme-footer", on: true, added: true,
+                              support: .partly, supportDetail: "Its code uses terminal UI Shepherd may not show: footer or header."),
                 HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from ~/code/acme-tools", on: true,
                               failure: "Cannot find module 'acme-sdk'", added: true),
                 HostExtension(id: "your-extensions/review.ts", name: "review", subtitle: "From your pi · extensions/review.ts", on: false),

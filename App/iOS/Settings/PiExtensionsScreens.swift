@@ -39,6 +39,11 @@ struct PiExtensionSections: View {
                                               subtitleTone: item.failure != nil ? .failed : nil,
                                               leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(item).rawValue) ?? .idle), chevron: false)
                                     HStack(spacing: SH.Space.s) {
+                                        if let word = HostInventoryPresentation.supportWord(item) {
+                                            SHTag(word, foreground: item.failure != nil ? Color.sh.failed
+                                                  : item.support == .partly ? Color.sh.lanternText : Color.sh.done)
+                                                .accessibilityHint(item.supportDetail ?? "")
+                                        }
                                         Toggle("\(item.name) on", isOn: Binding(get: { item.on }, set: { on in
                                             run(.extensionSetEnabled(destination: item.id, on: on), on: host)
                                         }))

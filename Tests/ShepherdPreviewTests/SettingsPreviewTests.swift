@@ -35,6 +35,31 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Tools ▸ Extensions and Sign-in once pi has loaded the extensions: what each adds, how far it
+    /// works in Shepherd, and the provider row naming the extension it came from.
+    @Test func extensionSupportAndProviderSources() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let auth = workspace.vm.piAuth
+        let copies = PreviewYourPi.copies
+        let home = workspace.vm.pi.home
+        func at(_ index: Int, _ entry: String = "") -> String { home.appendingPathComponent(copies[index].destination).appendingPathComponent(entry).path }
+        auth.providers = [PiSignInProvider(id: "anthropic", name: "Anthropic", oauth: "Claude Pro/Max"),
+                          PiSignInProvider(id: "acme", name: "Acme", oauth: "Acme account")]
+        auth.extensionInventory = [
+            copies[11].destination: [PiExtensionInventory(path: at(11, "index.ts"), providers: ["acme"], commands: ["acme-usage"])],
+            copies[8].destination: [PiExtensionInventory(path: at(8, "index.ts"), events: ["agent_end", "session_start"])],
+            copies[10].destination: [PiExtensionInventory(path: at(10), events: ["tool_call"], shortcuts: ["ctrl+shift+g"])],
+        ]
+        auth.providerOwners = ["acme": copies[11]]
+        for section in [SettingsSection.tools, .models] {
+            workspace.vm.settingsSection = section
+            try await Preview.render("settings-\(section.rawValue)-extension-support", size: CGSize(width: 1280, height: section == .tools ? 1400 : 1000)) {
+                SettingsView(vm: workspace.vm)
+            }
+        }
+    }
+
     @Test func damagedPiImportHistory() async throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

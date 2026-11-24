@@ -1,5 +1,6 @@
 // The native sign-in sheet discovers installed providers without running an agent or trusting project code.
 // PI_PACKAGE_DIR=<isolated pinned package> node --test Tests/Extensions/provider-sign-in.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -157,6 +158,7 @@ for (const sdk of ["dist/index.js", "dist/bundle/index.js"]) {
     b.send({ type: "providers" });
     // The broken extension is named by path and skipped; pi's own providers still list.
     assert.match((await b.reply("extensionFailed")).path, /fixture\.ts$/);
+    assert.deepEqual((await b.reply("extensions")).extensions, [], "a broken extension has no inventory");
     const { providers } = await b.reply("providers");
     assert.equal(providers.find(p => p.id === "fixture-login"), undefined);
     assert.ok(providers.some(p => p.id === "anthropic"));
@@ -176,6 +178,32 @@ for (const sdk of ["dist/index.js", "dist/bundle/index.js"]) {
     const prompt = await b.reply("prompt");
     b.send({ type: "answer", id: prompt.id, value: "fixture-code" });
     assert.equal((await b.reply("done")).credential, "oauth");
+    await b.close();
+  });
+
+  test(`${sdk}: each provider is attributed to the extension that registered it, with what else it registered`, { timeout: 30000 }, async t => {
+    const extra = `
+pi.registerCommand("fixture-usage", { handler() {} });
+pi.registerTool({ name: "fixture_search", description: "x", parameters: { type: "object", properties: {} }, async execute() { return { content: [] }; } });
+pi.registerShortcut("ctrl+shift+x", { handler() {} });
+pi.registerFlag("fixture-flag", { type: "boolean" });
+pi.registerMessageRenderer("fixture", () => undefined);
+pi.registerProvider("fixture-gateway", { baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "fixture", models: [{ id: "m" }] });
+`;
+    const b = await bridge(t, sdk, { source: provider().replace(/};\s*$/, extra + "};") });
+    b.send({ type: "providers" });
+    const { extensions } = await b.reply("extensions");
+    await b.reply("providers");
+    assert.equal(extensions.length, 1);
+    const [fixture] = extensions;
+    assert.match(fixture.path, /fixture\.ts$/);
+    assert.deepEqual(fixture.providers.sort(), ["fixture-ambient", "fixture-gateway", "fixture-login"]);
+    assert.deepEqual(fixture.commands, ["fixture-usage"]);
+    assert.deepEqual(fixture.tools, ["fixture_search"]);
+    assert.deepEqual(fixture.shortcuts, ["ctrl+shift+x"]);
+    assert.deepEqual(fixture.flags, ["fixture-flag"]);
+    assert.equal(fixture.renderers, 1);
+    assert.deepEqual(fixture.events, ["session_start"]);
     await b.close();
   });
 

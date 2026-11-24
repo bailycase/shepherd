@@ -90,5 +90,11 @@ struct HostInventoryPresentationTests {
         off.on = false
         #expect(P.tone(off) == .idle)
         #expect(P.extensionLine(broken) == "Cannot find module" && P.tone(broken) == .failed)
+        #expect(P.supportWord(fine) == nil && P.supportWord(broken) == "Didn’t load")
+        var partly = fine
+        partly.support = .partly
+        #expect(P.supportWord(partly) == "Partly" && P.tone(partly) == .attention)
+        partly.support = .works
+        #expect(P.supportWord(partly) == "Works" && P.tone(partly) == .done)
     }
 }

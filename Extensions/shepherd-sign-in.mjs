@@ -18,6 +18,8 @@
 //   {"type":"ready"}
 //   {"type":"providers","providers":[{"id":…, "name":…, "oauth"?:…, "apiKey"?:…}]}
 //   {"type":"extensionFailed","path":…}         an installed extension that didn't load (before the first reply that loads them)
+//   {"type":"extensions","extensions":[{"path":…, "providers":[…], "tools":[…], "commands":[…], "events":[…],
+//     "shortcuts":[…], "flags":[…], "renderers":n}]}   what each loaded extension registered, before "providers"
 //   {"type":"event","event":{"type":"auth_url"|"device_code"|"info"|"progress",…}}
 //   {"type":"prompt","id":"p1","kind":"manual_code"|"secret"|"text"|"select","message":…,"placeholder"?,"options"?}
 //   {"type":"promptClosed","id":"p1"}           pi no longer needs that answer (the browser won)
@@ -72,6 +74,8 @@ async function storedRuntime() {
 }
 
 let runtime;
+/** What each installed extension registered (`extensions` reply): sent with every provider list. */
+let inventory = [];
 async function modelRuntime() {
   return runtime ??= (async () => {
     const sdk = await import(pathToFileURL(sdkPath).href);
@@ -80,17 +84,48 @@ async function modelRuntime() {
       oauth: provider.auth.oauth?.login, apiKey: provider.auth.apiKey?.login,
     });
     // Sign-in uses the same installed providers as agents, but never starts a conversation,
-    // runs session handlers, or loads a workspace's code into the global credential store.
-    const services = await sdk.createAgentSessionServices({
-      cwd: home, agentDir: home, modelRuntime: models,
-      settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }),
-      resourceLoaderOptions: { noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true },
+    // runs session handlers, or loads a workspace's code into the global credential store. Pi's
+    // own loader, registered here as `createAgentSessionServices` does, so each provider keeps
+    // the extension that registered it (pi clears that record once it has registered them).
+    const loader = new sdk.DefaultResourceLoader({
+      cwd: home, agentDir: home, settingsManager: sdk.SettingsManager.create(home, home, { projectTrusted: false }),
+      noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
     });
-    if (services.diagnostics.some(d => d.type === "error")) throw new Error("Could not load installed provider extensions.");
+    await loader.reload();
+    const loaded = loader.getExtensions();
+    const failed = new Set(loaded.errors.map(error => String(error.path)));
+    const owners = new Map();
+    const register = (extensionPath, id, apply) => {
+      try {
+        apply();
+        owners.set(id, String(extensionPath));
+      } catch {
+        failed.add(String(extensionPath));
+      }
+    };
+    for (const { name, config, extensionPath } of loaded.runtime.pendingProviderRegistrations)
+      register(extensionPath, name, () => models.registerProvider(name, config));
+    for (const { provider, extensionPath } of loaded.runtime.pendingNativeProviderRegistrations)
+      register(extensionPath, provider.id, () => models.registerNativeProvider(provider));
+    loaded.runtime.pendingProviderRegistrations = [];
+    loaded.runtime.pendingNativeProviderRegistrations = [];
+    await models.refresh({ allowNetwork: false });
     // One extension that fails leaves the others' providers usable: the app learns its path (never
     // its error, which may quote its code) and leaves it out of launches, as pi's own failure does.
-    for (const { path: failed } of services.resourceLoader.getExtensions().errors) send({ type: "extensionFailed", path: String(failed) });
-    return services.modelRuntime;
+    for (const extensionPath of failed) send({ type: "extensionFailed", path: extensionPath });
+    const keys = map => [...(map?.keys() ?? [])].map(String);
+    inventory = loaded.extensions.filter(extension => !failed.has(String(extension.path))).map(extension => ({
+      path: String(extension.path),
+      providers: [...owners].filter(([, owner]) => owner === String(extension.path)).map(([id]) => id),
+      tools: keys(extension.tools),
+      commands: keys(extension.commands),
+      events: keys(extension.handlers),
+      shortcuts: keys(extension.shortcuts),
+      flags: keys(extension.flags),
+      renderers: (extension.messageRenderers?.size ?? 0) + (extension.entryRenderers?.size ?? 0)
+        + (extension.toolRenderers?.length ?? 0) + (extension.markdownTransformer ? 1 : 0),
+    }));
+    return models;
   })();
 }
 
@@ -226,6 +261,7 @@ async function listProviders() {
       keyForm: KEY_FORMS.has(provider.id) && !!nativeLogins.get(provider.id)?.apiKey
         && nativeLogins.get(provider.id).apiKey === provider.auth.apiKey?.login,
     })).filter(provider => provider.oauth || provider.apiKey);
+    send({ type: "extensions", extensions: inventory });
     send({ type: "providers", providers });
   } catch (error) {
     send({ type: "failed", code: "other", reason: clean(error) });

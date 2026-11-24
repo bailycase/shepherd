@@ -26,9 +26,19 @@ final class PiAuthStore {
     private(set) var accounts: [String: PiAccountList] = [:]
     /// Subscription usage by provider (`PiUsage`), read when Sign-in opens.
     private(set) var usage: [String: [PiUsageWindow]] = [:]
-    /// Effective interactive methods from Pi, including enabled provider extensions.
-    private(set) var providers: [PiSignInProvider]?
+    /// Effective interactive methods from Pi, including enabled provider extensions. Set by
+    /// `refreshProviders`; previews seed it.
+    internal(set) var providers: [PiSignInProvider]?
     private(set) var providersProblem: String?
+    /// What each switched-on extension registered, by its copy (`YourPiCopy.destination`), as the
+    /// last provider listing loaded it (Settings ▸ Tools' Adds and support).
+    internal(set) var extensionInventory: [String: [PiExtensionInventory]] = [:]
+    /// The extension copy each provider came from, by provider id (Sign-in's "from acme-login").
+    internal(set) var providerOwners: [String: YourPiCopy] = [:]
+    /// Each listed provider's name, by id.
+    var providerNames: [String: String] {
+        Dictionary((providers ?? []).map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
     @ObservationIgnored private var providerRead: Task<Void, Never>?
     /// The provider whose sign-in under way adds an account instead of replacing the active one.
     @ObservationIgnored private var adding: String?
@@ -82,13 +92,17 @@ final class PiAuthStore {
                 defer { watchdog.cancel() }
                 bridge.send(.providers)
                 var failed: [String] = []
+                var inventories: [PiExtensionInventory] = []
                 for await reply in bridge.replies {
                     switch reply {
                     case .extensionFailed(let path):
                         failed.append(path)
+                    case .extensions(let list):
+                        inventories = list
                     case .providers(let list):
                         providers = list
                         providersProblem = nil
+                        await attribute(inventories)
                         if !failed.isEmpty { await extensionsFailed(failed) }
                         return
                     case .failed(let failure):
@@ -105,6 +119,22 @@ final class PiAuthStore {
         providerRead = read
         await read.value
         providerRead = nil
+    }
+
+    /// Files each inventory to the extension copy it belongs to, and each provider to its copy.
+    private func attribute(_ inventories: [PiExtensionInventory]) async {
+        let pi = pi
+        let byCopy: ([String: [PiExtensionInventory]], [YourPiCopy]) = await Task.detached(priority: .userInitiated) {
+            let copies = pi.importedState().state()?.copies(.extensions) ?? []
+            return (PiExtensionSupport.byCopy(copies, inventories: inventories, home: pi.home), copies)
+        }.value
+        var owners: [String: YourPiCopy] = [:]
+        for (destination, list) in byCopy.0 {
+            guard let copy = byCopy.1.first(where: { $0.destination == destination }) else { continue }
+            for provider in list.flatMap(\.providers) { owners[provider] = copy }
+        }
+        if extensionInventory != byCopy.0 { extensionInventory = byCopy.0 }
+        if providerOwners != owners { providerOwners = owners }
     }
 
     /// Extensions that didn't load while listing providers: like a failure at an agent's launch,
@@ -485,7 +515,7 @@ final class PiSignInSession: Identifiable {
 
     func handle(_ reply: PiSignInReply) {
         switch reply {
-        case .ready, .providers, .extensionFailed, .info, .progress:
+        case .ready, .providers, .extensionFailed, .extensions, .info, .progress:
             break
         case .authURL(let url, _):
             authURL = url

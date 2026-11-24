@@ -10,6 +10,8 @@ struct PiSignInSettings: View {
     let auth: PiAuthStore
     /// Opens Settings ▸ Tools, where extensions that add providers are added. Nil hides the link.
     var openExtensions: (() -> Void)? = nil
+    /// Opens Settings ▸ Tools at one extension's row, by its copy's destination.
+    var openExtension: ((String) -> Void)? = nil
     @State private var renaming: Renaming?
     @State private var newName = ""
 
@@ -22,7 +24,8 @@ struct PiSignInSettings: View {
 
     var body: some View {
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: auth.expired,
-                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts, providers: auth.providers)
+                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts, providers: auth.providers,
+                                     owners: auth.providerOwners)
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 if let problem = auth.providersProblem { SHInlineProblem(problem) }
@@ -137,6 +140,7 @@ struct PiSignInSettings: View {
         else if row.auth.isSignedIn, let window = (auth.usage[row.id] ?? []).max(by: { $0.usedPercent < $1.usedPercent }) {
             parts.append("\(Int(window.usedPercent.rounded()))% of the \(window.name.lowercased()) used")
         }
+        if let source = row.source { parts.append("from \(source)") }
         return parts.joined(separator: " · ")
     }
 
@@ -207,6 +211,7 @@ struct PiSignInSettings: View {
                 Button("Add another account…") { Task { await auth.addAccount(row.id, key: true) } }
             }
             reimportItem(row)
+            extensionItem(row)
             Divider()
             Button("Remove key", role: .destructive) { Task { await auth.signOut(row.id) } }
                 .disabled({ if case .environment = row.auth { true } else { false } }())
@@ -216,10 +221,18 @@ struct PiSignInSettings: View {
                 Button("Add another account…") { Task { await auth.addAccount(row.id) } }
             }
             reimportItem(row)
+            extensionItem(row)
             if row.auth.isSignedIn || { if case .expired = row.auth { true } else { false } }() {
                 Divider()
                 Button("Sign out", role: .destructive) { Task { await auth.signOut(row.id) } }
             }
+        }
+    }
+
+    /// Show the extension a provider came from, in Settings ▸ Tools.
+    @ViewBuilder private func extensionItem(_ row: ProviderRowModel) -> some View {
+        if let source = row.source, let id = row.sourceID, let openExtension {
+            Button("Show the \(source) extension") { openExtension(id) }
         }
     }
 

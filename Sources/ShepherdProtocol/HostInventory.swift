@@ -45,14 +45,41 @@ public struct HostExtension: Codable, Hashable, Sendable, Identifiable {
     public var failure: String?
     /// Added in Shepherd (a file, folder or Git repository), rather than copied from the host's own pi.
     public var added: Bool
+    /// How far it works in Shepherd once the host's pi has loaded it; nil before, for one that is off
+    /// or failed, or from an older host.
+    public var support: Support?
+    /// What Shepherd can't show of it, in the Mac's words (its tag's tooltip).
+    public var supportDetail: String?
 
-    public init(id: String, name: String, subtitle: String, on: Bool, failure: String? = nil, added: Bool = false) {
+    public enum Support: String, Codable, Hashable, Sendable {
+        case works, partly
+    }
+
+    public init(id: String, name: String, subtitle: String, on: Bool, failure: String? = nil, added: Bool = false,
+                support: Support? = nil, supportDetail: String? = nil) {
         self.id = id
         self.name = name
         self.subtitle = subtitle
         self.on = on
         self.failure = failure
         self.added = added
+        self.support = support
+        self.supportDetail = supportDetail
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, subtitle, on, failure, added, support, supportDetail }
+
+    // A support word a newer host adds reads as none, not as a broken list.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        subtitle = try c.decode(String.self, forKey: .subtitle)
+        on = try c.decode(Bool.self, forKey: .on)
+        failure = try c.decodeIfPresent(String.self, forKey: .failure)
+        added = try c.decodeIfPresent(Bool.self, forKey: .added) ?? false
+        support = (try? c.decodeIfPresent(Support.self, forKey: .support)) ?? nil
+        supportDetail = try c.decodeIfPresent(String.self, forKey: .supportDetail)
     }
 }
 

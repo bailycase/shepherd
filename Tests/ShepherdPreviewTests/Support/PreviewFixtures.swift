@@ -497,7 +497,11 @@ enum PreviewYourPi {
         survey.extensions = [
             YourPiExtensionRow(copy: copies[11], on: true, summary: "Sign in to Acme with your Acme account."),
             YourPiExtensionRow(copy: copies[7], summary: "Adds a /pr-review command that checks the diff against your repo’s rules."),
-            YourPiExtensionRow(copy: copies[8], on: true, summary: "Posts to Slack when an agent finishes or needs you."),
+            {
+                var row = YourPiExtensionRow(copy: copies[8], on: true, summary: "Posts to Slack when an agent finishes or needs you.")
+                row.terminalOnly = ["status line"]
+                return row
+            }(),
             {
                 var row = YourPiExtensionRow(copy: copies[9], on: true, failure: "Cannot find module 'turndown' · web-search/index.ts:4",
                                              summary: "A web_search tool backed by your Brave API key.")

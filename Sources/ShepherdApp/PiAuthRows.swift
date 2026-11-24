@@ -43,6 +43,18 @@ struct ProviderRowModel: Equatable, Identifiable {
     var problem: String?
     /// Its saved accounts, when it has any (`PiAccounts`).
     var accounts: PiAccountList?
+    /// The extension it came from, by name ("acme-login"), and that copy's destination.
+    var source: String?
+    var sourceID: String?
+}
+
+extension ProviderRowModel {
+    /// Names the extension copy that registered this provider, when one did.
+    mutating func attribute(_ owners: [String: YourPiCopy]) {
+        guard let copy = owners[id] else { return }
+        source = copy.name
+        sourceID = copy.destination
+    }
 }
 
 /// Settings ▸ Pi ▸ Sign-in's rows, derived once per change from the survey. Pure, so the state table has a unit test.
@@ -60,7 +72,7 @@ struct PiSignInPage: Equatable {
     /// `needed` the providers agents wait on; `problems` a failed sign-out by provider.
     static func make(survey: YourPiSurvey, signingIn: String? = nil, expired: Set<String> = [], needed: Set<String> = [],
                      problems: [String: String] = [:], accounts: [String: PiAccountList] = [:],
-                     providers: [PiSignInProvider]? = nil) -> PiSignInPage {
+                     providers: [PiSignInProvider]? = nil, owners: [String: YourPiCopy] = [:]) -> PiSignInPage {
         var page = PiSignInPage()
         page.providerNames = Dictionary((providers ?? []).map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let logins = Dictionary(survey.logins.map { ($0.provider, $0) }, uniquingKeysWith: { first, _ in first })
@@ -115,6 +127,8 @@ struct PiSignInPage: Equatable {
                                                  badge: PiSignInCatalog.badge(signingIn), auth: .signingIn(plan: nil)))
         }
         page.apiKeys.sort { ($0.name.lowercased(), $0.id) < ($1.name.lowercased(), $1.id) }
+        for index in page.subscriptions.indices { page.subscriptions[index].attribute(owners) }
+        for index in page.apiKeys.indices { page.apiKeys[index].attribute(owners) }
 
         for provider in survey.customProviderDetails {
             let auth: ProviderAuth

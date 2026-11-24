@@ -50,6 +50,10 @@ struct PiSignInProtocolTests {
         Reply(json: #"{"type":"extensionFailed","path":"/home/your-extensions/added/x.ts"}"#,
               reply: .extensionFailed(path: "/home/your-extensions/added/x.ts")),
         Reply(json: #"{"type":"extensionFailed"}"#, reply: nil),
+        Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts","providers":["acme"],"tools":[],"commands":["acme-usage"],"events":[],"shortcuts":["ctrl+x"],"flags":[],"renderers":1}]}"#,
+              reply: .extensions([PiExtensionInventory(path: "/h/x.ts", providers: ["acme"], commands: ["acme-usage"], shortcuts: ["ctrl+x"], renderers: 1)])),
+        // An older bridge's inventory without some lists reads them as empty.
+        Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts"}]}"#, reply: .extensions([PiExtensionInventory(path: "/h/x.ts")])),
         Reply(json: #"{"type":"event","event":{"type":"auth_url","url":"https://claude.ai/oauth/authorize?x=1","instructions":"Complete login"}}"#,
               reply: .authURL(URL(string: "https://claude.ai/oauth/authorize?x=1")!, instructions: "Complete login")),
         // Only a web page is ever opened.

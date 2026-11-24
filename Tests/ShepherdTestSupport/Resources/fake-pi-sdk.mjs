@@ -103,8 +103,26 @@ async function keyLogin(interaction) {
 
 // The bridge loads provider services without creating an agent session.
 export const SettingsManager = { create: () => ({}) };
-export async function createAgentSessionServices({ modelRuntime }) {
-  return { modelRuntime, resourceLoader: { getExtensions: () => ({ errors: [] }) }, diagnostics: [] };
+// Extensions as pi's loader records them: `FAKE_PI_CONTROL/extensions.json`, when a test writes it,
+// lists each one's path, the providers it registers (by id, from `providers` above) and what else.
+export class DefaultResourceLoader {
+  async reload() {}
+  getExtensions() {
+    let listed = [];
+    try { listed = JSON.parse(fs.readFileSync(path.join(control, "extensions.json"), "utf8")); } catch {}
+    const names = list => new Map((list ?? []).map(name => [name, {}]));
+    return {
+      errors: [],
+      extensions: listed.map(e => ({
+        path: e.path, tools: names(e.tools), commands: names(e.commands), handlers: names(e.events), shortcuts: names(e.shortcuts),
+        flags: names(e.flags), messageRenderers: names(e.renderers), entryRenderers: new Map(),
+      })),
+      runtime: {
+        pendingProviderRegistrations: [],
+        pendingNativeProviderRegistrations: listed.flatMap(e => (e.providers ?? []).map(id => ({ provider: providers[id], extensionPath: e.path }))),
+      },
+    };
+  }
 }
 
 export class ModelRuntime {
@@ -115,6 +133,10 @@ export class ModelRuntime {
   static async create(options = {}) {
     return new ModelRuntime(options);
   }
+
+  async refresh() {}
+
+  registerNativeProvider() {}
 
   getProvider(id) {
     return providers[id];

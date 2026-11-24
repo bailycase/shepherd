@@ -296,6 +296,8 @@ public struct YourPiExtensionRow: Equatable, Sendable, Identifiable {
     public var summary: String?
     /// pi's last lines as it failed (Show log).
     public var failureLines: [String] = []
+    /// Terminal UI its code calls that Shepherd can't show (`PiExtensionSupport.scan`); only for one that is on.
+    public var terminalOnly: [String] = []
 
     public init(copy: YourPiCopy, on: Bool = false, failure: String? = nil, summary: String? = nil) {
         self.copy = copy
@@ -960,6 +962,7 @@ public struct YourPiImport: Sendable {
             var row = YourPiExtensionRow(copy: copy, on: state?.extensionsOn.contains(copy.destination) == true,
                                          failure: state?.extensionFailures[copy.destination]?.reason, summary: summary)
             row.failureLines = state?.extensionFailures[copy.destination]?.lines ?? []
+            if row.on { row.terminalOnly = PiExtensionSupport.scan(root) }
             return row
         }
 

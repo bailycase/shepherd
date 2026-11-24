@@ -157,7 +157,19 @@ public enum HostInventoryPresentation {
     /// The row's line: pi's reason while the extension is left out of launches, else where it came from.
     public static func extensionLine(_ item: HostExtension) -> String { item.failure ?? item.subtitle }
 
-    public static func tone(_ item: HostExtension) -> Tone { item.failure != nil ? .failed : item.on ? .done : .idle }
+    public static func tone(_ item: HostExtension) -> Tone {
+        item.failure != nil ? .failed : !item.on ? .idle : item.support == .partly ? .attention : .done
+    }
+
+    /// The tag beside its switch, as the Mac's: "Works", "Partly", "Didn’t load"; nil before the host's pi loaded it.
+    public static func supportWord(_ item: HostExtension) -> String? {
+        if item.failure != nil { return "Didn’t load" }
+        switch item.support {
+        case .works?: return "Works"
+        case .partly?: return "Partly"
+        case nil: return nil
+        }
+    }
 
     // MARK: Spaces
 

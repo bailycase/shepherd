@@ -111,7 +111,7 @@ struct PiSignInFlowTests {
         let imported = String(decoding: try JSONEncoder().encode(URL(fileURLWithPath: FakePiSDK.path).absoluteString), as: UTF8.self)
         try """
         import { ModelRuntime as Base } from \(imported);
-        export { createAgentSessionServices, SettingsManager } from \(imported);
+        export { DefaultResourceLoader, SettingsManager } from \(imported);
         import * as fs from 'node:fs';
         import * as path from 'node:path';
         export class ModelRuntime extends Base {
@@ -183,6 +183,35 @@ struct PiSignInFlowTests {
         if method == .apiKey { #expect(credential["key"] as? String == " !fixture$password ") }
         await auth.signOut(provider)
         #expect(try setup.stored()[provider] == nil)
+    }
+
+    /// An extension added in Shepherd that registers a provider: Sign-in names it as the provider's
+    /// source, and Tools learns what it registered and what Shepherd can't show of it.
+    @Test func aProviderIsAttributedToTheExtensionThatRegisteredIt() async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let source = setup.dir.appendingPathComponent("acme-login.ts")
+        try Data("export default pi => { pi.on('session_start', () => ctx.ui.setFooter(undefined)); };\n".utf8).write(to: source)
+        let copy = try setup.pi.importedState().addExtension(from: source)
+        let loaded = setup.pi.home.appendingPathComponent(copy.destination).path
+        let listed: [[String: Any]] = [["path": loaded, "providers": ["fixture-login"], "commands": ["acme-usage"],
+                                        "events": ["session_start"], "shortcuts": ["ctrl+shift+x"]]]
+        try JSONSerialization.data(withJSONObject: listed).write(to: setup.control.appendingPathComponent("extensions.json"))
+        let auth = try setup.store()
+
+        await auth.refreshProviders()
+
+        #expect(auth.providerOwners["fixture-login"]?.destination == copy.destination)
+        let survey = setup.pi.importedState().survey()
+        let row = try #require(survey.extensions.first { $0.copy.destination == copy.destination })
+        #expect(row.terminalOnly == ["footer or header"])
+        let support = PiExtensionSupport.make(try #require(auth.extensionInventory[copy.destination]), scanned: row.terminalOnly)
+        #expect(support.providers == ["fixture-login"])
+        #expect(support.level == .partly)
+        #expect(ExtensionsText.subtitle(row, support: support, names: auth.providerNames)
+            == "Adds Acme account sign-in, /acme-usage, 1 event hook · Not shown in Shepherd: shortcut ctrl+shift+x, footer or header · Added from \((source.path as NSString).abbreviatingWithTildeInPath)")
+        let page = PiSignInPage.make(survey: survey, providers: auth.providers, owners: auth.providerOwners)
+        #expect(page.subscriptions.first { $0.id == "fixture-login" }?.source == "acme-login")
     }
 
     @Test func signingOutRemovesOnlyThatProvidersCredentialFromShepherdsPi() async throws {

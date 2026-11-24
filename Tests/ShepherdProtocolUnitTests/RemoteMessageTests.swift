@@ -400,7 +400,7 @@ enum RemoteSamples {
     ]
     static let hostExtensions = [
         HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://github.com/acme/pi-login · Signs in to Acme",
-                      on: true, added: true),
+                      on: true, added: true, support: .partly, supportDetail: "Registered, but Shepherd can’t show: shortcut ctrl+x."),
         HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from ~/code/acme-tools", on: true,
                       failure: "Cannot find module 'acme-sdk'", added: true),
         HostExtension(id: "your-extensions/review.ts", name: "review", subtitle: "From your pi · extensions/review.ts", on: false),
@@ -1729,5 +1729,12 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.composedInput(text: "one\ntwo", submit: true) == Data("\u{1B}[200~one\ntwo\u{1B}[201~\r".utf8))
         #expect(RemoteProtocol.composedInput(text: "draft", submit: false) == Data("\u{1B}[200~draft\u{1B}[201~".utf8))
         #expect(RemoteProtocol.composedInput(text: "", submit: false) == Data("\u{1B}[200~\u{1B}[201~".utf8))
+    }
+
+    /// A support word a newer host adds leaves the row readable, with no support.
+    @Test func anUnknownExtensionSupportWordReadsAsNone() throws {
+        let json = #"{"id":"your-extensions/added/acme","name":"acme","subtitle":"Added","on":true,"added":true,"support":"sometimes"}"#
+        let row = try JSONDecoder().decode(HostExtension.self, from: Data(json.utf8))
+        #expect(row.support == nil && row.name == "acme")
     }
 }
