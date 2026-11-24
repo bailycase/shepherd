@@ -36,6 +36,8 @@ final class PreviewWorkspace {
             remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
             mcp: mcp,
             yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi),
+            // Sign-in's providers as the bundled pi lists them, never a bridge that has no pi SDK here.
+            piAuth: PiAuthStore(pi: scratch.server.pi, providers: PreviewYourPi.providers),
             // Hooks read the scratch folder's home, never this machine's.
             hooks: hooks ?? HooksModel(home: scratch.dir.appendingPathComponent("hooks-home").path,
                                        support: scratch.dir.appendingPathComponent("hooks-support")),
@@ -512,6 +514,21 @@ enum PreviewYourPi {
         ]
         return survey
     }()
+
+    /// The providers Sign-in lists, as the bundled pi offers them, plus one an extension adds.
+    static let providers: [PiSignInProvider] = [
+        PiSignInProvider(id: "anthropic", name: "Anthropic", oauth: "Anthropic (Claude Pro/Max)", apiKey: "Anthropic API key", keyForm: true),
+        PiSignInProvider(id: "openai-codex", name: "OpenAI Codex", oauth: "ChatGPT Plus/Pro (Codex Subscription)"),
+        PiSignInProvider(id: "github-copilot", name: "GitHub Copilot", oauth: "GitHub Copilot", apiKey: "GitHub token", keyForm: true),
+        PiSignInProvider(id: "xai", name: "xAI", oauth: "Grok subscription", apiKey: "xAI API key", keyForm: true),
+        PiSignInProvider(id: "kimi-coding", name: "Kimi", oauth: "Kimi For Coding", apiKey: "Kimi API key", keyForm: true),
+        PiSignInProvider(id: "radius", name: "Radius", oauth: "Radius"),
+        PiSignInProvider(id: "acme", name: "Acme", oauth: "Acme account"),
+        PiSignInProvider(id: "deepseek", name: "DeepSeek", apiKey: "DeepSeek API key", keyForm: true),
+        PiSignInProvider(id: "openai", name: "OpenAI", apiKey: "OpenAI API key", keyForm: true),
+        PiSignInProvider(id: "openrouter", name: "OpenRouter", apiKey: "OpenRouter API key", keyForm: true),
+        PiSignInProvider(id: "groq", name: "Groq", apiKey: "Groq API key", keyForm: true),
+    ]
 
     /// A new user: no pi of theirs, nothing in the environment, not signed in.
     static let none: YourPiSurvey = {

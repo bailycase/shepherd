@@ -157,9 +157,8 @@ public enum HostInventoryPresentation {
     /// The row's line: pi's reason while the extension is left out of launches, else where it came from.
     public static func extensionLine(_ item: HostExtension) -> String { item.failure ?? item.subtitle }
 
-    public static func tone(_ item: HostExtension) -> Tone {
-        item.failure != nil ? .failed : !item.on ? .idle : item.support == .partly ? .attention : .done
-    }
+    /// Loaded or not: "Partly" is its tag's word, not a dot that asks for the person (attention glows).
+    public static func tone(_ item: HostExtension) -> Tone { item.failure != nil ? .failed : item.on ? .done : .idle }
 
     /// The tag beside its switch, as the Mac's: "Works", "Partly", "Didn’t load"; nil before the host's pi loaded it.
     public static func supportWord(_ item: HostExtension) -> String? {

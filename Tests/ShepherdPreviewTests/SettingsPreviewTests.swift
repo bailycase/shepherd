@@ -44,8 +44,6 @@ struct SettingsPreviewTests {
         let copies = PreviewYourPi.copies
         let home = workspace.vm.pi.home
         func at(_ index: Int, _ entry: String = "") -> String { home.appendingPathComponent(copies[index].destination).appendingPathComponent(entry).path }
-        auth.providers = [PiSignInProvider(id: "anthropic", name: "Anthropic", oauth: "Claude Pro/Max"),
-                          PiSignInProvider(id: "acme", name: "Acme", oauth: "Acme account")]
         auth.extensionInventory = [
             copies[11].destination: [PiExtensionInventory(path: at(11, "index.ts"), providers: ["acme"], commands: ["acme-usage"])],
             copies[8].destination: [PiExtensionInventory(path: at(8, "index.ts"), events: ["agent_end", "session_start"])],

@@ -57,9 +57,14 @@ final class PiAuthStore {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    init(pi: PiSetup, bridge: (@MainActor () throws -> PiSignInBridge)? = nil) {
+    /// A fixed provider list (previews) is never listed again, as `YourPiModel`'s fixed survey isn't read again.
+    @ObservationIgnored private let fixedProviders: Bool
+
+    init(pi: PiSetup, bridge: (@MainActor () throws -> PiSignInBridge)? = nil, providers: [PiSignInProvider]? = nil) {
         self.pi = pi
         self.bridge = bridge ?? { try PiAuthStore.appBridge(pi) }
+        self.providers = providers
+        fixedProviders = providers != nil
     }
 
     /// Why this build can't sign in: a Debug build run on a stand-in engine has no pi SDK.
@@ -78,6 +83,7 @@ final class PiAuthStore {
 
     /// Refresh when Sign-in opens or provider resources change. Concurrent readers share one subprocess.
     func refreshProviders() async {
+        guard !fixedProviders else { return }
         if let providerRead { await providerRead.value; return }
         let read = Task { [weak self] in
             guard let self else { return }

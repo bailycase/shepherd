@@ -93,7 +93,7 @@ struct HostInventoryPresentationTests {
         #expect(P.supportWord(fine) == nil && P.supportWord(broken) == "Didn’t load")
         var partly = fine
         partly.support = .partly
-        #expect(P.supportWord(partly) == "Partly" && P.tone(partly) == .attention)
+        #expect(P.supportWord(partly) == "Partly" && P.tone(partly) == .done)
         partly.support = .works
         #expect(P.supportWord(partly) == "Works" && P.tone(partly) == .done)
     }
