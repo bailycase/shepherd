@@ -990,6 +990,23 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("env.CHANNEL == 'nightly' && 'YES' || 'NO'", build)
         self.assertIn('COMPILATION_CACHE_ENABLE_CACHING="$COMPILATION_CACHE"', build)
 
+    def test_only_nightly_overrides_swift_compilation_mode(self):
+        body = self.step("Build ${{ env.APP_NAME }}").split("run: |\n", 1)[1]
+        script = "\n".join(line[10:] for line in body.splitlines() if line.startswith("          "))
+        batch_settings = {
+            "SWIFT_OPTIMIZATION_LEVEL=-O",
+            "SWIFT_WHOLE_MODULE_OPTIMIZATION=NO",
+            "SWIFT_COMPILATION_MODE=singlefile",
+        }
+        for channel in ("nightly", "beta", "stable"):
+            with self.subTest(channel=channel):
+                result = subprocess.run(
+                    ["bash", "-e", "-c", 'xcodebuild() { printf "%s\\n" "$@"; }\n' + script],
+                    env={**os.environ, "CHANNEL": channel}, capture_output=True, text=True, check=True,
+                )
+                settings = {line for line in result.stdout.splitlines() if line.startswith("SWIFT_")}
+                self.assertEqual(settings, batch_settings if channel == "nightly" else set())
+
     def test_package_checkouts_are_cached_by_the_resolved_versions_before_the_build(self):
         names = [title for title, _ in self.steps()]
         cache = self.step("Cache Swift package checkouts")
