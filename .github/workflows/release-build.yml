@@ -77,6 +77,14 @@ jobs:
           # Reuse products only while shared library inputs match, not across model/ABI changes.
           shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
           echo "shared=$shared" >> "$GITHUB_OUTPUT"
+      # Cloning the Swift packages (Sentry's repository above all) took about 3 minutes per build.
+      # They change only with Package.resolved, and the step below keeps SourcePackages.
+      - name: Cache Swift package checkouts
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-release-${{ runner.os }}-${{ hashFiles('Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
       # No DerivedData cache: the shared-input key changed on nearly every commit, so it never
       # restored and only spent time saving. This marker discards any products that predate a change.
       - name: Start over when shared build inputs changed
