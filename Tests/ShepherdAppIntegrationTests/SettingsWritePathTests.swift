@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -119,6 +120,7 @@ struct SettingsWritePathTests {
         // (b) and (c) run against a fresh host the app serves, over its socket.
         let app = try AppHarness()
         defer { app.stop() }
+        try await app.server.useLoopbackNetworkingForTests()
         try await app.start()
         let hostSettings = try #require(app.hostSettings)
         let session = Session(wire: try Wire(path: app.hostSocket))
@@ -221,8 +223,10 @@ struct SettingsWritePathTests {
         typealias K = AppSettings.Key
         let harness = try AppHarness()
         defer { harness.stop() }
+        try await harness.server.useLoopbackNetworkingForTests()
         try await harness.start()
         let app = harness.settings, host = try #require(harness.hostSettings)
+        let services = try #require(harness.host)
         // Nothing in production writes the port (`remoteListenerPort.writers`): the host would listen on the stored one, the
         // edition's. Aim it at 0 so Serve this Mac opens on a free port.
         host.remoteListenerPort = 0
@@ -250,6 +254,7 @@ struct SettingsWritePathTests {
         }
 
         var reaches: [String: (followed: Bool, fields: [String])] = [:]
+        var openedPort: UInt16?
         for key in keys {
             let probe = probes[key]!
             let before = snapshot(harness.defaults, tracked), hostBefore = probe.read(host)
@@ -266,13 +271,39 @@ struct SettingsWritePathTests {
             fields.merge(moved) { $1 }
             try observe("direct.\(key)", fields)
             reaches[key] = (followed, moved.keys.map { String($0.dropFirst("hostReply.".count)) }.sorted())
+            if key == K.remoteListenerEnabled {
+                try await eventuallyOnMain("Serve this Mac to open the TCP listener") { services.listener.port != nil }
+                let port = try #require(services.listener.port)
+                try #require(try loopbackConnectError(port) == nil)
+                openedPort = port
+            }
         }
 
         // Serve this Mac's switch opens the listener in the host; turning it off closes it.
         app.remoteListenerEnabled = false
         try await reachHost(from: probes[K.remoteListenerEnabled]!)
         try observe("direct.\(K.remoteListenerEnabled).off", try await hostReplyMoved())
+        try await eventuallyOnMain("Serve this Mac to close the TCP listener") { services.listener.port == nil }
+        let port = try #require(openedPort)
+        try #require(try loopbackConnectError(port) == ECONNREFUSED)
         return reaches
+    }
+
+    /// Probe the actual TCP socket, independent of the host's listener bookkeeping.
+    private static func loopbackConnectError(_ port: UInt16) throws -> Int32? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw Inventory("TCP probe socket: errno \(errno)") }
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr = in_addr(s_addr: INADDR_LOOPBACK.bigEndian)
+        return withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 ? nil : errno
+            }
+        }
     }
 
     // MARK: Probes for the Mac's own write

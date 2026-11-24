@@ -73,7 +73,7 @@ struct FleetDispatchTests {
              sendWork: Bool = true, cap: Int = HostSettings.fleetThreadCapDefault, checkout: Bool = true,
              uncommitted: FleetUncommittedChanges = .sendThem, links: SessionServer.FleetLinkOptions? = nil, gate: FleetTestGate? = nil,
              mcp: [String: String] = [:], lacking: Set<String> = [], noXcode: Bool = false, isolatedPi: Bool = false,
-             prepare: (@Sendable (SessionServer) async -> Void)? = nil) async throws {
+             loopbackOnly: Bool = false, prepare: (@Sendable (SessionServer) async -> Void)? = nil) async throws {
             self.name = name
             meter = FleetPressureIntegrationTests.Meter(busy: busy)
             settings = Locked(HostSettings(fleetThreadsCanSend: sendWork, fleetThreadCap: cap, fleetUncommitted: uncommitted))
@@ -81,6 +81,11 @@ struct FleetDispatchTests {
             // A Mac of its own pi home: the conversations of two Macs never meet in one folder (a move writes one).
             let host = try ScratchServer(dir: scratch, pi: isolatedPi ? PiSetup(engine: PiSetup.app.engine, home: scratch.appendingPathComponent("pi"), userHome: scratch.path) : .app)
             let server = host.server
+            if loopbackOnly {
+                try await server.useLoopbackNetworkingForTests()
+                // If a scratch host's updater relay is reached, never open an installed app.
+                server.openAppForUpdate = { false }
+            }
             // Before the listener opens: what the host offers is read when a peer says hello.
             await prepare?(server)
             server.configureFleet(name: name, advertises: false)
@@ -109,18 +114,19 @@ struct FleetDispatchTests {
                 try git(["config", "user.email", "tests@example.com"], in: folder)
                 try await server.addSpace(Space(name: "acme-web", path: folder.path, repoKey: repoKey))
             }
-            let tokenURL = scratch.appendingPathComponent("remote-token")
-            let socket = scratch.appendingPathComponent("h.sock").path
-            let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
-            token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            try server.startLocalListener(path: socket, tokenURL: tokenURL)
+            // Issuing the test token starts Fleet. A returning peer can deliver work immediately.
             await MainActor.run {
                 server.serveThreads(ThreadHosting(defaults: {
                     ThreadHosting.Defaults(model: "stub/model-a", thinking: .medium, serviceTier: .standard, worktreeBaseMode: .head, worktreeFetchBeforeCreate: false)
                 }, launch: { AgentLaunchSettings() }, shell: { SessionCommand(argv: ["/bin/sh"], env: [:]) }))
             }
-            // Serving threads installs the host's own window relay, which a test's updater stands in for.
+            // Serving threads installs the host's own window relay. Restore the test updater before Fleet can accept requests.
             await prepare?(server)
+            let tokenURL = scratch.appendingPathComponent("remote-token")
+            let socket = scratch.appendingPathComponent("h.sock").path
+            let port = try await RestartablePort.listen(port) { try server.startRemoteListener(port: $0, tokenURL: tokenURL) }
+            token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            try server.startLocalListener(path: socket, tokenURL: tokenURL)
             let settings = settings
             server.setFleetHostSettings { [weak server] change in
                 let now = settings.withValue { $0.apply(change); return $0 }
@@ -267,12 +273,13 @@ struct FleetDispatchTests {
                      originExtra: [String: String] = [:], repoKeyB: String? = repoKey,
                      originOfB: ((Origin) throws -> Origin)? = nil, checkoutB: Bool = true,
                      uncommittedA: FleetUncommittedChanges = .sendThem, mcp: [String: String] = [:], lackingB: Set<String> = [],
-                     noXcodeB: Bool = false, isolatedPi: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
+                     noXcodeB: Bool = false, isolatedPi: Bool = false, loopbackOnly: Bool = false) async throws -> (a: Mac, b: Mac, origin: Origin) {
         try StubPi.installAsEngine()
         let origin = try makeOrigin(extra: originExtra)
-        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp, isolatedPi: isolatedPi)
+        let a = try await Mac("MacBook Pro", origin: origin, busy: busyA, sendWork: sendWork, cap: cap, uncommitted: uncommittedA, mcp: mcp,
+                              isolatedPi: isolatedPi, loopbackOnly: loopbackOnly)
         let b = try await Mac("Mac mini", origin: try originOfB?(origin) ?? origin, busy: busyB, repoKey: repoKeyB, sendWork: sendWork, checkout: checkoutB,
-                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB, isolatedPi: isolatedPi)
+                              mcp: mcp, lacking: lackingB, noXcode: noXcodeB, isolatedPi: isolatedPi, loopbackOnly: loopbackOnly)
         try await a.pair(with: b)
         try await waitForReports(a, b)
         return (a, b, origin)
