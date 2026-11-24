@@ -17,11 +17,11 @@ public struct SHModelSettingsLabel: View {
   }
 
   public var body: some View {
-    HStack(spacing: SH.Space.s) {
-      Text(model.isEmpty ? "Default" : model).font(.shMono(12)).lineLimit(1).truncationMode(.middle)
+    // The boards' `.mdl`: the model in `ui`, its level dimmed after it ("claude-opus Medium").
+    HStack(spacing: SH.Space.xs + 1) {
+      Text(model.isEmpty ? "Default" : model).font(.sh(.ui)).lineLimit(1).truncationMode(.middle)
       if let thinking {
-        Text("·").foregroundStyle(Color.sh.textTertiary)
-        Text(thinking).fixedSize()
+        Text(thinking).font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary).fixedSize()
       }
       if fast { SHFastBolt() }
       if changeable { SHChipChevron() }

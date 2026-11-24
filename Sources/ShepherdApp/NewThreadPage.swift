@@ -95,14 +95,9 @@ struct NewThreadPage: View {
         let query = commandQuery
         let _ = slash.update(query: query, commands: menuCommands)
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "New thread", chrome: chrome)
+            DestinationPageHeader(title: "New thread", chrome: chrome, rule: false)
+            // The boards' `.hero`: the composer and the suggestions under it, centred a little above the middle.
             VStack(spacing: AppLayout.newThreadGap) {
-                Text("What should the agent work on?")
-                    .font(.shSans(AppLayout.newThreadHeadingSize, .semibold))
-                    .tracking(AppLayout.newThreadHeadingTracking)
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .multilineTextAlignment(.center)
-                    .accessibilityAddTraits(.isHeader)
                 VStack(spacing: SH.Space.l) {
                     composer
                         .zIndex(1)
@@ -127,7 +122,7 @@ struct NewThreadPage: View {
                 ContinueCards(card: vm.continueCard, open: { vm.selectSidebarRow($0) },
                               design: vm.designToolEnabled ? { vm.openNewDesign() } : nil)
                     .frame(maxWidth: AppLayout.newThreadComposerWidth)
-                    .padding(.top, AppLayout.newThreadCardsTop)
+                    .padding(.top, AppLayout.newThreadCardsTop - AppLayout.newThreadGap)
             }
             .padding(.horizontal, AppLayout.newThreadSidePadding)
             .padding(.bottom, AppLayout.newThreadBottomPadding)
@@ -203,10 +198,13 @@ struct NewThreadPage: View {
                 }
                 .shTransition(.list, edge: .leading)
             }
+        } leading: {
+            leadingControls
         } field: {
             ComposerTextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }),
-                              caret: caret, placeholder: "Describe the task…",
-                              label: "What should the agent work on?", focus: $composing, attach: draft.attach)
+                              caret: caret, placeholder: "What should the agent work on?",
+                              label: "What should the agent work on?", focus: $composing, attach: draft.attach,
+                              size: AppLayout.newThreadFieldSize)
             .onComposerKey(.return) { press in
                 if let result = press.lineBreak() { return result }
                 // ↩ over the slash menu runs its row: the thread starts with it.
@@ -308,9 +306,36 @@ struct NewThreadPage: View {
         .overlay(alignment: .bottomLeading) { mentionMenu }
     }
 
+    /// The boards' line: the attach plus, then where it runs ("shepherd on This Mac") and, with another Mac paired, which Mac.
+    private var leadingControls: some View {
+        let chip = NewThreadPlaces.chip(NewThreadState.hosts(vm), chosen: draft.place)
+        let fleet = draft.fleetPicker(vm)
+        let withMac = !fleet.options.isEmpty
+        return HStack(spacing: SH.Space.xxs) {
+            Button { picking = true } label: { Image(systemName: "plus").font(.system(size: SHComposerMetrics.sendGlyph + 2)) }
+                .buttonStyle(.shIcon(size: SHComposerMetrics.actionSize, round: true))
+                .disabled(draft.attachments.isFull)
+                .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
+                .accessibilityLabel("Attach file")
+            // Fleet on and another Mac paired: the Mac is its own chip, after the project (FleetNewThread).
+            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: withMac ? nil : chip.host) }
+                .buttonStyle(.shComposerChip(active: menu == .place || menu == .base || menu == .branch))
+                .background { ComposerMenuRegion(dismissal: dismissal) }
+                .help(withMac ? chip.project : draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
+            if withMac {
+                Button { toggle(.whereRuns) } label: { SHFleetPlaceChipLabel(fleet.chip) }
+                    .buttonStyle(.shComposerChip(active: menu == .whereRuns))
+                    .background { ComposerMenuRegion(dismissal: dismissal) }
+                    .help("Where it runs: \(fleet.chip)")
+            }
+        }
+        .layoutPriority(1)
+    }
+
     private var controls: some View {
         ComposerControlsMinimum {
             HStack(spacing: SH.Space.xxs) {
+                Spacer(minLength: SH.Space.m)
                 ViewThatFits(in: .horizontal) {
                     controlChips(short: false)
                     controlChips(short: true)
@@ -330,41 +355,19 @@ struct NewThreadPage: View {
     }
 
     private func controlChips(short: Bool) -> some View {
-        let chip = NewThreadPlaces.chip(NewThreadState.hosts(vm), chosen: draft.place)
         let levels = draft.thinkingLevels(vm)
         let tiers = draft.serviceTiers(vm)
-        return HStack(spacing: SH.Space.xxs) {
-            Button { picking = true } label: { Image(systemName: "paperclip") }
-                .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
-                .disabled(draft.attachments.isFull)
-                .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
-                .accessibilityLabel("Attach file")
-            let summary = ModelSettingsSummary(model: draft.model, thinking: draft.thinkingLevel(vm).rawValue, thinkingOffered: !levels.isEmpty,
-                                               speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short,
-                                               qualified: draft.catalog?.isAmbiguous(draft.model) ?? false)
-            Button { toggle(.settings) } label: {
-                SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
-            }
-            .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
-            .background { ComposerMenuRegion(dismissal: dismissal) }
-            .help("Model settings: \(draft.model)")
-            .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
-            .accessibilityValue(summary.value)
-            Spacer(minLength: SH.Space.m)
-            // Fleet on and another Mac paired: the Mac is its own chip, after the project (FleetNewThread).
-            let fleet = draft.fleetPicker(vm)
-            let withMac = !fleet.options.isEmpty
-            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: withMac ? nil : chip.host) }
-                .buttonStyle(.shComposerChip(active: menu == .place || menu == .base || menu == .branch))
-                .background { ComposerMenuRegion(dismissal: dismissal) }
-                .help(withMac ? chip.project : draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
-            if withMac {
-                Button { toggle(.whereRuns) } label: { SHFleetPlaceChipLabel(fleet.chip) }
-                    .buttonStyle(.shComposerChip(active: menu == .whereRuns))
-                    .background { ComposerMenuRegion(dismissal: dismissal) }
-                    .help("Where it runs: \(fleet.chip)")
-            }
+        let summary = ModelSettingsSummary(model: draft.model, thinking: draft.thinkingLevel(vm).rawValue, thinkingOffered: !levels.isEmpty,
+                                           speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short,
+                                           qualified: draft.catalog?.isAmbiguous(draft.model) ?? false)
+        return Button { toggle(.settings) } label: {
+            SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
         }
+        .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
+        .background { ComposerMenuRegion(dismissal: dismissal) }
+        .help("Model settings: \(draft.model)")
+        .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
+        .accessibilityValue(summary.value)
     }
 
     // MARK: Menus
@@ -709,8 +712,8 @@ extension ShepherdViewModel {
     }
 }
 
-/// The suggestion cards under the composer, each a third of the row: Continue, and "Start a
-/// design" last while the Design tool is on.
+/// The suggestions under the composer (the boards' `.sugg`), one row each: Continue the most recent running thread, and
+/// "Start a design" while the Design tool is on.
 private struct ContinueCards: View, Equatable {
     let card: ContinueCard?
     let open: (SidebarRowID) -> Void
@@ -720,99 +723,69 @@ private struct ContinueCards: View, Equatable {
     static func == (a: ContinueCards, b: ContinueCards) -> Bool { a.card == b.card && (a.design == nil) == (b.design == nil) }
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = (proxy.size.width - AppLayout.newThreadCardsGap * (AppLayout.newThreadCardsPerRow - 1))
-                / AppLayout.newThreadCardsPerRow
-            HStack(spacing: AppLayout.newThreadCardsGap) {
-                if let card {
-                    SuggestionCard(card: card) { open(card.id) }
-                        .frame(width: max(0, width))
-                        .shTransition(.content)
-                }
-                if let design {
-                    DesignSuggestionCard(action: design)
-                        .frame(width: max(0, width))
-                        .shTransition(.content)
-                }
-                Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 0) {
+            if let card {
+                SuggestionRow(symbol: "bubble.left", kicker: "Continue", title: card.title, since: card.since,
+                              detail: "running", label: "Continue \(card.title), running") { open(card.id) }
+                    .shTransition(.content)
+            }
+            if let design {
+                SuggestionRow(symbol: "pencil.tip", kicker: nil, title: "Start a design", since: nil,
+                              detail: "HTML boards on a canvas", label: "Start a design, HTML boards on a canvas", action: design)
+                    .shTransition(.content)
             }
         }
-        .frame(height: SuggestionCard.height)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .shAnimation(.content, value: card?.id)
     }
 }
 
-/// "Start a design" (NavNewThread): "Need a mockup first?" beside a 12pt nib, "Start a design",
-/// and "HTML boards on a canvas".
-private struct DesignSuggestionCard: View {
+/// One suggestion (the boards' `.sg`): a 34pt row of its glyph, a kicker in `textSecondary`, the title in medium ink and a
+/// detail in `textTertiary` ("running for 42 min"), hover `bgHover`.
+private struct SuggestionRow: View {
+    let symbol: String
+    let kicker: String?
+    let title: String
+    /// When the thread started running: the detail counts it ("running for 42 min").
+    let since: Date?
+    let detail: String
+    let label: String
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: AppLayout.newThreadCardSpacing) {
-                HStack(spacing: SH.Space.m) {
-                    Image(systemName: "pencil.tip").font(.shSans(12))
-                        .foregroundStyle(Color.sh.textSecondary)
-                    Text("Need a mockup first?").font(.shSans(11.5)).foregroundStyle(Color.sh.textTertiary)
-                }
-                Text("Start a design").font(.shSans(13, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                Text("HTML boards on a canvas").font(.shSans(11)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
-            }
-            .padding(.vertical, SH.Space.l)
-            .padding(.horizontal, AppLayout.newThreadCardPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .shAnimation(.hover, value: hovering)
-        .accessibilityLabel("Start a design, HTML boards on a canvas")
-    }
-}
-
-/// One suggestion card (NavNewThread): a kicker with its glyph, a title, and a detail; radius 8,
-/// a `lineSubtle` border, hover `bgHover`.
-private struct SuggestionCard: View {
-    static let height = AppLayout.newThreadCardHeight
-
-    let card: ContinueCard
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: AppLayout.newThreadCardSpacing) {
-                HStack(spacing: SH.Space.m) {
-                    Image(systemName: "bubble.left").font(.system(size: AppLayout.chipSymbol, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
-                    Text("Continue").font(.shSans(11.5)).foregroundStyle(Color.sh.textTertiary)
-                }
-                Text(card.title).font(.shSans(13, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.tail)
+            HStack(spacing: SH.Space.m + 2) {
+                Image(systemName: symbol).font(.system(size: AppLayout.chipSymbol + 2)).foregroundStyle(Color.sh.textSecondary)
+                    .frame(width: SH.Space.xl)
+                if let kicker { Text(kicker).foregroundStyle(Color.sh.textSecondary) }
+                Text(title).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.tail)
                 Group {
-                    if let since = card.since {
+                    if let since {
                         TimelineView(SHElapsedSchedule(start: since)) { context in
-                            Text("running · \(SHDuration.text(context.date.timeIntervalSince(since)))")
+                            Text("\(detail) for \(Self.duration(context.date.timeIntervalSince(since)))")
                         }
                     } else {
-                        Text("running")
+                        Text(detail)
                     }
                 }
-                .font(.shSans(11))
-                .foregroundStyle(Color.sh.textTertiary)
+                .foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             }
-            .padding(.vertical, SH.Space.l)
-            .padding(.horizontal, AppLayout.newThreadCardPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+            .font(.sh(.ui))
+            .padding(.horizontal, SH.Space.l)
+            .frame(height: AppLayout.newThreadSuggestionHeight)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .shAnimation(.hover, value: hovering)
-        .accessibilityLabel("Continue \(card.title), running")
+        .buttonStyle(.shRow(radius: SH.Radius.s))
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel(label)
+    }
+    /// "42 min", "3 hr": the boards' words, on the same steps as the short clock.
+    static func duration(_ seconds: TimeInterval) -> String {
+        let whole = Int(max(0, seconds))
+        if whole < 60 { return "\(whole) sec" }
+        if whole < 3600 { return "\(whole / 60) min" }
+        if whole < 86_400 { return "\(whole / 3600) hr" }
+        return "\(whole / 86_400) d"
     }
 }
 

@@ -120,7 +120,7 @@ struct MermaidRenderingTests {
             let text = try await renderer.webView.evaluateJavaScript("document.querySelector('#chart svg').textContent") as? String
             #expect(text?.contains(label) == true)
             if label == "Review request" {
-                #expect(try await renderer.webView.evaluateJavaScript("getComputedStyle(document.querySelector('#chart .messageText')).fontFamily.includes('Geist')") as? Bool == true)
+                #expect(try await renderer.webView.evaluateJavaScript("getComputedStyle(document.querySelector('#chart .messageText')).fontFamily.includes('system-ui')") as? Bool == true)
                 let messageSize = try await renderer.webView.evaluateJavaScript("parseFloat(getComputedStyle(document.querySelector('#chart .messageText')).fontSize)") as? Double
                 #expect(messageSize == Double(SHTextStyle.body.size))
             }

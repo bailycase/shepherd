@@ -314,35 +314,32 @@ public struct SHSidebarAutomationRow: View, Equatable {
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.automation")
         let sh = Color.sh
+        // The boards' automation row: the name and one word, like a thread's; its runs' chevron
+        // shows while the pointer is over it.
         HStack(spacing: density.sidebarRowGap) {
-            SHGlyph.automation.image
-                .font(.system(size: density.rowGlyph - 1, weight: .regular))
-                .foregroundStyle(attention ? sh.lanternText : sh.textTertiary)
-                .frame(width: SHSidebarMetrics.rowSlot)
-                .accessibilityHidden(true)
             Text(name)
-                .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
+                .font(density.rowTitleFont(weight: unread > 0 ? .semibold : .regular))
                 .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: SH.Space.xs)
             HStack(spacing: SHProjectMetrics.rollupGap) {
                 Text(word)
-                    .font(.shMono(SHSidebarMetrics.accessoryFont))
+                    .font(.sh(.caption))
                     .foregroundStyle(color)
                     .shContentTransition(.crossFade)
                 if unread > 0 {
                     Text("\(unread)")
-                        .font(.sh(.micro, weight: .semibold))
+                        .font(.sh(.caption))
                         .monospacedDigit()
-                        .foregroundStyle(sh.running)
+                        .foregroundStyle(sh.textSecondary)
                         .shContentTransition(.numeric())
                 }
-                if let expanded {
+                if let expanded, hovering || expanded {
                     Button(action: toggle) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: SHProjectMetrics.chevron, weight: .semibold))
-                            .foregroundStyle(sh.textTertiary)
+                            .foregroundStyle(sh.textSecondary)
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                             .shAnimation(.disclosure, value: expanded)
                             .frame(width: SHProjectMetrics.chevronSlot, height: density.rowHeight)
@@ -357,17 +354,18 @@ public struct SHSidebarAutomationRow: View, Equatable {
             .fixedSize()
         }
         .padding(.leading, density.sidebarRowPadding)
-        .padding(.trailing, expanded == nil ? density.sidebarRowPadding : 0)
+        .padding(.trailing, expanded == nil || !(hovering || expanded == true) ? density.sidebarRowPadding : 0)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
     }
 
+    /// The boards' `.ac`: `textTertiary`, `textSecondary` when it asks you, red when it failed.
     private var color: Color {
         switch tone {
-        case .attention?: .sh.lanternText
+        case .attention?: .sh.textSecondary
         case .failed?, .stuck?: .sh.failed
         default: .sh.textTertiary
         }

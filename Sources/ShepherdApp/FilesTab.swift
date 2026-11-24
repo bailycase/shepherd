@@ -570,10 +570,8 @@ private struct CodeTextView: NSViewRepresentable {
         coordinator.currentKey = key
         coordinator.highlightTask?.cancel()
 
-        SHFonts.register()
         let size = AppLayout.Files.codeFontSize * scale
-        let font = NSFont(name: SHFonts.monoFamily, size: size)
-            ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let font = SHFonts.platform(mono: true, weight: .regular, size: size)
         let style = NSMutableParagraphStyle()
         style.minimumLineHeight = AppLayout.Files.lineHeight * scale
         style.maximumLineHeight = AppLayout.Files.lineHeight * scale

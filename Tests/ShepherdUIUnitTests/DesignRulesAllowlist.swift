@@ -152,7 +152,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/TurnChangesCard.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/TurnError.swift", 5, font),
         .init(.rawFontSize, "Sources/ShepherdApp/ChangesMenus.swift", 2, font),
-        .init(.rawFontSize, "Sources/ShepherdApp/NewThreadPage.swift", 7, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Thread/SubagentInspector.swift", 9, font),
     ]

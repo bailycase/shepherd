@@ -16,11 +16,11 @@ struct ShellLayoutTests {
         (1440.0, 232.0, false, false, ShellLayout.SidebarMode.docked, 232.0, false),
         (1440.0, 232.0, true, false, .hidden, 232.0, false),
         (1440.0, 232.0, true, true, .hidden, 232.0, false),
-        // Narrowing to fit: the main column keeps 720 (+1 for the edge).
-        (1000.0, 340.0, false, false, .docked, 279.0, false),
-        (911.0, 232.0, false, false, .docked, 190.0, false),
+        // Narrowing to fit: the main column keeps 720 (+8 for the panel's inset).
+        (1000.0, 340.0, false, false, .docked, 272.0, false),
+        (918.0, 232.0, false, false, .docked, 190.0, false),
         // Below the fit point the sidebar hides, and ⇧⌘S overlays it.
-        (910.0, 232.0, false, false, .hidden, 232.0, true),
+        (917.0, 232.0, false, false, .hidden, 232.0, true),
         (720.0, 232.0, false, false, .hidden, 232.0, true),
         (720.0, 232.0, false, true, .overlay, 232.0, true),
         (720.0, 232.0, true, true, .overlay, 232.0, true),
@@ -34,17 +34,17 @@ struct ShellLayoutTests {
     /// The shell watches `layoutWidth` instead of the window's width, so past the widest
     /// window that still narrows the sidebar a resize reruns nothing: every sidebar answer must
     /// be the same for the clamped width as for the real one.
-    @Test(arguments: [720.0, 910.0, 911.0, 1000.0, 1060.0, 1061.0, 1062.0, 1440.0, 2560.0] as [CGFloat])
+    @Test(arguments: [720.0, 917.0, 918.0, 1000.0, 1067.0, 1068.0, 1069.0, 1440.0, 2560.0] as [CGFloat])
     func theClampedWidthLaysOutTheShellAsTheWindowWidthDoes(window: CGFloat) {
         let clamped = ShellLayout.layoutWidth(window)
-        #expect(clamped == min(window, AppLayout.sidebarMaxWidth + AppLayout.dividerWidth + AppLayout.mainColumnMinWidth))
+        #expect(clamped == min(window, AppLayout.sidebarMaxWidth + AppLayout.sidebarGutter + AppLayout.mainColumnMinWidth))
         for preferred in [90.0, 190.0, 232.0, 340.0, 900.0] {
             for (userHidden, overlay) in [(false, false), (true, false), (false, true), (true, true)] {
                 #expect(ShellLayout.sidebar(windowWidth: clamped, preferredWidth: preferred, userHidden: userHidden, overlayShown: overlay)
                     == ShellLayout.sidebar(windowWidth: window, preferredWidth: preferred, userHidden: userHidden, overlayShown: overlay))
             }
             // A drag on the sidebar's edge is capped by the room the window leaves the same way.
-            let room = { (width: CGFloat) in AppSettings.clampSidebarWidth(min(preferred, Double(width - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth))) }
+            let room = { (width: CGFloat) in AppSettings.clampSidebarWidth(min(preferred, Double(width - AppLayout.sidebarGutter - AppLayout.mainColumnMinWidth))) }
             #expect(room(clamped) == room(window))
         }
     }
@@ -54,8 +54,8 @@ struct ShellLayoutTests {
         #expect(ShellLayout.sidebar(windowWidth: 1600, preferredWidth: 900, userHidden: false, overlayShown: false).width == AppLayout.sidebarMaxWidth)
     }
 
-    @Test func theDefaultSidebarIsTheBoards232Points() {
-        #expect(AppSettings.defaultSidebarWidth == 232)
+    @Test func theDefaultSidebarIsTheBoards248Points() {
+        #expect(AppSettings.defaultSidebarWidth == 248)
         #expect(AppSettings.sidebarWidthRange == 190...340)
     }
 

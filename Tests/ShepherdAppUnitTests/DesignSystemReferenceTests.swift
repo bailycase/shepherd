@@ -76,7 +76,7 @@ struct DesignSystemReferenceTests {
     @Test func darkAndLightValuesAreBothKept() throws {
         let window = try #require(Self.reference().colors[0].rows.first { $0.name == "--bg-window" })
         #expect(window.dark != window.light)
-        #expect(window.dark.lowercased() == "#0d0e10" && window.light.lowercased() == "#fbfbfa")
+        #expect(window.dark.lowercased() == "#1c1c1e" && window.light.lowercased() == "#f7f7f8")
         #expect(Self.reference().colorsSub == "\(Self.shepherdUI.colors.count) tokens · light and dark")
     }
 
@@ -99,17 +99,17 @@ struct DesignSystemReferenceTests {
         let reference = Self.reference()
         #expect(reference.type.map(\.title) == ["Display", "Text", "Mono"])
         #expect(reference.typeCount == SHTextStyle.allCases.count)
-        #expect(reference.type[0].rows.first?.tag == "Geist · 28 / 600")
+        #expect(reference.type[0].rows.first?.tag == "SF Pro · 22 / 600")
         #expect(reference.type[2].rows.last?.uppercase == true)
         #expect(reference.type[2].rows.last?.sample == DesignSystemReference.Copy.microSample.uppercased())
-        #expect(reference.typographySub == "Geist and Geist Mono · \(SHTextStyle.allCases.count) styles")
+        #expect(reference.typographySub == "SF Pro and SF Mono · \(SHTextStyle.allCases.count) styles")
     }
 
     @Test func stepsComeFromTheTokensAndSayWhatTheyAreForWhenTheSystemSays() {
         let reference = Self.reference()
         #expect(reference.spacing.map(\.px) == [2, 4, 6, 8, 12, 16, 24, 32])
         #expect(reference.spacingSub == "2 to 32px")
-        #expect(reference.radii.map(\.px) == [4, 6, 8, 12])
+        #expect(reference.radii.map(\.px) == [4, 7, 8, 12])
         #expect(reference.radii.first?.use == "pills, keycaps" && reference.radii.last?.use == "")
         #expect(reference.radiusSub == "4 to 12px")
     }

@@ -76,7 +76,7 @@ struct SidebarRecentsTests {
                                        state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]))]))
         let rows = Dictionary(uniqueKeysWithValues: lists.all.map { ($0.title, $0) })
         #expect(rows["failed"]?.leading == .dot(.failed))
-        #expect(rows["failed"]?.accessory == SHSidebarRow.Accessory.none)
+        #expect(rows["failed"]?.accessory == .text("failed", tone: .failed), "no dot says it failed: the word does")
         #expect(rows["running"]?.leading == .dot(.running))
         #expect(rows["running"]?.accessory == .elapsed(since: since))
         #expect(rows["idle"]?.leading == .dot(.idle))

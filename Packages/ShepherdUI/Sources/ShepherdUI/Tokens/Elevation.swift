@@ -1,10 +1,20 @@
 import SwiftUI
 
 extension View {
-    /// Flat card (panes, cards, the composer, tool groups): raised fill and a 1px line. Night
-    /// Watch separates with lines, never shadows.
-    public func shCard(radius: CGFloat = SH.Radius.m, fill: Color? = nil, line: Color? = nil) -> some View {
-        modifier(SHCardModifier(radius: radius, fill: fill, line: line))
+    /// Card (panes, cards, the composer, tool groups): raised fill and a 1px line, sitting on the
+    /// soft `lift` shadow when `lift` is set (the composer, the edits card, the side pane card).
+    public func shCard(radius: CGFloat = SH.Radius.xl, fill: Color? = nil, line: Color? = nil, lift: Bool = false) -> some View {
+        modifier(SHCardModifier(radius: radius, fill: fill, line: line, lift: lift))
+    }
+
+    /// The boards' `lift`: a close 1pt shadow and a soft 20pt one under a card's fill. Cast by the
+    /// fill shape, never the content, so a scrolling card does not redraw it per layer.
+    public func shLift<S: Shape>(_ shape: S, fill: Color? = nil) -> some View {
+        background {
+            shape.fill(fill ?? .sh.bgRaised)
+                .shadow(color: .sh.liftNear, radius: SHLift.nearRadius, y: SHLift.nearOffset)
+                .shadow(color: .sh.liftFar, radius: SHLift.farRadius, y: SHLift.farOffset)
+        }
     }
 
     /// Floating surface (menus, the palette, popovers, tooltips, toasts): raised fill, a 1px
@@ -121,13 +131,30 @@ private struct SHCardModifier: ViewModifier {
     let radius: CGFloat
     let fill: Color?
     let line: Color?
+    let lift: Bool
 
     func body(content: Content) -> some View {
-        content
-            .background(fill ?? .sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
-            .clipShape(RoundedRectangle(cornerRadius: radius))
-            .shBorder(line ?? .sh.lineSubtle, radius: radius)
+        let shape = RoundedRectangle(cornerRadius: radius)
+        if lift {
+            content
+                .clipShape(shape)
+                .shLift(shape, fill: fill)
+                .shBorder(line ?? .sh.lineSubtle, radius: radius)
+        } else {
+            content
+                .background(fill ?? .sh.bgRaised, in: shape)
+                .clipShape(shape)
+                .shBorder(line ?? .sh.lineSubtle, radius: radius)
+        }
     }
+}
+
+/// The boards' `lift` (0 1 2, 0 6 20) in SwiftUI radii, which are half a CSS blur.
+enum SHLift {
+    static let nearRadius: CGFloat = 1
+    static let nearOffset: CGFloat = 1
+    static let farRadius: CGFloat = 10
+    static let farOffset: CGFloat = 6
 }
 
 /// The pinned header's shadow: short and close, so it reads as an edge rather than a lift.
@@ -142,11 +169,15 @@ private struct SHPopoverModifier: ViewModifier {
     let line: Color?
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius)
+        // The shadow is cast by the fill, not the content: a content shadow redraws from every
+        // layer inside it as the menu's rows change.
         content
-            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
-            .clipShape(RoundedRectangle(cornerRadius: radius))
+            .clipShape(shape)
+            .background {
+                shape.fill(Color.sh.bgRaised).shadow(color: .sh.popoverShadow, radius: Self.shadowRadius, y: 12)
+            }
             .shBorder(line ?? .sh.lineStrong, radius: radius)
-            .shadow(color: .sh.popoverShadow, radius: Self.shadowRadius, y: 12)
     }
 }
 

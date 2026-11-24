@@ -17,12 +17,18 @@ public enum SH {
     public enum Radius {
         /// Pills, keycaps, chips.
         public static let xs: CGFloat = 4
-        /// Buttons, fields, rows.
-        public static let s: CGFloat = 6
-        /// Cards, composer, tool groups.
+        /// Rows, icon buttons.
+        public static let s: CGFloat = 7
+        /// Buttons, fields, output wells.
         public static let m: CGFloat = 8
-        /// Popovers, palette, sheets.
+        /// Popovers, menus, sheets.
         public static let l: CGFloat = 12
+        /// Cards, the composer, panes, the sidebar panel.
+        public static let xl: CGFloat = 14
+        /// The palette, the toolbar capsule.
+        public static let xxl: CGFloat = 16
+        /// The user's message bubble.
+        public static let bubble: CGFloat = 18
     }
 
     /// Row heights scale with Settings ▸ Appearance ▸ Density (rounded to whole points); control

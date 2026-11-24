@@ -259,24 +259,19 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         fail()
     }
 
-    static let fontData: String? = {
-        guard let url = Bundle.module.url(forResource: "Geist-Regular", withExtension: "otf", subdirectory: "Fonts") else { return nil }
-        return (try? Data(contentsOf: url))?.base64EncodedString()
-    }()
-
     private static let bundleScript: String? = {
         guard let url = Bundle.module.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Mermaid") else { return nil }
         return try? String(contentsOf: url, encoding: .utf8)
     }()
 
     static func document(source: String, colors: ThemeColors, fontSize: CGFloat, viewer: Bool = false, revision: String) -> String? {
-        guard let bundleScript, let fontData else { return nil }
+        guard let bundleScript else { return nil }
         let payload: [String: Any] = ["source": source, "revision": revision, "viewer": viewer, "variables": [
             "background": colors.bgSunken, "primaryColor": colors.bgRaised,
             "primaryTextColor": colors.textPrimary, "primaryBorderColor": colors.lineStrong,
             "secondaryColor": colors.bgWindow, "tertiaryColor": colors.bgRaised,
             "lineColor": colors.textSecondary, "textColor": colors.textPrimary,
-            "edgeLabelBackground": colors.bgSunken, "fontFamily": "Geist",
+            "edgeLabelBackground": colors.bgSunken, "fontFamily": SHFonts.sansCSS,
             "fontSize": "\(fontSize)px"
         ]]
         guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return nil }
@@ -286,7 +281,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-\(revision)'; style-src 'unsafe-inline'; img-src 'none'; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-        <style>@font-face{font-family:Geist;src:url(data:font/otf;base64,\(fontData)) format('opentype')}html,body{margin:0;background:transparent;overflow:hidden}#chart{transform-origin:0 0;touch-action:pan-y;user-select:none;-webkit-user-select:none}#chart svg{display:block;max-width:100%;height:auto}body.viewer #chart{height:100vh;touch-action:none}body.viewer #chart svg{width:100%;height:100%;max-width:none!important}*{animation:none!important;transition:none!important}</style>
+        <style>html,body{margin:0;background:transparent;overflow:hidden}#chart{transform-origin:0 0;touch-action:pan-y;user-select:none;-webkit-user-select:none}#chart svg{display:block;max-width:100%;height:auto}body.viewer #chart{height:100vh;touch-action:none}body.viewer #chart svg{width:100%;height:100%;max-width:none!important}*{animation:none!important;transition:none!important}</style>
         <script nonce="\(revision)">\(safeBundle)</script></head><body><div id="chart"></div>
         <script nonce="\(revision)">
         const input = \(safeJSON);
@@ -349,8 +344,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
             const fontSize = parseFloat(input.variables.fontSize);
             mermaid.initialize({startOnLoad:false,securityLevel:'strict',suppressErrorRendering:true,
               maxTextSize:\(SHMermaidMetrics.maximumSourceBytes),maxEdges:500,htmlLabels:false,theme:'base',
-              fontSize,fontFamily:'Geist',themeVariables:input.variables,flowchart:{htmlLabels:false},secure});
-            await document.fonts.load(input.variables.fontSize + ' Geist');
+              fontSize,fontFamily:input.variables.fontFamily,themeVariables:input.variables,flowchart:{htmlLabels:false},secure});
             const result = await mermaid.render('diagram', input.source);
             const parsed = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
             if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg') throw Error('Invalid SVG');

@@ -48,12 +48,12 @@ struct RootView: View {
             // hides it; a window too narrow to dock it overlays it instead. It keeps its width
             // while a right pane is open.
             if docked {
-                HStack(spacing: 0) {
-                    SidebarView(vm: vm)
-                        .frame(width: sidebar.width)
-                        .background(Color.sh.bgBase.ignoresSafeArea())
-                    sidebarResizeHandle(width: sidebar.width)
-                }
+                // The glass panel, inset from the window's leading, top and bottom edges; its
+                // trailing edge is the resize handle.
+                SidebarView(vm: vm)
+                    .frame(width: sidebar.width)
+                    .overlay(alignment: .trailing) { sidebarResizeHandle(width: sidebar.width) }
+                    .padding([.leading, .vertical], SHSidebarMetrics.panelInset)
                 // Over the main column, which takes its new frame at once as it slides.
                 .zIndex(1)
                 .shTransition(.pane, edge: .leading)
@@ -183,9 +183,9 @@ struct RootView: View {
                     .accessibilityHidden(true)
                 SidebarView(vm: vm)
                     .frame(width: width)
-                    // The shadow from the fill, never from the scrolling list over it.
-                    .shFloatBackground(Color.sh.bgBase.ignoresSafeArea())
-                    .overlay(alignment: .trailing) { SHHairline(.vertical) }
+                    // The panel floats on the popover's shadow, cast by a fill under it.
+                    .background { RoundedRectangle(cornerRadius: SH.Radius.xl).fill(Color.sh.bgWindow).shFloatShadow() }
+                    .padding([.leading, .vertical], SHSidebarMetrics.panelInset)
                     .shTransition(.pane, edge: .leading)
             }
         }
@@ -194,7 +194,7 @@ struct RootView: View {
     /// The sidebar's trailing edge, and its drag handle (adjustable with VoiceOver). Resizing
     /// never narrows the main column below its minimum.
     private func sidebarResizeHandle(width: CGFloat) -> some View {
-        Color.sh.lineSubtle
+        Color.clear
             .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear
@@ -203,7 +203,7 @@ struct RootView: View {
                     .pointerStyle(.columnResize)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
-                            .onChanged { liveSidebarWidth = fittedSidebarWidth(Double($0.location.x)) }
+                            .onChanged { liveSidebarWidth = fittedSidebarWidth(Double($0.location.x - AppLayout.sidebarGutter)) }
                             .onEnded { _ in
                                 if let width = liveSidebarWidth {
                                     appearance.sidebarWidth = width
@@ -225,7 +225,7 @@ struct RootView: View {
 
     /// A sidebar width within its range that leaves the main column its minimum.
     private func fittedSidebarWidth(_ width: Double) -> Double {
-        AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth)))
+        AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.sidebarGutter - AppLayout.mainColumnMinWidth)))
     }
 }
 
@@ -310,6 +310,8 @@ struct WorkspaceHeaderView: View {
     var showSidebar: (() -> Void)?
 
     private var keys: KeybindingsStore { vm.keybindings }
+    /// New thread leads with Show sidebar while the sidebar is not docked (GXSidebarHidden).
+    private var newThread: (() -> Void)? { showSidebar == nil ? nil : { vm.openDestination(.newThread) } }
 
     var body: some View {
         Group {
@@ -317,7 +319,7 @@ struct WorkspaceHeaderView: View {
                let connection = vm.remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
-                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
+                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar, newThread: newThread)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: Export draws here from this Mac's synced copy.
                     let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
@@ -378,7 +380,7 @@ struct WorkspaceHeaderView: View {
                     // one agent's chip and pane button into another's.
                     .id(agent.id)
             } else {
-                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
+                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar, newThread: newThread)
             }
         }
         .contentShape(Rectangle())
@@ -404,6 +406,7 @@ struct WorkspaceHeaderView: View {
         let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
+                            newThread: newThread,
                             branch: branch, directory: directory,
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,

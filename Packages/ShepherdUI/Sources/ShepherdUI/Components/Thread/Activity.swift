@@ -131,7 +131,7 @@ public struct SHActivityLine: View {
                     .shContentTransition(.numeric())
                 if !meta.isEmpty {
                     Text(meta)
-                        .font(.shMono(11))
+                        .font(.sh(.mono))
                         .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -164,7 +164,7 @@ public struct SHActivityLine: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .shShimmer(active: true)
                 if !meta.isEmpty {
-                    Text(meta).font(.shMono(11)).lineLimit(1).truncationMode(.tail)
+                    Text(meta).font(.sh(.mono)).lineLimit(1).truncationMode(.tail)
                         .shShimmer(active: true)
                 }
             }
@@ -601,58 +601,45 @@ public struct SHChangesCard: View {
         .shAnimation(.content, value: notice)
     }
 
+    /// The boards' `.ed`: a raised card on the `lift` shadow, "Edited 7 files" and its stat with Undo
+    /// and Review as words, then a row per file (its name, its folder dimmed after it, its stat and a
+    /// bar of its size against the largest), and "Show N more".
     private var edited: some View {
         let sh = Color.sh
         let shown = Array(files.prefix(shownCount))
         let more = SHChangesMore(shown: shown.count, listed: files.count, total: total)
+        let largest = max(1, files.map { $0.added + $0.removed }.max() ?? 1)
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "plus.forwardslash.minus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: SHThreadMetrics.changesTile, height: SHThreadMetrics.changesTile)
-                    .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.shSans(13, .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                    SHDiffStat(added: added, removed: removed, font: .shMono(11))
+                HStack(spacing: 10) {
+                    Text(title).font(.sh(.headline)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    SHDiffStat(added: added, removed: removed, font: .sh(.caption))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 if let onUndo {
-                    Button(action: onUndo) {
-                        HStack(spacing: 5) {
-                            Text("Undo")
-                            Image(systemName: "arrow.uturn.backward").font(.system(size: 10, weight: .medium))
-                        }
-                    }
-                    .buttonStyle(.sh(.ghost, size: .s))
-                    .disabled(busy)
-                    .help("Put back this turn’s edits in the worktree")
-                    .accessibilityLabel("Undo the agent’s edits to \(total) file\(total == 1 ? "" : "s")")
+                    Button("Undo", action: onUndo)
+                        .buttonStyle(SHCardLinkStyle(dim: true))
+                        .disabled(busy)
+                        .help("Put back this turn’s edits in the worktree")
+                        .accessibilityLabel("Undo the agent’s edits to \(total) file\(total == 1 ? "" : "s")")
                 }
                 if let onReview {
                     Button("Review", action: onReview)
-                        .buttonStyle(.sh(.secondary, size: .s))
+                        .buttonStyle(SHCardLinkStyle(dim: false))
                         .accessibilityLabel("Review \(title)")
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.leading, SH.Space.l)
-            .padding(.trailing, 10)
+            .padding(EdgeInsets(top: SH.Space.l, leading: SHThreadMetrics.changesInset, bottom: SH.Space.s, trailing: SHThreadMetrics.changesInset))
             ForEach(shown) { file in
-                SHHairline()
-                row(file)
+                SHChangedFileRow(file: file, largest: largest, label: label(file), onOpen: onOpen)
             }
-            if more != .none {
-                SHHairline()
-                moreRow(more)
-            }
+            if more != .none { moreRow(more) }
         }
+        .padding(.bottom, SH.Space.s)
         .frame(maxWidth: .infinity)
-        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
         .clipShape(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
+        .shLift(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
         .shBorder(sh.lineSubtle, radius: SHThreadMetrics.changesRadius)
         .accessibilityElement(children: .contain)
     }
@@ -680,14 +667,20 @@ public struct SHChangesCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func row(_ file: SHChangedFile) -> some View {
-        SHChangedFileRow(file: file, label: "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed", onOpen: onOpen)
+    private func label(_ file: SHChangedFile) -> String {
+        "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed"
     }
 
     @ViewBuilder private func moreRow(_ more: SHChangesMore) -> some View {
         let text = if case .review(let count) = more, onReview == nil { "\(count) more" } else { more.text ?? "" }
-        let label = Text(text).font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
-            .padding(.horizontal, SH.Space.l)
+        let label = HStack(spacing: SH.Space.s) {
+            if case .show = more {
+                Image(systemName: "chevron.down").font(.system(size: SHThreadMetrics.chevron, weight: .semibold)).accessibilityHidden(true)
+            }
+            Text(text)
+        }
+            .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            .padding(.horizontal, SHThreadMetrics.changesInset)
             .frame(maxWidth: .infinity, minHeight: SHThreadMetrics.changesRowHeight, alignment: .leading)
             .contentShape(Rectangle())
         switch more {
@@ -718,10 +711,13 @@ public struct SHChangesCard: View {
     }
 }
 
-/// A changes card's file row: the path (the folder dims), "new" or "deleted", its stat; while the pointer is over it, Open in
+/// A changes card's file row (the boards' `.edf`): the name, its folder dimmed after it, "new" or "deleted", the stat, and a
+/// 56pt-wide bar of its size against the card's largest, green for what it added; while the pointer is over it, Open in
 /// <app> before the stat (OpenInD). A click opens the file in Shepherd.
 private struct SHChangedFileRow: View {
     let file: SHChangedFile
+    /// The card's largest file, in lines added and removed: its bar is the full width.
+    let largest: Int
     let label: String
     let onOpen: ((String) -> Void)?
     @State private var hovering = false
@@ -730,20 +726,26 @@ private struct SHChangedFileRow: View {
 
     var body: some View {
         let sh = Color.sh
-        let content = HStack(spacing: SH.Space.m) {
-            Text("\(Text(file.directory).foregroundStyle(sh.textTertiary))\(Text(file.name).foregroundStyle(sh.textPrimary))")
-                .font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
-            HStack(spacing: SH.Space.m) {
-                if file.status != .modified {
-                    Text(file.status == .added ? "new" : "deleted").font(.shSans(11)).foregroundStyle(sh.textTertiary)
+        let content = HStack(spacing: SHThreadMetrics.changesColumnGap) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Text(file.name).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Text(file.directory.hasSuffix("/") ? String(file.directory.dropLast()) : file.directory)
+                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.head)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
+            HStack(spacing: SHThreadMetrics.changesColumnGap) {
+                HStack(spacing: SH.Space.s) {
+                    if file.status != .modified {
+                        Text(file.status == .added ? "new" : "deleted").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    }
+                    SHDiffStat(added: file.added, removed: file.removed, font: .sh(.caption), hidesZero: true)
                 }
-                SHDiffStat(added: file.added, removed: file.removed, font: .shMono(11))
+                bar
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { statWidth = $0 }
         }
-        .padding(.horizontal, SH.Space.l)
+        .padding(.horizontal, SHThreadMetrics.changesInset)
         .frame(minHeight: SHThreadMetrics.changesRowHeight)
         .contentShape(Rectangle())
         Group {
@@ -757,9 +759,53 @@ private struct SHChangedFileRow: View {
             }
         }
         // A deleted file has nothing to open.
-        .shOpenIn(file.status == .deleted ? nil : file.path, hovering: hovering, trailing: SH.Space.l + statWidth + SH.Space.m,
+        .shOpenIn(file.status == .deleted ? nil : file.path, hovering: hovering, trailing: SHThreadMetrics.changesInset + statWidth + SH.Space.m,
                   width: $openInWidth)
         // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
         .onHover { hovering = $0 }
+    }
+
+    /// The boards' `.bar`: right-aligned in its 56pt column, as wide as the file's share of the largest.
+    private var bar: some View {
+        let lines = max(1, file.added + file.removed)
+        let width = max(SHThreadMetrics.changesBarHeight, SHThreadMetrics.changesBarWidth * CGFloat(lines) / CGFloat(max(largest, lines)))
+        let green = width * CGFloat(file.added) / CGFloat(lines)
+        return HStack(spacing: 0) {
+            Color.sh.done.frame(width: green)
+            Color.sh.failed
+        }
+        .frame(width: width, height: SHThreadMetrics.changesBarHeight)
+        .clipShape(Capsule())
+        .frame(width: SHThreadMetrics.changesBarWidth, alignment: .trailing)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The changes card's Undo and Review: words, not buttons (the boards' `.lk`): Review in ink at medium, Undo dimmed.
+struct SHCardLinkStyle: ButtonStyle {
+    let dim: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        SHCardLink(configuration: configuration, dim: dim)
+    }
+}
+
+private struct SHCardLink: View {
+    let configuration: ButtonStyleConfiguration
+    let dim: Bool
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+
+    var body: some View {
+        configuration.label
+            .font(.sh(.ui, weight: dim ? .regular : .medium))
+            .foregroundStyle(dim && !hovering ? Color.sh.textSecondary : Color.sh.textPrimary)
+            .padding(.horizontal, SH.Space.xs)
+            .frame(minHeight: SH.Height.controlS)
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .shEnabledOpacity(enabled)
+            .onHover { hovering = $0 }
+            .shFocusRing(radius: SH.Radius.xs)
     }
 }

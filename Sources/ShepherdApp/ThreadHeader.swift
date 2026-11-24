@@ -28,6 +28,8 @@ struct ThreadHeader: View, Equatable {
     let title: String
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
+    /// New thread beside Show sidebar while the sidebar is not docked.
+    var newThread: (() -> Void)?
     /// Where the agent works; nil draws no chip.
     var branch: AgentBranchLabel?
     /// The checkout's directory, for the chip's tooltip and menu (local agents only).
@@ -70,7 +72,7 @@ struct ThreadHeader: View, Equatable {
         let parent = sentBy?.fromThread == true ? sentBy?.sender : nil
         let crumbs = [project, parent, title].compactMap { $0 }.joined(separator: " / ")
         SHThreadToolbar(title, project: project, titleHelp: crumbs, parent: parent, openParent: parent == nil ? nil : openSender,
-                        leadingInset: leadingInset, sidebar: showSidebar) {
+                        leadingInset: leadingInset, sidebar: showSidebar, newThread: newThread) {
             EmptyView()
         } trailing: {
             ThreadGoalHeader(store: store)
@@ -179,8 +181,9 @@ struct PlainHeader: View {
     let title: String
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
+    var newThread: (() -> Void)?
 
     var body: some View {
-        SHThreadToolbar(title, leadingInset: leadingInset, sidebar: showSidebar)
+        SHThreadToolbar(title, leadingInset: leadingInset, sidebar: showSidebar, newThread: newThread)
     }
 }

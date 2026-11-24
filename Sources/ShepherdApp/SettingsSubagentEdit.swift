@@ -309,10 +309,10 @@ private struct SubagentSwitch: View {
     var body: some View {
         Button { isOn.toggle() } label: {
             HStack(spacing: AppLayout.subagentEditSwitchGap) {
-                Capsule().fill(isOn ? Color.sh.lantern : Color.sh.lineStrong)
+                Capsule().fill(isOn ? Color.sh.primary : Color.sh.lineStrong)
                     .frame(width: AppLayout.subagentEditSwitchWidth, height: AppLayout.subagentEditSwitchHeight)
                     .overlay(alignment: isOn ? .trailing : .leading) {
-                        Circle().fill(isOn ? Color.sh.textOnLantern : Color.sh.textSecondary)
+                        Circle().fill(isOn ? Color.sh.textOnPrimary : Color.sh.textSecondary)
                             .frame(width: AppLayout.subagentEditKnob, height: AppLayout.subagentEditKnob)
                             .padding(AppLayout.subagentEditKnobInset)
                     }
@@ -347,7 +347,7 @@ private struct SubagentEditButton: ButtonStyle {
             let radius = AppLayout.subagentEditButtonRadius
             configuration.label
                 .font(.shSans(AppLayout.subagentEditButtonSize, kind == .save ? .semibold : .regular))
-                .foregroundStyle(kind == .delete ? Color.sh.failed : kind == .save ? Color.sh.textOnLantern : Color.sh.subagentControlText)
+                .foregroundStyle(kind == .delete ? Color.sh.failed : kind == .save ? Color.sh.textOnPrimary : Color.sh.subagentControlText)
                 .padding(.horizontal, kind == .save ? AppLayout.subagentEditSavePadding : AppLayout.subagentEditButtonPadding)
                 .frame(height: AppLayout.subagentEditButtonHeight)
                 .background(fill(active: active, pressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: radius))
@@ -360,7 +360,7 @@ private struct SubagentEditButton: ButtonStyle {
 
         private func fill(active: Bool, pressed: Bool) -> Color {
             switch kind {
-            case .save: pressed ? Color.sh.lanternPressed : active ? Color.sh.lanternHover : Color.sh.lantern
+            case .save: pressed ? Color.sh.primaryPressed : active ? Color.sh.primaryHover : Color.sh.primary
             case .revert: active ? Color.sh.bgHover : Color.sh.bgRaised
             case .delete: active ? Color.sh.subagentFailureTile : .clear
             }

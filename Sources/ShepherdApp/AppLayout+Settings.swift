@@ -254,8 +254,8 @@ extension AppLayout {
     static let importCatalogDeadline: Duration = .seconds(20)
     /// The review's Commit… sheet, and the most its file list grows before it scrolls.
     static let commitSheetWidth: CGFloat = 520
-    /// The thread's branch card (BranchCard): its width, its rows' side inset and glyph column.
-    static let branchCardWidth: CGFloat = 300
+    /// The thread's branch card (the boards' `.bk` in its 340pt `.bcol`): its width, its rows' side inset and glyph column.
+    static let branchCardWidth: CGFloat = 324
     static let branchCardInset: CGFloat = 14
     static let branchCardGlyph: CGFloat = 16
     /// The branch card's sheets: Update from the base, New and Rename branch.
@@ -264,8 +264,9 @@ extension AppLayout {
     static let branchCommitSheetWidth: CGFloat = 560
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280
-    /// The card's own column at the thread's right (BranchCard): the card and its margins.
-    static let branchCardColumn: CGFloat = branchCardWidth + 2 * SH.Space.l
+    /// The card's own column at the thread's right: the card and the 16pt beside it, 8pt under the toolbar.
+    static let branchCardColumn: CGFloat = branchCardWidth + SH.Space.xl
+    static let branchCardTop: CGFloat = SH.Space.m
     /// The narrowest transcript the docked card leaves; a thinner thread folds the card to one row.
     static let branchCardMinTranscript: CGFloat = 640
     /// A thread this wide docks the whole card in its column, the transcript centered in the rest.

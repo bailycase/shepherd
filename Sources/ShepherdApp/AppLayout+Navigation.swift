@@ -29,10 +29,13 @@ extension AppLayout {
     static let paneAdjustStep: CGFloat = 40
 
     // Sidebar
-    static let sidebarDefaultWidth: CGFloat = 232
+    static let sidebarDefaultWidth: CGFloat = 248
     static let sidebarMinWidth: CGFloat = 190
     static let sidebarMaxWidth: CGFloat = 340
     static let sidebarPadding: CGFloat = SHSidebarMetrics.listInset
+    /// The docked sidebar panel's inset from the window's leading edge: what the window gives it
+    /// beyond its width.
+    static let sidebarGutter: CGFloat = SHSidebarMetrics.panelInset
     static let sidebarRowSpacing: CGFloat = SHSidebarMetrics.rowSpacing
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
@@ -42,19 +45,18 @@ extension AppLayout {
     /// the 720pt composer and the Continue card's row under it.
     static let newThreadGap: CGFloat = 24
     static let newThreadSidePadding: CGFloat = 40
-    static let newThreadBottomPadding: CGFloat = 80
+    /// The boards' `.hero` sits 120pt above the middle.
+    static let newThreadBottomPadding: CGFloat = 120
+    /// New design's heading (SF Pro 26 semibold, tracked −2%).
     static let newThreadHeadingSize: CGFloat = 26
     static let newThreadHeadingTracking: CGFloat = -0.52
+    /// New thread's words (the boards' hero `.ta`): a size up from the thread's.
+    static let newThreadFieldSize: CGFloat = 15
+    /// The boards' suggestion rows (`.sg`) under the composer.
+    static let newThreadSuggestionHeight: CGFloat = 34
     static let newThreadComposerWidth: CGFloat = 720
-    /// The suggestion cards: three to the row, 10pt apart, 14pt below the column's gap.
-    static let newThreadCardsGap: CGFloat = 10
+    /// The suggestions sit 14pt under the composer.
     static let newThreadCardsTop: CGFloat = 14
-    static let newThreadCardsPerRow: CGFloat = 3
-    /// A card: padded 12pt above and below and 14 at the sides, an 11.5 kicker, a 13 title and
-    /// an 11 detail 5pt apart.
-    static let newThreadCardHeight: CGFloat = 82
-    static let newThreadCardPadding: CGFloat = 14
-    static let newThreadCardSpacing: CGFloat = 5
 
     // Workspace
     /// How far a terminal pane's placeholder ("starting session…") sits from its corner.
@@ -110,7 +112,7 @@ enum ShellLayout {
     /// and ⇧⌘S overlays it.
     static func sidebar(windowWidth: CGFloat, preferredWidth: CGFloat, userHidden: Bool, overlayShown: Bool) -> Sidebar {
         let preferred = min(max(preferredWidth, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth)
-        let room = windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth
+        let room = windowWidth - AppLayout.sidebarGutter - AppLayout.mainColumnMinWidth
         if room >= AppLayout.sidebarMinWidth {
             return Sidebar(mode: userHidden ? .hidden : .docked, width: min(preferred, room), autoHidden: false)
         }
@@ -120,7 +122,7 @@ enum ShellLayout {
 
     /// The narrowest window that docks the sidebar at `width`.
     static func sidebarFitWidth(_ width: CGFloat) -> CGFloat {
-        min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + AppLayout.dividerWidth + AppLayout.mainColumnMinWidth
+        min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + AppLayout.sidebarGutter + AppLayout.mainColumnMinWidth
     }
 
     /// A window width as the shell's layout tells it apart: at and past the narrowest window that

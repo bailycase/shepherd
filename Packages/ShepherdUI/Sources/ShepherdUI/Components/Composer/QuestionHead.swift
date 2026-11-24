@@ -49,6 +49,23 @@ public struct SHQuestionHead: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        let B = SHQuestionBoardMetrics.self
+        HStack(alignment: .top, spacing: B.headSpacing) {
+            SHStatusDot(.attention, size: B.dot).padding(.top, B.dotTop)
+            title
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+            Button(action: hide) {
+                Image(systemName: "chevron.down").font(.system(size: B.headChevron, weight: .medium))
+            }
+                .buttonStyle(.shIcon(size: SHQuestionHeadMetrics.hideButton))
+                .help(hideHelp)
+                .accessibilityLabel("Hide the question")
+        }
+        .padding(B.headInset)
+        .accessibilityElement(children: .contain)
+        #else
         HStack(alignment: .top, spacing: SHQuestionHeadMetrics.spacing) {
             SHQuestionHeading(count: count, question: question)
             Button(action: hide) {
@@ -58,7 +75,23 @@ public struct SHQuestionHead: View {
                 .help(hideHelp)
                 .accessibilityLabel("Hide the question")
         }
+        #endif
     }
+
+    #if os(macOS)
+    /// The question in 14 semibold (the redesign draws no eyebrow); "1 of N" follows it in
+    /// `textTertiary` when several questions wait.
+    private var title: some View {
+        let sh = Color.sh
+        let asked = Text(SHProseInline.attributed(question)).foregroundStyle(sh.textPrimary)
+        let more = Text(count > 1 ? "\u{2002}1 of \(count)" : "").font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary)
+        return Text("\(asked)\(more)")
+            .font(.sh(.body, weight: .semibold))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .accessibilityLabel("\(Self.title): \(question)")
+    }
+    #endif
 }
 
 /// A hidden question: one line with its glyph, the question (truncating), a small Answer and
@@ -76,7 +109,11 @@ public struct SHQuestionHiddenLine: View {
 
     public var body: some View {
         HStack(spacing: SHQuestionHeadMetrics.hiddenSpacing) {
+            #if os(macOS)
+            SHStatusDot(.attention, size: SHQuestionBoardMetrics.dot)
+            #else
             SHQuestionAskerGlyph(size: SHQuestionHeadMetrics.hiddenGlyph)
+            #endif
             Text(SHProseInline.attributed(question)).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
