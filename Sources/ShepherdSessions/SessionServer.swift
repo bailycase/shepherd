@@ -4463,7 +4463,8 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`): only for
+    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`; `.fileCreate`,
+    /// `files.create.v1`): only for
     /// a client that listed `files.v1` and is sent the agent (`remoteState`), inside the folder the thread runs in, off
     /// the server's queue. A save writes only over the text the client edited from.
     private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
@@ -4498,6 +4499,11 @@ public final class SessionServer: @unchecked Sendable {
                 let span = (try? ThreadFileSystem.resolve(path, in: root).get()).map { changes.beginWrite(absolute: [$0]) }
                 defer { if let span { changes.endWrite(span) } }
                 reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
+            case .fileCreate(let path, let text):
+                let span = (try? ThreadFileSystem.resolve((path as NSString).deletingLastPathComponent, in: root).get())
+                    .map { changes.beginWrite(absolute: [($0 as NSString).appendingPathComponent((path as NSString).lastPathComponent)]) }
+                defer { if let span { changes.endWrite(span) } }
+                reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.create(path, in: root, text: text)))
             default: return
             }
             self?.queue.async {

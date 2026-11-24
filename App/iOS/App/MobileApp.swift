@@ -78,9 +78,14 @@ final class MobileApp {
         if sawPath, usable { hosts.networkChanged() }
     }
 
+    /// The Shepherd location in Files: the shipped app's alone, so fixtures never touch the app group or the domain.
+    private(set) var filesLocation: FilesLocationBridge?
+
     /// The shipped app: preferences and the Keychain.
     static func live() -> MobileApp {
-        MobileApp(hosts: MobileHosts(device: .current), appearance: MobileAppearance())
+        let app = MobileApp(hosts: MobileHosts(device: .current), appearance: MobileAppearance())
+        app.filesLocation = FilesLocationBridge(hosts: app.hosts)
+        return app
     }
 
     /// Forgets a host everywhere: its token and record, its open screens, its threads.

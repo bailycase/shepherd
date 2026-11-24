@@ -18,7 +18,8 @@ struct HostTokens {
         save: { try HostKeychain.save($0, account: HostKeychain.account($1)) },
         remove: { try HostKeychain.remove(account: HostKeychain.account($0)) },
         readDevice: { try HostKeychain.read(account: HostKeychain.deviceAccount) },
-        saveDevice: { try HostKeychain.save($0, account: HostKeychain.deviceAccount) }
+        // The device's identity stays the app's own: the Files extension needs only each Mac's token.
+        saveDevice: { try HostKeychain.save($0, account: HostKeychain.deviceAccount, shared: false) }
     )
 
     /// Tokens held in memory for this process only.
@@ -39,8 +40,12 @@ struct HostTokens {
     }
 }
 
+/// The app writes host tokens into the app group's access group, so its Files extension (`FileProviderExtension`)
+/// reaches the same Macs; reads search every group the process has.
 enum HostKeychain {
     static let service = "com.bailycase.shepherd.ios.remote"
+    /// The app group, which iOS also takes as a Keychain access group.
+    static let accessGroup = "group.com.bailycase.shepherd.ios"
     /// This device's fleet identity (id and token).
     static let deviceAccount = "device-identity"
 
@@ -65,16 +70,31 @@ enum HostKeychain {
         return token
     }
 
-    static func save(_ token: String, account: String) throws {
-        let attributes: [String: Any] = [
+    static func save(_ token: String, account: String, shared: Bool = true) throws {
+        var attributes: [String: Any] = [
             kSecValueData as String: Data(token.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        var status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            status = SecItemAdd(query(account).merging(attributes) { _, new in new } as CFDictionary, nil)
+        if shared { attributes[kSecAttrAccessGroup as String] = accessGroup }
+        var status = upsert(account, attributes)
+        if status == errSecMissingEntitlement, shared {
+            // A build signed without the app group (an unsigned simulator run) keeps the token to itself.
+            attributes[kSecAttrAccessGroup as String] = nil
+            status = upsert(account, attributes)
         }
         guard status == errSecSuccess else { throw failure(status) }
+    }
+
+    private static func upsert(_ account: String, _ attributes: [String: Any]) -> OSStatus {
+        let status = SecItemUpdate(query(account) as CFDictionary, attributes as CFDictionary)
+        guard status == errSecItemNotFound else { return status }
+        return SecItemAdd(query(account).merging(attributes) { _, new in new } as CFDictionary, nil)
+    }
+
+    /// Moves a token saved before the extension existed into the shared group. Nothing happens to one already there
+    /// or to a missing one.
+    static func share(account: String) {
+        _ = SecItemUpdate(query(account) as CFDictionary, [kSecAttrAccessGroup as String: accessGroup] as CFDictionary)
     }
 
     static func remove(account: String) throws {

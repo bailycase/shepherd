@@ -861,6 +861,9 @@ IOS_WIDGETS = ("PlugIns/Shepherd Widgets.appex", IOS.bundle_id + ".widgets", "Ap
 # The notification content extension and its App ID. It draws what the push carries and requests
 # no entitlements: a seal or profile that grants it the app group gives it more than it needs.
 IOS_NOTIFICATION_CONTENT = ("PlugIns/Shepherd Notification Content.appex", IOS.bundle_id + ".notification-content")
+# The Files extension (Shepherd as a location in Files), its App ID, and its entitlements: it reads the paired Macs and
+# their tokens through IOS_GROUP, so a seal without the group ships a location that reaches no Mac.
+IOS_FILES = ("PlugIns/Shepherd Files.appex", IOS.bundle_id + ".files", "App/FilesProvider/ShepherdFiles.entitlements")
 
 
 def _ios_grouped(entitlements: dict) -> bool:
@@ -874,14 +877,16 @@ def prepare_ios_signing(path: str) -> None:
     repository = Path(__file__).resolve().parent.parent
     widgets = os.path.join(path, IOS_WIDGETS[0])
     content = os.path.join(path, IOS_NOTIFICATION_CONTENT[0])
+    files = os.path.join(path, IOS_FILES[0])
     app = _ios_plist((repository / "App/iOS/ShepherdIOS.entitlements").read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production"))
     if app.get("aps-environment") != "production":
         raise ValueError("archive must request production push entitlements")
     # (bundle, what it requests, whether it is in the glance group)
     for bundle, entitlements, grouped in ((widgets, _ios_plist((repository / IOS_WIDGETS[2]).read_bytes()), True),
-                                          (content, {}, False), (path, app, True)):
+                                          (content, {}, False),
+                                          (files, _ios_plist((repository / IOS_FILES[2]).read_bytes()), True), (path, app, True)):
         if _ios_grouped(entitlements) != grouped:
-            raise ValueError("archive must request the glance app group only for the app and its widgets")
+            raise ValueError("archive must request the app group only for the app, its widgets and its Files extension")
         with tempfile.TemporaryDirectory(prefix="shepherd-ios-signing-") as root:
             requested = Path(root) / "entitlements.plist"
             requested.write_bytes(plistlib.dumps(entitlements))
@@ -928,16 +933,17 @@ def verify_ios_ipa(path: str, build: str) -> None:
                 raise ValueError(f"{label} permits debugging or has malformed get-task-allow")
             if not _ios_grouped(entitlements):
                 raise ValueError(f"{label} lacks the glance app group")
-        widgets = apps[0] / IOS_WIDGETS[0]
-        signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", str(widgets)))
-        profile = _ios_plist(_ios_command("security", "cms", "-D", "-i", str(widgets / "embedded.mobileprovision")))
-        for label, entitlements in (("widgets signature", signed), ("widgets profile", profile.get("Entitlements"))):
-            if not isinstance(entitlements, dict):
-                raise ValueError(f"{label} entitlements are missing or malformed")
-            if entitlements.get("application-identifier") != f"{team}.{IOS_WIDGETS[1]}":
-                raise ValueError(f"{label} has missing or incorrect application-identifier")
-            if not _ios_grouped(entitlements):
-                raise ValueError(f"{label} lacks the glance app group")
+        for name, (bundle, identifier) in (("widgets", IOS_WIDGETS[:2]), ("files", IOS_FILES[:2])):
+            extension = apps[0] / bundle
+            signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", str(extension)))
+            profile = _ios_plist(_ios_command("security", "cms", "-D", "-i", str(extension / "embedded.mobileprovision")))
+            for label, entitlements in ((f"{name} signature", signed), (f"{name} profile", profile.get("Entitlements"))):
+                if not isinstance(entitlements, dict):
+                    raise ValueError(f"{label} entitlements are missing or malformed")
+                if entitlements.get("application-identifier") != f"{team}.{identifier}":
+                    raise ValueError(f"{label} has missing or incorrect application-identifier")
+                if not _ios_grouped(entitlements):
+                    raise ValueError(f"{label} lacks the app group")
         content = apps[0] / IOS_NOTIFICATION_CONTENT[0]
         signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", str(content)))
         profile = _ios_plist(_ios_command("security", "cms", "-D", "-i", str(content / "embedded.mobileprovision")))

@@ -154,6 +154,30 @@ struct RemoteFilesTests {
         #expect(try String(contentsOf: host.folder.appendingPathComponent("README.md"), encoding: .utf8) == "# Readme\n")
     }
 
+    /// A new file (a phone's conflict copy, a document made in Files) lands only as a new name, never over one, and never outside.
+    @Test func createsANewFileOnlyUnderAFreeNameInsideTheFolder() async throws {
+        let host = try await FilesHost()
+        defer { host.stop() }
+        let client = try await host.remote.typed()
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.filesCreateCapability))
+
+        #expect(try await client.createFile(agentID: host.agent, path: "Sources/Notes.md", text: "# Notes\n") == .saved)
+        #expect(try String(contentsOf: host.folder.appendingPathComponent("Sources/Notes.md"), encoding: .utf8) == "# Notes\n")
+        let listed = try await client.listFiles(agentID: host.agent, path: "Sources", showHidden: false)
+        #expect(listed.entries.allSatisfy { $0.modified != nil }, "each entry says when it last changed")
+
+        for path in ["README.md", "escape/new.txt", "../files-outside/new.txt", "missing/new.txt", "escape.txt", "Sources/"] {
+            guard case .failed = try await client.createFile(agentID: host.agent, path: path, text: "owned") else {
+                Issue.record("creating \(path) was not refused")
+                continue
+            }
+        }
+        #expect(try String(contentsOf: host.folder.appendingPathComponent("README.md"), encoding: .utf8) == "# Readme\n")
+        #expect(!FileManager.default.fileExists(atPath: host.outside.appendingPathComponent("new.txt").path))
+        #expect(try String(contentsOf: host.outside.appendingPathComponent("secret.txt"), encoding: .utf8) == "secret\n")
+    }
+
     @Test func aClientWithoutTheCapabilityIsNeitherOfferedNorServedFiles() async throws {
         let host = try await FilesHost()
         defer { host.stop() }

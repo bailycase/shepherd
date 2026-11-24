@@ -279,7 +279,7 @@ snapshots (its own index file; the user's index, tree, HEAD, refs and stash are 
 Undo and Redo of a turn (the turn's own files only: what changed while it ran, less what Shepherd wrote for the person; while another agent's turn ran in the same working tree, another agent's edit, write or subagent landed in it, or the person ran a branch action or a commit in it, only the files its own edit and write calls (and its own subagents) named and no other call or subagent named; refused when any changed since), Save in the Files
 tab (`FileTreeModel.save`: the person's Save, Save chord or Overwrite; one existing local text file inside
 the thread's folder, written in place only while it still holds the version the editor expected; a paired
-device's Save reaches the host's server as `fileWrite`, `ThreadFileSystem.save`, under the same rule), Add child project
+device's Save reaches the host's server as `fileWrite`, `ThreadFileSystem.save`, under the same rule; a paired device's new file, `fileCreate`, `ThreadFileSystem.create`, is one new text file in a folder inside the thread's folder, never over a name already taken), Add child project
 (one empty directory), an explicit project folder transfer, and Issues & PRs' GitHub changes
 (`Forge/ForgeService.swift`, each on the person's click, through their gh with `--repo` from `/`, so
 no local checkout or branch is touched; bodies go on stdin): comment, review, merge (method, merge
