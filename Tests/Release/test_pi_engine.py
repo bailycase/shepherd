@@ -977,6 +977,13 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}", over)
         self.assertIn("marker=build/ci-toolchain", over)
 
+    def test_package_checkouts_are_cached_by_the_resolved_versions_before_the_build(self):
+        names = [title for title, _ in self.steps()]
+        cache = self.step("Cache Swift package checkouts")
+        self.assertIn("path: build/SourcePackages", cache)
+        self.assertIn("swiftpm/Package.resolved", cache)
+        self.assertLess(names.index("Cache Swift package checkouts"), names.index("Build ${{ env.APP_NAME }}"))
+
     def test_changed_shared_inputs_drop_release_products_but_keep_package_downloads(self):
         body = self.step("Start over when shared build inputs changed")
         script = "\n".join(line[10:] for line in body.split("run: |\n", 1)[1].splitlines()
