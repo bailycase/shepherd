@@ -41,8 +41,9 @@ public enum SHThreadMetrics {
     public static let changesRowHeight: CGFloat = touchable(30)
     public static let changesTile: CGFloat = 30
     public static let changesRadius: CGFloat = 10
-    /// Files the card lists before "N more".
+    /// Files the card lists before "N more", and how many more each click of it lists.
     public static let changesShownFiles = 3
+    public static let changesMoreFiles = 10
     public static let codeHeaderHeight: CGFloat = touchable(28)
     /// The copy and retry buttons under a turn, and the code block's copy.
     public static let footerButton: CGFloat = 24
