@@ -55,15 +55,39 @@ public struct SHSentCommand: View {
         .shAnimation(.content, value: expanded)
     }
 
+    /// The boards' `.sk`: "Used skill" in 12 `textSecondary` and the name in 12 mono semibold ink, the glyph quiet in
+    /// `textSecondary`; touch keeps the `ui` words and the medium name.
+    @MainActor private static var glyphColor: Color {
+        #if os(macOS)
+        .sh.textSecondary
+        #else
+        .sh.textTertiary
+        #endif
+    }
+    @MainActor private static var verbFont: Font {
+        #if os(macOS)
+        .sh(.caption)
+        #else
+        .sh(.ui, weight: .regular)
+        #endif
+    }
+    @MainActor private static var nameFont: Font {
+        #if os(macOS)
+        .sh(.code, weight: .semibold)
+        #else
+        .sh(.code, weight: .medium)
+        #endif
+    }
+
     private var header: some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
             Image(systemName: kind == .skill ? SHGlyph.skill.symbolName : SHGlyph.document.symbolName)
                 .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(sh.textTertiary)
+                .foregroundStyle(Self.glyphColor)
                 .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
-            (Text(verb + " ").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
-             + Text(name).font(.sh(.code, weight: .medium)).foregroundStyle(sh.textPrimary))
+            (Text(verb + " ").font(Self.verbFont).foregroundStyle(sh.textSecondary)
+             + Text(name).font(Self.nameFont).foregroundStyle(sh.textPrimary))
                 .lineLimit(1)
                 .truncationMode(.middle)
             if expanded, !meta.isEmpty {
@@ -80,11 +104,11 @@ public struct SHSentCommand: View {
         let sh = Color.sh
         return ScrollView {
             Text(text)
-                .font(.sh(.code))
+                .font(Self.textFont)
                 .foregroundStyle(sh.textSecondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(SH.Space.l)
+                .padding(Self.textPadding)
         }
         .scrollBounceBehavior(.basedOnSize)
         .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -95,15 +119,52 @@ public struct SHSentCommand: View {
         .frame(maxHeight: SHThreadMetrics.sentCommandTextHeight)
         .fixedSize(horizontal: false, vertical: true)
         .overlay(alignment: .bottom) {
-            if moreBelow {
+            if moreBelow && Self.fades {
                 LinearGradient(colors: [sh.bgSunken.opacity(0), sh.bgSunken], startPoint: .top, endPoint: .bottom)
                     .frame(height: SHThreadMetrics.sentCommandFade)
                     .allowsHitTesting(false)
             }
         }
-        .background(RoundedRectangle(cornerRadius: SH.Radius.m).fill(sh.bgSunken))
+        .background(RoundedRectangle(cornerRadius: SH.Radius.m).fill(Self.boxFill))
         .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+        .shBorder(Self.boxLine, radius: SH.Radius.m)
+    }
+
+    /// The boards' `.skt`: the text in 12 sans on a `bgHover` wash over the bubble, 8×10 inside, no line and no fade.
+    @MainActor private static var textFont: Font {
+        #if os(macOS)
+        .sh(.caption)
+        #else
+        .sh(.code)
+        #endif
+    }
+    private static var textPadding: EdgeInsets {
+        #if os(macOS)
+        EdgeInsets(top: SH.Space.m, leading: 10, bottom: SH.Space.m, trailing: 10)
+        #else
+        EdgeInsets(top: SH.Space.l, leading: SH.Space.l, bottom: SH.Space.l, trailing: SH.Space.l)
+        #endif
+    }
+    private static var fades: Bool {
+        #if os(macOS)
+        false
+        #else
+        true
+        #endif
+    }
+    @MainActor private static var boxFill: Color {
+        #if os(macOS)
+        .sh.bgHover
+        #else
+        .sh.bgSunken
+        #endif
+    }
+    @MainActor private static var boxLine: Color {
+        #if os(macOS)
+        .clear
+        #else
+        .sh.lineSubtle
+        #endif
     }
 
     private func link(_ title: String, action: @escaping () -> Void) -> some View {

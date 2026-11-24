@@ -15,11 +15,13 @@ import Testing
 @Suite("Queue stack", .serialized, .mainActorExclusive)
 @MainActor
 struct QueueStackIntegrationTests {
+    /// The redesign's menu is a hairline on a soft shadow: the pixels that differ reach this far past its edge.
+    static let shadowReach: CGFloat = 8
     static let texts = ["Also cover partial refunds in the tests.", "Use table-driven tests, like ledger_test.go.", "Then open a draft PR."]
 
-    /// The stack's height over the card: its header, its rows, and the gap to the card.
+    /// The stack's height over the card's line: its header and its rows (Up next shares the card, so no gap).
     static func stackHeight(rows: Int) -> CGFloat {
-        SHQueueMetrics.headerHeight + CGFloat(rows) * SHQueueMetrics.rowHeight + AppLayout.menuGap
+        SHQueueMetrics.headerHeight + CGFloat(rows) * SHQueueMetrics.rowHeight
     }
 
     @Test func theStackGrowsUpwardFromACardThatStaysPut() async throws {
@@ -28,7 +30,9 @@ struct QueueStackIntegrationTests {
         try await thread.waitUntilReady()
         let inset = thread.composerInset
         let cardTop = thread.size.height - inset
-        let card = CGRect(x: 0, y: cardTop, width: thread.size.width, height: inset)
+        // Up next joins the card's top edge, so its corners and line are the stack's; the line of words below never moves.
+        let card = CGRect(x: thread.columnLeading, y: cardTop + 2 * SHComposerMetrics.radius, width: thread.columnTrailing - thread.columnLeading,
+                          height: inset - 2 * SHComposerMetrics.radius - AppLayout.composerBottom)
         let before = FrameTimer.capture(thread.window, card)
         #expect(thread.isPinned)
 
@@ -36,7 +40,8 @@ struct QueueStackIntegrationTests {
         try await thread.settle()
 
         #expect(thread.composerInset == inset + Self.stackHeight(rows: 2), "the stack sits on the card and the thread's inset follows it")
-        #expect(FrameTimer.capture(thread.window, card) == before, "the card never moved")
+        let moved = Pixels.bounds(differing: before, FrameTimer.capture(thread.window, card), rows: 0..<Int(card.height))
+        #expect(moved == nil, "the card never moved: \(String(describing: moved)) in \(card)")
         #expect(thread.isPinned, "the thread keeps its last turn in view above the stack")
 
         // pi takes both: the stack leaves, and the card still has not moved.
@@ -118,11 +123,11 @@ struct QueueStackIntegrationTests {
         try await thread.settle()
 
         #expect(thread.composerInset == inset && thread.threadOffset == offset)
-        let menu = try #require(Pixels.bounds(differing: before, FrameTimer.capture(thread.window, above), rows: 0..<Int(above.height), by: 0.11),
+        let menu = try #require(Pixels.bounds(differing: before, FrameTimer.capture(thread.window, above), rows: 0..<Int(above.height), by: 0.04),
                                 "the menu opened")
-        #expect(abs(menu.maxX - thread.columnTrailing) <= 2, "at the card's trailing edge: \(menu)")
+        #expect(abs(menu.maxX - thread.columnTrailing) <= Self.shadowReach, "at the card's trailing edge: \(menu)")
         #expect(abs(menu.maxY - (cardTop - AppLayout.menuGap)) <= 2, "8pt above the card: \(menu)")
-        #expect(abs(menu.width - SHQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
+        #expect(abs(menu.width - SHQueueMetrics.sendMenuWidth) <= 2 * Self.shadowReach, "the menu's own width: \(menu)")
     }
 
     /// Where the thread has room beside the card, the Send menu stands there (as the boards
@@ -133,8 +138,9 @@ struct QueueStackIntegrationTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         let inset = thread.composerInset, offset = thread.threadOffset
+        // Inside the shared card's line, which a focused card draws around Up next too.
         let stack = CGRect(x: thread.columnLeading, y: thread.size.height - inset, width: thread.columnTrailing - thread.columnLeading,
-                           height: Self.stackHeight(rows: 2) - AppLayout.menuGap)
+                           height: Self.stackHeight(rows: 2)).insetBy(dx: SH.Space.s, dy: SH.Space.s)
         let beside = CGRect(x: thread.columnTrailing + 1, y: 0, width: thread.size.width - thread.columnTrailing - 1, height: thread.size.height)
         let (stackBefore, besideBefore) = (FrameTimer.capture(thread.window, stack), FrameTimer.capture(thread.window, beside))
         let send = try #require(thread.sendButton)
@@ -143,11 +149,11 @@ struct QueueStackIntegrationTests {
         try await thread.settle()
 
         #expect(thread.composerInset == inset && thread.threadOffset == offset)
-        let found = Pixels.bounds(differing: besideBefore, FrameTimer.capture(thread.window, beside), rows: 0..<Int(beside.height), by: 0.11)
+        let found = Pixels.bounds(differing: besideBefore, FrameTimer.capture(thread.window, beside), rows: 0..<Int(beside.height), by: 0.04)
         let menu = try #require(found, "the menu opened beside the card").offsetBy(dx: beside.minX, dy: 0)
-        #expect(abs(menu.minX - (thread.columnTrailing + AppLayout.menuGap)) <= 2, "8pt after the card's trailing edge: \(menu)")
+        #expect(abs(menu.minX - (thread.columnTrailing + AppLayout.menuGap)) <= Self.shadowReach, "8pt after the card's trailing edge: \(menu)")
         #expect(abs(menu.maxY - (thread.size.height - AppLayout.composerBottom)) <= 2, "bottom-aligned with the card: \(menu)")
-        #expect(abs(menu.width - SHQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
+        #expect(abs(menu.width - SHQueueMetrics.sendMenuWidth) <= 2 * Self.shadowReach, "the menu's own width: \(menu)")
         // Only the menu's shadow may reach it.
         let covered = Pixels.bounds(differing: stackBefore, FrameTimer.capture(thread.window, stack), rows: 0..<Int(stack.height), by: 0.11)
         #expect(covered == nil, "Up next stays uncovered: \(String(describing: covered)) in \(stack)")

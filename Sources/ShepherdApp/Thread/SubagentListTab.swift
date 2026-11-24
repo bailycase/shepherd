@@ -52,6 +52,7 @@ struct SubagentListTab: View {
                             }
                         }
                     }
+                    .padding(.horizontal, SH.Space.m)
                     .padding(.bottom, SH.Space.xxl)
                 }
                 .scrollIndicators(.automatic)

@@ -105,13 +105,13 @@ struct QueueStackTests {
 
     /// A lifted message follows the pointer, but floats no further than half a row past the
     /// stack's first and last rows; where it lands still follows the pointer.
-    @Test(arguments: [(-400, -100), (400, 20), (-30, -30)] as [(CGFloat, CGFloat)])
+    @Test(arguments: [(-400, -2.5 * SHQueueMetrics.rowHeight), (400, 0.5 * SHQueueMetrics.rowHeight), (-30, -30)] as [(CGFloat, CGFloat)])
     func aLiftedMessageStaysWithinHalfARowOfTheStack(translation: CGFloat, lift: CGFloat) {
         let state = QueueStackState()
         state.update([Self.a, Self.b, Self.c])
         state.drag(Self.c.id.uuidString, by: translation)
         #expect(state.translation == lift)
-        if translation < -100 { #expect(state.drop == .init(boundary: 0, index: 0)) }
+        if translation < -2.5 * SHQueueMetrics.rowHeight { #expect(state.drop == .init(boundary: 0, index: 0)) }
     }
 
     /// Undo rows are slots a drag passes, not places in the order.
@@ -169,7 +169,7 @@ struct QueueStackTests {
 
     /// The Send menu stands beside the card only where the thread has room for it and its
     /// margin; else it opens above the card.
-    @Test(arguments: [(0, false), (283, false), (284, true), (400, true)] as [(CGFloat, Bool)])
+    @Test(arguments: [(0, false), (SHQueueMetrics.sendMenuWidth + 15, false), (SHQueueMetrics.sendMenuWidth + 16, true), (400, true)] as [(CGFloat, Bool)])
     func theSendMenuGoesBesideTheCardOnlyWhenItFits(room: CGFloat, beside: Bool) {
         #expect(Composer.sendMenuBeside(room: room) == beside)
     }
