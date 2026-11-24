@@ -24,12 +24,15 @@ extension ThemeDefinition {
                 textPrimary: "#1d1d1f",
                 textSecondary: "#6e6e73",
                 textTertiary: "#a1a1a6",
-                textOnLantern: "#1a1206",
+                // The boards' light attention (--mac-attention), darkened from #FF9500 so a dot reads on the window;
+                // white on it now passes where the dark ink no longer does.
+                textOnLantern: "#ffffff",
                 primary: "#1d1d1f",
                 textOnPrimary: "#ffffff",
-                lantern: "#ff9500",
-                lanternText: "#945b00",
-                lanternTint: "#ff950021",
+                lantern: "#b55400",
+                // A touch darker than before so its words keep 4.5:1 on the darker tint.
+                lanternText: "#8a5300",
+                lanternTint: "#b5540021",
                 running: "#2f6fe0",
                 runningTint: "#2f6fe01a",
                 textOnRunning: "#ffffff",
