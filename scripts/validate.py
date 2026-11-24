@@ -107,6 +107,14 @@ CASES = {
         {("codec-golden", None), ("compare-golden", None)}, "scratch-host request sequences matched the golden", "wire",
         golden="Tests/Fixtures/c-wire.json",
     ),
+    "c-launch": Case(
+        "HostLaunchTests",
+        {(step, None) for step in ("socket-answers", "host-isolated", "descriptors", "still-answering",
+                                    "legacy-state-socket-answers", "legacy-state-host-isolated", "legacy-state-descriptors",
+                                    "legacy-state-still-answering")},
+        "the host answered and held its descriptors with 150 synced spaces", "real host",
+        scenario="Tests/ShepherdAppIntegrationTests/HostLaunchTests.swift",
+    ),
 }
 
 
@@ -709,6 +717,9 @@ def run_case(name, anchor_off=None, ios_frames=None):
               "log": LOG, "source": None, "toolchain": None, "exit_status": None, "build_test_seconds": None}
     env = {**os.environ, "SHEPHERD_VALIDATION_DIR": str(mac)}
     env.pop("SHEPHERD_LIVE_MODEL", None)
+    if name == "c-launch":
+        env.pop("SHEPHERD_LAUNCH_DEATH_RECEIPT", None)
+        env["SHEPHERD_LAUNCH_SMOKE"] = "1"
     if name == SCROLL_OWNER_CASE:
         env["SHEPHERD_SCROLL_OWNER_FULL"] = "1"
     setup_error = None
