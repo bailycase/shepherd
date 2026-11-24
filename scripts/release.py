@@ -80,7 +80,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_engine  # noqa: E402  (beside this file; the tests load this one by path)
 
-REPOSITORY_PAGES = "https://bailycase.github.io/shepherd/"
+REPOSITORY_PAGES = "https://shepherd-app.github.io/shepherd/"
 
 
 @dataclass(frozen=True)

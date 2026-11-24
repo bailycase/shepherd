@@ -19,7 +19,7 @@ An agent should be able to change Shepherd, run the affected checks against real
 1. **Routine builds and renders consume the machine.** Parallel cold builds filled the disk and saturated the host. Separate render scripts produced inconsistent matrices and left behind private caches and simulator processes. A missing provisioned iPad need not block a render if a compatible runtime and device type are installed.
 2. **Agents can't close the loop on the app.** A PNG doesn't tell an agent whether a control works. The default Dev launch isn't safe for unattended use, and the tests don't assemble an obvious edit → turn → Changes → review → commit path with one report.
 3. **Fleet mistakes slipped past local tests.** The two-Mac run found wrong branch summaries, status/activity mismatches, provider errors marked done and settings not followed by the receiving host. Update requests also need a physical-host check; fake-updater success isn't an install.
-4. **Load failures are hard to interpret.** [#684](https://github.com/bailycase/shepherd/issues/684) passed alone after intermittent startup timeouts in parallel; [#678](https://github.com/bailycase/shepherd/issues/678) may be a race exposed by load. Neither is a reason to turn a red run green.
+4. **Load failures are hard to interpret.** [#684](https://github.com/shepherd-app/shepherd/issues/684) passed alone after intermittent startup timeouts in parallel; [#678](https://github.com/shepherd-app/shepherd/issues/678) may be a race exposed by load. Neither is a reason to turn a red run green.
 5. **Nightly reviewers get uneven evidence.** Local runs are the evidence before review. Automate their selection and reporting before adding another CI lane.
 
 ## One command and a definition of done

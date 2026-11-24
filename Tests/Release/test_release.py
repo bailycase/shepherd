@@ -37,11 +37,11 @@ STAMP = "202609232100"
 def item(version, channel=None, archive="Shepherd-v1.0.0.dmg", deltas=()):
     tag = f"<sparkle:channel>{channel}</sparkle:channel>" if channel else ""
     delta_xml = "".join(
-        f'<enclosure url="https://github.com/bailycase/shepherd/releases/download/{d}" sparkle:deltaFrom="1"/>'
+        f'<enclosure url="https://github.com/shepherd-app/shepherd/releases/download/{d}" sparkle:deltaFrom="1"/>'
         for d in deltas
     )
     return (f"<item><title>{version}</title>{tag}<sparkle:version>{version}</sparkle:version>"
-            f'<enclosure url="https://github.com/bailycase/shepherd/releases/download/{archive}" length="1"/>'
+            f'<enclosure url="https://github.com/shepherd-app/shepherd/releases/download/{archive}" length="1"/>'
             f"<sparkle:deltas>{delta_xml}</sparkle:deltas></item>")
 
 
@@ -436,7 +436,7 @@ FOOTER = "    </channel>\n</rss>\n"
 def generated_item(version, url, channel="", deltas=(), requirement=""):
     """An item as generate_appcast writes it, indented, with its signatures."""
     lines = [f"<title>{version}</title>", "<pubDate>Sun, 27 Sep 2026 17:38:08 +0000</pubDate>",
-             "<link>https://github.com/bailycase/shepherd</link>"]
+             "<link>https://github.com/shepherd-app/shepherd</link>"]
     if channel:
         lines.append(f"<sparkle:channel>{channel}</sparkle:channel>")
     lines += [f"<sparkle:version>{version}</sparkle:version>",
@@ -452,7 +452,7 @@ def generated_item(version, url, channel="", deltas=(), requirement=""):
     return "        <item>\n" + "".join(f"            {line}\n" for line in lines) + "        </item>\n"
 
 
-DOWNLOAD = "https://github.com/bailycase/shepherd/releases/download"
+DOWNLOAD = "https://github.com/shepherd-app/shepherd/releases/download"
 # One fixture per feed shape the workflow publishes. The newest beta and nightly items carry the
 # requirement already, as generate_appcast writes it for an archive with no x86_64 slice.
 FEED_SHAPES = {
@@ -1773,7 +1773,7 @@ class RetireWorkflowTests(unittest.TestCase):
             self.assertFalse(release.plan(ref, "202609250000", asc_key=True, testflight=True)["ios"], ref)
 
     def test_it_runs_on_linux_and_reads_the_repo_without_writing_it(self):
-        self.assertRegex(self.job, r"(?m)^    runs-on: ubuntu-latest$")
+        self.assertRegex(self.job, r"(?m)^    runs-on: blacksmith-2vcpu-ubuntu-2404$")
         self.assertRegex(self.job, r"(?m)^    timeout-minutes: 60$")
         permissions = self.block(self.job, "permissions", "    ")
         self.assertEqual(re.findall(r"^      (\S+): (\S+)", permissions, re.M), [("contents", "read")])

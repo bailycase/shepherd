@@ -1,26 +1,7 @@
 name: Release build
-run-name: Self-hosted release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}
 
-# Dispatch is local-only, build-only, and fenced on an active Nightly Release parent.
-# This workflow must also exist on the default branch before dispatch is available.
+# Build-only: release.yml calls it, then publishes the package it uploads.
 on:
-  workflow_dispatch:
-    inputs:
-      parent_run:
-        type: string
-        required: true
-      parent_attempt:
-        type: string
-        required: true
-      source_sha:
-        type: string
-        required: true
-      build_number:
-        type: string
-        required: true
-      plan:
-        type: string
-        required: true
   workflow_call:
     inputs:
       parent_run:
@@ -38,13 +19,8 @@ on:
       plan:
         type: string
         required: true
-      hosted:
-        type: boolean
-        default: true
     secrets:
       SENTRY_AUTH_TOKEN:
-        required: false
-      SELFHOSTED_HOSTNAME:
         required: false
       DEVELOPER_ID_P12:
         required: false
@@ -63,38 +39,13 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  guard:
-    name: Validate the Release parent
-    if: github.event_name != 'pull_request' && (inputs.hosted || (vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.ref == 'refs/heads/nightly'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    env:
-      GH_TOKEN: ${{ github.token }}
-      PARENT_RUN: ${{ inputs.parent_run }}
-      PARENT_ATTEMPT: ${{ inputs.parent_attempt }}
-      SOURCE_SHA: ${{ inputs.source_sha }}
-      BUILD_NUMBER: ${{ inputs.build_number }}
-      RELEASE_PLAN: ${{ inputs.plan }}
-    steps:
-      # Validate from the trusted workflow ref before checking out the supplied SHA on Self-hosted.
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - run: python3 scripts/release_runner.py validate ${{ !inputs.hosted && '--local' || '' }}
-
   build:
     name: build package
-    needs: guard
-    if: github.event_name != 'pull_request' && (inputs.hosted || (vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.ref == 'refs/heads/nightly'))
-    # Custom label only: Self-hosted was registered without default self-hosted/OS labels.
-    runs-on: ${{ !inputs.hosted && 'shepherd-release' || 'macos-26' }}
+    runs-on: blacksmith-6vcpu-macos-26
     timeout-minutes: 60
     env:
-      # Referencing the hostname as a secret masks the runner's built-in machine-name log.
-      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
       APP_KEY: ${{ fromJSON(inputs.plan).app }}
       APP_NAME: ${{ fromJSON(inputs.plan).name }}
       VERSION: ${{ fromJSON(inputs.plan).version }}
@@ -116,13 +67,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha }}
-          clean: ${{ runner.environment != 'self-hosted' }}
           persist-credentials: false
-      - name: Fence the build on its active parent
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release_runner.py validate ${{ !inputs.hosted && '--local' || '' }}
-
       - name: Xcode version
         id: xcode
         run: |
@@ -132,8 +77,8 @@ jobs:
           # Reuse products only while shared library inputs match, not across model/ABI changes.
           shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
           echo "shared=$shared" >> "$GITHUB_OUTPUT"
-      # No hosted DerivedData cache: the shared-input key changed on nearly every commit, so
-      # it never restored and only spent time saving. Persistent self-hosted products use this marker.
+      # No DerivedData cache: the shared-input key changed on nearly every commit, so it never
+      # restored and only spent time saving. This marker discards any products that predate a change.
       - name: Start over when shared build inputs changed
         env:
           VERSION: ${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}
@@ -150,7 +95,6 @@ jobs:
       # nodejs.org and pi from the npm registry, checked against scripts/pi-engine-pin.json;
       # the cache keeps those downloads, and staging reuses one only while it matches the pin.
       - name: Cache the pi engine's downloads
-        if: runner.environment == 'github-hosted'
         uses: actions/cache@v4
         with:
           path: .build/pi-engine-cache
@@ -158,10 +102,6 @@ jobs:
       - name: Stage the pi engine
         run: python3 scripts/pi_engine.py stage
 
-      - name: Fence signing on the active parent
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release_runner.py validate ${{ !inputs.hosted && '--local' || '' }}
       - name: Import Developer ID certificate
         id: cert
         env:
