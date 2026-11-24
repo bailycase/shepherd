@@ -218,7 +218,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             files: card.rows.map {
                 SHTurnChangesCard.File(path: $0.path, directory: $0.directory, name: $0.name, isNew: $0.isNew, added: $0.added, removed: $0.removed)
             },
-            more: card.moreText, undone: card.state == .undone, busy: changesBusy,
+            total: card.fileCount, undone: card.state == .undone, busy: changesBusy,
             onUndo: card.state == .ready && card.canUndo ? undo : nil,
             onRedo: card.state == .undone && card.canRedo ? redo : nil,
             onReview: review,

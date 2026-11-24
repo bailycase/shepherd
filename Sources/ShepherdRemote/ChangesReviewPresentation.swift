@@ -8,8 +8,8 @@ import ShepherdProtocol
 // MARK: The card
 
 /// The "Edited N files" card that ends a turn (ChangesStates › ChangesCard; MobileThread,
-/// iPadReview): the title and stat, Undo or Redo, Review, the first three files with their
-/// folder dimmed, then "N more". Built from the turn the host recorded, or, from a host that
+/// iPadReview): the title and stat, Undo or Redo, Review, the files with their folder dimmed (the
+/// card lists the first three, then more on request). Built from the turn the host recorded, or, from a host that
 /// records none (or while its turn runs), from the turn's own edit calls (no Undo then).
 public struct NativeChangesCard: Equatable, Sendable {
     public struct Row: Equatable, Sendable, Identifiable {
@@ -31,17 +31,15 @@ public struct NativeChangesCard: Equatable, Sendable {
         case undone
     }
 
-    /// Files listed before "N more".
-    public static let shownFiles = 3
-
     /// The host's record of the turn; nil for a card drawn from the turn's edit calls.
     public var turnID: UUID?
     public var title: String
     public var added: Int
     public var removed: Int
+    /// The files the host listed (its first `ChangesLimits.turnFiles`).
     public var rows: [Row]
-    /// Files past `rows`.
-    public var more: Int
+    /// Every file the turn changed, listed or not.
+    public var fileCount: Int
     public var state: State
     public var canUndo: Bool
     public var canRedo: Bool
@@ -55,11 +53,11 @@ public struct NativeChangesCard: Equatable, Sendable {
         title = turn.title
         added = turn.added
         removed = turn.removed
-        rows = turn.files.prefix(Self.shownFiles).map { file in
+        rows = turn.files.map { file in
             let (directory, name) = reviewPathParts(file.path)
             return Row(path: file.path, directory: directory, name: name, isNew: file.status == .added, added: file.added, removed: file.removed)
         }
-        more = max(0, turn.fileCount - rows.count)
+        fileCount = max(turn.fileCount, rows.count)
         state = turn.state == .undone ? .undone : .ready
         canUndo = turn.canUndo
         canRedo = turn.canRedo
@@ -71,17 +69,14 @@ public struct NativeChangesCard: Equatable, Sendable {
         title = "Edited " + nativeCount(changes.files.count, "file")
         added = changes.added
         removed = changes.removed
-        rows = changes.files.prefix(Self.shownFiles).map {
+        rows = changes.files.map {
             Row(path: $0.path, directory: $0.directory, name: $0.name, isNew: $0.status == .added, added: $0.added, removed: $0.removed)
         }
-        more = max(0, changes.files.count - rows.count)
+        fileCount = changes.files.count
         state = .ready
         canUndo = false
         canRedo = false
     }
-
-    /// "2 more", or nil when every file is listed.
-    public var moreText: String? { more > 0 ? "\(more) more" : nil }
 }
 
 /// The card that ends a finished reply: the host's record of its turn when it has ended one,

@@ -511,10 +511,37 @@ public struct SHChangedFile: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A changes card's last row once it lists `shown` of the `listed` files it has (the host sends a
+/// turn's first 20) out of `total`: "Show 10 more" lists the next batch in place, so a turn of a
+/// hundred files never floods the thread; past the listed files, "N more in Review" opens the pane.
+public enum SHChangesMore: Equatable, Sendable {
+    case show(Int)
+    case review(Int)
+    case none
+
+    public init(shown: Int, listed: Int, total: Int) {
+        if shown < listed {
+            self = .show(min(SHThreadMetrics.changesMoreFiles, listed - shown))
+        } else if total > shown {
+            self = .review(total - shown)
+        } else {
+            self = .none
+        }
+    }
+
+    public var text: String? {
+        switch self {
+        case .show(let count): "Show \(count) more"
+        case .review(let count): "\(count) more in Review"
+        case .none: nil
+        }
+    }
+}
+
 /// Ends every turn that edited files (ChangesCard(turn.changes), SHThread, Main): a header with
 /// a 30pt tile, "Edited 5 files" over its diff stat, Undo and Review; then the first three files
-/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "N more".
-/// Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
+/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "Show N
+/// more", which lists the next files (`SHChangesMore`). Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
 /// "Undid the agent’s edits to 5 files", with Redo (ChangesCard · after Undo).
 public struct SHChangesCard: View {
     public enum Phase: Equatable, Sendable {
@@ -534,6 +561,7 @@ public struct SHChangesCard: View {
     let onOpen: ((String) -> Void)?
     let onUndo: (() -> Void)?
     let onRedo: (() -> Void)?
+    @State private var shownCount = SHThreadMetrics.changesShownFiles
 
     /// `total` counts every file the turn changed (the card lists the first three); without it,
     /// `files` are all of them. `onUndo` and `onRedo` are left out where they can't apply (not the
@@ -575,8 +603,8 @@ public struct SHChangesCard: View {
 
     private var edited: some View {
         let sh = Color.sh
-        let shown = Array(files.prefix(SHThreadMetrics.changesShownFiles))
-        let more = total - shown.count
+        let shown = Array(files.prefix(shownCount))
+        let more = SHChangesMore(shown: shown.count, listed: files.count, total: total)
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "plus.forwardslash.minus")
@@ -617,7 +645,7 @@ public struct SHChangesCard: View {
                 SHHairline()
                 row(file)
             }
-            if more > 0 {
+            if more != .none {
                 SHHairline()
                 moreRow(more)
             }
@@ -656,18 +684,28 @@ public struct SHChangesCard: View {
         SHChangedFileRow(file: file, label: "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed", onOpen: onOpen)
     }
 
-    @ViewBuilder private func moreRow(_ count: Int) -> some View {
-        let label = Text("\(count) more").font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
+    @ViewBuilder private func moreRow(_ more: SHChangesMore) -> some View {
+        let text = if case .review(let count) = more, onReview == nil { "\(count) more" } else { more.text ?? "" }
+        let label = Text(text).font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
             .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: SHThreadMetrics.changesRowHeight, alignment: .leading)
             .contentShape(Rectangle())
-        if let onReview {
-            Button(action: onReview) { label }
+        switch more {
+        case .show(let count):
+            Button { shownCount += count } label: { label }
                 .buttonStyle(.shRow(radius: 0))
-                .accessibilityLabel("\(count) more files")
-                .accessibilityHint("Opens the Changes pane")
-        } else {
-            label
+                .accessibilityLabel("Show \(count) more files")
+        case .review(let count):
+            if let onReview {
+                Button(action: onReview) { label }
+                    .buttonStyle(.shRow(radius: 0))
+                    .accessibilityLabel("\(count) more files")
+                    .accessibilityHint("Opens the Changes pane")
+            } else {
+                label
+            }
+        case .none:
+            EmptyView()
         }
     }
 

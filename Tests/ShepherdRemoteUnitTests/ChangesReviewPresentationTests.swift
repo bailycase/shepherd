@@ -17,14 +17,15 @@ struct ChangesReviewPresentationTests {
 
     // MARK: The card
 
-    /// Three files as plain paths, the folder apart and a created one marked new, then "2 more".
-    @Test func aRecordedTurnShowsThreeFilesThenHowManyMore() throws {
+    /// Every file the host listed as a plain path, the folder apart and a created one marked new,
+    /// and the turn's whole count for the files it left out.
+    @Test func aRecordedTurnListsTheHostsFilesAndCountsThemAll() throws {
         let card = try #require(NativeChangesCard(turn: Self.turn))
         #expect(card.title == "Edited 5 files")
-        #expect(card.rows.map(\.name) == ["outbox.go", "refund.go", "refund_test.go"])
-        #expect(card.rows.map(\.directory) == ["ledger/", "ledger/", "ledger/"])
-        #expect(card.rows.map(\.isNew) == [false, true, true])
-        #expect(card.moreText == "2 more")
+        #expect(card.rows.map(\.name) == ["outbox.go", "refund.go", "refund_test.go", "0042.sql"])
+        #expect(card.rows.map(\.directory) == ["ledger/", "ledger/", "ledger/", "migrations/"])
+        #expect(card.rows.map(\.isNew) == [false, true, true, true])
+        #expect(card.fileCount == 5)
         #expect(card.turnID == Self.turn.id && card.canUndo && card.state == .ready)
     }
 
@@ -50,7 +51,7 @@ struct ChangesReviewPresentationTests {
         let edits = try #require(NativeTurnChanges(turn: ChangesTurn(startedAt: 1, state: .ready, files: [
             Self.file("App/iOS/ThreadView.swift", added: 0, removed: 4)], removed: 4)))
         let card = try #require(nativeChangesCard(turn: nil, changes: edits))
-        #expect(card.title == "Edited 1 file" && card.turnID == nil && !card.canUndo && card.moreText == nil)
+        #expect(card.title == "Edited 1 file" && card.turnID == nil && !card.canUndo && card.fileCount == 1)
         #expect(nativeChangesCard(turn: Self.turn, changes: edits)?.turnID == Self.turn.id)
         #expect(nativeChangesCard(turn: nil, changes: nil) == nil)
     }
