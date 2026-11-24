@@ -55,6 +55,8 @@ struct SHMenuRow<Label: View>: View {
     var alignment: VerticalAlignment = .center
     var padding = EdgeInsets(top: 0, leading: SH.Space.m, bottom: 0, trailing: SH.Space.m)
     var height = SHComposerMetrics.menuRowHeight
+    /// The fill under the highlighted row; nil is `runningTint`, the menus' own.
+    var highlight: Color? = nil
     let action: () -> Void
     let onHover: () -> Void
     @ViewBuilder let label: () -> Label
@@ -67,7 +69,7 @@ struct SHMenuRow<Label: View>: View {
             .padding(padding)
             .frame(minHeight: height)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(highlighted ? Color.sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .background(highlighted ? highlight ?? Color.sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
             .onTapGesture(perform: action)
             .onHover { if $0 { onHover() } }

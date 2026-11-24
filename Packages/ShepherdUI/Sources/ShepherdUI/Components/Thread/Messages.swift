@@ -69,6 +69,21 @@ public struct SHUserBubble<Leading: View>: View {
 
     /// The "Steered" label's glyph.
     static var steeredGlyph: CGFloat { 11 }
+    /// The label and the bubble's line: the redesign's quiet `textTertiary` and none on the Mac, `running` blue elsewhere.
+    @MainActor static var steeredColor: Color {
+        #if os(macOS)
+        .sh.textTertiary
+        #else
+        .sh.running
+        #endif
+    }
+    @MainActor static var steeredLine: Color {
+        #if os(macOS)
+        .clear
+        #else
+        .sh.running
+        #endif
+    }
 
     let text: String
     let title: String?
@@ -107,9 +122,13 @@ public struct SHUserBubble<Leading: View>: View {
             if steered {
                 HStack(spacing: SH.Space.xs) {
                     Image(systemName: "arrow.turn.down.right").font(.system(size: Self.steeredGlyph, weight: .medium))
+                    #if os(macOS)
+                    Text("Steered in").font(.sh(.caption))
+                    #else
                     Text("Steered").font(.sh(.caption, weight: .medium))
+                    #endif
                 }
-                .foregroundStyle(sh.running)
+                .foregroundStyle(Self.steeredColor)
             }
             VStack(alignment: .leading, spacing: SH.Space.m) {
                 // Above the words: what it holds may open over them (a chip's preview).
@@ -138,7 +157,7 @@ public struct SHUserBubble<Leading: View>: View {
             // bubble's edge isn't crossed by it.
             .background {
                 RoundedRectangle(cornerRadius: SHUserBubbleMetrics.radius).fill(sh.bgBubble)
-                    .shBorder(steered ? sh.running : SHUserBubbleMetrics.line, radius: SHUserBubbleMetrics.radius)
+                    .shBorder(steered ? Self.steeredLine : SHUserBubbleMetrics.line, radius: SHUserBubbleMetrics.radius)
             }
             .frame(maxWidth: metrics.maxWidth, alignment: .trailing)
             if !metrics.overlaysCaption, timestamp != nil || note != nil {

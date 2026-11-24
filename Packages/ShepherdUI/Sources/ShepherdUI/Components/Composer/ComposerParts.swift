@@ -98,22 +98,29 @@ public struct SHComposerCommandsLabel: View {
 /// field has focus (or a menu is open, or a drop hovers) the line turns `textTertiary` with a
 /// 3pt `bgSelected` ring. Top: attachments; then the field (it grows to 8 lines); then one row
 /// of controls. Nothing else lives under the field.
-public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>: View {
+public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Controls: View>: View {
     /// How the Mac lays the card out: the thread's one line (attach, the words, the controls), or New
     /// thread's words over the line.
     public enum Layout: Sendable { case inline, stacked }
 
     let isFocused: Bool
     let layout: Layout
+    /// Something that shares the card above its line (the Mac's Up next): inside the card's shape, line and focus ring.
+    let above: Above
+    let joined: Bool
     let top: Top
     let leading: Leading
     let field: Field
     let controls: Controls
 
-    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
+    /// `joined` says `above` draws something: the card then clips only what is below it, so a row lifted by a drag floats free.
+    public init(isFocused: Bool, layout: Layout = .stacked, joined: Bool = false, @ViewBuilder above: () -> Above,
+                @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
                 @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
         self.isFocused = isFocused
         self.layout = layout
+        self.joined = joined
+        self.above = above()
         self.top = top()
         self.leading = leading()
         self.field = field()
@@ -131,7 +138,12 @@ public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>:
     /// The boards' `.cmp`: `bgRaised` at radius 14 on the `lift` shadow, attachments over one line.
     private var mac: some View {
         let shape = RoundedRectangle(cornerRadius: SHComposerMetrics.radius)
+        let below = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(
+            topLeading: joined ? 0 : SHComposerMetrics.radius, bottomLeading: SHComposerMetrics.radius,
+            bottomTrailing: SHComposerMetrics.radius, topTrailing: joined ? 0 : SHComposerMetrics.radius))
         return VStack(alignment: .leading, spacing: 0) {
+            above
+            VStack(alignment: .leading, spacing: 0) {
             chips
             switch layout {
             case .inline:
@@ -157,10 +169,11 @@ public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>:
                 .padding(.horizontal, SHComposerMetrics.linePadding)
                 .frame(height: SHComposerMetrics.lineHeight)
             }
+            }
+            // As the card eases to a new height (a question taking the field's place, attachments
+            // arriving), what it holds is revealed by its edge rather than drawn outside it.
+            .clipShape(below)
         }
-        // As the card eases to a new height (a question taking the field's place, attachments
-        // arriving), what it holds is revealed by its edge rather than drawn outside it.
-        .clipShape(shape)
         .shLift(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the card as it grows.
         .modifier(SHComposerFocus(isFocused: isFocused))
@@ -242,16 +255,23 @@ private struct SHComposerFocus: ViewModifier {
     }
 }
 
-extension SHComposer where Leading == EmptyView {
-    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
-                @ViewBuilder controls: () -> Controls) {
-        self.init(isFocused: isFocused, layout: layout, top: top, leading: { EmptyView() }, field: field, controls: controls)
+extension SHComposer where Above == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
+                @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: top, leading: leading, field: field, controls: controls)
     }
 }
 
-extension SHComposer where Top == EmptyView, Leading == EmptyView {
+extension SHComposer where Above == EmptyView, Leading == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
+                @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: top, leading: { EmptyView() }, field: field, controls: controls)
+    }
+}
+
+extension SHComposer where Above == EmptyView, Top == EmptyView, Leading == EmptyView {
     public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
-        self.init(isFocused: isFocused, layout: layout, top: { EmptyView() }, leading: { EmptyView() }, field: field, controls: controls)
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: { EmptyView() }, leading: { EmptyView() }, field: field, controls: controls)
     }
 }
 
