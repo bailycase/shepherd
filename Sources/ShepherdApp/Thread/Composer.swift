@@ -84,6 +84,10 @@ struct Composer: View, Equatable {
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
     @Environment(\.designReferences) private var references
+    /// The threads the @ picker can link (ThreadLinkA); nil where none resolve.
+    @Environment(\.shThreadLinks) private var threadLinks
+    /// This thread's own agent, left out of "Link a thread".
+    @Environment(\.threadLinkSelf) private var threadLinkSelf
     /// The @ picker: where it is and what it lists, derived once per change of the draft.
     @State private var mentions = MentionPickerState()
     /// Where the field's caret is, for ⌫ at the start of the words (not observed: the caret
@@ -294,12 +298,14 @@ struct Composer: View, Equatable {
     private var menuOpen: Bool { commandQuery != nil || loginQuery != nil || mentionShown || menu != nil }
 
     /// @ picks design pieces here: a local thread (not a design's chat) whose host takes references.
-    private var mentionsAvailable: Bool { references != nil && !designChat && store.supportedActions.contains("designReferences") }
+    private var designsAvailable: Bool { references != nil && !designChat && store.supportedActions.contains("designReferences") }
+    /// @ opens the picker: on design pieces, or on threads to link (any thread but a design's chat).
+    private var mentionsAvailable: Bool { designsAvailable || (threadLinks != nil && !designChat) }
 
     /// The @ picker is up: a mention is being typed. It opens at once, saying "Loading designs…"
     /// until the catalog is read (MentionPickerState).
     private var mentionShown: Bool {
-        mentions.isOpen && commandQuery == nil && loginQuery == nil && references != nil
+        mentions.isOpen && commandQuery == nil && loginQuery == nil && mentionsAvailable
     }
 
     private var openMenu: OpenMenu {
@@ -1162,7 +1168,7 @@ struct Composer: View, Equatable {
             if mentions.isOpen { mentions.close() }
             return
         }
-        if let pasted = ComposerReferencePaste.extract(new, previous: old) {
+        if designsAvailable, let pasted = ComposerReferencePaste.extract(new, previous: old) {
             store.draft = pasted.draft
             for reference in pasted.references { attachReference(reference) }
             return
@@ -1172,14 +1178,21 @@ struct Composer: View, Equatable {
 
     /// Derives what the @ picker lists for the draft as it is; opening it reads this Mac's designs.
     private func updateMentions() {
-        guard mentionsAvailable, let references else { return }
+        guard mentionsAvailable else { return }
         // A closed picker whose draft opens nothing would only close again: a prose key writes nothing.
         guard mentions.isOpen || mentions.opens(for: store.draft) else { return }
+        let designs = designsAvailable
+        let threads = threadLinks.map { Array($0.links.values) } ?? []
+        guard designs, let references else {
+            mentions.update(draft: store.draft, catalog: nil, threads: threads, excluding: threadLinkSelf, designs: false)
+            return
+        }
         let wasOpen = mentions.isOpen, scope = mentions.scope
         // Opening reads the designs afresh: from this call the picker says it is loading, not what
         // the last opening ended with.
         if mentions.opens(for: store.draft) { references.startCatalogRead() }
-        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage, place: references.place) {
+        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage, place: references.place,
+                        threads: threads, excluding: threadLinkSelf) {
             references.rowPicture($0)
         }
         if mentions.isOpen, !wasOpen {
@@ -1199,6 +1212,8 @@ struct Composer: View, Equatable {
         case .pick(let reference, let draft):
             store.draft = draft
             attachReference(reference)
+        case .link(let draft):
+            store.draft = draft
         case nil:
             break
         }

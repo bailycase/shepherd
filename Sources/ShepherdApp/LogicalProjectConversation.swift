@@ -85,6 +85,8 @@ struct ConversationThread: View {
             .environment(\.shProseHalfLeading, true)     // and CSS's half-leading above and below a paragraph's lines
             .environment(\.projectActionCards, actionCards)
             .environment(\.shProseTaskLinks, ProjectTaskLinks.table(project: ref.id, presentation: presentation))
+            .environment(\.shThreadLinks, vm.threadLinks)
+            .environment(\.threadLinkSelf, agent?.rawValue)
             .environment(\.openURL, OpenURLAction { [vm, projectID = ref.id] url in
                 ProjectTaskLinks.open(url, in: vm, project: projectID, presentation: presentation) ? .handled : .systemAction
             })

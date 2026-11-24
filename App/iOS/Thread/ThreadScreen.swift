@@ -31,6 +31,8 @@ struct ThreadScreen: View {
     @State private var height: CGFloat = 0
     /// The space's apps, for the header's Run (`ThreadAppsMenu`).
     @State private var apps = ThreadApps()
+    /// The threads its links name, on its own host (`ThreadLinksSync`).
+    @State private var threadLinks = SHThreadLinks()
 
     /// The poll loop's identity: another thread in the same view, a new connection, or the
     /// thread leaving the screen restarts it.
@@ -116,6 +118,9 @@ struct ThreadScreen: View {
             }
         }
         .background(Color.sh.bgWindow)
+        // Thread links in its prose and its @ picker resolve on its own host (ThreadLinkA).
+        .environment(\.shThreadLinks, threadLinks)
+        .background { ThreadLinksSync(host: ref.host, links: threadLinks) }
         // Measured around the composer's inset, which would otherwise shrink what it measures.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         // The side pane's Terminal tab dot and the menu's "1 running".

@@ -66,6 +66,8 @@ public struct SHUserBubble<Leading: View>: View {
     @Environment(\.shProseSize) private var proseSize
     @Environment(\.shUserBubbleMetrics) private var metrics
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    /// A thread linked in the message (the @ picker writes `[Title](shepherd-thread://<id>)`) draws as its chip.
+    @Environment(\.shThreadLinks) private var threadLinks
 
     /// `attachments` name the images sent with the message. `timestamp` shows only while
     /// `revealed` (the pointer is over the message); `note` follows it and always shows ("from
@@ -131,13 +133,22 @@ public struct SHUserBubble<Leading: View>: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func line(_ value: String, weight: Font.Weight?) -> some View {
-        Text(value)
-            .font(.sh(.body, weight: weight, size: proseSize))
-            .lineSpacing(max(0, SHTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment))
-            .foregroundStyle(Color.sh.textPrimary)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
+    /// The words as typed; only a thread link is read, and draws as its chip (unresolved: its words).
+    @ViewBuilder private func line(_ value: String, weight: Font.Weight?) -> some View {
+        let spacing = max(0, SHTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment)
+        if let threadLinks, let linked = SHThreadLinks.linkingThreads(in: value) {
+            SHThreadChipParagraph(text: linked, links: threadLinks, size: proseSize, weight: weight, lineSpacing: spacing)
+                .foregroundStyle(Color.sh.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(value)
+                .font(.sh(.body, weight: weight, size: proseSize))
+                .lineSpacing(spacing)
+                .foregroundStyle(Color.sh.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// "2:41 PM", or "10:58 · from parent": the time (and its separator) fades in place beside a

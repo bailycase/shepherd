@@ -421,53 +421,13 @@ final class DesignReferenceChips {
 
 // MARK: - Chips
 
-/// How long the pointer rests on a chip before its preview opens, and lingers after leaving it.
-private enum ChipHoverTiming {
-    static let open: Duration = .milliseconds(450)
-    static let close: Duration = .milliseconds(250)
-}
-
-/// Whether a chip's preview is open: after a short hover on the chip, kept while the pointer is on
-/// the chip or the preview, and closed a moment after it leaves both.
-@MainActor @Observable
-final class ReferenceChipHover {
-    private(set) var shown = false
-    @ObservationIgnored private var inside = 0
-    @ObservationIgnored private var timer: Task<Void, Never>?
-
-    init(shown: Bool = false) { self.shown = shown }
-
-    func pointer(_ entered: Bool) {
-        inside = max(0, inside + (entered ? 1 : -1))
-        timer?.cancel()
-        let wanted = inside > 0
-        guard wanted != shown else { return }
-        timer = Task { [weak self] in
-            try? await Task.sleep(for: wanted ? ChipHoverTiming.open : ChipHoverTiming.close)
-            guard !Task.isCancelled, let self else { return }
-            self.shown = wanted
-        }
-    }
-
-    func close() {
-        timer?.cancel()
-        inside = 0
-        shown = false
-    }
-
-    /// Previews: open at once.
-    func show() {
-        timer?.cancel()
-        shown = true
-    }
-}
+/// Whether a chip's preview is open (ShepherdUI's, shared with thread chips' peeks).
+typealias ReferenceChipHover = SHChipHover
 
 /// Whether a sent chip's preview is open in a thread row: the row draws over the rows after it
-/// while it is, so a preview opening below its chip (near the thread's top) isn't covered.
-struct ReferencePreviewOpenKey: PreferenceKey {
-    static let defaultValue = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
-}
+/// while it is, so a preview opening below its chip (near the thread's top) isn't covered. Thread
+/// chips' peeks say so with the same key.
+typealias ReferencePreviewOpenKey = SHPreviewOpenKey
 
 /// The chips a sent message carries (DesignReferenceChip · sent): each opens its piece in the
 /// design, and after a short hover its preview (RefChipHover) with Open in design, and Send vN
