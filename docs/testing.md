@@ -192,9 +192,11 @@ early with status 0 also passes. `ModelSettingsPopoverTests` is the worked examp
 ## CI
 
 PR CI runs only for pull requests targeting `master`, not `nightly`. Pushes to `master`,
-the daily schedule and manual dispatch keep their existing triggers.
+the daily schedule and manual dispatch keep their existing triggers. CI and Release run on
+GitHub-hosted runners (`ubuntu-latest`, `macos-26`); there is no
+self-hosted runner, so every job starts on a fresh VM.
 
-The hosted `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
+The `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
 sidebar loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI
 validation. Failed compiler outputs and the client-check log are retained in its CI artifact.
 
@@ -204,13 +206,13 @@ and the integration suites of the areas its paths touch, and a path no area clai
 module's suites. Broad app, sessions and remote selections use four filtered lanes, not one serial
 runner. Remote-client unit tests remain in every Swift run. Shared contracts (`ShepherdCore`, `ShepherdProtocol`, the test
 support, `Package.swift`, the engine pin, the script itself), `master`, the daily run and a
-`full-ci` label run everything across four hosted lanes. The pixel-scanning suites in
+`full-ci` label run everything across four lanes, each on its own hosted macOS runner. The pixel-scanning suites in
 `ci_plan.DEEP` (the completion matrix and reproduction, tail flow, send scrolling, blank screen,
 design performance) normally run only there and on the manual UI diagnostics dispatch. A changed
 test file still runs its own tests, including slow diagnostics. `nightly` ships without rerunning tests. Failed Swift runs keep the log and the
 completion captures as a seven-day artifact.
 
-Hosted builds restore timestamps only for tracked files whose bytes match the cached input
+Builds restore timestamps only for tracked files whose bytes match the cached input
 manifest, so a fresh checkout does not re-emit unchanged modules or recopy resources. Changed
 files keep their checkout timestamps; missing metadata uses normal invalidation. Swift file
 hashing and dependency checks stay enabled. Only one lane saves the shared build cache.
