@@ -501,7 +501,7 @@
     browser) when it never answers; the next call reaches the host's own page or the next owner. The
     host also pushes `abandoned` (Stop), `ended` (superseded, unresponsive, agent gone), `handBack`
     (the user's next message, from any client) and `opened` (the agent opened a page in the host's
-    own browser: the viewer's tab takes the dot). The viewer runs a request with the local driver,
+    own browser; the Mac app marks nothing for it). The viewer runs a request with the local driver,
     bound by `BrowserViewerPolicy`: only the host's own loopback ports and public addresses (SECURITY.md). A claim ends with
     the viewer's tab out of sight for 30 s, its connection, or a newer claim. A client or host without
     the capability keeps PR 3a's two pages.
@@ -512,6 +512,9 @@
     requests still work. The target is thread-local, independent of the user's selected tab, with
     at most eight live tabs and no restart restoration. A remote tab list masks titles and URLs
     of pages outside `BrowserViewerPolicy`.
+  - `browser.show.v1` (clients only) adds `show` (`browser_show`, bare or inside `tab`): the viewer
+    makes the tab the one on screen and opens the thread's side pane on Browser. A host answers
+    `unavailable` when the owning viewer does not list it.
 
   - `hostUpdate` (`host.update.v1`, only an installed supported app with its updater bridge):
     `status`, `check`, and `install(offerID:authorized:)`, answered with `HostUpdateStatus`.

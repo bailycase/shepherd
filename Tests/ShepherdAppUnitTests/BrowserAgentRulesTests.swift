@@ -103,7 +103,7 @@ struct BrowserAgentRulesTests {
 
     private static let observations: [BrowserRequest] = [
         .read(selector: nil, maxChars: nil), .wait(text: "x", ref: nil, gone: false, ms: nil, timeout: nil),
-        .screenshot(ref: nil), .console(clear: false), .tabs,
+        .screenshot(ref: nil), .console(clear: false), .tabs, .show,
         .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)),
     ]
     private static let actions: [BrowserRequest] = [
@@ -401,18 +401,6 @@ struct BrowserAgentRulesTests {
         #expect(!BrowserEval.mayBeStatements(BrowserScriptFailure(message: "SyntaxError: JSON Parse error: Unexpected EOF").with(syntax: true)),
                 "a script that ran and threw is not run again")
         #expect(!BrowserEval.mayBeStatements(BrowserScriptFailure(message: "TypeError: null is not an object")))
-    }
-
-    // MARK: The tab's tip
-
-    @Test func theTabsTipNamesTheHostAndPathTheAgentOpened() throws {
-        let opened = Date(timeIntervalSince1970: 5)
-        let url = try #require(URL(string: "http://localhost:5173/checkout?step=2"))
-        #expect(SidePaneTabs.tip(opened: (url, opened)) == SHSidePaneTabTip(text: "localhost:5173/checkout?step=2", openedAt: opened))
-        #expect(SidePaneTabs.tip(opened: nil) == nil)
-        let items = SidePaneTabs.items(news: [.browser], changedFiles: nil, browserTip: SHSidePaneTabTip(text: "localhost:5173", openedAt: opened))
-        let browserTab = items.first { $0.id == "browser" }
-        #expect(browserTab?.tip?.text == "localhost:5173" && items.first?.tip == nil)
     }
 }
 

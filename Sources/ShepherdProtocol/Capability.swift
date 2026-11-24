@@ -16,6 +16,7 @@ public struct Capability: RawRepresentable, Hashable, Sendable {
     public static let automations = Capability("automations.v1")
     public static let branchStatus = Capability("branch.status.v1")
     public static let browserDrive = Capability("browser.drive.v1")
+    public static let browserShow = Capability("browser.show.v1")
     public static let browserTabs = Capability("browser.tabs.v1")
     public static let browserTunnel = Capability("browser.tunnel.v1")
     public static let changes = Capability("changes.v1")
