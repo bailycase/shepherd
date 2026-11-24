@@ -237,7 +237,7 @@ public struct SHChangesFileList: View {
             .scrollIndicators(.hidden)
         }
         .frame(width: SHChangesMetrics.fileListWidth)
-        .background(sh.bgWindow)
+        .background(SHPaneSurface.fill)
         .overlay(alignment: .trailing) { SHHairline(.vertical) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Changed files")
