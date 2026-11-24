@@ -175,7 +175,13 @@ extension SHTurnError {
                 copied = true
                 copies += 1
                 Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-            } label: { SHCopyGlyph(copied: copied, copies: copies).foregroundStyle(sh.textSecondary) }
+            } label: {
+                // Drawn 12pt; pressed over the Mac's 24pt, taking back the room its frame adds.
+                SHCopyGlyph(copied: copied, copies: copies).foregroundStyle(sh.textSecondary)
+                    .frame(width: SH.Height.controlS, height: SH.Height.controlS)
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, -SH.Space.s)
+            }
                 .buttonStyle(.plain)
                 .shHelp("Copy the error")
                 .accessibilityLabel(copied ? "Copied" : "Copy error")
@@ -272,7 +278,10 @@ private struct SHTurnErrorLinkStyle: ButtonStyle {
             .font(.shSans(SHTurnErrorMacMetrics.actionSize, .medium))
             .foregroundStyle(Color.sh.textPrimary)
             .opacity(configuration.isPressed ? 0.6 : 1)
+            // A taller press area than the words, without taller layout.
+            .padding(.vertical, SH.Space.xs)
             .contentShape(Rectangle())
+            .padding(.vertical, -SH.Space.xs)
     }
 }
 #endif

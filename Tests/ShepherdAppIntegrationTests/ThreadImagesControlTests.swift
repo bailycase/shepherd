@@ -281,7 +281,7 @@ struct ThreadImagesControlTests {
         let gone = NativeImageRef(id: "missing", mimeType: "image/png", width: 24, height: 24, byteCount: teal.count)
         let thread = HStack {
             ReceivedImages(refs: [ref])
-            ThreadImageThumb(ref: gone, name: "chart.png", size: CGSize(width: 80, height: 80), open: {})
+            ThreadImageThumb(ref: gone, name: "chart.png", size: CGSize(width: 80, height: 80), radius: SHThreadImageMetrics.receivedRadius, open: {})
         }
         .environment(\.threadImages, images)
         let window = OffscreenWindow(size: CGSize(width: 700, height: 320), dark: true, ZStack { thread; ImageViewerOverlay(vm: vm) })
@@ -318,9 +318,10 @@ struct ThreadImagesControlTests {
         let controls = window.controls()
         func control(_ label: String) throws -> Control { try #require(controls.first { $0.label == label }, "\(label)") }
         let frame = window.window.frame
-        // A 28pt close circle and 36pt arrows; the pill holds every action, and the close circle sits below the picture, in the window's middle third.
+        // Icons of one size and 36pt arrows; the pill holds every action, and the close icon sits below the picture, in the window's middle third.
         let close = try control("Close"), copy = try control("Copy")
-        #expect(abs(close.frame.width - 28) < 1 && abs(close.frame.height - 28) < 1, "the close circle is 28pt: \(close.frame)")
+        #expect(abs(close.frame.height - 28) < 1 && abs(close.frame.height - copy.frame.height) < 1,
+                "the close icon is a 28pt ghost button like the pill's others (GXImageViewer's bare ✕): \(close.frame) \(copy.frame)")
         #expect(abs(close.frame.midY - copy.frame.midY) < 1, "Copy and close share the pill")
         #expect(abs(close.frame.midX - frame.midX) < frame.width / 6, "the pill is centred, not in a corner: \(close.frame) in \(frame)")
         #expect(close.frame.minY > frame.minY + SHImageViewerMetrics.margin / 2, "the pill floats above the window's bottom edge: \(close.frame)")

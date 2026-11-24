@@ -140,10 +140,15 @@ public struct SHCompactionDivider: View {
                         .foregroundStyle(sh.textTertiary)
                     #endif
                 }
+                #if os(macOS)
+                // A taller press area than the words, without taller layout (below).
+                .padding(.vertical, SH.Space.xs)
+                #endif
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             #if os(macOS)
+            .padding(.vertical, -SH.Space.xs)
             .padding(.leading, SHCompactionMetrics.toggleInset)
             #endif
             .fixedSize()

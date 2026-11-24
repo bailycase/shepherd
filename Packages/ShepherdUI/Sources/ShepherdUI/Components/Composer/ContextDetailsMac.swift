@@ -364,7 +364,10 @@ private struct SHContextLinkStyle: ButtonStyle {
             configuration.label
                 .font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
                 .padding(.horizontal, SH.Space.xs)
+                // A taller press area than the words, without taller layout.
+                .padding(.vertical, SH.Space.xs)
                 .contentShape(Rectangle())
+                .padding(.vertical, -SH.Space.xs)
                 .shEnabledOpacity(enabled)
                 .shFocusRing(radius: SH.Radius.xs)
         }
