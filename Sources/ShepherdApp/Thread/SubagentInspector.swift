@@ -196,15 +196,17 @@ private struct SubagentRunInspector: View {
                     Button(run.paused == true ? "Continue" : "Pause") {
                         Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
                     }
-                    .buttonStyle(.sh(.secondary, size: .s))
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .regular)))
+                    .padding(.horizontal, SH.Space.xs).padding(.vertical, SH.Space.xs)
                     .disabled(!canAct)
                     .help("Pause before the next model request; current tools finish normally")
                 }
                 Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
-                    .buttonStyle(.sh(.danger, size: .s))
+                    // The board's Pause and Stop are words in ink, side by side; Stop stays a plain word.
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .regular)))
                     .disabled(!canAct)
                     .accessibilityLabel("Stop \(role)")
-                    .padding(.trailing, SH.Space.xs)
+                    .padding(.horizontal, SH.Space.xs).padding(.vertical, SH.Space.xs)
             }
             if let select, let position, siblings.count > 1 {
                 Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
@@ -347,14 +349,14 @@ private struct SubagentRunInspector: View {
             ? SubagentPresentation.position(turns: transcript.turns, top: topTurn, total: run?.turns) : nil
         return HStack(spacing: SH.Space.s) {
             if let position {
-                Text(position).font(.shMono(11)).shContentTransition(.numeric())
+                Text(position).font(.sh(.caption)).shContentTransition(.numeric())
                 Spacer()
                 if moreBelow { Text("Scroll for the rest") }
             } else if transcript.earlierCount > 0 {
-                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.shMono(11))
+                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.sh(.caption))
                     .shContentTransition(.numeric())
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
-                    .buttonStyle(.shLink(font: .shSans(11)))
+                    .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.caption)))
                     .disabled(transcript.loadingOlder)
             }
             if position == nil {
@@ -362,7 +364,7 @@ private struct SubagentRunInspector: View {
                 if run?.isTerminal != true { Text(transcript.following ? "Following live" : "Reading earlier output") }
             }
         }
-        .font(.shSans(11)).foregroundStyle(Color.sh.textTertiary)
+        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
         .padding(.horizontal, AppLayout.inspectorPadding)
         .frame(minHeight: AppLayout.inspectorFooterHeight)
         .shAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
@@ -421,6 +423,12 @@ private struct SubagentRunInspector: View {
         let sh = Color.sh
         // The same Steer command, called Reply while the run waits on its parent's answer.
         let words = run.map(nativeRunSteerWords) ?? .steer
+        #if os(macOS)
+        return VStack(alignment: .leading, spacing: 0) {
+            steerBox(role: role, words: words)
+            notice(store.notice)
+        }
+        #else
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 TextField(words.label(role), text: $draft,
@@ -463,7 +471,46 @@ private struct SubagentRunInspector: View {
             notice(store.notice)
         }
         .overlay(alignment: .top) { SHHairline() }
+        #endif
     }
+
+    /// The boards' `.isteer`: its words on a hairline box (radius 12) with the Steer word under them, on the right.
+    private func steerBox(role: String, words: NativeRunSteerWords) -> some View {
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        let prompt = words == .steer ? "Steer this subagent. It reads this before its next turn."
+            : "\(words.label(role)) — it was waiting on its parent"
+        return VStack(alignment: .leading, spacing: AppLayout.steerBoxGap) {
+            TextField(words.label(role), text: $draft, prompt: Text(prompt).foregroundStyle(sh.textTertiary), axis: .vertical)
+                .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.sh(.ui, weight: .regular)).autocorrectionDisabled()
+                .foregroundStyle(sh.textPrimary).tint(sh.lantern)
+                .focused($composing)
+                .onKeyPress(.return, phases: .down) { press in
+                    if let result = SHReturnKey.lineBreak(for: press) { return result }
+                    send()
+                    return .handled
+                }
+                .accessibilityLabel(words.label(role))
+            HStack(spacing: SH.Space.s) {
+                // Who it goes to is still said, quietly: the run, not the parent.
+                Text("to: \(role) · not the parent").font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                Spacer(minLength: SH.Space.s)
+                Button(words.verb) { send() }
+                    .buttonStyle(.shLink(color: canSend ? sh.textPrimary : sh.textSecondary, font: .sh(.ui, weight: .regular)))
+                    .padding(.vertical, SH.Space.xs)
+                    .disabled(!canSend)
+                    .help(words.help ?? "")
+            }
+        }
+        .padding(AppLayout.steerBoxPadding)
+        .shBorder(composing ? sh.textTertiary : sh.lineSubtle, in: shape)
+        .shAnimation(.hover, value: composing)
+        .contentShape(Rectangle())
+        .onTapGesture { composing = true }
+        .padding(AppLayout.steerBoxMargin)
+    }
+
+    private var canSend: Bool { canAct && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     @ViewBuilder private func notice(_ text: String?) -> some View {
         if let text {

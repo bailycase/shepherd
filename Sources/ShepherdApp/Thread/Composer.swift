@@ -438,10 +438,10 @@ struct Composer: View, Equatable {
             // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
             if let dock = projectSend?.dock { dock().shTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
-            if store.hasGoal || showsTray || queueStack.isVisible {
+            if store.hasGoal || showsTray || (queueStack.isVisible && !joinsQueue) {
                 ComposerDock(store: store, trayState: trayState, actions: subagents,
-                             showsQueue: queueStack.isVisible, goalActive: active) {
-                    if queueStack.isVisible {
+                             showsQueue: queueStack.isVisible && !joinsQueue, goalActive: active) {
+                    if queueStack.isVisible && !joinsQueue {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
                                        readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
@@ -785,10 +785,23 @@ struct Composer: View, Equatable {
         withTransaction(instant) { composing = value }
     }
 
+    /// Whether Up next draws inside the composer's card: always, until a question takes the card's place.
+    private var joinsQueue: Bool {
+        queueStack.isVisible && !(dialogs.first != nil && store.session != nil && questionKey != nil)
+    }
+
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
-        return SHComposer(isFocused: focused, layout: .inline) {
+        let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
+        return SHComposer(isFocused: focused, layout: .inline, joined: joinsQueue) {
+            // Up next shares the card, above its line (the boards' `.cmp` with `.qh`), unless a question has taken the card's place.
+            if joinsQueue {
+                QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: false,
+                               focusedRow: $focusedRow, focusComposer: { composing = true },
+                               readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
+            }
+        } top: {
             // The images waiting to send, first in the card (GXImagesComposer); what keeps Send held is said under them.
             ForEach(input.attachments.items) { attachment in
                 attachment.chip(open: { openAttachment(attachment) }, remove: { input.attachments.remove(attachment.id) })

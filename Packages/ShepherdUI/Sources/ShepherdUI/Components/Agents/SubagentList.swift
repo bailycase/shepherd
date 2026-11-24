@@ -13,6 +13,17 @@ public enum SHSubagentListMetrics {
     public static let timeWidth: CGFloat = 30
     /// The finished glyphs (`checkmark`, `xmark`): 11pt, as the board draws them (8 wide, where the tray's 8pt cross is 6).
     public static let glyphSize: CGFloat = 11
+    #if os(macOS)
+    /// The redesign's page (`.sa`): 14pt over the header and 8pt in, rows padded 8 at radius 9, their title and
+    /// its facts 7pt apart, the two columns 16pt apart; a section's head 30pt, 10pt below the rows before it.
+    public static let macPagePadding: CGFloat = 14
+    public static let macRowPadding: CGFloat = SH.Space.m
+    public static let macRowRadius: CGFloat = 9
+    public static let macTitleGap: CGFloat = 7
+    public static let macColumnGap: CGFloat = SH.Space.xl
+    public static let macSectionHeight: CGFloat = 30
+    public static let macSectionTop: CGFloat = 10
+    #endif
     /// A line's height in the board: its spans set a size but no line height, so a browser gives Geist its natural 1.2
     /// leading, where the ramp's styles run 1.3 and 1.35; whole points, as it lays them out. Scaled with the Text size.
     @MainActor public static func line(_ size: CGFloat) -> CGFloat { (size * ThemeStore.shared.textScale * 1.2).rounded(.down) }
@@ -29,6 +40,22 @@ public struct SHSubagentListSummary: View, Equatable {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // The boards' `.sah`: the count in `ui` semibold, its tally in words after it, 8pt in and 4pt under.
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).fixedSize()
+                .shContentTransition(.numeric())
+            Text(tally.map(\.text).joined(separator: ", ")).font(.sh(.ui, weight: .regular))
+                .foregroundStyle(Color.sh.textSecondary).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, SH.Space.m)
+        .padding(.bottom, SH.Space.xs)
+        .padding(.top, SHSubagentListMetrics.macPagePadding)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(([title] + tally.map(\.text)).joined(separator: ", "))
+        .accessibilityAddTraits(.isHeader)
+        #else
         HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
             Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).fixedSize()
                 .shContentTransition(.numeric())
@@ -44,6 +71,7 @@ public struct SHSubagentListSummary: View, Equatable {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(([title] + tally.map(\.text)).joined(separator: ", "))
         .accessibilityAddTraits(.isHeader)
+        #endif
     }
 }
 
@@ -59,6 +87,19 @@ public struct SHSubagentListSection: View, Equatable {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The boards' `.sag`: "This turn" in `caption` medium and its time in regular, both `textTertiary`.
+        HStack(spacing: SH.Space.m) {
+            Text(title).font(.sh(.caption, weight: .medium)).foregroundStyle(sh.textTertiary).lineLimit(1)
+            if let time { Text(time).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1) }
+            Spacer(minLength: 0)
+        }
+        .frame(height: SHSubagentListMetrics.macSectionHeight)
+        .padding(.horizontal, SH.Space.m)
+        .padding(.top, SHSubagentListMetrics.macSectionTop)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        #else
         HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
             Text(title).font(.sh(.caption)).foregroundStyle(sh.textSecondary).lineLimit(1)
             if let time {
@@ -72,6 +113,7 @@ public struct SHSubagentListSection: View, Equatable {
         .padding(.bottom, SH.Space.s)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+        #endif
     }
 }
 
@@ -92,6 +134,38 @@ public struct SHSubagentListRow: View, Equatable {
     public var body: some View {
         let _ = SHRenderProbe.tick("subagents.listRow")
         let sh = Color.sh
+        #if os(macOS)
+        Button(action: open) {
+            HStack(spacing: SHSubagentListMetrics.macColumnGap) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    HStack(alignment: .firstTextBaseline, spacing: SHSubagentListMetrics.macTitleGap) {
+                        Text(run.name).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary)
+                            .lineLimit(1).truncationMode(.tail)
+                        if let role = run.role {
+                            Text(role).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1).layoutPriority(1)
+                        }
+                    }
+                    detail
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: SH.Space.m) {
+                    if let added = run.added, let removed = run.removed {
+                        SHDiffStat(added: added, removed: removed, font: .sh(.caption))
+                    }
+                    SHSubagentStateWord(run: run)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: SHSubagentTrayMetrics.chevron - 1, weight: .semibold))
+                        .foregroundStyle(sh.textTertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(SHSubagentListMetrics.macRowPadding)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.shRow(radius: SHSubagentListMetrics.macRowRadius))
+        .accessibilityLabel(run.accessibilityLabel)
+        .accessibilityHint("Opens the run")
+        #else
         let mono = Font.sh(.micro, weight: .regular)
         Button(action: open) {
             HStack(spacing: SH.Space.l) {
@@ -134,6 +208,7 @@ public struct SHSubagentListRow: View, Equatable {
         .overlay(alignment: .top) { SHHairline() }
         .accessibilityLabel(run.accessibilityLabel)
         .accessibilityHint("Opens the run")
+        #endif
     }
 
     /// What it is doing, why it waits, what it did, or why it failed: one plain line (the board's `.sl-line`).
@@ -145,7 +220,11 @@ public struct SHSubagentListRow: View, Equatable {
         case .asked(let question): (question.isEmpty ? "asked the parent" : "asked the parent: " + question, sh.textSecondary)
         case .failed(let reason): (reason, sh.failed)
         }
+        #if os(macOS)
+        return Text(text).font(.sh(.ui, weight: .regular)).foregroundStyle(color).lineLimit(1).truncationMode(.tail)
+        #else
         return Text(text).font(.sh(.caption)).foregroundStyle(color).lineLimit(1).truncationMode(.tail)
             .frame(height: SHSubagentListMetrics.line(SHTextStyle.caption.size))
+        #endif
     }
 }

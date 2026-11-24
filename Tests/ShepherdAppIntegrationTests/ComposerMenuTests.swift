@@ -34,7 +34,7 @@ struct ComposerMenuTests {
             let padding = 2 * SH.Space.s
             switch self {
             case .slash: return SHComposerMetrics.menuHeaderHeight + CGFloat(SHComposerMetrics.menuMaxRows) * SHComposerMetrics.slashRowHeight + padding
-            case .models: return SHComposerMetrics.modelSearchHeight + 2 * SH.Space.xs + SHComposerMetrics.modelPickerMaxHeight
+            case .models: return SHComposerMetrics.modelSearchHeight + 2 * SHComposerMetrics.modelListInset + SHComposerMetrics.modelPickerMaxHeight
             case .thinking, .speed:
                 // A hairline between sections, a header, a track of 24pt segments in 2pt padding, and 6pt under it.
                 func section(rows: Int) -> CGFloat {

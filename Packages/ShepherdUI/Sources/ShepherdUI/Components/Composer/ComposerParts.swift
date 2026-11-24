@@ -33,18 +33,44 @@ public enum SHComposerMetrics {
     public static let branchCount: CGFloat = 10.5
     public static let fieldMaxLines = 8
     /// Menus: 28pt rows under a 24pt section header, in a 6pt-padded popover.
+    #if os(macOS)
+    /// The redesign's menus (`.mi`, `.mh`): 30pt rows under a 26pt header.
+    public static let menuRowHeight: CGFloat = 30
+    public static let menuHeaderHeight: CGFloat = 26
+    #else
     public static let menuRowHeight: CGFloat = 28
     public static let menuHeaderHeight: CGFloat = 24
+    #endif
     public static let menuMaxRows = 8
     /// The slash menu (SlashMenu board) spans the composer card: 36pt rows with 12pt sides, the
     /// command in a column at least 150pt wide.
+    #if os(macOS)
+    public static let slashRowHeight: CGFloat = 30
+    /// The board sets each description right after its command, not in a column.
+    public static let slashNameWidth: CGFloat = 0
+    #else
     public static let slashRowHeight: CGFloat = 36
     public static let slashNameWidth: CGFloat = 150
+    #endif
     /// The model picker (ModelPicker board): 380pt, two-line 40pt rows, sections 4pt apart.
+    #if os(macOS)
+    /// The redesign's picker (GXModel): 360pt, a 38pt search row, 52pt rows (a check, the id over its levels, the context
+    /// size), sections butted together, the list 6pt in from the card.
+    public static let modelPickerWidth: CGFloat = 360
+    public static let modelRowHeight: CGFloat = 52
+    public static let modelSectionGap: CGFloat = 0
+    public static let modelSearchHeight: CGFloat = 38
+    public static let modelListInset: CGFloat = SH.Space.s
+    /// The model id in mono (the board's 12.5).
+    public static let modelIdSize: CGFloat = 12.5
+    #else
     public static let modelPickerWidth: CGFloat = 380
     public static let modelRowHeight: CGFloat = 40
     public static let modelSectionGap: CGFloat = 4
     public static let modelSearchHeight: CGFloat = 30
+    public static let modelListInset: CGFloat = SH.Space.xs
+    public static let modelIdSize: CGFloat = 12.5
+    #endif
     public static let modelPickerMaxHeight: CGFloat = 360
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
@@ -98,23 +124,30 @@ public struct SHComposerCommandsLabel: View {
 /// field has focus (or a menu is open, or a drop hovers) the line turns `textTertiary` with a
 /// 3pt `bgSelected` ring. Top: attachments; then the field (it grows to 8 lines); then one row
 /// of controls. Nothing else lives under the field.
-public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>: View {
+public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Controls: View>: View {
     /// How the Mac lays the card out: the thread's one line (attach, the words, the controls), or New
     /// thread's words over the line.
     public enum Layout: Sendable { case inline, stacked }
 
     let isFocused: Bool
     let layout: Layout
+    /// Something that shares the card above its line (the Mac's Up next): inside the card's shape, line and focus ring.
+    let above: Above
+    let joined: Bool
     let top: Top
     let leading: Leading
     let field: Field
     let controls: Controls
     @Environment(\.shComposerNotice) private var notice
 
-    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
+    /// `joined` says `above` draws something: the card then clips only what is below it, so a row lifted by a drag floats free.
+    public init(isFocused: Bool, layout: Layout = .stacked, joined: Bool = false, @ViewBuilder above: () -> Above,
+                @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
                 @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
         self.isFocused = isFocused
         self.layout = layout
+        self.joined = joined
+        self.above = above()
         self.top = top()
         self.leading = leading()
         self.field = field()
@@ -132,7 +165,12 @@ public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>:
     /// The boards' `.cmp`: `bgRaised` at radius 14 on the `lift` shadow, attachments over one line.
     private var mac: some View {
         let shape = RoundedRectangle(cornerRadius: SHComposerMetrics.radius)
+        let below = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(
+            topLeading: joined ? 0 : SHComposerMetrics.radius, bottomLeading: SHComposerMetrics.radius,
+            bottomTrailing: SHComposerMetrics.radius, topTrailing: joined ? 0 : SHComposerMetrics.radius))
         return VStack(alignment: .leading, spacing: 0) {
+            above
+            VStack(alignment: .leading, spacing: 0) {
             chips
             switch layout {
             case .inline:
@@ -158,10 +196,11 @@ public struct SHComposer<Top: View, Leading: View, Field: View, Controls: View>:
                 .padding(.horizontal, SHComposerMetrics.linePadding)
                 .frame(height: SHComposerMetrics.lineHeight)
             }
+            }
+            // As the card eases to a new height (a question taking the field's place, attachments
+            // arriving), what it holds is revealed by its edge rather than drawn outside it.
+            .clipShape(below)
         }
-        // As the card eases to a new height (a question taking the field's place, attachments
-        // arriving), what it holds is revealed by its edge rather than drawn outside it.
-        .clipShape(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the card as it grows.
         // Inside the lift, so the ring is drawn over the card's shadow rather than under it.
         .modifier(SHComposerFocus(isFocused: isFocused))
@@ -260,16 +299,23 @@ private struct SHComposerFocus: ViewModifier {
     }
 }
 
-extension SHComposer where Leading == EmptyView {
-    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
-                @ViewBuilder controls: () -> Controls) {
-        self.init(isFocused: isFocused, layout: layout, top: top, leading: { EmptyView() }, field: field, controls: controls)
+extension SHComposer where Above == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
+                @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: top, leading: leading, field: field, controls: controls)
     }
 }
 
-extension SHComposer where Top == EmptyView, Leading == EmptyView {
+extension SHComposer where Above == EmptyView, Leading == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
+                @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: top, leading: { EmptyView() }, field: field, controls: controls)
+    }
+}
+
+extension SHComposer where Above == EmptyView, Top == EmptyView, Leading == EmptyView {
     public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
-        self.init(isFocused: isFocused, layout: layout, top: { EmptyView() }, leading: { EmptyView() }, field: field, controls: controls)
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: { EmptyView() }, leading: { EmptyView() }, field: field, controls: controls)
     }
 }
 

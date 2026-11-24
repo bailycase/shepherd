@@ -38,30 +38,21 @@ struct NewWorktreeSheet: View {
     var body: some View {
         let sh = Color.sh
         let M = NewWorktreeSheetMetrics.self
-        VStack(alignment: .leading, spacing: 0) {
-            Text("New worktree in \(space.name)")
-                .font(.shSans(M.titleSize, .semibold))
-                .foregroundStyle(sh.textPrimary)
-                .frame(minHeight: M.titleLine, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-            Text("The new worktree starts this branch from the base.")
-                .font(.sh(.ui, weight: .regular))
-                .foregroundStyle(sh.textSecondary)
-                .lineSpacing(M.messageLine - 18)
-                .padding(.top, M.messageTop)
-            SheetLabel("Branch name")
-            SheetField {
+        SHCardSheet("New worktree in \(space.name)", message: Text("The new worktree starts this branch from the base."),
+                    status: creating ? "Creating the worktree…" : nil, width: AppLayout.newWorktreeSheetWidth) {
+            SHCardSheetLabel("Branch name")
+            SHCardSheetLineField {
                 TextField("Branch name", text: $branch, prompt: Text("branch name").foregroundStyle(sh.textTertiary))
                     .textFieldStyle(.plain)
-                    .font(.shMono(M.codeSize))
+                    .font(.shMono(SHCardSheetMetrics.codeSize))
                     .focused($branchFocused)
                     .onSubmit(create)
             }
-            SheetLabel("Base")
-            SheetField {
+            SHCardSheetLabel("Base")
+            SHCardSheetLineField {
                 TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(sh.textTertiary))
                     .textFieldStyle(.plain)
-                    .font(.shMono(M.codeSize))
+                    .font(.shMono(SHCardSheetMetrics.codeSize))
                 Button { choosing = true } label: {
                     Image(systemName: "chevron.down").font(.system(size: M.chevron, weight: .medium)).foregroundStyle(sh.textSecondary)
                         .frame(width: M.chevronTarget, height: M.chevronTarget)
@@ -103,22 +94,15 @@ struct NewWorktreeSheet: View {
                 DialogBanner(state: .failed, title: "Couldn't create the worktree", message: errorText)
                     .padding(.top, SH.Space.l)
             }
-            HStack(spacing: M.footGap) {
-                if creating { SHDialogStatus("Creating the worktree…") }
-                Spacer(minLength: 0)
-                Button("Cancel") { vm.worktreeSheetTarget = nil }
-                    .buttonStyle(SheetActionStyle(pill: false))
-                    .keyboardShortcut(.cancelAction)
-                Button(creating ? "Creating…" : "Create") { create() }
-                    .buttonStyle(SheetActionStyle(pill: true))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
-            }
-            .padding(.top, M.footTop)
+        } actions: {
+            Button("Cancel") { vm.worktreeSheetTarget = nil }
+                .buttonStyle(.shCardSheet(.dim))
+                .keyboardShortcut(.cancelAction)
+            Button(creating ? "Creating…" : "Create") { create() }
+                .buttonStyle(.shCardSheet(.pill))
+                .keyboardShortcut(.defaultAction)
+                .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
         }
-        .padding(M.padding)
-        .frame(width: AppLayout.newWorktreeSheetWidth)
-        .background(sh.bgRaised)
         // Creating… shows in the footer and the button; a failure discloses as a banner.
         .shAnimation(.content, value: creating)
         .shAnimation(.disclosure, value: errorText)
@@ -197,76 +181,8 @@ struct NewWorktreeSheet: View {
     }
 }
 
-/// The sheet's measures (GXNewWorktree): a 480pt card with 18pt over 20pt of padding, its title in 15 semibold, fields 32pt tall.
+/// The Base field's chevron button: its glyph and its target.
 private enum NewWorktreeSheetMetrics {
-    static let padding = EdgeInsets(top: 18, leading: 20, bottom: 16, trailing: 20)
-    static let titleSize: CGFloat = 15
-    static let titleLine: CGFloat = 20
-    static let messageTop: CGFloat = SH.Space.s
-    static let messageLine: CGFloat = 19
-    static let labelTop: CGFloat = 14
-    static let fieldHeight: CGFloat = 32
-    static let fieldPadding: CGFloat = 10
-    static let codeSize: CGFloat = 12.5
     static let chevron: CGFloat = 10
     static let chevronTarget: CGFloat = 24
-    static let footTop: CGFloat = 18
-    static let footGap: CGFloat = 18
-    static let pillHeight: CGFloat = 26
-    static let pillPadding: CGFloat = 11
-}
-
-/// A label over a field: 12pt in `textSecondary`, 14pt below the last thing and 6pt over the field.
-private struct SheetLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-            .padding(.top, NewWorktreeSheetMetrics.labelTop)
-            .padding(.bottom, SH.Space.s)
-    }
-}
-
-/// A bordered field: 32pt tall, the line, radius 8.
-private struct SheetField<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        HStack(spacing: SH.Space.m) { content }
-            .padding(.horizontal, NewWorktreeSheetMetrics.fieldPadding)
-            .frame(maxWidth: .infinity, minHeight: NewWorktreeSheetMetrics.fieldHeight, alignment: .leading)
-            .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(Color.sh.lineSubtle, lineWidth: 1) }
-    }
-}
-
-/// A foot action: "Cancel" as a word in `textSecondary`, or the ink pill.
-private struct SheetActionStyle: ButtonStyle {
-    let pill: Bool
-    @Environment(\.isEnabled) private var enabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        let sh = Color.sh
-        let M = NewWorktreeSheetMetrics.self
-        if pill {
-            configuration.label
-                .font(.sh(.caption, weight: .medium))
-                .lineLimit(1)
-                .foregroundStyle(sh.textOnPrimary)
-                .padding(.horizontal, M.pillPadding)
-                .frame(height: M.pillHeight)
-                .background(configuration.isPressed ? sh.primaryPressed : sh.primary, in: Capsule())
-                .contentShape(Capsule())
-                .shEnabledOpacity(enabled)
-                .shFocusRing(radius: M.pillHeight / 2)
-        } else {
-            configuration.label
-                .font(.sh(.ui, weight: .regular))
-                .lineLimit(1)
-                .foregroundStyle(sh.textSecondary)
-                .opacity(configuration.isPressed ? 0.7 : 1)
-                .contentShape(Rectangle())
-                .shFocusRing(radius: SH.Radius.xs)
-        }
-    }
 }
