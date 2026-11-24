@@ -909,6 +909,7 @@ public final class SessionServer: @unchecked Sendable {
     @MainActor var creatingAgents = Set<AgentID>()
     /// Main actor: threads agent_spawn is starting now, by the thread that asked (the per-thread cap counts them).
     @MainActor var spawning: [AgentID: Int] = [:]
+    @MainActor var readingPeerCheckouts = false
     /// Main actor: what every agent's pi start waits for first (`holdStartsForFirstCopy`), and
     /// how many wait for it now.
     @MainActor var firstCopy: Task<Void, Never>?
@@ -1681,6 +1682,18 @@ public final class SessionServer: @unchecked Sendable {
         set { queue.sync { storedFleetLinkOptions = newValue } }
     }
     private var storedFleetLinkOptions = FleetLinkOptions()
+    private var loopbackNetworkingForTests = false
+
+    /// Scratch fixtures only; set before starting Fleet or either path into the TCP listener.
+    func useLoopbackNetworkingForTests() async throws {
+        try await enqueue {
+            guard self.fleet == nil, self.remoteListenFD < 0, self.remoteListenerClosing == nil, !self.changingListener else {
+                throw SessionServerError.conflict("configure loopback before starting Fleet or the remote listener")
+            }
+            self.loopbackNetworkingForTests = true
+        }
+    }
+
     /// Tests: stands `store` in for iCloud for the next `startFleet()`, with the routes this host says it has, how long a
     /// join code lasts and how often a peer's presence is looked up.
     func configureFleetRendezvous(store: FleetRendezvousStore, routes: (@Sendable (UInt16) -> [FleetRoute])? = nil,
@@ -1746,23 +1759,33 @@ public final class SessionServer: @unchecked Sendable {
                     ?? FleetPressure(queue: queue, clock: clock, localFacts: facts, check: .system(providers: { await providers.answers() }))
                 // iCloud is where a Mac that Bonjour can't reach is found; a build without the entitlement gets a store that says
                 // unavailable, so everything else works as it does without it.
-                let rendezvous: FleetRendezvousStore? = fleetRendezvousSetup?.store ?? (fleetOptions.advertises ? FleetCloudKitStore.forThisBuild : nil)
+                let advertises = fleetOptions.advertises && !loopbackNetworkingForTests
+                let rendezvousSetup = loopbackNetworkingForTests ? nil : fleetRendezvousSetup
+                let rendezvous: FleetRendezvousStore? = rendezvousSetup?.store ?? (advertises ? FleetCloudKitStore.forThisBuild : nil)
                 let service = try FleetService(queue: queue, directory: supportDirectory.appendingPathComponent("fleet", isDirectory: true),
-                                               name: fleetOptions.name ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                                               build: hostBuild, advertises: fleetOptions.advertises, clock: clock, pressure: pressure,
-                                               network: storedFleetLinkOptions.network ?? .system,
+                                               name: fleetOptions.name ?? (loopbackNetworkingForTests ? "Scratch host" : nil) ?? Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                                               build: hostBuild, advertises: advertises, clock: clock, pressure: pressure,
+                                               network: storedFleetLinkOptions.network ?? (loopbackNetworkingForTests ? .silent : .system),
                                                rendezvous: rendezvous.map { FleetRendezvous(store: $0) })
+                // Keep explicit fixture routing (e.g. LinkRouting maps its synthetic routes to loopback).
                 if let dialer = storedFleetLinkOptions.dialer { service.dialer = dialer }
+                else if loopbackNetworkingForTests {
+                    let dial = service.dialer
+                    service.dialer = { client, route, token, peer, name in
+                        guard route.host == "127.0.0.1" else { throw SessionServerError.conflict("not a loopback peer route") }
+                        try await dial(client, route, token, peer, name)
+                    }
+                }
                 if let grace = storedFleetLinkOptions.drainGrace { service.drainGrace = grace }
                 if let interval = storedFleetLinkOptions.recheckInterval { service.recheckInterval = interval }
                 if let settle = storedFleetLinkOptions.networkSettle { service.networkSettle = settle }
                 service.predatesLinks = storedFleetLinkOptions.predatesLinks
-                if let setup = fleetRendezvousSetup {
+                if let setup = rendezvousSetup {
                     if let routes = setup.routes { service.routes = routes }
                     if let lifetime = setup.joinLifetime { service.joinLifetime = lifetime }
                     if let interval = setup.lookupInterval { service.presenceLookupInterval = interval }
                 } else {
-                    service.watchesNetwork = fleetOptions.advertises
+                    service.watchesNetwork = advertises
                 }
                 service.onChange = { [weak self] in self?.pushSettingsChanged(.fleet) }
                 service.onViewChange = { [weak self] in self?.pushFleetViewChanged() }
@@ -3244,7 +3267,7 @@ public final class SessionServer: @unchecked Sendable {
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = in_port_t(port).bigEndian
-        addr.sin_addr = in_addr(s_addr: INADDR_ANY)
+        addr.sin_addr = in_addr(s_addr: loopbackNetworkingForTests ? INADDR_LOOPBACK.bigEndian : INADDR_ANY)
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
@@ -3255,12 +3278,6 @@ public final class SessionServer: @unchecked Sendable {
             close(fd)
             throw SessionServerError.system(call: "bind", errno: err)
         }
-        guard listen(fd, SOMAXCONN) == 0 else {
-            let err = errno
-            close(fd)
-            throw SessionServerError.system(call: "listen", errno: err)
-        }
-
         var boundAddr = sockaddr_in()
         var boundLen = socklen_t(MemoryLayout<sockaddr_in>.size)
         let named = withUnsafeMutablePointer(to: &boundAddr) {
@@ -3274,6 +3291,19 @@ public final class SessionServer: @unchecked Sendable {
             throw SessionServerError.system(call: "getsockname", errno: err)
         }
         let boundPort = UInt16(bigEndian: boundAddr.sin_port)
+        if loopbackNetworkingForTests {
+            guard boundLen == socklen_t(MemoryLayout<sockaddr_in>.size), boundAddr.sin_family == AF_INET,
+                  UInt32(bigEndian: boundAddr.sin_addr.s_addr) == INADDR_LOOPBACK,
+                  boundPort != 0, port == 0 || port == boundPort else {
+                close(fd)
+                throw SessionServerError.conflict("remote listener did not bind the requested IPv4 loopback endpoint")
+            }
+        }
+        guard listen(fd, SOMAXCONN) == 0 else {
+            let err = errno
+            close(fd)
+            throw SessionServerError.system(call: "listen", errno: err)
+        }
 
         let flags = fcntl(fd, F_GETFL, 0)
         _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
@@ -4433,7 +4463,8 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`): only for
+    /// A thread's folder (`RemoteAgentQuery.files`, `.fileRead`, `files.v1`; `.fileWrite`, `files.write.v1`; `.fileCreate`,
+    /// `files.create.v1`): only for
     /// a client that listed `files.v1` and is sent the agent (`remoteState`), inside the folder the thread runs in, off
     /// the server's queue. A save writes only over the text the client edited from.
     private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
@@ -4468,6 +4499,11 @@ public final class SessionServer: @unchecked Sendable {
                 let span = (try? ThreadFileSystem.resolve(path, in: root).get()).map { changes.beginWrite(absolute: [$0]) }
                 defer { if let span { changes.endWrite(span) } }
                 reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.save(path, in: root, text: text, expected: expected)))
+            case .fileCreate(let path, let text):
+                let span = (try? ThreadFileSystem.resolve((path as NSString).deletingLastPathComponent, in: root).get())
+                    .map { changes.beginWrite(absolute: [($0 as NSString).appendingPathComponent((path as NSString).lastPathComponent)]) }
+                defer { if let span { changes.endWrite(span) } }
+                reply = .agentResult(id: id, result: .fileWrite(ThreadFileSystem.create(path, in: root, text: text)))
             default: return
             }
             self?.queue.async {
@@ -7100,6 +7136,10 @@ public final class SessionServer: @unchecked Sendable {
         }
         guard !request.isTabManagement || owner.clientCapabilities.contains(RemoteProtocol.browserTabsCapability) else {
             reply(.error(id: requestID, code: "unavailable", message: "The viewer showing this browser does not support tabs. Update that viewer or release its browser claim."), to: client)
+            return true
+        }
+        guard !request.shows || owner.clientCapabilities.contains(RemoteProtocol.browserShowCapability) else {
+            reply(.error(id: requestID, code: "unavailable", message: "The Shepherd showing this browser can't bring it into view. Tell the user to open the Browser tab."), to: client)
             return true
         }
         nextDriveToken += 1

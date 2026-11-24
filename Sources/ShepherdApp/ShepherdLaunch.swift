@@ -2,11 +2,9 @@ import SwiftUI
 import ShepherdCore
 import ShepherdUI
 
-/// The app's start: the session server acquires the workspace (ownership, state, Changes
-/// records, design cleanup) off the main thread while the window is already up, and only once
-/// it holds that authority is the model made, on the main actor, that restores agents and
-/// writes the workspace. Menus are registered immediately but cannot act on the workspace
-/// before then. A start that fails ends the app as it always has (`failed`).
+/// The app waits for the session host off the main thread while the window is already up.
+/// Once the host is listening, the app makes its workspace model on the main actor. Menus
+/// are registered immediately but cannot act on the workspace before then.
 @MainActor @Observable
 final class ShepherdLaunch<Model: AnyObject> {
     private(set) var model: Model?
@@ -61,7 +59,7 @@ struct LaunchSurface: View {
             if slow {
                 HStack(spacing: SH.Space.s) {
                     ProgressView().controlSize(.small)
-                    Text("Opening your workspace…").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                    Text("Waiting for Shepherd’s session host…").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
                 }
                 .accessibilityElement(children: .combine)
                 .transition(.opacity)

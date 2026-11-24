@@ -622,6 +622,9 @@ final class ShepherdViewModel {
     @ObservationIgnored let userActivity = UserActivity()
     /// Hidden readers scrolled into a thread's history, shared by both store sets (`NativeThreadStores`).
     let threadReaderPins = ThreadReaderPins()
+    /// The threads a link in any conversation resolves against (ThreadLinkA), kept by `ThreadLinksSync`; one object, so the
+    /// environment that carries it into each layout never changes.
+    @ObservationIgnored lazy var threadLinks = SHThreadLinks { [weak self] in self?.openThreadLink($0) }
     /// Keyboard commands for the thread on screen.
     let threadCommands = ThreadCommandCenter()
     /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).

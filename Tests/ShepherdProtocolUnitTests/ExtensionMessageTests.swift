@@ -185,7 +185,7 @@ struct ExtensionMessageTests {
         .back(note: nil), .forward(note: "going forward"), .reload(note: nil),
         .tabs, .newTab(url: "about:blank", note: "separate page"),
         .selectTab(id: "00000000-0000-0000-0000-000000000001"), .closeTab(id: "00000000-0000-0000-0000-000000000001"),
-        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)),
+        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)), .show,
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -505,7 +505,7 @@ struct ExtensionReplyTests {
             AgentPeerInfo(id: AgentID(rawValue: "me"), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
         .agents(id: 2, agents: [
-            AgentPeerInfo(id: AgentID(rawValue: "far"), name: "far", status: "blocked", cwd: "/docs", isSelf: false, space: "acme-docs", lastActiveAt: 1_700_000_000_000, asking: true),
+            AgentPeerInfo(id: AgentID(rawValue: "far"), name: "far", status: "blocked", cwd: "/docs", isSelf: false, space: "acme-docs", lastActiveAt: 1_700_000_000_000, asking: true, checkoutStatus: .dirty),
         ], omitted: 3),
         .fleetDispatches(id: 145, dispatches: [
             FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test", branch: "fleet/flaky-test", mine: true),
@@ -849,6 +849,20 @@ struct ChildRunTests {
         let old = try Wire.decode(AgentPeerInfo.self, #"{"id":"a1","name":"api","status":"idle","cwd":"/work","isSelf":false}"#)
         #expect(old == AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false))
         #expect(try Wire.object(old).keys.sorted() == ["cwd", "id", "isSelf", "name", "status"])
+    }
+
+    @Test(arguments: [PeerCheckoutStatus.clean, .dirty, .unknown])
+    func aDetailedAgentListRowCarriesOnlyCheckoutStateAndAnOptionalLocalCount(_ status: PeerCheckoutStatus) throws {
+        var row = AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false,
+                                checkoutStatus: status)
+        let encoded = try Wire.object(row)
+        #expect(encoded["checkoutStatus"] as? String == status.rawValue)
+        #expect(Set(encoded.keys) == ["cwd", "id", "isSelf", "name", "status", "checkoutStatus"])
+        row.commitsAheadOfLocalUpstream = 0
+        let withCount = try Wire.object(row)
+        #expect(withCount["commitsAheadOfLocalUpstream"] as? Int == 0)
+        #expect(Set(withCount.keys) == Set(encoded.keys).union(["commitsAheadOfLocalUpstream"]))
+        #expect(try JSONDecoder().decode(AgentPeerInfo.self, from: JSONEncoder().encode(row)) == row)
     }
 
     @Test func absentCardFieldsNeverAppearOnTheWire() throws {

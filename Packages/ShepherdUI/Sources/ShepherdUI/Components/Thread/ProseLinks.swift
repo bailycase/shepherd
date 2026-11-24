@@ -10,6 +10,8 @@ import SwiftUI
     var root: URL?
     /// The conversation's own opener, which the link reaches once resolved.
     var outer: OpenURLAction?
+    /// The threads a thread link opens (`shThreadLinks`).
+    var threads: SHThreadLinks?
     /// What `Text` links and the buttons of images and task chips call; made once, weakly bound.
     private(set) var action = OpenURLAction { _ in .discarded }
 
@@ -19,6 +21,12 @@ import SwiftUI
 
     @discardableResult
     func open(_ url: URL) -> OpenURLAction.Result {
+        // A thread link opens its thread here or nowhere: the internal scheme never reaches the conversation's opener or the system.
+        if url.scheme?.lowercased() == SHThreadLinks.scheme {
+            guard let threads, let link = threads.link(url) else { return .discarded }
+            threads.open(link.id)
+            return .handled
+        }
         guard let destination = SHProseLink.destination(url, root: root), let outer else { return .discarded }
         outer(destination)
         return .handled
@@ -34,9 +42,10 @@ private struct SHProseLinks: ViewModifier {
     @State private var router = SHProseLinkRouter()
     @Environment(\.shProseFileRoot) private var root
     @Environment(\.openURL) private var openURL
+    @Environment(\.shThreadLinks) private var threads
 
     func body(content: Content) -> some View {
-        let _ = router.route(root: root, to: openURL)
+        let _ = router.route(root: root, to: openURL, threads: threads)
         content
             .environment(\.openURL, router.action)
             .environment(\.shProseLinkRouter, router)
@@ -44,9 +53,10 @@ private struct SHProseLinks: ViewModifier {
 }
 
 private extension SHProseLinkRouter {
-    func route(root: URL?, to outer: OpenURLAction) {
+    func route(root: URL?, to outer: OpenURLAction, threads: SHThreadLinks?) {
         self.root = root
         self.outer = outer
+        self.threads = threads
     }
 }
 

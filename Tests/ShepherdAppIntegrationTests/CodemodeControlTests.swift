@@ -124,7 +124,7 @@ struct CodemodeControlTests {
                 ListPerf.settle(window)
                 #expect(!window.controls().contains { $0.label == label && $0.value == "Expanded" })
                 if let arguments = call.arguments {
-                    let input = "\(call.name) arguments"
+                    let input = "\(call.name) arguments" + (call.detail.isEmpty ? "" : ", \(call.detail)")
                     let pressed = try window.press(input)
                     #expect(ControlPress.undersized([pressed], minimum: .desktop).isEmpty)
                     ListPerf.settle(window)

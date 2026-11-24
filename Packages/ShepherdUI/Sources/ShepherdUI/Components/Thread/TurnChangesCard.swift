@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The "Edited N files" card that ends a turn on touch (ChangesStates › ChangesCard;
 /// MobileThread, iPadReview): a 36pt icon tile, the title over its stat, Undo and Review, then
-/// the first files as plain paths (the folder dimmed, "new" before a created file's stat) and "N
-/// more". Once undone it is one dashed line, "Undid the agent’s edits to 5 files", with Redo.
+/// the first files as plain paths (the folder dimmed, "new" before a created file's stat) and "Show
+/// N more", which lists the next files (`SHChangesMore`). Once undone it is one dashed line, "Undid the agent’s edits to 5 files", with Redo.
 /// At the accessibility sizes the head stacks and paths take two lines, so nothing clips.
 public struct SHTurnChangesCard: View, Equatable {
     public struct File: Identifiable, Equatable, Sendable {
@@ -29,7 +29,8 @@ public struct SHTurnChangesCard: View, Equatable {
     let added: Int
     let removed: Int
     let files: [File]
-    let more: String?
+    /// Every file the turn changed; `files` may be only the first of them.
+    let total: Int
     let undone: Bool
     /// Undo or Redo is on its way to the host.
     let busy: Bool
@@ -38,14 +39,15 @@ public struct SHTurnChangesCard: View, Equatable {
     let onReview: (() -> Void)?
     let onOpen: ((String) -> Void)?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var shownCount = SHThreadMetrics.changesShownFiles
 
-    public init(title: String, added: Int, removed: Int, files: [File], more: String? = nil, undone: Bool = false, busy: Bool = false,
+    public init(title: String, added: Int, removed: Int, files: [File], total: Int? = nil, undone: Bool = false, busy: Bool = false,
                 onUndo: (() -> Void)? = nil, onRedo: (() -> Void)? = nil, onReview: (() -> Void)? = nil, onOpen: ((String) -> Void)? = nil) {
         self.title = title
         self.added = added
         self.removed = removed
         self.files = files
-        self.more = more
+        self.total = max(total ?? files.count, files.count)
         self.undone = undone
         self.busy = busy
         self.onUndo = onUndo
@@ -55,7 +57,7 @@ public struct SHTurnChangesCard: View, Equatable {
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.title == rhs.title && lhs.added == rhs.added && lhs.removed == rhs.removed && lhs.files == rhs.files && lhs.more == rhs.more
+        lhs.title == rhs.title && lhs.added == rhs.added && lhs.removed == rhs.removed && lhs.files == rhs.files && lhs.total == rhs.total
             && lhs.undone == rhs.undone && lhs.busy == rhs.busy && (lhs.onUndo == nil) == (rhs.onUndo == nil)
             && (lhs.onRedo == nil) == (rhs.onRedo == nil) && (lhs.onReview == nil) == (rhs.onReview == nil)
             && (lhs.onOpen == nil) == (rhs.onOpen == nil)
@@ -69,13 +71,14 @@ public struct SHTurnChangesCard: View, Equatable {
 
     private var card: some View {
         let sh = Color.sh
+        let more = SHChangesMore(shown: min(shownCount, files.count), listed: files.count, total: total)
         return VStack(spacing: 0) {
             head
-            ForEach(files) { file in
+            ForEach(files.prefix(shownCount)) { file in
                 SHHairline()
                 row(file)
             }
-            if let more {
+            if more != .none {
                 SHHairline()
                 moreRow(more)
             }
@@ -191,19 +194,29 @@ public struct SHTurnChangesCard: View, Equatable {
         }
     }
 
-    @ViewBuilder private func moreRow(_ more: String) -> some View {
-        let content = Text(more)
+    @ViewBuilder private func moreRow(_ more: SHChangesMore) -> some View {
+        let text = if case .review(let count) = more, onReview == nil { "\(count) more" } else { more.text ?? "" }
+        let content = Text(text)
             .font(.shSans(14))
             .foregroundStyle(Color.sh.textSecondary)
             .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: SHTurnChangesCard.rowHeight, alignment: .leading)
             .contentShape(Rectangle())
-        if let onReview {
-            Button(action: onReview) { content }
+        switch more {
+        case .show(let count):
+            Button { shownCount += count } label: { content }
                 .buttonStyle(.shRow(radius: 0))
-                .accessibilityHint("Opens every file in review")
-        } else {
-            content
+                .accessibilityLabel("Show \(count) more files")
+        case .review:
+            if let onReview {
+                Button(action: onReview) { content }
+                    .buttonStyle(.shRow(radius: 0))
+                    .accessibilityHint("Opens every file in review")
+            } else {
+                content
+            }
+        case .none:
+            EmptyView()
         }
     }
 
@@ -249,7 +262,7 @@ public struct SHTurnChangesCard: View, Equatable {
     ]
     SHPreviewBoth {
         VStack(spacing: SH.Space.l) {
-            SHTurnChangesCard(title: "Edited 5 files", added: 200, removed: 8, files: files, more: "2 more", onUndo: {}, onReview: {}, onOpen: { _ in })
+            SHTurnChangesCard(title: "Edited 5 files", added: 200, removed: 8, files: files, total: 5, onUndo: {}, onReview: {}, onOpen: { _ in })
             SHTurnChangesCard(title: "Undid the agent’s edits to 5 files", added: 200, removed: 8, files: [], undone: true, onRedo: {})
         }
         .frame(width: 420)

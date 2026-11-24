@@ -1,22 +1,23 @@
 import SwiftUI
 
-// Tool activity (SHThread, ToolRows, LiveText): one quiet line per burst of work, its calls on a
+// Tool activity (ToolFeed › A · One live line): one line per stretch of work, its calls on a
 // hairline rail, and the changes card that ends a turn with edits.
 
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
 /// with a hover fill that expands the burst into its calls. A failed burst turns `failed` and
-/// stays visible. A live one is the thread's live indicator (LiveText): the tool's own glyph in
-/// `textSecondary`, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time
-/// in mono 11 `textTertiary`, and its last output lines. Nothing spins.
+/// stays visible. A live one is the thread's live indicator (ToolFeed › A · One live line): the running spinner where the glyph
+/// goes, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time in mono 11 `textTertiary`, and its last
+/// output lines.
 public struct SHActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
     /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
     /// acme-web"): the nib and the shield. `lookedAtDesign` is a thread reading a design piece it
     /// was sent ("Looked at Checkout funnel dashboard › A · Funnel first"): the nib too. `browser`
-    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `images` is the neutral count of the
+    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `computer` is an agent
+    /// working this Mac's apps ("5 actions in Safari"): the pointer. `images` is the neutral count of the
     /// images a message or a tool result carries ("2 images", ThreadImagesSent and ThreadImagesReceived): the `photo` glyph.
-    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, images, other }
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, computer, images, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -86,6 +87,7 @@ public struct SHActivityLine: View {
         case .drew, .lookedAtDesign: "pencil.tip"
         case .checked: "checkmark.shield"
         case .browser: "globe"
+        case .computer: "cursorarrow"
         case .images: "photo"
         case .other: "wrench.adjustable"
         }
@@ -147,14 +149,13 @@ public struct SHActivityLine: View {
         .frame(minHeight: SHThreadMetrics.activityHeight)
     }
 
-    /// The running call (LiveText): its own glyph, still, in `textSecondary`; the verb and the
+    /// The running call (ToolFeed › A): the running spinner in the glyph's place (still under Reduce Motion); the verb and the
     /// command shimmer; the clock ticks beside them in tertiary.
     private func liveHeader(since: Date?) -> some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(sh.textSecondary)
+            ProgressView()
+                .progressViewStyle(.shSpinner(size: SHThreadMetrics.activityIcon))
                 .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
             SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
                 Text(label).font(.sh(.ui, weight: .regular))
@@ -510,10 +511,37 @@ public struct SHChangedFile: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A changes card's last row once it lists `shown` of the `listed` files it has (the host sends a
+/// turn's first 20) out of `total`: "Show 10 more" lists the next batch in place, so a turn of a
+/// hundred files never floods the thread; past the listed files, "N more in Review" opens the pane.
+public enum SHChangesMore: Equatable, Sendable {
+    case show(Int)
+    case review(Int)
+    case none
+
+    public init(shown: Int, listed: Int, total: Int) {
+        if shown < listed {
+            self = .show(min(SHThreadMetrics.changesMoreFiles, listed - shown))
+        } else if total > shown {
+            self = .review(total - shown)
+        } else {
+            self = .none
+        }
+    }
+
+    public var text: String? {
+        switch self {
+        case .show(let count): "Show \(count) more"
+        case .review(let count): "\(count) more in Review"
+        case .none: nil
+        }
+    }
+}
+
 /// Ends every turn that edited files (ChangesCard(turn.changes), SHThread, Main): a header with
 /// a 30pt tile, "Edited 5 files" over its diff stat, Undo and Review; then the first three files
-/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "N more".
-/// Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
+/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "Show N
+/// more", which lists the next files (`SHChangesMore`). Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
 /// "Undid the agent’s edits to 5 files", with Redo (ChangesCard · after Undo).
 public struct SHChangesCard: View {
     public enum Phase: Equatable, Sendable {
@@ -533,6 +561,7 @@ public struct SHChangesCard: View {
     let onOpen: ((String) -> Void)?
     let onUndo: (() -> Void)?
     let onRedo: (() -> Void)?
+    @State private var shownCount = SHThreadMetrics.changesShownFiles
 
     /// `total` counts every file the turn changed (the card lists the first three); without it,
     /// `files` are all of them. `onUndo` and `onRedo` are left out where they can't apply (not the
@@ -574,8 +603,8 @@ public struct SHChangesCard: View {
 
     private var edited: some View {
         let sh = Color.sh
-        let shown = Array(files.prefix(SHThreadMetrics.changesShownFiles))
-        let more = total - shown.count
+        let shown = Array(files.prefix(shownCount))
+        let more = SHChangesMore(shown: shown.count, listed: files.count, total: total)
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "plus.forwardslash.minus")
@@ -616,7 +645,7 @@ public struct SHChangesCard: View {
                 SHHairline()
                 row(file)
             }
-            if more > 0 {
+            if more != .none {
                 SHHairline()
                 moreRow(more)
             }
@@ -655,18 +684,28 @@ public struct SHChangesCard: View {
         SHChangedFileRow(file: file, label: "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed", onOpen: onOpen)
     }
 
-    @ViewBuilder private func moreRow(_ count: Int) -> some View {
-        let label = Text("\(count) more").font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
+    @ViewBuilder private func moreRow(_ more: SHChangesMore) -> some View {
+        let text = if case .review(let count) = more, onReview == nil { "\(count) more" } else { more.text ?? "" }
+        let label = Text(text).font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
             .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: SHThreadMetrics.changesRowHeight, alignment: .leading)
             .contentShape(Rectangle())
-        if let onReview {
-            Button(action: onReview) { label }
+        switch more {
+        case .show(let count):
+            Button { shownCount += count } label: { label }
                 .buttonStyle(.shRow(radius: 0))
-                .accessibilityLabel("\(count) more files")
-                .accessibilityHint("Opens the Changes pane")
-        } else {
-            label
+                .accessibilityLabel("Show \(count) more files")
+        case .review(let count):
+            if let onReview {
+                Button(action: onReview) { label }
+                    .buttonStyle(.shRow(radius: 0))
+                    .accessibilityLabel("\(count) more files")
+                    .accessibilityHint("Opens the Changes pane")
+            } else {
+                label
+            }
+        case .none:
+            EmptyView()
         }
     }
 

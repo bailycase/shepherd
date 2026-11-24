@@ -60,13 +60,14 @@ struct MCPActivityTests {
         #expect(burst.state == .running && burst.label == "Calling search_issues" && burst.meta == "github · bug")
     }
 
-    @Test func aFailedCallStaysItsOwnLineWithPisReason() {
+    @Test func aFailedCallSaysPisReasonAndARetriedOneIsCounted() {
         let a = call("mcp__github__search_issues", ["query": "bug"], output: "Tool mcp__github__search_issues not found", error: true)
         let b = call("mcp__github__search_issues", ["query": "bug"], output: "ok")
-        let lines = nativeActivityBursts([b, a, b])
-        #expect(lines.map(\.state) == [.done, .failed, .done])
-        #expect(lines[1].label == "search_issues failed")
-        #expect(lines[1].meta == "github · bug · Tool mcp__github__search_issues not found")
+        let failed = nativeActivityBurst([a])
+        #expect(failed.state == .failed && failed.label == "search_issues failed")
+        #expect(failed.meta == "github · bug · Tool mcp__github__search_issues not found")
+        let retried = nativeActivityBursts([b, a, b])
+        #expect(retried.map(\.state) == [.done] && retried[0].meta == "github · 1 retry")
     }
 
     @Test func aStoppedCallSaysSo() {
@@ -78,9 +79,9 @@ struct MCPActivityTests {
         let search = { call("mcp__github__search_issues", ["query": "bug"], output: "ok") }
         let get = call("mcp__github__get_issue", ["id": "1"], output: "ok")
         let lines = nativeActivityBursts([search(), search(), get, call("mcp__linear__get_issue", [:], output: "ok")])
-        #expect(lines.map(\.label) == ["Called search_issues 2 times", "Called get_issue", "Called get_issue"])
-        #expect(lines[0].meta == "github")
-        #expect(lines.map(\.calls.count) == [2, 1, 1], "another server's tool of the same name is another line")
+        #expect(lines.map(\.label) == ["Called search_issues 2 times, called get_issue and called get_issue"],
+                "another server's tool of the same name is named again")
+        #expect(lines[0].meta == "4 actions")
     }
 
     @Test func theSearchThatLoadsToolsIsOneQuietLineWithWhatWasSearched() {

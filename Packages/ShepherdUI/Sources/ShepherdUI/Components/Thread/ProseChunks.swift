@@ -39,12 +39,13 @@ public struct SHProseChunks<Element, ID: Hashable, Content: View>: View {
             if split > 0 {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(elements.prefix(split), id: id) { element in
-                        content(element).padding(.top, gap(element))
+                        content(element).padding(.top, gap(element)).shRaisedWhilePreviewing()
                     }
                 }
+                .shRaisedWhilePreviewing()
             }
             ForEach(elements.dropFirst(split), id: id) { element in
-                content(element).padding(.top, gap(element))
+                content(element).padding(.top, gap(element)).shRaisedWhilePreviewing()
             }
         }
     }

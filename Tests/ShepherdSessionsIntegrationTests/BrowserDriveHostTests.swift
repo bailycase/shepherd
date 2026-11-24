@@ -125,6 +125,27 @@ struct BrowserDriveHostTests {
         }
     }
 
+    @Test func showRequiresAViewerThatCanShowAndRoundTripsThroughOne() async throws {
+        let s = try await setup()
+        defer { s.stop() }
+        let old = try await s.host.raw(authenticated: false)
+        try await old.hello(token: s.host.token,
+            capabilities: RemoteProtocol.clientCapabilities.filter { $0 != RemoteProtocol.browserShowCapability })
+        try await claim(old, s.a)
+        let agent = try s.extensionClient()
+        try agent.send(.browser(id: 1, agentID: s.a.id, request: .tab(id: "t", request: .show)))
+        guard case .error(1, "unavailable", _) = try await agent.reply() else {
+            Issue.record("an old viewer was sent a show it cannot decode"); return
+        }
+        let current = try await s.viewer()
+        try await claim(current, s.a)
+        try agent.send(.browser(id: 2, agentID: s.a.id, request: .show))
+        guard case .request(let token, _, let received) = try await current.nextDrive() else { Issue.record("no show request"); return }
+        #expect(received == .show)
+        try current.send(.browserAnswer(requestToken: token, outcome: .text("shown")))
+        #expect(try await agent.reply() == .browserResult(id: 2, text: "shown", image: nil))
+    }
+
     @Test func aFailureTheViewerReportsReachesTheAgentWithItsCode() async throws {
         let s = try await setup()
         defer { s.stop() }

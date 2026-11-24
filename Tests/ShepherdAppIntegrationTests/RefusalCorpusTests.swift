@@ -47,6 +47,8 @@ struct RefusalCorpusTests {
 /// requests from the main actor.
 private final class Wire: @unchecked Sendable {
     enum Frame { case line(Data), closed, timeout }
+    enum FinalReplyError: Error, Equatable { case unexpectedBytes, timedOut }
+    private static let replyDeadline: Duration = .seconds(10)
 
     private let fd: Int32
     private var buffer = Data()
@@ -76,6 +78,9 @@ private final class Wire: @unchecked Sendable {
         try Self.finish(connected)
     }
 
+    /// Takes ownership of one end of a test socket pair.
+    init(fileDescriptor: Int32) { fd = fileDescriptor }
+
     private static func finish(_ connected: Int32) throws {
         guard connected == 0 else { throw WireFailure("connect: errno \(errno)") }
     }
@@ -104,14 +109,21 @@ private final class Wire: @unchecked Sendable {
         }
     }
 
-    func next(timeout: Duration = .seconds(10)) async -> Frame {
-        await Task.detached { [self] in read(timeout: timeout) }.value
+    func next(timeout: Duration = Wire.replyDeadline) async -> Frame {
+        await Task.detached { [self] in (try? read(timeout: timeout)) ?? .closed }.value
     }
 
-    private func read(timeout: Duration) -> Frame {
+    /// After a final reply, require actual EOF with no intervening bytes. A read error isn't EOF.
+    func requirePeerEOF(timeout: Duration = Wire.replyDeadline) async throws {
+        let frame = try await Task.detached { [self] in try read(timeout: timeout, expectingEOF: true) }.value
+        guard case .closed = frame else { throw FinalReplyError.timedOut }
+    }
+
+    private func read(timeout: Duration, expectingEOF: Bool = false) throws -> Frame {
         let deadline = ContinuousClock.now + timeout
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
+            if expectingEOF, !buffer.isEmpty { throw FinalReplyError.unexpectedBytes }
             if let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
                 let line = buffer[buffer.startIndex..<newline]
                 buffer.removeSubrange(buffer.startIndex...newline)
@@ -120,10 +132,12 @@ private final class Wire: @unchecked Sendable {
             guard ContinuousClock.now < deadline else { return .timeout }
             var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
             let ready = poll(&poller, 1, 50)
-            if ready < 0, errno != EINTR { return .closed }
+            if ready < 0, errno != EINTR { throw WireFailure("poll: errno \(errno)") }
             guard ready > 0 else { continue }
             let n = Darwin.read(fd, &chunk, chunk.count)
-            if n > 0 { buffer.append(contentsOf: chunk[0..<n]) } else if n == 0 || (errno != EINTR && errno != EAGAIN) { return .closed }
+            if n > 0 { buffer.append(contentsOf: chunk[0..<n]) }
+            else if n == 0 { return .closed }
+            else if errno != EINTR && errno != EAGAIN { throw WireFailure("read: errno \(errno)") }
         }
     }
 }
@@ -131,6 +145,37 @@ private final class Wire: @unchecked Sendable {
 private struct WireFailure: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
+}
+
+@Suite(.integrationTimeLimit)
+struct WireFinalReplyTests {
+    enum PeerEnding: CaseIterable { case closes, staysOpen, extraReply, partialReply }
+
+    @Test(arguments: PeerEnding.allCases)
+    func requiresEOFWithoutAnyBytesAfterTheRefusal(_ ending: PeerEnding) async throws {
+        var pair: [Int32] = [-1, -1]
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        let client = Wire(fileDescriptor: pair[0])
+        var peer: Wire? = Wire(fileDescriptor: pair[1])
+        let refusal = try NDJSON.encode(RemoteReply.error(id: 0, code: "unauthenticated", message: "hello required"))
+        var bytes = refusal
+        if ending == .extraReply { bytes.append(try NDJSON.encode(RemoteReply.ok(id: 2))) }
+        if ending == .partialReply { bytes.append(UInt8(ascii: "{")) }
+        try #require(peer).send(bytes)
+        if ending == .closes || ending == .partialReply { peer = nil }
+        defer { withExtendedLifetime(peer) {} }
+
+        guard case .line(let reply) = await client.next() else { throw WireFailure("missing final refusal") }
+        #expect(reply == Data(refusal.dropLast()))
+        switch ending {
+        case .closes:
+            try await client.requirePeerEOF()
+        case .staysOpen:
+            await #expect(throws: Wire.FinalReplyError.timedOut) { try await client.requirePeerEOF(timeout: .milliseconds(50)) }
+        case .extraReply, .partialReply:
+            await #expect(throws: Wire.FinalReplyError.unexpectedBytes) { try await client.requirePeerEOF() }
+        }
+    }
 }
 
 // MARK: - Side effects as events
@@ -284,7 +329,8 @@ private final class Corpus {
         coordinator = owner
         // Off, so that nothing starts it: a request names it, and the guard under test is the one in front of the run log.
         automation = Automation(name: seed["automation"]!, prompt: "Watch the build.", cwd: app.dir.path, enabled: false)
-        // The host's fleet starts with the app's host services: named, and with no Bonjour or iCloud.
+        // The host's Fleet starts with the app's host services, before the corpus opens its TCP listener.
+        try await app.server.useLoopbackNetworkingForTests()
         app.server.configureFleet(name: seed["fleetName"]!, advertises: false)
         var seeded = Fixture.state(spaces: [space, reserved], agents: [thread, owner])
         seeded.automations = [automation]
@@ -563,16 +609,16 @@ private final class Corpus {
 
     private func modelCatalog() async throws {
         let authenticated = try await connect(capabilities: Self.bare)
-        let cases = [("listModels/authenticated", authenticated),
-                     ("listModels/before-hello", try unauthenticated()),
-                     ("listModels/before-hello-local", try Wire(unixPath: app.hostSocket))]
-        for (step, wire) in cases {
-            try await recordWireLines(step, on: wire) { .listModels(id: $0) }
+        let cases = [("listModels/authenticated", authenticated, false),
+                     ("listModels/before-hello", try unauthenticated(), false),
+                     ("listModels/before-hello-local", try Wire(unixPath: app.hostSocket), true)]
+        for (step, wire, finalReply) in cases {
+            try await recordWireLines(step, on: wire, finalReply: finalReply) { .listModels(id: $0) }
         }
     }
 
     /// Record the actual encoded frames, plus the same state and side-effect checks as `refuse`.
-    private func recordWireLines(_ step: String, on wire: Wire, _ make: (Int) -> RemoteRequest) async throws {
+    private func recordWireLines(_ step: String, on wire: Wire, finalReply: Bool = false, _ make: (Int) -> RemoteRequest) async throws {
         let before = try await snapshot()
         let stored = try Data(contentsOf: app.scratch.stateURL)
         let request = try NDJSON.encode(make(wire.nextID()))
@@ -580,10 +626,18 @@ private final class Corpus {
         var line: Data?
         _ = try await awaitReply(wire, recordingBytes: { line = $0 })
         let reply = try #require(line, "\(step) must receive a reply")
+        let connectionAfter: String
+        if finalReply {
+            // The refusal is already in hand. Observe the host's close without writing to a socket it may have closed.
+            try await wire.requirePeerEOF()
+            connectionAfter = "closed"
+        } else {
+            connectionAfter = try await probe(wire)
+        }
         // Wire reads through the LF delimiter and returns its payload unchanged.
         var result = ["request.line": String(decoding: request, as: UTF8.self),
                       "reply.line": String(decoding: reply + Data([0x0a]), as: UTF8.self),
-                      "connection.after": try await probe(wire)] as [String: Any]
+                      "connection.after": connectionAfter] as [String: Any]
         result.merge(try await aftermath(before)) { $1 }
         result["state.json.bytesUnchanged"] = try Data(contentsOf: app.scratch.stateURL) == stored
         record(step, result)
@@ -869,10 +923,19 @@ private final class Corpus {
         let peer = try await connect(capabilities: Self.current, name: "acme-peer", token: token)
         let project = app.dir.appendingPathComponent("acme-oauth")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        try await app.server.addSpace(Space(name: "Acme OAuth", path: project.path), first: false)
+        let oauthSpace = Space(name: "Acme OAuth", path: project.path)
+        try await app.server.addSpace(oauthSpace, first: false)
         let directory = project.path, file = ".shepherd/mcp.json"
         _ = try await local.projects(.save(directory: directory, file: file,
                                            text: #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#, expected: nil))
+        // Pairing starts Fleet's index. Let its Git probe and repo-stamp write for this space finish before measuring refusals.
+        let stampsURL = app.dir.appendingPathComponent("fleet/repo-stamps.json")
+        try await eventuallyAsync("Fleet to finish indexing and stamping the MCP fixture") {
+            guard try await local.fleetRead().snapshot.index?.indexing == false,
+                  let data = try? Data(contentsOf: stampsURL),
+                  let stamps = try? JSONDecoder().decode([String: String].self, from: data) else { return false }
+            return stamps[oauthSpace.id.rawValue] != nil
+        }
         let owner = RemoteHostClient()
         defer { owner.disconnect() }
         _ = try await owner.connect(host: "127.0.0.1", port: port, token: app.server.clientTokenForTests(), clientName: "acme-phone")

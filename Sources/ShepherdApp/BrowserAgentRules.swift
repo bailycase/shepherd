@@ -280,6 +280,7 @@ enum BrowserNote {
         case .newTab: return "opening a tab"
         case .selectTab: return "selecting a tab"
         case .closeTab: return "closing a tab"
+        case .show: return "showing the browser"
         case .tab(_, let request): return derived(for: request, target: target)
         }
     }

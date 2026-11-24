@@ -122,8 +122,8 @@ public struct ShepherdMacApp: App {
                 return vm
             },
             failed: { error in
+                guard !(error is CancellationError) else { return }
                 NSLog("Shepherd: failed to start the session host: \(error)")
-                if error is BackgroundHostClient.HostStarting { WorkspaceInUseAlert.show() }
                 if let failure = error as? HostSupervisor.StartFailed { _ = HostSupervisor.StartFailed.show(failure, canRetry: false) }
                 exit(EXIT_FAILURE)
             })
@@ -244,28 +244,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HostSupervisor.shared?.stop()
     }
 
-}
-
-/// What a launch says when the workspace's owner (launchd's background host) holds it but hasn't
-/// answered yet, instead of quitting silently.
-enum WorkspaceInUseAlert {
-    static let message = "Shepherd's background service is starting"
-    static let detail = "Your agents keep running. Open Shepherd again in a moment."
-
-    @MainActor static func make() -> NSAlert {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = message
-        alert.informativeText = detail
-        alert.addButton(withTitle: "Quit")
-        return alert
-    }
-
-    @MainActor static func show() {
-        let alert = make()
-        NSApp.activate()
-        alert.runModal()
-    }
 }
 
 extension ShepherdHost {

@@ -118,18 +118,10 @@ private struct SidePaneTabBar: View {
     let store: NativeThreadStore
     let maximized: Bool
 
-    /// What pi last opened in this thread's Browser, for the tab's brief tip.
-    private var browserTip: SHSidePaneTabTip? {
-        switch owner {
-        case .local(let agentID): SidePaneTabs.tip(opened: vm.browsers.existing(agentID)?.openedByAgent)
-        case .remote(let ref): SidePaneTabs.tip(opened: vm.browsers.existing(ref)?.openedByAgent)
-        }
-    }
-
     var body: some View {
         let tabs = vm.sidePaneTabs(for: owner)
         SHSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
-                                          browser: tabs.contains(.browser), browserTip: browserTip,
+                                          browser: tabs.contains(.browser),
                                           subagents: SidePaneTabs.subagents(store.subagents),
                                           pullRequest: tabs.contains(.pullRequest) ? pullRequest?.selection?.number : nil,
                                           design: tabs.contains(.design)),
@@ -166,10 +158,9 @@ private struct SidePaneTabBar: View {
 
 /// The strip's tabs, from what each one holds.
 enum SidePaneTabs {
-    /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
     /// `subagents` is the thread's run count and status; nil while it has none (no tab).
     /// `pullRequest` is the branch's pull request's number; nil while it has none (no tab).
-    static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: SHSidePaneTabTip? = nil,
+    static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true,
                       subagents: (count: Int, status: AgentState)? = nil, pullRequest: Int? = nil, design: Bool = false) -> [SHSidePaneTab] {
         SidePaneTab.tabs(browser: browser, pullRequest: pullRequest != nil, design: design).compactMap { tab in
             let count: Int? = switch tab {
@@ -180,13 +171,7 @@ enum SidePaneTabs {
             }
             if tab == .subagents, subagents == nil { return nil }
             return SHSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
-                                 badge: tab == .pullRequest ? pullRequest.map { "#\($0)" } : nil, news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
+                                 badge: tab == .pullRequest ? pullRequest.map { "#\($0)" } : nil, news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay)
         }
-    }
-
-    /// "localhost:5173/checkout": the page pi opened, as the address field shows it.
-    static func tip(opened: (url: URL, at: Date)?) -> SHSidePaneTabTip? {
-        guard let opened, let shown = BrowserAddress.display(opened.url) else { return nil }
-        return SHSidePaneTabTip(text: shown.host + shown.path, openedAt: opened.at)
     }
 }

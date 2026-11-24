@@ -209,6 +209,7 @@ enum RemoteSamples {
         .files(path: "Sources/App Intents", showHidden: true),
         .fileRead(path: "Widgets/NeedsYouWidget.swift"),
         .fileWrite(path: "src/Checkout.tsx", text: "let pay = \"ok\"\n", expected: ""),
+        .fileCreate(path: "docs/README (iPhone).md", text: "# Notes\n"),
     ]
 
     static let revision = ChangesRevision(old: "3f2a91c0", new: "4b825dc6")
@@ -1600,7 +1601,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability, RemoteProtocol.designBoardsCapability, RemoteProtocol.designThreadNotesCapability,
             RemoteProtocol.designGitCapability,
             // Offered only to a client that lists it in hello.
-            RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability,
+            RemoteProtocol.filesCapability, RemoteProtocol.filesWriteCapability, RemoteProtocol.filesCreateCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)

@@ -42,8 +42,11 @@ Every decision has to pass one test: does this help one person supervise ten wor
    under the picture. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
-3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
-4. **Nothing in the thread spins.** One thing moves at a time, and it is text (live text shimmers).
+3. **One line per stretch of work.** The tool calls between two pieces of prose are one activity line
+   (`docs/design/boards/ToolActivity.png`): live, it says what the running call is doing; finished,
+   it is a recap built from the calls' own arguments and results. Every tool has its own words,
+   never "Used <tool>".
+4. **One thing moves at a time.** The live line's spinner and shimmer are the only motion in the thread.
 5. **Nothing in the default view that isn't useful.** No key-hint rows (the question dock's
    footer is the one exception: its 1–N and ↩ hints, QuestionDockRadio), no repeated status text,
    no footers in menus, nothing under the composer but its controls.

@@ -1,7 +1,8 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
 // Shepherd browser extension: the agent's hands on its thread's own Browser page,
-// which the user sees and shares. Thirteen tools (open, read, click, type, press, scroll, wait,
-// screenshot, console, eval, back, forward, reload), each one request over the extension socket.
+// which the user sees and shares. Tab tools (tabs, new, select, close), page tools (open, read, click,
+// type, press, scroll, wait, screenshot, console, eval, back, forward, reload) and show (open the side
+// pane on the Browser), each one request over the extension socket.
 // The agent is never a parameter: the extension registers as this agent once (helloBrowser) and
 // Shepherd serves a browser request only on that connection, so a tool can act only on its own
 // thread's page. A page's text is untrusted website data and comes back as tool output, nothing more.
@@ -517,6 +518,19 @@ export default function shepherdBrowser(pi: ExtensionAPI) {
     promptSnippet: "Reload the Browser page",
     parameters: { note: noteParameter() },
     frame: (p) => ({ note: note(p) }),
+  });
+
+  tool({
+    name: "browser_show",
+    label: "Show Browser",
+    action: "show",
+    description:
+      "Show the user this thread's Browser: the side pane opens on its Browser tab, on the agent's target tab (or `tab`). " +
+      "Opening or driving a page shows the user nothing by itself; call this when they should look, e.g. to see a result " +
+      "or to sign in. It does not switch the user to this thread.",
+    promptSnippet: "Open the side pane on the Browser so the user sees the page",
+    parameters: {},
+    frame: () => ({}),
   });
 
   pi.on("session_shutdown", () => {

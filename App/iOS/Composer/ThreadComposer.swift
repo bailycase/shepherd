@@ -34,6 +34,8 @@ struct ThreadComposer: View {
     @State private var focused = false
     /// The @ picker for the host's designs (`design.references.v1`), the Mac's picker rules.
     @State private var mentions = MentionPickerState()
+    /// The threads the picker links on "#" (ThreadLinkA): the thread's own host's.
+    @Environment(\.shThreadLinks) private var threadLinks
     /// Something is being dragged over the composer.
     @State private var dropTargeted = false
 
@@ -472,21 +474,27 @@ struct ThreadComposer: View {
                                appear: { id in if let item = mentions.content.items[id] { designs.wantMentionPicture(item, host: host) } })
     }
 
-    /// Follows the draft: open while it ends in an @ mention, where the host takes references to
-    /// its designs (never in a design's own chat).
+    /// Follows the draft: open while it ends in a "#" mention, on the host's threads to link, or an "@"
+    /// mention where the host takes references to its designs (never in a design's own chat).
     private func updateMentions(store: NativeThreadStore) {
         let designs = MobileDesigns.of(hosts)
+        let threads = threadLinks.map { Array($0.links.values) } ?? []
         guard store.supports("designReferences"), !designChat, let library = designs.library(ref.host) else {
-            if mentions.isOpen { mentions.close() }
+            if !designChat, threadLinks != nil {
+                mentions.update(draft: store.draft, catalog: nil, threads: threads, excluding: ref.agent.rawValue, designs: false)
+            } else if mentions.isOpen {
+                mentions.close()
+            }
             return
         }
         let opening = mentions.opens(for: store.draft)
-        if opening, library.listing == nil { Task { await library.refresh() } }
+        if opening, library.listing == nil, ComposerMention.token(in: store.draft)?.trigger == "@" { Task { await library.refresh() } }
         let scope = mentions.scope
         let host = ref.host
         let version = designs.mentionPicturesVersion
         mentions.update(draft: store.draft, catalog: library.listing == nil ? nil : library.mentionCatalog(),
-                        place: hosts.host(host)?.name ?? "the host") { item in
+                        place: hosts.host(host)?.name ?? "the host", threads: threads,
+                        excluding: ref.agent.rawValue) { item in
             designs.mentionPicture(item, host: host).map { SHReferenceImage(id: item.id + "@\(version)", image: Image(uiImage: $0)) }
         }
         guard mentions.isOpen, opening || mentions.scope != scope else { return }
@@ -513,6 +521,8 @@ struct ThreadComposer: View {
                     state.attachmentError = "That design reference didn't attach: \(MobileDesignsError.words(error))"
                 }
             }
+        case .link(let draft)?:
+            store.draft = draft
         case nil:
             break
         }

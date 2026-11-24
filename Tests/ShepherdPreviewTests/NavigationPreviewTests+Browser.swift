@@ -86,6 +86,7 @@ extension PreviewTests {
         let workspace = try PreviewWorkspace()
         let session = try remoteBrowser()
         session.load(try #require(URL(string: "http://localhost:5173/checkout")))
+        session.consoleOpen = true
         // Nothing listens at 5173 here, so the load fails: what the console shows is the board's instead,
         // once the failed load is over (a new document starts it over).
         final class Seeded { var done = false }
@@ -135,7 +136,6 @@ extension PreviewTests {
         let workspace = try PreviewWorkspace()
         let session = try remoteBrowser()
         session.load(try #require(URL(string: "http://localhost:5173/checkout")))
-        session.consoleOpen = false
         final class Pointed { var done = false }
         let pointed = Pointed()
         try await Preview.render("browser-remote-agent-using-it", size: Self.paneSize, ready: {
@@ -149,24 +149,6 @@ extension PreviewTests {
             return session.agentOverlay?.pointer != nil
         }) {
             browserPane(workspace, session, store: NativeThreadStore())
-        }
-    }
-
-    /// The agent opened a page on the host while the viewer's Browser tab was out of sight (PaneStates
-    /// › SidePaneTabs · the agent opened a tab, on a remote thread): the tab's dot and its brief tip.
-    @Test func browserRemoteAgentOpenedATab() async throws {
-        let session = try remoteBrowser()
-        session.noteAgentOpened(try #require(URL(string: "http://localhost:5173/checkout")))
-        let tip = try #require(SidePaneTabs.tip(opened: session.openedByAgent))
-        try await Preview.render("browser-remote-agent-opened-tab", size: CGSize(width: 600, height: 150)) {
-            VStack(spacing: 0) {
-                SHSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
-                               select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
-                    Button("Reset Width") {}
-                }
-                Spacer(minLength: 0)
-            }
-            .background(Color.sh.bgWindow)
         }
     }
 
@@ -188,6 +170,7 @@ extension PreviewTests {
         let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
         session.load(try #require(URL(string: "about:blank#checkout")))
         session.viewport = .phone
+        session.consoleOpen = true
         let store = NativeThreadStore()
         // What the page reports lands once its document is in (a new document starts them over).
         final class Seeded { var done = false }
@@ -219,7 +202,6 @@ extension PreviewTests {
         session.load(try #require(URL(string: "about:blank#cart")))
         session.viewport = .laptop
         session.dark = true
-        session.consoleOpen = false
         session.menuOpen = true
         let store = NativeThreadStore()
         try await Preview.render("browser-viewport-menu", size: Self.paneSize) {
@@ -234,7 +216,6 @@ extension PreviewTests {
         let workspace = try PreviewWorkspace()
         let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
         session.load(try #require(URL(string: "about:blank#checkout")))
-        session.consoleOpen = false
         let store = NativeThreadStore()
         // A new document takes the pointer away, so the agent points once the page is in.
         final class Pointed { var done = false }
@@ -260,7 +241,6 @@ extension PreviewTests {
         let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
         session.load(try #require(URL(string: "about:blank#cart")))
         session.viewport = .phone
-        session.consoleOpen = false
         let store = NativeThreadStore()
         final class Pointed { var done = false }
         let pointed = Pointed()
@@ -275,31 +255,6 @@ extension PreviewTests {
             return session.agentOverlay?.pointer != nil
         }) {
             browserPane(workspace, session, store: store)
-        }
-    }
-
-    /// pi opened a page while the pane was on another tab (PaneStates › SidePaneTabs · the agent
-    /// opened a tab): the Browser tab takes its dot and a brief tip hangs under it; and the header's
-    /// button, with the pane closed, says the same.
-    @Test func browserAgentOpenedATab() async throws {
-        let tip = SHSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10))
-        try await Preview.render("browser-agent-opened-tab", size: CGSize(width: 600, height: 150)) {
-            VStack(spacing: 0) {
-                SHSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
-                               select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
-                    Button("Reset Width") {}
-                }
-                Spacer(minLength: 0)
-            }
-            .background(Color.sh.bgWindow)
-        }
-        try await Preview.render("browser-agent-opened-button", size: CGSize(width: 420, height: 110)) {
-            HStack {
-                Spacer()
-                SHPaneNewsTip(SidePaneTab.browser.newsText, shortcut: "⇧⌘B")
-            }
-            .padding(SH.Space.xl)
-            .background(Color.sh.bgWindow)
         }
     }
 

@@ -169,6 +169,7 @@ final class BrowserTabs {
             guard let id = UUID(uuidString: id), let page = page(id) else { return missingTab() }
             guard !inner.isTabManagement else { return .failure(code: "invalid", message: "Only page actions accept a tab target.") }
             agentTargetID = id
+            if case .show = inner { return show(page) }
             let outcome = await page.performPage(inner, origin: origin)
             if case .open = inner, case .result = outcome { page.tabSource = .agent }
             return outcome
@@ -176,6 +177,7 @@ final class BrowserTabs {
             guard let page = agentTarget else {
                 return .failure(code: "no_tab", message: "The agent's tab was closed. Use browser_new_tab or browser_select_tab.")
             }
+            if case .show = request { return show(page) }
             if case .open(let url, let note) = request, page.tabSource == .user, page.hasPage, !page.userHasControl {
                 // The first agent navigation must not replace a page the user opened by hand.
                 return await run(.newTab(url: url, note: note), origin: origin)
@@ -184,6 +186,13 @@ final class BrowserTabs {
             if case .open = request, case .result = outcome { page.tabSource = .agent }
             return outcome
         }
+    }
+
+    /// `browser_show`: the tab becomes the one on screen (the view model then opens the pane). No
+    /// title or address: what the page is stays behind `browser_read` and its checks.
+    private func show(_ page: BrowserSession) -> BrowserOutcome {
+        select(page.tabID)
+        return .text("The Browser is open beside the thread, showing tab \(page.tabID.uuidString).")
     }
 
     private func missingTab() -> BrowserOutcome { .failure(code: "no_tab", message: "No such tab in this thread. Call browser_tabs.") }
