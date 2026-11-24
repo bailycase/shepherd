@@ -340,6 +340,9 @@ public final class NativeThreadStore {
     /// The first dialog when it is a hook's proposal or ask, parsed once per change (HookThreadScene).
     public private(set) var hookPrompt: NativeHookPrompt?
     public private(set) var dialogsSupported = true { didSet { threadVersion &+= 1 } }
+    /// What the thread's origins file says is wrong with it, read apart from `snapshot` so a notice that rarely changes does not
+    /// redraw its readers with every snapshot.
+    public private(set) var originsProblem: String? { didSet { threadVersion &+= 1 } }
     /// Extension widgets of the kinds this client draws.
     public private(set) var widgets: [NativeThreadWidget] = [] { didSet { chromeVersion &+= 1 } }
     public private(set) var goal: NativeGoal? {
@@ -1205,6 +1208,8 @@ public final class NativeThreadStore {
         if dialogs != self.dialogs { self.dialogs = dialogs }
         let dialogsSupported = value?.dialogsSupported ?? true
         if dialogsSupported != self.dialogsSupported { self.dialogsSupported = dialogsSupported }
+        let originsProblem = value?.originsProblem
+        if originsProblem != self.originsProblem { self.originsProblem = originsProblem }
         let goal = value?.goal.flatMap { $0.isValid ? $0 : nil }
         if goal != self.goal { self.goal = goal }
         let widgets = (value?.widgets ?? []).filter { $0.kind != .unknown }
