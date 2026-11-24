@@ -280,6 +280,11 @@ struct ThreadHostingTests {
         let (h, _, _) = try host()
         defer { h.stop() }
         let clean = try makeScratchRepo(), dirty = try makeScratchRepo()
+        for repo in [clean, dirty] {
+            try git(["branch", "base"], in: repo)
+            try git(["branch", "--set-upstream-to=base"], in: repo)
+        }
+        try git(["commit", "--allow-empty", "-qm", "agent checkout one ahead"], in: dirty)
         try "pending work\n".write(to: dirty.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
         let space = Space(name: "acme-web", path: dirty.path)
         try await h.server.addSpace(space)
@@ -301,15 +306,17 @@ struct ThreadHostingTests {
         }
 
         let plain = try await row(id: 1, details: false)
-        #expect(plain.cwd == clean.path && plain.checkoutStatus == nil)
+        #expect(plain.cwd == clean.path && plain.checkoutStatus == nil && plain.commitsAheadOfLocalUpstream == nil)
         let detailed = try await row(id: 2, details: true)
         #expect(detailed.checkoutStatus == .dirty, "reported \(detailed.checkoutStatus?.rawValue ?? "none"); the first pane is a terminal in a different, clean checkout")
+        #expect(detailed.commitsAheadOfLocalUpstream == 1, "the first pane's checkout is zero ahead")
         #expect(detailed.cwd == dirty.path)
 
         agent.paneID = nil
         try await h.server.updateAgent(agent)
         let missing = try await row(id: 3, details: true)
         #expect(missing.checkoutStatus == .unknown)
+        #expect(missing.commitsAheadOfLocalUpstream == nil)
         #expect(missing.cwd.isEmpty)
     }
 
