@@ -680,7 +680,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "List the other agent threads in Shepherd, in every space: id, name, status (working/blocked/idle/done), and working " +
       "directory. details adds space, last activity, asking and local checkout status with an offline upstream comparison. " +
       "Use it to find a thread the user named. It only reads: it is not a reason to message, " +
-      `steer, read${threadsStartThreads ? "" : " or start"} any thread, which you may do only when the user explicitly asks you to.`,
+      `steer, read${threadsStartThreads ? "" : " or start"} any thread, which you may do only when the user explicitly asks you to. ` +
+      "To name a thread in a reply, write [its name](shepherd-thread://<id>).",
     promptSnippet: line(deferPeers, "List the other agent threads, only to find one the user named"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,

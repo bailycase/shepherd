@@ -154,6 +154,7 @@ public struct SHProseChunk<Code: SHProseCode>: View, Equatable {
         VStack(alignment: .leading, spacing: SH.Space.l) {
             ForEach(parts) { part in
                 SHProseBlockView<Code>(block: part.block, writing: writing(in: part)).equatable()
+                    .shRaisedWhilePreviewing()
             }
         }
         .shProseLinks()

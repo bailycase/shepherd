@@ -623,6 +623,8 @@ struct NewThreadPage: View {
         case .pick(let reference, let text):
             draft.prompt = text
             attach(reference)
+        case .link(let text):
+            draft.prompt = text
         case nil:
             break
         }

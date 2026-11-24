@@ -217,6 +217,8 @@ test("every tool that touches another thread leads with the rule and gives a wro
     assert.match(h.tools.get("agent_delete").description, /^Only when the user explicitly asks you to delete another agent\./);
     assert.match(h.tools.get("agent_wait").description, /^Only after the user asked you to message or steer another thread/);
     assert.match(h.tools.get("agent_list").description, /Use it to find a thread the user named\. It only reads/);
+    // Thread links (ThreadLinkA): the one place an agent learns the link format, read only when it loads agent_list.
+    assert.match(h.tools.get("agent_list").description, /To name a thread in a reply, write \[its name\]\(shepherd-thread:\/\/<id>\)\./);
   } finally { await h.close(); }
 });
 

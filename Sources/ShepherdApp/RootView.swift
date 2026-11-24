@@ -134,6 +134,7 @@ struct RootView: View {
             CommandPaletteView(vm: vm)
         }
         .background { MenuStateSync(vm: vm) }
+        .background { ThreadLinksSync(vm: vm) }
         .background { MainWindowReader() }
         .shDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)

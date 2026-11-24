@@ -604,6 +604,9 @@ struct PaneLeafView: View, Equatable {
                 )
                 // Design references reach an ordinary thread only.
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
+                // Thread links in its prose and its # picker (ThreadLinkA).
+                .environment(\.shThreadLinks, vm.threadLinks)
+                .environment(\.threadLinkSelf, agentID.rawValue)
                 // Dispatches: what this thread sent, or where it came from (nil outside Fleet).
                 .environment(\.fleetThread, model.fleet)
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
@@ -1246,6 +1249,8 @@ struct RemoteAgentThreadPane: View {
         // References to the host's own designs, where it takes them.
         .environment(\.designReferences, designReferences)
         .environment(\.fleetThread, fleet)
+        .environment(\.shThreadLinks, vm.threadLinks)
+        .environment(\.threadLinkSelf, ref.agentID.rawValue)
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm))
     }
