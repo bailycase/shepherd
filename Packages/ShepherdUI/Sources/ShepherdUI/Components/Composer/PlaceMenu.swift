@@ -309,6 +309,17 @@ public struct SHPlaceChipLabel: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // The boards' `.where`: the folder, the project in medium ink, "on This Mac" in `textSecondary`.
+        HStack(spacing: SH.Space.xs + 1) {
+            Image(systemName: "folder").font(.system(size: SH.Space.l + 1)).foregroundStyle(.sh.textSecondary)
+            Text(project).font(.sh(.ui, weight: .medium)).foregroundStyle(.sh.textPrimary).lineLimit(1)
+            if let host { Text("on \(host)").font(.sh(.ui)).foregroundStyle(.sh.textSecondary).lineLimit(1) }
+            SHChipChevron()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(host.map { "Where it runs: \(project) on \($0)" } ?? "Project: \(project)")
+        #else
         HStack(spacing: SH.Space.s) {
             Image(systemName: "folder").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
             Text(project).font(.shMono(12)).lineLimit(1)
@@ -321,5 +332,6 @@ public struct SHPlaceChipLabel: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(host.map { "Where it runs: \(project) on \($0)" } ?? "Project: \(project)")
+        #endif
     }
 }

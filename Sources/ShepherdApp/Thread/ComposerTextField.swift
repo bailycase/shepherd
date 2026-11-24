@@ -14,6 +14,8 @@ struct ComposerTextField: NSViewRepresentable {
     let focus: Binding<Bool>
     let attach: ([NSItemProvider]) -> Void
     var lineSpacing: CGFloat = 0
+    /// The words' size: `body`, or New thread's larger 15pt (the boards' hero `.ta`).
+    var size: CGFloat = SHTextStyle.body.size
     private var keys: [KeyEquivalent: (Press) -> KeyPress.Result] = [:]
     @Environment(\.isEnabled) private var enabled
     @Environment(\.colorScheme) private var appearance
@@ -33,8 +35,9 @@ struct ComposerTextField: NSViewRepresentable {
 
     init(text: Binding<String>, caret: ComposerCaret? = nil, placeholder: String,
          label: String, focus: Binding<Bool>, attach: @escaping ([NSItemProvider]) -> Void,
-         lineSpacing: CGFloat = 0) {
+         lineSpacing: CGFloat = 0, size: CGFloat = SHTextStyle.body.size) {
         _text = text
+        self.size = size
         self.caret = caret
         self.placeholder = placeholder
         self.label = label
@@ -109,7 +112,7 @@ struct ComposerTextField: NSViewRepresentable {
         defer { field.updating = false }
         field.updateStyle(Style(appearance: appearance, scale: ThemeStore.shared.textScale,
                                 text: Color.sh.textPrimary, placeholderColor: Color.sh.textTertiary,
-                                caret: Color.sh.lantern, placeholder: placeholder, lineSpacing: lineSpacing))
+                                caret: Color.sh.lantern, placeholder: placeholder, lineSpacing: lineSpacing, size: size))
         if field.isEnabled != enabled { field.isEnabled = enabled }
         if field.accessibilityLabel() != label { field.setAccessibilityLabel(label) }
         field.editor.attach = attach
@@ -189,6 +192,7 @@ struct ComposerTextField: NSViewRepresentable {
         var caret: Color
         var placeholder: String
         var lineSpacing: CGFloat
+        var size: CGFloat
     }
 
     final class Field: NSTextField {
@@ -251,7 +255,7 @@ struct ComposerTextField: NSViewRepresentable {
         private func applyStyle() {
             guard let style = pendingStyle, style != appliedStyle,
                   appliedStyle == nil || (window != nil && !isHiddenOrHasHiddenAncestor) else { return }
-            font = SHFonts.platform(mono: false, weight: .regular, size: SHTextStyle.body.size * style.scale)
+            font = SHFonts.platform(mono: false, weight: .regular, size: style.size * style.scale)
             textColor = NSColor(style.text)
             placeholderAttributedString = NSAttributedString(string: style.placeholder, attributes: [
                 .font: font!, .foregroundColor: NSColor(style.placeholderColor)
