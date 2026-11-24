@@ -240,7 +240,7 @@ extension AppLayout {
     // Sheets
     static let renameSheetWidth: CGFloat = 420
     static let confirmSheetWideWidth: CGFloat = 520
-    static let newWorktreeSheetWidth: CGFloat = 520
+    static let newWorktreeSheetWidth: CGFloat = 480
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.
@@ -258,10 +258,19 @@ extension AppLayout {
     static let branchCardWidth: CGFloat = 324
     static let branchCardInset: CGFloat = 14
     static let branchCardGlyph: CGFloat = 16
-    /// The branch card's sheets: Update from the base, New and Rename branch.
-    static let branchSheetWidth: CGFloat = 520
-    /// The branch card's Commit… (BranchCommit).
-    static let branchCommitSheetWidth: CGFloat = 560
+    /// The base row's branch in mono 12.5; the "asked you" dot.
+    static let branchCardCodeSize: CGFloat = 12.5
+    static let branchCardDot: CGFloat = 7
+    /// The branch card's sheets (GXBranchCommit, GXBranchConflict): Commit…, Update from the base, New and Rename branch.
+    static let branchSheetWidth: CGFloat = SHCardSheetMetrics.width
+    static let branchCommitSheetWidth: CGFloat = SHCardSheetMetrics.width
+    /// The Branch picker (GXBranchPicker): 330pt, and how tall its list grows before it scrolls. It opens under the card's
+    /// branch row, which is this tall.
+    static let branchPickerWidth: CGFloat = 330
+    static let branchPickerListMaxHeight: CGFloat = 300
+    /// The menu behind a remote thread's "on mini" (GXRemote).
+    static let remoteMenuWidth: CGFloat = 280
+    static let branchCardHeaderHeight: CGFloat = 44
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280
     /// The card's own column at the thread's right: the card and the 16pt beside it, 8pt under the toolbar.
@@ -279,7 +288,6 @@ extension AppLayout {
     static let directoryPickerWidth: CGFloat = 480
     static let directoryListHeight: CGFloat = 260
     static let promptEditorHeight: CGFloat = 96
-    static let baseFieldMaxWidth: CGFloat = 200
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12
     /// The tool-output sheet ("… n more lines", Open Output): its minimum and ideal size.

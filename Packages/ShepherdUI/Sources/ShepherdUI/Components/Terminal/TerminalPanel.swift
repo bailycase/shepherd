@@ -11,12 +11,28 @@ public enum SHTerminalMetrics {
     public static let buttonSize: CGFloat = 34
     public static let contentPadding = EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
     #else
-    public static let panelHeight: CGFloat = 330
+    /// The panel is a raised card (GXTerminal's `.term`): 300pt tall with 8pt above and below it.
+    public static let panelHeight: CGFloat = 316
     public static let tabBarHeight: CGFloat = 38
     public static let tabHeight: CGFloat = 26
-    public static let buttonSize: CGFloat = SH.Height.controlS
+    public static let buttonSize: CGFloat = SH.Height.controlM
     public static let contentPadding = EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
     #endif
+    /// Where the card sits in the room under the thread: 28pt in from the thread's side, 16pt from the
+    /// other, 8pt from the thread and from the window's edge. Zero on iOS, where the panel fills its room.
+    #if os(macOS)
+    public static let cardInsets = EdgeInsets(top: 8, leading: 28, bottom: 8, trailing: 16)
+    public static let cardRadius: CGFloat = SH.Radius.xl
+    #else
+    public static let cardInsets = EdgeInsets()
+    public static let cardRadius: CGFloat = 0
+    #endif
+    /// A tab's side padding, and a running tab's dot (GXTerminal's `.ptab` and `.gd`).
+    public static let tabPadding: CGFloat = 10
+    public static let runningDot: CGFloat = 6
+    /// The strip's side padding on the Mac: 8pt before the tabs, 6pt after the buttons.
+    public static let stripLeading: CGFloat = 8
+    public static let stripTrailing: CGFloat = 6
     /// Never shorter than a tab bar and a few lines.
     public static let minimumPanelHeight: CGFloat = 120
     /// What the thread keeps above the panel.
@@ -138,15 +154,25 @@ public struct SHTerminalTabBar<Trailing: View>: View {
             HStack(spacing: SH.Space.xxs) { trailing() }
                 .buttonStyle(.shIcon(size: SHTerminalMetrics.buttonSize))
         }
+        #if os(macOS)
+        .padding(.leading, SHTerminalMetrics.stripLeading)
+        .padding(.trailing, SHTerminalMetrics.stripTrailing)
+        #else
         .padding(.horizontal, SH.Space.m)
+        #endif
         .frame(minHeight: SHTerminalMetrics.tabBarHeight)
         .frame(maxWidth: .infinity)
         // A strip of chrome over the terminal: it grows with Dynamic Type, but not past a size
         // that leaves room for the terminal under it.
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        #if os(macOS)
+        // The card the panel is (GXTerminal) draws the strip's top and sides: only the rule under it.
+        .overlay(alignment: .bottom) { SHHairline(color: .sh.lineSubtle) }
+        #else
         .background(Color.sh.bgWindow)
         .overlay(alignment: .top) { SHHairline(color: .sh.lineStrong) }
         .overlay(alignment: .bottom) { SHHairline() }
+        #endif
         #if os(macOS)
         // A right-click (or ⌃-click) on a tab opens the menu from it.
         .background {
@@ -194,8 +220,91 @@ public struct SHTerminalTabView: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// GXTerminal's `.ptab`: the title in `ui` (medium in ink while selected), 10pt in, a dot ahead of
+    /// it while a command runs, and the selected tab's ×.
+    private var macBody: some View {
         let sh = Color.sh
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
+            Button(action: select) {
+                HStack(spacing: SH.Space.s) {
+                    macMark
+                    Text(tab.title)
+                        .font(.sh(.ui, weight: isSelected ? .medium : .regular))
+                        .foregroundStyle(isSelected ? sh.textPrimary : sh.textSecondary)
+                        .lineLimit(1)
+                    if isSelected, let host = tab.host {
+                        Label(host, systemImage: "desktopcomputer")
+                            .labelStyle(SHTerminalHostLabelStyle())
+                            .font(.sh(.micro, weight: .regular))
+                            .foregroundStyle(sh.textTertiary)
+                            .lineLimit(1)
+                    }
+                    if tab.activity == .unseen {
+                        Circle().fill(sh.running).frame(width: SHTerminalMetrics.runningDot, height: SHTerminalMetrics.runningDot)
+                    }
+                }
+                .padding(.leading, SHTerminalMetrics.tabPadding)
+                .padding(.trailing, isSelected && close != nil ? SH.Space.xs : SHTerminalMetrics.tabPadding)
+                .frame(minHeight: SHTerminalMetrics.tabHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityActions {
+                if let close { Button("Close", action: close) }
+            }
+            if isSelected, let close {
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.sh(.micro))
+                        .foregroundStyle(sh.textTertiary)
+                        .frame(width: SH.Height.controlS)
+                        .frame(minHeight: SHTerminalMetrics.tabHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, SH.Space.xxs)
+                .shHelp("Close terminal")
+                .accessibilityLabel("Close \(tab.title)")
+            }
+        }
+        .background(isSelected ? sh.bgSelected : hovering ? sh.bgHover : .clear,
+                    in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
+        .fixedSize()
+    }
+
+    /// What stands before the title: a spinner while a shell starts, a dot while a command runs (or
+    /// after one failed), nothing for a shell at its prompt.
+    @ViewBuilder private var macMark: some View {
+        let sh = Color.sh
+        switch tab.activity {
+        case .starting:
+            ProgressView().progressViewStyle(SHSpinnerStyle(size: SHTerminalMetrics.runningDot * 2))
+        case .running:
+            Circle().fill(sh.textSecondary).frame(width: SHTerminalMetrics.runningDot, height: SHTerminalMetrics.runningDot)
+        case .exited(let failed):
+            Circle().fill(failed ? sh.failed : sh.textTertiary)
+                .frame(width: SHTerminalMetrics.runningDot, height: SHTerminalMetrics.runningDot)
+        case .idle, .unseen:
+            EmptyView()
+        }
+    }
+    #endif
+
+    private var touchBody: some View {
+        let sh = Color.sh
+        return HStack(spacing: 0) {
             Button(action: select) {
                 HStack(spacing: SH.Space.s) {
                     glyph

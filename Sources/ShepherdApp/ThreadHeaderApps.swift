@@ -2,9 +2,10 @@ import SwiftUI
 import ShepherdSessions
 import ShepherdUI
 
-/// The thread header's Run button (AppsQuickAction, AppsRunning boards): the space's first quick
-/// action, or the app running now with its port and Stop (its name shows its output), and ▾
-/// listing every quick action in the space, then Add or edit apps….
+/// The thread header's app chip (GXAppsRun, GXAppsRunning boards), in the toolbar's trailing capsule: ▶ and
+/// the space's first quick action, or while an app runs its name, port and ■ (a click stops it); with ▾
+/// listing every quick action in the space, each app's output while it runs, then Add or edit apps….
+/// A rule separates it from the capsule's buttons.
 struct ThreadAppsButton: View {
     let apps: QuickApps
     let run: (AppKey) -> Void
@@ -12,89 +13,93 @@ struct ThreadAppsButton: View {
     let restart: (AppKey) -> Void
     let output: (AppKey) -> Void
     let edit: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         let primary = apps.primary
-        HStack(spacing: 0) {
-            if primary.running {
-                Button { output(primary.key) } label: {
-                    HStack(spacing: SH.Space.s) {
-                        SHStatusDot(primary.status == .starting ? .running : .done)
-                        Text(primary.app.name).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-                        if let port = primary.portLabel { Text(port).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary) }
-                    }
-                    .padding(.horizontal, SH.Space.m)
-                    .frame(height: SH.Height.controlS)
-                }
-                .buttonStyle(.shRow())
-                .help("Show \(primary.app.name)’s output")
-                .accessibilityLabel("\(primary.app.name), running. Show output")
-                divider
-                Button { stop(primary.key) } label: {
-                    Image(systemName: "stop.fill").font(.sh(.micro)).frame(width: SH.Height.controlS, height: SH.Height.controlS)
-                }
-                .buttonStyle(.shRow())
-                .help("Stop \(primary.app.name)")
-                .accessibilityLabel("Stop \(primary.app.name)")
-            } else {
-                Button { run(primary.key) } label: {
-                    Label(primary.app.name, systemImage: "play.fill")
-                        .font(.sh(.ui))
-                        .labelStyle(AppRunLabelStyle())
-                        .padding(.horizontal, SH.Space.m)
-                        .frame(height: SH.Height.controlS)
-                }
-                .buttonStyle(.shRow())
-                .help("Run \(primary.app.name)")
-                .accessibilityLabel("Run \(primary.app.name)")
-            }
-            divider
-            Menu {
-                Section("Apps in \(apps.space)") {
-                    ForEach(apps.items) { item in
-                        Button {
-                            switch item.status {
-                            case .starting?, .running?: stop(item.key)
-                            case .exited?: restart(item.key)
-                            default: run(item.key)
-                            }
-                        } label: {
-                            Label {
-                                Text(item.app.name)
-                                Text(item.menuDetail)
-                            } icon: {
-                                Image(systemName: item.running ? "stop.fill" : "play.fill")
-                            }
+        HStack(spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.s) {
+                if primary.running {
+                    Button { stop(primary.key) } label: {
+                        HStack(spacing: SH.Space.s) {
+                            Text(primary.app.name).foregroundStyle(Color.sh.textPrimary)
+                            if let port = primary.portLabel { Text(port).foregroundStyle(Color.sh.textTertiary) }
+                            Image(systemName: "stop.fill").font(.sh(.micro)).foregroundStyle(Color.sh.textPrimary)
+                                .accessibilityHidden(true)
                         }
+                        .font(.sh(.ui, weight: .regular))
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
                     }
-                }
-                let running = apps.items.filter { $0.status != nil }
-                if !running.isEmpty {
-                    Section("Output") {
-                        ForEach(running) { item in
-                            Button("Show \(item.app.name)’s Output") { output(item.key) }
-                        }
+                    .buttonStyle(.plain)
+                    .help("Stop \(primary.app.name)")
+                    .accessibilityLabel("Stop \(primary.app.name)")
+                    .accessibilityValue(primary.status == .starting ? "starting" : "running")
+                } else {
+                    Button { run(primary.key) } label: {
+                        Label(primary.app.name, systemImage: "play.fill")
+                            .font(.sh(.ui, weight: .regular))
+                            .labelStyle(AppRunLabelStyle())
+                            .frame(maxHeight: .infinity)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .help("Run \(primary.app.name)")
+                    .accessibilityLabel("Run \(primary.app.name)")
                 }
-                Divider()
-                Button("Add or edit apps…", action: edit)
-            } label: {
-                Image(systemName: "chevron.down").font(.sh(.micro)).frame(width: SH.Height.controlS, height: SH.Height.controlS)
+                menu
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .buttonStyle(.shRow())
-            .fixedSize()
-            .accessibilityLabel("Apps in \(apps.space)")
+            .padding(.leading, AppLayout.appsChipLeading)
+            .padding(.trailing, SH.Space.m)
+            .frame(height: SH.Height.controlM)
+            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .onHover { hovering = $0 }
+            .shAnimation(.hover, value: hovering)
+            SHHairline(.vertical).frame(height: AppLayout.appsChipRule).padding(.horizontal, SH.Space.xxs)
         }
-        .padding(SH.Space.xxs)
-        .frame(height: SH.Height.controlM)
-        .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
-        .fixedSize()
     }
 
-    private var divider: some View {
-        SHHairline(.vertical).frame(height: SH.Height.controlS - SH.Space.m)
+    private var menu: some View {
+        Menu {
+            Section("Apps in \(apps.space)") {
+                ForEach(apps.items) { item in
+                    Button {
+                        switch item.status {
+                        case .starting?, .running?: stop(item.key)
+                        case .exited?: restart(item.key)
+                        default: run(item.key)
+                        }
+                    } label: {
+                        Label {
+                            Text(item.app.name)
+                            Text(item.menuDetail)
+                        } icon: {
+                            Image(systemName: item.running ? "stop.fill" : "play.fill")
+                        }
+                    }
+                }
+            }
+            let running = apps.items.filter { $0.status != nil }
+            if !running.isEmpty {
+                Section("Output") {
+                    ForEach(running) { item in
+                        Button("Show \(item.app.name)’s Output") { output(item.key) }
+                    }
+                }
+            }
+            Divider()
+            Button("Add or edit apps…", action: edit)
+        } label: {
+            Image(systemName: "chevron.down").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+                .padding(.horizontal, SH.Space.xs)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel("Apps in \(apps.space)")
     }
 }
 
@@ -136,19 +141,19 @@ struct AppLogView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if let process {
-                            Text("$ " + process.command).foregroundStyle(Color.sh.textTertiary)
+                            Text("$ " + process.command).foregroundStyle(Color.sh.textPrimary)
                                 .padding(.bottom, SH.Space.m)
                         }
                         ForEach(lines.indices, id: \.self) { index in
-                            Text(lines[index].isEmpty ? " " : lines[index]).foregroundStyle(Color.sh.textPrimary)
+                            Text(lines[index].isEmpty ? " " : lines[index]).foregroundStyle(Color.sh.textSecondary)
                         }
                         Color.clear.frame(height: 1).id("tail")
                     }
                     .font(.sh(.code))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, SH.Space.l)
-                    .padding(.vertical, SH.Space.m)
+                    .padding(.horizontal, SHTerminalMetrics.contentPadding.leading)
+                    .padding(.vertical, SHTerminalMetrics.contentPadding.top)
                 }
                 .onChange(of: lines.count) { proxy.scrollTo("tail", anchor: .bottom) }
             }
@@ -167,7 +172,8 @@ struct AppLogView: View {
                 .frame(height: SH.Height.controlL + SH.Space.m)
             }
         }
-        .background(Color.sh.bgWindow)
+        // On the panel's card, as the terminals beside it are.
+        .background(Color.sh.bgRaised)
         .task(id: process?.revision) {
             // ponytail: the whole tail again per revision (the host's pushes are at most 10/s); ask
             // for the lines after the last one read if a chatty app's output costs too much.

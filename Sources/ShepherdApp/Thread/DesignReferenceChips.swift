@@ -88,6 +88,11 @@ final class DesignReferenceChips {
         /// The line above it: "Drew a board", "B · Pay on phone · draft in Checkout redesign".
         var lineLabel: String? = nil
         var lineMeta: String? = nil
+        /// The card's head over a board the agent drew (GXBoardDraft, GXBoardChange).
+        var header: DesignReferencePresentation.BoardHeader? = nil
+        /// The card's footer: the board's name with its design, over its meta.
+        var title: String? = nil
+        var footerMeta: [String]? = nil
     }
 
     let agentID: AgentID
@@ -169,8 +174,12 @@ final class DesignReferenceChips {
         next.board = payload.reference.board.map { payload.boardTitle ?? $0.stem }
             ?? payload.boards?.first.map { $0.title ?? $0.board.stem } ?? payload.design
         next.meta = DesignReferencePresentation.boardMeta(payload, freshness: standing)
-        next.note = payload.proposal.map { DesignReferencePresentation.boardNote($0, revision: payload.revision) }
-            ?? DesignReferencePresentation.boardNote(standing)
+        // A drawn board says where it stands in its head, so it has no note under it.
+        next.note = payload.proposal == nil ? DesignReferencePresentation.boardNote(standing, shown: payload.revision) : nil
+        next.header = payload.proposal.map { DesignReferencePresentation.boardHeader($0, revision: payload.revision) }
+        let footer = DesignReferencePresentation.boardFooter(payload, board: next.board)
+        next.title = footer.title
+        next.footerMeta = footer.meta
         next.showLatest = DesignReferencePresentation.showLatest(standing)
         next.proposal = payload.proposal
         next.pictureURL = file.map { kept.folder.appendingPathComponent($0.name) }

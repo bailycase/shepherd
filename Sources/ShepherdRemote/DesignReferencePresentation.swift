@@ -99,6 +99,50 @@ public enum DesignReferencePresentation {
         return meta
     }
 
+    /// The Mac card's head over a board the agent drew (GXBoardDraft, GXBoardChange): what it did
+    /// and where the board stands.
+    public struct BoardHeader: Equatable, Sendable {
+        public var label: String
+        public var tag: String
+
+        public init(label: String, tag: String) {
+            self.label = label
+            self.tag = tag
+        }
+    }
+
+    public static func boardHeader(_ proposal: DesignReferencePayload.Proposal, revision: UInt64) -> BoardHeader {
+        let label = proposal.kind == .draft ? "Drew a board" : "Changed"
+        let tag = switch (proposal.kind, proposal.state) {
+        case (.draft, .pending): "Draft"
+        case (.change, .pending): "From revision \(revision)"
+        case (.draft, .added): "Added to the design"
+        case (.change, .added): "Applied to the design"
+        case (_, .discarded): "Discarded"
+        }
+        return BoardHeader(label: label, tag: tag)
+    }
+
+    /// The Mac card's footer (GXBoardShown, GXBoardDraft): the board's name with its design,
+    /// "Checkout redesign, A · Funnel first", over its meta; a draft is named alone over "Draft
+    /// for Checkout redesign, 560 × 410".
+    public static func boardFooter(_ payload: DesignReferencePayload, board: String) -> (title: String, meta: [String]) {
+        // The note over the footer says the design moved on; the meta stays at the revision shown.
+        let meta = boardMeta(payload, freshness: .current)
+        if let proposal = payload.proposal, proposal.kind == .draft {
+            let size = payload.width.flatMap { width in payload.height.map { "\(Int(width)) × \(Int($0))" } }
+            return (board, proposal.state == .pending ? ["Draft for " + payload.design] + (size.map { [$0] } ?? []) : meta)
+        }
+        return (board == payload.design ? board : payload.design + ", " + board, meta)
+    }
+
+    /// What the Mac card says over its footer once the design moved on (GXBoardStale): "Changed
+    /// since. This is revision 13; the board is at 15."; the other standings keep their words.
+    public static func boardNote(_ freshness: DesignReferenceFreshness, shown revision: UInt64) -> String? {
+        guard case .updatedSince(let latest, _) = freshness else { return boardNote(freshness) }
+        return "Changed since. This is revision \(revision); the board is at \(latest)."
+    }
+
     /// What a board the agent drew says under its footer.
     public static func boardNote(_ proposal: DesignReferencePayload.Proposal, revision: UInt64) -> String {
         switch (proposal.kind, proposal.state) {
