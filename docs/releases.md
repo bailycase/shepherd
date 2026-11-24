@@ -204,8 +204,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     the Release run's number, plan, signing identities, entitlements and notarization policy.
     It has a sixty-minute execution limit and cannot publish.
   - The app, and a non-nightly DMG, wait for notarization acceptance and receive stapled tickets
-    before package provenance is recorded. The build keeps no DerivedData cache (a shared-input
-    key changed on nearly every commit); its pi engine downloads are cached.
+    before package provenance is recorded. Nightly restores Xcode's compiler cache, not the build
+    graph, intermediates or assembled app. Tagged releases compile cold. Swift package checkouts
+    and pi engine downloads are cached, and the Xcode log includes a build timing summary.
   - The build uses a temporary signing keychain with a random password, preserves/restores the
     exact existing user keychain search list and removes imported certificate/notary files in
     an `always()` cleanup step, including after failure/cancellation.
