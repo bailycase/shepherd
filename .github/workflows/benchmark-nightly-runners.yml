@@ -1,0 +1,77 @@
+name: Benchmark Nightly runners
+on:
+  push:
+    branches: [chore/benchmark-nightly-runners]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    runs-on: ${{ matrix.label }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [blacksmith-6vcpu-macos-26, macos-26]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record toolchain
+        id: xcode
+        run: |
+          test "$(uname -m)" = arm64
+          sysctl hw.ncpu hw.memsize
+          toolchain=$(xcodebuild -version; xcrun --show-sdk-version; swift --version)
+          printf '%s\n' "$toolchain"
+          echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Cache Swift package checkouts
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: perf-20261124-${{ matrix.label }}-spm-${{ hashFiles('Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+      - name: Cache compiler results
+        uses: actions/cache@v4
+        with:
+          path: build/CompilationCache.noindex
+          key: perf-20261124-${{ matrix.label }}-compile-${{ steps.xcode.outputs.version }}-${{ github.sha }}
+          restore-keys: |
+            perf-20261124-${{ matrix.label }}-compile-${{ steps.xcode.outputs.version }}-
+      - name: Cache engine downloads
+        uses: actions/cache@v4
+        with:
+          path: .build/pi-engine-cache
+          key: perf-20261124-${{ matrix.label }}-pi-${{ hashFiles('scripts/pi-engine-pin.json') }}
+      - name: Stage engine
+        run: python3 scripts/pi_engine.py stage
+      - name: Build unsigned Nightly
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          /usr/bin/time -p xcodebuild \
+            -project Shepherd.xcodeproj \
+            -scheme 'Shepherd (Nightly)' \
+            -configuration Nightly \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -showBuildTimingSummary \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
+            COMPILATION_CACHE_ENABLE_CACHING=YES \
+            COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
+            SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_WHOLE_MODULE_OPTIMIZATION=NO SWIFT_COMPILATION_MODE=singlefile \
+            MARKETING_VERSION=0.1.0 CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build
+      - name: Verify Nightly bundle
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          app='build/Build/Products/Nightly/Shepherd Nightly.app'
+          /usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Contents/Info.plist" | grep -Fx "$BUILD_NUMBER"
+          marker='Shepherd hosted timing probe'
+          if grep -Fq "$marker" Sources/ShepherdApp/SettingsWindow.swift; then
+            LC_ALL=C grep -aFq "$marker" "$app/Contents/MacOS/Shepherd Nightly"
+          fi
+          python3 scripts/release.py thin-app "$app"
+          python3 scripts/release.py verify-app "$app" nightly 0.1.0
