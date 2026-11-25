@@ -39,7 +39,7 @@ struct HomeScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { NewThreadHooks.open(navigator: navigator) } label: { Label("New thread", systemImage: "square.and.pencil") }
                     .buttonStyle(.glassProminent)
-                    .tint(Color.sh.lantern)
+                    .tint(Color.sh.primary)
                     .disabled(model.hosts.isEmpty)
             }
             .visibilityPriority(.high)

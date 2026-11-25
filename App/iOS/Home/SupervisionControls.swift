@@ -99,7 +99,7 @@ struct HomeReviewQueueRow: View {
     var body: some View {
         let count = HomeFeed.of(hosts).supervisionQueues.review.count
         if count > 0 {
-            SHListCard {
+            SHListCard(inset: SHListMetrics.iconInset) {
                 Button { navigator.openReviewQueue(hosts: hosts) } label: {
                     SHListRow("Review queue", leading: .symbol(SHGlyph.reviewQueue.symbolName), trailing: .value("\(count) to review"))
                 }

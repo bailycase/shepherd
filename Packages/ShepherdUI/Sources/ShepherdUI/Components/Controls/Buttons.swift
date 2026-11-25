@@ -63,13 +63,26 @@ private struct SHStyledButton: View {
         let settings = scale == .settings
         let M = SHSettingsControlMetrics.self
         // A Settings page draws every size as its one button: 26pt at radius `s`, `caption`.
+        #if os(iOS)
+        // The phone and iPad boards' pills: 30, 36 and 44pt capsules at 13, 14 and 15.
+        let standard: (CGFloat, CGFloat, CGFloat) = switch size {
+        case .s: (30, SH.Space.l, 13)
+        case .m: (36, 14, 14)
+        case .l: (SH.Height.touch, SH.Space.xl, 15)
+        }
+        #else
         let standard: (CGFloat, CGFloat, CGFloat) = switch size {
         case .s: (SH.Height.controlS, SH.Space.m, 12)
         case .m: (SH.Height.controlM, 10, 12.5)
         case .l: (SH.Height.controlL, 14, 13)
         }
+        #endif
         let (height, padding, fontSize) = settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
+        #if os(iOS)
+        let radius = settings ? M.radius : height / 2
+        #else
         let radius = settings ? M.radius : SH.Radius.s
+        #endif
         let filled = kind == .primary || kind == .dangerFill || kind == .strong
         let shape = RoundedRectangle(cornerRadius: radius)
         configuration.label
@@ -80,7 +93,7 @@ private struct SHStyledButton: View {
             .padding(.horizontal, padding)
             .frame(minHeight: height)
             .background(background(sh), in: shape)
-            .shBorder(kind == .secondary || kind == .raised || kind == .danger ? sh.lineStrong : .clear, radius: radius)
+            .shBorder(bordered ? sh.lineStrong : .clear, radius: radius)
             .offset(y: configuration.isPressed ? 0.5 : 0)
             .shEnabledOpacity(enabled)
             .contentShape(shape)
@@ -91,6 +104,15 @@ private struct SHStyledButton: View {
     }
 
     private var active: Bool { enabled && (hovering || configuration.isPressed) }
+
+    /// The Mac's secondary buttons carry a line; the phone boards' pills are a plain `bgSelected` fill.
+    private var bordered: Bool {
+        #if os(iOS)
+        kind == .raised || kind == .danger || (kind == .secondary && scale == .settings)
+        #else
+        kind == .secondary || kind == .raised || kind == .danger
+        #endif
+    }
 
     private func foreground(_ sh: SHPalette) -> Color {
         switch kind {
@@ -116,7 +138,11 @@ private struct SHStyledButton: View {
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.textSecondary : sh.textPrimary)
         case .secondary:
             // The Settings buttons are unfilled.
+            #if os(iOS)
+            return AnyShapeStyle(scale == .settings && !active ? Color.clear : sh.bgSelected)
+            #else
             return AnyShapeStyle(active ? sh.bgSelected : scale == .settings ? Color.clear : sh.bgRaised)
+            #endif
         case .raised:
             return AnyShapeStyle(active ? sh.bgSelected : sh.bgRaised)
         case .ghost:

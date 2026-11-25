@@ -32,10 +32,11 @@ struct NeedsYouScreen: View {
             // On a wide iPad the trailing corner shares the status bar's space.
             if sizeClass == .regular {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                        Text("Needs you").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
+                    // The board's head: "Needs you" over "2 waiting".
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Needs you").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                         if !items.isEmpty {
-                            Text("\(items.count) waiting").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                            Text("\(items.count) waiting").font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary)
                         }
                     }
                     .fixedSize()
@@ -68,9 +69,10 @@ private struct NeedsYouCards: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                Text(NeedsYouScreen.waiting(items.count))
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                Text("Questions and blocked threads from every host show here.")
+                    .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                     .padding(.horizontal, SH.Space.xs)
+                    .accessibilityLabel(NeedsYouScreen.waiting(items.count))
                 ForEach(items) { item in
                     AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
                 }
@@ -131,15 +133,16 @@ private struct NeedsYouDetail: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                        Text(item.title).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                        // "Needs you · 2m": how long it has waited.
+                    // "Dock review pane" over "Needs you · 13m": how long it has waited.
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(item.title).font(.shSans(MobileLayout.detailTitleSize, .semibold)).foregroundStyle(sh.textPrimary)
                         if let since = item.since.map(Date.init(milliseconds:)) {
                             TimelineView(SHElapsedSchedule(start: since)) { context in
-                                SHStatusPill(.attention, label: "\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))")
+                                Text("\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))")
+                                    .font(.sh(.caption)).foregroundStyle(AgentState.attention.textColor)
                             }
                         } else {
-                            SHStatusPill(.attention)
+                            Text(AgentState.attention.label).font(.sh(.caption)).foregroundStyle(AgentState.attention.textColor)
                         }
                     }
                     Text(item.question).shText(.body).foregroundStyle(sh.textPrimary)
@@ -160,7 +163,9 @@ private struct NeedsYouDetail: View {
                             .shText(.caption).foregroundStyle(sh.textTertiary)
                     }
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        SHSectionHeader("Where it came from")
+                        Text("Where it came from").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                            .padding(.horizontal, SH.Space.xs)
+                            .accessibilityAddTraits(.isHeader)
                         SHListCard {
                             SHListRow(item.thread, subtitle: item.kind, subtitleMono: false,
                                       clock: item.since.map { .ago(Date(milliseconds: $0)) }, leading: item.leading,

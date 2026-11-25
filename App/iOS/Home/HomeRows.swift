@@ -24,6 +24,11 @@ extension FleetClock {
     }
 }
 
+extension String {
+    /// "needs you" as "Needs you": the first letter alone.
+    var sentenceCased: String { prefix(1).uppercased() + dropFirst() }
+}
+
 extension Date {
     init(milliseconds: Double) { self.init(timeIntervalSince1970: milliseconds / 1000) }
 }
@@ -48,7 +53,15 @@ extension FleetAttention {
         }
     }
 
-    /// The card's origin glyph; a thread's is the glowing dot (nil).
+    /// What asks, in iPadOverview's cards: the thread, and for an automation's run that it is one.
+    var overviewOrigin: String {
+        switch origin {
+        case .thread, .project: thread
+        case .automation: "\(thread) · automation"
+        }
+    }
+
+    /// The origin glyph of an automation's run; a thread has none.
     var symbol: String? {
         switch origin {
         case .thread, .project: nil
@@ -73,24 +86,35 @@ extension FleetThreadRow {
 }
 
 /// A thread in Home, Recents and the sidebar; a design's row (MobileAgents) wears the nib and
-/// "design · 4 boards". Home's rows (DuoClosedHome) say what a working thread does as a verb
-/// ("Running python") and where any other works ("Shepherd"); the host's name shows only while
-/// rows from several hosts mix (never in the sidebar, where it crowds the title), and no row has a chevron.
+/// "design · 4 boards". Home's rows (DuoClosedHome) have no dot: the title over what a working
+/// thread does as a verb ("Running python") or where any other works ("Shepherd"), the state in
+/// words at the right ("Running, 2m"; "13m" for the rest, after the host's name while rows from
+/// several hosts mix), and a chevron. The sidebar's rows are the title and one word (iPadSidebar).
 struct ThreadRow: View, Equatable {
     let row: FleetThreadRow
     var selected = false
     /// The sidebar's rows are one line: the title alone.
     var compact = false
 
+    private var trailing: SHListRow.Trailing {
+        if compact {
+            if row.failed { return .alert("failed") }
+            if row.status == .done, let clock = row.clock?.rowClock { return .stamp(nil, clock) }
+            return row.hostTag.map { .host($0) } ?? .none
+        }
+        if row.status == .working, !row.offline, row.design == nil {
+            return .stamp("Running", row.clock?.rowClock, joiner: ", ")
+        }
+        if row.hostTag == nil, row.clock == nil { return .none }
+        return .stamp(row.hostTag, row.clock?.rowClock)
+    }
+
     var body: some View {
-        // The sidebar says a failed last turn (iPadThreadError): a failed dot and "failed".
-        let failed = compact && row.failed
-        SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, clock: compact ? nil : row.clock?.rowClock,
-                  leading: row.design != nil ? .symbol("pencil.tip") : .state(failed ? .failed : AgentState(row.status)),
-                  trailing: failed ? .meta("failed") : compact ? .none : row.hostTag.map { .host($0) } ?? .none,
-                  chevron: false, selected: selected, dimmed: row.offline, compact: compact)
-            // The dot alone says the state; VoiceOver hears it.
-            .accessibilityValue((failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : ""))
+        SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, subtitleMono: false,
+                  leading: row.design != nil ? .symbol("pencil.tip") : .none, trailing: trailing,
+                  chevron: !compact, selected: selected, dimmed: row.offline, compact: compact)
+            // The words at the right say the state; VoiceOver hears it.
+            .accessibilityValue((compact && row.failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : ""))
     }
 }
 
@@ -113,9 +137,9 @@ struct AttentionRow: View, Equatable {
 
     var body: some View {
         // The sidebar names the thread; its chip says who asks ("reviewer") or why.
-        SHListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
-                  trailing: compact ? .reason(item.reason) : item.hostTag.map { .host($0) } ?? .none,
-                  chevron: false, selected: selected, compact: compact)
+        SHListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleMono: false, subtitleLines: 2,
+                  leading: .none, trailing: compact ? .reason(item.reason) : .stamp(item.hostTag, item.since.map { .ago(Date(milliseconds: $0)) }),
+                  chevron: !compact, selected: selected, compact: compact)
     }
 }
 
@@ -132,19 +156,24 @@ struct AttentionCard: View {
     @Environment(MobileProjects.self) private var projects
 
     var body: some View {
-        // On iPhone an automation's card is titled by its question over the asker's context
-        // (MobileInbox); the iPad's cards keep the name and "Thread" or "Automation" (iPadOverview).
+        // The phone's card (MobileInbox) is the thread, where it came from ("A thread on Studio"), the
+        // question and its message; the iPad overview's (iPadOverview) is what asks, the question's
+        // title and its text, and its list's items (iPadInbox) the thread, the question, where from.
         let pad = navigator.layout == .pad
-        let asked = !pad && answers && item.symbol != nil && item.message != nil
-        SHAttentionCard(symbol: item.symbol, origin: pad ? item.shortOriginLabel : item.originLabel, title: asked ? item.question : item.title,
-                        question: asked ? (item.message ?? item.question) : item.question,
-                        message: answers && !asked ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
-                        selected: selected, style: answers ? .card : .item) {
+        let overview = pad && answers
+        let origin = item.hostName.isEmpty ? item.originLabel : item.symbol == nil ? "\(item.originLabel) on \(item.hostName)" : "\(item.originLabel) · \(item.hostName)"
+        SHAttentionCard(symbol: item.symbol, origin: overview ? item.overviewOrigin : origin, title: overview ? item.question : item.title,
+                        question: overview ? (item.message ?? "") : item.question, message: overview ? nil : answers ? item.message : nil,
+                        since: item.since.map(Date.init(milliseconds:)), host: nil,
+                        selected: selected, style: !answers ? .item : overview ? .overview : .card,
+                        link: answers && !overview ? ("Open thread", { navigator.open(projects.route(item)) }) : nil) {
             if answers {
-                AttentionReplies(item: item, busy: busy)
-                Button("Open") { navigator.open(projects.route(item)) }
-                    .buttonStyle(.sh(item.reply == .open ? .secondary : .ghost))
-                    .accessibilityLabel("Open \(item.thread)")
+                AttentionReplies(item: item, busy: busy, size: overview ? .l : .m, ink: overview)
+                if overview {
+                    Button("Open thread") { navigator.open(projects.route(item)) }
+                        .buttonStyle(.sh(.ghost, size: .l))
+                        .accessibilityLabel("Open \(item.thread)")
+                }
             }
             if let failure {
                 Text(failure).shText(.caption).foregroundStyle(Color.sh.failed)
@@ -161,6 +190,8 @@ struct AttentionReplies: View {
     let busy: Bool
     var size: SHButtonStyle.Size = .m
     var pickLast = false
+    /// The asker's pick in ink, the rest as plain text (iPadOverview); the phone's answers are all pills (MobileInbox).
+    var ink = false
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
@@ -170,13 +201,13 @@ struct AttentionReplies: View {
             let ordered = Array(options.enumerated())
             ForEach(pickLast ? ordered.reversed() : ordered, id: \.offset) { index, option in
                 Button(option) { Task { await feed.choose(item, option) } }
-                    .buttonStyle(.sh(index == 0 ? .primary : .secondary, size: size))
+                    .buttonStyle(.sh(index == 0 ? (ink || pickLast ? .primary : .secondary) : (ink ? .ghost : .secondary), size: size))
                     .disabled(busy)
             }
         case .confirm:
             if pickLast { no(feed) }
             Button("Yes") { Task { await feed.answer(item, .confirm(value: true)) } }
-                .buttonStyle(.sh(.primary, size: size)).disabled(busy)
+                .buttonStyle(.sh(ink || pickLast ? .primary : .secondary, size: size)).disabled(busy)
             if !pickLast { no(feed) }
         case .open:
             EmptyView()
@@ -185,7 +216,7 @@ struct AttentionReplies: View {
 
     private func no(_ feed: HomeFeed) -> some View {
         Button("No") { Task { await feed.answer(item, .confirm(value: false)) } }
-            .buttonStyle(.sh(.secondary, size: size)).disabled(busy)
+            .buttonStyle(.sh(ink ? .ghost : .secondary, size: size)).disabled(busy)
     }
 }
 
@@ -195,7 +226,9 @@ struct HostNotices: View {
 
     var body: some View {
         if !cards.isEmpty {
-            SHLazyListCard(cards) { card in HostNotice(card: card).equatable() }
+            SHListCard {
+                ForEach(cards) { card in HostNotice(card: card).equatable() }
+            }
         }
     }
 }
@@ -210,20 +243,20 @@ struct HostNotice: View, Equatable {
     static func == (a: HostNotice, b: HostNotice) -> Bool { a.card == b.card }
 
     var body: some View {
-        HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: SH.Space.l) {
-            SHStatusDot(card.state, size: SHListMetrics.dot)
-                .frame(width: SHListMetrics.leadingWidth)
+        // DuoClosedHome: the name and why in words, Retry as plain text at the top right.
+        HStack(alignment: .top, spacing: SH.Space.l) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(card.name).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
-                Text(card.summary).font(.sh(.caption)).shShimmer(active: card.phase == .connecting).foregroundStyle(card.state.textColor).lineLimit(3)
+                Text(card.name).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
+                Text(card.summary).font(.sh(.caption)).shShimmer(active: card.phase == .connecting)
+                    .foregroundStyle(Color.sh.textSecondary).lineLimit(3)
                 // At accessibility sizes Retry drops under the name rather than squeezing it.
                 if typeSize.isAccessibilitySize { retry.padding(.top, SH.Space.xs) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if !typeSize.isAccessibilitySize { retry }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SHListMetrics.rowInset)
+        .padding(.vertical, SHListMetrics.rowPadding)
         .frame(minHeight: SHListMetrics.twoLineRowHeight)
         .accessibilityElement(children: .contain)
     }
@@ -231,12 +264,12 @@ struct HostNotice: View, Equatable {
     @ViewBuilder private var retry: some View {
         if card.needsPairing {
             // The Mac no longer accepts the old shared token: only a new pairing gets back in.
-            Button("Add a Mac", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
-                .buttonStyle(.sh(.primary, size: .s))
+            Button("Add a Mac") { navigator.present(.settings(.host(nil))) }
+                .buttonStyle(.plain).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                 .accessibilityLabel("Add \(card.name) again with a code")
         } else if card.canRetry {
-            Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(card.id) }
-                .buttonStyle(.sh(.secondary, size: .s))
+            Button("Retry") { hosts.retry(card.id) }
+                .buttonStyle(.plain).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                 .accessibilityLabel("Retry \(card.name)")
         }
     }

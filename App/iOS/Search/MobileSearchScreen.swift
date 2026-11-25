@@ -20,8 +20,8 @@ struct MobileSearchScreen: View {
             HStack(spacing: SH.Space.l) {
                 SHTouchSearchField("Search threads", text: $store.query, focus: $focused)
                 Button("Cancel") { dismiss() }
-                    .font(.sh(.body))
-                    .foregroundStyle(Color.sh.running)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .frame(minHeight: SH.Height.touch)
             }
             .padding(.horizontal, MobileLayout.searchGutter)
@@ -60,7 +60,7 @@ private struct SearchResultsList: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+            LazyVStack(alignment: .leading, spacing: SH.Space.xl + SH.Space.xs) {
                 if idle {
                     SHEmptyState(Text("Search every host"),
                                  message: "Find a thread by its title, or by a line from its conversation (three letters or more).",
@@ -75,7 +75,7 @@ private struct SearchResultsList: View {
                 ForEach(sections) { section in
                     VStack(alignment: .leading, spacing: SH.Space.s) {
                         Text(section.title)
-                            .font(.sh(.caption, weight: .semibold))
+                            .font(.sh(.caption, weight: .medium))
                             .foregroundStyle(Color.sh.textSecondary)
                             .padding(.horizontal, SH.Space.xs)
                             .accessibilityAddTraits(.isHeader)
@@ -84,7 +84,7 @@ private struct SearchResultsList: View {
                                 SearchEntryButton(entry: entry, first: entry.id == section.entries.first?.id, open: open).equatable()
                             }
                         }
-                        .shCard(radius: MobileLayout.cardRadius)
+                        .shCard(radius: MobileLayout.cardRadius, lift: true)
                     }
                 }
                 SearchStatusView(status: status)
@@ -109,7 +109,7 @@ private struct SearchEntryButton: View, Equatable {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !first { SHHairline() }
+            if !first { SHHairline().padding(.leading, SHListMetrics.rowInset) }
             Button { open(entry) } label: {
                 SHSearchResultRow(leading: entry.leading, title: entry.title, detail: entry.detail, tag: entry.host,
                                   chevron: true, dimmed: entry.dimmed)
