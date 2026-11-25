@@ -805,7 +805,16 @@ final class ShepherdViewModel {
         hosts.onHostConnected = { [weak self] hostID in
             self?.skillsHostConnected(hostID)
         }
-        threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }
+        threadStores.configure = { [weak self] agent, store in
+            store.offline = self?.coordinatorHeldOff(agent) ?? false
+            store.reconnectHost = { [weak self] in
+                guard let hosts = self?.remoteHosts, let host = hosts.localHost else { return }
+                await hosts.retryNow(id: host.id)
+            }
+        }
+        remoteThreadStores.configure = { [weak hosts] ref, store in
+            store.reconnectHost = { [weak hosts] in await hosts?.retryNow(id: ref.hostID) }
+        }
         threadStores.drafts = ComposerDrafts(defaults: sidebarDefaults)
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }

@@ -151,7 +151,10 @@ extension ShepherdViewModel {
 
     /// A thread's requests: to the host that runs it.
     func nativeThread(_ id: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
-        guard let ref = localRef(id) else { throw BackgroundHostClient.HostStarting() }
+        // Nothing left this device: a send keeps its words and images (`NativeThreadStore.notSentCode`).
+        guard let ref = localRef(id) else {
+            throw RemoteHostClientError.rejected(code: "not_sent", message: BackgroundHostClient.HostStarting().description)
+        }
         return try await remoteHosts.nativeThread(ref, request: request)
     }
 }

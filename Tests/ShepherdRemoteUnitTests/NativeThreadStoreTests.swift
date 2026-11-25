@@ -357,6 +357,8 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(!store.ready && store.loadError == "Agent is gone")
         #expect(!store.supports("send"))
+        #expect(store.loadErrorKind == .host(code: "boom") && store.loadErrorTitle == "Couldn't load this thread.")
+        #expect(store.loadErrorLine == "Couldn't load this thread. Agent is gone")
     }
 
     @Test func aStaleSessionRefetchesFresh() async {
@@ -374,6 +376,41 @@ struct NativeThreadStoreTests {
         host.next = [.failure(RemoteHostClientError.disconnected)]
         await store.refresh()
         #expect(!store.ready && store.loadError == "connection closed")
+        #expect(store.loadErrorKind == .connection && store.loadErrorTitle == NativeThreadStore.lostConnectionTitle)
+        #expect(store.loadErrorLine == "connection closed")
+    }
+
+    @Test func aRequestThatNeverLeftIsALostConnectionAndAnythingTheHostSaidIsNot() async {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.next = [.failure(RemoteHostClientError.rejected(code: "not_sent", message: "Host is disconnected. Reconnect before trying again."))]
+        await store.refresh()
+        #expect(store.loadError == "Host is disconnected. Reconnect before trying again." && store.loadErrorKind == .connection)
+        host.next = [.failure(RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host."))]
+        await store.refresh()
+        #expect(store.loadError == "Update Shepherd on the host." && store.loadErrorTitle == "This host needs an update.")
+        host.next = [.success(.accepted(operationID: UUID()))]
+        await store.refresh()
+        #expect(store.loadErrorKind == .host(code: "unexpected"))
+        await store.refresh()
+        #expect(store.ready && store.loadError == nil, "the banner clears when the host answers")
+    }
+
+    @Test func reconnectBringsTheHostBackBeforeItPullsAndOnlyForALostConnection() async {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        var reconnects = 0
+        store.reconnectHost = { reconnects += 1 }
+        host.next = [.failure(RemoteHostClientError.disconnected)]
+        await store.refresh()
+        #expect(store.loadError != nil)
+        await store.reconnect()
+        #expect(reconnects == 1 && store.ready && store.loadError == nil)
+        host.next = [.success(.failure(code: "boom", message: "Agent is gone"))]
+        await store.refresh()
+        host.next = [.success(.failure(code: "boom", message: "Agent is gone"))]
+        await store.reconnect()
+        #expect(reconnects == 1 && store.loadErrorKind == .host(code: "boom"), "a refusal has no connection to bring back")
     }
 
     @Test func anUnexpectedResultIsReported() async {
@@ -768,7 +805,7 @@ struct NativeThreadStoreTests {
         if Task.isCancelled { store.stop() }
         await sending.value
         #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
-        #expect(!store.starting && store.loadError == "native_unavailable: The agent exited (code 127).")
+        #expect(!store.starting && store.loadError == "The agent exited (code 127).")
     }
 
     @Test func aPiThatNeverStartsBecomesAnErrorAfterTheLimitAndClearsWhenItAnswers() async {
@@ -853,12 +890,13 @@ struct NativeThreadStoreTests {
         #expect(store.ready && store.messages == [hi] && store.loadError == nil)
     }
 
-    @Test func aServingThreadWhosePiGoesAwayIsALostConnection() async {
+    @Test func aServingThreadWhosePiGoesAwayIsTheHostsRefusalNotALostConnection() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
         host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent no longer exists."))]
         await store.refresh()
-        #expect(!store.starting && !store.ready && store.loadError == "native_unavailable: The agent no longer exists.")
+        #expect(!store.starting && !store.ready && store.loadError == "The agent no longer exists.")
+        #expect(store.loadErrorKind == .host(code: NativeThreadCode.unavailable) && store.loadErrorTitle == "The agent process isn't running.")
     }
 
     // MARK: Sending

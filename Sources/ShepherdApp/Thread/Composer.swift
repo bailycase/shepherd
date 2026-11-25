@@ -411,8 +411,8 @@ struct Composer: View, Equatable {
                 }
                 .shTransition(.list, edge: .bottom)
             } else if let error = store.loadError {
-                SHBanner(.failed, title: "Lost connection to the agent process.", message: error) {
-                    Button("Reconnect") { Task { await store.refresh(fresh: true) } }
+                SHBanner(.failed, title: store.loadErrorTitle, message: error) {
+                    Button(store.loadErrorKind == .connection ? "Reconnect" : "Try again") { Task { await store.reconnect() } }
                         .buttonStyle(.sh(.secondary, size: .s))
                 }
                 .shTransition(.list, edge: .bottom)

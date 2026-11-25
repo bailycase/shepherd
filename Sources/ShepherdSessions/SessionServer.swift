@@ -3399,6 +3399,11 @@ public final class SessionServer: @unchecked Sendable {
         queue.sync { for client in Array(clients.values) where client.isLocal { disconnect(client, reason: "dropped") } }
     }
 
+    /// Stops listening on `host.sock` and drops the app's connections, as a host that is going away does (tests).
+    func stopLocalListener() {
+        queue.sync { stopLocalListenerOnQueue() }
+    }
+
     private func stopLocalListenerOnQueue() {
         for client in Array(clients.values) where client.isLocal { disconnect(client, reason: "local listener stopped") }
         localAcceptSource?.cancel()

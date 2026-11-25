@@ -11,7 +11,7 @@ import ShepherdProtocol
 struct ComposerSubmissionTests {
     /// The host: serves a snapshot, and answers each send as the test says, holding it until released.
     @MainActor final class Host {
-        enum Answer { case refuse, unknown, accept }
+        enum Answer { case refuse, unknown, accept, notSent }
         var answer: Answer = .refuse
         var hold: CheckedContinuation<Void, Never>?
         var holding = false
@@ -44,6 +44,7 @@ struct ComposerSubmissionTests {
             switch answer {
             case .refuse: return .failure(code: "refused", message: "The agent refused it.")
             case .unknown: throw CancellationError()
+            case .notSent: throw RemoteHostClientError.rejected(code: "not_sent", message: "Host is disconnected. Reconnect before trying again.")
             case .accept: return .accepted(operationID: id)
             }
         }
@@ -121,6 +122,28 @@ struct ComposerSubmissionTests {
         #expect(store.draft == "look at this")
         #expect(input.attachments.items.map(\.name) == ["a.png"])
         #expect(store.submissions.isEmpty)
+    }
+
+    /// The connection is gone when Send is pressed (nothing left this device): every word and image is back in the composer, the
+    /// thread says why, and the same message goes once the host is back.
+    @Test func aSendWithNoConnectionKeepsEveryWordAndImageAndGoesOnceItIsBack() async throws {
+        let host = Host()
+        host.answer = .notSent
+        let (store, loop) = await ready(host)
+        defer { loop.cancel() }
+        let input = ThreadInput()
+        input.attachments.add([("a.png", image("a.png")), ("b.png", image("b.png"))])
+        store.draft = "look at these"
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp) == false)
+        #expect(store.draft == "look at these")
+        #expect(input.attachments.items.map(\.name) == ["a.png", "b.png"])
+        #expect(store.submissions.isEmpty && store.notice == "Host is disconnected. Reconnect before trying again.")
+
+        host.answer = .accept
+        #expect(await ComposerImageCapture.send(store: store, input: input, delivery: .followUp))
+        let sent = try #require(host.lastSend)
+        #expect(sent.text == "look at these" && sent.images?.map(\.name) == ["a.png", "b.png"])
+        #expect(store.draft.isEmpty && input.attachments.isEmpty)
     }
 
     @Test func sendingTextKeepsImagesWhenTheHostDoesNotSupportThem() async throws {
