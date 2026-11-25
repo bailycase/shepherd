@@ -83,7 +83,7 @@ class WorkflowTests(unittest.TestCase):
         for mutation in ("git push", "gh release", "SPARKLE_PRIVATE_KEY", "contents: write", "pull_request:"):
             self.assertNotIn(mutation, build)
         self.assertNotIn("hosted", build.split("jobs:\n")[0])
-        self.assertIn("    runs-on: blacksmith-6vcpu-macos-26\n", build)
+        self.assertIn("    runs-on: macos-26\n", build)
         self.assertIn('CURRENT_PROJECT_VERSION="$BUILD_NUMBER"', build)
         self.assertIn("ref: ${{ inputs.source_sha }}", build)
         self.assertIn("persist-credentials: false", build)

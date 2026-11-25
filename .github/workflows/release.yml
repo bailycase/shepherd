@@ -65,7 +65,7 @@ concurrency:
 jobs:
   plan:
     name: plan
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
     steps:
@@ -129,7 +129,7 @@ jobs:
   release:
     name: publish selected package
     needs: [plan, build]
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
@@ -184,7 +184,7 @@ jobs:
     needs: [plan, release]
     # A successful selected package must publish even when the other build was skipped.
     if: ${{ !cancelled() && needs.release.result == 'success' }}
-    runs-on: blacksmith-6vcpu-macos-26
+    runs-on: macos-26
     timeout-minutes: 45
     # Only publication coalesces: every tagged build keeps its own release. A replacement
     # waiting publisher rebuilds from all completed releases once it acquires this slot.
@@ -348,8 +348,8 @@ jobs:
     name: iOS to TestFlight (internal)
     needs: plan
     if: github.event_name != 'pull_request' && fromJSON(needs.plan.outputs.plan).ios
-    # The target needs the iOS 27.1 SDK, so this job runs on Blacksmith's macOS 27 image (Xcode 27 default).
-    runs-on: blacksmith-6vcpu-macos-27
+    # GitHub's xcode-27 image includes the pinned Xcode 27.1 and iOS 27.1 SDK.
+    runs-on: xcode-27
     timeout-minutes: 60
     # Read-only: the archive runs package plugins and macros, and nothing here writes the repo.
     permissions:
@@ -489,7 +489,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' && fromJSON(needs.plan.outputs.plan).ios &&
       needs.testflight.result == 'success'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read

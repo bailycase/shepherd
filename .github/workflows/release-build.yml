@@ -43,7 +43,7 @@ permissions:
 jobs:
   build:
     name: build package
-    runs-on: blacksmith-6vcpu-macos-26
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       APP_KEY: ${{ fromJSON(inputs.plan).app }}
@@ -77,13 +77,12 @@ jobs:
           # Reuse products only while shared library inputs match, not across model/ABI changes.
           shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
           echo "shared=$shared" >> "$GITHUB_OUTPUT"
-      # Cloning the Swift packages (Sentry's repository above all) took about 3 minutes per build.
-      # They change only with Package.resolved, and the step below keeps SourcePackages.
-      - name: Cache Swift package checkouts
-        uses: actions/cache@v4
+      - name: Restore Swift package checkouts
+        id: spm
+        uses: actions/cache/restore@v4
         with:
           path: build/SourcePackages
-          key: spm-release-${{ runner.os }}-${{ hashFiles('Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
       # No DerivedData cache: the shared-input key changed on nearly every commit, so it never
       # restored and only spent time saving. This marker discards any products that predate a change.
@@ -97,6 +96,20 @@ jobs:
             find build -mindepth 1 -maxdepth 1 ! -name SourcePackages -exec rm -rf {} +
           fi
           mkdir -p build && echo "$VERSION" > "$marker"
+
+      # Save on a miss before compilation, so a slow build cannot prevent the next run from restoring it.
+      - name: Resolve pinned Swift packages
+        if: steps.spm.outputs.cache-hit != 'true'
+        run: |
+          xcodebuild -project Shepherd.xcodeproj -scheme "$SCHEME" -configuration "$CONFIGURATION" \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build \
+            -onlyUsePackageVersionsFromResolvedFile -resolvePackageDependencies
+      - name: Save Swift package checkouts
+        if: steps.spm.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/SourcePackages
+          key: ${{ steps.spm.outputs.cache-primary-key }}
 
       # Reuse compiler results, not the build graph or the assembled app. Tagged releases
       # remain cold because Actions caches from nightly aren't visible to tag runs.
