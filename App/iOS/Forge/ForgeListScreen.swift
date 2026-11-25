@@ -414,7 +414,7 @@ enum ForgeDetailLayout: Equatable {
 
 /// The iPad detail's head (iPadIPReview): Back, "#31" over "payments · Open", and the item's menu
 /// in a glass circle. Where the bars run down the side (iPhone Duo) Back and ••• are the bar's, and
-/// the head is only the centred title (DuoBookPR).
+/// the head is only the title (DuoBookPR).
 struct ForgePadHead<Items: View>: View {
     let title: String
     let subtitle: String?
@@ -435,8 +435,8 @@ struct ForgePadHead<Items: View>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back")
             }
-            ForgeTitle(title: title, subtitle: subtitle, alignment: verticalBars ? .center : .leading)
-                .frame(maxWidth: .infinity, alignment: verticalBars ? .center : .leading)
+            ForgeTitle(title: title, subtitle: subtitle, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if !verticalBars {
                 Menu { menu() } label: {
                     Image(systemName: "ellipsis")

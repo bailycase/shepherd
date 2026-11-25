@@ -197,6 +197,7 @@ struct ForgeSheetFrame<Content: View>: View {
     let submit: () -> Void
     @ViewBuilder let content: () -> Content
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         NavigationStack {
@@ -229,7 +230,7 @@ struct ForgeSheetFrame<Content: View>: View {
             }
         }
         // Over the page, which shows above it (MobilePRReview, MobilePRMerge).
-        .presentationDetents([.fraction(fraction), .large])
+        .presentationDetents(sizeClass == .regular ? [.large] : [.fraction(fraction), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color.sh.bgWindow)
     }
