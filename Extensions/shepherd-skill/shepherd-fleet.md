@@ -4,8 +4,8 @@
 
 `Shepherd --host` owns the workspace, every agent's process, the terminals and the network listener. The app is its client
 over `<support>/host.sock`, which accepts only the signed Shepherd app: an agent connecting to it is refused before it
-can send anything. In Shepherd Nightly the host is a background service, so agents keep running after the app quits; in
-Shepherd, or with the service off, it is the app's child and stops at Quit. Restarting it interrupts every agent on the
+can send anything. In installed Shepherd and Shepherd Nightly the host is a background service, so agents keep running after the app
+quits; in a development build, or with the service off, it is the app's child and stops at Quit. Restarting it interrupts every agent on the
 Mac, you included.
 
 ## Fleet

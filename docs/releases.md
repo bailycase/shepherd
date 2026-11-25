@@ -144,7 +144,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   number. (Old `nightly-*` releases and their tags are pruned to the latest few; those tags are
   the workflow's own, not release versions.)
 - **Default channel:** Shepherd (`AppUpdater.swift`, `UpdateChannel`) defaults to its birth
-  channel, parsed from the marketing version. An explicit choice in Settings ▸ Advanced is never
+  channel, parsed from the marketing version. An explicit choice in Settings ▸ General is never
   overwritten, and the picker offers only Stable and Beta.
 - **Channel plumbing** changes `scripts/release.py` (and `release.yml` if the steps change),
   `UpdateChannel`/`UpdateChannelStore`/`ChannelDelegate`, the Advanced row, the Xcode
