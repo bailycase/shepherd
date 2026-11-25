@@ -163,7 +163,13 @@ enum SidebarSent {
             for var row in lists[list] {
                 let id = row.id
                 if row.subtitle == nil, let count = sentCount[id] {
-                    row.subtitle = .init(count.back > 0 ? "\(count.sent) sent, \(count.back) back" : "\(count.sent) sent")
+                    var words = count.back > 0 ? "\(count.sent) sent, \(count.back) back" : "\(count.sent) sent"
+                    // A sender on another Mac names it first ("mini, 1 sent"), as the boards do, in place of its tag.
+                    if case .tag(let mac) = row.accessory {
+                        words = "\(mac), \(words)"
+                        row.accessory = .none
+                    }
+                    row.subtitle = .init(words)
                 }
                 // Still in its own group only where it waits on you.
                 if infos[id] != nil, nests(row), row.section != .needsYou { continue }

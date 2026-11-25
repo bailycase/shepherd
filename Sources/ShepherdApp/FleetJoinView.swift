@@ -10,7 +10,7 @@ struct FleetJoinView: View {
     let dismiss: () -> Void
 
     var body: some View {
-        SHDialog("Join a fleet", message: "On a Mac already in your fleet, open Settings ▸ Fleet ▸ Add a Mac and enter this code.",
+        SHDialog("Join a fleet", message: "On a Mac already in the fleet, open Fleet, then Add a Mac, and enter this code.",
                  width: AppLayout.fleetPairWidth) {
             VStack(spacing: 0) {
                 VStack(spacing: SH.Space.l) {
@@ -109,7 +109,7 @@ struct FleetShareSection: View {
 struct FleetJoinCode: View {
     let join: FleetSettingsModel.Join
     /// What follows how long the code has left.
-    var note = "this Mac's settings are replaced by the fleet's"
+    var note = "This Mac’s settings are replaced by the fleet’s."
 
     /// "482 913".
     static func grouped(_ code: String) -> String {
@@ -133,7 +133,7 @@ struct FleetJoinCode: View {
                 .textSelection(.enabled)
                 .accessibilityLabel("Pairing code \(join.code.map(String.init).joined(separator: " "))")
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text("Expires in \(Self.remaining(until: join.expiresAt, now: context.date)) · \(note)")
+                Text("Expires in \(Self.remaining(until: join.expiresAt, now: context.date)). \(note)")
                     .font(.sh(.caption))
                     .foregroundStyle(sh.textTertiary)
             }
