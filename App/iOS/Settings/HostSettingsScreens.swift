@@ -19,7 +19,7 @@ struct ModelDefaultsSections: View {
         HostSettingsBody(store: store, explanation: nil) { settings, host in
             let agentDefaults = host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability)
             SettingsSection("Defaults for new threads") {
-                SHListCard {
+                SettingsCard {
                     SettingsControlRow("Model", note: "“Use the agent’s default” passes no model, so the agent picks.") {
                         Menu {
                             Button("Use the agent’s default") { store.hostSettings.post(.defaultModel(nil), on: host) }
@@ -46,7 +46,7 @@ struct ModelDefaultsSections: View {
             }
             if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) || host.serves(RemoteProtocol.hostSettingsVisionModelCapability) {
                 SettingsSection("Small jobs") {
-                    SHListCard {
+                    SettingsCard {
                         if host.serves(RemoteProtocol.hostSettingsTextGenerationModelCapability) {
                             SettingsControlRow("Text generation model", note: "The model the host uses to generate short text itself: a thread's title from its first prompt, and commit messages drafted from a diff. Your renames are never overwritten. Automatic prefers a low-cost model the host is signed in to.") {
                                 Menu {
@@ -114,7 +114,7 @@ struct AgentSettingsSections: View {
         HostSettingsBody(store: store, explanation: nil) { settings, host in
             let agentDefaults = host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability)
             SettingsSection("Queue") {
-                SHListCard {
+                SettingsCard {
                     SettingsControlRow("When a turn ends, send the queue", note: "All at once arrives as one turn, in order.") {
                         SettingsPicker("Send the queue", selection: settings.queueDelivery, options: [.oneAtATime, .all],
                                        title: HostSettingsPresentation.title) { store.hostSettings.post(.queueDelivery($0), on: host) }
@@ -123,7 +123,7 @@ struct AgentSettingsSections: View {
             }
             if host.serves(RemoteProtocol.hostSettingsSubThreadsCapability) {
                 SettingsSection("Threads a thread starts") {
-                    SHListCard {
+                    SettingsCard {
                         SettingsSwitchRow("Threads can start threads",
                                           note: "A thread may start another for separate work without being asked. Off, it starts one only when you ask. Three deep at most.",
                                           isOn: settings.threadsStartThreads) { store.hostSettings.post(.threadsStartThreads($0), on: host) }
@@ -137,7 +137,7 @@ struct AgentSettingsSections: View {
             }
             if agentDefaults {
                 SettingsSection("Context") {
-                    SHListCard {
+                    SettingsCard {
                         SettingsControlRow("Compact at", note: "How full an agent lets its context get before it compacts on its own, as a share of the model's window. The default leaves 16k tokens free.") {
                             SettingsPicker("Compact at", selection: settings.compactAtPercent, options: [Int?.none] + HostSettings.compactAtChoices.map { Int?($0) },
                                            title: { $0.map { "\($0)%" } ?? "Agent’s default" }) { store.hostSettings.post(.compactAtPercent($0), on: host) }
@@ -178,7 +178,7 @@ struct WorktreesScreen: View {
             HostSettingsBody(store: store, explanation: "How a host creates worktrees, and what happens when a thread's work is done.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("New worktrees") {
-                SHListCard {
+                SettingsCard {
                     SettingsControlRow("Base branch",
                                        note: "**Remote default** starts clean from origin's default branch. **Current branch** stacks on the checkout's work in progress.") {
                         SettingsPicker("Base branch", selection: settings.worktreeBase, options: HostSettings.WorktreeBase.allCases,
@@ -190,7 +190,7 @@ struct WorktreesScreen: View {
                 }
             }
             SettingsSection("Commits") {
-                SHListCard {
+                SettingsCard {
                     SettingsSwitchRow("Draft commit messages", note: "Commit from review drafts one from the diff.",
                                       isOn: settings.generatePRDescriptions) { post(.generatePRDescriptions($0)) }
                 }
@@ -198,7 +198,7 @@ struct WorktreesScreen: View {
             let closeOnMerge = host.serves(RemoteProtocol.hostSettingsCloseOnMergeCapability)
             if host.serves(RemoteProtocol.hostSettingsV2Capability) || closeOnMerge {
                 SettingsSection("Deleting") {
-                    SHListCard {
+                    SettingsCard {
                         if host.serves(RemoteProtocol.hostSettingsV2Capability) {
                             SettingsControlRow("Deleting a worktree agent",
                                                note: "**Ask** shows the confirmation. A remembered removal still asks when the checkout has unreconciled work.") {
@@ -229,7 +229,7 @@ struct ExtensionSections: View {
         HostSettingsBody(store: store, explanation: nil) { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("Built in") {
-                SHListCard {
+                SettingsCard {
                     // The Context switches live on Agents where the host serves them there.
                     ForEach(settings.bundledExtensions.filter { !host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability) || !AgentSettingsSections.contextSwitches.contains($0.id) }) { bundled in
                         SettingsSwitchRow(bundled.name, note: HostSettingsPresentation.note(forBundled: bundled.id), isOn: bundled.on) {
@@ -242,20 +242,20 @@ struct ExtensionSections: View {
             PiExtensionSections(store: store)
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
                 SettingsSection("How the agent uses them") {
-                    SHListCard {
+                    SettingsCard {
                         SettingsSwitchRow("Also use a repo’s .mcp.json", note: "Off: only the host's own MCP servers, in every repo.",
                                           isOn: settings.mcpProjectConfig) { post(.mcpProjectConfig($0)) }
                     }
                 }
                 SettingsSection("Slash commands") {
-                    SHListCard { SlashCommandsLink(commands: settings.slashCommands, hidden: Set(settings.hiddenSlashCommands)) }
+                    SettingsCard { SlashCommandsLink(commands: settings.slashCommands, hidden: Set(settings.hiddenSlashCommands)) }
                 }
             }
             SettingsSection("Installed on \(host.name)") {
                 if settings.installedExtensions.isEmpty {
                     SettingsFootnote("None yet. Extensions installed on \(host.name) show here.")
                 } else {
-                    SHListCard {
+                    SettingsCard {
                         ForEach(settings.installedExtensions, id: \.self) { source in
                             Text(source)
                                 .font(.sh(.mono))
@@ -286,7 +286,7 @@ private struct SubagentDefaultsSection: View {
 
     var body: some View {
         SettingsSection("Subagents") {
-            SHListCard {
+            SettingsCard {
                 SettingsControlRow("Concurrency", note: "How many subagents run at once.") {
                     SettingsPicker("Concurrency", selection: defaults.concurrency, options: Array(HostSettings.SubagentDefaults.concurrencyRange),
                                    title: { String($0) }) { set(\.concurrency, $0) }
@@ -361,7 +361,7 @@ struct SkillsSlashMenuSection: View {
         HostSettingsBody(store: store, explanation: nil) { settings, host in
             if host.serves(RemoteProtocol.hostSettingsV2Capability) {
                 SettingsSection("Options") {
-                    SHListCard {
+                    SettingsCard {
                         SettingsSwitchRow("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
                                           isOn: settings.skillsInSlashMenu) { store.hostSettings.post(.skillsInSlashMenu($0), on: host) }
                     }
@@ -382,7 +382,7 @@ private struct SlashCommandsSection: View {
             if commands.isEmpty {
                 SettingsFootnote("Commands show here once an agent on the host has listed them.")
             } else {
-                SHListCard {
+                SettingsCard {
                     ForEach(commands, id: \.name) { command in
                         SettingsSwitchRow("/" + command.name, note: command.description, isOn: !hidden.contains(command.name)) {
                             toggle(command.name, $0)
@@ -397,37 +397,66 @@ private struct SlashCommandsSection: View {
 
 // MARK: The page
 
-/// A Settings page of stacked sections: pulling it reads every host again, the bar names it (inline,
-/// as the boards draw it), and beside the iPad's list it starts a step lower. Host pages put their
-/// bodies in it, so one page can hold sections of several host models (Models, Tools).
-struct SettingsPageScaffold<Content: View>: View {
+/// A Settings page of stacked sections (MobileSettingsGeneral, MobileExperiments, MobileHooks): on the phone its
+/// 28pt title over its lead; beside the iPad's list a bar with its title, subtitle and actions. Pulling it reads
+/// every host again. Host pages put their bodies in it, so one page can hold sections of several host models
+/// (Models, Tools).
+struct SettingsPageScaffold<Content: View, Actions: View>: View {
     let title: String
-    let store: SettingsStore
+    let subtitle: String?
+    let lead: String?
+    let store: SettingsStore?
+    @ViewBuilder let actions: () -> Actions
     @ViewBuilder let content: () -> Content
     @Environment(\.settingsColumn) private var inColumn
 
-    init(_ title: String, store: SettingsStore, @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String, subtitle: String? = nil, lead: String? = nil, store: SettingsStore? = nil,
+         @ViewBuilder actions: @escaping () -> Actions, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
+        self.subtitle = subtitle
+        self.lead = lead
         self.store = store
+        self.actions = actions
         self.content = content
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                content()
+        VStack(spacing: 0) {
+            if inColumn { PadColumnBar(title: title, subtitle: subtitle, inset: MobileLayout.settingsPadPageInset, actions: actions) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                    if !inColumn { SettingsHeading(title) }
+                    if let lead { SettingsLead(lead).padding(.top, inColumn ? 0 : -MobileLayout.settingsLeadPull) }
+                    content()
+                }
+                .padding(.horizontal, inColumn ? MobileLayout.settingsPadPageInset : MobileLayout.gutter)
+                .padding(.bottom, MobileLayout.sectionSpacing)
+                .frame(maxWidth: MobileLayout.homeMaxWidth)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
+            .modifier(SettingsRefresh(action: store.map { store in { await store.refresh() } }))
         }
-        .refreshable { await store.refresh() }
         .background(Color.sh.bgWindow)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .task { if !inColumn { await store.watch() } }
+        .toolbar(removing: .title)
+        .task { if !inColumn { await store?.watch() } }
+    }
+}
+
+/// Pull to read again, where a page has something to read.
+private struct SettingsRefresh: ViewModifier {
+    let action: (() async -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action { content.refreshable { await action() } } else { content }
+    }
+}
+
+extension SettingsPageScaffold where Actions == EmptyView {
+    init(_ title: String, subtitle: String? = nil, lead: String? = nil, store: SettingsStore? = nil,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.init(title, subtitle: subtitle, lead: lead, store: store, actions: { EmptyView() }, content: content)
     }
 }
 
@@ -440,17 +469,13 @@ struct HostSettingsBody<Content: View>: View {
 
     var body: some View {
         let host = store.settingsHost
-        VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+        VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
             if let explanation {
-                Text(explanation)
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+                SettingsLead(explanation)
             }
             if let problem = store.hostSettings.problem {
                 SHBanner(.failed, title: problem) {
-                    Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.sh(.secondary))
+                    Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.settingsPill)
                 }
             }
             if let host {
@@ -477,8 +502,8 @@ struct HostSettingsBody<Content: View>: View {
 
 // MARK: Rows
 
-/// A row of a Settings card with a control: its title over an optional note (`code` and
-/// **names** marked as the Mac's Settings mark them), the control trailing.
+/// A row of a Settings card with a control (the boards' `gt-r`): its title over an optional note (`code`
+/// and **names** marked as the Mac's Settings mark them), the control trailing.
 struct SettingsControlRow<Control: View>: View {
     let title: String
     let note: String?
@@ -499,16 +524,16 @@ struct SettingsControlRow<Control: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let note {
                     SHMarkupText(note, size: MobileLayout.settingsNoteSize, codeSize: MobileLayout.settingsNoteCodeSize)
-                        .foregroundStyle(Color.sh.textTertiary)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             control()
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(minHeight: note == nil ? SHListMetrics.rowHeight : SHListMetrics.twoLineRowHeight)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.settingsRowHeight, alignment: .leading)
     }
 }
 
@@ -529,7 +554,7 @@ struct SettingsSwitchRow: View {
     var body: some View {
         SettingsControlRow(title, note: note) {
             Toggle(title, isOn: Binding(get: { isOn }, set: toggle))
-                .toggleStyle(.shSwitch)
+                .toggleStyle(.settingsSwitch)
                 .labelsHidden()
         }
     }
@@ -580,12 +605,12 @@ struct SettingsMenuLabel: View {
     var body: some View {
         HStack(spacing: SH.Space.xs) {
             Text(text)
-                .font(mono ? .sh(.mono) : .sh(.ui))
+                .font(mono ? .shMono(MobileLayout.settingsNoteSize) : .shSans(MobileLayout.settingsNoteSize))
                 .foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.sh(.caption, weight: .semibold))
+            Image(systemName: SHGlyph.popupChevrons.symbolName)
+                .font(.shSans(MobileLayout.settingsChevronSize, .medium))
                 .foregroundStyle(Color.sh.textTertiary)
         }
         .frame(maxWidth: MobileLayout.settingsMenuMaxWidth, alignment: .trailing)
@@ -607,7 +632,7 @@ struct SettingsFootnote: View {
 
     var body: some View {
         Text(text)
-            .shText(.caption)
+            .font(.shSans(MobileLayout.settingsCaptionSize))
             .foregroundStyle(tone == .failed ? Color.sh.failed : Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, SH.Space.xs)

@@ -37,8 +37,8 @@ struct MCPSections: View {
                 if inventory.servers.isEmpty {
                     SettingsSection("MCP servers") { SettingsFootnote("No MCP servers in the fleet yet.") }
                 } else {
-                    SettingsSection("MCP servers") {
-                    SHListCard {
+                    SettingsSection("MCP servers", count: inventory.servers.count) {
+                    SettingsCard {
                         ForEach(inventory.servers) { server in
                             HStack(spacing: SH.Space.s) {
                                 MCPServerLine(server: server)
@@ -58,14 +58,15 @@ struct MCPSections: View {
                     }
                 }
                 if editable {
-                    HStack(spacing: SH.Space.l) {
+                    HStack(spacing: SH.Space.xl) {
                         Button("Add server") { store.mcpEditor = MCPEditor(replacing: nil, json: MCPEditor.template) }
-                            .buttonStyle(.sh(.secondary))
+                            .buttonStyle(.settingsLink)
                             .disabled(editor != nil)
                         Button("Check again") { Task { await config.perform(.mcpRefresh, on: host) } }
-                            .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                            .buttonStyle(.settingsLink(.dim))
                             .disabled(config.busy.contains(host.id))
                     }
+                    .padding(.horizontal, SH.Space.xs)
                     SettingsFootnote("Servers are kept in \(inventory.configPath) on each Mac. Secrets go to its Keychain.")
                 } else {
                     SettingsFootnote(HostInventoryPresentation.mcpGuidance(host: host.name, configPath: inventory.configPath))
@@ -123,9 +124,9 @@ private struct MCPServerEditor: View {
                     let name = secretName.trimmingCharacters(in: .whitespaces)
                     save(json, name.isEmpty || secretValue.isEmpty ? [:] : [name: secretValue])
                 }
-                .buttonStyle(.sh(.primary))
+                .buttonStyle(.settingsPill(.dark))
                 .disabled(busy || json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Cancel", action: cancel).buttonStyle(.sh(.secondary))
+                Button("Cancel", action: cancel).buttonStyle(.settingsPill)
             }
         }
         .padding(SH.Space.l)
@@ -147,7 +148,7 @@ private struct MCPServerControls: View {
         let run: (RemoteHostConfigRequest) -> Void = { request in Task { await config.perform(request, on: host) } }
         HStack(spacing: SH.Space.s) {
             Toggle("\(server.name) on", isOn: Binding(get: { server.enabled }, set: { run(.mcpSetEnabled(name: server.name, on: $0)) }))
-                .toggleStyle(.shSwitch)
+                .toggleStyle(.settingsSwitch)
                 .labelsHidden()
             Menu {
                 Button("Edit…", action: edit)
@@ -182,40 +183,28 @@ private struct MCPServerControls: View {
     }
 }
 
-/// One server: its dot, name and kind, the error or endpoint, the sign-in column and its tools.
+/// One server (MobileMCP): its name, its state and sign-in in the state's color, and the endpoint or error.
 private struct MCPServerLine: View {
     let server: HostMCPServer
 
     var body: some View {
         let sh = Color.sh
-        HStack(alignment: .top, spacing: SH.Space.m) {
-            MCPStatusDot(MCPDotState(rawValue: server.status.rawValue) ?? .idle)
-                .padding(.top, SH.Space.xs)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(spacing: SH.Space.s) {
-                    Text(server.name)
-                        .font(.sh(.ui, weight: .medium))
-                        .foregroundStyle(sh.textPrimary)
-                    Text(HostInventoryPresentation.statusWord(server.status))
-                        .font(.sh(.caption))
-                        .foregroundStyle(tone.color)
-                }
-                Text(HostInventoryPresentation.serverLine(server))
-                    .font(.sh(.mono))
-                    .foregroundStyle(server.note != nil ? sh.failed : sh.textTertiary)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                if let signIn = HostInventoryPresentation.signInWord(server.signIn) {
-                    Text(signIn)
-                        .font(.sh(.caption))
-                        .foregroundStyle(sh.textSecondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            Text(server.name)
+                .font(.sh(.ui))
+                .foregroundStyle(sh.textPrimary)
+            Text("\(Text(HostInventoryPresentation.statusWord(server.status)).foregroundStyle(tone.textColor))\(Text(HostInventoryPresentation.signInWord(server.signIn).map { " · " + $0 } ?? "").foregroundStyle(sh.textSecondary))")
+                .font(.shSans(MobileLayout.settingsCaptionSize))
+            Text(HostInventoryPresentation.serverLine(server))
+                .font(.shMono(MobileLayout.settingsNoteCodeSize))
+                .foregroundStyle(server.note != nil ? sh.failed : sh.textTertiary)
+                .lineLimit(2)
+                .truncationMode(.middle)
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(minHeight: SHListMetrics.twoLineRowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
+        .frame(minHeight: MobileLayout.settingsRowHeight)
         .opacity(server.enabled ? 1 : SHMCPMetrics.offOpacity)
         .accessibilityElement(children: .combine)
     }
@@ -238,10 +227,10 @@ struct SubagentProfilesScreen: View {
                 if profiles.isEmpty {
                     SettingsFootnote("No subagents in the fleet yet.")
                 } else {
-                    SHListCard {
+                    SettingsCard {
                         ForEach(profiles) { profile in
                             Button { navigator.open(.settings(.subagent(profile.file))) } label: {
-                                SHListRow(profile.name, subtitle: HostInventoryPresentation.profileLine(profile), subtitleMono: false,
+                                SettingsRow(profile.name, subtitle: HostInventoryPresentation.profileLine(profile), subtitleMono: false,
                                           subtitleTone: profile.error != nil ? .failed : nil,
                                           leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(profile).rawValue) ?? .idle),
                                           trailing: .meta(HostInventoryPresentation.capability(profile)))
@@ -253,10 +242,10 @@ struct SubagentProfilesScreen: View {
                 if config.canEdit(host) {
                     HStack(spacing: SH.Space.l) {
                         Button("New profile") { navigator.open(.settings(.subagent(SubagentProfileScreen.newFile))) }
-                            .buttonStyle(.sh(.secondary))
+                            .buttonStyle(.settingsPill)
                         if profiles.contains(where: \.isDefault) || profiles.isEmpty {
                             Button("Restore defaults…") { restoring = true }
-                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                                .buttonStyle(.settingsLink)
                         }
                     }
                     .confirmationDialog("Restore the default subagents?", isPresented: $restoring) {
@@ -322,11 +311,11 @@ struct SubagentProfileScreen: View {
                             }
                         }
                     }
-                    .buttonStyle(.sh(.primary))
+                    .buttonStyle(.settingsPill(.dark))
                     .disabled(config.busy.contains(host.id) || (!isNew && text == loaded?.text) || (isNew && name.isEmpty))
                     if !isNew, loaded != nil {
                         Button("Delete…", role: .destructive) { deleting = true }
-                            .buttonStyle(.sh(.secondary))
+                            .buttonStyle(.settingsPill)
                     }
                 }
                 .confirmationDialog("Delete \(file)?", isPresented: $deleting) {
@@ -395,9 +384,9 @@ struct ProviderSections: View {
                                     if await config.perform(request, on: host) != nil { keyFor = nil }
                                 }
                             }
-                            .buttonStyle(.sh(.primary))
+                            .buttonStyle(.settingsPill(.dark))
                             .disabled(key.isEmpty || config.busy.contains(host.id))
-                            Button("Cancel") { key = ""; keyFor = nil }.buttonStyle(.sh(.secondary))
+                            Button("Cancel") { key = ""; keyFor = nil }.buttonStyle(.settingsPill)
                         }
                         SettingsFootnote("The host checks the key with the provider before saving it.")
                     }
@@ -409,10 +398,10 @@ struct ProviderSections: View {
                 ForEach(["Subscription", "API key", "Custom"], id: \.self) { badge in
                     if let rows = page.groups[badge], !rows.isEmpty {
                         SettingsSection(badge == "Subscription" ? "Subscriptions" : badge == "API key" ? "API keys" : "Custom providers") {
-                            SHListCard {
+                            SettingsCard {
                                 ForEach(rows) { provider in
                                     HStack(spacing: SH.Space.s) {
-                                        SHListRow(provider.name, subtitle: provider.problem ?? HostInventoryPresentation.providerLine(provider),
+                                        SettingsRow(provider.name, subtitle: provider.problem ?? HostInventoryPresentation.providerLine(provider),
                                                   subtitleMono: false,
                                                   subtitleTone: provider.problem != nil ? .failed : provider.auth == .expired ? .attention : nil,
                                                   leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(provider.auth).rawValue) ?? .idle),
@@ -449,12 +438,12 @@ struct ProviderSections: View {
                                     }
                                 }
                             }
-                            .buttonStyle(.sh(.secondary))
+                            .buttonStyle(.settingsPill)
                         }
                         if config.servesExtensions(host) {
                             // Providers come from extensions, added in Settings ▸ Tools.
                             Button("Add a provider") { navigator.open(.settings(.tools)) }
-                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                                .buttonStyle(.settingsLink)
                         }
                     }
                 }
@@ -486,7 +475,7 @@ private struct ProviderAccounts: View {
                     HStack(spacing: SH.Space.s) {
                         if !account.active {
                             Button("Use") { act(.use(id: account.id)) }
-                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                                .buttonStyle(.settingsLink)
                                 .accessibilityLabel("Use \(account.name) for \(provider.name)")
                         }
                         Menu {
@@ -546,11 +535,11 @@ private struct ProviderAction: View {
         } else if subscription {
             Button(provider.auth == .expired ? "Sign in again" : "Sign in") { run(.providerSignIn(provider: provider.id)) }
                 .disabled(provider.signIn.map { $0.oauth == nil } ?? false)
-                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                .buttonStyle(.settingsLink)
         } else {
             Button("Set key") { beginKey(adding: false) }
                 .disabled(provider.signIn.map { $0.apiKey == nil } ?? false)
-                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                .buttonStyle(.settingsLink)
         }
     }
 
@@ -592,7 +581,7 @@ private struct HostSignInPanel: View {
                     }
                     if let address = progress.authorizationURL.flatMap(URL.init(string:)) {
                         Button(progress.deviceCode == nil ? "Open sign-in page" : "Open the page") { openURL(address) }
-                            .buttonStyle(.sh(.primary))
+                            .buttonStyle(.settingsPill(.dark))
                     }
                     if let prompt = progress.prompt {
                         SettingsFootnote(prompt.message)
@@ -602,7 +591,7 @@ private struct HostSignInPanel: View {
                                     Button(option.label) { send(option.id, progress: progress) }
                                 }
                             }
-                            .buttonStyle(.sh(.secondary))
+                            .buttonStyle(.settingsPill)
                         } else {
                             if prompt.kind == .secret {
                                 SecureField(prompt.placeholder ?? "Answer", text: $code)
@@ -616,7 +605,7 @@ private struct HostSignInPanel: View {
                                     .textInputAutocapitalization(.never)
                                     .accessibilityLabel(prompt.message)
                             }
-                            Button("Continue") { send(code, progress: progress) }.buttonStyle(.sh(.secondary))
+                            Button("Continue") { send(code, progress: progress) }.buttonStyle(.settingsPill)
                         }
                     } else if progress.wantsCode {
                         SettingsFootnote(codePrompt)
@@ -625,17 +614,17 @@ private struct HostSignInPanel: View {
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                         Button("Send") { send(code, progress: progress) }
-                        .buttonStyle(.sh(.secondary))
+                        .buttonStyle(.settingsPill)
                         .disabled(code.isEmpty)
                     }
                     Button("Cancel") { Task { await config.cancelSignIn(on: host) } }
-                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                        .buttonStyle(.settingsLink)
                 case .done:
                     SettingsFootnote("Signed in on \(host.name).")
-                    Button("Done") { config.clearSignIn(on: host) }.buttonStyle(.sh(.secondary))
+                    Button("Done") { config.clearSignIn(on: host) }.buttonStyle(.settingsPill)
                 case .failed:
                     SettingsFootnote(progress.message ?? "The sign-in didn't finish.", tone: .failed)
-                    Button("OK") { config.clearSignIn(on: host) }.buttonStyle(.sh(.secondary))
+                    Button("OK") { config.clearSignIn(on: host) }.buttonStyle(.settingsPill)
                 }
             }
             .padding(SH.Space.l)
@@ -683,18 +672,14 @@ struct HostConfigBody<Content: View>: View {
     var body: some View {
         let host = store.settingsHost
         let config = store.hostConfig
-        VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+        VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
             if let explanation {
-                Text(explanation)
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+                SettingsLead(explanation)
             }
             if let host {
                 if let problem = config.problems[host.id] {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { config.dismissProblem(on: host) }.buttonStyle(.sh(.secondary))
+                        Button("OK") { config.dismissProblem(on: host) }.buttonStyle(.settingsPill)
                     }
                 }
                 if !host.isConnected {

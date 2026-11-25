@@ -26,8 +26,8 @@ struct FleetCheckList: View {
                     .font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).padding(.horizontal, SH.Space.xs)
             }
             ForEach(check.groups) { group in
-                FleetSectionLabel(title: group.name, capitals: capitals)
-                SHListCard {
+                SettingsCaption(group.name)
+                SettingsCard {
                     ForEach(group.rows) { row in
                         FleetCheckRowView(row: row, columns: check.columns, offers: row.id == "build" && updates != nil ? check.updateOffers : [], updates: updates).equatable()
                     }
@@ -103,7 +103,7 @@ private struct FleetUpdateRow: View {
                     Text(running.note).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textSecondary)
                     if running.cancellable {
                         Button("Cancel") { updates.cancel(offer.mac) }
-                            .buttonStyle(.sh(.secondary, size: .l))
+                            .buttonStyle(.settingsPill)
                             .accessibilityLabel("Cancel updating \(offer.macName)")
                     }
                 }
@@ -115,11 +115,11 @@ private struct FleetUpdateRow: View {
                 if offer.canStart {
                     Text(offer.headline).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
                     Button(offer.buttonTitle) { updates.start(offer.mac, .idle) }
-                        .buttonStyle(.sh(.primary, size: .l))
+                        .buttonStyle(.settingsPrimary)
                 }
                 Text(offer.note).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary)
                 if offer.canStart, let now = offer.nowTitle {
-                    Button(now) { updates.start(offer.mac, .now) }.buttonStyle(.sh(.ghost, size: .l))
+                    Button(now) { updates.start(offer.mac, .now) }.buttonStyle(.settingsLink(.dim))
                 }
                 if let problem = offer.problem {
                     Text(problem).font(.sh(.caption, weight: .regular)).foregroundStyle(offer.failed ? sh.failed : sh.textSecondary)

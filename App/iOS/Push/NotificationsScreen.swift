@@ -12,8 +12,7 @@ import ShepherdRemote
 struct NotificationsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(PushManager.self) private var push
-    @Environment(\.settingsColumn) private var inColumn
-    @Environment(\.scenePhase) private var scenePhase
+        @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @Environment(MobileNavigator.self) private var navigator
     @State private var liveActivities = ActivityAuthorizationInfo().areActivitiesEnabled
@@ -23,17 +22,16 @@ struct NotificationsScreen: View {
     var body: some View {
         let preferences = push.preferences
         let muted = Self.mutedThreads(hosts.hosts)
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+        SettingsPageScaffold("General") {
                 SettingsSection("Send me") {
-                    SHListCard {
+                    SettingsCard {
                         topic(.questions, "Questions and approvals", note: "Subagent and automation questions, plans, reviews")
                         topic(.failures, "Failures", note: "Failed turns and threads that stopped")
                         topic(.finished, "Finished work", note: "Quietly, and in your Scheduled Summary")
                     }
                 }
                 SettingsSection("Which device") {
-                    SHListCard {
+                    SettingsCard {
                         SettingsSwitchRow("Only when I’m away from my Mac",
                                           note: "Your Mac gets it first. This device only after 2 minutes idle.",
                                           isOn: preferences.awayOnly) { on in
@@ -44,19 +42,14 @@ struct NotificationsScreen: View {
                         Button {
                             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                         } label: {
-                            SettingsControlRow("Live Activities") {
-                                Text(liveActivities ? "On" : "Off").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
-                                Image(systemName: "chevron.right").font(.sh(.caption, weight: .semibold))
-                                    .foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-                            }
-                            .contentShape(Rectangle())
+                            SettingsRow("Live Activities", trailing: .value(liveActivities ? "On" : "Off"))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.shRow(radius: 0))
                     }
                 }
                 if !muted.isEmpty {
                     SettingsSection("Muted threads") {
-                        SHListCard {
+                        SettingsCard {
                             ForEach(muted) { row in
                                 SettingsControlRow(row.title, note: row.host) {
                                     Button("Unmute") {
@@ -65,7 +58,7 @@ struct NotificationsScreen: View {
                                             try await AgentActions.mutePushes(row.id, false, hosts: hosts)
                                         }
                                     }
-                                    .buttonStyle(.sh(.secondary))
+                                    .buttonStyle(.settingsLink)
                                 }
                             }
                         }
@@ -75,7 +68,7 @@ struct NotificationsScreen: View {
                     if hosts.hosts.isEmpty {
                         SettingsFootnote("Add a host in Settings ▸ Fleet to enable push notifications.")
                     } else {
-                        SHListCard {
+                        SettingsCard {
                             ForEach(hosts.hosts) { host in
                                 PushHostRow(host: host)
                             }
@@ -83,22 +76,13 @@ struct NotificationsScreen: View {
                     }
                 }
                 SettingsFootnote("Lock-screen previews follow iOS settings.")
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
-        .background(Color.sh.bgWindow)
         .task(id: scenePhase) {
             if scenePhase == .active {
                 liveActivities = ActivityAuthorizationInfo().areActivitiesEnabled
                 await push.refreshPermission()
             }
         }
-        .navigationTitle("General")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func topic(_ topic: Topic, _ title: String, note: String) -> some View {
@@ -142,15 +126,15 @@ private struct PushHostRow: View {
             HStack(spacing: SH.Space.l) {
                 VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     Text(host.name)
-                        .font(.sh(.ui, weight: .medium))
-                        .foregroundStyle(Color.sh.textPrimary)
+                        .font(.sh(.ui))
+                        .foregroundStyle(host.phase.isConnected ? Color.sh.textPrimary : Color.sh.textTertiary)
                     if !supported && host.phase.isConnected {
                         Text("Update Shepherd on this Mac")
-                            .font(.sh(.caption))
-                            .foregroundStyle(Color.sh.textTertiary)
+                            .font(.shSans(MobileLayout.settingsCaptionSize))
+                            .foregroundStyle(Color.sh.textSecondary)
                     } else if !host.phase.isConnected {
                         Text("Offline")
-                            .font(.sh(.caption))
+                            .font(.shSans(MobileLayout.settingsCaptionSize))
                             .foregroundStyle(Color.sh.textTertiary)
                     }
                 }
@@ -161,7 +145,7 @@ private struct PushHostRow: View {
                     Button("Retry") {
                         Task { await push.retryRevoke(host: host) }
                     }
-                    .buttonStyle(.sh(.secondary))
+                    .buttonStyle(.settingsLink)
                 } else {
                     Toggle(host.name, isOn: Binding(
                         get: { state.enabled },
@@ -172,35 +156,35 @@ private struct PushHostRow: View {
                             }
                         }
                     ))
-                    .toggleStyle(.shSwitch)
+                    .toggleStyle(.settingsSwitch)
                     .labelsHidden()
                     .disabled(!supported && !state.enabled)
                 }
             }
             if state.enabled, !state.registered, !state.revokeFailed {
                 Text(host.phase.isConnected ? "Waiting for Mac to confirm registration" : "Waiting for Mac to connect")
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    .font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(Color.sh.textSecondary)
                 if host.phase.isConnected, !state.registering {
                     Button("Retry registration") { Task { await push.renew(host: host, reconnect: true) } }
-                        .buttonStyle(.sh(.secondary))
+                        .buttonStyle(.settingsLink)
                 }
             }
             if state.permissionDenied {
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
-                .buttonStyle(.sh(.secondary))
+                .buttonStyle(.settingsLink)
             }
             if let error = state.error {
                 Text(error)
-                    .font(.sh(.caption))
+                    .font(.shSans(MobileLayout.settingsCaptionSize))
                     .foregroundStyle(Color.sh.failed)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(minHeight: SHListMetrics.twoLineRowHeight)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
+        .frame(minHeight: MobileLayout.settingsRowHeight)
         .accessibilityElement(children: .combine)
     }
 }

@@ -55,40 +55,31 @@ enum SettingsSearch {
     }
 }
 
-/// The search field over the Settings list, on iPhone and beside the iPad's list.
-struct SettingsSearchField: View {
-    @Binding var query: String
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        SHTouchSearchField("Search settings", text: $query, focus: $focused)
-            .autocorrectionDisabled()
-    }
-}
-
-/// The matching pages with their matching rows, each opening its page; or that nothing matched.
+/// The matching pages with their matching rows, each opening its page (beside the iPad's list, filling the
+/// open one); or that nothing matched.
 struct SettingsSearchResults: View {
     let hits: [(page: SettingsPage, rows: [String])]
-    let open: (SettingsPage) -> Void
+    let pad: Bool
+    let selection: SettingsSelection
+    let open: (SettingsPage, String?) -> Void
 
     var body: some View {
         if hits.isEmpty {
             SettingsFootnote("No settings match.")
-                .padding(.horizontal, MobileLayout.gutter)
-                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             ForEach(hits, id: \.page) { page, rows in
                 SettingsSection(page.title) {
-                    SHListCard {
+                    SettingsCard {
                         if rows.isEmpty {
-                            Button { open(page) } label: {
-                                SettingsNavRow(page.title)
+                            Button { open(page, nil) } label: {
+                                SettingsRow(page.title, chevron: !pad, selected: pad && selection.isSelected(page))
                             }
                             .buttonStyle(.shRow(radius: 0))
                         } else {
                             ForEach(rows, id: \.self) { row in
-                                Button { open(page) } label: {
-                                    SettingsNavRow(row, note: rows.count > 1 ? page.title : nil)
+                                Button { open(page, row) } label: {
+                                    SettingsRow(row, subtitle: rows.count > 1 ? page.title : nil, chevron: !pad,
+                                                selected: pad && selection.isSelected(page, row: row))
                                 }
                                 .buttonStyle(.shRow(radius: 0))
                             }

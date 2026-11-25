@@ -27,7 +27,8 @@ struct InstructionsScreen: View {
         }
         .background(Color.sh.bgWindow)
         .navigationTitle("Instructions")
-        .navigationBarTitleDisplayMode(sizeClass == .regular || inColumn ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .task { if !inColumn { await store.watch() } }
     }
 }
@@ -43,28 +44,37 @@ private struct InstructionsPhonePage: View {
         let model = store.instructions
         let hosts = store.hosts
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text(InstructionsCopy.explanation)
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+            VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                SettingsHeading("Instructions")
+                SettingsLead(InstructionsCopy.explanation).padding(.top, -MobileLayout.settingsLeadPull)
                 if let problem = model.historyProblem(in: hosts) {
                     SHBanner(.failed, title: problem)
                 } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
                     }
                 }
                 if model.edited(in: hosts) != nil {
-                    SettingsSection("Files") {
-                        SHListCard {
+                    SettingsSection("Read in this order · later wins") {
+                        SettingsCard(inset: MobileLayout.settingsRowInset + MobileLayout.settingsLeadingWidth + SH.Space.l) {
                             ForEach(InstructionFile.allCases, id: \.self) { file in
                                 Button { navigator.open(.settings(.instructionsFile(file))) } label: {
                                     InstructionsFileRow(file: file, note: InstructionsPresentation.fileNote(file, text: model.text(file, in: hosts), sentence: true),
                                                         edited: model.isEdited(file))
                                 }
                                 .buttonStyle(.shRow(radius: 0))
+                            }
+                        }
+                    }
+                    let saves = InstructionFile.allCases.flatMap { file in
+                        model.history(file, in: hosts).dropFirst().prefix(MobileLayout.instructionsHistoryPerFile).map { (file, $0) }
+                    }
+                    if !saves.isEmpty {
+                        SettingsSection("History") {
+                            SettingsCard {
+                                ForEach(saves, id: \.1.id) { file, entry in
+                                    InstructionsSaveRow(file: file, entry: entry) { Task { await model.restore(entry, in: hosts) } }
+                                }
                             }
                         }
                     }
@@ -81,8 +91,30 @@ private struct InstructionsPhonePage: View {
     }
 }
 
-/// A file's row: a page glyph, the file (mono 15/600) over what it is and its size, "edited"
-/// while a draft waits, and a chevron.
+/// One earlier save (MobileInstructions' History): the file over when it was saved, and Restore.
+private struct InstructionsSaveRow: View {
+    let file: InstructionFile
+    let entry: InstructionHistoryEntry
+    let restore: () -> Void
+
+    var body: some View {
+        HStack(spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(file.fileName).font(.shMono(SHTextStyle.ui.size)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text("Saved " + InstructionsPresentation.historyDate(entry.savedAt))
+                    .font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Restore", action: restore).buttonStyle(.settingsLink)
+        }
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, SH.Space.xs)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.settingsRowHeight, alignment: .leading)
+    }
+}
+
+/// A file's row: a page glyph, the file (mono 15) over what it is and its size, "edited" while a draft
+/// waits, and a chevron.
 private struct InstructionsFileRow: View {
     let file: InstructionFile
     let note: String
@@ -92,31 +124,28 @@ private struct InstructionsFileRow: View {
         let sh = Color.sh
         HStack(spacing: SH.Space.l) {
             Image(systemName: "doc.text")
-                .font(.sh(.ui, weight: .medium))
+                .font(.shSans(MobileLayout.settingsGlyphSize, .regular))
                 .foregroundStyle(sh.textSecondary)
-                .frame(width: SHListMetrics.leadingWidth)
+                .frame(width: MobileLayout.settingsLeadingWidth)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(file.fileName)
-                    .font(.shMono(SHTextStyle.ui.size, .semibold))
+                    .font(.shMono(SHTextStyle.ui.size, .medium))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Text(note)
-                    .shText(.caption)
-                    .foregroundStyle(sh.textTertiary)
+                    .font(.shSans(MobileLayout.settingsCaptionSize))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if edited {
-                Text("edited").font(.sh(.caption)).foregroundStyle(sh.lanternText)
+                Text("edited").font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(sh.lanternText)
             }
-            Image(systemName: "chevron.right")
-                .font(.sh(.caption, weight: .semibold))
-                .foregroundStyle(sh.textTertiary)
-                .accessibilityHidden(true)
+            SettingsChevron()
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
         .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsFileRowHeight, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -175,7 +204,7 @@ struct InstructionsEditorScreen: View {
                     SHBanner(.failed, title: problem)
                 } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
                     }
                 }
             }
@@ -194,8 +223,8 @@ struct InstructionsEditorScreen: View {
                         .font(.shMono(SHTextStyle.ui.size, .semibold))
                         .foregroundStyle(Color.sh.textPrimary)
                     Text(InstructionsCopy.scope + (isEdited ? " · edited" : ""))
-                        .font(.sh(.micro, weight: .regular))
-                        .foregroundStyle(Color.sh.textTertiary)
+                        .font(.shSans(MobileLayout.settingsCaptionSize))
+                        .foregroundStyle(Color.sh.textSecondary)
                 }
                 .accessibilityElement(children: .combine)
             }
@@ -204,6 +233,8 @@ struct InstructionsEditorScreen: View {
                     SHBusyLabel("Saving…")
                 } else {
                     Button("Save") { Task { await model.save(file, in: settingsHosts) } }
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.sh.primary)
                         .disabled(!isEdited)
                 }
             }
@@ -227,19 +258,16 @@ private struct InstructionsPadPage: View {
         let model = store.instructions
         let hosts = store.hosts
         let snapshot = model.edited(in: hosts).flatMap { model.files(of: $0).snapshot }
-        VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
-            HStack(alignment: .center, spacing: SH.Space.l) {
-                Text(InstructionsCopy.padNote)
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            PadColumnBar(title: "Instructions", subtitle: InstructionsCopy.padNote, inset: MobileLayout.settingsPadPageInset) {
                 actions(model, hosts: hosts, historyAvailable: snapshot != nil && snapshot?.historyProblem == nil)
             }
+        VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
             if let problem = snapshot?.historyProblem {
                 SHBanner(.failed, title: problem)
             } else if let problem = model.problem {
                 SHBanner(.failed, title: problem) {
-                    Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                    Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
                 }
             }
             if let snapshot {
@@ -257,27 +285,24 @@ private struct InstructionsPadPage: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, MobileLayout.instructionsPadSides)
-        .padding(.vertical, MobileLayout.instructionsPadSpacing)
+        .padding(.horizontal, MobileLayout.settingsPadPageInset)
+        .padding(.bottom, MobileLayout.instructionsPadSpacing)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
         .shAnimation(.content, value: focus.editing)
     }
 
-    /// History and Save.
+    /// History and Save, as the bar's glass.
     private func actions(_ model: ClientInstructions, hosts: [SettingsHost], historyAvailable: Bool) -> some View {
         HStack(spacing: SH.Space.m) {
-            Button("History") { showsHistory = true }
-                .buttonStyle(.sh(.secondary, size: .l))
-                .disabled(!historyAvailable)
+            PadBarButton(title: "History", disabled: !historyAvailable) { showsHistory = true }
                 .popover(isPresented: $showsHistory, arrowEdge: .top) {
                     InstructionsHistoryList(entries: model.history(file, in: hosts)) { entry in
                         showsHistory = false
                         Task { await model.restore(entry, in: hosts) }
                     }
                 }
-            Button("Save") { Task { await model.save(file, in: hosts) } }
-                .buttonStyle(.sh(.primary, size: .l))
-                .disabled(!model.isEdited(file) || model.busy)
+            PadBarPrimary(title: "Save to all hosts", disabled: !model.isEdited(file) || model.busy) { Task { await model.save(file, in: hosts) } }
         }
         .fixedSize()
     }
@@ -430,7 +455,7 @@ private struct InstructionsHistoryList: View {
             if current {
                 Text("current").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             } else {
-                Button("Restore") { restore(entry) }.buttonStyle(.sh(.secondary, size: .s))
+                Button("Restore") { restore(entry) }.buttonStyle(.settingsPill)
             }
         }
         .padding(.vertical, SH.Space.m)
@@ -439,9 +464,9 @@ private struct InstructionsHistoryList: View {
 
 /// The page's words.
 private enum InstructionsCopy {
-    static let explanation = "The agent reads these at the start of every session Shepherd starts, on any Mac in the fleet."
+    static let explanation = "Shared across the fleet. Every Mac gets each save."
     /// Under the editor's file name on the phone.
-    static let scope = "the fleet"
+    static let scope = "Every host"
     /// Beside History and Save on the iPad.
     static let padNote = "Shared across the fleet. Every Mac gets each save."
 

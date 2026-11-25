@@ -18,13 +18,7 @@ struct AppsScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let apps = store.apps
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("Things you run while you work, such as a dev server or Storybook, and what each is doing on its Mac. Add and edit them in Settings ▸ Apps on the Mac.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+        SettingsPageScaffold(SettingsPage.apps.title, lead: "Things you run while you work, such as a dev server or Storybook, and what each is doing on its Mac. Add and edit them in Settings ▸ Apps on the Mac.", store: nil) {
                 if store.hosts.isEmpty {
                     SettingsFootnote("Add a Mac in Settings ▸ Fleet to see its apps.")
                 }
@@ -33,17 +27,8 @@ struct AppsScreen: View {
                         navigator.open(.settings(.app(host: host.id, id: row.id)))
                     }
                 }
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
         .refreshable { await store.loadApps() }
-        .background(Color.sh.bgWindow)
-        .navigationTitle(SettingsPage.apps.title)
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .task(id: store.appsInput) { await store.watchApps() }
     }
 }
@@ -69,14 +54,14 @@ private struct AppsHostSections: View {
         case .loaded(let page):
             if let problem = apps.problems[host.id] {
                 SHBanner(.failed, title: problem) {
-                    Button("OK") { apps.dismissProblem(host) }.buttonStyle(.sh(.secondary))
+                    Button("OK") { apps.dismissProblem(host) }.buttonStyle(.settingsPill)
                 }
             }
             ForEach(page.groups) { group in
                 VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                    SHListHeader(group.title) { if named && group.id != "mac" { SHHostBadge(host.name) } }
+                    SettingsCaption(group.title) { if named && group.id != "mac" { SHHostBadge(host.name) } }
                     if group.rows.isEmpty {
-                        SHListCard {
+                        SettingsCard {
                             Text("No apps yet")
                                 .font(.sh(.ui))
                                 .foregroundStyle(Color.sh.textTertiary)
@@ -84,7 +69,7 @@ private struct AppsHostSections: View {
                                 .frame(maxWidth: .infinity, minHeight: SHListMetrics.rowHeight, alignment: .leading)
                         }
                     } else {
-                        SHLazyListCard(group.rows) { row in
+                        SettingsLazyCard(group.rows) { row in
                             AppRow(row: row, busy: apps.isBusy(row, on: host)) { open(row) } act: {
                                 Task { await apps.perform(row, on: host) }
                             }
@@ -140,7 +125,7 @@ private struct AppActionButton: View {
 
     var body: some View {
         Button(row.actionTitle, action: act)
-            .buttonStyle(.sh(.secondary, size: .m))
+            .buttonStyle(.settingsPill)
             .disabled(busy || row.stopping || row.actionBlocked != nil)
             .accessibilityLabel("\(row.actionTitle) \(row.name)")
             .accessibilityHint(row.actionBlocked ?? "")
@@ -296,7 +281,7 @@ struct AppScreen: View {
 
     /// Where it opens, what it runs and where, and who can start it: read-only.
     private func facts(_ row: AppRowValue, host: SettingsHost) -> some View {
-        SHListCard {
+        SettingsCard {
             AppFact("Opens", row.place)
             AppFact("Command", row.command.isEmpty ? "None" : row.command, mono: !row.command.isEmpty)
             if let command = row.restartCommand { AppFact("Restart runs", command, mono: true) }
@@ -308,7 +293,7 @@ struct AppScreen: View {
 
     @ViewBuilder private func outputSection(_ row: AppRowValue) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            SHListHeader("Output")
+            SettingsCaption("Output")
             if row.run == nil {
                 SettingsFootnote("It hasn't run since \(SettingsStore.of(hosts).hosts.first { $0.id == hostID }?.name ?? "the host") started.")
             } else {

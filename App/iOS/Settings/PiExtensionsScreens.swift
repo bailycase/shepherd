@@ -23,17 +23,17 @@ struct PiExtensionSections: View {
             SettingsSection("Extensions") {
                 if let problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { self.problem = nil }.buttonStyle(.sh(.secondary))
+                        Button("OK") { self.problem = nil }.buttonStyle(.settingsPill)
                     }
                 }
                 if let items = config.extensions[host.id] {
                     if items.isEmpty {
                         SettingsFootnote("None yet. Add a Git repository that registers a provider or other tools.")
                     } else {
-                        SHListCard {
+                        SettingsCard {
                             ForEach(items) { item in
                                 HStack(spacing: SH.Space.s) {
-                                    SHListRow(item.name, subtitle: HostInventoryPresentation.extensionLine(item), subtitleMono: false,
+                                    SettingsRow(item.name, subtitle: HostInventoryPresentation.extensionLine(item), subtitleMono: false,
                                               subtitleTone: item.failure != nil ? .failed : nil,
                                               leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(item).rawValue) ?? .idle), chevron: false)
                                     HStack(spacing: SH.Space.s) {
@@ -45,7 +45,7 @@ struct PiExtensionSections: View {
                                         Toggle("\(item.name) on", isOn: Binding(get: { item.on }, set: { on in
                                             run(.extensionSetEnabled(destination: item.id, on: on), on: host)
                                         }))
-                                        .toggleStyle(.shSwitch)
+                                        .toggleStyle(.settingsSwitch)
                                         .labelsHidden()
                                         Menu {
                                             Button("Remove…", role: .destructive) { store.removingExtension = item }
@@ -66,7 +66,7 @@ struct PiExtensionSections: View {
                 }
                 HStack(spacing: SH.Space.l) {
                     Button("Add from Git…") { gitURL = ""; store.addingExtension = true }
-                        .buttonStyle(.sh(.secondary))
+                        .buttonStyle(.settingsPill)
                         .disabled(busy)
                     if busy { SHBusyLabel("Adding…") }
                 }

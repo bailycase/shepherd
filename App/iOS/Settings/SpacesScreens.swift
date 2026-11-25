@@ -24,13 +24,7 @@ struct SpacesScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let host = store.settingsHost
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("The folders a host keeps as spaces, and what each one's .shepherd or .pi folder holds. Hidden spaces are listed too.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+        SettingsPageScaffold(SettingsPage.spaces.title, lead: "The folders a host keeps as spaces, and what each one's .shepherd or .pi folder holds. Hidden spaces are listed too.", store: nil) {
                 if let host {
                     if !host.isConnected {
                         SettingsFootnote("\(host.name) is offline. Its spaces show here once it's back.")
@@ -38,9 +32,9 @@ struct SpacesScreen: View {
                         SettingsFootnote("\(host.name)'s Shepherd is too old to share its spaces. Update it to see them here.")
                     } else {
                         if host.serves(RemoteProtocol.spaceLifecycleCapability) {
-                            SHListCard {
+                            SettingsCard {
                                 Button { navigator.open(.settings(.organizeSpaces)) } label: {
-                                    SHListRow("Organize spaces", subtitle: "Rename, hide, reorder or remove", subtitleMono: false,
+                                    SettingsRow("Organize spaces", subtitle: "Rename, hide, reorder or remove", subtitleMono: false,
                                               leading: .symbol("arrow.up.arrow.down"))
                                 }
                                 .buttonStyle(.shRow(radius: 0))
@@ -53,10 +47,10 @@ struct SpacesScreen: View {
                             if spaces.isEmpty {
                                 SettingsFootnote("No spaces on \(host.name) yet.")
                             } else {
-                                SHListCard {
+                                SettingsCard {
                                     ForEach(spaces) { space in
                                         Button { navigator.open(.settings(.spaceConfiguration(host: host.id, directory: space.directory, name: space.name))) } label: {
-                                            SHListRow(space.name, subtitle: HostInventoryPresentation.spaceLine(space), subtitleMono: false,
+                                            SettingsRow(space.name, subtitle: HostInventoryPresentation.spaceLine(space), subtitleMono: false,
                                                       subtitleTone: space.error != nil ? .failed : nil,
                                                       leading: .state(AgentState(rawValue: HostInventoryPresentation.tone(space).rawValue) ?? .idle),
                                                       trailing: .value(space.displayPath))
@@ -73,18 +67,10 @@ struct SpacesScreen: View {
                 } else {
                     SettingsFootnote("Add a host in Settings ▸ Fleet to see its spaces.")
                 }
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
         .refreshable { generation += 1 }
         .background(Color.sh.bgWindow)
         .shAnimation(.content, value: phase)
-        .navigationTitle(SettingsPage.spaces.title)
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .task(id: "\(host?.id.uuidString ?? "")/\(host?.isConnected == true)/\(generation)") { await load(host) }
     }
 
@@ -214,7 +200,7 @@ private struct SpaceOverview: View {
                     SettingsSection("Pi settings") { SpaceFileLinks(files: settings, model: model) }
                 }
                 SettingsSection("Skills and extensions") {
-                    SHListCard {
+                    SettingsCard {
                         sectionLink(.skills, count: files[.skills]?.count ?? 0)
                         sectionLink(.extensions, count: files[.extensions]?.count ?? 0)
                         sectionLink(.mcp, count: model.context?.mcpServers)
@@ -222,7 +208,7 @@ private struct SpaceOverview: View {
                 }
                 if model.canManageResources {
                     SettingsSection("More resources") {
-                        SHListCard { sectionLink(.prompts); sectionLink(.agents) }
+                        SettingsCard { sectionLink(.prompts); sectionLink(.agents) }
                     }
                 }
             } else if model.busy {
@@ -269,9 +255,6 @@ private struct SpacePage<Content: View>: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color.sh.bgWindow)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -281,7 +264,7 @@ private struct SpaceFileLinks: View {
     @Environment(\.spaceSettingsConnection) private var connection
 
     var body: some View {
-        SHLazyListCard(files) { file in
+        SettingsLazyCard(files) { file in
             NavigationLink {
                 SpaceFileScreen(file: file.path, model: model)
                     .environment(\.spaceSettingsConnection, connection)
@@ -306,18 +289,18 @@ private struct SpaceDraftCard: View {
 
     var body: some View {
         if let draft = model.drafts[file] {
-            SHListCard {
+            SettingsCard {
                 HStack(spacing: SH.Space.m) {
                     Text((file as NSString).lastPathComponent)
                         .shText(.code)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if draft.conflict {
                         Button("Reload…") { reload = true }
-                            .buttonStyle(.sh(.secondary, size: .l))
+                            .buttonStyle(.settingsPill)
                             .disabled(host?.isConnected != true || !model.canEdit || model.busy)
                     } else {
                         Button("Save") { Task { await model.save(file) } }
-                            .buttonStyle(.sh(.primary, size: .l))
+                            .buttonStyle(.settingsPrimary)
                             .disabled(host?.isConnected != true || !model.canEdit || !draft.isEdited || model.busy)
                     }
                 }
@@ -351,7 +334,7 @@ private struct SpaceFileScreen: View {
             SpaceDraftCard(file: file, model: model)
             if let resource, model.canManageResources, let draft = model.drafts[file], draft.saved.text != nil {
                 Button("Delete file…", role: .destructive) { deleting = true }
-                    .buttonStyle(.sh(.secondary, size: .l))
+                    .buttonStyle(.settingsPill)
                     .disabled(host?.isConnected != true || model.busy || draft.isEdited || draft.conflict)
                     .confirmationDialog("Delete \(resource.name)?", isPresented: $deleting, titleVisibility: .visible) {
                         Button("Delete file", role: .destructive) {
@@ -422,9 +405,9 @@ private struct SpaceResources: View {
     var body: some View {
         if model.canManageResources {
             if let resources = model.resources[kind], !resources.isEmpty {
-                SHLazyListCard(resources) { resource in
+                SettingsLazyCard(resources) { resource in
                     if resource.global {
-                        SHListRow(resource.name, subtitle: resource.description, subtitleMono: false, trailing: .value("Global"))
+                        SettingsRow(resource.name, subtitle: resource.description, subtitleMono: false, trailing: .value("Global"))
                     } else {
                         NavigationLink {
                             SpaceFileScreen(file: resource.path, model: model, resource: resource)
@@ -441,7 +424,7 @@ private struct SpaceResources: View {
             }
             if let inherited = model.inheritedResources[kind], !inherited.isEmpty {
                 SettingsSection(inheritanceTitle(model)) {
-                    SHLazyListCard(inherited) { resource in
+                    SettingsLazyCard(inherited) { resource in
                         SpaceInheritedRow(model: model, kind: inheritanceKind, name: resource.name, note: resource.description)
                     }
                 }
@@ -476,11 +459,11 @@ private struct SpaceInheritedRow: View {
     var body: some View {
         let on = model.inherits(kind, name)
         HStack(spacing: SH.Space.m) {
-            SHListRow(name, subtitle: note, subtitleMono: false, chevron: false)
+            SettingsRow(name, subtitle: note, subtitleMono: false, chevron: false)
             if model.canSetInheritance(kind) {
                 Toggle(name, isOn: Binding(get: { on }, set: { value in Task { await model.setInherited(kind, name, on: value) } }))
                     .labelsHidden()
-                    .toggleStyle(.shSwitch)
+                    .toggleStyle(.settingsSwitch)
                     .disabled(host?.isConnected != true || model.busy)
                     .padding(.trailing, SH.Space.l)
             } else {
@@ -505,28 +488,28 @@ private struct SpaceMCP: View {
     var body: some View {
         if !model.inheritedServers.isEmpty {
             SettingsSection(inheritanceTitle(model)) {
-                SHLazyListCard(model.inheritedServers) { server in
+                SettingsLazyCard(model.inheritedServers) { server in
                     SpaceInheritedRow(model: model, kind: .mcp, name: server.name, note: server.endpoint)
                 }
             }
         }
         SettingsSection("Defined here") {
-            SHLazyListCard(model.servers) { server in
+            SettingsLazyCard(model.servers) { server in
                 let signedIn = model.signedIn[server.file]?.contains(server.name) == true
                 let signingIn = active == server.id
                 let status = host?.isConnected == true ? "Signing in…" : "Waiting for host…"
                 HStack(spacing: SH.Space.m) {
-                    SHListRow(server.name, subtitle: signingIn ? status : server.endpoint, subtitleMono: !signingIn, chevron: false)
+                    SettingsRow(server.name, subtitle: signingIn ? status : server.endpoint, subtitleMono: !signingIn, chevron: false)
                     if signingIn {
                         Button("Cancel") { authTask?.cancel() }
-                            .buttonStyle(.sh(.secondary, size: .l))
+                            .buttonStyle(.settingsPill)
                             .padding(.trailing, SH.Space.l)
                     } else if model.canUseMCP, server.usesOAuth {
                         Button(signedIn ? "Sign out" : "Sign in") {
                             if signedIn { Task { await model.signOut(server) } }
                             else { signIn(server) }
                         }
-                        .buttonStyle(.sh(.secondary, size: .l))
+                        .buttonStyle(.settingsPill)
                         .disabled(host?.isConnected != true || model.busy || model.drafts[server.file]?.isEdited == true || (!signedIn && active != nil))
                         .padding(.trailing, SH.Space.l)
                     }
@@ -577,13 +560,13 @@ private struct SpaceSkillInstall: View {
                 SpaceInput(label: "Revision", placeholder: "Branch or commit", text: $revision)
                 if revision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, host?.supports(.skills) == true {
                     Button("Preview skills") { Task { await preview() } }
-                        .buttonStyle(.sh(.secondary, size: .l))
+                        .buttonStyle(.settingsPill)
                         .disabled(host?.isConnected != true || repo.isEmpty || lookingUp || model.busy)
                     if lookingUp { SHBusyLabel("Looking up…") }
                     if let found {
-                        SHLazyListCard(found.skills) { skill in
+                        SettingsLazyCard(found.skills) { skill in
                             Toggle(skill.name, isOn: Binding(get: { picked.contains(skill.path) }, set: { _ in picked.formSymmetricDifference([skill.path]) }))
-                                .toggleStyle(.shSwitch)
+                                .toggleStyle(.settingsSwitch)
                                 .padding(SH.Space.l)
                         }
                     }
@@ -596,7 +579,7 @@ private struct SpaceSkillInstall: View {
                 SettingsFootnote("Destination · \(model.directory)/.pi/skills")
                 SettingsFootnote("Global Skills stays unchanged.")
                 Button(selectedPaths.count == 1 ? "Add 1 skill" : "Add \(selectedPaths.count) skills") { Task { await install() } }
-                    .buttonStyle(.sh(.primary, size: .l))
+                    .buttonStyle(.settingsPrimary)
                     .disabled(host?.isConnected != true || !model.canManageResources || repo.isEmpty || selectedPaths.isEmpty || lookingUp || model.busy)
             }
             .toolbar {

@@ -193,23 +193,23 @@ private struct ProjectOverview: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            SHListCard {
+            SettingsCard {
                 Button { navigator.open(.projects(.settings(ref))) } label: {
-                    SHListRow("Spaces", subtitle: names.isEmpty ? "None yet · add in settings" : names.joined(separator: ", "),
+                    SettingsRow("Spaces", subtitle: names.isEmpty ? "None yet · add in settings" : names.joined(separator: ", "),
                               subtitleMono: false, leading: .symbol("folder"))
                 }
                 .buttonStyle(.shRow(radius: 0))
                 Button { navigator.open(.projects(.settings(ref))) } label: {
-                    SHListRow("Instructions, memory", subtitle: "In project settings", subtitleMono: false, leading: .symbol(SHGlyph.document.symbolName))
+                    SettingsRow("Instructions, memory", subtitle: "In project settings", subtitleMono: false, leading: .symbol(SHGlyph.document.symbolName))
                 }
                 .buttonStyle(.shRow(radius: 0))
             }
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                SHListHeader("Suggestions")
-                SHListCard {
+                SettingsCaption("Suggestions")
+                SettingsCard {
                     ForEach(Self.suggestions(firstSpace: names.first), id: \.self) { text in
                         Button { store.draft = text } label: {
-                            SHListRow(text, leading: .symbol("sparkles"), chevron: false)
+                            SettingsRow(text, leading: .symbol("sparkles"), chevron: false)
                         }
                         .buttonStyle(.shRow(radius: 0))
                     }

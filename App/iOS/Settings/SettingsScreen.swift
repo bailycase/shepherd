@@ -16,6 +16,9 @@ struct SettingsScreen: View {
                 SettingsSplit(store: store)
             } else {
                 SettingsList(store: store)
+                    .navigationTitle("Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(removing: .title)
             }
         }
         .task { await store.watch() }
@@ -44,46 +47,62 @@ extension SettingsStore {
     }
 }
 
-/// The phone's list, grouped as the Mac's is: General and Appearance, Agents (with Design systems
-/// while a host serves designs), Work, then Advanced and Experiments; About last.
+/// The Settings list (MobileSettings; iPadSettingsInstructions's middle column): grouped as the Mac's is,
+/// General and Appearance, Agents (with Design systems while a host serves designs), Work, then
+/// Advanced and Experiments; About last. On the phone a row pushes its page; beside the iPad's page
+/// the open one is filled and no row draws a chevron.
 private struct SettingsList: View {
     let store: SettingsStore
+    var pad = false
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileAppearance.self) private var appearance
     @Environment(MobileNavigator.self) private var navigator
+    @FocusState private var searching: Bool
 
     var body: some View {
         let designs = MobileDesigns.of(hosts).model
         @Bindable var selection = navigator.settingsSelection
         let query = selection.searchQuery
         let hits = SettingsSearch.hits(for: query, showsHooks: store.showsHooks)
+        VStack(spacing: 0) {
+        if pad { PadColumnBar("Settings", inset: MobileLayout.settingsPadBarInset) }
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                SettingsSearchField(query: $selection.searchQuery)
+            VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                if !pad { SettingsHeading("Settings") }
+                SettingsSearchCapsule(placeholder: "Search settings", text: $selection.searchQuery, focus: $searching)
                 if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    SettingsSearchResults(hits: hits) { navigator.open(.settings($0.route)) }
+                    SettingsSearchResults(hits: hits, pad: pad, selection: selection) { page, row in
+                        if pad { selection.select(page, row: row) } else { navigator.open(.settings(page.route)) }
+                    }
                 } else {
                     ForEach(Array(SettingsPage.groups.enumerated()), id: \.offset) { _, group in
                         SettingsSection(group.title) {
-                            SHListCard {
+                            SettingsCard {
                                 ForEach(store.listPages(group.pages), id: \.self) { page in
-                                    Button { navigator.open(.settings(page.route)) } label: {
-                                        SettingsNavRow(page.title, value: store.listValue(page, appearance: appearance))
+                                    Button { if pad { selection.page = page } else { navigator.open(.settings(page.route)) } } label: {
+                                        SettingsRow(page.title, trailing: store.listValue(page, appearance: appearance).map { .value($0) } ?? .none,
+                                                    chevron: !pad, selected: pad && selection.page == page)
                                     }
                                     .buttonStyle(.shRow(radius: 0))
                                 }
                                 // While a host serves designs (More's row, before the phone had five tabs).
                                 if group.title == "Agents", designs.available {
                                     Button { navigator.open(.designs(.systems)) } label: {
-                                        SettingsNavRow("Design systems", value: designs.systems.isEmpty ? nil : String(designs.systems.count))
+                                        SettingsRow("Design systems", trailing: designs.systems.isEmpty ? .none : .value(String(designs.systems.count)),
+                                                    chevron: !pad)
                                     }
                                     .buttonStyle(.shRow(radius: 0))
                                 }
                             }
                         }
                     }
-                    SettingsSection("About") {
-                        SHListCard { AboutRow(agent: store.agentVersion) }
+                    if pad {
+                        AboutLine(agent: store.listFootVersion(page: selection.page))
+                            .padding(.horizontal, SH.Space.xs)
+                    } else {
+                        SettingsSection("About") {
+                            SettingsCard { AboutRow(agent: store.agentVersion) }
+                        }
                     }
                 }
             }
@@ -92,19 +111,19 @@ private struct SettingsList: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
+        .scrollDismissesKeyboard(.interactively)
         .refreshable { await store.refresh() }
+        }
         .background(Color.sh.bgWindow)
-        .navigationTitle("Settings")
     }
 }
 
-/// A row of the phone's list or a page's drill-in: its title (over a note), a value, and a
-/// chevron. No leading icon (the boards draw none).
+/// A row of a page's drill-in: its title (over a note), a value, and a chevron. No leading icon (the
+/// boards draw none).
 struct SettingsNavRow: View {
     let title: String
     let note: String?
     let value: String?
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(_ title: String, note: String? = nil, value: String? = nil) {
         self.title = title
@@ -113,104 +132,21 @@ struct SettingsNavRow: View {
     }
 
     var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.l) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title)
-                    .font(.sh(.ui))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-                if let note {
-                    Text(note)
-                        .font(.sh(.caption))
-                        .foregroundStyle(sh.textTertiary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let value {
-                Text(value)
-                    .font(.sh(.ui))
-                    .foregroundStyle(sh.textTertiary)
-                    .lineLimit(1)
-            }
-            Image(systemName: "chevron.right")
-                .font(.sh(.caption, weight: .semibold))
-                .foregroundStyle(sh.textTertiary)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(maxWidth: .infinity, minHeight: note == nil ? SHListMetrics.rowHeight : SHListMetrics.twoLineRowHeight, alignment: .leading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        SettingsRow(title, subtitle: note, trailing: value.map { .value($0) } ?? .none)
     }
 }
 
-/// The iPad's Settings (iPadSettingsInstructions): a 300pt list of its pages in the Mac's groups,
-/// the open one on `bgSelected`, beside that page. The page names the bar and puts its actions
-/// there. Too narrow for both (iPhone Duo), the phone's list.
+/// The iPad's Settings (iPadSettingsInstructions): the list of its pages in the Mac's groups beside the
+/// page it opens. The page names the bar and puts its actions there. Too narrow for both (iPhone
+/// Duo), the phone's list.
 private struct SettingsSplit: View {
     let store: SettingsStore
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        @Bindable var selection = navigator.settingsSelection
-        let query = selection.searchQuery
-        let hits = SettingsSearch.hits(for: query, showsHooks: store.showsHooks)
+        let selection = navigator.settingsSelection
         PadListDetail(listWidth: MobileLayout.settingsListWidth) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
-                    SettingsSearchField(query: $selection.searchQuery)
-                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        ForEach(hits, id: \.page) { page, rows in
-                            Text(page.title)
-                                .shText(.caption)
-                                .foregroundStyle(Color.sh.textTertiary)
-                                .accessibilityAddTraits(.isHeader)
-                                .padding(.horizontal, SH.Space.l)
-                                .padding(.top, MobileLayout.settingsListGroupGap)
-                                .padding(.bottom, SH.Space.xs)
-                            if rows.isEmpty {
-                                SettingsListItem(page: page, selected: selection.isSelected(page)) { selection.select(page) }
-                            } else {
-                                ForEach(rows, id: \.self) { row in
-                                    SettingsListItem(page: page, selected: selection.isSelected(page, row: row), label: row) {
-                                        selection.select(page, row: row)
-                                    }
-                                }
-                            }
-                        }
-                        if hits.isEmpty {
-                            SettingsFootnote("No settings match.")
-                                .padding(.horizontal, SH.Space.l)
-                        }
-                    } else {
-                        ForEach(Array(SettingsPage.groups.enumerated()), id: \.offset) { index, group in
-                            if let title = group.title {
-                                Text(title)
-                                    .shText(.caption)
-                                    .foregroundStyle(Color.sh.textTertiary)
-                                    .accessibilityAddTraits(.isHeader)
-                                    .padding(.horizontal, SH.Space.l)
-                                    .padding(.top, MobileLayout.settingsListGroupGap)
-                                    .padding(.bottom, SH.Space.xs)
-                            } else if index > 0 {
-                                Color.clear.frame(height: MobileLayout.settingsListGroupGap)
-                            }
-                            ForEach(store.listPages(group.pages), id: \.self) { page in
-                                SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
-                            }
-                        }
-                    }
-                }
-                .padding(MobileLayout.settingsListInset)
-                AboutLine(agent: store.listFootVersion(page: selection.page))
-                    .padding(.horizontal, MobileLayout.settingsListInset + SH.Space.l)
-                    .padding(.vertical, SH.Space.l)
-            }
-            .refreshable { await store.refresh() }
-            .background(Color.sh.bgWindow)
+            SettingsList(store: store, pad: true)
         } detail: {
             SettingsPageView(page: selection.page)
                 .environment(\.settingsColumn, true)
@@ -219,33 +155,6 @@ private struct SettingsSplit: View {
             SettingsList(store: store)
         }
         .background(Color.sh.bgWindow)
-    }
-}
-
-/// One page in the iPad's list: its name (or a matching row's title while searching); the open one on `bgSelected` and semibold.
-private struct SettingsListItem: View {
-    let page: SettingsPage
-    let selected: Bool
-    let open: () -> Void
-    var label: String? = nil
-
-    var body: some View {
-        let sh = Color.sh
-        Button(action: open) {
-            HStack(spacing: SH.Space.l) {
-                Text(label ?? page.title)
-                    .font(.sh(.ui, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, SH.Space.l)
-            .frame(minHeight: MobileLayout.settingsListItemHeight)
-            .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
-            .contentShape(RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -266,17 +175,19 @@ extension SettingsStore {
 /// A titled group of Settings cards.
 struct SettingsSection<Content: View>: View {
     let title: String?
+    let count: Int?
     @ViewBuilder let content: () -> Content
 
     /// A group with no title is its card alone (the list's General and Appearance).
-    init(_ title: String?, @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String?, count: Int? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
+        self.count = count
         self.content = content
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            if let title { SHListHeader(title) }
+            if let title { SettingsCaption(title, count: count) }
             content()
         }
     }
@@ -288,14 +199,7 @@ private struct AboutRow: View {
     let agent: String?
 
     var body: some View {
-        HStack(spacing: SH.Space.l) {
-            Text("Shepherd \(AboutLine.version)").font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-            Spacer(minLength: SH.Space.m)
-            Text(agent ?? "build \(AboutLine.build)").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
-        }
-        .padding(.horizontal, SH.Space.l)
-        .frame(minHeight: SHListMetrics.rowHeight)
-        .accessibilityElement(children: .combine)
+        SettingsRow("Shepherd \(AboutLine.version)", trailing: .value(agent ?? "build \(AboutLine.build)"), chevron: false)
     }
 }
 
@@ -308,7 +212,7 @@ private struct AboutLine: View {
 
     var body: some View {
         Text(["Shepherd \(Self.version)", agent ?? "build \(Self.build)"].joined(separator: " · "))
-            .shText(.caption)
+            .font(.shSans(MobileLayout.settingsCaptionSize))
             .foregroundStyle(Color.sh.textTertiary)
     }
 }
@@ -316,42 +220,30 @@ private struct AboutLine: View {
 /// Settings ▸ Appearance: System, Light or Dark, for this device.
 struct AppearanceScreen: View {
     @Environment(MobileAppearance.self) private var appearance
-    @Environment(\.settingsColumn) private var inColumn
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                SHListCard {
-                    ForEach(MobileAppearance.Mode.allCases) { mode in
-                        Button { appearance.mode = mode } label: {
-                            HStack(spacing: SH.Space.l) {
-                                Text(mode.title).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                                Spacer(minLength: SH.Space.m)
-                                if appearance.mode == mode {
-                                    Image(systemName: "checkmark")
-                                        .font(.sh(.ui, weight: .semibold))
-                                        .foregroundStyle(Color.sh.lantern)
-                                }
+        SettingsPageScaffold("Appearance") {
+            SettingsCard {
+                ForEach(MobileAppearance.Mode.allCases) { mode in
+                    Button { appearance.mode = mode } label: {
+                        HStack(spacing: SH.Space.l) {
+                            Text(mode.title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+                            Spacer(minLength: SH.Space.m)
+                            if appearance.mode == mode {
+                                Image(systemName: "checkmark")
+                                    .font(.sh(.ui, weight: .semibold))
+                                    .foregroundStyle(Color.sh.textPrimary)
                             }
-                            .padding(.horizontal, SH.Space.l)
-                            .frame(minHeight: SHListMetrics.rowHeight)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.shRow(radius: 0))
-                        .accessibilityAddTraits(appearance.mode == mode ? .isSelected : [])
+                        .padding(.horizontal, MobileLayout.settingsRowInset)
+                        .frame(minHeight: MobileLayout.settingsRowHeight)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.shRow(radius: 0))
+                    .accessibilityAddTraits(appearance.mode == mode ? .isSelected : [])
                 }
-                Text("System follows this device's appearance. Shepherd on a Mac keeps its own.")
-                    .shText(.caption).foregroundStyle(Color.sh.textTertiary)
-                    .padding(.horizontal, SH.Space.xs)
             }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
+            SettingsFootnote("System follows this device's appearance. Shepherd on a Mac keeps its own.")
         }
-        .background(Color.sh.bgWindow)
-        .navigationTitle("Appearance")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

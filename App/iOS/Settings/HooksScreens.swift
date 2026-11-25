@@ -21,50 +21,52 @@ struct HooksScreen: View {
         let state = host.map { _ in model.state }
         @Bindable var selection = navigator.settingsSelection
         @Bindable var editing = store
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                if inColumn {
-                    HStack(spacing: SH.Space.l) {
-                        HookSegments(selection: $selection.hooksSources, options: [(false, "Hooks"), (true, "Sources")], label: "Show", pad: true)
-                            .fixedSize()
-                        Spacer(minLength: 0)
-                    }
-                }
-                Text("Commands that run at set points in a thread, on the Mac running the agent. Every hook runs unless you turn it off.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
-                if let problem = state?.page?.snapshot.settingsProblem {
-                    SHBanner(.failed, title: problem)
-                } else if let problem = model.problem {
-                    SHBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
-                    }
-                }
-                if let host, let state {
-                    content(state, host: host, model: model)
-                } else {
-                    SettingsFootnote("Add a Mac in Settings ▸ Fleet to manage the fleet's hooks.")
+        let count = state?.page.map { page in page.groups.reduce(0) { total, group in total + group.rows.count } }
+        SettingsPageScaffold(SettingsPage.hooks.title,
+                             subtitle: count.flatMap { count in host.map { "\(count) on \($0.name)" } },
+                             lead: "Commands that run at set points in a thread, on the host where the agent runs. Every hook runs unless you turn it off.",
+                             store: nil) {
+            PadBarPrimary(title: "Add hook", systemImage: "plus", disabled: state?.page == nil) {
+                if let page = state?.page { store.hookEditor = ClientHookEditor(adding: page.snapshot) }
+            }
+        } content: {
+            if inColumn {
+                HStack(spacing: SH.Space.l) {
+                    HookSegments(selection: $selection.hooksSources, options: [(false, "Hooks"), (true, "Sources")], label: "Show", pad: true)
+                        .fixedSize()
+                    Spacer(minLength: 0)
                 }
             }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
+            if let problem = state?.page?.snapshot.settingsProblem {
+                SHBanner(.failed, title: problem)
+            } else if let problem = model.problem {
+                SHBanner(.failed, title: problem) {
+                    Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
+                }
+            }
+            if let host, let state {
+                content(state, host: host, model: model)
+            } else {
+                SettingsFootnote("Add a Mac in Settings ▸ Fleet to manage the fleet's hooks.")
+            }
         }
         .refreshable { await model.refresh() }
-        .background(Color.sh.bgWindow)
         .shAnimation(.content, value: state)
-        .navigationTitle(SettingsPage.hooks.title)
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Add hook", systemImage: "plus") {
-                    if let page = state?.page { store.hookEditor = ClientHookEditor(adding: page.snapshot) }
+            if !inColumn {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Sources") { navigator.open(.settings(.hookSources)) }
+                        .tint(Color.sh.textPrimary)
                 }
-                .disabled(state?.page == nil)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add hook", systemImage: "plus") {
+                        if let page = state?.page { store.hookEditor = ClientHookEditor(adding: page.snapshot) }
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.sh.primary)
+                    .disabled(state?.page == nil)
+                }
             }
         }
         .sheet(item: $editing.hookEditor) { editor in
@@ -91,6 +93,9 @@ struct HooksScreen: View {
                 HookReaders(readers: page.readers) { format, on in Task { await model.setReader(format, on) } }
                 HookPadFiles(sections: page.sections)
             } else {
+                if !inColumn {
+                    SettingsCard { SettingsRow(host.name, trailing: .value(HooksPresentation.hooks(page.groups.reduce(0) { $0 + $1.rows.count })), chevron: false) }
+                }
                 if page.groups.isEmpty {
                     SettingsFootnote("No hooks yet. Add one, or ask an agent to propose one; Shepherd also reads the hooks in Claude Code's and Codex's files.")
                 }
@@ -99,14 +104,6 @@ struct HooksScreen: View {
                         if let entry = page.entry(slot: row.id) { SettingsStore.of(hosts).hookEditor = ClientHookEditor(editing: entry, in: page.snapshot) }
                     } setOn: { row, on in
                         Task { await model.setOn(row, on) }
-                    }
-                }
-                if !inColumn {
-                    SHListCard {
-                        Button { navigator.open(.settings(.hookSources)) } label: {
-                            SHListRow("Sources", trailing: .value(HooksPresentation.files(page.fileCount)))
-                        }
-                        .buttonStyle(.shRow(radius: 0))
                     }
                 }
             }
@@ -122,15 +119,9 @@ private struct HookGroupSection: View {
     let setOn: (HookRowValue, Bool) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                Text(group.label).font(.shSans(MobileLayout.hookHeadSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
-                Text(group.event).font(.shMono(MobileLayout.hookEventSize)).foregroundStyle(Color.sh.textTertiary)
-            }
-            .padding(.horizontal, SH.Space.xs)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            SHListCard {
+        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+            SettingsCaption(group.label, code: group.event)
+            SettingsCard {
                 ForEach(group.rows) { row in
                     HookRow(row: row, pad: pad, open: { open(row) }, setOn: { setOn(row, $0) })
                 }
@@ -139,8 +130,8 @@ private struct HookGroupSection: View {
     }
 }
 
-/// A hook: on the phone, two lines of command over its matcher chip and source; on the iPad, the
-/// chip, the command, the source in a column. The text opens Edit; the switch turns it off.
+/// A hook: on the phone, the command (mono, wrapping) over its matcher, host and file; on the iPad, the chip,
+/// the command over the host and file. The text opens Edit; the switch turns it off.
 private struct HookRow: View {
     let row: HookRowValue
     let pad: Bool
@@ -149,25 +140,27 @@ private struct HookRow: View {
 
     var body: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.l) {
+        HStack(alignment: .top, spacing: SH.Space.l) {
             Button(action: open) {
                 Group {
                     if pad {
                         HStack(spacing: SH.Space.l) {
                             HookChip(text: row.matcher, any: row.matcherIsAny, height: MobileLayout.hookPadChipHeight)
-                            Text(row.command).font(.sh(.code)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(row.shortSource).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                                .frame(width: MobileLayout.hookPadSourceWidth, alignment: .trailing)
+                            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                Text(row.command).font(.shMono(MobileLayout.hookFieldMonoSize)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                                    .truncationMode(.tail)
+                                Text(row.source).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     } else {
-                        VStack(alignment: .leading, spacing: SH.Space.xs) {
-                            Text(row.command).font(.sh(.code)).foregroundStyle(sh.textPrimary).lineLimit(2)
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            Text(row.command).font(.shMono(MobileLayout.settingsNoteSize + 1)).foregroundStyle(sh.textPrimary)
                                 .multilineTextAlignment(.leading)
-                            HStack(spacing: SH.Space.s) {
-                                HookChip(text: row.matcher, any: row.matcherIsAny, height: MobileLayout.hookChipHeight)
-                                Text(row.source).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                            }
+                            Text("\(Text(row.matcher).font(.shMono(MobileLayout.settingsNoteCodeSize))) · \(row.source)")
+                                .font(.shSans(MobileLayout.settingsCaptionSize))
+                                .foregroundStyle(sh.textSecondary)
+                                .multilineTextAlignment(.leading)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -180,20 +173,18 @@ private struct HookRow: View {
             .accessibilityValue("\(row.matcher), \(row.source)")
             .accessibilityHint("Opens the hook")
             Toggle(row.command, isOn: Binding(get: { row.on }, set: setOn))
-                .toggleStyle(.shSwitch)
+                .toggleStyle(.settingsSwitch)
                 .labelsHidden()
                 .disabled(row.locked)
-                .frame(minWidth: SH.Height.touch, minHeight: SH.Height.touch)
                 .accessibilityHint(row.lockHelp ?? "")
         }
-        .padding(.leading, SH.Space.xl)
-        .padding(.trailing, SH.Space.m)
-        .padding(.vertical, pad ? SH.Space.xs : SH.Space.m)
-        .frame(minHeight: pad ? MobileLayout.hookCompactRowHeight : MobileLayout.hookRowHeight)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.settingsRowHeight, alignment: .leading)
     }
 }
 
-/// The matcher, mono in a bordered chip; dashed and quiet when it matches everything.
+/// The matcher, mono in a bordered pill (the boards' `gt-tag`); quiet when it matches everything.
 struct HookChip: View {
     let text: String
     let any: Bool
@@ -201,26 +192,18 @@ struct HookChip: View {
 
     var body: some View {
         let sh = Color.sh
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.xs)
         Text(text)
-            .font(.shMono(MobileLayout.hookChipTextSize))
-            .foregroundStyle(any ? sh.textTertiary : sh.textPrimary)
+            .font(.shMono(MobileLayout.settingsNoteCodeSize).weight(.medium))
+            .foregroundStyle(any ? sh.textTertiary : sh.textSecondary)
             .lineLimit(1)
-            .padding(.horizontal, SH.Space.s)
-            .frame(height: height)
-            .background(sh.bgWindow, in: shape)
-            .overlay {
-                if any {
-                    shape.strokeBorder(sh.lineStrong, style: StrokeStyle(lineWidth: 1, dash: MobileLayout.hookChipDash))
-                } else {
-                    shape.strokeBorder(sh.lineStrong, lineWidth: 1)
-                }
-            }
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: MobileLayout.hookPadChipHeight)
+            .overlay { Capsule().strokeBorder(sh.lineSubtle) }
             .fixedSize()
     }
 }
 
-/// Two or more choices on a sunken track, the chosen one raised (Form | JSON, Hooks | Sources).
+/// Two or more choices on a pill track, the chosen one raised (Form | JSON, Hooks | Sources).
 struct HookSegments<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(Value, String)]
@@ -228,32 +211,9 @@ struct HookSegments<Value: Hashable>: View {
     var pad = false
 
     var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.xxs) {
-            ForEach(options, id: \.0) { value, title in
-                Button { selection = value } label: {
-                    Text(title)
-                        .font(.shSans(pad ? MobileLayout.hookPadSegmentTextSize : MobileLayout.hookSegmentTextSize))
-                        .foregroundStyle(selection == value ? sh.textPrimary : sh.textSecondary)
-                        .lineLimit(1)
-                        .padding(.horizontal, pad ? SH.Space.l : 0)
-                        .frame(maxWidth: pad ? nil : .infinity, minHeight: pad ? MobileLayout.hookPadSegmentHeight : MobileLayout.hookSegmentHeight)
-                        .background(selection == value ? sh.bgRaised : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.hookSegmentRadius))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(SH.Space.xxs)
-        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.hookSegmentTrackRadius))
-        .shBorder(sh.lineSubtle, radius: MobileLayout.hookSegmentTrackRadius)
-        .shAnimation(.content, value: selection)
-        .accessibilityRepresentation {
-            Picker(label, selection: $selection) {
-                ForEach(options, id: \.0) { value, title in Text(title).tag(value) }
-            }
-            .pickerStyle(.segmented)
-        }
+        SettingsSegments(label, selection: $selection, options: options)
+            .frame(width: pad ? MobileLayout.hookPadSegmentsWidth : nil)
+            .shAnimation(.content, value: selection)
     }
 }
 
@@ -262,7 +222,6 @@ struct HookSegments<Value: Hashable>: View {
 /// Sources on the phone (MobileHookSources): the readers, then each scope's files with their state.
 struct HookSourcesScreen: View {
     @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let store = SettingsStore.of(hosts)
@@ -270,28 +229,18 @@ struct HookSourcesScreen: View {
         let host = model.host
         let page = model.state.page
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("Files a Mac reads hooks from. Hooks from every file run together.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+            VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                SettingsLead(host.map { "Files \($0.name) reads hooks from. Hooks from every file run together." }
+                             ?? "Files a Mac reads hooks from. Hooks from every file run together.")
                 if let problem = model.problem {
                     SettingsFootnote(problem, tone: .failed)
                 }
                 if let page {
                     HookReaders(readers: page.readers) { format, on in Task { await model.setReader(format, on) } }
                     ForEach(page.sections) { section in
-                        VStack(alignment: .leading, spacing: SH.Space.s) {
-                            HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
-                                Text(section.name).font(.shSans(MobileLayout.hookHeadSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
-                                Text(section.root == nil ? "every space" : section.note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                                    .lineLimit(1).truncationMode(.middle)
-                            }
-                            .padding(.horizontal, SH.Space.xs)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityAddTraits(.isHeader)
-                            SHListCard {
+                        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                            SettingsCaption(section.name, code: section.root == nil ? "every space" : section.note)
+                            SettingsCard {
                                 ForEach(section.files) { file in HookFileLine(file: file, path: file.shownPath) }
                             }
                         }
@@ -320,7 +269,7 @@ private struct HookReaders: View {
     let set: (HookFormat, Bool) -> Void
 
     var body: some View {
-        SHListCard {
+        SettingsCard {
             reader("Read Claude Code hooks", paths: ".claude/settings.json", on: readers.claude) { set(.claude, $0) }
             reader("Read Codex hooks", paths: ".codex/hooks.json, config.toml", on: readers.codex) { set(.codex, $0) }
         }
@@ -330,24 +279,22 @@ private struct HookReaders: View {
         HStack(spacing: SH.Space.l) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-                Text(paths).font(.shMono(MobileLayout.hookEventSize)).foregroundStyle(Color.sh.textTertiary)
+                Text(paths).font(.shMono(MobileLayout.settingsNoteCodeSize + 1)).foregroundStyle(Color.sh.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Toggle(title, isOn: Binding(get: { on }, set: toggle))
-                .toggleStyle(.shSwitch)
+                .toggleStyle(.settingsSwitch)
                 .labelsHidden()
-                .frame(minWidth: SH.Height.touch, minHeight: SH.Height.touch)
         }
-        .padding(.leading, SH.Space.xl)
-        .padding(.trailing, SH.Space.m)
-        .padding(.vertical, SH.Space.m)
-        .frame(minHeight: MobileLayout.hookCompactRowHeight)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
+        .frame(minHeight: MobileLayout.settingsRowHeight)
         .accessibilityElement(children: .contain)
     }
 }
 
-/// A hooks file on the phone: its path over its state, the format and count trailing; dimmed
-/// while it isn't read.
+/// A hooks file on the phone: its path (mono) over its format and count, its state trailing, a problem
+/// under it in `failed`; dimmed while it isn't read.
 private struct HookFileLine: View {
     let file: HookFileRow
     let path: String
@@ -356,17 +303,21 @@ private struct HookFileLine: View {
         let sh = Color.sh
         HStack(spacing: SH.Space.l) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(path).font(.sh(.code)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
-                HookFileState(file: file)
+                Text(path).font(.shMono(MobileLayout.hookFieldMonoSize)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                Text(file.count == "–" ? file.format : "\(file.format) · \(file.count)")
+                    .font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                if file.tone == .failed {
+                    Text(file.state).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(AgentState.failed.textColor).lineLimit(2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(file.count == "–" ? file.format : "\(file.format) · \(file.count)")
-                .font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+            if file.tone != .failed {
+                Text(file.state).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(HookFileState.color(file.tone)).lineLimit(1)
+            }
         }
-        .padding(.leading, SH.Space.xl)
-        .padding(.trailing, SH.Space.m)
-        .padding(.vertical, SH.Space.m)
-        .frame(minHeight: MobileLayout.hookCompactRowHeight)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.settingsRowHeight, alignment: .leading)
         .opacity(file.dimmed ? SHListMetrics.dimmedOpacity : 1)
         .accessibilityElement(children: .combine)
     }
@@ -382,13 +333,13 @@ private struct HookFileState: View {
         HStack(spacing: SH.Space.s) {
             Circle().fill(color).frame(width: MobileLayout.hookDot, height: MobileLayout.hookDot).accessibilityHidden(true)
             Text(count && file.tone == .ok ? "\(file.state) · \(file.count)" : file.state)
-                .font(.sh(.caption)).foregroundStyle(color).lineLimit(2)
+                .font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(color).lineLimit(2)
         }
     }
 
     @MainActor static func color(_ tone: HookFileRow.Tone) -> Color {
         switch tone {
-        case .ok: AgentState.done.textColor
+        case .ok: Color.sh.textTertiary
         case .off: Color.sh.textTertiary
         case .failed: AgentState.failed.textColor
         }
@@ -401,15 +352,15 @@ private struct HookPadFiles: View {
 
     var body: some View {
         let sh = Color.sh
-        SHListCard {
+        SettingsCard {
             ForEach(sections) { section in
                 ForEach(section.files) { file in
                     HStack(spacing: SH.Space.l) {
                         Text(section.root == nil ? file.shownPath : "\(section.name)/\(file.shownPath)")
-                            .font(.sh(.code)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                            .font(.shMono(MobileLayout.settingsNoteSize)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .layoutPriority(1)
-                        Text(file.format).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                        Text(file.format).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(sh.textSecondary)
                             .frame(width: MobileLayout.hookPadFormatWidth, alignment: .leading)
                         HookFileState(file: file, count: true)
                             .frame(minWidth: MobileLayout.hookPadStateMinWidth, maxWidth: MobileLayout.hookPadStateWidth, alignment: .leading)
@@ -427,7 +378,7 @@ private struct HookPadFiles: View {
 
 // MARK: Edit
 
-/// Add hook and Edit hook (MobileHookEdit), as a sheet on the phone and the iPad: Cancel, the
+/// Add hook and Edit hook (MobileHookEdit), as a sheet on the phone and the iPad: Close, the
 /// title, Save; Form or JSON; the test runs on the host.
 struct HookEditScreen: View {
     @Bindable var editor: ClientHookEditor
@@ -438,7 +389,7 @@ struct HookEditScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
                 HookSegments(selection: $editor.pane, options: [(.form, "Form"), (.json, "JSON")], label: "Edit as")
                 if editor.readOnly {
                     SettingsFootnote("This hook is in \(editor.targetFile). Shepherd reads that file but doesn't write it; edit it on \(host.name).")
@@ -446,12 +397,9 @@ struct HookEditScreen: View {
                 if editor.pane == .form { form } else { json }
                 if let problem = editor.problem { SettingsFootnote(problem, tone: .failed) }
                 if editor.entry != nil, !editor.readOnly {
-                    Button { confirmingDelete = true } label: {
-                        Text("Delete hook").font(.sh(.ui)).foregroundStyle(AgentState.failed.textColor)
-                            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-                    }
-                    .buttonStyle(.shRow(radius: SH.Radius.m))
-                    .hookButtonChrome()
+                    Button("Delete hook") { confirmingDelete = true }
+                        .buttonStyle(.settingsLink(.failed))
+                        .padding(.horizontal, SH.Space.xs)
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -467,14 +415,15 @@ struct HookEditScreen: View {
         .disabled(editor.saving)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(editor.readOnly ? "Close" : "Cancel", action: close)
+                Button(editor.readOnly ? "Close" : "Cancel", systemImage: "xmark", action: close)
+                    .labelStyle(.iconOnly)
                     .tint(Color.sh.textPrimary)
             }
             if !editor.readOnly {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { if await editor.save(with: hooks) { close() } } }
-                        .fontWeight(.semibold)
-                        .tint(Color.sh.lanternText)
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.sh.primary)
                         .disabled(editor.saving)
                 }
             }
@@ -490,7 +439,7 @@ struct HookEditScreen: View {
     // MARK: Form
 
     @ViewBuilder private var form: some View {
-        SHListCard {
+        SettingsCard {
             fieldRow("When") {
                 SettingsPicker("When", selection: editor.event, options: HookEvent.allCases, title: \.label) { editor.event = $0 }
             }
@@ -510,71 +459,73 @@ struct HookEditScreen: View {
                         .frame(minHeight: SH.Height.touch)
                         .accessibilityHint(hint)
                 } else {
-                    Text("None: runs every time").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+                    Text("None: runs every time").font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(Color.sh.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }
         .disabled(editor.readOnly)
         if editor.matchesTools {
-            SHFlowLayout(spacing: SH.Space.xs) {
-                Text("Matches").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(.trailing, SH.Space.xs)
-                ForEach(HookMatcher.agentTools, id: \.self) { tool in
-                    HookToolChip(name: tool, hit: editor.matched.contains(tool))
+            VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                SettingsCaption("Matches")
+                SHFlowLayout(spacing: SH.Space.s) {
+                    ForEach(HookMatcher.agentTools, id: \.self) { tool in
+                        HookToolChip(name: tool, hit: editor.matched.contains(tool))
+                    }
                 }
+                .padding(.horizontal, SH.Space.xs)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(editor.matched.isEmpty ? "Matches no built-in tool" : "Matches " + editor.matched.joined(separator: ", "))
             }
-            .padding(.horizontal, SH.Space.xs)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(editor.matched.isEmpty ? "Matches no built-in tool" : "Matches " + editor.matched.joined(separator: ", "))
         }
         if !editor.matcherValid {
             SettingsFootnote("This isn't a regular expression Shepherd can read.", tone: .failed)
         }
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            Text("Runs").font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary).padding(.horizontal, SH.Space.xs)
+        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+            SettingsCaption("Runs")
             ForEach($editor.handlers) { $handler in
                 HookCommandCard(handler: $handler, removable: editor.handlers.count > 1 && !editor.readOnly) { editor.remove(handler.id) }
                     .disabled(editor.readOnly)
             }
             if !editor.readOnly {
-                Button("+ Add another command") { editor.addHandler() }
-                    .font(.sh(.ui))
-                    .foregroundStyle(AgentState.running.textColor)
+                Button("Add another command") { editor.addHandler() }
+                    .buttonStyle(.settingsLink)
                     .padding(.horizontal, SH.Space.xs)
-                    .frame(minHeight: SH.Height.touch)
             }
         }
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            Button { Task { await editor.test(with: hooks) } } label: {
-                HStack(spacing: SH.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                HStack(spacing: SH.Space.l) {
                     Text(editor.testing ? "Running on \(host.name)…" : "Test with a sample event")
+                        .font(.sh(.ui, weight: .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .shShimmer(active: editor.testing)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Run") { Task { await editor.test(with: hooks) } }
+                        .buttonStyle(.settingsPill)
+                        .disabled(editor.testable == nil || editor.testing)
+                        .accessibilityHint(editor.testable == nil ? "Enter a command to test it" : "Runs the command once on \(host.name) against a sample \(editor.event.rawValue) event")
                 }
-                .font(.sh(.ui))
-                .foregroundStyle(Color.sh.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
+                if let result = editor.testResult {
+                    HookTestResultCard(outcome: result.outcome, meta: editor.testMeta(result, host: host.name), output: HookTestOutput(result))
+                }
             }
-            .buttonStyle(.shRow(radius: SH.Radius.m))
-            .hookButtonChrome()
-            .disabled(editor.testable == nil || editor.testing)
-            .accessibilityHint(editor.testable == nil ? "Enter a command to test it" : "Runs the command once on \(host.name) against a sample \(editor.event.rawValue) event")
-            if let result = editor.testResult {
-                HookTestResultCard(outcome: result.outcome, meta: editor.testMeta(result, host: host.name), output: HookTestOutput(result))
-            }
+            .padding(.horizontal, MobileLayout.settingsRowInset)
+            .padding(.vertical, SH.Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shCard(radius: MobileLayout.settingsCardRadius, lift: true)
+            SettingsFootnote("Gets the event as JSON on stdin. Exit 2, or a block decision, stops the call; the reason goes to the agent.")
         }
-        SettingsFootnote("Gets the event as JSON on stdin. Exit 2, or a block decision, stops the call; the reason goes to the agent.")
     }
 
     private func fieldRow<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {
         HStack(spacing: SH.Space.l) {
-            Text(label).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                .frame(width: MobileLayout.hookLabelWidth, alignment: .leading)
+            Text(label).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                 .accessibilityHidden(true)
             control().frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.leading, SH.Space.xl)
-        .padding(.trailing, SH.Space.l)
-        .frame(minHeight: MobileLayout.hookFieldRowHeight)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .frame(minHeight: MobileLayout.settingsRowHeight)
     }
 
     // MARK: JSON
@@ -588,8 +539,8 @@ struct HookEditScreen: View {
             .textInputAutocapitalization(.never)
             .padding(SH.Space.l)
             .frame(minHeight: MobileLayout.hookJSONMinHeight)
-            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
-            .shBorder(editor.jsonError == nil ? Color.sh.lineSubtle : AgentState.failed.textColor, radius: SHListMetrics.cardRadius)
+            .shCard(radius: MobileLayout.settingsCardRadius, lift: true)
+            .overlay { RoundedRectangle(cornerRadius: MobileLayout.settingsCardRadius).strokeBorder(editor.jsonError == nil ? .clear : AgentState.failed.textColor) }
             .disabled(editor.readOnly)
             .accessibilityLabel("Hook entry as JSON")
         if let error = editor.jsonError { SettingsFootnote(error, tone: .failed) }
@@ -597,8 +548,8 @@ struct HookEditScreen: View {
     }
 }
 
-/// One command: what it runs, its time limit and what the thread says while it runs. A handler
-/// the form can't edit (an MCP tool, a prompt) says so; JSON edits it.
+/// One command (MobileHookEdit's Runs card): what it runs, its time limit and what the thread says while it
+/// runs. A handler the form can't edit (an MCP tool, a prompt) says so; JSON edits it.
 private struct HookCommandCard: View {
     @Binding var handler: HookFormHandler
     let removable: Bool
@@ -608,59 +559,50 @@ private struct HookCommandCard: View {
         VStack(alignment: .leading, spacing: SH.Space.m) {
             if handler.type == "command" {
                 TextField("Command", text: $handler.command, axis: .vertical)
-                    .font(.shMono(MobileLayout.hookFieldMonoSize))
+                    .font(.shMono(MobileLayout.settingsNoteSize + 1))
                     .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(2...8)
+                    .lineLimit(1...8)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                    .padding(.horizontal, SH.Space.l)
-                    .padding(.vertical, SH.Space.m)
-                    .frame(minHeight: MobileLayout.hookCommandMinHeight, alignment: .topLeading)
-                    .hookFieldChrome()
                     .accessibilityLabel("Command")
             } else {
                 Text(handler.type == "mcp_tool" ? "MCP tool \(handler.server) › \(handler.tool). Edit it in JSON." : "\(handler.type) handler: listed, never run. Edit it in JSON.")
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    .font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
             }
-            HStack(alignment: .bottom, spacing: SH.Space.m) {
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text("Time limit").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            Grid(alignment: .leading, horizontalSpacing: SH.Space.l, verticalSpacing: SH.Space.xs) {
+                GridRow {
+                    Text("Time limit").foregroundStyle(Color.sh.textSecondary)
+                        .frame(width: MobileLayout.hookLabelWidth, alignment: .leading)
                     HStack(spacing: SH.Space.xs) {
                         TextField("Time limit", text: $handler.timeout, prompt: Text("60").foregroundStyle(Color.sh.textTertiary))
-                            .font(.shMono(MobileLayout.hookFieldMonoSize))
                             .keyboardType(.decimalPad)
-                        Text("s").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                            .fixedSize()
+                        Text("s").foregroundStyle(Color.sh.textPrimary).accessibilityHidden(true)
                     }
-                    .padding(.horizontal, SH.Space.l)
-                    .frame(minHeight: SH.Height.touch)
-                    .hookFieldChrome()
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Time limit in seconds")
                 }
-                .frame(width: MobileLayout.hookLabelWidth)
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text("While it runs").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                GridRow {
+                    Text("While it runs").foregroundStyle(Color.sh.textSecondary)
+                        .frame(width: MobileLayout.hookLabelWidth, alignment: .leading)
                     TextField("Status while it runs", text: $handler.statusMessage, prompt: Text("Shown in the thread").foregroundStyle(Color.sh.textTertiary))
-                        .font(.sh(.ui))
-                        .padding(.horizontal, SH.Space.l)
-                        .frame(minHeight: SH.Height.touch)
-                        .hookFieldChrome()
                 }
             }
+            .font(.shSans(MobileLayout.hookFieldTextSize))
+            .foregroundStyle(Color.sh.textPrimary)
             if removable {
                 Button("Remove this command", action: remove)
-                    .font(.sh(.caption))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .frame(minHeight: SH.Height.touch)
+                    .buttonStyle(.settingsLink(.dim))
             }
         }
-        .padding(SH.Space.l)
-        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
-        .shBorder(Color.sh.lineSubtle, radius: SHListMetrics.cardRadius)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, SH.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: MobileLayout.settingsCardRadius, lift: true)
     }
 }
 
-/// A built-in tool in Matches: lit in `running` when the matcher matches it.
+/// A built-in tool in Matches (the boards' `gt-tag`): ink when the matcher matches it, a hairline when not.
 private struct HookToolChip: View {
     let name: String
     let hit: Bool
@@ -668,12 +610,12 @@ private struct HookToolChip: View {
     var body: some View {
         let sh = Color.sh
         Text(name)
-            .font(.shMono(MobileLayout.hookChipTextSize))
-            .foregroundStyle(hit ? sh.textPrimary : sh.textTertiary)
-            .padding(.horizontal, SH.Space.s)
+            .font(.shMono(MobileLayout.settingsNoteCodeSize).weight(.medium))
+            .foregroundStyle(hit ? sh.textOnPrimary : sh.textSecondary)
+            .padding(.horizontal, SH.Space.m)
             .frame(height: MobileLayout.hookPadChipHeight)
-            .background(hit ? (AgentState.running.tint ?? .clear) : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-            .shBorder(hit ? AgentState.running.color : sh.lineSubtle, radius: SH.Radius.xs)
+            .background(hit ? sh.primary : .clear, in: Capsule())
+            .overlay { Capsule().strokeBorder(hit ? .clear : sh.lineSubtle) }
     }
 }
 
@@ -688,8 +630,8 @@ private struct HookTestResultCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(outcome.summary).font(.sh(.ui, weight: .medium)).foregroundStyle(Self.color(outcome)).lineLimit(4)
-                Text(meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                Text(outcome.summary).font(.sh(.ui)).foregroundStyle(Self.color(outcome)).lineLimit(4)
+                Text(meta).font(.shMono(MobileLayout.settingsNoteCodeSize)).foregroundStyle(Color.sh.textTertiary)
             }
             .accessibilityElement(children: .combine)
             if let output {
@@ -698,8 +640,8 @@ private struct HookTestResultCard: View {
                         ForEach(output.streams) { stream in
                             VStack(alignment: .leading, spacing: SH.Space.xs) {
                                 HStack(spacing: SH.Space.s) {
-                                    Text(stream.label).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
-                                    if let note = stream.note { Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+                                    Text(stream.label).font(.shSans(MobileLayout.settingsCaptionSize, .semibold)).foregroundStyle(Color.sh.textSecondary)
+                                    if let note = stream.note { Text(note).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(Color.sh.textTertiary) }
                                 }
                                 ScrollView {
                                     Text(stream.text).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
@@ -708,8 +650,7 @@ private struct HookTestResultCard: View {
                                 }
                                 .frame(maxHeight: MobileLayout.hookOutputHeight)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-                                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+                                .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                                 .accessibilityLabel(stream.label)
                             }
                         }
@@ -721,11 +662,7 @@ private struct HookTestResultCard: View {
                 .tint(Color.sh.textSecondary)
             }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
-        .shBorder(Color.sh.lineSubtle, radius: SHListMetrics.cardRadius)
     }
 
     @MainActor static func color(_ outcome: HookOutcome) -> Color {
@@ -735,19 +672,5 @@ private struct HookTestResultCard: View {
         case .context: AgentState.running.textColor
         case .ask, .failed, .timedOut: AgentState.attention.textColor
         }
-    }
-}
-
-private extension View {
-    /// The edit form's field: the window's fill, a strong line, medium corners.
-    func hookFieldChrome() -> some View {
-        background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
-    }
-
-    /// The form's full-width buttons (Test, Delete hook): raised, a strong line.
-    func hookButtonChrome() -> some View {
-        background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
     }
 }

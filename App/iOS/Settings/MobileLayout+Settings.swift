@@ -20,19 +20,63 @@ extension MobileLayout {
     /// Above a page shown beside the list, under the bar.
     static let settingsColumnTop: CGFloat = SH.Space.xl
 
+    // MARK: The boards' parts (SettingsParts)
+
+    /// A card's corners (the boards' 16pt).
+    static let settingsCardRadius: CGFloat = SH.Radius.xxl
+    /// A row: 52pt at least, 16pt in at the sides, 10pt above and below its text.
+    static let settingsRowHeight: CGFloat = 52
+    static let settingsRowInset: CGFloat = SH.Space.xl
+    static let settingsRowPadding: CGFloat = SH.Space.m + SH.Space.xxs
+    /// The column a row's leading glyph sits in, and that glyph.
+    static let settingsLeadingWidth: CGFloat = 28
+    static let settingsGlyphSize: CGFloat = 16
+    /// A row's chevron.
+    static let settingsChevronSize: CGFloat = 14
+    /// A caption, a note, a value, a lead: the boards' 13pt.
+    static let settingsCaptionSize: CGFloat = 13
+    /// The switch: 52×32 with a 28pt knob.
+    static let settingsSwitchWidth: CGFloat = 52
+    static let settingsSwitchHeight: CGFloat = 32
+    static let settingsSwitchInset: CGFloat = SH.Space.xxs
+    /// A pill button: 36pt, its text 14pt, 14pt in.
+    static let settingsPillHeight: CGFloat = 36
+    static let settingsPillTextSize: CGFloat = 14
+    static let settingsPillInset: CGFloat = 14
+    /// The page's primary action: 50pt.
+    static let settingsPrimaryHeight: CGFloat = 50
+    /// The search capsule: 40pt, 14pt in.
+    static let settingsSearchHeight: CGFloat = 40
+    static let settingsSearchInset: CGFloat = 14
+    /// The segmented pill: 36pt with 3pt around its segments.
+    static let settingsSegmentHeight: CGFloat = 36
+    static let settingsSegmentInset: CGFloat = 3
+    /// The page title's tracking (-.02em), and the iPad bar: 52pt, its title 18pt, 24pt in on the list and 32 on a page.
+    static let settingsHeadingTracking: CGFloat = 0.02
+    /// The lead sits 10pt under the title (the boards' -10pt margin over the section gap).
+    static let settingsLeadPull: CGFloat = SH.Space.l - SH.Space.xxs
+    static let settingsPadBarHeight: CGFloat = 52
+    static let settingsPadBarTitleSize: CGFloat = 18
+    static let settingsPadBarInset: CGFloat = SH.Space.xl + SH.Space.m
+    static let settingsPadPageInset: CGFloat = SH.Space.xxxl
+    /// Between a page's groups.
+    static let settingsSectionSpacing: CGFloat = SH.Space.xl + SH.Space.xs
+
     // MARK: Rows
 
-    /// A row's note (12.5/1.45), its `code` a step smaller.
-    static let settingsNoteSize: CGFloat = 12.5
-    static let settingsNoteCodeSize: CGFloat = 11.5
-    static let settingsNoteLineHeight: CGFloat = 1.45
+    /// A row's note (the boards' 13 on 18pt lines), its `code` a step smaller.
+    static let settingsNoteSize: CGFloat = 13
+    static let settingsNoteCodeSize: CGFloat = 12
+    static let settingsNoteLineHeight: CGFloat = 1.38
     /// A menu's value before it truncates.
-    static let settingsMenuMaxWidth: CGFloat = 200
+    static let settingsMenuMaxWidth: CGFloat = 150
 
     // MARK: Instructions
 
     /// A file's row (a name over its note).
     static let instructionsFileRowHeight: CGFloat = 64
+    /// How many earlier saves of each file the phone's History lists.
+    static let instructionsHistoryPerFile = 2
     /// A host's row.
     static let instructionsHostRowHeight: CGFloat = 52
     /// The phone's editor: mono 13 on 21pt lines.
@@ -80,14 +124,14 @@ extension MobileLayout {
 
     /// A skill's row (MobileSkills): its name in sans 15 bold over its description at 12.5, 3pt
     /// apart, at least 58pt.
-    static let skillRowHeight: CGFloat = 58
+    static let skillRowHeight: CGFloat = 60
     static let skillNameSize: CGFloat = 15
     /// The chevron's column at a skill row's end (the row opens the skill).
-    static let skillChevronSlot: CGFloat = SH.Space.l
-    static let skillSummarySize: CGFloat = 12.5
+    static let skillChevronSlot: CGFloat = SH.Space.xl
+    static let skillSummarySize: CGFloat = 13
     static let skillLineSpacing: CGFloat = 3
     /// The switch at a row's end (`SHSwitch` is 30pt wide), kept clear of the row's text.
-    static let skillSwitchSlot: CGFloat = 30
+    static let skillSwitchSlot: CGFloat = 52
     /// A search result's status at its end: Install, Installed, Update, or "1 of 3 hosts".
     static let skillStatusSlot: CGFloat = 96
     /// A skill's name over its detail or its preview.
@@ -148,4 +192,8 @@ extension MobileLayout {
     static let hookPadSegmentTextSize: CGFloat = 14
     /// A file's state dot.
     static let hookDot: CGFloat = 6
+    /// Hooks | Sources beside the iPad's list.
+    /// A form field's text in the edit sheet.
+    static let hookFieldTextSize: CGFloat = 14
+    static let hookPadSegmentsWidth: CGFloat = 190
 }

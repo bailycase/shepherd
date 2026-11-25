@@ -20,20 +20,21 @@ struct ProjectsScreen: View {
                 SHEmptyState(Text("No projects"), message: Self.emptyMessage(projects.owners)) {
                     if creatable {
                         Button("New project", systemImage: "plus") { navigator.present(.projects(.create(host: nil))) }
-                            .buttonStyle(.sh(.primary))
+                            .buttonStyle(.settingsPill(.dark))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                    VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                        if sizeClass != .regular { SettingsHeading("Projects") }
                         ForEach(Self.groups(rows), id: \.home) { group in
                             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                                SHListHeader(group.owner, count: group.rows.count)
-                                SHListCard {
+                                SettingsCaption(group.owner, count: group.rows.count)
+                                SettingsCard {
                                     ForEach(group.rows) { row in
                                         Button { navigator.open(.projects(.project(row.ref))) } label: {
-                                            SHListRow(row.name, subtitle: row.summary.nilIfEmpty, subtitleMono: false,
+                                            SettingsRow(row.name, subtitle: row.summary.nilIfEmpty, subtitleMono: false,
                                                       leading: .symbol("square.stack.3d.up", row.needsYou > 0 ? .attention : nil),
                                                       trailing: row.needsYou > 0 ? .alert("\(row.needsYou) needs you")
                                                           : row.connected ? .none : .meta("Offline"),
@@ -58,13 +59,15 @@ struct ProjectsScreen: View {
         .task { await projects.refresh() }
         .background(Color.sh.bgWindow)
         .navigationTitle("Projects")
-        .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: sizeClass == .regular ? nil : .title)
         .toolbar {
             if creatable {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New project", systemImage: "plus") { navigator.present(.projects(.create(host: nil))) }
+                        .labelStyle(.iconOnly)
                         .buttonStyle(.glassProminent)
-                        .tint(Color.sh.lantern)
+                        .tint(Color.sh.primary)
                 }
             }
         }
