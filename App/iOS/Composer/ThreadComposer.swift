@@ -158,13 +158,6 @@ struct ThreadComposer: View {
                     }
                     .shTransition(.content)
                 }
-                if store.running, store.hasDraft || !state.attachments.isEmpty {
-                    // Under the queue, over the pill (the boards' `.gt-qhint`).
-                    Text(wide ? "Hold Send to steer now · ⌘↩ Steer now" : "Hold Send to steer now")
-                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                }
                 pill(store: store, state: state, host: host, live: live, wide: wide)
             }
         }

@@ -58,40 +58,6 @@ extension MobileNavigator {
     }
 }
 
-struct NextNeedingYouButton: View {
-    @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
-    var compact = false
-    var showsScope = false
-
-    var body: some View {
-        let current = navigator.selectedThread.map { FleetRef(host: $0.host, agent: $0.agent) }
-        let count = HomeFeed.of(hosts).supervisionQueues.needingYouCount(excluding: current)
-        if count > 0 {
-            Button { navigator.openNextNeedingYou(hosts: hosts) } label: {
-                if compact {
-                    HStack(spacing: SH.Space.xs) {
-                        SHGlyph.nextThread.image
-                        Text("\(count)").monospacedDigit()
-                    }
-                } else {
-                    VStack(spacing: SH.Space.xxs) {
-                        Text("Next (\(count))")
-                        if showsScope {
-                            Text("Waiting, then unseen done").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                        }
-                    }
-                }
-            }
-            .buttonStyle(.sh(.ghost, size: compact ? .s : .l))
-            .shTouchTarget(height: SH.Height.controlL)
-            .fixedSize()
-            .accessibilityLabel("Next thread, \(count) available")
-            .accessibilityHint("Opens waiting threads first, then unseen done threads")
-        }
-    }
-}
-
 struct HomeReviewQueueRow: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
