@@ -15,9 +15,8 @@ extension AppLayout {
     static let inspectorCardBottom: CGFloat = SHSidePaneMetrics.cardInset + 16
     /// What the card takes beside the thread: its gap before it and its trailing inset.
     static let inspectorCardEdge: CGFloat = SHSidePaneMetrics.cardGap + inspectorCardTrailing
-    static let inspectorPadding: CGFloat = 14
     static let inspectorTurnSpacing: CGFloat = 16
-    /// "72 earlier turns · Show all" · "Following live".
+    /// "72 earlier turns · Show all" · "Reading earlier output".
     static let inspectorFooterHeight: CGFloat = 28
     static let steerMaxLines = 6
     /// The Subagents board's 10pt inset above the Steer card, and above its field.

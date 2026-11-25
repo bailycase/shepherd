@@ -351,7 +351,7 @@ private struct SubagentRunInspector: View {
         return text.trimmingCharacters(in: .whitespacesAndNewlines) == role(run)
     }
 
-    /// "n earlier turns · Show all" · "Following live" (live runs only); a finished run's whole
+    /// "n earlier turns · Show all" · "Reading earlier output" (live runs, off the tail); a finished run's whole
     /// transcript says where it is read instead: "turn 4 of 11" · "Scroll for the rest".
     private func footerLine(_ run: ChildRun?) -> some View {
         let position = run?.isTerminal == true && transcript.earlierCount == 0

@@ -79,7 +79,7 @@ final class RightPaneState {
 }
 
 /// The agent's layout (its thread and any terminal panes) on the left, the side pane (its tabs, or
-/// an inspected subagent) beside it (PaneStates: 380pt at least, 600 default, at most half the
+/// an inspected subagent, a card of its own under the toolbar: `inspector`) beside it (PaneStates: 380pt at least, 600 default, at most half the
 /// column, the drag handle on its left edge). In a column too narrow to keep the layout at 400pt, the pane overlays it from the
 /// trailing edge instead of squeezing it (`ShellLayout`).
 ///
