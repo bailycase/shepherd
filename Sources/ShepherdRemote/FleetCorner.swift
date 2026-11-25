@@ -25,7 +25,7 @@ public struct FleetCorner: Equatable, Sendable {
         public var load: Double
         /// `.warn` while the Mac is busy, `.active` while it has room; `.tertiary` draws only the track.
         public var gauge: FleetTone
-        /// "busy · 3", "room · 2", "next", "1 waiting", "asleep", or why it can't take work ("no Xcode").
+        /// "3 running", "Room", "Next", "1 waiting", "Asleep", or why it can't take work ("No Xcode").
         public var state: String
         public var thisMac: Bool
 
@@ -39,9 +39,9 @@ public struct FleetCorner: Equatable, Sendable {
         public var text: String
     }
 
-    /// "2 of 3 awake", or "12 Macs".
+    /// "3 Macs", beside "Fleet" in the open corner.
     public var headline: String
-    /// The minimized line under "Fleet": "3 Macs, room on mini", "12 Macs, 7 with room".
+    /// The minimized line: "2 of 3 Macs awake", "3 Macs awake", "12 Macs, 7 with room".
     public var summary: String
     public var rows: [Row]
     public var more: More?
@@ -67,8 +67,7 @@ public struct FleetCorner: Equatable, Sendable {
         let rows = shown.map { row($0, next: folded && $0.id == page.nextGoesToID) }
         let hidden = cards.filter { card in !shown.contains { $0.id == card.id } }
         let asleep = cards.filter { $0.status == .asleep }.count
-        let awake = cards.count - asleep
-        let headline = cards.count == 1 ? "just this Mac" : folded || asleep == 0 ? "\(cards.count) Macs" : "\(awake) of \(cards.count) awake"
+                let headline = cards.count == 1 ? "just this Mac" : "\(cards.count) Macs"
         let more = hidden.isEmpty ? nil : More(
             count: hidden.count, asleep: hidden.filter { $0.status == .asleep }.count,
             text: ["\(hidden.count) more", hidden.contains { $0.status == .asleep } ? "\(hidden.filter { $0.status == .asleep }.count) asleep" : nil]
@@ -91,17 +90,12 @@ public struct FleetCorner: Equatable, Sendable {
         return picked
     }
 
-    /// "3 Macs, room on mini", "12 Macs, 7 with room", "Just this Mac".
+    /// "2 of 3 Macs awake", "3 Macs awake", "12 Macs, 7 with room", "Just this Mac".
     static func summary(_ cards: [FleetMacCard]) -> String {
         guard cards.count > 1 else { return "Just this Mac" }
-        let roomy = cards.filter(\.hasRoom)
-        let room: String
-        switch roomy.count {
-        case 0: room = "no room"
-        case 1: room = "room on \(roomy[0].isThisMac ? "this Mac" : FleetWherePicker.tagName(roomy[0].name))"
-        default: room = "\(roomy.count) with room"
-        }
-        return "\(cards.count) Macs, \(room)"
+        if cards.count > listsEveryMacUpTo { return "\(cards.count) Macs, \(cards.filter(\.hasRoom).count) with room" }
+        let awake = cards.filter { $0.status != .asleep }.count
+        return awake == cards.count ? "\(cards.count) Macs awake" : "\(awake) of \(cards.count) Macs awake"
     }
 
     static func row(_ card: FleetMacCard, next: Bool) -> Row {
@@ -114,17 +108,17 @@ public struct FleetCorner: Equatable, Sendable {
                    state: state(card, next: next), thisMac: card.isThisMac)
     }
 
-    /// Why the Mac is drawn as it is, the first of: it can't take work, work waits for it, it sleeps, Auto goes there next, how busy it is.
+    /// Why the Mac is drawn as it is, the first of: it can't take work, work waits for it, it sleeps, Auto goes there next, how many threads run on it.
     static func state(_ card: FleetMacCard, next: Bool) -> String {
-        if let reason = card.cannotTake { return reason }
+        if let reason = card.cannotTake { return reason.prefix(1).uppercased() + reason.dropFirst() }
         if card.waiting > 0 { return "\(card.waiting) waiting" }
-        if card.status == .asleep { return "asleep" }
-        if next { return "next" }
-        if card.status == .connecting { return "connecting" }
-        guard card.cpu != nil else { return "no reading" }
-        if card.room.text == FleetMacCard.notCounted { return "not counted" }
-        let working = card.working.flatMap { $0 > 0 ? $0 : nil }
-        return [card.hasRoom ? "room" : "busy", working.map(String.init)].compactMap { $0 }.joined(separator: " · ")
+        if card.status == .asleep { return "Asleep" }
+        if next { return "Next" }
+        if card.status == .connecting { return "Connecting" }
+        guard card.cpu != nil else { return "No reading" }
+        if card.room.text == FleetMacCard.notCounted { return "Not counted" }
+        if let working = card.working, working > 0 { return "\(working) running" }
+        return card.hasRoom ? "Room" : "Busy"
     }
 }
 

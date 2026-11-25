@@ -77,9 +77,11 @@ extension AppLayout {
 
     // The Check tab (FleetCheck): the grid beside a panel.
     /// The panel's width, the grid's head and its rows' least height.
-    static let fleetCheckPanelWidth: CGFloat = 400
-    static let fleetCheckHeadHeight: CGFloat = 36
-    static let fleetCheckRowHeight: CGFloat = 34
+    static let fleetCheckPanelWidth: CGFloat = 340
+    /// The panel is padded 18 at its sides and bottom.
+    static let fleetCheckPanelInset: CGFloat = 18
+    static let fleetCheckHeadHeight: CGFloat = 40
+    static let fleetCheckRowHeight: CGFloat = 42
     /// The grid's columns: the thing's name is this many times a Mac's column.
     static let fleetCheckNameWeight: CGFloat = 1.5
     /// A group's label is tracked wide (the board's .05em of 10.5pt).
@@ -103,5 +105,7 @@ extension AppLayout {
 
     // Moving a thread to another Mac (FleetMove).
     /// A step's mark column in the progress card.
-    static let fleetMoveMarkWidth: CGFloat = 14
+    /// A step's row is 28pt, the card padded 20.
+    static let fleetMoveStepHeight: CGFloat = 28
+    static let fleetMoveCardInset: CGFloat = 20
 }

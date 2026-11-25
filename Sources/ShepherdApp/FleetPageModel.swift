@@ -96,7 +96,8 @@ final class FleetPageModel {
             page = next
             layout = FleetMacsLayout.make(next)
         }
-        let corner = FleetCorner.make(next)
+        // A Mac alone has no fleet to summarize: the sidebar keeps its plain footer (FleetEmpty).
+        let corner = next.cards.count > 1 ? FleetCorner.make(next) : nil
         if corner != self.corner { self.corner = corner }
         if next.dispatchCards != dispatchCards { dispatchCards = next.dispatchCards }
         let sent = SidebarFleet(records: snapshot.dispatches.filter { $0.kind != .move }.sorted { $0.createdAt > $1.createdAt },

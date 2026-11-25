@@ -100,8 +100,8 @@ struct FleetMovePreviewTests {
             thread(fixture, header: header)
                 .overlay {
                     DialogSheet(title: facts.title, subtitle: facts.message, actions: [
-                        DialogAction("Cancel", kind: .cancel) {}, DialogAction("Move when it’s done", kind: .normal) {},
-                        DialogAction("Stop and move", kind: .prominent) {},
+                        DialogAction("Cancel", kind: .cancel) {}, DialogAction("Move now", kind: .normal) {},
+                        DialogAction("Move when it’s done", kind: .prominent) {},
                     ])
                     .shPopover()
                 }
