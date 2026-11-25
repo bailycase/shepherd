@@ -5,21 +5,18 @@ import ShepherdUI
 /// DesignSystemSpacing, DesignSystemSizes, DesignSystemComponents), as the boards draw it.
 extension AppLayout {
     /// The column: at most this wide, centered, 24pt between its parts.
-    static let referenceColumnWidth: CGFloat = 960
+    static let referenceColumnWidth: CGFloat = SHDesignChrome.systemColumn
     static let referencePartSpacing: CGFloat = SH.Space.xxl
     /// Above the first part, clear of the contents button; below the last.
-    static let referenceTopPadding: CGFloat = 64
+    static let referenceTopPadding: CGFloat = SH.Space.xl
     static let referenceBottomPadding: CGFloat = 64
 
-    /// The hero: 256pt, 32pt in, the name at 64 bold with its tagline 8pt under it. The art is
-    /// four columns of 64pt tiles, 8pt apart, in three rows.
-    static let referenceHeroHeight: CGFloat = 256
-    static let referenceHeroNameSize: CGFloat = 64
-    static let referenceHeroTileWidth: CGFloat = 64
-    static let referenceHeroRows: CGFloat = 3
+    /// The hero (DesignSystemPage): 28pt in, the name at 28 bold with its tagline under it, 38pt tiles 6pt apart.
+    static let referenceHeroNameSize: CGFloat = 28
+    static let referenceHeroPadding: CGFloat = 28
+    static let referenceHeroTile: CGFloat = 38
+    static let referenceHeroGap: CGFloat = SH.Space.s
 
-    /// A card's title (24 semibold) and its sub line.
-    static let referenceCardTitleSize: CGFloat = 24
     /// A table's columns: the name, a shape, a note.
     static let referenceNameColumn: CGFloat = 160
     /// The Components table's name column: wide enough for the longest component name on one line.
@@ -32,8 +29,8 @@ extension AppLayout {
     /// A spacing or size value's chip is this wide.
     static let referenceValueChipWidth: CGFloat = 160
     /// The contents menu: 224pt, its button 16pt from the corner.
-    static let referenceMenuWidth: CGFloat = 224
-    static let referenceMenuInset: CGFloat = SH.Space.xl
+    static let referenceMenuWidth: CGFloat = 230
+    static let referenceMenuInset: CGFloat = 48
     /// The measure of Principles and Voice copy.
     static let referenceProseLineSpacing: CGFloat = 4
 }

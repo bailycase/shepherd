@@ -195,14 +195,17 @@ public struct SHDesignToolbarChip: View {
     let title: String
     let symbol: String?
     let isOn: Bool
+    let symbolTrailing: Bool
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.isEnabled) private var enabled
 
-    public init(_ title: String, symbol: String? = nil, isOn: Bool = false, action: @escaping () -> Void) {
+    /// `symbolTrailing` puts the glyph after the words, small (a chevron on a button that opens a menu).
+    public init(_ title: String, symbol: String? = nil, isOn: Bool = false, symbolTrailing: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.symbol = symbol
         self.isOn = isOn
+        self.symbolTrailing = symbolTrailing
         self.action = action
     }
 
@@ -210,12 +213,17 @@ public struct SHDesignToolbarChip: View {
         let M = SHDesignChrome.self
         Button(action: action) {
             SHDesignToolbarChipLabel(hovering: hovering || isOn) {
-                if let symbol {
+                if let symbol, !symbolTrailing {
                     Image(systemName: symbol)
                         .font(.shSans(M.chipGlyph))
                         .foregroundStyle(Color.sh.textTertiary)
                 }
                 Text(title).font(.shSans(M.toolbarTextSize)).lineLimit(1)
+                if let symbol, symbolTrailing {
+                    Image(systemName: symbol)
+                        .font(.shSans(SH.Space.m + 2, .medium))
+                        .foregroundStyle(Color.sh.textTertiary)
+                }
             }
             .opacity(enabled ? 1 : SHControlMetrics.disabledOpacity)
         }

@@ -74,11 +74,16 @@ public struct SHJumpBackToast: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             HStack(spacing: SH.Space.m) {
-                Button("Back", action: back)
-                    .buttonStyle(.plain)
-                    .font(.shSans(M.backTextSize, .medium))
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .shHelp("Back to where you were", shortcut: shortcut)
+                Button(action: back) {
+                    Text("Back")
+                        .font(.shSans(M.backTextSize, .medium))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .padding(.horizontal, SH.Space.s)
+                        .frame(minHeight: M.backClose + 2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .shHelp("Back to where you were", shortcut: shortcut)
                 if let shortcut {
                     Text(shortcut)
                         .font(.shSans(M.backChordSize))
@@ -237,7 +242,30 @@ public struct SHJumpScopes<ID: Hashable>: View {
     }
 
     public var body: some View {
-        SHPaletteScope("Scope", selection: $selection, options: options.map { ($0.id, $0.title) })
+        let M = SHPaletteMetrics.self
+        HStack(spacing: SH.Space.xxs) {
+            ForEach(options, id: \.id) { option in
+                let chosen = option.id == selection
+                Button { selection = option.id } label: {
+                    Text(option.title)
+                        .font(.sh(.caption, weight: chosen ? .medium : .regular))
+                        .foregroundStyle(chosen ? Color.sh.textPrimary : Color.sh.textSecondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, M.scopeInset)
+                        .frame(height: M.scopeHeight)
+                        .background(chosen ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: M.scopeRadius))
+                        // The pill draws 24pt; its hit area keeps the desktop's 24pt minimum with a point to
+                        // spare, so rounding never takes it under.
+                        .padding(.vertical, 1)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(SHPlainPressStyle())
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
+        }
+        .fixedSize()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scope")
     }
 }
 

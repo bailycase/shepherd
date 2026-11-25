@@ -142,8 +142,8 @@ struct DesignToolComponentTests {
         let bounds = Self.boards.bounds
         #expect(bounds == CGRect(x: 0, y: 0, width: 2640, height: 1764))
         let fitted = SHCanvasViewport.fitting(bounds, in: CGSize(width: 1100, height: 800))
-        // DZCanvas: the top row's labels 52pt down, its frames 76pt down.
-        #expect(SHDesignMetrics.fitFrameTop == 76)
+        // DZCanvas: the top row's labels 72pt down, its frames 96pt down.
+        #expect(SHDesignMetrics.fitFrameTop == 96)
         #expect(fitted.screen(bounds.origin) == CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop))
         #expect(fitted.zoom < 1)
         let screen = fitted.screen(bounds)
@@ -192,44 +192,44 @@ struct DesignToolComponentTests {
 
     // MARK: Board actions, the direction tile, presenting
 
-    /// DZCanvas: the bar's bottom 2pt above the board's label (58pt above the frame), its leading
-    /// edge at the frame's middle, kept inside the canvas; none for a board off screen.
-    @Test func theBoardActionsSitOverTheBoardsLabelFromItsMiddle() throws {
-        let bar = CGSize(width: 375, height: 32)
+    /// DZCanvas: the bar's bottom 6pt above the board's label, its leading edge at the frame's,
+    /// kept inside the canvas; none for a board off screen.
+    @Test func theBoardActionsSitOverTheBoardsLabelFromItsLeadingEdge() throws {
+        let bar = CGSize(width: 375, height: SHDesignChrome.barHeight)
         let canvas = CGSize(width: 1000, height: 700)
         let origin = try #require(SHBoardActions.origin(over: CGRect(x: 44, y: 200, width: 538, height: 336), bar: bar, canvas: canvas))
-        #expect(origin == CGPoint(x: 313, y: 200 - 24 - 2 - 32))
+        #expect(origin == CGPoint(x: 44, y: 200 - 24 - SHDesignChrome.barGap - SHDesignChrome.barHeight))
         #expect(SHBoardActions.origin(over: CGRect(x: 1200, y: 20, width: 538, height: 336), bar: bar, canvas: canvas) == nil)
     }
 
-    /// Where the room above the label runs out, the bar flips 2pt under the board (above the
+    /// Where the room above the label runs out, the bar flips 6pt under the board (above the
     /// toolbar's band); where that doesn't fit either, it sits just inside the board's top edge,
     /// on the canvas. Near the trailing edge it stays 16pt inside.
     @Test(arguments: [
         // Scrolled up to the canvas's top: under the board.
-        (CGRect(x: 800, y: 20, width: 538, height: 336), CGPoint(x: 1000 - 375 - 16, y: 20 + 336 + 2)),
+        (CGRect(x: 800, y: 20, width: 538, height: 336), CGPoint(x: 1000 - 375 - 16, y: 20 + 336 + 6)),
         // Its bottom too near the toolbar's band as well: just inside its top edge.
-        (CGRect(x: 44, y: 20, width: 538, height: 600), CGPoint(x: 313, y: 22)),
+        (CGRect(x: 44, y: 20, width: 538, height: 600), CGPoint(x: 44, y: 26)),
         // Filling the canvas, its top scrolled away: 4pt from the canvas's top.
-        (CGRect(x: 44, y: -400, width: 538, height: 1400), CGPoint(x: 313, y: 4)),
+        (CGRect(x: 44, y: -400, width: 538, height: 1400), CGPoint(x: 44, y: 4)),
     ])
     func theBoardActionsFlipUnderABoardWithNoRoomAboveAndClampWhenNeitherFits(board: CGRect, expected: CGPoint) throws {
-        let origin = try #require(SHBoardActions.origin(over: board, bar: CGSize(width: 375, height: 32), canvas: CGSize(width: 1000, height: 700)))
+        let origin = try #require(SHBoardActions.origin(over: board, bar: CGSize(width: 375, height: SHDesignChrome.barHeight), canvas: CGSize(width: 1000, height: 700)))
         #expect(origin == expected)
     }
 
     /// Room above on the canvas isn't enough when the bar would lie over another board's label.
     @Test func theBoardActionsNeverCoverALabel() throws {
-        let bar = CGSize(width: 375, height: 32)
+        let bar = CGSize(width: 375, height: SHDesignChrome.barHeight)
         let board = CGRect(x: 44, y: 200, width: 538, height: 336)
         let label = CGRect(x: 400, y: 160, width: 160, height: 16)
         let origin = try #require(SHBoardActions.origin(over: board, bar: bar, canvas: CGSize(width: 1000, height: 700), labels: [label]))
-        #expect(origin == CGPoint(x: 313, y: 538))
+        #expect(origin == CGPoint(x: 44, y: 536 + SHDesignChrome.barGap))
         #expect(!CGRect(origin: origin, size: bar).intersects(label))
     }
 
-    /// DZCanvas at its fitted zoom: over any board of the top row, the bar sits 18pt from the top,
-    /// 2pt above that row's labels, and covers none of them.
+    /// DZCanvas at its fitted zoom: over any board of the top row, the bar sits 30pt from the top,
+    /// 6pt above that row's labels, and covers none of them.
     @Test(arguments: ["A.dc.html", "B.dc.html", "C.dc.html"])
     func aFittedCanvasLeavesTheBoardActionsRoomAboveTheTopRow(_ selected: String) throws {
         let frames: [String: CGRect] = [
@@ -244,10 +244,10 @@ struct DesignToolComponentTests {
         let viewport = SHCanvasViewport.fitting(boards.bounds, in: canvas)
         let labels = boards.compactMap { $0.labelRect(in: viewport) }
         #expect(labels.count == 4)
-        let bar = CGSize(width: 375, height: SHDesignMetrics.compactActionsHeight)
+        let bar = CGSize(width: 375, height: SHDesignChrome.barHeight)
         let origin = try #require(SHBoardActions.origin(over: viewport.screen(frames[selected]!), bar: bar, canvas: canvas, labels: labels))
-        #expect(origin.y == SHDesignMetrics.fitTop - SHDesignMetrics.actionsGap - SHDesignMetrics.compactActionsHeight)
-        #expect(origin.y == 18)
+        #expect(origin.y == SHDesignMetrics.fitTop - SHDesignChrome.barGap - SHDesignChrome.barHeight)
+        #expect(origin.y == 30)
         #expect(!labels.contains { $0.intersects(CGRect(origin: origin, size: bar)) })
     }
 

@@ -60,6 +60,9 @@ public enum SHDesignMetrics {
     /// Where a fitted canvas puts the boards (DZCanvas): 44pt in, the top row's labels 52pt down
     /// and its frames 76pt down, which leaves the board actions 18pt from the top. `fitTop` is
     /// also the room kept below the boards.
+    /// The margins a presented board keeps around it.
+    public static let presentLeading: CGFloat = 44
+    public static let presentTop: CGFloat = 52
     #if os(macOS)
     /// DZCanvas on the Mac: 28pt in, the top row's labels 72pt down and its frames 96pt down.
     public static let fitLeading: CGFloat = 28

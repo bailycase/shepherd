@@ -362,7 +362,7 @@ public struct SHBoardPresentation<Slot: View>: View {
     /// The board fitted into a view of `size` with the canvas's fitted margins around it, never
     /// larger than 100%.
     public static func zoom(for board: CGSize, in size: CGSize) -> CGFloat {
-        let room = CGSize(width: size.width - SHDesignMetrics.fitLeading * 2, height: size.height - SHDesignMetrics.fitTop * 2)
+        let room = CGSize(width: size.width - SHDesignMetrics.presentLeading * 2, height: size.height - SHDesignMetrics.presentTop * 2)
         guard board.width > 0, board.height > 0, room.width > 0, room.height > 0 else { return SHCanvasViewport.zoomRange.lowerBound }
         return SHCanvasViewport.clamp(min(1, room.width / board.width, room.height / board.height))
     }
