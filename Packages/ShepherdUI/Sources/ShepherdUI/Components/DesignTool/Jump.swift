@@ -92,8 +92,8 @@ public struct SHJumpBackToast: View {
                 }
             }
             if let close {
-                Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.shIcon(size: M.backClose))
+                Button(action: close) { Image(systemName: "xmark").font(.shSans(SH.Space.m + 2, .medium)) }
+                    .buttonStyle(.shIcon(size: M.backClose, tint: Color.sh.textTertiary))
                     .shHelp("Dismiss")
                     .accessibilityLabel("Dismiss")
             }
