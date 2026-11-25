@@ -21,15 +21,17 @@ struct SidePanePreviewTests {
     /// The workspace column as the shell composes it: the thread under the toolbar, the pane card beside both.
     struct PaneWindow<Pane: View>: View {
         let fixture: ThreadFixture
+        /// A subagent run's inspector in the pane (GXSubagents): a card under the toolbar, the thread's tray showing it chosen.
+        var inspected: String?
         @State private var panes = RightPaneState()
         @ViewBuilder let pane: () -> Pane
 
         var body: some View {
             ZStack(alignment: .top) {
-                RightPaneSplit(state: panes, showPane: true, card: true, publishesReserve: true) {
+                RightPaneSplit(state: panes, showPane: true, card: true, inspector: inspected != nil, publishesReserve: true) {
                     ThreadView(store: fixture.store, active: true, isFocused: false, request: fixture.request, commandKey: "preview",
                                agentName: "Investigate", workingDirectory: "~/Developer/Shepherd", inspectSubagent: { _ in },
-                               inspectedRunID: nil, review: { _ in },
+                               inspectedRunID: inspected, review: { _ in },
                                turnActions: TurnChangesActions(review: { _, _ in }, undo: { _ in nil }, redo: { _ in nil }), listModels: nil,
                                restartPi: { _ in }, authNotice: nil,
                                authActions: ThreadAuthActions(signIn: { _ in }, useModel: { _ in }, models: { ["openai/gpt-5.3-codex"] }),
@@ -42,7 +44,7 @@ struct SidePanePreviewTests {
                 .environment(\.workspaceTopInset, AppLayout.headerHeight)
                 ThreadHeader(store: fixture.store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities",
                              paneOpen: true, paneShortcut: "⇧⌘B", togglePane: {}, rename: {})
-                    .padding(.trailing, panes.reserved > 0 ? panes.reserved : panes.defaultWidth + AppLayout.paneCardEdge)
+                    .padding(.trailing, inspected != nil ? 0 : panes.reserved > 0 ? panes.reserved : panes.defaultWidth + AppLayout.paneCardEdge)
             }
             .background(Color.sh.bgWindow)
         }
@@ -84,6 +86,49 @@ struct SidePanePreviewTests {
                 Spacer()
             }
             .background(Color.sh.bgRaised)
+        }
+    }
+
+    /// GXSubagents in the whole window: the real shell (sidebar, toolbar, workspace) with a thread whose store a fixture feeds, a tray row clicked
+    /// (`toggleSubagentInspector`, which the row calls), and the inspector a card under the toolbar beside the thread.
+    @Test func gxSubagentInspectorInTheWindow() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        var agent = Agent(name: "Investigate SwiftUI live preview capabilities", spaceID: space.id, tabID: TabID(), status: .working, nameIsFinal: true)
+        let pane = LeafPane(cwd: space.path, agentID: agent.id)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        agent.tabID = tab.id
+        agent.paneID = pane.id
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let vm = workspace.vm
+        vm.selectAgent(agent.id)
+        let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
+        fixture.transcripts["native-worker"] = Threads.workerTranscript
+        defer { fixture.store.stop() }
+        let store = vm.threadStores.store(for: agent.id)
+        var pass: (began: Date, fed: Date?)?
+        try await Preview.render("gx-subagent-inspector-window", size: CGSize(width: 1440, height: 900), ready: {
+            // Each pass mounts the thread again, and its own request (nothing to say in a scratch app) takes the store: once it has,
+            // the fixture's takes it back, and the pass is ready when that has held for a moment.
+            let now = Date()
+            let began = pass?.began ?? now
+            if let fed = pass?.fed {
+                guard store.ready, store.tray != nil, now.timeIntervalSince(fed) > 0.5 else { return false }
+            } else if now.timeIntervalSince(began) > 0.5 {
+                pass = (began, now)
+                Task { await store.run(request: fixture.request) }
+                return false
+            } else {
+                pass = (began, nil)
+                return false
+            }
+            if vm.subagentInspector.runByAgent[agent.id] == nil { vm.toggleSubagentInspector(agentID: agent.id, runID: "native-worker") }
+            guard vm.subagentInspector.runByAgent[agent.id] == "native-worker" else { return false }
+            pass = nil
+            return true
+        }) {
+            RootView(vm: vm)
         }
     }
 }
