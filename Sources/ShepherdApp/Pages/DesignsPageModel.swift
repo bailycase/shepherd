@@ -5,7 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 
 /// The Designs page (NavDesigns) as plain values: This Mac's designs, most recently edited first,
-/// in rows of four, and its design systems in rows of three ending in "Build one from a repo".
+/// in rows of four, and its design systems in rows of three ("Build one from a repo" is the section's link).
 /// Pure: the same inputs always give the same page. Derived once per change, never in a view's
 /// body.
 struct DesignsPageModel: Equatable {
@@ -51,8 +51,6 @@ struct DesignsPageModel: Equatable {
         let count: String
         /// Four of its colors.
         let swatches: [DesignSystemPresentation.Swatch]
-        /// "Built-in" after a built-in's name.
-        var tag: String?
         /// A system coming with an import, until the design's boards are in.
         var dashed = false
         /// Its menu (SystemMenu); nil for a system still coming.
@@ -76,12 +74,9 @@ struct DesignsPageModel: Equatable {
                 .map { Array(cards[$0..<min($0 + DesignsPageModel.columns, cards.count)]) }
         }
 
-        var systemRows: [(systems: [System], tile: Bool)] {
-            let slots = systems.count + (projects == nil ? 0 : 1)
-            return stride(from: 0, to: slots, by: DesignsPageModel.systemColumns).map { start in
-                let end = min(start + DesignsPageModel.systemColumns, slots)
-                return (Array(systems[min(start, systems.count)..<min(end, systems.count)]), projects != nil && end == slots)
-            }
+        var systemRows: [[System]] {
+            stride(from: 0, to: systems.count, by: DesignsPageModel.systemColumns)
+                .map { Array(systems[$0..<min($0 + DesignsPageModel.systemColumns, systems.count)]) }
         }
     }
 
@@ -103,7 +98,7 @@ struct DesignsPageModel: Equatable {
     /// Each connected host that serves designs, after this Mac's.
     var hosts: [HostSection] = []
     var systems: [System] = []
-    /// The projects a system can be built from; none leaves the tile disabled.
+    /// The projects a system can be built from; none leaves "Build one from a repo" disabled.
     var projects: [Project] = []
     /// The filter matched nothing (there are designs).
     var noMatch = false
@@ -117,14 +112,10 @@ struct DesignsPageModel: Equatable {
         return stride(from: 0, to: slots.count, by: Self.columns).map { Array(slots[$0..<min($0 + Self.columns, slots.count)]) }
     }
 
-    /// The systems in rows of `systemColumns`, the build tile after the last: each row's
-    /// systems, and whether the tile ends it.
-    var systemRows: [(systems: [System], tile: Bool)] {
-        let slots = systems.count + 1
-        return stride(from: 0, to: slots, by: Self.systemColumns).map { start in
-            let end = min(start + Self.systemColumns, slots)
-            return (Array(systems[min(start, systems.count)..<min(end, systems.count)]), end == slots)
-        }
+    /// The systems in rows of `systemColumns`.
+    var systemRows: [[System]] {
+        stride(from: 0, to: systems.count, by: Self.systemColumns)
+            .map { Array(systems[$0..<min($0 + Self.systemColumns, systems.count)]) }
     }
 
     /// Shepherd Design's source line (DesignLifecycleStates: "Built into Shepherd", beside its tag).
@@ -168,24 +159,24 @@ struct DesignsPageModel: Equatable {
             let info = summary.info
             let project = info.spaceID.flatMap { names[$0] }
             let source = summary.builtIn ? builtInSource
-                : info.cameWith.flatMap { designNames[$0] }.map { "came with \($0)" }
+                : info.cameWith.flatMap { designNames[$0] }.map { "Comes with \($0)" }
                 ?? DesignSystemPresentation.source(project: project, sources: info.sources)
             let resyncs = project != nil && !info.sources.isEmpty
             return System(id: .system(info.namespace), name: info.title, source: source, count: designsText(counts[info.namespace] ?? 0),
-                          swatches: swatches[info.namespace] ?? [], tag: summary.builtIn ? "Built-in" : nil,
+                          swatches: swatches[info.namespace] ?? [],
                           menu: DesignMenu.system(name: info.title, builtIn: summary.builtIn, repo: resyncs ? project : nil,
                                                   building: building.contains(info.namespace)))
         }
         let built = Set(systems.compactMap(\.info.ownerDesignID))
         let pending = designs.filter { $0.buildsSystem && !built.contains($0.id) }.sorted { $0.createdAt < $1.createdAt }.map { build in
-            System(id: .build(build.id), name: build.name, source: build.sourceSpaceID.flatMap { names[$0] }.map { "\($0) · building" } ?? "building",
-                   count: "", swatches: [], menu: DesignMenu.system(name: build.name, builtIn: false, repo: nil, building: true))
+            System(id: .build(build.id), name: build.name, source: build.sourceSpaceID.flatMap { names[$0] }.map { "Reading \($0)…" } ?? "Reading the repo…",
+                   count: "building", swatches: [], menu: DesignMenu.system(name: build.name, builtIn: false, repo: nil, building: true))
         }
         cards.insert(contentsOf: pending, at: own.count)
         // A system coming with an import, dashed until its design's boards are in, after every
         // system there is (ImportProgress).
         if let importing, let system = importing.system, !own.contains(where: { $0.info.title == system }) {
-            cards.append(System(id: .system(".importing"), name: system, source: "came with \(importing.shownTitle)",
+            cards.append(System(id: .system(".importing"), name: system, source: "Comes with \(importing.shownTitle)",
                                 count: "after the boards", swatches: [], dashed: true))
         }
         if !query.isEmpty {
