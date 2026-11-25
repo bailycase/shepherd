@@ -126,14 +126,15 @@ final class ThreadInput {
         guard available else { return }
         attachments.clearError()
         let generation = generation
-        let session = store.sessionKey
+        let session = store.session?.piSessionID
         preparingImages += 1
         let prepare = prepareImages
         Task {
             let files = await prepare(providers)
             preparingImages -= 1
-            // An initial session does not replace the draft the user already started.
-            guard available, self.generation == generation, session == nil || store.sessionKey == session else { return }
+            // An initial session does not replace the draft the user already started, and a host that restarted meanwhile (a new
+            // pi process for the same conversation: `generation`) keeps the image; only another conversation does not get it.
+            guard available, self.generation == generation, session == nil || store.session?.piSessionID == session else { return }
             add(files: files, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
     }

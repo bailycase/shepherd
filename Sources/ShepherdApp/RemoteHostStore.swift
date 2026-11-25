@@ -552,6 +552,19 @@ final class RemoteHostStore {
         connect(connection)
     }
 
+    /// A thread's Reconnect: tries the host now, not after its backoff or a refusal that waited for a person, and returns once the
+    /// try has ended, connected or not. A connection already up is left alone; one being made is waited for. Unlike `reconnect`,
+    /// it keeps This Mac's terminals attached (`rebindPanes`).
+    func retryNow(id: UUID) async {
+        guard let connection = allConnections.first(where: { $0.id == id }), connection.phase != .connected else { return }
+        if connection.phase != .connecting {
+            connection.reconnectTask?.cancel()
+            connection.reconnectDelay = .seconds(1)
+            connect(connection)
+        }
+        await connection.reconnectTask?.value
+    }
+
     /// A row of Settings ▸ Fleet ▸ Macs for a Mac that was a client: added to the fleet (it is no longer a row) or dismissed.
     func dismissNotInFleet(id: UUID) {
         notInFleet.removeAll { $0.id == id }
@@ -818,7 +831,8 @@ final class RemoteHostStore {
     func nativeThread(_ target: RemoteAgentRef, request: NativeThreadRequest) async throws -> NativeThreadResult {
         guard let connection = allConnections.first(where: { $0.id == target.hostID }),
               connection.phase == .connected, let client = connection.client else {
-            throw RemoteHostClientError.disconnected
+            // Nothing left this device: a send keeps its words and images, and a pull says the connection is gone.
+            throw RemoteHostClientError.rejected(code: "not_sent", message: "Host is disconnected. Reconnect before trying again.")
         }
         return try await client.nativeThread(agentID: target.agentID, request: request)
     }

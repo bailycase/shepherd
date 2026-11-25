@@ -382,6 +382,41 @@ struct ThreadInputTests {
         #expect(store.attachedFiles.map(\.path) == [file.path])
     }
 
+    /// A host that restarts while a drop is read (an update's relaunch) serves the same conversation from a new pi process: the drop
+    /// still lands; one read for another conversation does not.
+    @Test(arguments: [false, true])
+    func aDropReadAcrossAHostRestartLandsUnlessTheConversationChanged(otherConversation: Bool) async throws {
+        let input = ThreadInput()
+        let store = NativeThreadStore()
+        let file = try makeScratchDirectory("restart-composer-input").appendingPathComponent("notes.txt")
+        try Data("notes".utf8).write(to: file)
+        let (files, reply) = AsyncStream<URL>.makeStream()
+        defer { reply.finish() }
+        input.prepareImages = { _ in
+            for await file in files { return [(file, nil)] }
+            return []
+        }
+        input.setAvailable(true, for: UUID())
+        var snapshot = ComposerThread.snapshot(messages: 0, commands: [])
+        let served = Locked(snapshot)
+        let polling = Task { await store.run(request: { _ in .snapshot(value: served.current) }) }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        input.attach([NSItemProvider()], store: store, localFiles: true)
+        #expect(input.preparingImages == 1)
+
+        let before = store.sessionKey
+        snapshot.generation += "-restarted"
+        snapshot.revision += 1
+        if otherConversation { snapshot.piSessionID += "-new" }
+        served.withValue { $0 = snapshot }
+        await store.refresh(fresh: true)
+        try await eventuallyOnMain("the restarted host's session") { store.sessionKey != before }
+        reply.yield(file)
+        try await eventuallyOnMain("file provider to finish") { input.preparingImages == 0 }
+        #expect(store.attachedFiles.map(\.path) == (otherConversation ? [] : [file.path]))
+    }
+
     @Test func aBackgroundFocusRequestReclaimsOnlyAnAvailableComposer() async throws {
         let input = ThreadInput()
         let store = NativeThreadStore()

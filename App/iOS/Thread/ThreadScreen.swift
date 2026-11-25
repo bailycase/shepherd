@@ -237,7 +237,7 @@ struct ThreadScreen: View {
         if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         // A stopped pi's problem is the composer's banner (`StartProblemBanner`), with Retry where the host takes it.
-        return store.loadError
+        return store.loadErrorLine
     }
 }
 

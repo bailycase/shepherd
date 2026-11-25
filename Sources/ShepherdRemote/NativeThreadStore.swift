@@ -170,6 +170,32 @@ public final class NativeThreadStore {
     public private(set) var startRestart: NativeStartRestartState? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
     public private(set) var loadError: String? { didSet { if loadError != nil, startRestart == .starting { startRestart = nil }; bothVersions() } }
+    /// What `loadError` is: the link to the host lost (a request that never got an answer), or the host's own answer, by its code.
+    public enum LoadErrorKind: Equatable, Sendable {
+        case connection
+        case host(code: String)
+    }
+    /// Set with `loadError`, before it.
+    public private(set) var loadErrorKind = LoadErrorKind.connection
+    public static let lostConnectionTitle = "Lost connection to the agent process."
+    /// The banner's title: the connection's own, or one that fits what the host said.
+    public var loadErrorTitle: String {
+        switch loadErrorKind {
+        case .connection: Self.lostConnectionTitle
+        case .host(let code) where code == NativeThreadCode.unavailable: "The agent process isn't running."
+        case .host(let code) where code == "update_required" || code == "unsupported": "This host needs an update."
+        case .host: "Couldn't load this thread."
+        }
+    }
+    /// `loadError` in one line, for a client whose banner is one line (the phone's): a refusal by the host follows its title.
+    public var loadErrorLine: String? {
+        guard let loadError else { return nil }
+        if case .host = loadErrorKind { return "\(loadErrorTitle) \(loadError)" }
+        return loadError
+    }
+    /// Brings the host's connection back, tried now rather than after its backoff, and returns once the try has ended. Set by whoever
+    /// owns the host connection (the app's host store); nil for a store with none of its own to bring back.
+    @ObservationIgnored public var reconnectHost: (@MainActor () async -> Void)?
     public private(set) var notice: String? { didSet { modelUnavailable = false; chromeVersion &+= 1 } }
     public private(set) var modelUnavailable = false { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
@@ -2294,11 +2320,11 @@ public final class NativeThreadStore {
                 noteStarting()
             case .failure(let code, let message):
                 ready = false
-                setLoadError(message)
+                setLoadError(message, kind: .host(code: code))
                 if code == "stale_session", !fresh { await refresh(fresh: true) }
             default:
                 ready = false
-                setLoadError("Unexpected thread response. Refresh to try again.")
+                setLoadError("Unexpected thread response. Refresh to try again.", kind: .host(code: "unexpected"))
             }
         } catch RemoteHostClientError.rejected(let code, _) where code == NativeThreadCode.starting {
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
@@ -2306,8 +2332,15 @@ public final class NativeThreadStore {
         } catch {
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
             ready = false
-            setLoadError(String(describing: error))
+            setLoadError(error)
         }
+    }
+
+    /// Reconnect: a lost connection is brought back first (`reconnectHost`), then the thread is pulled whole. A refusal by the host
+    /// has nothing to reconnect: it is only asked again.
+    public func reconnect() async {
+        if loadErrorKind == .connection, let reconnectHost { await reconnectHost() }
+        await refresh(fresh: true)
     }
 
     /// Asks the host to start pi for a thread it served as a preview, once per run. The host
@@ -2335,15 +2368,29 @@ public final class NativeThreadStore {
     }
 
     /// Any failure but `native_starting`: the thread is not starting, it is in trouble.
-    private func setLoadError(_ message: String) {
+    private func setLoadError(_ message: String, kind: LoadErrorKind = .connection) {
         catchUpMissed()
         endStarting()
         clearStartProblem()
         resumeStartWaiters(false)
-        guard loadError != message else { return }
+        guard loadError != message || loadErrorKind != kind else { return }
+        loadErrorKind = kind
         loadError = message
         derive()
     }
+
+    /// A request that threw: the host answering with a refusal says so by its code, in its words; anything else (no connection,
+    /// no answer in time, a closed link) is the connection lost.
+    private func setLoadError(_ error: Error) {
+        if case RemoteHostClientError.rejected(let code, let message) = error {
+            setLoadError(message, kind: code == Self.notSentCode ? .connection : .host(code: code))
+        } else {
+            setLoadError(String(describing: error))
+        }
+    }
+
+    /// `RemoteHostClientError.rejected`'s code for a request that never left this device: the connection was not there.
+    static let notSentCode = "not_sent"
 
     /// pi has not answered yet (the host is still binding or booting it): quiet, with no
     /// error, until it has taken longer than `startingLimit`.
@@ -2371,7 +2418,8 @@ public final class NativeThreadStore {
             resumeStartWaiters(false)
             let limit = startingLimit.formatted(.units(allowed: [.minutes, .seconds], width: .wide))
             let message = "\(Self.notStartedPrefix) \(limit)."
-            if loadError != message {
+            if loadError != message || loadErrorKind != .host(code: "not_started") {
+                loadErrorKind = .host(code: "not_started")
                 loadError = message
                 derive()
             }
@@ -2527,6 +2575,7 @@ public final class NativeThreadStore {
                 olderCursor = page.olderCursor
                 derive()
             case .failure(let code, let message):
+                loadErrorKind = .host(code: code)
                 loadError = message
                 derive()
                 if code == "stale_cursor" || code == "stale_session" { await refresh(fresh: true, resetHistory: true) }
@@ -2534,7 +2583,7 @@ public final class NativeThreadStore {
             }
         } catch {
             guard !Task.isCancelled, epoch == run, historyEpoch == history else { return }
-            setLoadError(String(describing: error))
+            setLoadError(error)
         }
     }
 
@@ -3189,6 +3238,9 @@ public final class NativeThreadStore {
                snapshot?.generation != current.generation || snapshot?.piSessionID != current.piSessionID { return false }
             if case RemoteHostClientError.outcomeUnknown = error {
                 notice = Self.outcomeUnknown
+            } else if case RemoteHostClientError.rejected(Self.notSentCode, let message) = error {
+                // It never left: the words and images come back (`.failed`), and the thread says why.
+                notice = message
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
