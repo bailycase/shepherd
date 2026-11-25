@@ -61,8 +61,8 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// pi retrying the request that just failed, at the end of the live turn.
         case retrying(id: String, line: NativeRetryLine)
         /// A message the user steered in, where pi read it (after the tool work before it).
-        /// `sentAt` is when it was sent (ms); `images` how many it carried.
-        case steer(id: String, text: String, sentAt: Double?, images: Int)
+        /// `sentAt` is when it was sent (ms); `images` how many it carried, `imageRefs` the images when the thread names every one.
+        case steer(id: String, text: String, sentAt: Double?, images: Int, imageRefs: [NativeImageRef] = [])
         /// A compaction where it happened, and what the agent kept.
         case compaction(NativeCompactionRow)
         /// A question pi asked, where it asked, and the user's answer (QuestionAnswered).
@@ -71,7 +71,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _, _), .prose(let id, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .hook(let id, _), .error(let id, _, _, _),
-                 .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
+                 .steer(let id, _, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
             }
@@ -137,10 +137,9 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     }
 }
 
-/// Builds a turn's presentation. Consecutive calls of one kind merge into activity lines, one per
-/// burst; prose and the subagent record split them. Thinking between prose blocks folds into one "Thought for Ns" at the
-/// start of its stretch, so a thinking model's per-call reasoning does not break every line
-/// in two; the block still streaming stays last, live. `call` builds a call from its message
+/// Builds a turn's presentation, in the order things happened. Consecutive calls of one kind merge into activity lines, one per
+/// burst; prose, the subagent record, thinking the reader can see and a call's own pictures split them where they fall.
+/// Consecutive thinking folds into one "Thought for Ns". The block still streaming stays last, live. `call` builds a call from its message
 /// and `thinking` parses a stretch's finished thinking (the store passes memoised ones, so a
 /// reply streaming under a thought never parses it again). `prose` parses an item by id, text
 /// and streaming mode, so the store can reuse finished prose while the tail grows. `errors`
@@ -161,13 +160,13 @@ public func nativeTurnPresentation(
         case tool(NativeThreadMessage)
         case note(String)
         case images([NativeImageRef])
-        /// What a tool returned: drawn under its stretch's line, so a render never splits the stretch.
+        /// What a tool returned: drawn where its call ended, so the activity line stops there and the next call starts another.
         case toolImages([NativeImageRef])
         case goalRecord(String)
         case hook(NativeHookRow)
         /// Consecutive failed requests: pi's automatic retries of one.
         case error([NativeThreadMessage])
-        case steer(String, Double?, Int)
+        case steer(String, Double?, Int, [NativeImageRef])
         case compaction(NativeCompactionRow)
         case question(NativeQuestionRecordRow)
     }
@@ -192,7 +191,9 @@ public func nativeTurnPresentation(
         }
         if message.role == "user" {
             let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
-            raw.append(.steer(text, message.timestamp, message.blocks.count { $0.kind == .unsupportedImage }))
+            let images = message.blocks.count { $0.kind == .unsupportedImage }
+            let refs = message.blocks.compactMap(\.image)
+            raw.append(.steer(text, message.timestamp, images, refs.count == images ? refs : []))
             continue
         }
         if message.role == "custom", message.customType == "shepherd.hook" {
@@ -272,52 +273,53 @@ public func nativeTurnPresentation(
         return "\(kind):\(ordinal)"
     }
 
-    /// One stretch between prose: its merged thinking first, then its lines and cards.
+    /// The turn in the order it happened. Calls gather into the activity line being built; what happened between them (thinking
+    /// the reader can see, a call's own pictures) closes that line and stands where it happened, so the next calls start a new one.
+    /// Consecutive thinking merges into one row, and thinking with nothing to show splits nothing.
     var stretchThinking: [(text: String, seconds: Double?, message: String)] = []
     var stretchCalls: [NativeActivityCall] = []
-    var stretchItems: [NativeTurnPresentation.Item] = []
-    var stretchImages: [NativeImageRef] = []
     func flushCalls() {
         let bursts = nativeActivityBursts(stretchCalls)
-        if let first = bursts.first { stretchItems.append(.activity(id: "activity:" + first.id, bursts: bursts)) }
+        if let first = bursts.first { items.append(.activity(id: "activity:" + first.id, bursts: bursts)) }
         stretchCalls = []
     }
-    func flushStretch() {
-        flushCalls()
-        if !stretchThinking.isEmpty {
-            // The ordinal is spent either way, so leaving an empty row out moves no other id.
-            let id = nextID("thinking")
-            let text = RPCContentBlock.normalizedThinking(stretchThinking.map(\.text).filter(nativeThinkingIsReadable).joined(separator: "\n\n"))
-            var seconds: Double?
-            var counted: Set<String> = []
-            for part in stretchThinking where counted.insert(part.message).inserted {
-                if let value = part.seconds { seconds = (seconds ?? 0) + value }
-            }
-            if !text.isEmpty || nativeThoughtIsTimed(seconds) {
-                items.append(.thinking(id: id, text: text, blocks: text.isEmpty ? [] : thinking(text), seconds: seconds, live: false, since: nil))
-            }
+    /// The thinking gathered so far, where it happened: after the calls before it, ahead of whatever comes next.
+    func flushThinking() {
+        guard !stretchThinking.isEmpty else { return }
+        // The ordinal is spent either way, so leaving an empty row out moves no other id.
+        let id = nextID("thinking")
+        let text = RPCContentBlock.normalizedThinking(stretchThinking.map(\.text).filter(nativeThinkingIsReadable).joined(separator: "\n\n"))
+        var seconds: Double?
+        var counted: Set<String> = []
+        for part in stretchThinking where counted.insert(part.message).inserted {
+            if let value = part.seconds { seconds = (seconds ?? 0) + value }
         }
-        items += stretchItems
-        if !stretchImages.isEmpty { items.append(.images(id: nextID("images"), images: stretchImages)) }
         stretchThinking = []
-        stretchItems = []
-        stretchImages = []
+        guard !text.isEmpty || nativeThoughtIsTimed(seconds) else { return }
+        flushCalls()
+        items.append(.thinking(id: id, text: text, blocks: text.isEmpty ? [] : thinking(text), seconds: seconds, live: false, since: nil))
+    }
+    func flushStretch() {
+        flushThinking()
+        flushCalls()
     }
 
     /// The record's lines: "Started" once, at the first spawn; "finished" once, after it.
     func placeStart() {
         guard let record = cards.record, !placedStart else { return }
+        flushThinking()
         flushCalls()
-        stretchItems.append(.subagents(id: "subagents:started", lines: [record.started]))
+        items.append(.subagents(id: "subagents:started", lines: [record.started]))
         placedStart = true
     }
     func placeFinish() {
         guard placedStart, !placedFinish, let finished = cards.record?.finished else { return }
+        flushThinking()
         flushCalls()
-        if case .subagents(let id, let lines)? = stretchItems.last, id == "subagents:started" {
-            stretchItems[stretchItems.count - 1] = .subagents(id: id, lines: lines + [finished])
+        if case .subagents(let id, let lines)? = items.last, id == "subagents:started" {
+            items[items.count - 1] = .subagents(id: id, lines: lines + [finished])
         } else {
-            stretchItems.append(.subagents(id: "subagents:finished", lines: [finished]))
+            items.append(.subagents(id: "subagents:finished", lines: [finished]))
         }
         placedFinish = true
     }
@@ -331,6 +333,7 @@ public func nativeTurnPresentation(
         case .thinking(let text, let seconds, let message, _):
             stretchThinking.append((text, seconds, message))
         case .tool(let message):
+            flushThinking()
             toolCalls += 1
             // The record stands for the turn's children: their bookkeeping calls have no second
             // surface; unassociated calls stay visible so errors are not hidden.
@@ -362,13 +365,15 @@ public func nativeTurnPresentation(
             flushStretch()
             items.append(.images(id: nextID("images"), images: refs))
         case .toolImages(let refs):
-            stretchImages += refs
+            // Under the call that returned them, before whatever the agent does next.
+            flushCalls()
+            items.append(.images(id: nextID("images"), images: refs))
         case .error(let tries):
             flushStretch()
             items.append(.error(id: nextID("error"), error: errors.error(tries), final: false, folded: true))
-        case .steer(let text, let sentAt, let images):
+        case .steer(let text, let sentAt, let images, let refs):
             flushStretch()
-            items.append(.steer(id: nextID("steer"), text: text, sentAt: sentAt, images: images))
+            items.append(.steer(id: nextID("steer"), text: text, sentAt: sentAt, images: images, imageRefs: refs))
         case .compaction(let row):
             flushStretch()
             items.append(.compaction(row))

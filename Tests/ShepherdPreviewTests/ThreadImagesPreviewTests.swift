@@ -197,6 +197,70 @@ struct ThreadImagesPreviewTests {
         }
     }
 
+    /// A picture held by this client under a local id, and the ref a row names it by.
+    static func held(_ images: NativeThreadImages, _ index: Int, size: CGSize, tint: NSColor) -> NativeImageRef {
+        let data = picture(size, tint: tint)
+        let rep = NSBitmapImageRep(data: data)
+        let id = NativeThreadImages.localID(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, index)
+        images.hold(local: id, data)
+        return NativeImageRef(id: id, mimeType: "image/png", width: rep?.pixelsWide, height: rep?.pixelsHigh, byteCount: data.count)
+    }
+
+    /// A message the user queued with two pictures, as the thread draws it once the queue delivered it and pi has not saved the pictures yet:
+    /// "From the queue", then each picture down a column above its bubble (the host only counts them; this client names them from what it sent).
+    @Test func queuedMessageWithPictures() async throws {
+        let images = NativeThreadImages()
+        let refs = [Self.held(images, 0, size: CGSize(width: 117, height: 253), tint: .systemBlue),
+                    Self.held(images, 1, size: CGSize(width: 240, height: 150), tint: .systemGray)]
+        try await Preview.renderMatrix("thread-images-queued", size: CGSize(width: 880, height: 640), ready: { images.heldBytes >= 0 }) {
+            UserTurn(bubbles: [UserTurn.Bubble(text: "Here is the screenshot of the overlap.", images: 2, caption: "3:02 PM", pending: false, imageRefs: refs),
+                               UserTurn.Bubble(text: "And the same screen on the mini.", images: 0, caption: "3:03 PM", pending: true)],
+                     fromQueue: 2, hover: MessageHover(hovering: true))
+                .environment(\.threadImages, images)
+                .frame(width: 820, alignment: .leading).padding(24)
+                .frame(width: 880, height: 640, alignment: .topLeading)
+                .background(Color.sh.bgWindow)
+        }
+    }
+
+    /// A long live turn with a picture after each click: thinking, words, each call with its own pictures under it, more thinking, and the call
+    /// still running last, in the order the session ran them.
+    @Test func interleavedTurnWithPictures() async throws {
+        var snapshot = Threads.empty
+        snapshot.running = true
+        snapshot.supportedActions += ["sendImages", "images"]
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        let start = Date().timeIntervalSince1970 * 1000 - 120_000
+        func shot(_ n: Int, _ tint: NSColor) -> NativeThreadMessage {
+            let ref = Self.held(fixture.store.images, 10 + n, size: CGSize(width: 384, height: 240), tint: tint)
+            return NativeThreadMessage(entryID: "t\(n)", role: "toolResult", blocks: [
+                .init(kind: .text, text: "clicked"), .init(kind: .unsupportedImage, text: "[Image unavailable in native thread]", imageID: ref.id,
+                                                              mimeType: ref.mimeType, width: ref.width, height: ref.height, byteCount: ref.byteCount)],
+                toolName: "computer_use", toolCallID: "c\(n)", argumentsText: #"{"action":"click","x":120,"y":88}"#, status: "complete",
+                timestamp: start + Double(n) * 9_000, startedAt: start + Double(n) * 9_000 - 800)
+        }
+        func thought(_ id: String, _ text: String, _ seconds: Double, at: Double) -> NativeThreadMessage {
+            var message = NativeThreadMessage(entryID: id, role: "assistant", blocks: [.init(kind: .thinking, text: text)], timestamp: start + at)
+            message.thinkingSeconds = seconds
+            return message
+        }
+        var first = thought("a1", "The icon is in the Dock; find it before clicking.", 12, at: 1_000)
+        first.blocks.append(.init(kind: .text, text: "Opening it to see what it is."))
+        fixture.snapshot.messages = [
+            NativeThreadMessage(entryID: "u1", role: "user", blocks: [.init(kind: .text, text: "What is the app with the blue icon in my Dock?")], timestamp: start),
+            first, shot(1, .systemBlue),
+            thought("a2", "A window opened. Check what it is called.", 9, at: 20_000), shot(2, .systemGray),
+            thought("a3", "It needs a moment to finish loading.", 14, at: 40_000), shot(3, .systemRed),
+        ]
+        fixture.snapshot.provisional = [NativeThreadMessage(entryID: "provisional:tool:run", role: "toolResult", blocks: [], toolName: "bash", toolCallID: "run",
+                                                           argumentsText: #"{"command":"sleep 6"}"#, status: "running", timestamp: start + 60_000, startedAt: start + 58_000)]
+        let store = fixture.store
+        try await Preview.renderMatrix("thread-order-interleaved", size: CGSize(width: 900, height: 900), scales: [1], ready: { store.ready && !store.rows.isEmpty }) {
+            fixture.thread(title: "What is this app", workingDirectory: "~/Developer/acme-web")
+        }
+    }
+
     // MARK: The viewer over the real thread (ThreadImageOpen)
 
     /// A real PNG of `width` × `height` pixels shaped like a phone screen or a dashboard, small on disk.

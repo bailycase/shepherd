@@ -542,6 +542,10 @@ public final class NativeThreadStore {
     @ObservationIgnored private var claimed: [String: UUID] = [:]
     /// Images this client queued, by queued message id: the host keeps only their names.
     @ObservationIgnored private var sentImages: [UUID: [NativeImage]] = [:]
+    /// What this client's own sends' images are called in the rows that stand for the send before pi saves it (the host's pending row, its
+    /// live row, this client's echo): by send, in order. The bytes are `images.hold(local:)`'s. Bounded to the latest sends.
+    @ObservationIgnored private var localImages: [UUID: [NativeImageRef]] = [:]
+    @ObservationIgnored private var localImageOrder: [UUID] = []
     /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
     /// that wants one asks, and holds what it got.
     @ObservationIgnored public let images = NativeThreadImages()
@@ -679,6 +683,7 @@ public final class NativeThreadStore {
             overlays = []
             holding = []
             sentImages = [:]
+            releaseLocalImages()
             return
         }
         // Everything this client changed before the host answered the pull that brought this
@@ -832,7 +837,7 @@ public final class NativeThreadStore {
             messageIndex[$0.entryID] == nil && ($0.toolCallID == nil || toolCounts[$0.toolCallID!] == nil)
         }
         let sending = sendingTail()
-        let tail: [NativeThreadMessage]
+        var tail: [NativeThreadMessage]
         if snapshot?.queue != nil {
             // The host orders the run (user messages where pi read them) and shows its own
             // pending row for a send; an echo stands in only until the host's next snapshot.
@@ -841,6 +846,8 @@ public final class NativeThreadStore {
         } else {
             tail = pending.filter { $0.status != "queued" } + sending.now + provisional + pending.filter { $0.status == "queued" } + sending.queued
         }
+        // Only where the client draws pictures at all (the host says so): an older host keeps its chips.
+        if !localImages.isEmpty, supports("images") { tail = tail.map(namingLocalImages) }
         tailPayloadBytes = tail.reduce(0) { $0 + Self.payloadBytes($1) }
         var changed = min(historyDirty, displayedHistoryCount)
         let suffix = Array(messages[changed...]) + tail
@@ -1069,6 +1076,61 @@ public final class NativeThreadStore {
             if item.queued { queued.append(item.message) } else { now.append(item.message) }
         }
         return (now, queued)
+    }
+
+    /// Keeps a send's images under the names its rows will give them, so the thread draws them from the bytes this client already has
+    /// until the host names the saved ones. All or nothing: an image the thread would not draw leaves the send's chips.
+    private func holdLocalImages(_ operation: UUID, _ sent: [NativeImage]) {
+        var refs: [NativeImageRef] = []
+        for (index, image) in sent.enumerated() {
+            guard let size = NativeThreadImages.pixelSize(of: image.data, mimeType: image.mimeType) else { return }
+            refs.append(NativeImageRef(id: NativeThreadImages.localID(operation, index), mimeType: image.mimeType,
+                                       width: size.width, height: size.height, byteCount: image.data.count))
+        }
+        guard !refs.isEmpty else { return }
+        for (ref, image) in zip(refs, sent) { images.hold(local: ref.id, image.data) }
+        localImages[operation] = refs
+        localImageOrder.append(operation)
+        while localImageOrder.count > 16 {
+            let oldest = localImageOrder.removeFirst()
+            images.release(local: (localImages.removeValue(forKey: oldest) ?? []).map(\.id))
+        }
+    }
+
+    private func releaseLocalImages() {
+        images.release(local: localImages.values.flatMap { $0.map(\.id) })
+        localImages = [:]
+        localImageOrder = []
+    }
+
+    /// A row for a send of this client's, its images named from the bytes held here: when the host's row (pending, or pi's live message)
+    /// has not named them yet. Taken from the send that row says it is (the queued messages it delivers, its operation, or its echo id),
+    /// and only when the counts add up; any other row is returned as it came.
+    private func namingLocalImages(_ row: NativeThreadMessage) -> NativeThreadMessage {
+        guard row.role == "user" else { return row }
+        let wanted = row.blocks.count { $0.kind == .unsupportedImage }
+        guard wanted > 0, !row.blocks.contains(where: { $0.kind == .unsupportedImage && $0.imageID != nil }) else { return row }
+        var refs: [NativeImageRef] = []
+        if let parts = row.origin?.parts, !parts.isEmpty {
+            for part in parts where part.images > 0 {
+                guard let id = part.id, let held = localImages[id], held.count == part.images else { return row }
+                refs += held
+            }
+        } else if let id = row.operationID ?? UUID(uuidString: String(row.entryID.dropFirst("pending:".count))), let held = localImages[id] {
+            refs = held
+        }
+        guard refs.count == wanted else { return row }
+        var named = row
+        var next = refs.makeIterator()
+        for index in named.blocks.indices where named.blocks[index].kind == .unsupportedImage {
+            guard let ref = next.next() else { break }
+            named.blocks[index].imageID = ref.id
+            named.blocks[index].mimeType = ref.mimeType
+            named.blocks[index].width = ref.width
+            named.blocks[index].height = ref.height
+            named.blocks[index].byteCount = ref.byteCount
+        }
+        return named
     }
 
     /// The user message a send stands for before the host reads it: "sending" until it is accepted, then "pending"
@@ -3016,6 +3078,7 @@ public final class NativeThreadStore {
             captured[operation] = Capture(after: messages.last?.entryID,
                                           earlier: Set(messages.filter { $0.role == "user" }.map(\.entryID) + live.map(\.entryID)),
                                           live: Set(live.map(\.entryID)), idle: !current.running, order: captureCount)
+            if !images.isEmpty { holdLocalImages(operation, images) }
             if submission != nil {
                 // While a turn runs it waits below the reply streaming (whatever its delivery: the host holds it in Up next, or an
                 // older host's echo follows the turn), so the reply's own rows are never moved by it.

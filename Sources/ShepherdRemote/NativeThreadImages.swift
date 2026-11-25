@@ -68,8 +68,19 @@ public final class NativeThreadImages {
         self.fetch = fetch
     }
 
+    /// Images this client sent, held under the ids its own rows name them by until pi saves them and the host does (`localID`). They
+    /// are never fetched, never evicted by the cache's limit, and live as long as the thread's store keeps the send.
+    private var local: [String: Data] = [:]
+
+    /// The id a client's own sent image goes by before the host names it: the send's operation and the image's place in it.
+    public static func localID(_ operation: UUID, _ index: Int) -> String { "local|\(operation.uuidString)|\(index)" }
+
+    public func hold(local id: String, _ data: Data) { local[id] = data }
+    public func release(local ids: [String]) { for id in ids { local[id] = nil } }
+
     /// What is already here, without asking; refreshes its place in the cache.
     public func cached(_ id: String) -> Data? {
+        if let data = local[id] { return data }
         guard let data = cache[id] else { return nil }
         order.removeAll { $0 == id }
         order.append(id)
@@ -224,6 +235,16 @@ public final class NativeThreadImages {
         guard session == epoch, !Task.isCancelled else { return .cancelled }
         remember(ref.id, data)
         return .image(data)
+    }
+
+    /// The pixel size of an image this client is about to send, when the thread would draw it: an offered type that is what its own header
+    /// says, within the byte and pixel bounds. Nothing is decoded.
+    static func pixelSize(of data: Data, mimeType: String) -> (width: Int, height: Int)? {
+        guard (1...NativeImage.maxBytes).contains(data.count), rasterHeaderMatches(data, mimeType: mimeType, width: nil, height: nil),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return (width, height)
     }
 
     /// The type, size and pixel count in `data`'s own header: the type the snapshot named, a positive size within the pixel bound
