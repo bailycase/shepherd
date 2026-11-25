@@ -83,9 +83,9 @@ private struct SubagentRunInspector: View {
     @State private var forking = false
     @State private var copying = false
     /// The topmost transcript turn on screen, and whether more of it lies below: a finished
-    /// run's footer says where it is read ("turn 4 of 11 · Scroll for the rest").
-    @State private var topTurn: String?
-    @State private var moreBelow = false
+    /// run's footer says where it is read ("turn 4 of 11 · Scroll for the rest"). Its own object,
+    /// read only by the footer, so a scroll step reruns the footer and not the inspector.
+    @State private var readout = TranscriptReadout()
     @FocusState private var composing: Bool
 
     init(store: NativeThreadStore, runID: String, siblings: [ChildRun], active: Bool, close: @escaping () -> Void,
@@ -108,12 +108,15 @@ private struct SubagentRunInspector: View {
     private var canAct: Bool { active && store.supports("subagents") }
 
     var body: some View {
+        let _ = SHRenderProbe.tick("inspector.body")
         let run = run
         VStack(spacing: 0) {
             header(run)
             brief(run)
             transcriptView(run)
-            footerLine(run)
+            TranscriptFooter(transcript: transcript, readout: readout, finished: run?.isTerminal == true, total: run?.turns) {
+                Task { await transcript.loadAll(store: store, runID: runID) }
+            }
             // A run waiting on its parent's answer has no process left, but it is not finished: it keeps the
             // Steer field (the user speaking over its parent) rather than the finished run's read-only bar.
             if let run, SubagentPresentation.isFinished(run) { finishedBar(run).shTransition(.content) } else { composer(run).shTransition(.content) }
@@ -329,11 +332,11 @@ private struct SubagentRunInspector: View {
                 ThreadView.distanceFromBottom(geometry) > NativeScrollFollower.threshold
             } action: { _, below in
                 if !below { transcript.setFollowing(true) }
-                if moreBelow != below { moreBelow = below }
+                if readout.moreBelow != below { readout.moreBelow = below }
             }
             .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { ids in
                 let top = ids.first { $0 != Self.bottomID }
-                if topTurn != top { topTurn = top }
+                if readout.topTurn != top { readout.topTurn = top }
             }
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting { transcript.setFollowing(false) }
@@ -349,48 +352,6 @@ private struct SubagentRunInspector: View {
         guard earlier == 0, let turn, turn.isUser, turn.messages.count == 1, let message = turn.messages.first else { return false }
         let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
         return text.trimmingCharacters(in: .whitespacesAndNewlines) == role(run)
-    }
-
-    /// "n earlier turns · Show all" · "Reading earlier output" (live runs, off the tail); a finished run's whole
-    /// transcript says where it is read instead: "turn 4 of 11" · "Scroll for the rest".
-    private func footerLine(_ run: ChildRun?) -> some View {
-        let position = run?.isTerminal == true && transcript.earlierCount == 0
-            ? SubagentPresentation.position(turns: transcript.turns, top: topTurn, total: run?.turns) : nil
-        // Following the tail is the rest state and says nothing (the board draws no line); the footer shows only what is to read.
-        let says = position != nil || transcript.earlierCount > 0 || (run?.isTerminal != true && !transcript.following)
-        return HStack(spacing: SH.Space.s) {
-            if let position {
-                Text(position).font(.sh(.caption)).shContentTransition(.numeric())
-                Spacer()
-                if moreBelow { Text("Scroll for the rest") }
-            } else if transcript.earlierCount > 0 {
-                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.sh(.caption))
-                    .shContentTransition(.numeric())
-                Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
-                    .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.caption)))
-                    .disabled(transcript.loadingOlder)
-            }
-            if position == nil {
-                Spacer()
-                if run?.isTerminal != true, !transcript.following { Text("Reading earlier output") }
-            }
-        }
-        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-        .padding(.horizontal, AppLayout.inspectorBodyPadding.leading)
-        .frame(minHeight: says ? AppLayout.inspectorFooterHeight : 0)
-        .opacity(says ? 1 : 0)
-        .frame(height: says ? nil : 0)
-        .shAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
-                                                  following: transcript.following, position: position,
-                                                  moreBelow: position != nil && moreBelow))
-    }
-
-    private struct FooterState: Equatable {
-        var earlier: Int
-        var loading: Bool
-        var following: Bool
-        var position: String?
-        var moreBelow: Bool
     }
 
     /// "10:58", before "from parent"; nil when pi gave no time.
@@ -548,6 +509,67 @@ private struct SubagentRunInspector: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
         }
+    }
+}
+
+/// Where the transcript's scroll is: the topmost turn on screen, and whether more of it lies below. Written on scroll steps, read
+/// only by `TranscriptFooter`.
+@MainActor @Observable
+final class TranscriptReadout {
+    var topTurn: String?
+    var moreBelow = false
+}
+
+/// "n earlier turns · Show all" · "Reading earlier output" (live runs, off the tail); a finished run's whole
+/// transcript says where it is read instead: "turn 4 of 11" · "Scroll for the rest". Its own view, so what a scroll step
+/// writes (`TranscriptReadout`) reruns this line and not the inspector around it.
+private struct TranscriptFooter: View {
+    let transcript: SubagentTranscriptModel
+    let readout: TranscriptReadout
+    /// The run is finished, and how many turns it took.
+    let finished: Bool
+    let total: Int?
+    let showAll: () -> Void
+
+    var body: some View {
+        let position = finished && transcript.earlierCount == 0
+            ? SubagentPresentation.position(turns: transcript.turns, top: readout.topTurn, total: total) : nil
+        let moreBelow = readout.moreBelow
+        // Following the tail is the rest state and says nothing (the board draws no line); the footer shows only what is to read.
+        let says = position != nil || transcript.earlierCount > 0 || (!finished && !transcript.following)
+        HStack(spacing: SH.Space.s) {
+            if let position {
+                Text(position).font(.sh(.caption)).shContentTransition(.numeric())
+                Spacer()
+                if moreBelow { Text("Scroll for the rest") }
+            } else if transcript.earlierCount > 0 {
+                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.sh(.caption))
+                    .shContentTransition(.numeric())
+                Button(transcript.loadingOlder ? "Loading…" : "Show all", action: showAll)
+                    .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.caption)))
+                    .disabled(transcript.loadingOlder)
+            }
+            if position == nil {
+                Spacer()
+                if !finished, !transcript.following { Text("Reading earlier output") }
+            }
+        }
+        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+        .padding(.horizontal, AppLayout.inspectorBodyPadding.leading)
+        .frame(minHeight: says ? AppLayout.inspectorFooterHeight : 0)
+        .opacity(says ? 1 : 0)
+        .frame(height: says ? nil : 0)
+        .shAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
+                                                  following: transcript.following, position: position,
+                                                  moreBelow: position != nil && moreBelow))
+    }
+
+    private struct FooterState: Equatable {
+        var earlier: Int
+        var loading: Bool
+        var following: Bool
+        var position: String?
+        var moreBelow: Bool
     }
 }
 
