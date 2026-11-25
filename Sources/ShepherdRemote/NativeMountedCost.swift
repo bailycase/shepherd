@@ -168,7 +168,7 @@ public enum NativeMountedCost {
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
         case .images(_, let images): images.count * NativeMarkdownBlock.imageFloor * imageWeight
-        case .steer(_, let text, _, _): line + text.utf8.count * textByte
+        case .steer(_, let text, _, _, _): line + text.utf8.count * textByte
         case .thinking, .note, .goalRecord, .hook, .error, .retrying, .compaction, .question: line
         }
     }

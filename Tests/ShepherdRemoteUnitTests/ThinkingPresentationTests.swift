@@ -28,7 +28,7 @@ struct ThinkingPresentationTests {
 
     struct Case: CustomTestStringConvertible, Sendable {
         let name: String
-        /// Each part's text and seconds, one assistant message each, with a read between.
+        /// Each part's text and seconds, one assistant message each, one after another, then a read.
         let parts: [(String, Double?)]
         let live: Bool
         let row: Row
@@ -64,9 +64,10 @@ struct ThinkingPresentationTests {
             } else {
                 var message = F.assistant("", thinking: part.0, id: "a\(index)")
                 message.thinkingSeconds = part.1
-                messages += [message, F.tool("read", args: #"{"path":"\#(index).swift"}"#, id: "r\(index)", callID: "r\(index)")]
+                messages.append(message)
             }
         }
+        if !live { messages.append(F.tool("read", args: #"{"path":"0.swift"}"#, id: "r0", callID: "r0")) }
         return messages
     }
 

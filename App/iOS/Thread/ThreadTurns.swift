@@ -193,7 +193,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             TurnErrorItem(error: error, folded: folded, retry: final ? actions.retry : nil)
         case .retrying(_, let line):
             RetryLineItem(line: line)
-        case .steer(_, let text, let sentAt, let images):
+        case .steer(_, let text, let sentAt, let images, _):
             SHUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: sentAt.map { nativeClockText($0) },
                          origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)

@@ -522,23 +522,24 @@ struct TurnPresentationTests {
             case .hook(_, let row): "hook:" + row.kind.rawValue
             case .error(_, _, let final, let folded): final ? "error:final" : folded ? "error:folded" : "error"
             case .retrying: "retrying"
-            case .steer(_, let text, _, _): "steer:" + text
+            case .steer(_, let text, _, _, _): "steer:" + text
             case .compaction(let row): "compaction:" + row.title
             case .question(let row): "question:" + row.question
             }
         }
     }
 
-    @Test func proseSplitsActivityAndThinkingFoldsIntoItsStretch() {
+    /// Thinking stands where it happened: between the calls it fell between, and one thought after another is one row.
+    @Test func proseSplitsActivityAndThinkingSitsWhereItHappened() {
         let messages = [
             F.assistant("Looking.", thinking: "plan"),
-            tool("read", "r1"), F.assistant("", thinking: "next"), tool("read", "r2"), F.assistant("", thinking: "then"), tool("edit", "e1"),
-            F.assistant("Done."),
+            tool("read", "r1"), F.assistant("", thinking: "next"), tool("read", "r2"), F.assistant("", thinking: "then"), F.assistant("", thinking: "again"),
+            tool("edit", "e1"), F.assistant("Done."),
         ]
         let presentation = nativeTurnPresentation(messages, live: false)
-        #expect(kinds(presentation) == ["thinking", "prose", "thinking", "lines:3", "prose"])
-        guard case .thinking(_, let text, _, _, _, _) = presentation.items[2] else { Issue.record("no folded thinking"); return }
-        #expect(text == "next\n\nthen")
+        #expect(kinds(presentation) == ["thinking", "prose", "lines:1", "thinking", "lines:1", "thinking", "lines:1", "prose"])
+        guard case .thinking(_, let text, _, _, _, _) = presentation.items[5] else { Issue.record("no folded thinking"); return }
+        #expect(text == "then\n\nagain")
     }
 
     /// A steer is drawn where pi read it, splitting the work before it from the work after, and
@@ -551,7 +552,7 @@ struct TurnPresentationTests {
         let presentation = nativeTurnPresentation([tool("read", "r1"), steer, F.assistant("Switching."), tool("edit", "e1")], live: false)
         #expect(kinds(presentation) == ["lines:1", "steer:use tables", "prose", "lines:1"])
         #expect(presentation.copyText == "Switching." && presentation.toolCalls == 2)
-        guard case .steer(_, _, let sentAt, let images) = presentation.items[1] else { Issue.record("no steer"); return }
+        guard case .steer(_, _, let sentAt, let images, _) = presentation.items[1] else { Issue.record("no steer"); return }
         #expect(sentAt == 7 && images == 1)
     }
 
@@ -560,7 +561,7 @@ struct TurnPresentationTests {
         first.thinkingSeconds = 3
         var second = F.assistant("", thinking: "b")
         second.thinkingSeconds = 1.5
-        let presentation = nativeTurnPresentation([first, tool("read", "r"), second, tool("read", "s")], live: false)
+        let presentation = nativeTurnPresentation([first, second, tool("read", "r"), tool("read", "s")], live: false)
         guard case .thinking(_, _, _, let seconds, _, _) = presentation.items.first else { Issue.record("no thinking"); return }
         #expect(seconds == 4.5)
     }

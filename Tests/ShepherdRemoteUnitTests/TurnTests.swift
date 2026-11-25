@@ -222,8 +222,9 @@ struct TurnTests {
         #expect(kinds.contains("note:Image attached"))
     }
 
-    /// Pictures several tools returned (one render after another) gather under their stretch's one line, never splitting it.
-    @Test func aStretchsToolImagesGatherUnderItsOneLine() {
+    /// Pictures a tool returned stand under the call that returned them, before the next call: the line stops there, and nothing
+    /// is gathered to the end of the stretch.
+    @Test func aToolsImagesStandUnderItsOwnCall() {
         var first = F.tool("board_render", args: #"{"path":"A.dc.html"}"#, id: "e-1", callID: "1")
         first.blocks = [Self.named("t|0|aaaaaaaaaaaaaaaa")]
         var second = F.tool("board_render", args: #"{"path":"B.dc.html"}"#, id: "e-2", callID: "2")
@@ -238,7 +239,35 @@ struct TurnTests {
             default: "other"
             }
         }
-        #expect(kinds == ["lines:3", "images:2", "prose"])
+        #expect(kinds == ["lines:1", "images:1", "lines:1", "images:1", "lines:1", "prose"])
+    }
+
+    /// A long live turn (a computer-use run: a screenshot after each click) reads in the order it happened: thinking, words, each call
+    /// with its own pictures under it, more thinking, the next call, and the call still running last.
+    @Test func aLiveTurnWithPicturesFollowsTheSessionsOrder() {
+        func shot(_ id: String, _ name: String) -> NativeThreadMessage {
+            var result = F.tool("computer_use", args: #"{"action":"click"}"#, id: "e-\(id)", callID: id)
+            result.blocks = [Self.named(name)]
+            return result
+        }
+        var thought = F.assistant("", thinking: "Where is the button?")
+        thought.thinkingSeconds = 12
+        var second = F.assistant("", thinking: "It moved.")
+        second.thinkingSeconds = 9
+        let running = F.tool("bash", args: #"{"command":"sleep 6"}"#, status: "running", id: "e-run", callID: "run")
+        let messages = [thought, F.assistant("Opening it to see what it is."), shot("1", "t|0|aaaaaaaaaaaaaaaa"), second,
+                        shot("2", "t|1|bbbbbbbbbbbbbbbb"), shot("3", "t|2|cccccccccccccccc"), running]
+        let items = nativeTurnPresentation(messages, live: true).items
+        let kinds = items.map { item -> String in
+            switch item {
+            case .thinking(_, _, _, _, let live, _): live ? "live-thinking" : "thinking"
+            case .activity(_, let bursts): "lines:" + bursts.map { "\($0.state == .running ? "running" : String($0.calls.count))" }.joined(separator: "+")
+            case .images(_, let images): "images:\(images.count)"
+            case .prose: "prose"
+            default: "other"
+            }
+        }
+        #expect(kinds == ["thinking", "prose", "lines:1", "images:1", "thinking", "lines:1", "images:1", "lines:1", "images:1", "lines:running"], "\(kinds)")
     }
 
     // MARK: The neutral count (ThreadImagesSent, ThreadImagesReceived)
