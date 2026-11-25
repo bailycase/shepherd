@@ -47,42 +47,40 @@ struct FleetScreen: View {
         let serves = store.showsFleet
         let actions = FleetRowActions(forget: { forgetting = $0 }, retry: { hosts.retry($0) })
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+            VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
                 if contentTitle { FleetHeader(page: page, add: wide ? addMac : nil) } else if !page.cards.isEmpty { FleetSubtitle(page: page) }
                 if let problem = fleet.problem {
-                    SHBanner(.failed, title: problem) { Button("OK") { fleet.dismissProblem() }.buttonStyle(.sh(.secondary)) }
+                    SHBanner(.failed, title: problem) { Button("OK") { fleet.dismissProblem() }.buttonStyle(.settingsPill) }
                 }
                 if case .failed(let message) = fleet.phase {
-                    SHBanner(.failed, title: message) { Button("Try again") { Task { await fleet.refresh(store.hosts, watching: true) } }.buttonStyle(.sh(.secondary)) }
+                    SHBanner(.failed, title: message) { Button("Try again") { Task { await fleet.refresh(store.hosts, watching: true) } }.buttonStyle(.settingsPill) }
                 }
                 if let failure = forgetFailure {
-                    SHBanner(.failed, title: failure) { Button("OK") { forgetFailure = nil }.buttonStyle(.sh(.secondary)) }
+                    SHBanner(.failed, title: failure) { Button("OK") { forgetFailure = nil }.buttonStyle(.settingsPill) }
                 }
                 if rows.isEmpty {
                     empty()
                 } else {
                     if serves, !page.check.columns.isEmpty {
-                        SHSegmentedPicker("Fleet view", selection: $tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
+                        SettingsSegments("Fleet view", selection: $tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
                     }
                     if tab == .check, serves {
-                        FleetCheckList(check: page.check, capitals: navigator.hingeClosed == nil,
+                        FleetCheckList(check: page.check, capitals: false,
                                        updates: fleet.canUpdate(store.hosts) ? FleetCheckList.Updates(
                                            start: { mac, when in Task { await fleet.update(mac, .start(when: when), store.hosts) } },
                                            cancel: { mac in Task { await fleet.update(mac, .cancel, store.hosts) } }) : nil)
                     } else {
-                        Macs(rows: rows, wide: wide, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
+                        Macs(rows: rows, wide: wide, duo: navigator.hingeClosed != nil, closed: navigator.hingeClosed == true, open: navigator.hingeClosed == false, actions: actions) { weight, id in
                             fleet.choose(weight, for: id, store.hosts)
                         }
                     }
                     if tab == .check, serves {
                         EmptyView()
                     } else if serves {
-                        FleetSectionLabel(title: wide ? "Recent work today" : "Recent work", capitals: navigator.hingeClosed == nil)
-                            .padding(.top, wide ? SH.Space.s : 0)
+                        SettingsCaption(wide ? "Recent work today" : "Recent work", tone: wide ? .loud : .quiet)
                         FleetDispatchesCard()
                     } else {
-                        Text("Room and readings show for a Mac on the latest Shepherd. Update it to see them.")
-                            .shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
+                        SettingsFootnote("Room and readings show for a Mac on the latest Shepherd. Update it to see them.")
                     }
                 }
             }
@@ -120,9 +118,11 @@ struct FleetScreen: View {
         .toolbar {
             if !wide {
                 ToolbarItem(placement: .topBarTrailing) {
-                    // The board's plus is `textPrimary`, not the app's accent.
+                    // The board's plus is the ink circle.
                     Button("Add a Mac", systemImage: "plus", action: addMac)
-                        .tint(Color.sh.textPrimary)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.sh.primary)
                 }
             }
         }
@@ -152,7 +152,7 @@ struct FleetScreen: View {
     /// No Mac at all: the one thing to do is add one.
     private func empty() -> some View {
         SHEmptyState(Text("No Macs yet"), message: "Pair with a Mac running Shepherd, with the code it shows, to see its threads and room here.") {
-            Button("Add a Mac", action: addMac).buttonStyle(.sh(.primary))
+            Button("Add a Mac", action: addMac).buttonStyle(.settingsPill(.dark))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, MobileLayout.sectionSpacing)
@@ -169,13 +169,15 @@ struct FleetRowActions {
 private struct Macs: View {
     let rows: [FleetListRow]
     let wide: Bool
+    /// iPhone Duo, open or closed: one card of rows (DuoClosedFleet); the phone and the iPad draw a card per Mac.
+    let duo: Bool
     let closed: Bool
     let open: Bool
     let actions: FleetRowActions
     let choose: (FleetSendWeight, UUID) -> Void
 
     var body: some View {
-        if wide {
+        if wide || !duo {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: MobileLayout.fleetCardMinWidth), spacing: MobileLayout.blockSpacing, alignment: .top)],
                       alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 ForEach(rows) { row in
@@ -183,7 +185,7 @@ private struct Macs: View {
                 }
             }
         } else {
-            SHListCard {
+            SettingsCard {
                 ForEach(rows) { row in
                     FleetMacRow(card: row.card, style: closed ? .compact : open ? .duo : .phone).equatable().fleetRowActions(row, actions)
                 }
@@ -228,7 +230,7 @@ private struct FleetRowMenu: ViewModifier {
 
 // MARK: Rows (the phone and iPhone Duo)
 
-/// One Mac as a row: its dot, name and room word, the room's gauge, and a mono line of readings.
+/// One Mac as a row (iPhone Duo): its name and room word, the room's gauge, and a line of readings.
 struct FleetMacRow: View, Equatable {
     let card: FleetMacCard
     let style: FleetFactsStyle
@@ -237,19 +239,17 @@ struct FleetMacRow: View, Equatable {
 
     var body: some View {
         let sh = Color.sh
-        let closed = style == .compact
-        VStack(alignment: .leading, spacing: closed ? SH.Space.s : SH.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             HStack(spacing: SH.Space.m) {
-                FleetDot(color: card.roomColor)
-                Text(card.name).font(closed ? .sh(.headline) : .sh(.title)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Text(card.name).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
                 Spacer(minLength: SH.Space.m)
-                Text(card.rowRoom).font(closed ? .sh(.caption, weight: .semibold) : .sh(.ui, weight: .semibold)).foregroundStyle(card.roomColor)
+                Text(card.rowRoom).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(card.roomColor)
             }
             FleetGauge(fraction: card.status == .asleep ? 0 : card.room.fraction, color: card.roomColor, height: MobileLayout.fleetRoomBarHeight)
-            Text(card.facts(style)).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
+            Text(card.facts(style)).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(sh.textTertiary)
         }
         .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, closed ? SH.Space.l : SH.Space.xl)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
         .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
         .opacity(card.status == .asleep ? MobileLayout.fleetAsleepOpacity : 1)
         .accessibilityElement(children: .ignore)
@@ -260,7 +260,7 @@ struct FleetMacRow: View, Equatable {
 
 // MARK: Cards (the iPad)
 
-/// One Mac as a card: its room, readings, and the Send work here menu.
+/// One Mac as a card (FleetA-phone, iPadFleet): its name and room word, the room's gauge, its readings, and the Send work menu.
 struct FleetMacCardView: View, Equatable {
     let card: FleetMacCard
     let choose: (FleetSendWeight, UUID) -> Void
@@ -270,39 +270,31 @@ struct FleetMacCardView: View, Equatable {
     var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.l) {
-            HStack(spacing: SH.Space.m) {
-                FleetDot(color: card.roomColor)
-                Text(card.name).font(.sh(.title)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                Spacer(minLength: 0)
+            HStack(spacing: SH.Space.l - SH.Space.xxs) {
+                SHGlyph.Settings.computer.image
+                    .font(.shSans(MobileLayout.settingsGlyphSize, .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .accessibilityHidden(true)
+                Text(card.name).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                Text(card.rowRoom).font(.shSans(MobileLayout.settingsCaptionSize)).foregroundStyle(card.roomColor)
+            }
+            if card.status != .asleep {
+                FleetGauge(fraction: card.room.fraction, color: card.roomColor, height: MobileLayout.fleetRoomBarHeight)
             }
             VStack(alignment: .leading, spacing: SH.Space.s) {
-                HStack {
-                    Text("Room").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
-                    Spacer(minLength: SH.Space.m)
-                    Text(card.rowRoom).font(.sh(.ui, weight: .semibold)).foregroundStyle(card.roomColor)
-                }
-                FleetGauge(fraction: card.status == .asleep ? 0 : card.room.fraction, color: card.roomColor, height: MobileLayout.fleetRoomBarHeight)
+                FleetFact("CPU") { Text(card.cpu?.text ?? "—").foregroundStyle(sh.textPrimary) }
+                FleetFact("Memory") { Text(card.memory?.text ?? "—").foregroundStyle(sh.textPrimary) }
+                FleetFact("Power") { Text(card.power.text).foregroundStyle(card.status == .asleep ? sh.textTertiary : sh.textPrimary).lineLimit(2) }
+                FleetFact("Agents") { Text(card.agents).foregroundStyle(card.status == .asleep ? sh.textTertiary : sh.textPrimary) }
             }
-            .accessibilityElement(children: .combine)
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                FleetFact("CPU") {
-                    HStack(spacing: SH.Space.m) {
-                        FleetGauge(fraction: card.cpu?.fraction ?? 0, color: card.cpu?.tone.fillColor ?? sh.textTertiary, height: MobileLayout.fleetMetricBarHeight)
-                        Text(card.cpu?.text ?? "—").font(.sh(.mono)).foregroundStyle(sh.textPrimary)
-                    }
-                }
-                FleetFact("Memory") { Text(card.memory?.text ?? "—").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary) }
-                FleetFact("Power") {
-                    Text(card.power.text).font(.sh(.ui, weight: .regular)).foregroundStyle(card.power.tone.textColor).lineLimit(2)
-                }
-                FleetFact("Agents") { Text(card.agents).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary) }
-            }
-            Spacer(minLength: 0)
+            .font(.shSans(MobileLayout.fleetFactSize))
             if card.takesWeight { FleetWeightMenu(card: card, choose: choose) }
         }
-        .padding(SH.Space.l)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, SH.Space.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: MobileLayout.settingsCardRadius, lift: true)
         .opacity(card.status == .asleep ? MobileLayout.fleetAsleepOpacity : 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.rowLabel)
@@ -321,16 +313,15 @@ private struct FleetFact<Value: View>: View {
 
     var body: some View {
         HStack(spacing: SH.Space.m) {
-            Text(label).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+            Text(label).foregroundStyle(Color.sh.textSecondary)
                 .frame(width: MobileLayout.fleetFactLabelWidth, alignment: .leading)
             value.frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(minHeight: SH.Space.xxl)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// "Send work · Normal" with its four choices (iPadFleet's dropdown).
+/// "Send work   Normal ⌃⌄" with its four choices, under a rule (the cards' footer).
 private struct FleetWeightMenu: View {
     let card: FleetMacCard
     let choose: (FleetSendWeight, UUID) -> Void
@@ -344,18 +335,17 @@ private struct FleetWeightMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: SH.Space.m) {
-                Text("Send work · \(Text(card.weight.title).foregroundStyle(sh.textPrimary))")
-                    .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+            HStack(spacing: SH.Space.xs) {
+                Text("Send work").font(.shSans(MobileLayout.fleetFactSize)).foregroundStyle(sh.textSecondary)
                 Spacer(minLength: SH.Space.m)
-                Image(systemName: "chevron.down").font(.sh(.micro, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                Text(card.weight.title).font(.sh(.ui)).foregroundStyle(sh.textPrimary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.shSans(MobileLayout.settingsChevronSize, .medium)).foregroundStyle(sh.textTertiary)
             }
-            .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
-            .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+            .contentShape(Rectangle())
         }
+        .overlay(alignment: .top) { SHHairline() }
         .accessibilityLabel(card.weightLabel)
         .accessibilityValue(card.weight.title)
     }

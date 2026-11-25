@@ -14,7 +14,9 @@ extension MobileLayout {
     /// A Mac that isn't answering fades (the boards' 0.6).
     static let fleetAsleepOpacity: Double = 0.6
     /// A card's fact label column (iPadFleet's 64pt) and a dispatch's time column.
-    static let fleetFactLabelWidth: CGFloat = 64
+    static let fleetFactLabelWidth: CGFloat = 72
+    /// A card's readings (FleetA-phone's 14pt).
+    static let fleetFactSize: CGFloat = 14
     static let fleetTimeWidth: CGFloat = 56
     /// The iPad's header sits 48pt under the top and in from the sides.
     static let fleetPadInset: CGFloat = SH.Space.xxxl + SH.Space.xl

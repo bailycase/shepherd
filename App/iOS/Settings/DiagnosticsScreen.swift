@@ -26,7 +26,7 @@ struct DiagnosticsScreen: View {
                         share = on
                         if !on { MobileDiagnostics.stop() }
                     }))
-                    .toggleStyle(.shSwitch)
+                    .toggleStyle(.settingsSwitch)
                     .labelsHidden()
                     .disabled(!MobileDiagnostics.configured)
                 }

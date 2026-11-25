@@ -28,26 +28,18 @@ struct SkillsScreen: View {
         let store = SettingsStore.of(hosts)
         let model = store.skills
         let skillsHosts = store.skillsHosts
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text("Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.")
-                        .shText(.caption)
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, SH.Space.xs)
-                    SHTouchSearchField("Search skills.sh", text: $query, focus: $searchFocused)
-                }
+        SettingsPageScaffold("Skills", lead: "Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.", store: store) {
+                SettingsSearchCapsule(placeholder: "Search skills.sh", text: $query, focus: $searchFocused)
                 if let problem = model.recordsProblem(in: skillsHosts) {
                     SHBanner(.failed, title: problem)
                 } else if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
                     }
                 }
                 if let removal = model.removal {
                     SHBanner(.idle, title: SkillsPresentation.removed(removal), systemImage: "trash") {
-                        Button("Undo") { model.undoRemoval(in: skillsHosts) }.buttonStyle(.sh(.secondary))
+                        Button("Undo") { model.undoRemoval(in: skillsHosts) }.buttonStyle(.settingsPill)
                     }
                 }
                 if term.isEmpty {
@@ -60,27 +52,19 @@ struct SkillsScreen: View {
                         navigator.open(.settings(.skillResult(skill)))
                     }
                 }
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
-        .refreshable { await store.refresh() }
-        .background(Color.sh.bgWindow)
         .shAnimation(.content, value: term.isEmpty)
-        .navigationTitle("Skills")
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 // Title and glyph: the system shows the glyph, and needs both to move the item to a
                 // side bar or into the overflow menu.
                 Button("Add from repo", systemImage: "plus") { navigator.open(.settings(.skillsRepo(nil))) }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.sh.primary)
             }
         }
-        .task { if !inColumn { await store.watch() } }
         .task(id: term) { await search() }
     }
 
@@ -121,10 +105,10 @@ private struct InstalledSkills: View {
             let rows = model.rows(in: hosts)
             let updates = rows.filter { $0.skill.update != nil }.count
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                SHListHeader("Installed · \(rows.count)") {
+                SettingsCaption("Installed · \(rows.count)") {
                     if updates > 0 {
                         Button("Update \(updates)") { Task { await model.updateAll(in: hosts) } }
-                            .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                            .buttonStyle(.settingsLinkCompact)
                             .disabled(rows.contains(where: \.isUpdating))
                     }
                 }
@@ -141,8 +125,7 @@ private struct InstalledSkills: View {
                             .equatable()
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
-                    .shCard(radius: SHListMetrics.cardRadius)
+                    .shCard(radius: MobileLayout.settingsCardRadius, lift: true)
                 }
             }
             .shAnimation(.list, value: rows.map(\.id))
@@ -196,35 +179,34 @@ private struct SkillListRow: View, Equatable {
                 HStack(spacing: SH.Space.m + SH.Space.xxs) {
                     VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
                         Text(skill.name)
-                            .font(.shSans(MobileLayout.skillNameSize, .bold))
+                            .font(.shMono(MobileLayout.skillNameSize, .medium))
                             .foregroundStyle(skill.isOn ? sh.textPrimary : sh.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Text(SkillsPresentation.mobileSummary(skill))
                             .font(.shSans(MobileLayout.skillSummarySize))
-                            .foregroundStyle(sh.textTertiary)
-                            .lineLimit(2)
+                            .foregroundStyle(sh.textSecondary)
+                            .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if row.isUpdating {
                         Text("Updating")
-                            .font(.sh(.caption, weight: .medium))
-                            .foregroundStyle(sh.running)
+                            .font(.sh(.ui))
+                            .foregroundStyle(sh.textSecondary)
                             .shShimmer(active: true)
                     } else if skill.update != nil {
-                        SHUpdatePill()
+                        Text("Update")
+                            .font(.sh(.ui))
+                            .foregroundStyle(sh.textPrimary)
                     }
                     Color.clear
                         .frame(width: MobileLayout.skillSwitchSlot, height: 1)
                         .accessibilityHidden(true)
-                    Image(systemName: "chevron.right")
-                        .font(.sh(.caption, weight: .semibold))
-                        .foregroundStyle(sh.textTertiary)
+                    SettingsChevron()
                         .frame(width: MobileLayout.skillChevronSlot)
-                        .accessibilityHidden(true)
                 }
-                .padding(.vertical, SH.Space.m)
-                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+                .padding(.vertical, MobileLayout.settingsRowPadding)
+                .padding(.horizontal, MobileLayout.settingsRowInset)
                 .frame(maxWidth: .infinity, minHeight: MobileLayout.skillRowHeight, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -232,11 +214,11 @@ private struct SkillListRow: View, Equatable {
             .accessibilityLabel(skill.update == nil ? skill.name : "\(skill.name), update available")
             .accessibilityHint(SkillsPresentation.mobileSummary(skill))
             Toggle(skill.name, isOn: Binding(get: { skill.isOn }, set: toggle))
-                .toggleStyle(.shSwitch)
+                .toggleStyle(.settingsSwitch)
                 .labelsHidden()
-                .padding(.trailing, SH.Space.l + SH.Space.xxs + MobileLayout.skillChevronSlot + SH.Space.m + SH.Space.xxs)
+                .padding(.trailing, MobileLayout.settingsRowInset + MobileLayout.skillChevronSlot + SH.Space.l)
         }
-        .overlay(alignment: .top) { if !first { SHHairline() } }
+        .overlay(alignment: .top) { if !first { SHHairline().padding(.leading, MobileLayout.settingsRowInset) } }
     }
 }
 
@@ -251,15 +233,14 @@ private struct PiSkillsSections: View {
             let groups = model.piGroups(in: hosts)
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                    SHListHeader("\(SkillsPresentation.groupTitle(group.kind)) · \(group.rows.count)")
+                    SettingsCaption("\(SkillsPresentation.groupTitle(group.kind)) · \(group.rows.count)")
                     LazyVStack(spacing: 0) {
                         ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                             PiSkillListRow(row: row, first: index == 0)
                                 .equatable()
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
-                    .shCard(radius: SHListMetrics.cardRadius)
+                    .shCard(radius: MobileLayout.settingsCardRadius, lift: true)
                 }
             }
             if let problem = pi.skills.problem {
@@ -320,7 +301,7 @@ private struct SkillSearchResults: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            SHListHeader(searching && results.isEmpty ? "Searching skills.sh…" : SkillsPresentation.results(results.count, for: term))
+            SettingsCaption(searching && results.isEmpty ? "Searching skills.sh…" : SkillsPresentation.results(results.count, for: term))
             if let failure {
                 SettingsFootnote(failure, tone: .failed)
             } else if results.isEmpty {
@@ -418,7 +399,7 @@ private struct SkillResultLine: View, Equatable {
         switch state {
         case .install:
             Button("Install", action: install)
-                .buttonStyle(.sh(.secondary, size: .s))
+                .buttonStyle(.settingsPill)
                 .accessibilityLabel("Install \(skill.name)")
         case .installing:
             Text("Installing")
@@ -497,9 +478,9 @@ struct SkillResultScreen: View {
                 }
                 VStack(alignment: .leading, spacing: SH.Space.m) {
                     Button("Pick from all of \(skill.source)") { navigator.open(.settings(.skillsRepo(skill.source))) }
-                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                        .buttonStyle(.settingsLink)
                     Button("View on skills.sh") { openURL(SkillsDirectory.page(of: skill)) }
-                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                        .buttonStyle(.settingsLink)
                 }
                 .padding(.horizontal, SH.Space.xs)
             }
@@ -523,7 +504,7 @@ struct SkillResultScreen: View {
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             switch state {
             case .install, .installing:
-                SHListCard {
+                SettingsCard {
                     SettingsControlRow("Use it", note: invocation == .automatic
                                        ? "The agent reads it when a task calls for it."
                                        : "Only when you type /skill:\(skill.slug).") {
@@ -538,7 +519,7 @@ struct SkillResultScreen: View {
                     Label("Install", systemImage: "arrow.down.to.line")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.sh(.primary, size: .l))
+                .buttonStyle(.settingsPrimary)
                 .disabled(state != .install || model.edited(in: hosts) == nil)
             case .installed:
                 HStack(spacing: SH.Space.m) {
@@ -547,7 +528,7 @@ struct SkillResultScreen: View {
                         .foregroundStyle(Color.sh.done)
                     Spacer(minLength: SH.Space.m)
                     Button("Open") { navigator.open(.settings(.skill(skill.slug))) }
-                        .buttonStyle(.sh(.secondary))
+                        .buttonStyle(.settingsPill)
                 }
                 .padding(.horizontal, SH.Space.xs)
             case .update:
@@ -557,7 +538,7 @@ struct SkillResultScreen: View {
                     Label("Update", systemImage: "arrow.down.to.line")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.sh(.primary, size: .l))
+                .buttonStyle(.settingsPrimary)
                 .disabled(model.row(skill.slug, in: hosts)?.isUpdating == true)
             }
             if let install = model.installs[skill.id], install.isRunning || install.failure != nil {
@@ -638,10 +619,10 @@ struct SkillDetailScreen: View {
             SHBanner(.failed, title: problem)
         } else if let problem = model.problem {
             SHBanner(.failed, title: problem) {
-                Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
             }
         }
-        SHListCard {
+        SettingsCard {
             SettingsSwitchRow("On", note: skill.isOn ? "Agents can use it." : "No agent sees it until it's back on.",
                               isOn: skill.isOn) { on in
                 model.setOn(skill.name, on, in: hosts)
@@ -680,7 +661,7 @@ struct SkillDetailScreen: View {
             Label("Remove", systemImage: "trash")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.sh(.danger, size: .l))
+        .buttonStyle(.settingsLink(.failed))
         .accessibilityHint("Undo on the Skills list puts it back.")
     }
 }
@@ -718,11 +699,11 @@ private struct SkillVersionCard: View {
                         Button(action: update) {
                             Label(row.isUpdating ? "Updating…" : "Update", systemImage: "arrow.down.to.line")
                         }
-                        .buttonStyle(.sh(.primary))
+                        .buttonStyle(.settingsPill(.dark))
                         .disabled(row.isUpdating)
                         if let compare = SkillsText.compareURL(repo: source.repo, from: source.commit, to: newer.commit) {
                             Button("What changed") { openURL(compare) }
-                                .buttonStyle(.sh(.ghost))
+                                .buttonStyle(.settingsLink(.dim))
                         }
                     }
                     .padding(.top, SH.Space.xs)
@@ -788,7 +769,7 @@ struct AddSkillsScreen: View {
                             .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
                             .accessibilityLabel("Repository")
                         Button("Look up") { Task { await lookUp(model: model, hosts: skillsHosts) } }
-                            .buttonStyle(.sh(.secondary, size: .l))
+                            .buttonStyle(.settingsPill)
                             .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || lookingUp)
                     }
                     if let problem {
@@ -826,9 +807,9 @@ struct AddSkillsScreen: View {
     private func picker(_ found: RepoSkills, model: ClientSkills, hosts: [SkillsHost]) -> some View {
         let newPaths = found.skills.filter { model.row($0.name, in: hosts) == nil }.map(\.path)
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            SHListHeader(SkillsPresentation.selection(picked.count, new: newPaths.count)) {
+            SettingsCaption(SkillsPresentation.selection(picked.count, new: newPaths.count)) {
                 Button("Select all new") { picked = Set(newPaths) }
-                    .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                    .buttonStyle(.settingsLink)
                     .disabled(newPaths.isEmpty || picked.count == newPaths.count)
             }
             LazyVStack(spacing: 0) {
@@ -853,7 +834,7 @@ struct AddSkillsScreen: View {
     private func footer(_ found: RepoSkills, model: ClientSkills, hosts: [SkillsHost]) -> some View {
         let install = installKey.flatMap { model.installs[$0] }
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-            SHListCard {
+            SettingsCard {
                 SettingsControlRow("Use them") {
                     SettingsPicker("Use them", selection: invocation, options: [SkillInvocation.automatic, .slashOnly],
                                    title: SkillsPresentation.invocationTitle) { invocation = $0 }
@@ -869,7 +850,7 @@ struct AddSkillsScreen: View {
                 Text(SkillsPresentation.installTitle(max(picked.count, 1)))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.sh(.primary, size: .l))
+            .buttonStyle(.settingsPrimary)
             .disabled(picked.isEmpty || install?.isRunning == true)
         }
     }

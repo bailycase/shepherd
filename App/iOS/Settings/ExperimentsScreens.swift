@@ -24,13 +24,8 @@ struct ExperimentsScreen: View {
         let serving = !model.hosts(settingsHosts).isEmpty
         let on = model.isOn(settingsHosts)
         let waiting = model.waiting(settingsHosts)
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+        SettingsPageScaffold("Experiments", lead: "Still being tried out. Each is off until you turn it on.", store: store) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text("Still being tried out. Each is off until you turn it on.")
-                        .shText(.caption)
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .padding(.horizontal, SH.Space.xs)
                     if serving || model.unavailable.isEmpty {
                         SuggestedInstructionsCard(isOn: on, enabled: serving) { turnOn in
                             model.post(settingsHosts) { $0.enabled = turnOn }
@@ -60,17 +55,17 @@ struct ExperimentsScreen: View {
                 }
                 if let problem = store.hostSettings.problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.sh(.secondary))
+                        Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.settingsPill)
                     }
                 }
                 if let problem = model.problem {
                     SHBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
                     }
                 }
                 if on, let settings = model.settings(settingsHosts) {
                     SettingsSection("Learn from") {
-                        SHListCard {
+                        SettingsCard {
                             ForEach([SuggestionSource.Kind.thread, .automation], id: \.self) { kind in
                                 SourceRow(kind: kind, chosen: settings.sources.contains(kind)) {
                                     model.post(settingsHosts) { $0.sources.formSymmetricDifference([kind]) }
@@ -81,17 +76,17 @@ struct ExperimentsScreen: View {
                 }
                 if on || !waiting.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        SHListHeader("Waiting for you") {
+                        SettingsCaption("Waiting for you") {
                             if waiting.count > 1 {
                                 Button("Add all") { Task { await model.addAll(settingsHosts) } }
-                                    .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                                    .buttonStyle(.settingsLinkCompact)
                                     .disabled(model.busy)
                             }
                         }
                         if waiting.isEmpty {
                             SettingsFootnote("Nothing is waiting. When an agent learns something the hard way, its line shows up here.")
                         } else {
-                            SHListCard {
+                            SettingsCard {
                                 ForEach(waiting) { item in
                                     Button { navigator.open(.settings(.suggestion(item.id))) } label: {
                                         WaitingRow(item: item, showsHost: model.hosts(settingsHosts).count > 1)
@@ -104,65 +99,32 @@ struct ExperimentsScreen: View {
                 }
                 if on {
                     Button("Open Instructions") { store.open(.instructions, inColumn: inColumn, navigator: navigator) }
-                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+                        .buttonStyle(.settingsLink(.dim))
                         .padding(.horizontal, SH.Space.xs)
                 }
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
-        .refreshable { await store.refresh() }
-        .background(Color.sh.bgWindow)
         .shAnimation(.disclosure, value: on)
         .shAnimation(.list, value: waiting.map(\.id))
-        .navigationTitle("Experiments")
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
-        .task { if !inColumn { await store.watch() } }
     }
 }
 
-/// Suggested instructions' card: a flask on its lantern tile, the name over what it does, and
-/// its switch.
+/// Suggested instructions' card (MobileExperiments): the name over what it does, and its switch.
 private struct SuggestedInstructionsCard: View {
     let isOn: Bool
     let enabled: Bool
     let toggle: (Bool) -> Void
 
     var body: some View {
-        let sh = Color.sh
-        HStack(alignment: .top, spacing: SH.Space.l) {
-            Image(systemName: "flask")
-                .font(.sh(.ui, weight: .medium))
-                .foregroundStyle(sh.lanternText)
-                .frame(width: MobileLayout.experimentTile, height: MobileLayout.experimentTile)
-                .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Suggested instructions")
-                    .font(.sh(.ui, weight: .semibold))
-                    .foregroundStyle(sh.textPrimary)
-                Text("Agents draft a line for your root AGENTS.md when they learn something the hard way. Nothing is written until you add it.")
-                    .shText(size: MobileLayout.settingsNoteSize, lineHeight: MobileLayout.settingsNoteLineHeight)
-                    .foregroundStyle(sh.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle("Suggested instructions", isOn: Binding(get: { isOn }, set: toggle))
-                .toggleStyle(.shSwitch)
-                .labelsHidden()
-                .disabled(!enabled)
+        SettingsCard {
+            ExperimentRow(title: "Suggested instructions", isOn: isOn, label: "Suggested instructions", enabled: enabled,
+                          text: "Agents draft a line for your AGENTS.md when they learn something the hard way. Nothing is written until you add it.",
+                          toggle: toggle)
         }
-        .padding(SH.Space.l)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SHListMetrics.cardRadius)
     }
 }
 
-/// One host's switchable experiments, each shown only where the host takes its switch: Goals,
-/// Projects, the Design tool and Computer use.
+/// One host's switchable experiments in one card (MobileExperiments), each shown only where the host takes
+/// its switch: Goals, Projects, the Design tool and Computer use.
 private struct HostExperiments: View {
     let host: SettingsHost
     let settings: HostSettings
@@ -170,60 +132,48 @@ private struct HostExperiments: View {
 
     var body: some View {
         let post: (HostSettingChange) -> Void = { hostSettings.post($0, on: host) }
-        if host.serves(RemoteProtocol.goalExperimentCapability) {
-            HostExperimentCard(title: "Goals", host: host.name, isOn: settings.goalsEnabled,
-                               text: "Keep a conversation working toward a condition you set with /goal. No time or token budgets. Turning this off pauses active goals without clearing them.") {
-                SHGoalGlyph()
-            } toggle: { post(.goalsEnabled($0)) }
-        }
-        if host.serves(RemoteProtocol.projectsExperimentCapability) {
-            HostExperimentCard(title: "Projects", host: host.name, isOn: settings.projectsEnabled,
-                               text: "Coordinate work across threads and spaces. Turning this off pauses project work and keeps your projects and files.") {
-                Image(systemName: "square.stack.3d.up")
-            } toggle: { post(.projectsEnabled($0)) }
-        }
-        if host.serves(RemoteProtocol.designToolExperimentCapability) {
-            HostExperimentCard(title: "Design tool", host: host.name, isOn: settings.designToolEnabled,
-                               text: "Describe a page or flow and a design agent draws it as HTML boards on a canvas. Adds Designs to the host's sidebar and “Start a design” to New thread.") {
-                Image(systemName: "paintbrush.pointed")
-            } toggle: { post(.designToolEnabled($0)) }
-        }
-        if host.serves(RemoteProtocol.computerUseExperimentCapability) {
-            HostExperimentCard(title: "Computer use", host: host.name, isOn: settings.computerUseEnabled,
-                               text: "New threads can use the apps on the Mac: read windows, click, type and choose menus, in the background without taking its mouse or keyboard. Threads already running get it when they restart. Allow Accessibility and Screen Recording for Shepherd on the Mac.") {
-                Image(systemName: "cursorarrow.rays")
-            } toggle: { post(.computerUseEnabled($0)) }
+        SettingsCard {
+            if host.serves(RemoteProtocol.goalExperimentCapability) {
+                ExperimentRow(title: "Goals", isOn: settings.goalsEnabled, label: "Goals on \(host.name)",
+                              text: "Keep a conversation working toward a condition you set with /goal. Turning this off pauses active goals without clearing them.") { post(.goalsEnabled($0)) }
+            }
+            if host.serves(RemoteProtocol.projectsExperimentCapability) {
+                ExperimentRow(title: "Projects", isOn: settings.projectsEnabled, label: "Projects on \(host.name)",
+                              text: "Coordinate work across threads and spaces. Turning this off pauses project work and keeps your projects and files.") { post(.projectsEnabled($0)) }
+            }
+            if host.serves(RemoteProtocol.designToolExperimentCapability) {
+                ExperimentRow(title: "Design tool", isOn: settings.designToolEnabled, label: "Design tool on \(host.name)",
+                              text: "Describe a page or flow and a design agent draws it as HTML boards on a canvas. Adds Designs to the sidebar and “Start a design” to New thread.") { post(.designToolEnabled($0)) }
+            }
+            if host.serves(RemoteProtocol.computerUseExperimentCapability) {
+                ExperimentRow(title: "Computer use", isOn: settings.computerUseEnabled, label: "Computer use on \(host.name)",
+                              text: "Lets an agent see and use apps on the host’s screen while you watch. Allow Accessibility and Screen Recording for Shepherd on the Mac.") { post(.computerUseEnabled($0)) }
+            }
         }
         SettingsFootnote("Changes apply on \(host.name) at once.")
     }
 }
 
-/// An experiment's card for one host: its tile, its name over what it does, and its switch.
-private struct HostExperimentCard<Glyph: View>: View {
+/// An experiment's row: its name over what it does (up to four lines), and its switch beside the top.
+private struct ExperimentRow: View {
     let title: String
-    let host: String
     let isOn: Bool
+    let label: String
+    var enabled = true
     let text: String
     var lockedNote: String?
-    @ViewBuilder let glyph: () -> Glyph
     let toggle: (Bool) -> Void
 
     var body: some View {
         let sh = Color.sh
         HStack(alignment: .top, spacing: SH.Space.l) {
-            glyph()
-                .font(.sh(.ui, weight: .medium))
-                .foregroundStyle(sh.lanternText)
-                .frame(width: MobileLayout.experimentTile, height: MobileLayout.experimentTile)
-                .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.sh(.ui, weight: .semibold))
+                    .font(.sh(.ui))
                     .foregroundStyle(sh.textPrimary)
                 Text(text)
                     .shText(size: MobileLayout.settingsNoteSize, lineHeight: MobileLayout.settingsNoteLineHeight)
-                    .foregroundStyle(sh.textTertiary)
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let lockedNote {
                     Text(lockedNote)
@@ -233,14 +183,14 @@ private struct HostExperimentCard<Glyph: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle("\(title) on \(host)", isOn: Binding(get: { isOn }, set: toggle))
-                .toggleStyle(.shSwitch)
+            Toggle(label, isOn: Binding(get: { isOn }, set: toggle))
+                .toggleStyle(.settingsSwitch)
                 .labelsHidden()
-                .disabled(lockedNote != nil)
+                .disabled(!enabled || lockedNote != nil)
         }
-        .padding(SH.Space.l)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
+        .padding(.vertical, MobileLayout.settingsRowPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SHListMetrics.cardRadius)
     }
 }
 
@@ -260,12 +210,12 @@ private struct SourceRow: View {
                 if chosen {
                     Image(systemName: "checkmark")
                         .font(.sh(.ui, weight: .semibold))
-                        .foregroundStyle(Color.sh.running)
+                        .foregroundStyle(Color.sh.textPrimary)
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, SH.Space.l)
-            .frame(maxWidth: .infinity, minHeight: MobileLayout.experimentSourceRowHeight)
+            .padding(.horizontal, MobileLayout.settingsRowInset)
+            .frame(maxWidth: .infinity, minHeight: MobileLayout.settingsRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.shRow(radius: 0))
@@ -295,19 +245,16 @@ private struct WaitingRow: View {
                     .shText(size: SHTextStyle.code.size, mono: true, lineHeight: MobileLayout.suggestionLineHeight)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(origin.joined(separator: " · "))
-                    .font(.sh(.caption))
+                    .font(.shSans(MobileLayout.settingsCaptionSize))
                     .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right")
-                .font(.sh(.caption, weight: .semibold))
-                .foregroundStyle(sh.textTertiary)
+            SettingsChevron()
                 .padding(.top, SH.Space.xxs)
-                .accessibilityHidden(true)
         }
         .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.l)
+        .padding(.horizontal, MobileLayout.settingsRowInset)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Adds: \(SuggestionsPresentation.plainLine(suggestion.line)). From \(origin.joined(separator: ", "))")
@@ -321,7 +268,7 @@ private struct SuggestionsUnavailableBanner: View {
 
     var body: some View {
         SHBanner(.failed, title: "Suggested instructions on \(hostName)", message: message, stacked: true) {
-            Button("Refresh", action: refresh).buttonStyle(.sh(.secondary))
+            Button("Refresh", action: refresh).buttonStyle(.settingsPill)
         }
     }
 }
@@ -413,7 +360,7 @@ struct SuggestionScreen: View {
             }
         }
         SettingsSection("Goes to") {
-            SHListCard {
+            SettingsCard {
                 SettingsControlRow("File", note: "On \(item.hostName). Nothing is written until you add it.") {
                     SettingsPicker("File", selection: target, options: InstructionFile.allCases, title: \.fileName) { file = $0 }
                 }
@@ -425,7 +372,7 @@ struct SuggestionScreen: View {
             }
         } else if let problem = model.problem {
             SHBanner(.failed, title: problem) {
-                Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
+                Button("OK") { model.dismissProblem() }.buttonStyle(.settingsPill)
             }
         }
         VStack(spacing: SH.Space.m) {
@@ -436,7 +383,7 @@ struct SuggestionScreen: View {
                     if model.problem == nil && model.unavailable[item.host] == nil { dismiss() }
                 }
             }
-            .buttonStyle(.sh(.primary, size: .l))
+            .buttonStyle(.settingsPrimary)
             .frame(maxWidth: .infinity)
             Button("Dismiss") {
                 Task {
@@ -444,7 +391,7 @@ struct SuggestionScreen: View {
                     if model.problem == nil && model.unavailable[item.host] == nil { dismiss() }
                 }
             }
-            .buttonStyle(.sh(.ghost, size: .l))
+            .buttonStyle(.settingsLink(.dim))
         }
         .disabled(model.busy || model.unavailable[item.host] != nil)
     }

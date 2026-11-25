@@ -35,7 +35,7 @@ struct SpacesOrganizeScreen: View {
                     } else if spaces.isEmpty {
                         SettingsFootnote("No spaces on \(host.name) yet.")
                     } else {
-                        SHListCard {
+                        SettingsCard {
                             ForEach(spaces) { space in
                                 SettingsControlRow(space.name, note: "`\(space.path)`" + (space.sidebarHidden ? " · Hidden from the sidebar" : "")) {
                                     menu(for: space, in: spaces, host: host, store: store)

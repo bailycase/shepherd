@@ -39,10 +39,10 @@ struct ProjectTaskList: View {
                             VStack(spacing: 0) {
                                 switch item {
                                 case .header(let group, let count):
-                                    SHListHeader(group.rawValue, attention: group == .waiting, count: count)
+                                    SettingsCaption(group.rawValue, tone: group == .waiting ? .attention : .quiet, count: count)
                                         .padding(.top, MobileLayout.sectionSpacing)
                                 case .row(let row, let first, let last):
-                                    SHListCardSegment(first: first, last: last) {
+                                    SettingsCardSegment(first: first, last: last) {
                                         ProjectTaskHistoryRow(ref: ref, row: row,
                                                               age: row.settledAt.map { ProjectAge.text($0, now: now) })
                                             .equatable()
@@ -77,7 +77,7 @@ private struct ProjectTaskHistoryRow: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("ios.projectTask.row")
         Button { navigator.open(.projects(.task(ref, row.id))) } label: {
-            SHListRow(row.title, subtitle: row.line, subtitleMono: false,
+            SettingsRow(row.title, subtitle: row.line, subtitleMono: false,
                       leading: .state(row.mobileState),
                       trailing: age.map { .meta($0) } ?? .none)
         }
