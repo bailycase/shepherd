@@ -18,14 +18,13 @@ public enum SHAutomationMetrics {
     public static let factLabelWidth: CGFloat = 110
     /// The switch as drawn (`.shSwitch`); touch grows its hit area.
     public static let switchSize = CGSize(width: 30, height: 18)
-    /// A live run's card: its ring outside the running line, and its spinner.
+    /// A live run's card: its ring outside the running line.
     public static let runRing: CGFloat = 3
-    public static let runSpinner: CGFloat = 13
     /// How a live run is going ("Running · 4m"): the board's 13pt, between caption and ui.
     public static let runStatusSize: CGFloat = 13
 }
 
-/// A run going now, as its own card (MobileAutomations' Running now): a spinner, the
+/// A run going now, as its own card (MobileAutomations' Running now): the
 /// automation's name, and its host trailing, then how the run is going ("Running · 4m"). A
 /// working run's card takes a `running` line inside a 3pt `runningTint` ring; one that asked
 /// you a `lanternText` line, the bolt and "Asked you" in lanternText. A tap opens the automation.
@@ -65,14 +64,10 @@ public struct SHAutomationRunCard: View, Equatable {
         let shape = RoundedRectangle(cornerRadius: SHListMetrics.cardRadius)
         return VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(spacing: SH.Space.m) {
-                Group {
-                    if asking {
-                        Image(systemName: "bolt").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.lanternText)
-                    } else {
-                        ProgressView().progressViewStyle(.shSpinner(size: SHAutomationMetrics.runSpinner))
-                    }
+                if asking {
+                    Image(systemName: "bolt").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.lanternText)
+                        .accessibilityHidden(true)
                 }
-                .accessibilityHidden(true)
                 Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(2)
                 Spacer(minLength: SH.Space.m)
                 if let host {
@@ -80,6 +75,7 @@ public struct SHAutomationRunCard: View, Equatable {
                 }
             }
             statusLine
+                .shShimmer(active: !asking)
                 .font(.shSans(SHAutomationMetrics.runStatusSize))
                 .foregroundStyle(asking ? sh.lanternText : sh.textSecondary)
         }
@@ -115,7 +111,7 @@ public struct SHAutomationRunCard: View, Equatable {
 public struct SHAutomationRow: View, Equatable {
     public enum Leading: Equatable, Sendable {
         case none
-        /// A spinner: its run is working.
+        /// Nothing: its run is working, and its status line shimmers.
         case running
         /// An SF Symbol, tinted by a state or secondary ("bolt").
         case symbol(String, AgentState? = nil)
@@ -194,6 +190,7 @@ public struct SHAutomationRow: View, Equatable {
                     .foregroundStyle(sh.textTertiary)
                     .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                 statusLine
+                    .shShimmer(active: leading == .running)
                     .font(.sh(.caption))
                     .foregroundStyle(statusTone?.textColor ?? sh.textTertiary)
                     .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
@@ -235,8 +232,8 @@ public struct SHAutomationRow: View, Equatable {
         case .none:
             EmptyView()
         case .running:
-            ProgressView().progressViewStyle(.shSpinner(size: SHListMetrics.symbol))
-                .accessibilityHidden(true)
+            // Nothing spins: the status line shimmers.
+            EmptyView()
         case .symbol(let name, let tone):
             // A glyph that needs you is lanternText; only a status dot glows in lantern.
             Image(systemName: name)

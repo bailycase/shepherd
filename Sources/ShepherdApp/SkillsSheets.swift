@@ -203,7 +203,7 @@ struct SkillsDirectorySheet: View {
                         SkillFilesBlock(entries: preview.entries, note: SkillsPresentation.scriptsNote(paths: preview.paths))
                         moreFrom(skill, hosts: hosts)
                     } else {
-                        ProgressView().progressViewStyle(.shSpinner).frame(maxWidth: .infinity)
+                        SHBusyLabel("Reading the skill…").frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.vertical, SH.Space.xl + SH.Space.xxs)
@@ -531,7 +531,7 @@ struct AddSkillsSheet: View {
                 .foregroundStyle(sh.textPrimary)
                 .onSubmit { Task { await lookUp() } }
             if lookingUp {
-                ProgressView().progressViewStyle(.shSpinner)
+                SHBusyLabel("Looking up…", font: .shSans(AppLayout.skillsNoteSize))
             } else if let found {
                 let commit = Text(SkillsText.shortCommit(found.commit)).font(.shMono(AppLayout.skillsNoteSize))
                 Text("\(found.skills.count) \(found.skills.count == 1 ? "skill" : "skills") · \(found.branch) @ \(commit)")

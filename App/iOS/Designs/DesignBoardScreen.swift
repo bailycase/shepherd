@@ -724,7 +724,7 @@ private struct DesignBoardCanvas: View {
                         if live.failure != nil {
                             Text(live.failure ?? "").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         } else {
-                            ProgressView().progressViewStyle(.shSpinner)
+                            SHBusyLabel("Loading…")
                         }
                     }
                 }

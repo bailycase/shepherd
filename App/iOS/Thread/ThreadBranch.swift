@@ -175,7 +175,7 @@ struct BranchStatusRows: View {
                 Text("\(status.behind) behind \(base)")
                 Spacer(minLength: SH.Space.m)
                 if store.busy {
-                    ProgressView()
+                    SHBusyLabel("Updating…")
                 } else {
                     Button("Update") { choosing = true }
                         .foregroundStyle(Color.sh.running)

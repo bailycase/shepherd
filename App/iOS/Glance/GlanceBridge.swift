@@ -10,7 +10,7 @@ import WidgetKit
 /// Publishes every host's work to the glance surfaces:
 /// the widgets' snapshot, the Watch Live Activity and any thread being followed. It reads Home's
 /// feed while the app is in front and stops when it leaves; what it published last then goes
-/// stale on its own (`SHGlance.staleAfter`), so no surface shows a frozen spinner as live.
+/// stale on its own (`SHGlance.staleAfter`), so no surface shows a frozen running mark as live.
 /// It also runs the surfaces' buttons (`GlanceActions`) and their links.
 @MainActor
 final class GlanceBridge {

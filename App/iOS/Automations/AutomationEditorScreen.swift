@@ -116,7 +116,7 @@ struct AutomationEditorScreen: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Saving…")
                 } else {
                     Button("Save") { save(host: target?.id, store: store) }.disabled(!canSave)
                 }

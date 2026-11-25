@@ -118,7 +118,7 @@ final class DesignReferenceChips {
     @ObservationIgnored let catalogTimeout: Duration
 
     /// A read of the catalog that takes longer than this is a failure with a Retry, never a
-    /// spinner that doesn't end.
+    /// loading state that doesn't end.
     nonisolated static let defaultCatalogTimeout: Duration = .seconds(15)
 
     init(agentID: AgentID, io: IO, catalogTimeout: Duration = DesignReferenceChips.defaultCatalogTimeout) {

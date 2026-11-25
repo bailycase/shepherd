@@ -143,8 +143,8 @@ struct NewDesignPage: View {
             }
             Spacer(minLength: SH.Space.m)
             if draft.starting {
-                ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
-                    .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
+                SHBusyLabel("Starting…")
+                    .frame(height: SHComposerMetrics.actionSize)
                     .accessibilityLabel("Starting")
             } else {
                 SHComposerActionButton(.send, enabled: blocker == nil) { draft.send(vm) }

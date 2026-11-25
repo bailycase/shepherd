@@ -83,15 +83,19 @@ extension SHDialog where Status == EmptyView {
 public struct SHDialogStatus: View {
     let text: String
     let isError: Bool
+    /// Work is in progress: the words shimmer.
+    let busy: Bool
 
-    public init(_ text: String, isError: Bool = false) {
+    public init(_ text: String, isError: Bool = false, busy: Bool = false) {
         self.text = text
         self.isError = isError
+        self.busy = busy
     }
 
     public var body: some View {
         Text(text)
             .shText(.caption)
+            .shShimmer(active: busy)
             .foregroundStyle(isError ? Color.sh.failed : Color.sh.textSecondary)
             .lineLimit(2)
             .textSelection(.enabled)

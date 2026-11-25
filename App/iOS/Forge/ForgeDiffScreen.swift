@@ -204,7 +204,7 @@ private struct ForgeDiffRows: View {
                     Text("This file is cut short here.").shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(MobileLayout.gutter)
                 }
             } else {
-                ProgressView().progressViewStyle(.shSpinner).padding(MobileLayout.gutter)
+                SHBusyLabel("Loading…").padding(MobileLayout.gutter)
             }
         }
         .padding(.top, SH.Space.xs)

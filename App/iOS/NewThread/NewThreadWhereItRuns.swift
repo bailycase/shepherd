@@ -161,8 +161,7 @@ struct NewThreadBranchPicker: View {
                     }
                 } else {
                     HStack(spacing: SH.Space.m) {
-                        ProgressView().progressViewStyle(.shSpinner)
-                        note("Reading branches on \(model.host?.name ?? "the host")…")
+                        note("Reading branches on \(model.host?.name ?? "the host")…", busy: true)
                     }
                     .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight)
                 }
@@ -195,9 +194,10 @@ struct NewThreadBranchPicker: View {
         .accessibilityHint(option.selected ? "" : "Branches from \(option.name)")
     }
 
-    private func note(_ text: String) -> some View {
+    private func note(_ text: String, busy: Bool = false) -> some View {
         Text(text)
             .shText(.caption)
+            .shShimmer(active: busy)
             .foregroundStyle(Color.sh.textTertiary)
             .padding(.horizontal, SH.Space.s)
     }

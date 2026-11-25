@@ -153,7 +153,7 @@ public struct SHFileViewer: View {
         let sh = Color.sh
         switch content {
         case .loading:
-            ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            SHBusyLabel("Loading…").frame(maxWidth: .infinity, maxHeight: .infinity)
         case .message(let text):
             Text(text)
                 .font(.sh(.ui))

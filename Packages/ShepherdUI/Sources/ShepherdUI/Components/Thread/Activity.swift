@@ -6,8 +6,7 @@ import SwiftUI
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
 /// with a hover fill that expands the burst into its calls. A failed burst turns `failed` and
-/// stays visible. A live one is the thread's live indicator (ToolFeed › A · One live line): the running spinner where the glyph
-/// goes, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time in mono 11 `textTertiary`, and its last
+/// stays visible. A live one is the thread's live indicator (ToolFeed › A · One live line): no glyph and nothing spinning, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time in mono 11 `textTertiary`, and its last
 /// output lines.
 public struct SHActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
@@ -149,25 +148,22 @@ public struct SHActivityLine: View {
         .frame(minHeight: SHThreadMetrics.activityHeight)
     }
 
-    /// The running call (ToolFeed › A): the running spinner in the glyph's place (still under Reduce Motion); the verb and the
+    /// The running call (ToolFeed › A): no glyph and nothing spins; the verb and the
     /// command shimmer; the clock ticks beside them in tertiary.
     private func liveHeader(since: Date?) -> some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            ProgressView()
-                .progressViewStyle(.shSpinner(size: SHThreadMetrics.activityIcon))
-                .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
             SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
                 Text(label).font(.sh(.ui, weight: .regular))
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
-                    .shShimmer(active: true)
                 if !meta.isEmpty {
                     Text(meta).font(.sh(.mono)).lineLimit(1).truncationMode(.tail)
-                        .shShimmer(active: true)
                 }
             }
+            // One band over the verb and the command together: one layer per live line.
+            .shShimmer(active: true)
             if received != nil || since != nil {
                 HStack(spacing: 0) {
                     if let received { Text(received + (since == nil ? "" : " · ")) }

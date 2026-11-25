@@ -78,10 +78,7 @@ private struct ChangesScopeMenu: View {
                     }
                 }
             } else {
-                HStack(spacing: SH.Space.m) {
-                    ProgressView().progressViewStyle(.shSpinner(size: 10))
-                    Text("Counting each scope…").font(.shSans(11)).foregroundStyle(Color.sh.textTertiary)
-                }
+                Text("Counting each scope…").font(.shSans(11)).shShimmer(active: true)
                 .padding(.horizontal, SH.Space.m)
                 .padding(.vertical, SH.Space.s)
             }
@@ -241,11 +238,9 @@ private struct ChangesBasePicker: View {
                 } else if let failure = session.branchesError {
                     SHChangesMenuNote(failure)
                 } else {
-                    HStack(spacing: SH.Space.m) {
-                        ProgressView().progressViewStyle(.shSpinner(size: 10))
-                        Text("Reading branches…").font(.shSans(11)).foregroundStyle(Color.sh.textTertiary)
-                    }
+                    Text("Reading branches…").font(.shSans(11)).shShimmer(active: true)
                     .padding(.horizontal, SH.Space.m)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: SHChangesMenuMetrics.rowHeight)
                 }
             }

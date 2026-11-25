@@ -114,7 +114,7 @@ struct RemoteLayoutDeck: View, Equatable {
             let model = page.model
             RemoteAgentPaneContent(vm: page.vm, presentation: model.presentation)
                 .equatable()
-                // Nor draw its spinners and glows where no one sees them.
+                // Nor draw its shimmers and glows where no one sees them.
                 .environment(\.shMotionPaused, !model.isVisible)
                 // Nor take the window's drag: a hidden page lays out nothing for it (`ThreadView.eagerCount`).
                 .transformEnvironment(\.liveResizing) { if !model.isVisible { $0 = false } }

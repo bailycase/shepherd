@@ -72,7 +72,7 @@ public enum SHComponentCatalog {
             },
             entry("SHBarProgressStyle", "Status") { ProgressView(value: 0.62).progressViewStyle(.shBar).frame(width: 160) },
             entry("SHStepStrip", "Status") { SHStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: 160) },
-            entry("SHSpinnerStyle", "Status") { ProgressView().progressViewStyle(.shSpinner) },
+            entry("SHBusyLabel", "Status") { SHBusyLabel("Loading…") },
             entry("SHSparkline", "Status") { SHSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8]) },
             entry("SHCountBadge", "Status") {
                 HStack(spacing: SH.Space.m) {

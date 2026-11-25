@@ -63,7 +63,7 @@ private struct AppsHostSections: View {
         case .unsupported:
             SettingsFootnote("\(host.name)'s Shepherd is too old to share its apps. Update it to see them here.")
         case .loading:
-            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+            SHBusyLabel("Reading the apps…").frame(maxWidth: .infinity)
         case .failed(let reason):
             SettingsFootnote(reason, tone: .failed)
         case .loaded(let page):
@@ -233,7 +233,7 @@ struct AppScreen: View {
         let row = state?.page?.row(rowID)
         VStack(spacing: 0) {
             if state == .loading {
-                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity, maxHeight: .infinity)
+                SHBusyLabel("Loading…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let host, let row {
                 header(row, host: host, apps: apps)
                 ScrollView {
@@ -314,7 +314,7 @@ struct AppScreen: View {
             } else {
                 switch output {
                 case .loading:
-                    ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                    SHBusyLabel("Reading the output…").frame(maxWidth: .infinity)
                 case .failed(let reason):
                     SettingsFootnote(reason, tone: .failed)
                 case .lines(let lines):

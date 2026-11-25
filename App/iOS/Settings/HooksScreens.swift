@@ -83,7 +83,7 @@ struct HooksScreen: View {
         case .unsupported:
             SettingsFootnote("\(host.name)'s Shepherd is too old to manage hooks from here. Update it to see them.")
         case .loading:
-            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+            SHBusyLabel("Reading the hooks…").frame(maxWidth: .infinity)
         case .failed(let reason):
             SettingsFootnote(reason, tone: .failed)
         case .loaded(let page):
@@ -547,8 +547,8 @@ struct HookEditScreen: View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
             Button { Task { await editor.test(with: hooks) } } label: {
                 HStack(spacing: SH.Space.m) {
-                    if editor.testing { ProgressView().progressViewStyle(SHSpinnerStyle()) }
                     Text(editor.testing ? "Running on \(host.name)…" : "Test with a sample event")
+                        .shShimmer(active: editor.testing)
                 }
                 .font(.sh(.ui))
                 .foregroundStyle(Color.sh.textPrimary)

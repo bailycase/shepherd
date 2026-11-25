@@ -203,7 +203,7 @@ public struct SHTerminalTabBar<Trailing: View>: View {
     }
 }
 
-/// A tab: the terminal glyph (a spinner while a command runs), the title in mono, the host of a
+/// A tab: the terminal glyph (the title shimmers while a command runs), the title in mono, the host of a
 /// selected remote tab, a running-blue dot for output you have not seen, and the selected tab's close.
 public struct SHTerminalTabView: View {
     let tab: SHTerminalTab
@@ -238,6 +238,7 @@ public struct SHTerminalTabView: View {
                     macMark
                     Text(tab.title)
                         .font(.sh(.ui, weight: isSelected ? .medium : .regular))
+                        .shShimmer(active: tab.activity == .starting)
                         .foregroundStyle(isSelected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     if isSelected, let host = tab.host {
@@ -284,13 +285,13 @@ public struct SHTerminalTabView: View {
         .fixedSize()
     }
 
-    /// What stands before the title: a spinner while a shell starts, a dot while a command runs (or
-    /// after one failed), nothing for a shell at its prompt.
+    /// What stands before the title: a dot while a command runs (or after one failed), nothing for a
+    /// shell at its prompt or one that is starting (its title shimmers).
     @ViewBuilder private var macMark: some View {
         let sh = Color.sh
         switch tab.activity {
         case .starting:
-            ProgressView().progressViewStyle(SHSpinnerStyle(size: SHTerminalMetrics.runningDot * 2))
+            EmptyView()
         case .running:
             Circle().fill(sh.textSecondary).frame(width: SHTerminalMetrics.runningDot, height: SHTerminalMetrics.runningDot)
         case .exited(let failed):
@@ -310,6 +311,7 @@ public struct SHTerminalTabView: View {
                     glyph
                     Text(tab.title)
                         .font(.sh(.mono))
+                        .shShimmer(active: tab.activity == .running || tab.activity == .starting)
                         .foregroundStyle(isSelected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     // The selected tab names its host (TerminalTab · states); the rest share it.
@@ -360,13 +362,11 @@ public struct SHTerminalTabView: View {
     @ViewBuilder private var glyph: some View {
         let sh = Color.sh
         switch tab.activity {
-        case .running, .starting:
-            ProgressView().progressViewStyle(SHSpinnerStyle(size: 11))
         case .exited(let failed):
             Image(systemName: "terminal")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(failed ? sh.failed : sh.textTertiary)
-        case .idle, .unseen:
+        case .running, .starting, .idle, .unseen:
             Image(systemName: "terminal")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(isSelected ? sh.textPrimary : sh.textTertiary)

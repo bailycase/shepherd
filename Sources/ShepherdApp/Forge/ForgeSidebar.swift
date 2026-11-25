@@ -233,10 +233,8 @@ private struct ForgeListItemView: View, Equatable {
             case .more(let id, let title, let loading):
                 Button { toggle(id) } label: {
                     HStack(spacing: SH.Space.s) {
-                        Text(title)
-                        if loading {
-                            ProgressView().progressViewStyle(.shSpinner(size: SH.Space.l))
-                        } else {
+                        Text(title).shShimmer(active: loading)
+                        if !loading {
                             Image(systemName: "chevron.right").font(.sh(.micro))
                         }
                     }
@@ -252,8 +250,7 @@ private struct ForgeListItemView: View, Equatable {
             case .loadMore(let loading):
                 Button(action: more) {
                     HStack(spacing: SH.Space.s) {
-                        Text("Load more")
-                        if loading { ProgressView().progressViewStyle(.shSpinner(size: SH.Space.l)) }
+                        Text("Load more").shShimmer(active: loading)
                     }
                     .font(.sh(.ui, weight: .regular))
                     .foregroundStyle(Color.sh.textSecondary)

@@ -129,8 +129,7 @@ struct SearchStatusView: View {
         VStack(alignment: .leading, spacing: SH.Space.xs) {
             if let searching = status.searching {
                 HStack(spacing: SH.Space.s) {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
-                    Text(searching)
+                    Text(searching).shShimmer(active: true)
                 }
                 .accessibilityElement(children: .combine)
             }

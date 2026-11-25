@@ -12,15 +12,15 @@ import Testing
 @testable import ShepherdUI
 
 /// What the app costs while nothing changes: motion no one sees costs
-/// nothing, and motion on screen costs the app no frames. The spinner and the glow turn on the
-/// render server (a Core Animation animation on their layer); a spinner in a layout the
+/// nothing, and motion on screen costs the app no frames. The shimmer and the glow move on the
+/// render server (a Core Animation animation on their layer); a shimmer in a layout the
 /// workspace keeps mounted but hidden, or in a row a lazy stack has let go of, rests. Counted in
 /// frames the clock-driven motions draw (`SHRenderProbe`), host layout passes, and the layers
 /// carrying an animation, none of which a slow machine changes.
 @Suite("Idle cost", .mainActorExclusive)
 @MainActor
 struct IdleCostTests {
-    static let clockKeys = ["ui.spinnerFrame", "ui.glowFrame", "ui.pulseFrame"]
+    static let clockKeys = ["ui.glowFrame", "ui.pulseFrame"]
 
     /// Clock frames drawn over `seconds` of run loop.
     static func clockFrames(over seconds: Double = 1) async -> Int {
@@ -34,12 +34,6 @@ struct IdleCostTests {
         ((root as? T).map { [$0] } ?? []) + root.subviews.flatMap { views(type, in: $0) }
     }
 
-    /// Spinners in `root`, and how many of them turn.
-    static func spinners(in root: NSView) -> (all: Int, turning: Int) {
-        let all = views(SHSpinnerLayerView.self, in: root)
-        return (all.count, all.filter { $0.arc.animation(forKey: SHLayerMotion.spinKey) != nil }.count)
-    }
-
     /// Live text's shimmer bands in `root`, and how many of them move.
     static func shimmers(in root: NSView) -> (all: Int, moving: Int) {
         let all = views(SHShimmerLayerView.self, in: root)
@@ -51,9 +45,9 @@ struct IdleCostTests {
         return (all.count, all.filter { $0.dot.animation(forKey: SHLayerMotion.glowKey) != nil }.count)
     }
 
-    /// A thread that has loaded draws no spinner: "Starting…" is gone for good, not turning
+    /// A thread that has loaded draws no shimmer: "Starting…" is gone for good, not moving
     /// where no one sees it.
-    @Test func aLoadedThreadDrawsNoSpinnerFrames() async throws {
+    @Test func aLoadedThreadDrawsNoShimmerFrames() async throws {
         let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(2)))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -61,12 +55,12 @@ struct IdleCostTests {
         let frames = await Self.clockFrames()
 
         #expect(frames == 0, "\(frames) clock frames")
-        #expect(Self.spinners(in: thread.window.host).turning == 0)
+        #expect(Self.shimmers(in: thread.window.host).moving == 0)
     }
 
-    /// The control: a thread whose pi keeps it waiting says so in its composer, and that spinner
-    /// turns.
-    @Test func aVisibleStartingThreadStillSpins() async throws {
+    /// The control: a thread whose pi keeps it waiting says so in its composer, and those words
+    /// shimmer, once.
+    @Test func aVisibleStartingThreadStillShimmers() async throws {
         let thread = FakeThread(ThreadFixture.snapshot([]), starting: true, reduceMotion: false)
         defer { thread.close() }
         let store = thread.store
@@ -74,10 +68,10 @@ struct IdleCostTests {
         try await eventuallyOnMain("pi to be reported starting") { store.starting }
         try await eventuallyOnMain("the composer to say pi is starting") {
             ListPerf.settle(thread.window)
-            return Self.spinners(in: host).all == 1
+            return Self.shimmers(in: host).all == 1
         }
 
-        #expect(Self.spinners(in: host).turning == 1)
+        #expect(Self.shimmers(in: host).moving == 1)
     }
 
     /// Layouts the workspace keeps mounted behind the visible one draw no clock frames, and
@@ -124,26 +118,9 @@ struct IdleCostTests {
 
         #expect(frames == 0, "\(frames) clock frames")
         let shimmers = Self.shimmers(in: window.host)
-        #expect(shimmers.all >= agents.count - 1 && shimmers.moving == 0, "\(shimmers)")
-        let spinners = Self.spinners(in: window.host)
-        if spinners.all != 0 {
-            let states = agents.enumerated().map { index, agent in
-                let store = vm.threadStores.store(for: agent.agent.id)
-                return "\(index):ready=\(store.ready),starting=\(store.starting),busy=\(store.busy),running=\(store.running)"
-            }
-            let ancestors = Self.views(SHSpinnerLayerView.self, in: window.host).map { spinner in
-                var view: NSView? = spinner
-                var names: [String] = []
-                while let current = view, names.count < 6 {
-                    names.append(String(describing: type(of: current)))
-                    view = current.superview
-                }
-                return names
-            }
-            print("Hidden-layout spinners: count/turning=\(spinners), stores=\(states), ancestor classes=\(ancestors)")
-        }
-        // Each hidden turn's live line wears the running spinner (ToolFeed › A, ced9bd7ab); in a hidden layout it rests.
-        #expect(spinners.all == agents.count - 1 && spinners.turning == 0, "only the live lines' spinners, none turning: \(spinners)")
+        #expect(shimmers.moving == 0, "\(shimmers)")
+        // Each hidden turn's live line wears one shimmer (ToolFeed › A); in a hidden layout it rests.
+        #expect(shimmers.all == agents.count - 1, "one shimmer per hidden live line: \(shimmers)")
     }
 
     /// A paused shimmer moves again as its layout comes back on screen. Between tools the
@@ -165,11 +142,10 @@ struct IdleCostTests {
         #expect(shown.moving == shown.all, "\(shown)")
     }
 
-    /// ToolFeed › A: a running thread's one live line wears the running spinner and shimmers, and a
-    /// steering message in "Up next" waits still (waiting isn't working), so that spinner is the
-    /// thread's only one. The spinner and the shimmer rest while the layout is hidden and move
-    /// again on screen.
-    @Test func aRunningThreadWithASteerSpinsNothing() async throws {
+    /// ToolFeed › A: a running thread's one live line shimmers, and a steering message in "Up next"
+    /// waits still (waiting isn't working), so that shimmer is the thread's only one. It rests
+    /// while the layout is hidden and moves again on screen.
+    @Test func aRunningThreadWithASteerShimmersOnce() async throws {
         var snapshot = ThreadFixture.snapshot(ThreadFixture.history(2) + [ThreadFixture.user("u", "Go")],
                                               provisional: [ThreadFixture.streaming("Working on it.")], running: true)
         snapshot.provisional = [NativeThreadMessage(entryID: "provisional:tool:b", role: "toolResult", blocks: [], toolName: "bash",
@@ -180,24 +156,18 @@ struct IdleCostTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         ListPerf.settle(thread.window)
-        let turning = Self.spinners(in: thread.window.host)
-        #expect(turning.all == 1 && turning.turning == 1, "only the live line's spinner turns: \(turning)")
         let shown = Self.shimmers(in: thread.window.host)
-        #expect(shown.all >= 1 && shown.moving == shown.all, "the live line's: \(shown)")
+        #expect(shown.all == 1 && shown.moving == 1, "only the live line's shimmer moves: \(shown)")
 
         thread.visibility.motionPaused = true
         ListPerf.settle(thread.window)
         let hidden = Self.shimmers(in: thread.window.host)
         #expect(hidden.all == shown.all && hidden.moving == 0, "\(hidden)")
-        let resting = Self.spinners(in: thread.window.host)
-        #expect(resting.all == 1 && resting.turning == 0, "\(resting)")
 
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
         let back = Self.shimmers(in: thread.window.host)
-        #expect(back.moving == back.all, "\(back)")
-        let again = Self.spinners(in: thread.window.host)
-        #expect(again.turning == again.all, "\(again)")
+        #expect(back.all == 1 && back.moving == 1, "\(back)")
     }
 
     /// A shimmer on screen costs the app no frames: its band slides on the render server, in
@@ -236,15 +206,15 @@ struct IdleCostTests {
 
     // MARK: Render-server motion
 
-    /// A spinner turning and an attention dot glowing, on screen: SwiftUI draws no frame for them
+    /// A shimmer moving and an attention dot glowing, on screen: SwiftUI draws no frame for them
     /// and never lays the window out again.
-    @Test func aRunningSpinnerAndAGlowingDotCostTheAppNoFrames() async throws {
+    @Test func aShimmerAndAGlowingDotCostTheAppNoFrames() async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60),
-                                          HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }.padding(10)
+                                          HStack { Text("Running").shShimmer(active: true); SHStatusDot(.attention) }.padding(10)
                                               .environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
         try await Task.sleep(for: .milliseconds(300))
-        #expect(Self.spinners(in: window.host).turning == 1 && Self.glows(in: window.host).pulsing == 1)
+        #expect(Self.shimmers(in: window.host).moving == 1 && Self.glows(in: window.host).pulsing == 1)
         let layouts = window.host.layouts
 
         let frames = await Self.clockFrames()
@@ -253,32 +223,32 @@ struct IdleCostTests {
         #expect(window.host.layouts - layouts == 0, "\(window.host.layouts - layouts) host layout passes")
     }
 
-    @Test func theSpinnerAndTheGlowRepeatAtTheirAnchors() async throws {
+    @Test func theShimmerAndTheGlowRepeatAtTheirAnchors() async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60),
-                                          HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }.padding(10)
+                                          HStack { Text("Running").shShimmer(active: true); SHStatusDot(.attention) }.padding(10)
                                               .environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
-        let spinner = try #require(Self.views(SHSpinnerLayerView.self, in: window.host).first)
+        let band = try #require(Self.views(SHShimmerLayerView.self, in: window.host).first)
         let dot = try #require(Self.views(SHGlowLayerView.self, in: window.host).first)
 
-        let spin = try #require(spinner.arc.animation(forKey: SHLayerMotion.spinKey) as? CABasicAnimation)
-        #expect(spin.keyPath == "transform.rotation.z" && spin.duration == SH.Motion.spin.duration && spin.repeatCount == .infinity)
-        #expect(abs(abs((spin.toValue as? Double) ?? 0) - 2 * .pi) < 1e-9, "one turn per period")
+        let slide = try #require(band.band.animation(forKey: SHLayerMotion.shimmerKey) as? CAAnimationGroup)
+        #expect(slide.duration == SH.Motion.shimmer.duration && slide.repeatCount == .infinity)
+        #expect(slide.animations?.compactMap { ($0 as? CABasicAnimation)?.keyPath }.sorted() == ["endPoint", "startPoint"], "the band slides, nothing turns")
         let glow = try #require(dot.dot.animation(forKey: SHLayerMotion.glowKey) as? CAKeyframeAnimation)
         #expect(glow.keyPath == "opacity" && glow.duration == SH.Motion.glow.duration && glow.repeatCount == .infinity)
     }
 
-    /// Reduce Motion, and a hidden layout, leave the arc and the dot at rest.
+    /// Reduce Motion draws no band at all; a hidden layout leaves the band and the dot at rest.
     @Test(arguments: ["reduce motion", "paused"]) func nothingTurnsOrGlowsAtRest(reason: String) async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60),
-                                          HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }.padding(10)
+                                          HStack { Text("Running").shShimmer(active: true); SHStatusDot(.attention) }.padding(10)
                                               .environment(\._accessibilityReduceMotion, reason == "reduce motion")
                                               .environment(\.shMotionPaused, reason == "paused"))
         defer { window.close() }
 
-        let spinners = Self.spinners(in: window.host), glows = Self.glows(in: window.host)
+        let shimmers = Self.shimmers(in: window.host), glows = Self.glows(in: window.host)
 
-        #expect(spinners.all == 1 && spinners.turning == 0)
+        #expect(shimmers.all == (reason == "paused" ? 1 : 0) && shimmers.moving == 0)
         #expect(glows.all == 1 && glows.pulsing == 0)
         #expect(Self.views(SHGlowLayerView.self, in: window.host).first?.dot.opacity == 1, "a resting dot is fully lit")
     }
@@ -287,68 +257,60 @@ struct IdleCostTests {
         var value: ColorScheme = .light
     }
 
-    private struct SchemedSpinner: View {
+    private struct SchemedShimmer: View {
         let scheme: Scheme
 
         var body: some View {
-            HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }
+            HStack { Text("Running").shShimmer(active: true); SHStatusDot(.attention) }
                 .padding(10)
+                .environment(\._accessibilityReduceMotion, false)
                 .environment(\.colorScheme, scheme.value)
         }
     }
 
     /// The layers take their colors from the theme's tokens as the view's appearance resolves
-    /// them, again whenever it changes: switching to dark recolors a spinner and a dot in place.
-    @Test func anAppearanceSwitchRecolorsTheSpinnerAndTheDot() throws {
+    /// them, again whenever it changes: switching to dark recolors a shimmer and a dot in place.
+    @Test func anAppearanceSwitchRecolorsTheShimmerAndTheDot() throws {
         let scheme = Scheme()
-        let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60), SchemedSpinner(scheme: scheme))
+        let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60), SchemedShimmer(scheme: scheme))
         defer { window.close() }
-        let spinner = try #require(Self.views(SHSpinnerLayerView.self, in: window.host).first)
+        let band = try #require(Self.views(SHShimmerLayerView.self, in: window.host).first)
         let dot = try #require(Self.views(SHGlowLayerView.self, in: window.host).first)
         func expected(_ color: Color, _ scheme: ColorScheme) -> CGColor {
             var environment = EnvironmentValues()
             environment.colorScheme = scheme
             return color.resolve(in: environment).cgColor
         }
-        #expect(spinner.arc.strokeColor == expected(Color.sh.running, .light))
+        #expect((band.band.colors as? [CGColor]) == [expected(Color.sh.textTertiary, .light), expected(Color.sh.textPrimary, .light),
+                                                     expected(Color.sh.textTertiary, .light)])
         #expect(dot.dot.fillColor == expected(AgentState.attention.color, .light))
 
         scheme.value = .dark
         window.window.layoutIfNeeded()
         window.host.layoutSubtreeIfNeeded()
 
-        #expect(spinner.arc.strokeColor == expected(Color.sh.running, .dark))
+        #expect((band.band.colors as? [CGColor]) == [expected(Color.sh.textTertiary, .dark), expected(Color.sh.textPrimary, .dark),
+                                                     expected(Color.sh.textTertiary, .dark)])
         #expect(dot.dot.fillColor == expected(AgentState.attention.color, .dark))
-        #expect(expected(Color.sh.running, .light) != expected(Color.sh.running, .dark), "the token has two colors")
+        #expect(expected(Color.sh.textPrimary, .light) != expected(Color.sh.textPrimary, .dark), "the token has two colors")
     }
 
-    /// Every spinner turns in step with the clock (`SHPhase`), as the timeline-drawn one did.
-    @Test(.timingSensitive) func aSpinnerTurnsInStepWithTheClock() async throws {
-        let window = LayoutCountingWindow(size: CGSize(width: 60, height: 60), ProgressView().progressViewStyle(.shSpinner).padding(10))
+    /// Every shimmer moves in step with the clock (`SHPhase`), as the timeline-drawn one did.
+    @Test(.timingSensitive) func aShimmerMovesInStepWithTheClock() async throws {
+        let window = LayoutCountingWindow(size: CGSize(width: 160, height: 60),
+                                          Text("Running tests").shShimmer(active: true).padding(10)
+                                              .environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
-        let spinner = try #require(Self.views(SHSpinnerLayerView.self, in: window.host).first)
+        let band = try #require(Self.views(SHShimmerLayerView.self, in: window.host).first)
         try await Task.sleep(for: .milliseconds(100))
 
-        let angle = try #require(spinner.arc.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double)
-        let expected = -2 * .pi * SHPhase.fraction(Date(), .spin)
+        let start = try #require(band.band.presentation()?.startPoint)
+        let expected = SHPhase.shimmerPoints(center: SHPhase.shimmerCenter(Date())).start
 
-        let apart = abs(remainder(angle - expected, 2 * .pi))
-        #expect(apart < 0.5, "at \(angle), the clock's phase is \(expected)")
+        #expect(abs(start.x - expected.x) < 0.5, "at \(start.x), the clock's phase is \(expected.x)")
     }
 
     // MARK: The look
-
-    /// The arc as SwiftUI drew it before it turned on the render server.
-    private struct ShapeArc: View {
-        let size: CGFloat
-
-        var body: some View {
-            Circle().trim(from: 0, to: 0.75)
-                .stroke(Color.sh.running, style: StrokeStyle(lineWidth: max(1.5, size * 0.145), lineCap: .round))
-                .padding(max(1.5, size * 0.145) / 2)
-                .frame(width: size, height: size)
-        }
-    }
 
     private static func bitmap(_ view: some View, size: CGSize, dark: Bool) -> NSBitmapImageRep {
         let window = OffscreenWindow(size: size, dark: dark, view.frame(width: size.width, height: size.height)
@@ -387,27 +349,6 @@ struct IdleCostTests {
             }
         }
         return (mismatched, inked)
-    }
-
-    /// At rest the layer arc draws what the shape did: the same 3/4 ring, open from twelve to
-    /// three o'clock, with its stroke, round caps, and color, in both appearances.
-    @Test(arguments: [false, true]) func theSpinnerDrawsTheArcItReplaced(dark: Bool) {
-        let size = CGSize(width: 48, height: 48)
-        let shape = Self.bitmap(ShapeArc(size: 48), size: size, dark: dark)
-        let layer = Self.bitmap(ProgressView().progressViewStyle(.shSpinner(size: 48)), size: size, dark: dark)
-
-        let difference = Self.mismatch(shape, layer, ink: Color.sh.running, dark: dark)
-
-        #expect(difference.ink > 500, "the arc drew: \(difference)")
-        // Edge pixels vary with the renderer (CI's VM antialiases differently: 18% there, under
-        // 15% on a Mac); the geometry checks below stay exact.
-        #expect(Double(difference.mismatched) < Double(difference.ink) * 0.25, "\(difference)")
-        // On the ring: open at half past one, drawn at half past four (a mirror swaps the two).
-        let background = shape.colorAt(x: 0, y: 0)!
-        for bitmap in [shape, layer] {
-            #expect(bitmap.colorAt(x: 38, y: 9) == background, "the gap is top-right")
-            #expect(bitmap.colorAt(x: 38, y: 38) != background, "the arc passes bottom-right")
-        }
     }
 
     @Test(arguments: [false, true]) func theGlowingDotDrawsTheDotItReplaced(dark: Bool) {
@@ -462,12 +403,12 @@ struct IdleCostReport {
         report.add("restored workspace (12 agents, 1 visible)", "idle 4 s: main-thread CPU (median of 3)", ms: MainThreadCPU.median(cpu))
     }
 
-    /// One spinner, one glowing dot, and an empty window for comparison, each alone in a window
+    /// One shimmer, one glowing dot, and an empty window for comparison, each alone in a window
     /// and idle for three seconds: main-thread CPU and the host's layout passes.
     @Test func continuousMotionIdle() async throws {
         let cases: [(String, AnyView)] = [
             ("empty window", AnyView(Color.clear.frame(width: 40, height: 40))),
-            ("one spinner", AnyView(ProgressView().progressViewStyle(.shSpinner))),
+            ("one shimmer", AnyView(Text("Running").shShimmer(active: true))),
             ("one glowing dot", AnyView(SHStatusDot(.attention))),
         ]
         for (name, view) in cases {

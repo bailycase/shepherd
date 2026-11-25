@@ -12,6 +12,7 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
     case rawColor = "raw-color"
     case rawGlyphName = "raw-glyph-name"
     case symbolRenameUnderAnimation = "symbol-rename-under-animation"
+    case spinner = "spinner"
 
     var testDescription: String { rawValue }
 
@@ -28,6 +29,8 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
             "A glyph with a shared definition is never named as a raw SF Symbol string: it comes from SHGlyph (Tokens/Glyphs.swift). (DESIGN.md › Shepherd Design › Icons)"
         case .symbolRenameUnderAnimation:
             "An SF Symbol is never renamed where an animation can reach it: an Image(systemName:) or systemImage: whose name follows state (a ? \"x\" : \"y\"), or any dynamic name under .shAnimation, .animation or a content transition. SwiftUI draws the rename through RenderBox, which loads about 258 MB of accelerated drawing pool for 1.2 to 1.6 s on every animated change, from any ancestor's .shAnimation or withSHAnimation. (DESIGN.md › Shepherd Design › Motion)"
+        case .spinner:
+            "Nothing in Shepherd spins: no ProgressView without a value (ProgressView(), ProgressView(\"…\"), ProgressView { … }), no spinner style (.shSpinner, SHSpinnerStyle, SHLayerSpinner). Busy work is words that shimmer. (DESIGN.md › Principles › One thing moves at a time)"
         }
     }
 
@@ -44,6 +47,8 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
             "Draw it through SHGlyph (SHGlyph.fastBolt.image, or SHFastBolt for the Fast mark) or pass SHGlyph.<case>.symbolName where an API takes a symbol name. A new glyph that more than one view draws is a new case in Tokens/Glyphs.swift."
         case .symbolRenameUnderAnimation:
             "A disclosure chevron is one SHTurningChevron that turns. Any other pair is two images that fade: stack fixed images and fade them by opacity under .shAnimation(.content, value:) (SHComposerActionButton), or key one image with .id(state) and .shTransition(.content) in a ZStack (SHCopyGlyph, SHStateGlyph, SHCommitMessageEditor). A name that follows state where nothing animates (a menu or toolbar item, a kind that is fixed for the row) goes in the allowlist with why."
+        case .spinner:
+            "Shimmer the words that name the work (Text(\"Saving…\").shShimmer(active: busy), set before the foreground style), or where a place has none show SHBusyLabel(\"Loading…\"). Progress that has a value is ProgressView(value:) with .progressViewStyle(.shBar)."
         }
     }
 }
@@ -103,6 +108,12 @@ enum DesignRules {
         ##""#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?""##,
     ])
 
+    /// A `ProgressView` that is not given a value, and the spinner styles and views.
+    private static let spinner = alternation([
+        #"\bProgressView\s*(?:\((?!\s*value:)|\{)"#,
+        #"(?i:\bsh(?:layer)?spinner)"#,
+    ])
+
     /// The symbol names `SHGlyph` registers, as the string literals that must not appear elsewhere.
     private static let registeredSymbols: [String] = SHGlyph.allCases.map { "\"\($0.symbolName)\"" }
     private static let registeredNeedles: [[UInt8]] = registeredSymbols.map { Array($0.utf8) }
@@ -116,6 +127,7 @@ enum DesignRules {
         if code.contains(".opacity("), matches(statusTint) { broken.append(.statusTintByOpacity) }
         if matches(color) { broken.append(.rawColor) }
         if registeredSymbols.contains(where: code.contains) { broken.append(.rawGlyphName) }
+        if code.contains("ProgressView") || code.localizedCaseInsensitiveContains("spinner"), matches(spinner) { broken.append(.spinner) }
         return broken
     }
 
@@ -225,7 +237,7 @@ enum DesignRules {
             || has("Color(") || has("Color.", notFollowedBy: "sh") || has("#colorLiteral") || has("\"#") || has("NSColor") || has("UIColor")
             || has("foregroundStyle(.", notFollowedBy: "sh") || has("foregroundColor(.", notFollowedBy: "sh")
             || has(".background(.", notFollowedBy: "sh") || has(".fill(.", notFollowedBy: "sh") || has(".stroke(.", notFollowedBy: "sh")
-            || has(".tint(.", notFollowedBy: "sh") || mentionsARegisteredSymbol(line)
+            || has(".tint(.", notFollowedBy: "sh") || has("ProgressView") || has("pinner") || mentionsARegisteredSymbol(line)
     }
 
     private static func mentionsARegisteredSymbol(_ line: UnsafeBufferPointer<UInt8>) -> Bool {

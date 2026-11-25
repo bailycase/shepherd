@@ -1829,7 +1829,7 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
             return vm.mountedTabs.count == agents.count
                 && vm.threadStores.store(for: agents[0].agent.id).ready
-                && IdleCostTests.spinners(in: window.host).all == 0
+                && IdleCostTests.shimmers(in: window.host).all == 0
         }
         let deck = try WorkspaceNavigationTests.deck(in: window)
         let hidden = deck.pages.values.filter { $0.host.isHidden }.map(\.host)
@@ -1887,7 +1887,7 @@ struct ListPerformanceTests {
             try await eventuallyOnMain("the mounted workspace to settle", timeout: .seconds(60)) {
                 ListPerf.settle(window)
                 guard vm.mountedTabs.count == agents.count, vm.threadStores.store(for: agents[0].agent.id).ready,
-                      IdleCostTests.spinners(in: window.host).all == 0 else { return false }
+                      IdleCostTests.shimmers(in: window.host).all == 0 else { return false }
                 let counts = ListPerf.counting { ListPerf.settle(window) }
                 quiet = ["shell.root", "shell.workspace", "thread.view", "deck.hiddenLayout"].allSatisfy { counts[$0, default: 0] == 0 } ? quiet + 1 : 0
                 return quiet >= 10
@@ -1956,7 +1956,7 @@ struct ListPerformanceTests {
             try await eventuallyOnMain("the mounted workspace to settle", timeout: .seconds(60)) {
                 ListPerf.settle(window)
                 guard vm.mountedTabs.count == agents.count, vm.threadStores.store(for: agents[0].agent.id).ready,
-                      IdleCostTests.spinners(in: window.host).all == 0 else { return false }
+                      IdleCostTests.shimmers(in: window.host).all == 0 else { return false }
                 let counts = ListPerf.counting { ListPerf.settle(window) }
                 quiet = ["shell.root", "shell.workspace", "thread.view", "deck.hiddenLayout"].allSatisfy { counts[$0, default: 0] == 0 } ? quiet + 1 : 0
                 return quiet >= 10

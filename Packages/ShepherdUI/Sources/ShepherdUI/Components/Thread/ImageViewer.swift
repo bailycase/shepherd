@@ -203,7 +203,7 @@ public struct SHImageViewer: View {
         case .loading:
             RoundedRectangle(cornerRadius: SH.Radius.m).fill(sh.bgSunken)
                 .frame(width: SHImageViewerMetrics.placeholderWidth, height: SHImageViewerMetrics.placeholderHeight)
-                .overlay { ProgressView().controlSize(.small) }
+                .overlay { SHBusyLabel("Loading…") }
                 .accessibilityLabel("Loading \(name)")
         case .failed(let message):
             VStack(spacing: SH.Space.m) {

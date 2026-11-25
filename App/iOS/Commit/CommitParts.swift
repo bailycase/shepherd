@@ -91,8 +91,7 @@ struct CommitProgress: View {
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             if store.steps.isEmpty {
                 HStack(spacing: SH.Space.m) {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
-                    Text("Starting on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                    Text("Starting on the host…").font(.sh(.ui)).shShimmer(active: true)
                 }
                 .frame(minHeight: SH.Height.touch)
             } else {

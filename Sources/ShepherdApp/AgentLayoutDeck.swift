@@ -60,7 +60,7 @@ struct AgentLayoutDeck: View, Equatable {
         var body: some View {
             let model = page.model
             content(model)
-                // Nor draw its spinners and glows where no one sees them.
+                // Nor draw its shimmers and glows where no one sees them.
                 .environment(\.shMotionPaused, !model.isVisible)
                 // Nor take the window's drag: a hidden thread lays out nothing for it, so its two changes (the start and the end) would
                 // only rebuild its rows (`ThreadView.eagerCount`).

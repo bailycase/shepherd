@@ -57,12 +57,8 @@ struct LaunchSurface: View {
         ZStack {
             Color.sh.bgWindow
             if slow {
-                HStack(spacing: SH.Space.s) {
-                    ProgressView().controlSize(.small)
-                    Text("Waiting for Shepherd’s session host…").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
-                }
-                .accessibilityElement(children: .combine)
-                .transition(.opacity)
+                Text("Waiting for Shepherd’s session host…").font(.sh(.ui, weight: .regular)).shShimmer(active: true)
+                    .transition(.opacity)
             }
         }
         .shAnimation(.content, value: slow)

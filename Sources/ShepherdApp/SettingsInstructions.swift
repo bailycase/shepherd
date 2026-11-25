@@ -146,10 +146,9 @@ private struct InstructionsEditorCard: View {
             .id(file)
         } else {
             VStack(spacing: SH.Space.m) {
-                ProgressView().progressViewStyle(.shSpinner).accessibilityHidden(true)
                 Text("Reading This Mac's files…")
                     .font(.sh(.caption))
-                    .foregroundStyle(Color.sh.textTertiary)
+                    .shShimmer(active: true)
             }
             .padding(SH.Space.xxl)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

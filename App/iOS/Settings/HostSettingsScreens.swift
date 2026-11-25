@@ -458,7 +458,7 @@ struct HostSettingsBody<Content: View>: View {
                 case .loaded(let settings):
                     content(settings, host)
                 case .loading:
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Reading the settings…")
                         .frame(maxWidth: .infinity)
                 case .offline:
                     SettingsFootnote("\(host.name) is offline. Its settings show here once it's back.")

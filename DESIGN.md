@@ -46,7 +46,7 @@ Every decision has to pass one test: does this help one person supervise ten wor
    (`docs/design/boards/ToolActivity.png`): live, it says what the running call is doing; finished,
    it is a recap built from the calls' own arguments and results. Every tool has its own words,
    never "Used <tool>".
-4. **One thing moves at a time.** The live line's spinner and shimmer are the only motion in the thread.
+4. **One thing moves at a time.** The live line's shimmering words are the only motion in the thread. Nothing in Shepherd spins: busy work is words that shimmer (`SHBusyLabel` where a place has none).
 5. **Nothing in the default view that isn't useful.** No key-hint rows (the question dock's
    footer is the one exception: its 1–N and ↩ hints, QuestionDockRadio), no repeated status text,
    no footers in menus, nothing under the composer but its controls.
@@ -162,7 +162,7 @@ status color, a raw color, a raw glyph name, or a symbol renamed where an animat
 **Motion** uses `SH.Motion` anchors, never a literal duration or curve:
 
 - `hover`, `content` 120ms · `disclosure`, `list`, `pane`, `overlay` 180ms · `sheet`,
-  `emphasis`, `scroll` 240ms, all springs; `glow` 1.6s (attention only), `spin` 1s, `shimmer`
+  `emphasis`, `scroll` 240ms, all springs; `glow` 1.6s (attention only), `shimmer`
   1.8s (live text only), `pulse` 1.4s.
 - A store-driven change uses `.shAnimation(_:value:)` and `.shTransition`. An action-driven
   change uses `withSHAnimation`. Never use an ad-hoc `withAnimation`.
@@ -170,7 +170,7 @@ status color, a raw color, a raw glyph name, or a symbol renamed where an animat
   once (`.shInstant()`); the one exception is the composer's focus ring in the layout a switch
   brings on screen, which fades in over the `hover` 120ms (an ease-out, never a spring) and lands at
   once under Reduce Motion. Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
-- Spinners and glows are Core Animation layers, never a view redrawn every frame; so is the
+- Glows and the shimmer are Core Animation layers, never a view redrawn every frame; so is the
   composer's focus line and ring, since a SwiftUI animation lays the visible layout out again on
   every frame it lasts.
 - A glyph that swaps for another (Send and Stop, copy and its check) is two fixed images

@@ -300,7 +300,7 @@ private struct PaletteExcerpt: View {
                 }
             }
             if loading && lines.isEmpty {
-                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                SHBusyLabel("Searching…").frame(maxWidth: .infinity)
             }
         }
         .padding(SH.Space.l)

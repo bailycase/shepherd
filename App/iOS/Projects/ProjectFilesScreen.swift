@@ -52,7 +52,7 @@ struct ProjectFilesScreen: View {
                         .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             } else {
-                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                SHBusyLabel("Loading…").frame(maxWidth: .infinity)
             }
             if let preview { Section { previewView(preview) } }
         }
@@ -180,7 +180,7 @@ struct AssignProjectTaskScreen: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { navigator.dismissPresented() } }
             ToolbarItem(placement: .confirmationAction) {
-                if assigning { ProgressView().progressViewStyle(SHSpinnerStyle()) } else {
+                if assigning { SHBusyLabel("Starting…") } else {
                     Button("Start thread") { assign() }.disabled(!ready)
                 }
             }

@@ -183,7 +183,7 @@ struct Composer: View, Equatable {
     @Environment(\.presentImages) private var presentImages
     private var running: Bool { store.running }
     private var dialogs: [NativeThreadDialog] { errored ? [] : store.dialogs }
-    /// While pi starts, a send waits for it behind the spinner.
+    /// While pi starts, a send waits for it ("Sending…" stands in for Send).
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
             && input.preparingImages == 0
@@ -1517,7 +1517,8 @@ struct ComposerControls: View, Equatable {
                     .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                     .accessibilityLabel("Attach file")
             }
-            modelChip(compact: compact)
+            // Narrow, "Starting…" has no room for its words: the model chip's own shimmer says it.
+            modelChip(compact: compact, shimmers: model.startingShown && !startingLabel && !model.busy)
             if part == .all { Spacer(minLength: SH.Space.m) }
             if model.startingShown { startingIndicator(label: startingLabel).shTransition(.content) }
             if let hooks = model.hooks { HookComposerGlyph(indicator: hooks, open: actions.hooks) }
@@ -1525,7 +1526,7 @@ struct ComposerControls: View, Equatable {
         .shAnimation(.content, value: model.startingShown)
     }
 
-    @ViewBuilder private func modelChip(compact: Bool) -> some View {
+    @ViewBuilder private func modelChip(compact: Bool, shimmers: Bool = false) -> some View {
         if let name = model.model {
             let summary = ModelSettingsSummary(model: name, thinking: model.thinking, thinkingOffered: model.thinkingShown, speed: model.speed,
                                                speedOffered: model.speedShown, shortenedName: compact, dropsThinking: compact,
@@ -1533,6 +1534,7 @@ struct ComposerControls: View, Equatable {
             Button(action: actions.models) {
                 SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast,
                                      changeable: model.modelChangeable || model.thinkingShown || model.speedShown)
+                    .shShimmer(active: shimmers)
             }
             .buttonStyle(.shComposerChip(active: model.modelsOpen))
             .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
@@ -1543,22 +1545,19 @@ struct ComposerControls: View, Equatable {
         }
     }
 
-    /// "Starting…" beside the action, quiet and in the row it never resizes. Its spinner
-    /// gives way to Send's own while a message waits for the agent.
-    private func startingIndicator(label: Bool) -> some View {
-        HStack(spacing: AppLayout.startingSpacing) {
-            if !model.busy {
-                ProgressView().progressViewStyle(.shSpinner(size: AppLayout.startingSpinner, color: Color.sh.textTertiary))
-            }
-            if label { Text("Starting…").font(Font.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+    /// "Starting…" beside the action, quiet and in the row it never resizes. Its words stop
+    /// shimmering while a message waits for the agent ("Sending…" shimmers instead). Without
+    /// room for the words the model chip shimmers (`modelChip`).
+    @ViewBuilder private func startingIndicator(label: Bool) -> some View {
+        if label {
+            Text("Starting…").font(Font.sh(.caption)).shShimmer(active: !model.busy).foregroundStyle(Color.sh.textTertiary)
+                .padding(.trailing, SH.Space.s)
+                .help("The agent is starting. A message sent now goes once it is ready.")
+                .accessibilityLabel("Starting the agent")
         }
-        .padding(.trailing, SH.Space.s)
-        .help("The agent is starting. A message sent now goes once it is ready.")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Starting the agent")
     }
 
-    /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
+    /// Send and Stop are one button that morphs; "Sending…" cross-fades over it while pi
     /// accepts a message. While pi works it is Stop with nothing to send and Send with input
     /// (words, files, images, references, elements); then right-clicking or holding Send opens
     /// the Send menu. There is no second Stop.
@@ -1567,8 +1566,8 @@ struct ComposerControls: View, Equatable {
         return HStack(spacing: SH.Space.s) {
             ZStack {
                 if model.busy {
-                    ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
-                        .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
+                    SHBusyLabel("Sending…")
+                        .frame(height: SHComposerMetrics.actionSize)
                         .accessibilityLabel("Waiting for the agent")
                         .shTransition(.content)
                 } else {

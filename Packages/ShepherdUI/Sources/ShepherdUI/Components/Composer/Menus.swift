@@ -575,10 +575,8 @@ public struct SHModelPicker: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if loading {
-                            HStack(spacing: SH.Space.m) {
-                                ProgressView().progressViewStyle(.shSpinner(size: 12))
-                                Text("Loading models…").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                            }
+                            SHBusyLabel("Loading models…")
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, SH.Space.m)
                             .frame(height: SHComposerMetrics.menuRowHeight)
                             .id(Self.loadingRow)

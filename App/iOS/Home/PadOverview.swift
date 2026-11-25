@@ -213,7 +213,7 @@ private struct OverviewColumns: View {
     }
 }
 
-/// A running thread's glyph (iPadOverview, iPadHosts): the spinner, the branch while its
+/// A running thread's glyph (iPadOverview, iPadHosts): a dot, the branch while its
 /// subagents work, or its state's dot while it waits on you.
 enum RunningGlyph {
     static func of(_ row: FleetThreadRow) -> SHListRow.Leading {

@@ -50,7 +50,7 @@ struct ThemeContrastTests {
         pairs.append(Pair(name: "textOnLantern on lantern", text: \.textOnLantern, fill: \.lantern, base: \.bgWindow, minimum: text))
         // The Browser's element tag and the design canvas's selection tag.
         pairs.append(Pair(name: "textOnRunning on running", text: \.textOnRunning, fill: \.running, base: \.bgWindow, minimum: text))
-        // State dots, glyphs, spinners, and bars on the window.
+        // State dots, glyphs, and bars on the window.
         for (name, role) in [("lantern", \ThemeColors.lantern), ("running", \.running), ("done", \.done), ("failed", \.failed)] {
             pairs.append(Pair(name: "\(name) mark on bgWindow", text: role, fill: \.bgWindow, base: \.bgWindow, minimum: mark))
         }

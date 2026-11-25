@@ -159,7 +159,7 @@ struct DesignSystemScreen: View {
             } else if let problem {
                 Text(problem).foregroundStyle(Color.sh.failed)
             } else {
-                ProgressView().progressViewStyle(.shSpinner).frame(maxWidth: .infinity)
+                SHBusyLabel("Loading…").frame(maxWidth: .infinity)
             }
         }
         .scrollContentBackground(.hidden)

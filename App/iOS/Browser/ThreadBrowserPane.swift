@@ -462,8 +462,7 @@ private struct BrowserWaiting: View {
         let port = BrowserTunnelTarget.port(of: url)
         let servers = (page.devServers ?? []).filter { $0.port == port }
         BrowserMessage(title: "Waiting for \(host)", message: "Its page opens here when it answers on \(page.hostName).") {
-            ProgressView()
-                .accessibilityLabel("Waiting")
+            SHBusyLabel("Waiting…")
             ForEach(servers) { server in
                 Button {
                     Task { await page.start(server) }

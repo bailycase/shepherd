@@ -22,8 +22,7 @@ import SwiftUI
     SHPreviewBoth {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                ProgressView().progressViewStyle(.shSpinner)
-                Text("Tool or turn in progress").font(.shSans(12.5)).foregroundStyle(.sh.textPrimary)
+                SHBusyLabel("Tool or turn in progress", font: .shSans(12.5))
             }
             HStack(spacing: 10) {
                 SHSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8])

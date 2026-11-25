@@ -301,12 +301,9 @@ struct AddMCPServerSheet: View {
         case .idle:
             EmptyView()
         case .checking:
-            HStack(spacing: SH.Space.m) {
-                ProgressView().progressViewStyle(.shSpinner)
-                Text("Checking \(URL(string: url)?.host ?? "the server")…").font(.shSans(AppLayout.mcpSheetTextSize))
-                    .foregroundStyle(sh.textSecondary)
-            }
-            .modifier(MCPCheckCard())
+            Text("Checking \(URL(string: url)?.host ?? "the server")…").font(.shSans(AppLayout.mcpSheetTextSize))
+                .shShimmer(active: true)
+                .modifier(MCPCheckCard())
         case .answered(let serverName, let transport):
             VStack(alignment: .leading, spacing: SH.Space.m) {
                 answered(serverName, transport: transport)

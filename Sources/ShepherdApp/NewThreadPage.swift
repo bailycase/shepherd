@@ -334,8 +334,8 @@ struct NewThreadPage: View {
                 }
                 .shAnimation(.content, value: [draft.model, draft.thinking.rawValue, draft.serviceTier.rawValue])
                 if draft.starting {
-                    ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
-                        .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
+                    SHBusyLabel("Starting…")
+                        .frame(height: SHComposerMetrics.actionSize)
                         .accessibilityLabel("Starting")
                 } else {
                     SHComposerActionButton(.send, enabled: draft.blocker(vm) == nil) { draft.send(vm) }

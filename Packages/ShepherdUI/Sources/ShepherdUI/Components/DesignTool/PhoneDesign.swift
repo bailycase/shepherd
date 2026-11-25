@@ -39,7 +39,7 @@ public enum SHPhoneDesignMetrics {
     public static let dotSpacing: CGFloat = 5
     public static let boardTitleSize: CGFloat = 16
     /// The comment card over the board: 12×14 padding, 8pt between its parts, radius 14, a
-    /// header in 12, the comment in 14/1.45, the agent's progress in 12.5 with an 11pt spinner.
+    /// header in 12, the comment in 14/1.45, the agent's progress in 12.5, shimmering.
     public static let cardPaddingVertical: CGFloat = SH.Space.l
     public static let cardPaddingHorizontal: CGFloat = 14
     public static let cardSpacing: CGFloat = SH.Space.m
@@ -48,7 +48,6 @@ public enum SHPhoneDesignMetrics {
     public static let cardTextSize: CGFloat = 14
     public static let cardLineHeight: CGFloat = 1.45
     public static let cardStatusSize: CGFloat = 12.5
-    public static let cardSpinner: CGFloat = 11
     /// The toolbar: a 20pt glyph over an 11pt label, 4pt apart, 10×14 padding.
     public static let toolGlyph: CGFloat = 20
     /// The symbol drawn in that 20pt box.
@@ -195,7 +194,7 @@ public struct SHBoardDots: View, Equatable {
 
 /// A comment as it rises over a board on the phone (MobileDesignBoard): the small pin, "on" and
 /// the element in `textPrimary` semibold, the author and age trailing, the comment in 14/1.45;
-/// while the design agent works on it, a running spinner and "Design agent is updating A ·
+/// while the design agent works on it, a shimmering status and "Design agent is updating A ·
 /// phone"; once it answered, its answer under a hairline.
 public struct SHPhoneCommentCard: View, Equatable {
     let number: Int
@@ -229,13 +228,10 @@ public struct SHPhoneCommentCard: View, Equatable {
             .foregroundStyle(sh.textTertiary)
             phoneText(text)
             if let status {
-                HStack(spacing: SH.Space.m) {
-                    ProgressView().progressViewStyle(SHSpinnerStyle(size: SHPhoneDesignMetrics.cardSpinner, color: sh.running))
-                    Text(status).lineLimit(2)
-                }
-                .font(.shSans(SHPhoneDesignMetrics.cardStatusSize))
-                .foregroundStyle(sh.textSecondary)
-                .accessibilityElement(children: .combine)
+                Text(status).lineLimit(2)
+                    .shShimmer(active: true)
+                    .font(.shSans(SHPhoneDesignMetrics.cardStatusSize))
+                    .foregroundStyle(sh.textSecondary)
             }
             if let answer {
                 VStack(alignment: .leading, spacing: SHDesignMetrics.entrySpacing) {

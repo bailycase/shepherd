@@ -581,10 +581,7 @@ private struct ReviewBody: View, Equatable {
                 ChangesErrorView(message: session.loadError ?? "", notice: session.loadErrorIsNotice ? ChangesText.scopeButton(session) : nil)
                     .shTransition(.content)
             case .loading:
-                HStack(spacing: SH.Space.m) {
-                    ProgressView().progressViewStyle(.shSpinner(size: AppLayout.reviewLoadingSpinner))
-                    Text("Loading the diff…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                }
+                SHBusyLabel("Loading the diff…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .shTransition(.content)
             case .empty:

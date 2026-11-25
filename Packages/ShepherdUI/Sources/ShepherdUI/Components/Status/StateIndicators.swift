@@ -82,37 +82,6 @@ public struct SHStatusDot: View {
     }
 }
 
-/// The running spinner: a 3/4 arc turning once a second (by Core Animation: `SHLayerSpinner`).
-/// Static under Reduce Motion. As a style on a native `ProgressView`:
-/// `.progressViewStyle(.shSpinner)`.
-public struct SHSpinnerStyle: ProgressViewStyle {
-    let size: CGFloat
-    let color: Color?
-
-    public init(size: CGFloat = 13, color: Color? = nil) {
-        self.size = size
-        self.color = color
-    }
-
-    public func makeBody(configuration: Configuration) -> some View {
-        SHSpinnerArc(size: size, color: color)
-    }
-}
-
-extension ProgressViewStyle where Self == SHSpinnerStyle {
-    public static var shSpinner: SHSpinnerStyle { SHSpinnerStyle() }
-    public static func shSpinner(size: CGFloat = 13, color: Color? = nil) -> SHSpinnerStyle { SHSpinnerStyle(size: size, color: color) }
-}
-
-struct SHSpinnerArc: View {
-    let size: CGFloat
-    let color: Color?
-
-    var body: some View {
-        SHLayerSpinner(size: size, color: color ?? .sh.running)
-    }
-}
-
 /// The 4pt progress bar (steps, budget): `.progressViewStyle(.shBar)`, running blue unless
 /// tinted.
 public struct SHBarProgressStyle: ProgressViewStyle {
@@ -141,11 +110,13 @@ extension ProgressViewStyle where Self == SHBarProgressStyle {
     public static func shBar(tint: Color?) -> SHBarProgressStyle { SHBarProgressStyle(tint: tint) }
 }
 
-/// A state glyph at 14pt (tool rows, runs): a spinner while running, otherwise the state's
-/// symbol in its color; queued is a hollow ring.
+/// A state glyph at 14pt (tool rows, runs): a filled dot while running (nothing spins; the words
+/// beside it shimmer), otherwise the state's symbol in its color; queued is a hollow ring.
 public struct SHStateGlyph: View {
     let state: AgentState
     let size: CGFloat
+    /// How much smaller than the glyph the running dot is.
+    static let runningInset: CGFloat = 8
 
     public init(_ state: AgentState, size: CGFloat = 14) {
         self.state = state
@@ -156,7 +127,7 @@ public struct SHStateGlyph: View {
         Group {
             switch state {
             case .running:
-                SHSpinnerArc(size: size - 2, color: state.color)
+                Circle().fill(state.color).frame(width: size - SHStateGlyph.runningInset, height: size - SHStateGlyph.runningInset)
             case .queued, .idle:
                 Circle().strokeBorder(state.color, lineWidth: 1.5).frame(width: size - 5, height: size - 5)
             default:
@@ -164,7 +135,7 @@ public struct SHStateGlyph: View {
             }
         }
         .frame(width: size, height: size)
-        // The spinner gives way to its outcome, and one outcome's symbol to another's.
+        // The running dot gives way to its outcome, and one outcome's symbol to another's.
         .shComponentAnimation(.content, value: state)
         .accessibilityHidden(true)
     }

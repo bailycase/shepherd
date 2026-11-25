@@ -563,8 +563,7 @@ private struct PadSendBar: View {
                         }
                     } label: {
                         HStack(spacing: SH.Space.s) {
-                            if store.submitting { ProgressView().progressViewStyle(SHSpinnerStyle()) }
-                            Text(store.sendTitle)
+                            Text(store.sendTitle).shShimmer(active: store.submitting)
                         }
                     }
                     .buttonStyle(.sh(.primary, size: .l))

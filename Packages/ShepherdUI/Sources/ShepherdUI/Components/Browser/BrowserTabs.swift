@@ -41,8 +41,6 @@ public enum SHBrowserTabsMetrics {
     public static let agentBarHeight: CGFloat = SHBrowserMetrics.consoleBarHeight
     /// The Mac's agent line under the page (GXPaneBrowserAgent's `.astat`): 34pt.
     public static let agentStatusHeight: CGFloat = 34
-    public static let agentSpinner: CGFloat = 11
-    public static let agentChipSpinner: CGFloat = 12
     public static let agentTakeOverGlyph: CGFloat = 12
 }
 
@@ -135,7 +133,7 @@ public struct SHBrowserTabItem: Identifiable, Equatable, Sendable {
     public let letter: String
     public let tint: SHBrowserTabTint
     public let source: SHBrowserTabSource
-    /// The agent is using this page now: a spinner stands in for the favicon.
+    /// The agent is using this page now: its title shimmers.
     public let agentActive: Bool
     /// The agent opened it and nobody has looked yet: a 6pt dot.
     public let unseen: Bool
@@ -297,22 +295,19 @@ public struct SHBrowserTabStrip<ListButtonModifier: ViewModifier>: View {
             HStack(spacing: 0) {
                 Button(action: select) {
                     HStack(spacing: SH.Space.s) {
-                        if item.agentActive {
-                            ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.favicon)).accessibilityHidden(true)
-                                .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
-                        } else {
-                            #if os(macOS)
-                            // The board draws every page's tile as the plain globe.
-                            Image(systemName: "globe").font(.system(size: SHBrowserTabsMetrics.favicon))
-                                .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
-                                .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
-                                .accessibilityHidden(true)
-                            #else
-                            SHBrowserFavicon(letter: item.letter, tint: item.tint)
-                            #endif
-                        }
+                        #if os(macOS)
+                        // The board draws every page's tile as the plain globe.
+                        Image(systemName: "globe").font(.system(size: SHBrowserTabsMetrics.favicon))
+                            .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                            .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
+                            .accessibilityHidden(true)
+                        #else
+                        SHBrowserFavicon(letter: item.letter, tint: item.tint)
+                        #endif
+                        // The agent using this page: its title shimmers.
                         Text(item.title)
                             .font(.sh(.ui, weight: Self.titleWeight(selected: selected)))
+                            .shShimmer(active: item.agentActive)
                             .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -660,7 +655,7 @@ public struct SHBrowserTabsNote: View {
 // MARK: The agent
 
 /// "Agent is filling the checkout form" with Take over, a bar over the console (BrowserTabsAgent):
-/// `runningTint`, a hairline above, the words in `caption`, an 11pt `running` spinner.
+/// `runningTint`, a hairline above, the words in `caption`, shimmering.
 public struct SHAgentBar: View {
     public static let glyph = "hand.raised"
 
@@ -682,7 +677,7 @@ public struct SHAgentBar: View {
 
     #if os(macOS)
     /// GXPaneBrowserAgent's `.astat`: 34pt on the pane, "The agent is typing the test card" in `textSecondary`
-    /// and Take over in ink, no tint, rule or spinner (the page's ring says the agent is there).
+    /// and Take over in ink, no tint or rule (the page's ring says the agent is there).
     private var macBody: some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
@@ -705,10 +700,7 @@ public struct SHAgentBar: View {
     private var touchBody: some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.agentSpinner))
-                .frame(width: SHBrowserTabsMetrics.agentSpinner, height: SHBrowserTabsMetrics.agentSpinner)
-                .accessibilityHidden(true)
-            Text("Agent is \(note)").font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textPrimary)
+            Text("Agent is \(note)").font(.sh(.caption, weight: .regular)).shShimmer(active: true).foregroundStyle(sh.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: takeOver) {
@@ -741,10 +733,7 @@ public struct SHAgentElsewhere: View {
     public var body: some View {
         Button(action: show) {
             HStack(spacing: SH.Space.s) {
-                ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.agentChipSpinner))
-                    .frame(width: SHBrowserTabsMetrics.agentChipSpinner, height: SHBrowserTabsMetrics.agentChipSpinner)
-                    .accessibilityHidden(true)
-                Text("Agent is in \(title)").lineLimit(1).truncationMode(.tail)
+                Text("Agent is in \(title)").lineLimit(1).truncationMode(.tail).shShimmer(active: true)
             }
         }
         .buttonStyle(.sh(.secondary, size: .s))

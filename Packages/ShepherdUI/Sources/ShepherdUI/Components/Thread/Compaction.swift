@@ -106,10 +106,9 @@ public struct SHCompactionDivider: View {
                 .font(.system(size: SHCompactionMetrics.icon - 1, weight: .medium))
                 .foregroundStyle(warning ? sh.lanternText : Self.iconColor(sh))
         }
-        Group {
-            if running { Text(title).shShimmer() } else { Text(title) }
-        }
-        .font(.shSans(12)).foregroundStyle(warning ? sh.lanternText : sh.textSecondary)
+        Text(title)
+            .shShimmer(active: running)
+            .font(.shSans(12)).foregroundStyle(warning ? sh.lanternText : sh.textSecondary)
         if let tokens { Text(tokens).font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize() }
     }
 
