@@ -8,7 +8,8 @@ public enum SHComposerMetrics {
     #if os(macOS)
     public static let actionSize: CGFloat = 30
     #else
-    public static let actionSize: CGFloat = 28
+    /// The touch pill's Send and Stop (the boards' `.gt-cmp .sd`).
+    public static let actionSize: CGFloat = 36
     #endif
     /// The card's corner: the boards' 14 on the Mac.
     #if os(macOS)
@@ -366,8 +367,8 @@ public struct SHChipChevron: View {
     }
 }
 
-/// The composer's action, a 28pt circle: Send (an arrow on the lantern fill, 35% until there is
-/// something to send) or Stop (a square on `failed`) while a turn runs and there is nothing to
+/// The composer's action, a circle (30pt on the Mac, 36 on touch): Send (an arrow on the ink fill, on `bgSelected` until there is
+/// something to send) or Stop (a square on the ink fill) while a turn runs and there is nothing to
 /// send. It is the composer's only action: with input while a turn runs it is Send again.
 public struct SHComposerActionButton: View {
     public enum Mode: Sendable { case send, stop }
@@ -394,13 +395,9 @@ public struct SHComposerActionButton: View {
     public var body: some View {
         let sh = Color.sh
         let send = mode == .send
-        // The Mac draws the boards' Send and Stop: both on the ink fill, Send on `bgSelected` with a dim arrow while there is
-        // nothing to send. The iPhone and iPad keep Stop on `failed` and a faded Send.
-        #if os(macOS)
+        // The boards' Send and Stop, on every platform: both on the ink fill, Send on `bgSelected` with a dim arrow while there is
+        // nothing to send.
         let (stopFill, stopGlyph, arrow) = (sh.primary, sh.textOnPrimary, enabled ? sh.textOnPrimary : sh.textTertiary)
-        #else
-        let (stopFill, stopGlyph, arrow) = (sh.failed, sh.textOnFailed, sh.textOnPrimary)
-        #endif
         Button(action: action) {
             ZStack {
                 glyph("arrow.up", size: SHComposerMetrics.sendGlyph, color: arrow, shown: send)
@@ -445,19 +442,11 @@ private struct SHComposerActionCircle: View {
 
     var body: some View {
         let pressed = enabled && configuration.isPressed
-        #if os(macOS)
         // Nothing to send: the boards' `.send.off`, the selection fill under a dim arrow.
         let shown = enabled ? fill.mix(with: .black, by: pressed ? 0.1 : 0) : Color.sh.bgSelected
-        let faded = 1.0
-        #else
-        let shown = fill.mix(with: .black, by: pressed ? 0.1 : 0)
-        // Send brightens as soon as there is something to send.
-        let faded = enabled ? 1 : 0.35
-        #endif
         configuration.label
             .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
             .background(shown, in: Circle())
-            .opacity(faded)
             .shAnimation(.hover, value: enabled)
             .shAnimation(.hover, value: hovering)
             .contentShape(Circle())

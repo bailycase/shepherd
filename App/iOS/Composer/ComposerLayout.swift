@@ -7,6 +7,9 @@ extension MobileLayout {
     static let attachmentThumbnailPixels = CGSize(width: 60, height: 60)
     /// Space between the composer's parts: the queue, the command list, the chips, the field.
     static let composerSpacing: CGFloat = SH.Space.m
+    /// A pill narrower than this (iPhone Duo's column beside its rail: 333pt; an iPhone's is 358) lets a typed draft have the model
+    /// chip's room (DuoClosedQueue).
+    static let narrowPillWidth: CGFloat = 345
     /// The composer's padding under the field.
     static let composerBottom: CGFloat = SH.Space.m
     /// The Up next rows' most height before they scroll: three rows (a steering one included)

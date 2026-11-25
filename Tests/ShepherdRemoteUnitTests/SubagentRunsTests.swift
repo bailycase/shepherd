@@ -316,8 +316,8 @@ struct SubagentRunsTests {
     }
 
     @Test func theTouchFieldSaysWhoItReachesAndWhyForAReply() {
-        #expect(NativeRunSteerWords.steer.caption("worker") == "to: worker · not the parent · lands before its next turn")
-        #expect(NativeRunSteerWords.reply.caption("worker") == "to: worker · not the parent · it was waiting on its parent")
+        #expect(NativeRunSteerWords.steer.caption("worker") == "Goes to worker, not the parent. It lands before its next turn.")
+        #expect(NativeRunSteerWords.reply.caption("worker") == "Goes to worker, not the parent. It was waiting on its parent.")
     }
 
     // MARK: Transcript

@@ -14,7 +14,7 @@ public enum SHRunTouchMetrics {
     /// A row of earlier runs: a name over a line.
     public static let historyRowHeight: CGFloat = 56
     /// The steer field, one line tall.
-    public static let steerHeight: CGFloat = 46
+    public static let steerHeight: CGFloat = SHTouchComposerMetrics.capsuleHeight
     /// The selection ring outside the inspected card.
     public static let ring: CGFloat = 3
     /// The tabs between sibling runs.

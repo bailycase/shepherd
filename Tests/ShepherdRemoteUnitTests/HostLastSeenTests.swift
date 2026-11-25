@@ -33,7 +33,7 @@ struct HostLastSeenTests {
         var studio = NewThreadRulesTests.studio
         studio.lastSeen = Self.ago(1)
         let rows = NewThreadRows.hosts([studio, laptop], selected: nil, now: Self.now, calendar: Self.calendar, locale: Self.locale)
-        #expect(rows.map(\.detail) == ["connected · 2 threads running", "unreachable · last seen 7:12\u{202F}AM"])
+        #expect(rows.map(\.detail) == ["Connected · 2 threads running", "Unreachable · last seen 7:12\u{202F}AM"])
     }
 
     @Test func onlyAHostThatIsNotConnectedCarriesWhenItWasLastSeen() {

@@ -48,7 +48,7 @@ public struct NewThreadHostRow: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let name: String
     public let status: Status
-    /// "connected · 2 threads running", "connecting…", "unreachable · last seen 7:12 AM".
+    /// "Connected · 2 threads running", "Connecting…", "Unreachable · last seen 7:12 AM".
     public let detail: String
     /// What this host cannot do from here, and why: an older Shepherd.
     public let limitation: String?
@@ -122,15 +122,15 @@ public enum NewThreadRows {
 
     private static func detail(_ host: NewThreadHostInput, status: NewThreadHostRow.Status) -> String {
         switch status {
-        case .connecting: return "connecting…"
-        case .offline: return host.phase.failure?.headline.lowercased() ?? "unreachable"
+        case .connecting: return "Connecting…"
+        case .offline: return host.phase.failure?.headline ?? "Unreachable"
         case .connected:
             let hidden = Set(host.state.spaces.filter { !$0.showsThreads }.map(\.id))
             let visible = host.state.agents.filter { !hidden.contains($0.spaceID) && !host.state.isDesignAgent($0) }
             let running = visible.filter { $0.status == .working }.count
-            if running > 0 { return "connected · \(running) \(running == 1 ? "thread" : "threads") running" }
-            if visible.isEmpty { return "connected" }
-            return "connected · \(visible.count) \(visible.count == 1 ? "thread" : "threads")"
+            if running > 0 { return "Connected · \(running) \(running == 1 ? "thread" : "threads") running" }
+            if visible.isEmpty { return "Connected" }
+            return "Connected · \(visible.count) \(visible.count == 1 ? "thread" : "threads")"
         }
     }
 }
