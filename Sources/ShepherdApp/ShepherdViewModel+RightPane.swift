@@ -38,8 +38,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
         case .pullRequest: ForgeSymbol.pullRequest
-        case .subagents: SHGlyph.gitBranch.symbolName
-        case .files: SHGlyph.document.symbolName
+        case .subagents: "person.2"
+        case .files: "folder"
         case .design: "pencil.tip"
         }
     }
@@ -122,6 +122,14 @@ extension ShepherdViewModel {
 
     var isRightPaneOpen: Bool { rightPaneContent != nil }
 
+    /// How much of the column's trailing side the thread's pane card takes, which the toolbar leaves it (GXSidePane): what the
+    /// layout on screen drew, or its saved width until it has.
+    var sidePaneReserve: CGFloat {
+        guard isRightPaneOpen else { return 0 }
+        let state = subagentInspector
+        return state.reserved > 0 ? state.reserved : (state.width > 0 ? state.width : state.defaultWidth) + AppLayout.paneCardEdge
+    }
+
     /// ⇧⌘B and the header's button: hide the pane (and an inspected subagent over it), or show it
     /// on its tab.
     func toggleRightPane() {
@@ -146,6 +154,7 @@ extension ShepherdViewModel {
             return
         }
         if let tab {
+            if tab != .changes { leaveQueuedReview(for: owner) }
             if panes.tabs[owner] != tab { panes.tabs[owner] = tab }
             closeInspector(owner)
         }
@@ -195,6 +204,7 @@ extension ShepherdViewModel {
 
     /// Hides `owner`'s pane: the inspector closes, and the review is discarded like a cancel.
     func hideSidePane(_ owner: SidePaneOwner) {
+        leaveQueuedReview(for: owner)
         if subagentInspector.maximized.contains(owner) { subagentInspector.maximized.remove(owner) }
         closeInspector(owner)
         guard subagentInspector.open.contains(owner) else { return }
@@ -205,6 +215,10 @@ extension ShepherdViewModel {
         case .remote(let target):
             if let session = remoteReviews[target], !session.hostReviewPane { cancelReview(session) }
         }
+    }
+
+    private func leaveQueuedReview(for owner: SidePaneOwner) {
+        if sidePaneOwner == owner { queuedReview = nil }
     }
 
     func closeInspector(_ owner: SidePaneOwner) {

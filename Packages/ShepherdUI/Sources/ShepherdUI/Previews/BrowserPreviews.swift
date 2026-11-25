@@ -115,18 +115,3 @@ private struct RemoteAddressPreview: View {
         .frame(width: 420)
     }
 }
-
-#Preview("Side pane — the agent opened a tab") {
-    SHPreviewBoth {
-        VStack(alignment: .leading, spacing: SH.Space.l) {
-            SHSidePaneTabs([SHSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2, shortcut: "⌃1"),
-                            SHSidePaneTab(id: "browser", title: "Browser", systemImage: "globe", news: true, shortcut: "⌃2",
-                                          tip: SHSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10)))],
-                           selection: "changes", select: { _ in }, close: {}) {
-                Button("Reset Width") {}
-            }
-            SHPaneTabTip(SHSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10)))
-        }
-        .frame(width: 460, height: 130, alignment: .topLeading)
-    }
-}

@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { startProvider } from "../fake-provider.mjs";
 
 export const pkg = process.env.PI_PACKAGE_DIR;
@@ -83,15 +84,45 @@ export function requestSummary(entry) {
   };
 }
 
+// Resolves true if `promise` settles within `ms`, false if the deadline passes first.
+const within = (promise, ms) => {
+  let timer;
+  return Promise.race([promise.then(() => true), new Promise((resolve) => { timer = setTimeout(resolve, ms, false); })]).finally(() => clearTimeout(timer));
+};
+
+/** Stops a ChildProcess this harness spawned: SIGTERM, then SIGKILL, each followed by a bounded wait for its exit event. */
+async function stopChild(child, graceMs = 3000) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, "exit");
+  exited.catch(() => {}); // a spawn error is reported by the failed kill below
+  for (const [signal, wait] of [["SIGTERM", graceMs], ["SIGKILL", 5000]]) {
+    if (!child.kill(signal) && child.exitCode === null && child.signalCode === null) throw Error(`could not send ${signal} to pi`);
+    if (await within(exited, wait)) return;
+  }
+  throw Error("pi did not exit after SIGKILL");
+}
+
 export async function withPi(t, options, body) {
   const { settings = {}, files = () => ({}), project, args = [], env: extraEnv = {}, onRequest, cwd } = options;
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-rpc-")));
-  t.after(() => {
-    if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true });
-    else console.log(`Retained private Pi fixture: ${dir}`);
+  let provider, child;
+  // One cleanup, registered before anything else can throw, that copes with whatever setup got as far as creating:
+  // pi is stopped first and the provider next (each bounded: a step that never finishes fails by name), the directory last (a pi still writing into it fails the removal),
+  // and each step runs even when an earlier one failed. Any failure fails the test.
+  t.after(async () => {
+    const failures = [];
+    const attempt = async (what, step) => { try { await step(); } catch (error) { failures.push(`${what}: ${error?.message ?? error}`); } };
+    await attempt("stopping pi", () => stopChild(child));
+    await attempt("stopping the fake provider", async () => {
+      if (provider && !(await within(provider.stop(), 5000))) throw Error("the fake provider's server did not close within 5000 ms");
+    });
+    await attempt("removing the fixture directory", () => {
+      if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      else console.log(`Retained private Pi fixture: ${dir}`);
+    });
+    if (failures.length) throw Error(`withPi cleanup of ${dir} failed:\n${failures.join("\n")}`);
   });
-  const provider = await startProvider({ onRequest, usage: options.usage });
-  t.after(() => provider.stop());
+  provider = await startProvider({ onRequest, usage: options.usage });
   const home = options.agentDir ?? path.join(dir, "home");
   const work = path.join(dir, "work");
   fs.mkdirSync(home, { recursive: true });
@@ -109,14 +140,12 @@ export async function withPi(t, options, body) {
   project?.(dir, work);
   const extra = typeof extraEnv === "function" ? extraEnv(dir, work) : extraEnv;
   const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extra };
-  let child;
   const launch = (resumeArgs = []) => {
     const entrypoint = options.entrypoint ?? (process.env.PI_FAKE_BUNDLED_CLI === "1" ? "dist/bundle/cli.js" : "dist/cli.js");
     child = spawn(options.launcher ?? process.execPath, [...(options.launcher ? [] : [path.join(pkg, entrypoint)]), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
       "--model", "fixture/fixture", ...args, ...resumeArgs], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
     bind();
   };
-  t.after(() => child.kill("SIGKILL"));
   const events = [];
   let out = "", err = "", next = 0;
   function bind() {

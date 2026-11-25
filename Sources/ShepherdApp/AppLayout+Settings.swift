@@ -20,7 +20,7 @@ extension AppLayout {
     static let settingsEditorChrome: CGFloat = 56 + 44 + SH.Space.xxxl + SH.Space.xl
     /// A group's footnote line height.
     static let settingsFootnoteLineHeight: CGFloat = 1.35
-    /// A remote host's address in its row ("horizon.starlight.internal:7433"): mono 12.
+    /// A remote host's address in its row ("orbit.starlight.internal:7433"): mono 12.
     static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group, and between groups.
     static let settingsGroupSpacing: CGFloat = SH.Space.xl
@@ -240,7 +240,7 @@ extension AppLayout {
     // Sheets
     static let renameSheetWidth: CGFloat = 420
     static let confirmSheetWideWidth: CGFloat = 520
-    static let newWorktreeSheetWidth: CGFloat = 520
+    static let newWorktreeSheetWidth: CGFloat = 480
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.
@@ -254,18 +254,28 @@ extension AppLayout {
     static let importCatalogDeadline: Duration = .seconds(20)
     /// The review's Commit… sheet, and the most its file list grows before it scrolls.
     static let commitSheetWidth: CGFloat = 520
-    /// The thread's branch card (BranchCard): its width, its rows' side inset and glyph column.
-    static let branchCardWidth: CGFloat = 300
+    /// The thread's branch card (the boards' `.bk` in its 340pt `.bcol`): its width, its rows' side inset and glyph column.
+    static let branchCardWidth: CGFloat = 324
     static let branchCardInset: CGFloat = 14
     static let branchCardGlyph: CGFloat = 16
-    /// The branch card's sheets: Update from the base, New and Rename branch.
-    static let branchSheetWidth: CGFloat = 520
-    /// The branch card's Commit… (BranchCommit).
-    static let branchCommitSheetWidth: CGFloat = 560
+    /// The base row's branch in mono 12.5; the "asked you" dot.
+    static let branchCardCodeSize: CGFloat = 12.5
+    static let branchCardDot: CGFloat = 7
+    /// The branch card's sheets (GXBranchCommit, GXBranchConflict): Commit…, Update from the base, New and Rename branch.
+    static let branchSheetWidth: CGFloat = SHCardSheetMetrics.width
+    static let branchCommitSheetWidth: CGFloat = SHCardSheetMetrics.width
+    /// The Branch picker (GXBranchPicker): 330pt, and how tall its list grows before it scrolls. It opens under the card's
+    /// branch row, which is this tall.
+    static let branchPickerWidth: CGFloat = 330
+    static let branchPickerListMaxHeight: CGFloat = 300
+    /// The menu behind a remote thread's "on mini" (GXRemote).
+    static let remoteMenuWidth: CGFloat = 280
+    static let branchCardHeaderHeight: CGFloat = 44
     /// The folded card's widest; a long branch truncates in the middle.
     static let branchCardCompactMaxWidth: CGFloat = 280
-    /// The card's own column at the thread's right (BranchCard): the card and its margins.
-    static let branchCardColumn: CGFloat = branchCardWidth + 2 * SH.Space.l
+    /// The card's own column at the thread's right: the card and the 16pt beside it, 8pt under the toolbar.
+    static let branchCardColumn: CGFloat = branchCardWidth + SH.Space.xl
+    static let branchCardTop: CGFloat = SH.Space.m
     /// The narrowest transcript the docked card leaves; a thinner thread folds the card to one row.
     static let branchCardMinTranscript: CGFloat = 640
     /// A thread this wide docks the whole card in its column, the transcript centered in the rest.
@@ -278,7 +288,6 @@ extension AppLayout {
     static let directoryPickerWidth: CGFloat = 480
     static let directoryListHeight: CGFloat = 260
     static let promptEditorHeight: CGFloat = 96
-    static let baseFieldMaxWidth: CGFloat = 200
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12
     /// The tool-output sheet ("… n more lines", Open Output): its minimum and ideal size.

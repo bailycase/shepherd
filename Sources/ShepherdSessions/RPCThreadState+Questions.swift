@@ -30,10 +30,7 @@ extension RPCThreadState {
         // A timeout ended it when pi gave up, which is where pi carried on.
         let ended = answer == nil ? dialog.timeout.map { record.askedAt + $0 } ?? now : now
         let question = ThreadOriginStore.Question(id: dialog.id, record: record, endedAt: min(ended, now))
-        questions.removeAll { $0.id == dialog.id }
-        questions.append(question)
-        if questions.count > ThreadOriginStore.questionLimit { questions.removeFirst(questions.count - ThreadOriginStore.questionLimit) }
-        saveOrigins()
+        keepOriginChange(.question(question))
         live.removeAll { $0.kind == .question(dialog.id) }
         live.append(LiveItem(kind: .question(dialog.id), value: Self.message(question), raw: nil, ended: true))
     }

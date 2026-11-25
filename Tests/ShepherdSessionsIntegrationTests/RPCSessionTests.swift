@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 import ShepherdCore
@@ -44,6 +45,7 @@ struct RPCSessionTests {
             case .agentStart: "agent_start"
             case .agentEnd: "agent_end"
             case .agentSettled: "agent_settled"
+            case .sessionInfoChanged: "session_info_changed"
             case .skillsChanged: "skills_changed"
             case .skillsWatchError: "skills_watch_error"
             case .turnStart: "turn_start"
@@ -519,6 +521,27 @@ struct RPCSessionTests {
             kill(child, 0) != 0 && kill(grandchild, 0) != 0
         }
         #expect(try await unrelated.request(.getState).get().success)
+    }
+
+    @Test func failedSpawnSetupAbortsStartupWithoutLeakingPipes() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                // Darwin rejects this in addchdir, before posix_spawn has a chance to run.
+                let cwd = "/" + String(repeating: "x", count: Int(PATH_MAX))
+                let params = CreateSessionParams(cwd: cwd, command: ["/usr/bin/true"], runtime: .rpc)
+                let queue = DispatchQueue(label: "test.rpc.setup-failure")
+                let before = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+                do {
+                    let session = try RPCSession(params: params, queue: queue)
+                    queue.sync { session.shutdown() }
+                    Issue.record("Launch succeeded with no working-directory file action")
+                } catch let error as RPCSession.SpawnError {
+                    #expect(error.message == "posix_spawn_file_actions_addchdir failed: errno \(ENAMETOOLONG)")
+                }
+                let after = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+                #expect(after == before, "failed spawn setup must close all pipe ends")
+            }
+        }
     }
 
     @Test func aMissingExecutableFailsToSpawn() {

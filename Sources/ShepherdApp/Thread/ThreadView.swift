@@ -109,6 +109,13 @@ struct ThreadView: View {
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
     @State private var historyAnchor = ThreadHistoryAnchor()
+    #if DEBUG
+    @State private var fixtureMeasuredHistory = ThreadMeasuredHistory()
+    private var measuredHistory: ThreadMeasuredHistory? {
+        tailGuard.measuredHistoryForTests ?? (ThreadScrollValidation.measuredHistory ? fixtureMeasuredHistory : nil)
+    }
+    @Environment(\.shDensity) private var historyDensity
+    #endif
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
@@ -159,7 +166,10 @@ struct ThreadView: View {
         // from the newest (`ThreadRestore`): the eager tail grows over the lazy stack's rows, which the second frame brings back.
         let eagerCount = eagerCount(origins, rows: rows)
         let restored = restore.plan(active: active, hiddenKept: kept, rows: rows, eagerRows: eagerCount, following: follower.sticky,
-                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount), keepsOnlyTail: store.keepsOnlyTail) { [store] drawn in
+                                    tailParsed: !store.tailAwaitsParse(lastRows: eagerCount), keepsOnlyTail: store.keepsOnlyTail,
+                                    covering: {
+            store.eagerTailRows(maxRows: eagerCount, costCap: 0, coveringHeight: eagerCover) { $0.isUser && origins.hides($0.turn) }
+        }) { [store] drawn in
             store.restoreCost(drawn: drawn, upTo: eagerCount)
         }
         let restoreStepping = restore.restoring
@@ -215,9 +225,10 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant, releasing: !active && (rows.isEmpty || restoreStepping),
-                                      stack: historyStack, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
-                                      historyRowID: historyRowID)
+                        historyColumn(history, tail: eager, spacing: spacing, dormant: dormant,
+                                      releasing: !active && (rows.isEmpty || restoreStepping), stack: historyStack, running: running,
+                                      catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID,
+                                      parked: parksHistory)
                         ForEach(eager) { row in
                             rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
@@ -253,18 +264,31 @@ struct ThreadView: View {
                     .overlay(alignment: .top) {
                         // With no history the lazy stack is empty and still takes the column's spacing: the first row starts that far below the
                         // column's top, and the sentinel reaches it, or turning to that row leaves it above the scroll view's margin.
-                        Color.clear.frame(height: AppLayout.turnSpacing + (history.isEmpty ? spacing : 0))
-                            .onScrollVisibilityChange { visible in
-                                historyPaging.visible = visible
-                                loadVisibleHistory()
-                            }
-                            .accessibilityHidden(true)
+                        #if DEBUG
+                        if measuredHistory != nil {
+                            // At the AppKit top, the history starts under the reading inset.
+                            // Put the sentinel inside the reading area rather than behind it.
+                            historySentinel(spacing: history.isEmpty ? spacing : 0).padding(.top, threadTopMargin)
+                        } else {
+                            historySentinel(spacing: history.isEmpty ? spacing : 0)
+                        }
+                        #else
+                        historySentinel(spacing: history.isEmpty ? spacing : 0)
+                        #endif
                     }
                     .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
                     .modifier(ThreadGutterPadding(inset: composerInset, fixedGutter: workerStyle?.gutter))
                     .frame(maxWidth: .infinity)
                     .background { ThreadInputBackground(input: input) }
-                    .background { ThreadScrollViewFinder(guardian: tailGuard) }
+                    .background {
+                        #if DEBUG
+                        ThreadScrollViewFinder(guardian: tailGuard,
+                                               historyAnchor: measuredHistory != nil ? historyAnchor : nil,
+                                               measuredHistory: measuredHistory)
+                        #else
+                        ThreadScrollViewFinder(guardian: tailGuard)
+                        #endif
+                    }
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images and file links resolve in its folder; a remote agent's files are not here.
@@ -283,24 +307,37 @@ struct ThreadView: View {
                         FleetMoveCardView(card: move, cancel: { actions.cancelMove($0) }, dismiss: { actions.dismissMove($0) }).equatable()
                     }
                 }
+                #if DEBUG
+                .onChange(of: measuredHistory != nil && (parksHistory || history.isEmpty)) { _, release in
+                    if release { measuredHistory?.release() }
+                }
+                .onChange(of: fleetThread?.move != nil) { _, _ in
+                    SHRenderProbe.scrollEvent("thread.write.L13", "fleet.notice", from: tailGuard, kind: "layout")
+                }
+                #endif
                 .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
                                                present: !composerHidden))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
-                .contentMargins(.top, workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
+                .contentMargins(.top, threadTopMargin, for: .scrollContent)
                 // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
                 // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
-                .onChange(of: rows.first?.id) { _, first in
+                .onChange(of: rows.first?.id) { old, first in
+                    if old != nil, historyAnchor.isEngaged {
+                        SHRenderProbe.scrollEvent("thread.write.L6", "history.prepended", from: tailGuard, target: first, kind: "layout")
+                    }
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { [weak historyAnchor] id in
+                        ThreadScrollTrace.write("thread.write.M5", "history.materialize", in: tailGuard.scrollView(), target: id)
                         historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
                 }
                 .onChange(of: dormant) { _, dormant in
                     // Its rows gone, a reader left scrolled up would come back at the top of a shrunken scroll view, with nothing
                     // to anchor it to the bottom: it comes back at its tail, and no longer keeps its history pinned.
+                    SHRenderProbe.scrollEvent("thread.write.L14", "thread.dormant", from: tailGuard, kind: "layout")
                     guard dormant, !follower.sticky else { return }
                     historyAnchor.cancel()
                     follower.jumpToLatest()
@@ -316,6 +353,9 @@ struct ThreadView: View {
                 }
                 .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail, restoring: restored != nil))
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
+                    if old.container != new.container {
+                        SHRenderProbe.scrollEvent("thread.write.L12", "viewport.resized", from: tailGuard, kind: "layout")
+                    }
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
                     let gesture = input.hasWheelIntent(movingUp: new.distance > old.distance) || follower.userScrolling
                     // Where nothing anchors the scroll view, every reading is the layout's own:
@@ -323,6 +363,7 @@ struct ThreadView: View {
                     // tray all land back on the tail as they arrive.
                     // The guard walks the scroll view itself while it repairs one, and is not fought.
                     if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: nativeTail), !tailGuard.repairing {
+                        ThreadScrollTrace.write("thread.write.M1", "follower.repin", in: tailGuard.scrollView(), target: Self.bottomID)
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                     tailGuard.distance = new.distance
@@ -331,20 +372,7 @@ struct ThreadView: View {
                     if historyAnchor.isEngaged { historyAnchor.moved() }
                 }
                 .onScrollPhaseChange { old, phase, context in
-                    // Only a live finger/wheel counts. Momentum and programmatic phases are not
-                    // intent; a gesture that ends near the bottom re-sticks from where it lands.
-                    historyAnchor.animating = phase == .animating
-                    follower.userScrolling = phase == .interacting
-                    input.decelerating = phase == .decelerating
-                    if phase == .interacting {
-                        historyAnchor.cancel()
-                        historyPaging.beginScroll()
-                        tailGuard.readerMoved()
-                    }
-                    if phase == .idle, old == .interacting || old == .decelerating {
-                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry), userIntent: true)
-                    }
-                    if phase == .idle { loadVisibleHistory() }
+                    scrollPhaseChanged(from: old, to: phase, distance: Self.distanceFromBottom(context.geometry))
                 }
                 .onChange(of: store.sentCount) { _, _ in
                     // A send that goes in now re-attaches to the tail: the echoed turn is the last
@@ -360,6 +388,7 @@ struct ThreadView: View {
                         // follower lands the echo and the collapsing tray together as their layout
                         // arrives, instead of two competing jumps.
                         if !wasFollowing {
+                            ThreadScrollTrace.write("thread.write.M9", "send", in: tailGuard.scrollView(), target: Self.bottomID)
                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
                         }
                         tailGuard.asked()
@@ -368,6 +397,7 @@ struct ThreadView: View {
                 // New output at the tail is what "unseen" means, never the content height.
                 // The version, not the last row's value: comparing a live turn's messages per chunk is a deep string compare.
                 .onChange(of: store.threadVersion) { _, _ in
+                    SHRenderProbe.scrollEvent("thread.write.L7", "thread.version", from: tailGuard, kind: "layout")
                     follower.contentArrived()
                     tailGuard.suspect()
                 }
@@ -389,6 +419,7 @@ struct ThreadView: View {
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()
                                  follower.jumpToLatest()
+                                 ThreadScrollTrace.write("thread.write.M10", "jumpToLatest", in: tailGuard.scrollView(), target: Self.bottomID)
                                  proxy.scrollTo(Self.bottomID, anchor: .bottom)
                                  tailGuard.asked()
                              } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
@@ -398,7 +429,10 @@ struct ThreadView: View {
                              slashLogin: slashLogin, projectUpNext: projectSend.map { _ in ProjectHeldMessages.upNext(held) })
                         .equatable()
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
-                            if composerInset.height != $0 { composerInset.height = $0 }
+                            if composerInset.height != $0 {
+                                SHRenderProbe.scrollEvent("thread.write.L11", "composer.height", from: tailGuard, kind: "layout")
+                                composerInset.height = $0
+                            }
                         }
                 }
             }
@@ -433,7 +467,11 @@ struct ThreadView: View {
         .background { ThreadInputBackground(input: input) }
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
-        .onGeometryChange(for: Int.self) { AppLayout.eagerCoverHeight(forViewport: $0.size.height) } action: { eagerCover = $0 }
+        .onGeometryChange(for: Int.self) { AppLayout.eagerCoverHeight(forViewport: $0.size.height) } action: { [gate = liveResizeGate] cover in
+            gate.cover = cover
+            // A drag only widens what the tail covers: a window that shrinks and grows back over the same ground builds no row on the way.
+            eagerCover = gate.wasLive ? max(eagerCover, cover) : cover
+        }
         .onHover { hovering = $0 }
         .onDisappear {
             historyAnchor.cancel()
@@ -457,15 +495,25 @@ struct ThreadView: View {
         }
         // The drag over, the eager tail grows back a step at a time (`returnEagerTail`).
         .onChange(of: liveResizing) { _, resizing in
+            SHRenderProbe.scrollEvent("thread.write.L4", resizing ? "liveResize.begin" : "liveResize.end", from: tailGuard, kind: "layout")
             guard !resizing else { return }
             liveResizeGate.wasLive = false
+            // The window's own height again, whatever the drag widened it to.
+            if eagerCover != liveResizeGate.cover, liveResizeGate.cover > 0 { eagerCover = liveResizeGate.cover }
             guard active else { return }
-            let live = liveEagerCount(userOrigins)
-            if live < restingCount(userOrigins, rows: listedRows(userOrigins)) { eagerReturning = live }
+            // Always a write, even when the tail has nothing to grow back to: the history stays out while this gate says the drag has not
+            // ended (`parksHistory`), a reference nothing observes, so only a change of state draws the thread once it is cleared.
+            // `returnEagerTail` ends it at once for a tail that is at its size.
+            eagerReturning = liveEagerCount(userOrigins)
         }
         .task(id: eagerReturning != nil) {
             if eagerReturning != nil { await returnEagerTail() }
         }
+        #if DEBUG
+        .onChange(of: active) { _, active in
+            SHRenderProbe.scrollEvent("thread.write.L14", active ? "thread.revealed" : "thread.hidden", from: tailGuard, kind: "layout")
+        }
+        #endif
         .task(id: LoopKey(active: active, run: loopRun)) {
             guard !Task.isCancelled else { return }
             guard active else {
@@ -540,7 +588,10 @@ struct ThreadView: View {
             : eagerTail.update(rows: rows, revision: store.rowStructureRevision, costs: store.rowCostRevision, cover: eagerCover, maxRows: Self.eagerRows,
                                crossing: AppLayout.eagerTailCrossing, detached: !follower.sticky, settling: settling) { ruleCount(origins) }
         let drawn = count > 0 ? count : nil
-        if store.drawnEagerRows != drawn { store.drawnEagerRows = drawn }
+        if store.drawnEagerRows != drawn {
+            SHRenderProbe.scrollEvent("thread.write.L2", "eagerTail.crossing", from: tailGuard, kind: "layout")
+            store.drawnEagerRows = drawn
+        }
         return count
     }
 
@@ -553,6 +604,14 @@ struct ThreadView: View {
     /// Whether the tail drawn is the one a thread at rest has (`restingCount`), and not the one that covers the window while it is
     /// live-resized or the one growing back after it (`eagerCount`, which keeps the gate it reads).
     private var tailAtRest: Bool { !liveResizing && !liveResizeGate.wasLive && eagerReturning == nil }
+
+    /// Whether the history above the tail stands down while the window is dragged, and while the tail grows back after it: the reader at
+    /// the tail sees none of it (the tail covers the window, `eagerCount`), a lazy stack is measured again at every width a drag passes
+    /// through, and now and then it lays out the whole history from its top, tens of milliseconds a time. There is no stack for it, and the
+    /// scroll view keeps the tail (`ThreadTailAnchor`) as its content gets shorter and taller above it. A stack that comes back with the
+    /// tail full-sized builds nothing, for the tail is out of its reach; one that came back under the small tail built a screen of rows.
+    /// A reader who has scrolled up reads the history, so for them it stays.
+    private var parksHistory: Bool { active && follower.sticky && (liveResizing || !tailAtRest) }
 
     /// The tail that covers the window while it is being live-resized (`eagerCount`).
     private func liveEagerCount(_ origins: ProjectUserOrigins) -> Int {
@@ -573,26 +632,57 @@ struct ThreadView: View {
 
     /// The lazy stack of the rows older than the eager tail, drawn again only when what its rows are built from changes
     /// (`ThreadHistoryCache`).
+    @ViewBuilder
     private func historyColumn(_ history: ArraySlice<NativeThreadRow>, tail: ArraySlice<NativeThreadRow>, spacing: CGFloat, dormant: Bool,
                                releasing: Bool, stack: Int, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
-                               historyRowID: String?) -> some View {
-        let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
-                             detached: !follower.sticky)
-        return ThreadHistoryColumn(key: key) {
-            AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
-                ForEach(history) { row in
-                    rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                               historyRowID: String?, parked: Bool) -> some View {
+        // Parked, there is no stack at all (`parksHistory`): its rows go with it, and come back with it.
+        if !parked {
+            let key = historyKey(history, tail: tail, arrived: arrived, dormant: dormant, stack: stack, boundary: historyRowID, running: running,
+                                 detached: !follower.sticky)
+            #if DEBUG
+            if let measuredHistory {
+                let settings = ThreadMeasuredHistory.Settings(session: store.sessionKey, textScale: ThemeStore.shared.textScale,
+                                                              density: historyDensity)
+                var measuredKey = key
+                let _ = measuredKey?.heightSettings = settings
+                ThreadHistoryColumn(key: measuredKey) {
+                    measuredHistory.update(history, spacing: spacing, settings: settings)
+                    return AnyView(ThreadMeasuredColumn(history: measuredHistory, spacing: spacing) { row in
+                        rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled,
+                                historyRowID: historyRowID, slotOwnsID: true)
+                    }
+                    .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
                 }
+            } else {
+                lazyHistoryColumn(history, key: key, spacing: spacing, dormant: dormant, releasing: releasing, stack: stack,
+                                  running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
             }
-            .scrollTargetLayout()
-            // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
-            // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
-            // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
-            // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
-            // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
-            // its restore is done: the two never change it in the same update.
-            .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
+            #else
+            lazyHistoryColumn(history, key: key, spacing: spacing, dormant: dormant, releasing: releasing, stack: stack,
+                              running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+            #endif
         }
+    }
+
+    private func lazyHistoryColumn(_ history: ArraySlice<NativeThreadRow>, key: ThreadHistoryCache.Key?, spacing: CGFloat,
+                                   dormant: Bool, releasing: Bool, stack: Int, running: Bool, catchingUp: Bool,
+                                   arrived: Set<String>, settled: Bool, historyRowID: String?) -> some View {
+            ThreadHistoryColumn(key: key) {
+                AnyView(LazyVStack(alignment: .leading, spacing: spacing) {
+                    ForEach(history) { row in
+                        rowView(row, running: running, catchingUp: catchingUp, arrived: arrived, settled: settled, historyRowID: historyRowID)
+                    }
+                }
+                .scrollTargetLayout()
+                // The stack of a hidden host keeps the rows it has realized when its list empties (it drops them in a layout
+                // that host does not run). Its identity changes whenever the rows are let go (a pass, a released history, a hidden
+                // thread that draws its tail alone: `releasing`), and takes them with it. A thread with no history to let go (one of a few
+                // rows) and the one on screen keep their own. It changes too when the thread on screen has added enough rows for the stack
+                // to have built more than a reader at the tail has any use for (`ThreadHistoryBuilt`), which it does only on screen and once
+                // its restore is done: the two never change it in the same update.
+                .id(StackID(dormant: dormant || (releasing && history.isEmpty), built: stack)))
+            }
     }
 
     /// What the history's rows are built from. None while there is no history, and for a thread whose rows also read what cannot be
@@ -626,12 +716,14 @@ struct ThreadView: View {
             // brings their blocks builds them, and the stack comes in the one after it. A parse that does not land holds it back only so long.
             // So does the pull that catches the thread up, for a thread whose first frame came before it because it kept only its tail
             // (`ThreadRestore.awaitsPull`): what it brings changes the tail and adds rows above it, and a stack built before it is built
-            // against a tail that is still to move. And the scroll view of such a thread, until it has stopped reporting and rests on its
-            // end (`ThreadTailGuard.rests`): the pull may land with the tail's rows still being measured, and a stack that joins in the
-            // middle of that is laid out where the viewport was, and builds the heavy rows it finds there. Each waits no longer than the
-            // replies do.
+            // against a tail that is still to move; a pull that failed, or pi held off or not started in time, brings nothing, and the stack
+            // does not wait for it. And the scroll view of such a thread, until it has stopped reporting and rests on its end
+            // (`ThreadTailGuard.rests`): the pull may land with the tail's rows still being measured, and a stack that joins in the middle of
+            // that is laid out where the viewport was, and builds the heavy rows it finds there. Each waits no longer than the replies do.
             var parseRetries = 0, pullRetries = 0, restRetries = 0
-            func pullPending() -> Bool { restore.awaitsPull && store.catchUp == nil && pullRetries < AppLayout.restoreParseRetries }
+            func pullPending() -> Bool {
+                restore.waitsForPull(landed: store.catchUp != nil, failed: store.catchUpFailed, retries: pullRetries)
+            }
             func tailMoving() -> Bool {
                 restore.awaitsPull && restRetries < AppLayout.restoreParseRetries && !tailGuard.rests(quietFor: AppLayout.restoreQuiet)
             }
@@ -646,9 +738,11 @@ struct ThreadView: View {
             // from the top: a reader who scrolled away in the moments before it comes goes back to the tail, held there as it grows.
             if !follower.sticky {
                 follower.jumpToLatest()
+                SHRenderProbe.scrollEvent("thread.write.M12", "restore.land", from: tailGuard, target: Self.bottomID)
                 tailGuard.land()
             }
             let rows = listedRows(userOrigins)
+            SHRenderProbe.scrollEvent("thread.write.L3", "restore.firstStep", from: tailGuard, kind: "layout")
             _ = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins, rows: rows)) { _ in 0 }
         }
         while !Task.isCancelled {
@@ -656,6 +750,7 @@ struct ThreadView: View {
             guard !Task.isCancelled else { return }
             if waiting() { continue }
             let rows = listedRows(userOrigins)
+            SHRenderProbe.scrollEvent("thread.write.L3", "restore.step", from: tailGuard, kind: "layout")
             let more = restore.advance(rows: rows, eagerRows: eagerCount(userOrigins, rows: rows)) { [store] drawn in
                 store.restoreStep(drawn: drawn, bytes: AppLayout.restoreStepBytes)
             }
@@ -704,7 +799,7 @@ struct ThreadView: View {
         let bubbles = row.turn.bubbles
         guard bubbles.count == 1, let bubble = bubbles.first else { return nil }
         let time = bubble.sentAt.map { nativeClockText($0, meridiem: false) }
-        if let result = FleetResultMessage.parse(bubble.text) {
+        if let result = FleetResultMessage.parse(bubble.text, dispatchID: row.turn.messages.first?.fleetResultID) {
             return FleetMessageRow(kind: .result(result, fleet.card(for: result)), time: time, actions: fleet.actions)
         }
         // The first message of a thread another thread sent: the From box, over the words that were sent.
@@ -738,7 +833,7 @@ struct ThreadView: View {
     /// row that could be nothing would make it evaluate every row of a long thread on each
     /// streamed chunk.
     @ViewBuilder private func rowView(_ row: NativeThreadRow, running: Bool, catchingUp: Bool, arrived: Set<String>, settled: Bool,
-                                      historyRowID: String?) -> some View {
+                                      historyRowID: String?, slotOwnsID: Bool = false) -> some View {
         let _ = SHRenderProbe.tick("thread.rowBuilder")
         ThreadRowLayer {
             // One view serves the streaming shell and the reply it becomes, so the turn's end updates its turn in place.
@@ -749,8 +844,13 @@ struct ThreadView: View {
         }
         .id(row.id)
         .background {
+            #if DEBUG
+            ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id, measuredHistory: slotOwnsID ? measuredHistory : nil)
+                .accessibilityHidden(true)
+            #else
             ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id)
                 .accessibilityHidden(true)
+            #endif
         }
         .background {
             if row.id == historyRowID {
@@ -876,12 +976,25 @@ struct ThreadView: View {
         tailGuard.active = active
         tailGuard.following = follower.sticky
         tailGuard.userScrolling = follower.userScrolling
+        #if DEBUG
+        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard {
+            trace.wheel = wheelIntent()
+            trace.phase = scrollPhaseChanged
+            trace.historyVisibility = historyVisibilityChanged
+            if ThreadScrollValidation.measuredHistory {
+                trace.measuredHistory = measuredHistory
+                trace.find = finder.find
+                trace.selectTurn = { [selection = $jumpedTurn] in selection.wrappedValue = $0 }
+            }
+        }
+        #endif
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
         tailGuard.rebuild = { [historyAnchor, weak guardian = tailGuard, revision = $transcriptRevision] in
             historyAnchor.cancel()
             guardian?.targets([])
             var transaction = Transaction()
             transaction.disablesAnimations = true
+            SHRenderProbe.scrollEvent("thread.write.M8", "guard.rebuild", from: guardian)
             withTransaction(transaction) { revision.wrappedValue &+= 1 }
         }
         if tailGuard.rowIDsStamp != rowIndex.stamp {
@@ -894,9 +1007,36 @@ struct ThreadView: View {
     // The rows of a thread still to bring its lazy stack back (`ThreadRestore`) are in memory, drawn or not: nothing to load for them.
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating && !restore.awaitsHistory }
 
+    private var threadTopMargin: CGFloat {
+        workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop
+    }
+
+    private func historySentinel(spacing: CGFloat) -> some View {
+        Color.clear.frame(height: AppLayout.turnSpacing + spacing)
+            .onScrollVisibilityChange { visible in
+                #if DEBUG
+                if visible, let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard {
+                    trace.mark("fixture.nativeHistoryVisibility")
+                }
+                #endif
+                historyVisibilityChanged(visible)
+            }
+            .accessibilityHidden(true)
+    }
+
+    private func historyVisibilityChanged(_ visible: Bool) {
+        historyPaging.visible = visible
+        loadVisibleHistory()
+    }
+
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
-        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey)
+        #if DEBUG
+        let measuredScroll = measuredHistory != nil ? tailGuard.scrollView() : nil
+        #else
+        let measuredScroll: NSScrollView? = nil
+        #endif
+        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey, measuredScroll: measuredScroll)
         Task {
             await store.loadOlder()
             historyAnchor.finished(token, firstID: store.rows.first?.id)
@@ -936,13 +1076,14 @@ struct ThreadView: View {
             guard userTurns.indices.contains(target) else {
                 jumpedTurn = nil
                 follower.jumpToLatest()
+                ThreadScrollTrace.write("thread.write.M11", "turnCommand.latest", in: tailGuard.scrollView(), target: Self.bottomID)
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 tailGuard.asked()
                 return
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
-            withSHAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
+            jump(to: userTurns[target], caller: "turnCommand.target", proxy: proxy)
         }
     }
 
@@ -960,7 +1101,26 @@ struct ThreadView: View {
         guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
         jumpedTurn = nil
         follower.beginJump()
-        withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
+        jump(to: row.id, caller: "find", proxy: proxy)
+    }
+
+    private func jump(to id: String, caller: String, proxy: ScrollViewProxy) {
+        #if DEBUG
+        if let measuredHistory {
+            DispatchQueue.main.async {
+                guard tailGuard.active else { return }
+                if let scroll = tailGuard.scrollView(), measuredHistory.jump(to: id, caller: caller, in: scroll) { return }
+                jumpWithProxy(to: id, caller: caller, proxy: proxy)
+            }
+            return
+        }
+        #endif
+        jumpWithProxy(to: id, caller: caller, proxy: proxy)
+    }
+
+    private func jumpWithProxy(to id: String, caller: String, proxy: ScrollViewProxy) {
+        ThreadScrollTrace.write("thread.write.M11", caller, in: tailGuard.scrollView(), target: id)
+        withSHAnimation(.scroll) { proxy.scrollTo(id, anchor: .top) }
     }
 
     /// How far the visible bottom sits above the end of the content (`NativeScrollProbe`): 0 at
@@ -975,6 +1135,39 @@ struct ThreadView: View {
                           insetBottom: geometry.contentInsets.bottom)
     }
 
+    private func scrollPhaseChanged(from old: ScrollPhase, to phase: ScrollPhase, distance: CGFloat) {
+        // Only live interaction counts as intent, not momentum or a programmatic scroll.
+        #if DEBUG
+        if let trace = MacScrollValidationTrace.current, trace.guardian === tailGuard { trace.phaseChanged(to: phase) }
+        #endif
+        historyAnchor.animating = phase == .animating
+        follower.userScrolling = phase == .interacting
+        input.decelerating = phase == .decelerating
+        if phase == .interacting {
+            historyAnchor.cancel()
+            historyPaging.beginScroll()
+            tailGuard.readerMoved()
+        }
+        if phase == .idle, old == .interacting || old == .decelerating {
+            follower.observe(distanceFromBottom: distance, userIntent: true)
+        }
+        if phase == .idle { loadVisibleHistory() }
+    }
+
+    private func wheelIntent() -> (CGFloat) -> Void {
+        { [weak input = input, weak anchor = historyAnchor, weak paging = historyPaging, weak guardian = tailGuard] delta in
+            #if DEBUG
+            if let trace = MacScrollValidationTrace.current, trace.guardian === guardian, delta != 0 {
+                trace.wheelUntil = .now + .milliseconds(350)
+            }
+            #endif
+            anchor?.cancel()
+            if delta != 0 { input?.readerScrolled(upward: delta > 0) }
+            paging?.beginScroll()
+            guardian?.readerMoved()
+        }
+    }
+
     /// Wheel/trackpad events are the one user scroll intent SwiftUI does not phase for us.
     private func installWheelMonitor() {
         guard wheelMonitor == nil else { return }
@@ -982,14 +1175,23 @@ struct ThreadView: View {
         // `wheelMonitor` back to nil (a window released with the thread in it) would leave the pair and the store alive for good. The
         // handler holds only what it moves.
         let hovering = $hovering
-        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
-            [weak input = input, weak anchor = historyAnchor, weak paging = historyPaging, weak guardian = tailGuard] event in
-            if hovering.wrappedValue {
-                anchor?.cancel()
-                if event.scrollingDeltaY != 0 { input?.readerScrolled(upward: event.scrollingDeltaY > 0) }
-                paging?.beginScroll()
-                guardian?.readerMoved()
+        let wheel = wheelIntent()
+        #if DEBUG
+        if let measuredHistory {
+            wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown, .leftMouseUp]) {
+                [weak measuredHistory, weak guardian = tailGuard] event in
+                if event.type == .scrollWheel {
+                    if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
+                } else if let scroll = guardian?.scrollView() {
+                    measuredHistory?.observeScroller(event, in: scroll)
+                }
+                return event
             }
+            return
+        }
+        #endif
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            if hovering.wrappedValue { wheel(event.scrollingDeltaY) }
             return event
         }
     }
@@ -1000,6 +1202,7 @@ struct ThreadView: View {
                 quiet("Last known thread · refreshing before enabling actions")
             }
             if !store.dialogsSupported { quiet("This host's agent cannot answer questions here · update Shepherd on the host") }
+            if let problem = store.originsProblem { quiet(problem) }
             if let notice = store.clipNotice { ForEach(notice.lines, id: \.self) { quiet($0) } }
         }
     }
@@ -1189,6 +1392,7 @@ final class ThreadHistoryBuilt {
             added = 0
         }
         if grew, counts, mayLetGo, added >= Self.rows {
+            SHRenderProbe.scrollEvent("thread.write.L5", "history.stackRemount", kind: "layout")
             stack += 1
             added = 0
         }
@@ -1227,6 +1431,9 @@ final class ThreadHistoryCache {
         let actions: [Bool]
         let store: ObjectIdentifier
         let tailGuard: ObjectIdentifier
+        #if DEBUG
+        var heightSettings: ThreadMeasuredHistory.Settings?
+        #endif
 
         /// The rows of `arrived` that are among the `history`'s. Rows arrive at the thread's tail, so unless a batch larger than the
         /// tail arrived at once, every one is in `tail` and only it is looked at; the history is walked only for such a batch.
@@ -1266,13 +1473,9 @@ private struct ThreadHistoryColumn: View {
     let key: ThreadHistoryCache.Key?
     let make: () -> AnyView
     @State private var cache = ThreadHistoryCache()
-
-    init(key: ThreadHistoryCache.Key?, make: @escaping () -> AnyView) {
-        self.key = key
-        self.make = make
+    var body: some View {
+        cache.view(for: key, make: make)
     }
-
-    var body: some View { cache.view(for: key, make: make) }
 }
 
 /// What a thread view's loop task restarts for: showing or hiding, and a loop handed back to it.
@@ -1408,6 +1611,13 @@ final class ThreadRestore {
     /// (`AppLayout.restoreRetry` each): not for ever, so that a parse that does not land cannot keep the older rows from coming back.
     func waitsForParse(retries: Int) -> Bool { !tailDrawnParsed && retries < AppLayout.restoreParseRetries }
 
+    /// The first lazy stack still waits for the pull that catches the thread up (`awaitsPull`), having waited `retries` times: not once the
+    /// pull has landed, nor once it has failed or pi is held off or did not start in time (`NativeThreadStore.catchUpFailed`), since then
+    /// nothing is on its way to move the tail or add rows above it, and not for ever.
+    func waitsForPull(landed: Bool, failed: Bool, retries: Int) -> Bool {
+        awaitsPull && !landed && !failed && retries < AppLayout.restoreParseRetries
+    }
+
     /// The lazy stack is still to come back (the next step brings it): the thread draws only the rows the eager stack holds, so a
     /// reader cannot scroll to older ones.
     var awaitsHistory: Bool { restoring && !history }
@@ -1419,9 +1629,13 @@ final class ThreadRestore {
     /// no more than a step (`AppLayout.restoreStepBytes`) draws them all in its first frame, as it would after any release, because
     /// there is nothing to spread (a dozen rows of one line owe nothing), and a last screen that is all it drew might not fill its
     /// window (`ThreadTailAnchor`). `keepsOnlyTail` is whether the thread holds only the end of its history, as it is shown
-    /// (`NativeThreadStore.keepsOnlyTail`): its restore waits for the pull that catches it up (`awaitsPull`).
+    /// (`NativeThreadStore.keepsOnlyTail`): its restore waits for the pull that catches it up (`awaitsPull`). `covering` is how many rows
+    /// at the end of the thread cover the window by the low height estimate (`NativeThreadStore.eagerTailRows`), read once as it comes
+    /// back, with `owed`: a restore draws that many in its first frame, and not only the rows it kept, when they cost no more than a
+    /// step beyond them (`firstFrameRows`).
     func plan<Rows: BidirectionalCollection>(active: Bool, hiddenKept: Int?, rows: Rows, eagerRows: Int, following: Bool = true,
-                                             tailParsed: Bool = true, keepsOnlyTail: Bool = false, owed: (Int) -> Int) -> Plan?
+                                             tailParsed: Bool = true, keepsOnlyTail: Bool = false, covering: () -> Int = { 0 },
+                                             owed: (Int) -> Int) -> Plan?
     where Rows.Element == NativeThreadRow, Rows.Index == Int {
         _ = steps
         tailDrawnParsed = tailParsed
@@ -1450,7 +1664,7 @@ final class ThreadRestore {
             begun = true
             // At least one row, so that the first frame is not blank.
             if let kept = self.hiddenKept.map({ max(1, $0) }), kept < min(rows.count, eagerRows), owed(kept) > AppLayout.restoreStepBytes {
-                first = rows[rows.endIndex - kept].id
+                first = rows[rows.endIndex - Self.firstFrameRows(kept: kept, covering: min(covering(), rows.count, eagerRows), owed: owed)].id
                 restoring = true
                 history = false
             } else if keepsOnlyTail, self.hiddenKept != nil, rows.count > eagerRows, eagerRows < ThreadView.eagerRows {
@@ -1473,6 +1687,19 @@ final class ThreadRestore {
             return nil
         }
         return plan
+    }
+
+    /// How many rows the first frame of a restore that starts from the `kept` rows its hidden view still draws draws: those, and more while
+    /// they do not cover the window (`covering` rows do, by the low height estimate), as many more as owe no more than a step
+    /// (`AppLayout.restoreStepBytes`) beyond them. A last screen of a few short rows is not the window's: what is above it stays blank until
+    /// the first step, which a thread that kept only its tail waits for its pull for (`awaitsPull`), a fraction of a second at the least.
+    /// Short rows are what costs little to build, so the window is covered at the price of a step the first frame never bore, at most.
+    static func firstFrameRows(kept: Int, covering: Int, owed: (Int) -> Int) -> Int {
+        guard covering > kept else { return kept }
+        let bound = owed(kept) - AppLayout.restoreStepBytes
+        var drawn = kept
+        while drawn < covering, owed(drawn + 1) >= bound { drawn += 1 }
+        return drawn
     }
 
     /// What a restore under way draws: the eager stack from the row it has reached. A tail that waits for its lazy stack is the rule's at
@@ -1647,19 +1874,19 @@ struct ThreadTailAnchor: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if native {
             content
-                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(SHRenderProbe.scrollAnchorEnabled("M2") ? .bottom : nil, for: .initialOffset)
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
                 // ever happens on user scroll intent.
-                .defaultScrollAnchor(sticky ? .bottom : nil, for: .sizeChanges)
+                .defaultScrollAnchor(sticky && SHRenderProbe.scrollAnchorEnabled("M3") ? .bottom : nil, for: .sizeChanges)
                 // Content shorter than the window rests at the bottom of it while the rows above come back, not at the top with
                 // a blank band under it that the rest then pushes the end of the thread out of. A thread whose rows are all
                 // drawn rests where it always did.
-                .defaultScrollAnchor(restoring ? .bottom : nil, for: .alignment)
+                .defaultScrollAnchor(restoring && SHRenderProbe.scrollAnchorEnabled("M4") ? .bottom : nil, for: .alignment)
         } else {
             content
                 // Detached, a shrinking live reply must not move the reader beyond its rows.
                 // While following, leave size anchoring to the existing follower and guard.
-                .defaultScrollAnchor(sticky ? nil : .top, for: .sizeChanges)
+                .defaultScrollAnchor(!sticky && SHRenderProbe.scrollAnchorEnabled("M13") ? .top : nil, for: .sizeChanges)
         }
     }
 }
@@ -1669,6 +1896,8 @@ struct ThreadTailAnchor: ViewModifier {
 @MainActor
 final class LiveResizeGate {
     var wasLive = false
+    /// What the window's height asks the tail to cover as last measured (`ThreadView.eagerCover` follows it, but for a drag's widening).
+    var cover = 0
 }
 
 /// Measured insets, read by the composer and padding rather than the transcript builder.

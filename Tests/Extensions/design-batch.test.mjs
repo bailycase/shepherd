@@ -1,6 +1,7 @@
 // The design agent's batch tools: boards_edit, board_search,
 // board_render, board_extract, the checkpoint tools, the reports every write answers, and design_check's
 // snap, against a stand-in Shepherd socket. No model provider, only temporary files.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

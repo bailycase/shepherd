@@ -3,6 +3,7 @@
 // tool's request frame over a stand-in Shepherd socket; text, image and no-image-model results;
 // error replies; a cancelled call and a late reply; a closed connection and the reconnect; and that
 // neither its socket nor its timers keep pi alive. No model provider, only temporary files.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -31,7 +32,7 @@ const KEYS = ["SHEPHERD_EXT_BROWSER", "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "S
 const TOOLS = [
   "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab",
   "browser_open", "browser_read", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_wait",
-  "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload",
+  "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload", "browser_show",
 ];
 const WITH_NOTE = ["browser_new_tab", "browser_open", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_eval",
   "browser_back", "browser_forward", "browser_reload"];
@@ -224,7 +225,7 @@ test("the schemas require what a request needs and cap what could be huge", asyn
     assert.deepEqual(required("browser_press"), ["key"]);
     assert.deepEqual(required("browser_eval"), ["expression"]);
     for (const name of ["browser_read", "browser_scroll", "browser_wait", "browser_screenshot", "browser_console",
-      "browser_back", "browser_forward", "browser_reload"]) {
+      "browser_back", "browser_forward", "browser_reload", "browser_show"]) {
       assert.deepEqual(required(name), [], name);
     }
     assert.equal(pi.tools.get("browser_type").parameters.properties.text.maxLength, 20_000);
@@ -323,6 +324,9 @@ const CASES = [
   ["browser_back", { note: "going back" }, { action: "back", note: "going back" }],
   ["browser_forward", {}, { action: "forward" }],
   ["browser_reload", { note: "refreshing" }, { action: "reload", note: "refreshing" }],
+  ["browser_show", {}, { action: "show" }],
+  ["browser_show", { tab: "7c9e6679-7425-40de-944b-e07fc1f90ae7" },
+    { action: "tab", tabID: "7c9e6679-7425-40de-944b-e07fc1f90ae7", request: { action: "show" } }],
 ];
 
 test("every tool sends its request as the wire's frame, with the agent from the environment and a rising id", async () => {

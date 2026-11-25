@@ -1,9 +1,9 @@
 import SwiftUI
 
-// The workplace chip's menu (NavNewThread): where a new thread runs, as the composer's menus
-// look (radius 12, raised, the popover shadow, 28pt rows). A search field, then one section per
-// host with its projects as a tree (nested ones fold under their parent), each section ending in
-// "Add folder…"; then the worktree option.
+// The workplace chip's menu (GXNewPayments): where a new thread runs. A search field, then one section per
+// host with its projects as a tree (nested ones fold under their parent; the one host's is headed "Space"),
+// each section ending in "Add folder…"; then New Worktree… and Import Existing Worktree…, the worktree option,
+// and, with another Mac paired, "Where it runs": each Mac, then Auto.
 
 /// A project the menu offers: its name and path, on a host.
 public struct SHPlaceOption: Identifiable, Equatable, Sendable {
@@ -11,18 +11,21 @@ public struct SHPlaceOption: Identifiable, Equatable, Sendable {
     /// The section (host) it belongs to.
     public var section: String
     public var title: String
-    /// Its path, in mono `textTertiary`.
+    /// A quiet word after the name ("Own scratch folder"), in `textTertiary`.
     public var detail: String?
+    /// Its path: what a search matches besides the name, and the row's tooltip.
+    public var path: String?
     public var isCurrent: Bool
     /// The ids of the options it nests under, outermost first; they come before it in the section.
     public var ancestors: [String]
 
-    public init(id: String, section: String, title: String, detail: String? = nil, isCurrent: Bool = false,
+    public init(id: String, section: String, title: String, detail: String? = nil, path: String? = nil, isCurrent: Bool = false,
                 ancestors: [String] = []) {
         self.id = id
         self.section = section
         self.title = title
         self.detail = detail
+        self.path = path
         self.isCurrent = isCurrent
         self.ancestors = ancestors
     }
@@ -62,19 +65,29 @@ public struct SHPlaceWorktree: Equatable, Sendable {
 }
 
 public enum SHPlaceMenuMetrics {
-    /// The menu's width: a project's name and its path side by side.
-    public static let width: CGFloat = 320
-    /// The Base row's branch (as the project rows' paths) and its chevron (as All models…).
-    static let baseFont: CGFloat = 11
-    static let baseChevron: CGFloat = 10
-    /// A nested project's indent per level, and its disclosure chevron's box.
-    static let indent: CGFloat = 14
-    static let disclosure: CGFloat = 10
-    /// The search row's glyph and text, as the model picker's (ModelPicker).
+    /// The menu's width (the board's 300): a project's name and its path side by side.
+    public static let width: CGFloat = 300
+    /// The tallest the menu grows before its list scrolls: the projects, the worktree rows and the Macs fit.
+    public static let maxHeight: CGFloat = 560
+    /// The search row's glyph.
     static let searchGlyph: CGFloat = 12
-    static let searchFont: CGFloat = 13
 }
 
+extension SHFleetPlaceRow {
+    /// The board's words beside a Mac in the menu: "Has room", "Asleep"; Auto says what it does.
+    var menuWord: String {
+        if id == "auto" { return "Picks the Mac with room" }
+        switch roomWord {
+        case "asleep": return "Asleep"
+        case "most", "some": return "Has room"
+        case "little": return "Little room"
+        case "full": return "No room"
+        default: return roomWord
+        }
+    }
+}
+
+#if os(macOS)
 /// The workplace menu: a search field, sections of projects as trees (a check on the chosen one,
 /// its path trailing), "Add folder…" per host, and the worktree switch. Typing filters every
 /// project, nested or not, by name or path. ↑↓ move, → opens a parent, ← closes it (or goes to its
@@ -88,6 +101,13 @@ public struct SHPlaceMenu<RowMenu: View>: View {
     let onWorktree: (Bool) -> Void
     let onChooseBranch: () -> Void
     let onChooseBase: () -> Void
+    /// "New Worktree…" and "Import Existing Worktree…" under the projects; nil draws no row.
+    let onNewWorktree: (() -> Void)?
+    let onImportWorktree: (() -> Void)?
+    /// "Where it runs": the Macs a thread can start on, Auto last; empty draws no section.
+    let runs: [SHFleetPlaceRow]
+    let runsNote: String?
+    let onRun: (SHFleetPlaceRow) -> Void
     let onClose: () -> Void
     @ViewBuilder let rowMenu: (SHPlaceOption) -> RowMenu
     @State private var selection: Int
@@ -99,6 +119,8 @@ public struct SHPlaceMenu<RowMenu: View>: View {
     public init(sections: [SHPlaceSection], worktree: SHPlaceWorktree?, maxHeight: CGFloat? = nil,
                 onChoose: @escaping (SHPlaceOption) -> Void, onAdd: @escaping (SHPlaceSection) -> Void,
                 onWorktree: @escaping (Bool) -> Void, onChooseBranch: @escaping () -> Void = {}, onChooseBase: @escaping () -> Void = {},
+                onNewWorktree: (() -> Void)? = nil, onImportWorktree: (() -> Void)? = nil,
+                runs: [SHFleetPlaceRow] = [], runsNote: String? = nil, onRun: @escaping (SHFleetPlaceRow) -> Void = { _ in },
                 onClose: @escaping () -> Void,
                 @ViewBuilder rowMenu: @escaping (SHPlaceOption) -> RowMenu) {
         self.sections = sections
@@ -109,6 +131,11 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         self.onWorktree = onWorktree
         self.onChooseBranch = onChooseBranch
         self.onChooseBase = onChooseBase
+        self.onNewWorktree = onNewWorktree
+        self.onImportWorktree = onImportWorktree
+        self.runs = runs.filter { $0.id != "auto" } + runs.filter { $0.id == "auto" }
+        self.runsNote = runsNote
+        self.onRun = onRun
         self.onClose = onClose
         self.rowMenu = rowMenu
         let all = sections.flatMap(\.options)
@@ -127,6 +154,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                 var section = section
                 section.options = section.options.filter {
                     $0.title.localizedCaseInsensitiveContains(query) || $0.detail?.localizedCaseInsensitiveContains(query) == true
+                        || $0.path?.localizedCaseInsensitiveContains(query) == true
                 }.map { var option = $0; option.ancestors = []; return option }
                 section.addTitle = nil
                 return section.options.isEmpty ? nil : section
@@ -143,23 +171,31 @@ public struct SHPlaceMenu<RowMenu: View>: View {
 
     public var body: some View {
         let sh = Color.sh
+        let M = SHPlaceMenuMetrics.self
         let shown = shown
         let options = shown.flatMap(\.options)
         let parents = Set(sections.flatMap(\.options).compactMap(\.ancestors.last))
         // Rows line up with their siblings' chevrons once any project nests.
         let disclosures = query.isEmpty && !parents.isEmpty
-        // The worktree's rows after the projects, in order, for ↑↓ and ⏎.
+        // The rows after the projects, in order, for ↑↓ and ⏎: the worktree commands, the Branch and Base, then the Macs.
+        let commands: [(String, () -> Void)] = [onNewWorktree.map { ("New Worktree…", $0) }, onImportWorktree.map { ("Import Existing Worktree…", $0) }]
+            .compactMap { $0 }
         let extras: [(String, String, () -> Void)] = worktree?.isOn == true
             ? [worktree?.branch.map { ("Branch", $0, onChooseBranch) }, worktree?.base.map { ("Base", $0, onChooseBase) }].compactMap { $0 }
             : []
-        let rowCount = options.count + extras.count
+        let commandBase = options.count
+        let extraBase = commandBase + commands.count
+        let runBase = extraBase + extras.count
+        let rowCount = runBase + runs.count
         let indexByID = Dictionary(options.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        VStack(alignment: .leading, spacing: 0) {
+        let single = sections.count == 1
+        SHPopMenu(width: SHPlaceMenuMetrics.width) {
             HStack(spacing: SH.Space.m) {
-                Image(systemName: "magnifyingglass").font(.system(size: SHPlaceMenuMetrics.searchGlyph, weight: .medium)).foregroundStyle(sh.textTertiary)
+                Image(systemName: "magnifyingglass").font(.system(size: M.searchGlyph, weight: .medium)).foregroundStyle(sh.textTertiary)
+                    .accessibilityHidden(true)
                 TextField(text: $query, prompt: Text("Search spaces").foregroundStyle(sh.textTertiary)) { Text("Search spaces") }
                     .textFieldStyle(.plain)
-                    .font(.shSans(SHPlaceMenuMetrics.searchFont))
+                    .font(.sh(.ui, weight: .regular))
                     .foregroundStyle(sh.textPrimary)
                     .focused($focused)
                     .onKeyPress(.downArrow) { selection = min(max(0, rowCount - 1), selection + 1); return .handled }
@@ -183,7 +219,9 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                     }
                     .onKeyPress(.return) {
                         if options.indices.contains(selection) { onChoose(options[selection]) }
-                        else if extras.indices.contains(selection - options.count) { extras[selection - options.count].2() }
+                        else if commands.indices.contains(selection - commandBase) { commands[selection - commandBase].1() }
+                        else if extras.indices.contains(selection - extraBase) { extras[selection - extraBase].2() }
+                        else if runs.indices.contains(selection - runBase), runs[selection - runBase].isEnabled { onRun(runs[selection - runBase]) }
                         return .handled
                     }
                     .onKeyPress(.escape) { onClose(); return .handled }
@@ -196,93 +234,69 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                     if shown.isEmpty {
                         Text("No matching spaces").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                             .padding(.horizontal, SH.Space.m)
-                            .frame(height: SHComposerMetrics.menuRowHeight)
+                            .frame(height: SHPopMenuMetrics.rowHeight)
                     }
                     ForEach(shown) { section in
-                        SHMenuHeader(section.title)
+                        SHPopMenuHeader(single ? "Space" : section.title)
                         ForEach(section.options) { option in
                             let index = indexByID[option.id] ?? 0
                             let isParent = parents.contains(option.id)
                             let isOpen = expanded.contains(option.id)
-                            SHMenuRow(highlighted: index == selection, action: { onChoose(option) }, onHover: { selection = index }) {
-                                if disclosures {
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: SHPlaceMenuMetrics.baseChevron, weight: .semibold))
-                                        .foregroundStyle(sh.textTertiary)
-                                        .rotationEffect(.degrees(isOpen ? 90 : 0))
-                                        .frame(width: SHPlaceMenuMetrics.disclosure)
-                                        .opacity(isParent ? 1 : 0)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            guard isParent else { return onChoose(option) }
+                            SHPopMenuRow(option.title, lead: .check(option.isCurrent), trailing: option.detail, trailingStyle: .path,
+                                         disclosure: disclosures ? SHPopMenuDisclosure(indent: option.ancestors.count, isParent: isParent, isOpen: isOpen) : nil,
+                                         highlighted: index == selection, index: index, onHighlight: { selection = $0 },
+                                         onDisclose: { if isOpen { expanded.remove(option.id) } else { expanded.insert(option.id) } },
+                                         action: { onChoose(option) })
+                                .contextMenu { rowMenu(option) }
+                                .help(option.path ?? "")
+                                .accessibilityLabel(option.title + (option.isCurrent ? ", current" : "") + (isParent ? (isOpen ? ", expanded" : ", collapsed") : ""))
+                                .accessibilityActions {
+                                    if isParent {
+                                        Button(isOpen ? "Collapse" : "Expand") {
                                             if isOpen { expanded.remove(option.id) } else { expanded.insert(option.id) }
                                         }
-                                        .accessibilityHidden(true)
-                                        .padding(.leading, CGFloat(option.ancestors.count) * SHPlaceMenuMetrics.indent)
-                                }
-                                Text(option.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                                if let detail = option.detail {
-                                    Text(detail).font(.shMono(11)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                                        .truncationMode(.head)
-                                }
-                                Spacer(minLength: 0)
-                                if option.isCurrent {
-                                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(sh.running)
-                                }
-                            }
-                            .contextMenu { rowMenu(option) }
-                            .accessibilityLabel(option.title + (option.isCurrent ? ", current" : "") + (isParent ? (isOpen ? ", expanded" : ", collapsed") : ""))
-                            .accessibilityActions {
-                                if isParent {
-                                    Button(isOpen ? "Collapse" : "Expand") {
-                                        if isOpen { expanded.remove(option.id) } else { expanded.insert(option.id) }
                                     }
                                 }
-                            }
                         }
                         if let add = section.addTitle {
-                            SHMenuRow(highlighted: false, action: { onAdd(section) }, onHover: {}) {
-                                Image(systemName: "plus").font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)
-                                Text(add).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
-                                Spacer(minLength: 0)
-                            }
-                            .accessibilityLabel("\(add) on \(section.title)")
+                            SHPopMenuRow(add, lead: .glyph("plus"), quiet: true, highlighted: false) { onAdd(section) }
+                                .accessibilityLabel("\(add) on \(section.title)")
                         }
+                    }
+                    if !commands.isEmpty || worktree != nil {
+                        SHPopMenuSeparator()
+                        ForEach(Array(commands.enumerated()), id: \.element.0) { offset, command in
+                            let index = commandBase + offset
+                            SHPopMenuRow(command.0, highlighted: selection == index, index: index, onHighlight: { selection = $0 }, action: command.1)
+                        }
+                    }
+                    if let worktree {
+                        SHPopMenuToggle("New worktree", caption: worktree.caption, isOn: Binding(get: { worktree.isOn }, set: onWorktree))
+                        ForEach(Array(extras.enumerated()), id: \.element.0) { offset, row in
+                            let index = extraBase + offset
+                            SHPopMenuRow(row.0, trailing: row.1, trailingStyle: .code, chevron: true, highlighted: selection == index, index: index,
+                                         onHighlight: { selection = $0 }, action: row.2)
+                                .accessibilityLabel(row.0 == "Base" ? "Base branch: \(row.1)" : "\(row.0): \(row.1)")
+                        }
+                    }
+                    if !runs.isEmpty {
+                        SHPopMenuSeparator()
+                        SHPopMenuHeader("Where it runs")
+                        ForEach(Array(runs.enumerated()), id: \.element.id) { offset, run in
+                            let index = runBase + offset
+                            SHPopMenuRow(run.title, lead: .check(run.isCurrent), trailing: run.menuWord, enabled: run.isEnabled,
+                                         highlighted: selection == index, index: index, onHighlight: { selection = $0 }) { onRun(run) }
+                                .help(run.detail)
+                                .accessibilityLabel("\(run.title), \(run.roomWord), \(run.detail)" + (run.isCurrent ? ", chosen" : ""))
+                        }
+                        if let runsNote { SHPopMenuNote(runsNote) }
                     }
                 }
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: maxHeight.map {
-                max(0, $0 - SHComposerMetrics.modelSearchHeight - (worktree == nil ? 0 : SHComposerMetrics.menuRowHeight * 3))
-            })
+            .frame(maxHeight: maxHeight.map { max(0, $0 - SHComposerMetrics.modelSearchHeight) })
             .fixedSize(horizontal: false, vertical: maxHeight == nil)
-            if let worktree {
-                SHHairline().padding(.vertical, SH.Space.xs)
-                HStack(spacing: SH.Space.m) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("New worktree").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
-                        Text(worktree.caption).font(.shSans(11)).foregroundStyle(sh.textTertiary).lineLimit(2)
-                    }
-                    Spacer(minLength: SH.Space.m)
-                    Toggle("New worktree", isOn: Binding(get: { worktree.isOn }, set: onWorktree))
-                        .toggleStyle(.shSwitch)
-                        .labelsHidden()
-                }
-                .padding(.horizontal, SH.Space.m)
-                .padding(.vertical, SH.Space.xs)
-                ForEach(Array(extras.enumerated()), id: \.element.0) { offset, row in
-                    let index = options.count + offset
-                    SHMenuRow(highlighted: selection == index, action: row.2, onHover: { selection = index }) {
-                        Text(row.0).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
-                        Spacer(minLength: SH.Space.m)
-                        Text(row.1).font(.shMono(SHPlaceMenuMetrics.baseFont)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
-                        Image(systemName: "chevron.right").font(.system(size: SHPlaceMenuMetrics.baseChevron, weight: .semibold)).foregroundStyle(sh.textTertiary)
-                    }
-                    .accessibilityLabel(row.0 == "Base" ? "Base branch: \(row.1)" : "\(row.0): \(row.1)")
-                }
-            }
         }
-        .modifier(SHMenuSurface(width: SHPlaceMenuMetrics.width))
         .task {
             // As the model picker: let the chip's focus release finish before claiming the field.
             await Task.yield()
@@ -291,10 +305,11 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         }
         .onChange(of: query) { _, _ in selection = 0 }
         .onChange(of: rowCount) { _, count in selection = min(selection, max(0, count - 1)) }
-        .accessibilityElement(children: .contain)
         .accessibilityLabel("Where the thread runs")
     }
 }
+
+#endif
 
 /// The workplace chip (NavNewThread): a repo glyph and the project in mono, a `textTertiary`
 /// "·", a display glyph and the host in mono, and a chevron, as a composer chip.
@@ -302,13 +317,24 @@ public struct SHPlaceChipLabel: View {
     let project: String
     let host: String?
 
-    /// `host` nil draws the project alone: the Mac is its own chip while Fleet is on (`SHFleetPlaceChipLabel`).
+    /// With another Mac paired `host` is the Mac the thread runs on ("Auto · Mac mini"); its menu's Where it runs section picks it.
     public init(project: String, host: String?) {
         self.project = project
         self.host = host
     }
 
     public var body: some View {
+        #if os(macOS)
+        // The boards' `.where`: the folder, the project in medium ink, "on This Mac" in `textSecondary`.
+        HStack(spacing: SH.Space.xs + 1) {
+            Image(systemName: "folder").font(.system(size: SH.Space.l + 1)).foregroundStyle(.sh.textSecondary)
+            Text(project).font(.sh(.ui, weight: .medium)).foregroundStyle(.sh.textPrimary).lineLimit(1)
+            if let host { Text("on \(host)").font(.sh(.ui)).foregroundStyle(.sh.textSecondary).lineLimit(1) }
+            SHChipChevron()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(host.map { "Where it runs: \(project) on \($0)" } ?? "Project: \(project)")
+        #else
         HStack(spacing: SH.Space.s) {
             Image(systemName: "folder").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
             Text(project).font(.shMono(12)).lineLimit(1)
@@ -321,5 +347,6 @@ public struct SHPlaceChipLabel: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(host.map { "Where it runs: \(project) on \($0)" } ?? "Project: \(project)")
+        #endif
     }
 }

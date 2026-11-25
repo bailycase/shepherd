@@ -1,4 +1,5 @@
 // Real modular and bundled RPC CLIs; private HOME, loopback provider, no credentials.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

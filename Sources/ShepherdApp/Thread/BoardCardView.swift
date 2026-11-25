@@ -23,9 +23,10 @@ struct BoardCardView<Fallback: View>: View {
                 if let label = board.lineLabel {
                     SHActivityLine(kind: .drew, label: label, meta: board.lineMeta ?? "", status: .done)
                 }
-                SHBoardCard(design: board.design, board: board.board, meta: board.meta, note: failure ?? board.note, size: board.size,
-                            picture: board.picture.map { .picture($0.image) } ?? (board.hasPicture ? .loading : .missing),
-                            open: board.picture == nil ? nil : { openFullSize(board) }) {
+                SHBoardCard(design: board.design, board: board.board, meta: board.footerMeta ?? board.meta, note: failure ?? board.note,
+                            size: board.size, picture: board.picture.map { .picture($0.image) } ?? (board.hasPicture ? .loading : .missing),
+                            open: board.picture == nil ? nil : { openFullSize(board) }, title: board.title,
+                            header: board.header.map { SHBoardCardHeader(label: $0.label, tag: $0.tag) }) {
                     BoardActions(board: board, busy: busy, settle: settle, open: { references.io.open($0) })
                 }
             }
@@ -56,38 +57,39 @@ struct BoardCardView<Fallback: View>: View {
     }
 }
 
-/// A board's actions, on its card and under the pane: a drawn board's badge, Discard and Add (or
-/// Apply) to design while it waits; a shown one's Show vN once the design moved on, and Open in
-/// design.
+/// A board's actions, on its card and under the pane, as links (GXBoardShown): a drawn board's
+/// Discard and Add (or Apply) to design while it waits; a shown one's way to the board as it is
+/// now once the design moved on, and Open in design.
 struct BoardActions: View {
     let board: DesignReferenceChips.Board
     var busy = false
-    var badge = true
     var settle: ((Bool) -> Void)?
     var open: ((DesignReference) -> Void)?
 
     var body: some View {
         if let proposal = board.proposal {
             if proposal.state == .pending, let settle {
-                if badge { SHBoardBadge(proposal.kind == .draft ? "Draft" : "Changed") }
                 Button("Discard") { settle(false) }
-                    .buttonStyle(.sh(.ghost, size: .s))
+                    .buttonStyle(.shBoardLink(quiet: true))
                     .disabled(busy)
                 Button(proposal.kind == .draft ? "Add to design" : "Apply to design") { settle(true) }
-                    .buttonStyle(.sh(.strong, size: .s))
+                    .buttonStyle(.shBoardLink())
                     .disabled(busy)
             } else if proposal.state == .added, let open {
                 Button("Open in design") { open(board.reference.unpinned) }
-                    .buttonStyle(.sh(.ghost, size: .s))
+                    .buttonStyle(.shBoardLink())
             }
         } else if let open {
-            if let latest = board.showLatest {
-                Button(latest) { open(board.reference.unpinned) }
-                    .buttonStyle(.sh(.secondary, size: .s))
+            if board.showLatest != nil {
+                Button("Open in design") { open(board.reference) }
+                    .buttonStyle(.shBoardLink(quiet: true))
+                Button("Open the board as it is now") { open(board.reference.unpinned) }
+                    .buttonStyle(.shBoardLink())
                     .help("Open the board as it is now")
+            } else {
+                Button("Open in design") { open(board.reference) }
+                    .buttonStyle(.shBoardLink())
             }
-            Button("Open in design") { open(board.reference) }
-                .buttonStyle(.sh(.ghost, size: .s))
         }
     }
 }
@@ -100,10 +102,11 @@ struct BoardPane: View {
     var settle: ((Bool) -> Void)?
 
     var body: some View {
+        let pending = board.proposal?.state == .pending && settle != nil
         SHBoardPane(design: board.design, board: board.board, meta: board.meta, size: board.size, picture: board.picture?.image,
-                    open: open) {
-            if board.proposal?.state == .pending, let settle {
-                BoardActions(board: board, badge: false, settle: settle)
+                    open: open, footer: pending) {
+            if pending, let settle {
+                BoardActions(board: board, settle: settle)
             }
         }
     }

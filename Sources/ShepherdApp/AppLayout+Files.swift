@@ -7,30 +7,32 @@ extension AppLayout {
         /// The file viewer header bar height.
         static let headerHeight: CGFloat = 40
         /// Status bar height under the editor (legend, caret, language, indentation).
-        static let statusBarHeight: CGFloat = 28
+        static let statusBarHeight: CGFloat = 30
         /// A changed line's bar in the gutter, and in the status bar's legend.
         static let markWidth: CGFloat = 2
         static let legendMarkHeight: CGFloat = 10
         /// A tab's unsaved-edits dot.
         static let dirtyDotSize: CGFloat = 6
-        /// The active tab's lantern rule along its top.
-        static let activeTabRule: CGFloat = 2
         /// How often an open editor checks its file on disk.
         static let diskCheckInterval: Duration = .seconds(2)
         /// The pause in typing before the editor highlights again.
         static let rehighlightDelay: Duration = .milliseconds(300)
         /// Tab strip height for open files.
-        static let tabHeight: CGFloat = 36
+        static let tabHeight: CGFloat = 38
+        /// A tab (GXPaneFilesEdit `.ftab`): 28pt, 2pt from the next, 11pt in before its name and 9 after its close.
+        static let tabChipHeight: CGFloat = 28
+        static let tabLeading: CGFloat = 11
+        static let tabTrailing: CGFloat = 9
         /// Default tree panel width.
-        static let treeWidth: CGFloat = 260
+        static let treeWidth: CGFloat = 236
         /// Minimum tree panel width during resize.
         static let treeMinWidth: CGFloat = 160
         /// Minimum viewer width so the code area is never squeezed out.
         static let viewerMinWidth: CGFloat = 200
         /// Code line height (board: 20px at code font size).
         static let lineHeight: CGFloat = 20
-        /// Tree row height (board: 24px rows).
-        static let treeRowHeight: CGFloat = 24
+        /// Tree row height (GXPaneFiles `.fr`).
+        static let treeRowHeight: CGFloat = 26
         /// Tree indentation per depth level.
         static let treeIndent: CGFloat = 16
         /// Tree disclosure/file icon size.
@@ -53,8 +55,6 @@ extension AppLayout {
         static let filterFontSize: CGFloat = 12
         /// Symlink indicator icon size.
         static let symlinkIconSize: CGFloat = 9
-        /// Abbreviated path max width.
-        static let pathMaxWidth: CGFloat = 130
         /// Space name font size.
         static let spaceNameFontSize: CGFloat = 12.5
         /// Refresh icon size.

@@ -92,13 +92,17 @@ extension HostStores {
             await piAuth.signOut(provider)
             if let problem = piAuth.problems[provider] { throw RemoteCreateAgentError(problem) }
             return .providers(await hostProviders())
-        case .providerSignIn(let provider):
-            try HostConfigMapping.requireProvider(provider)
-            guard let subscription = PiSignInCatalog.subscription(provider) else {
-                throw RemoteCreateAgentError("\(PiSignInCatalog.name(provider)) signs in with a key.")
+        case .providerSignIn(let provider, let method, let adding):
+            let selected = method ?? .oauth
+            let methods = try await providerMethods(provider, method: selected)
+            let subscription = PiSignInCatalog.account(id: provider, name: methods.name, label: selected == .oauth ? methods.oauth : methods.apiKey)
+            if adding == true, !(await piAuth.beginAddingRemotely(provider)) {
+                throw RemoteCreateAgentError(piAuth.problems[provider] ?? "Couldn’t add an account.")
             }
-            if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
-            return .signIn(try remoteSignIns.startProvider(subscription, auth: piAuth))
+            do { return .signIn(try remoteSignIns.startProvider(subscription, auth: piAuth, method: selected)) } catch {
+                if adding == true { piAuth.stopAdding(provider) }
+                throw error
+            }
         case .providerAccount(let provider, let action):
             try HostConfigMapping.requireProvider(provider)
             switch action {
@@ -110,10 +114,8 @@ extension HostStores {
                 await piAuth.renameAccount(provider, id, to: trimmed)
             case .rotate(let on): await piAuth.setRotate(provider, on)
             case .add:
-                guard let subscription = PiSignInCatalog.subscription(provider) else {
-                    throw RemoteCreateAgentError("Add another \(PiSignInCatalog.name(provider)) key on the host.")
-                }
-                if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
+                let methods = try await providerMethods(provider, method: .oauth)
+                let subscription = PiSignInCatalog.account(id: provider, name: methods.name, label: methods.oauth)
                 guard await piAuth.beginAddingRemotely(provider) else {
                     throw RemoteCreateAgentError(piAuth.problems[provider] ?? "Couldn’t add an account.")
                 }
@@ -125,7 +127,9 @@ extension HostStores {
                 // As Settings ▸ Sign-in's Add account for a key: the current key is saved first,
                 // and the new one lands beside it.
                 let input = try HostConfigMapping.keyInput(key)
-                if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
+                guard try await providerMethods(provider, method: .apiKey).keyForm == true else {
+                    throw RemoteCreateAgentError("This provider needs interactive sign-in. Update Shepherd on this device.")
+                }
                 guard await piAuth.beginAddingRemotely(provider) else {
                     throw RemoteCreateAgentError(piAuth.problems[provider] ?? "Couldn’t add an account.")
                 }
@@ -136,9 +140,55 @@ extension HostStores {
             }
             if let problem = piAuth.problems[provider] { throw RemoteCreateAgentError(problem) }
             return .providers(await hostProviders())
+        case .extensionSetEnabled(let destination, let on):
+            try await requireExtension(destination)
+            let row = YourPiModel.extensionRowID(destination)
+            await yourPi.setExtension(destination, on: on)
+            return try await extensionsAfter(row)
+        case .extensionRemove(let destination):
+            try await requireExtension(destination)
+            let row = YourPiModel.extensionRowID(destination)
+            await yourPi.removeExtension(destination)
+            return try await extensionsAfter(row)
+        case .extensionAddGit(let url):
+            let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.utf8.count <= HostConfigMapping.maxURLBytes else {
+                throw RemoteCreateAgentError("Enter a Git repository address.")
+            }
+            // Another device never reaches this Mac's own disk, nor code an unencrypted hop could swap.
+            guard YourPiImport.isNetworkGitURL(trimmed) else {
+                throw RemoteCreateAgentError("From another device, add a repository by its https:// or ssh address.")
+            }
+            await yourPi.addExtension(.git(trimmed))
+            return try await extensionsAfter(YourPiModel.addExtensionRow)
         case .signIn(let id, let action):
             return .signIn(try await remoteSignIns.act(id, action))
         }
+    }
+
+    /// An extension the host has a copy of, as Settings lists it: a client names it by `HostExtension.id`.
+    private func requireExtension(_ destination: String) async throws {
+        await yourPi.refresh()
+        guard yourPi.survey?.extensions.contains(where: { $0.copy.destination == destination }) == true else {
+            throw RemoteCreateAgentError("This Mac has no extension by that name.")
+        }
+    }
+
+    /// The extensions after a change, or the reason the Mac's row shows for why it failed.
+    private func extensionsAfter(_ row: String) async throws -> RemoteHostConfigResult {
+        if let problem = yourPi.problems[row] { throw RemoteCreateAgentError(problem) }
+        return .extensions(await hostExtensions())
+    }
+
+    private func providerMethods(_ provider: String, method: PiSignInMethod) async throws -> PiSignInProvider {
+        try HostConfigMapping.requireProvider(provider)
+        await piAuth.refreshProviders()
+        if let problem = piAuth.providersProblem { throw RemoteCreateAgentError(problem) }
+        guard let methods = piAuth.providers?.first(where: { $0.id == provider }),
+              method == .oauth ? methods.oauth != nil : methods.apiKey != nil else {
+            throw RemoteCreateAgentError("This provider does not offer that sign-in method.")
+        }
+        return methods
     }
 
     private func requireServer(_ name: String) throws {
@@ -161,9 +211,10 @@ extension HostStores {
     /// pi's key login, answered with `key` once pi asks and the provider took it (as Settings'
     /// key form does: a key the provider refuses is not saved).
     private func saveProviderKey(_ provider: String, key: PiKeyInput) async throws {
-        try HostConfigMapping.requireProvider(provider)
-        if let problem = await piAuth.readyHome() { throw RemoteCreateAgentError(problem) }
-        let bridge = try piAuth.bridge()
+        guard try await providerMethods(provider, method: .apiKey).keyForm == true else {
+            throw RemoteCreateAgentError("This provider needs interactive sign-in. Update Shepherd on this device.")
+        }
+        let bridge = try piAuth.bridge(false)
         defer { bridge.close() }
         let watchdog = Task {
             try? await Task.sleep(for: HostConfigMapping.keyTimeout)
@@ -176,7 +227,11 @@ extension HostStores {
         var checked = false
         for await reply in bridge.replies {
             switch reply {
-            case .prompt(let asked) where asked.kind == .secret: prompt = asked.id
+            case .prompt(let asked):
+                guard asked.kind == .secret, asked.keyForm == true else {
+                    throw RemoteCreateAgentError("The provider needs additional setup. Use its interactive sign-in.")
+                }
+                prompt = asked.id
             case .checked("remote", let result):
                 switch result {
                 case .rejected(let reason), .unset(let reason): throw RemoteCreateAgentError(reason)
@@ -201,6 +256,9 @@ extension HostStores {
 @MainActor
 enum HostConfigMapping {
     static let keyTimeout: Duration = .seconds(60)
+
+    /// The longest address a client may ask the host to clone.
+    static let maxURLBytes = 2048
 
     /// What a remote read shows in place of a value written literally into the host's file.
     static let mask = "••••••••"
@@ -324,10 +382,14 @@ final class RemoteSignIns {
         guard let run = runs[id] else { throw RemoteCreateAgentError("This sign-in is no longer available. Try again.") }
         switch action {
         case .poll: break
-        case .complete(let code):
+        case .complete(let code, let promptID):
             guard run.isLive else { break }
-            guard code.utf8.count <= 8192 else { throw RemoteCreateAgentError("That's too long to be a sign-in code.") }
-            try await run.complete(code.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard code.utf8.count <= 8192 else { throw RemoteCreateAgentError("That's too long to be a sign-in answer.") }
+            if let promptID, promptID != run.promptID { throw RemoteCreateAgentError("That question has closed. Answer the current question.") }
+            if let prompt = run.progress.prompt, prompt.kind != .manualCode, promptID == nil {
+                throw RemoteCreateAgentError("Update Shepherd on this device to answer this provider’s question.")
+            }
+            try await run.complete(code)
         case .cancel:
             run.cancel()
             run.expiry?.cancel()
@@ -342,10 +404,11 @@ final class RemoteSignIns {
 
     /// pi's account login for `subscription`, its page opened on the client: a pasted code, or a
     /// device code to enter.
-    func startProvider(_ subscription: PiSignInCatalog.Subscription, auth: PiAuthStore) throws -> HostSignInProgress {
+    func startProvider(_ subscription: PiSignInCatalog.Subscription, auth: PiAuthStore,
+                       method: PiSignInMethod = .oauth) throws -> HostSignInProgress {
         let run = try begin(key: "provider:" + subscription.id, name: subscription.name)
         let bridge: PiSignInBridge
-        do { bridge = try auth.bridge() } catch {
+        do { bridge = try auth.bridge(false) } catch {
             runs[run.progress.id] = nil
             throw RemoteCreateAgentError(String(describing: error))
         }
@@ -360,11 +423,14 @@ final class RemoteSignIns {
                     run.progress.deviceCode = code
                     run.progress.authorizationURL = uri
                     run.progress.phase = .waiting
-                case .prompt(let prompt) where prompt.kind == .manualCode || prompt.kind == .text:
+                case .prompt(let prompt):
                     run.promptID = prompt.id
-                    run.progress.wantsCode = true
+                    run.progress.prompt = prompt
+                    run.progress.wantsCode = prompt.kind == .manualCode || prompt.kind == .text
+                    run.progress.phase = .waiting
                 case .promptClosed(let id) where id == run.promptID:
                     run.promptID = nil
+                    run.progress.prompt = nil
                     run.progress.wantsCode = false
                 case .done(let provider, _):
                     _ = auth.landed(provider)
@@ -389,16 +455,22 @@ final class RemoteSignIns {
             reader.cancel()
             auth.stopAdding(subscription.id)
         }
-        run.complete = { [weak run] code in
-            guard let run, let prompt = run.promptID, !code.isEmpty else {
-                throw RemoteCreateAgentError("The host isn't waiting for a code yet. Try again in a moment.")
+        run.complete = { [weak run] value in
+            guard let run, let promptID = run.promptID, let prompt = run.progress.prompt else {
+                throw RemoteCreateAgentError("The host isn't waiting for an answer yet. Try again in a moment.")
+            }
+            let answer = prompt.kind == .manualCode ? value.trimmingCharacters(in: .whitespacesAndNewlines) : value
+            if prompt.kind == .select, !prompt.options.contains(where: { $0.id == answer }) {
+                throw RemoteCreateAgentError("Choose one of the provider’s options.")
             }
             run.promptID = nil
+            run.progress.prompt = nil
             run.progress.wantsCode = false
-            bridge.send(.answer(id: prompt, value: code))
+            run.progress.phase = .starting
+            bridge.send(.answer(id: promptID, value: answer))
         }
         // A pasted code: nothing listens on, or opens a browser on, this Mac for a client's sign-in.
-        bridge.send(.login(provider: subscription.id, method: .oauth, flow: subscription.flow == .device ? .device : .paste))
+        bridge.send(.login(provider: subscription.id, method: method, flow: subscription.flow == .device ? .device : .paste))
         return run.progress
     }
 

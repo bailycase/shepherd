@@ -57,7 +57,7 @@ extension PreviewTests {
             SHSidebar(topBar: SHSidebarTopBar(search: {}, hide: {})) {
                 ForgeSidebarPanel(vm: vm)
             } footer: {
-                SHSidebarFooter(name: "Baily", detail: "This Mac · build-01", settingsShortcut: "⌘,") {}
+                SHSidebarFooter(name: "Alex", detail: "This Mac · build-01", settingsShortcut: "⌘,") {}
             }
             .frame(width: sidebarWidth)
             SHHairline(.vertical)
@@ -276,6 +276,37 @@ extension PreviewTests {
         }
     }
 
+    /// A forge-pins.json the host can't read: Pinned says why there are no pins, and Issues & PRs
+    /// still opens the pull request.
+    @Test func forgeSidebarPinsDamaged() async throws {
+        let workspace = try await forgeWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let pins = workspace.dir.appendingPathComponent("forge-pins.json")
+        try Data("{broken".utf8).write(to: pins)
+        await vm.forgeStore.loadSidebar()
+        #expect(vm.forgeStore.sidebar?.pinsProblem?.contains(pins.path) == true && vm.forgeStore.sidebar?.pins.isEmpty == true)
+        await openForge(vm, .pullRequest, 31)
+        #expect(vm.forgeStore.pullRequest != nil)
+        #expect(await vm.forgeStore.perform(.setPinned(ref: ForgeItemRef(kind: .pullRequest, repo: ForgeFixtures.repo, number: 31),
+                                                       title: "t", pinned: true)) == false)
+        #expect(try Data(contentsOf: pins) == Data("{broken".utf8))
+        #expect(vm.forgeStore.actionTitle == "Couldn't pin")
+        let banner = CGSize(width: AppLayout.forgeContentWidth, height: 140)
+        try await Preview.render("forge-pin-refused", size: banner, ready: { vm.forgeStore.actionError != nil }) {
+            ForgeBanners(vm: vm, store: vm.forgeStore).frame(width: banner.width, height: banner.height, alignment: .top).background(Color.sh.bgWindow)
+        }
+        vm.selectAgent(try #require(vm.state.agents.first).id)
+        try await Preview.render("forge-sidebar-pins-damaged", size: CGSize(width: Self.forgeSidebar, height: 600),
+                                 ready: { vm.forgeStore.sidebar?.pinsProblem != nil }) {
+            SidebarView(vm: vm).frame(width: Self.forgeSidebar)
+        }
+        // Moving the file away clears the note on the next read: no restart.
+        try FileManager.default.removeItem(at: pins)
+        await vm.forgeStore.loadSidebar()
+        #expect(vm.forgeStore.sidebar?.pinsProblem == nil)
+    }
+
     /// The side pane's Pull request tab (PRPane, PRPaneMerged) beside #31's thread: the branch's
     /// pull request found (the lookup stands in for `gh pr view`), then read through the fake gh.
     @Test(arguments: [false, true])
@@ -295,13 +326,17 @@ extension PreviewTests {
         let store = try #require(vm.branchPullRequests[agentID])
         store.now = { Self.forgeNow }
         #expect(vm.sidePaneTabs(for: .local(agentID)).contains(.pullRequest))
-        // The boards' 801pt pane, and a narrow one whose rail follows the column.
-        for width: CGFloat in merged ? [801] : [801, 440] {
-            try await Preview.render("forge-side-pane\(merged ? "-merged" : "")\(width < 801 ? "-narrow" : "")",
-                                     size: CGSize(width: width, height: 900), ready: { store.pullRequest != nil }) {
+        // The boards' 720pt pane card (GXPanePR), and a narrow one whose rail follows the column.
+        for width: CGFloat in merged ? [720] : [720, 440] {
+            try await Preview.render("forge-side-pane\(merged ? "-merged" : "")\(width < 720 ? "-narrow" : "")",
+                                     size: CGSize(width: width + 2 * SHSidePaneMetrics.cardInset, height: 900),
+                                     ready: { store.pullRequest != nil }) {
                 SidePaneView(vm: vm, owner: .local(agentID), tab: .pullRequest, news: [], review: nil,
                              store: vm.threadStores.store(for: agentID))
-                .frame(width: width, height: 900)
+                .frame(width: width, height: 900 - 2 * SHSidePaneMetrics.cardInset)
+                .shCard(lift: true)
+                .padding(SHSidePaneMetrics.cardInset)
+                .background(Color.sh.bgWindow)
             }
         }
     }

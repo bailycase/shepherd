@@ -25,8 +25,25 @@ extension ShepherdViewModel {
     /// Reads the runs the host kept. A host that cannot say keeps what was read before.
     func loadRemoteAutomationRuns(_ key: AutomationKey) async {
         guard remoteHosts.allConnections.first(where: { $0.id == key.host })?.supportsAutomations == true else { return }
-        guard case .runs(let runs)? = try? await remoteHosts.automation(key, request: .runs) else { return }
+        guard let runs = await readAutomationRuns(key, page: key) else { return }
         if remoteAutomationRuns[key] != runs { remoteAutomationRuns[key] = runs }
+    }
+
+    /// An automation's runs from its host, or nil when it can't say. A host whose run history file
+    /// is damaged says so (`runHistoryDamagedCode`): the page shows why until a read succeeds.
+    /// `page` is the automation's key on the Automations page.
+    func readAutomationRuns(_ key: AutomationKey, page: AutomationKey) async -> [AutomationRun]? {
+        do {
+            guard case .runs(let runs) = try await remoteHosts.automation(key, request: .runs) else { return nil }
+            if automationRunProblems[page] != nil { automationRunProblems[page] = nil }
+            return runs
+        } catch {
+            if case RemoteHostClientError.rejected(RemoteAutomationRequest.runHistoryDamagedCode, let message) = error,
+               automationRunProblems[page] != message {
+                automationRunProblems[page] = message
+            }
+            return nil
+        }
     }
 
     /// Sends one change to the host; a refusal shows the failed-action dialog. A trigger change

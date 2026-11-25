@@ -175,6 +175,47 @@ struct ComposerMenuPerformanceTests {
         }
     }
 
+    /// The Mac's drawn menus (SHPopMenu) list a few hundred branches as the Branch picker and the New
+    /// worktree's Base do: opening draws the rows on screen, not the list.
+    @Test func openingAPopMenuDrawsOnlyTheRowsOnScreen() async throws {
+        let model = HighlightModel()
+        SHRenderProbe.start()
+        let window = OffscreenWindow(size: PopHost.size, dark: false, PopHost(model: model))
+        defer { window.close() }
+        try await eventuallyOnMain("the menu to load") { window.layout(); return Self.menuScroll(in: window) != nil }
+        window.layout()
+        let opened = SHRenderProbe.stop()
+
+        let onScreen = Int(PopHost.listHeight / SHPopMenuMetrics.rowHeight) + 1
+        #expect(opened["pop.menu.row", default: 0] > 0, "the menu opened: \(opened)")
+        #expect(opened["pop.menu.row", default: 0] <= 2 * onScreen, "rows drawn for \(PopHost.count) branches: \(opened)")
+    }
+
+    /// A highlight moving in a pop menu (the keyboard, or the pointer in a list that follows it) redraws the
+    /// two rows it moves between, however long the list: a row draws again only when what it draws changes.
+    @Test func movingAPopMenusHighlightRedrawsTwoRows() async throws {
+        let model = HighlightModel()
+        let window = OffscreenWindow(size: PopHost.size, dark: false, PopHost(model: model))
+        defer { window.close() }
+        try await eventuallyOnMain("the menu to load") { window.layout(); return Self.menuScroll(in: window) != nil }
+        // The first move after opening also settles the lazy rows beside it; count the ones after.
+        model.selection = 1
+        for _ in 0..<3 {
+            try await Task.sleep(for: .milliseconds(20))
+            window.layout()
+        }
+
+        var drawn: [Int] = []
+        for index in 2...7 {
+            SHRenderProbe.start()
+            model.selection = index
+            window.layout()
+            drawn.append(SHRenderProbe.stop()["pop.menu.row", default: 0])
+        }
+        #expect(drawn.allSatisfy { $0 <= 2 }, "rows drawn per move: \(drawn)")
+        #expect(drawn.allSatisfy { $0 >= 1 }, "the highlight moved: \(drawn)")
+    }
+
     /// The same in the model picker: a highlight moving redraws two rows, and ↓ held down past
     /// the visible rows keeps the highlighted model in view.
     @Test func movingThePickersHighlightRedrawsTwoRowsAndShowsIt() async throws {
@@ -442,5 +483,33 @@ private struct SlashHost: View {
     var body: some View {
         SHSlashMenu(commands: commands, total: commands.count, query: "", selection: $model.selection) { _ in }
             .frame(width: 520, height: 360)
+    }
+}
+
+private struct PopHost: View {
+    static let size = CGSize(width: 360, height: 420)
+    static let count = 300
+    static let listHeight: CGFloat = 300
+    @Bindable var model: HighlightModel
+
+    var body: some View {
+        SHPopMenu(width: 330) {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(0..<Self.count, id: \.self) { index in
+                        // Closures that differ at every draw, as a list's do when they capture what it rebuilds: a row
+                        // draws again only if what it draws changed.
+                        let stamp = UUID()
+                        SHPopMenuRow("feat/ledger-\(index)", mono: true, lead: .check(index == 0), trailing: "1d",
+                                     highlighted: index == model.selection, index: index, onHighlight: { model.selection = $0 }) {
+                            model.query = "\(stamp)"
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: Self.listHeight)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
     }
 }

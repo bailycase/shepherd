@@ -1,6 +1,7 @@
 // The terminal tools an agent drives its own workspace with (Extensions/shepherd-panes.ts),
 // against a local Shepherd socket. A terminal is a tab under the thread: there are no panes and
 // no splits, the tools are named terminal_*, and the agent's own thread is never a terminal.
+import "./hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as net from "node:net";

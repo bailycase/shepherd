@@ -151,8 +151,7 @@ public struct SHProjectSettingsTab: View {
     }
 
     @MainActor static func width(of title: String) -> CGFloat {
-        let font = CTFontCreateWithName(SHFonts.postScriptName(mono: false, weight: .regular) as CFString,
-                                        SHTextStyle.ui.size * ThemeStore.shared.textScale, nil)
+        let font = SHFonts.platform(mono: false, weight: SHTextStyle.ui.weight, size: SHTextStyle.ui.size * ThemeStore.shared.textScale)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: title, attributes: [.font: font]))
         return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     }

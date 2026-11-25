@@ -5,18 +5,18 @@ import SwiftUI
 /// sizes are `SHThreadMetrics` and `SHComposerMetrics` in ShepherdUI.
 extension AppLayout {
     // Thread
-    /// The column's widest (Navigation board: "thread column · max 820 · prose 640").
-    static let threadMaxWidth: CGFloat = 820
-    /// Agent prose keeps the board's 640pt measure even though the column is wider.
-    static let proseMaxWidth: CGFloat = 640
-    static let userMaxWidth: CGFloat = 600
+    /// The column's widest (the boards' `.col`: 720, prose across all of it).
+    static let threadMaxWidth: CGFloat = 720
+    static let proseMaxWidth: CGFloat = 720
+    /// Your message's bubble (the boards' `.you`).
+    static let userMaxWidth: CGFloat = 560
     static let gutter: CGFloat = 32
     /// Older pages the context meter's Largest and Show summary load, at most, to find an entry.
     static let findPageLimit = 20
     /// Gutter when the window is too narrow for the column plus the full gutter.
     static let gutterCompact: CGFloat = 16
-    static let threadTop: CGFloat = 28
-    static let turnSpacing: CGFloat = 28
+    static let threadTop: CGFloat = 20
+    static let turnSpacing: CGFloat = 32
     /// The viewport heights the eager tail's cover is worked out at: a window drag changes the
     /// tail a few times, not at every point of height.
     static let eagerCoverStep: CGFloat = 200
@@ -109,6 +109,8 @@ extension AppLayout {
     /// Extra breathing room between the transcript tail and the floating composer.
     static let composerTranscriptGap: CGFloat = SH.Space.xxl
     static let composerFade: CGFloat = 48
+    /// How far in from the composer card's trailing edge the model picker and its settings open (GXModel).
+    static let modelMenuTrailing: CGFloat = 40
     /// A menu opens this far above the card, and keeps this far from the thread's top edge.
     static let menuGap: CGFloat = 8
     static let menuMargin: CGFloat = 8

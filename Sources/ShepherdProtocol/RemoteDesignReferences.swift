@@ -10,7 +10,7 @@ extension RemoteProtocol {
     /// The host pins its own designs' pieces for another device (`RemoteDesignRequest.pinReference`)
     /// and takes a thread send carrying references to them (`NativeThreadRequest.send`'s
     /// `designReferences`, each naming the host's design as `local`). Offered with `designsCapability`.
-    public static let designReferencesCapability = "design.references.v1"
+    public static let designReferencesCapability = Capability.designReferences.rawValue
 }
 
 /// A piece of the host's design as the host pinned it: the reference (named as the host sees it,

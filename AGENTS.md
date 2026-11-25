@@ -12,11 +12,13 @@ the app's own supervised child (`HostSupervisor`), which stops at Quit. Terminal
 Choose only what the change needs; these are alternatives, not a checklist. Replace placeholders.
 
 ```bash
-swift test --filter '<affected suite or test>' # builds before running; no separate swift build
-SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<affected preview>'
-PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test 'Tests/Extensions/<affected>.test.mjs'
+scripts/check.py <TestTarget> '<affected suite or test>' # target = its Tests/ folder; builds only it
+SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews scripts/check.py ShepherdPreviewTests '<affected preview>'
+PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test 'Tests/Extensions/<affected>.test.mjs'
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py' # docs guards
 ```
+
+On Mac, `python3 scripts/validate.py --case <changes-review|seeded-thread-rename|scroll-stability>` saves evidence under `.build/validation/`. Bare invocation does not select checks yet.
 
 App builds and engine staging: [docs/build-and-run.md](docs/build-and-run.md). Run the Mac app from
 `Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs only for PRs targeting `master`.
@@ -43,8 +45,15 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Branch from `nightly` (`feat/…`, `fix/…`), open the PR into `nightly`. Conventional commits
   (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). No AI attribution in commits or PR bodies.
-- Platform parity: a user-facing change ships on the Mac app and the iPhone and iPad client (`App/iOS`)
-  in the same PR, unless the user scopes it to one. Say in the PR what each platform got.
+- A change ends merged into `nightly`, not at an open PR, unless the user says to hold it. Open it
+  ready for review (never a draft), then `gh pr merge --squash` once checks pass and confirm it
+  merged. GitHub deletes the branch; remove your worktree.
+- Each merge into `nightly` publishes a Shepherd Nightly build. That is the normal end of a task,
+  not a release. When landing several PRs at once, merge them together rather than spread out.
+  TestFlight, `master` and release tags only when the user asks ([docs/releases.md](docs/releases.md)).
+- Platform parity: a user-facing change ships on the Mac app and the iPhone, iPhone Duo and iPad
+  client (`App/iOS`) in the same PR, unless the user scopes it to one. Say in the PR what each
+  platform got.
 - Start an authorized change without a separate issue or plan. Read the affected code and relevant
   doc sections; ask only when scope or a consent boundary below is unresolved.
 - Reuse tests that protect the affected behavior; add or extend coverage for new behavior or a
@@ -52,7 +61,7 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 - Swift Testing only: pure logic is unit; server, socket, process, git or window work is integration.
   Unit tests use no processes, sockets, windows, git or sleeps. Integration tests use
   `Tests/ShepherdTestSupport` and wait with `eventually`, never a fixed sleep.
-- Run the smallest relevant checks. Expand for shared changes or wider regressions, not every edit.
+- Run the smallest relevant checks once edits settle, not after each one. Expand for shared changes.
   Report actual results and gaps; required CI still gates PRs into `master`.
 - Fix only docs the change makes wrong. Don't write new docs for a feature unless asked.
 - Keep tool output small (`| head`, `--stat`, a file by range). Hand a broad search or a long log
@@ -68,6 +77,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## UI changes
 
+- New UI with no design yet: draw it as a board in Shepherd Design (two or three options when the
+  shape is unclear) and get the user's approval before writing app code.
 - The design the user gives (image, board, words) is the spec and outranks every doc here. Build
   what it draws; a difference from it is the user's call, so list each one under **Departures**
   in the PR and your final message (`none` counts). Save the image as `docs/design/boards/<Name>.png`. The repo is public: fixtures, mockups and images use made-up names (`acme-web`), never the user's projects, paths or tasks.

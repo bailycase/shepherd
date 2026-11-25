@@ -1,26 +1,7 @@
 name: Release build
-run-name: Self-hosted release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}
 
-# Dispatch is local-only, build-only, and fenced on an active Nightly Release parent.
-# This workflow must also exist on the default branch before dispatch is available.
+# Build-only: release.yml calls it, then publishes the package it uploads.
 on:
-  workflow_dispatch:
-    inputs:
-      parent_run:
-        type: string
-        required: true
-      parent_attempt:
-        type: string
-        required: true
-      source_sha:
-        type: string
-        required: true
-      build_number:
-        type: string
-        required: true
-      plan:
-        type: string
-        required: true
   workflow_call:
     inputs:
       parent_run:
@@ -38,13 +19,8 @@ on:
       plan:
         type: string
         required: true
-      hosted:
-        type: boolean
-        default: true
     secrets:
       SENTRY_AUTH_TOKEN:
-        required: false
-      SELFHOSTED_HOSTNAME:
         required: false
       DEVELOPER_ID_P12:
         required: false
@@ -63,38 +39,13 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  guard:
-    name: Validate the Release parent
-    if: github.event_name != 'pull_request' && (inputs.hosted || (vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.ref == 'refs/heads/nightly'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    env:
-      GH_TOKEN: ${{ github.token }}
-      PARENT_RUN: ${{ inputs.parent_run }}
-      PARENT_ATTEMPT: ${{ inputs.parent_attempt }}
-      SOURCE_SHA: ${{ inputs.source_sha }}
-      BUILD_NUMBER: ${{ inputs.build_number }}
-      RELEASE_PLAN: ${{ inputs.plan }}
-    steps:
-      # Validate from the trusted workflow ref before checking out the supplied SHA on Self-hosted.
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - run: python3 scripts/release_runner.py validate ${{ !inputs.hosted && '--local' || '' }}
-
   build:
     name: build package
-    needs: guard
-    if: github.event_name != 'pull_request' && (inputs.hosted || (vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.ref == 'refs/heads/nightly'))
-    # Custom label only: Self-hosted was registered without default self-hosted/OS labels.
-    runs-on: ${{ !inputs.hosted && 'shepherd-release' || 'macos-26' }}
+    runs-on: macos-26
     timeout-minutes: 60
     env:
-      # Referencing the hostname as a secret masks the runner's built-in machine-name log.
-      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
       APP_KEY: ${{ fromJSON(inputs.plan).app }}
       APP_NAME: ${{ fromJSON(inputs.plan).name }}
       VERSION: ${{ fromJSON(inputs.plan).version }}
@@ -116,13 +67,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha }}
-          clean: ${{ runner.environment != 'self-hosted' }}
           persist-credentials: false
-      - name: Fence the build on its active parent
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release_runner.py validate ${{ !inputs.hosted && '--local' || '' }}
-
       - name: Xcode version
         id: xcode
         run: |
@@ -132,8 +77,15 @@ jobs:
           # Reuse products only while shared library inputs match, not across model/ABI changes.
           shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
           echo "shared=$shared" >> "$GITHUB_OUTPUT"
-      # No hosted DerivedData cache: the shared-input key changed on nearly every commit, so
-      # it never restored and only spent time saving. Persistent self-hosted products use this marker.
+      - name: Restore Swift package checkouts
+        id: spm
+        uses: actions/cache/restore@v4
+        with:
+          path: build/SourcePackages
+          key: spm-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      # No DerivedData cache: the shared-input key changed on nearly every commit, so it never
+      # restored and only spent time saving. This marker discards any products that predate a change.
       - name: Start over when shared build inputs changed
         env:
           VERSION: ${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}
@@ -145,12 +97,36 @@ jobs:
           fi
           mkdir -p build && echo "$VERSION" > "$marker"
 
+      # Save on a miss before compilation, so a slow build cannot prevent the next run from restoring it.
+      - name: Resolve pinned Swift packages
+        if: steps.spm.outputs.cache-hit != 'true'
+        run: |
+          xcodebuild -project Shepherd.xcodeproj -scheme "$SCHEME" -configuration "$CONFIGURATION" \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build \
+            -onlyUsePackageVersionsFromResolvedFile -resolvePackageDependencies
+      - name: Save Swift package checkouts
+        if: steps.spm.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/SourcePackages
+          key: ${{ steps.spm.outputs.cache-primary-key }}
+
+      # Reuse compiler results, not the build graph or the assembled app. Tagged releases
+      # remain cold because Actions caches from nightly aren't visible to tag runs.
+      - name: Cache Nightly compiler results
+        if: env.CHANNEL == 'nightly'
+        uses: actions/cache@v4
+        with:
+          path: build/CompilationCache.noindex
+          key: compile-nightly-batch-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}
+          restore-keys: |
+            compile-nightly-batch-v1-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-
+
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
       # nodejs.org and pi from the npm registry, checked against scripts/pi-engine-pin.json;
       # the cache keeps those downloads, and staging reuses one only while it matches the pin.
       - name: Cache the pi engine's downloads
-        if: runner.environment == 'github-hosted'
         uses: actions/cache@v4
         with:
           path: .build/pi-engine-cache
@@ -158,10 +134,6 @@ jobs:
       - name: Stage the pi engine
         run: python3 scripts/pi_engine.py stage
 
-      - name: Fence signing on the active parent
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release_runner.py validate ${{ !inputs.hosted && '--local' || '' }}
       - name: Import Developer ID certificate
         id: cert
         env:
@@ -196,7 +168,14 @@ jobs:
       - name: Build ${{ env.APP_NAME }}
         env:
           SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_SENTRY_DSN }}
+          COMPILATION_CACHE: ${{ env.CHANNEL == 'nightly' && 'YES' || 'NO' }}
         run: |
+          swift_settings=()
+          if [[ "$CHANNEL" == nightly ]]; then
+            # Set all three so SwiftPM's release defaults can't select whole-module mode.
+            # Keep -O and let Xcode replay cached compiler results at file granularity.
+            swift_settings=(SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_WHOLE_MODULE_OPTIMIZATION=NO SWIFT_COMPILATION_MODE=singlefile)
+          fi
           xcodebuild \
             -project Shepherd.xcodeproj \
             -scheme "$SCHEME" \
@@ -204,8 +183,11 @@ jobs:
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build \
             -onlyUsePackageVersionsFromResolvedFile \
+            -showBuildTimingSummary \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
+            COMPILATION_CACHE_ENABLE_CACHING="$COMPILATION_CACHE" \
+            "${swift_settings[@]}" \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             SHEPHERD_SENTRY_DSN="$SHEPHERD_SENTRY_DSN" \

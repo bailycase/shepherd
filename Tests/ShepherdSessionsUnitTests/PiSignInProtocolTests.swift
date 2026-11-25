@@ -14,6 +14,10 @@ struct PiSignInProtocolTests {
     }
 
     static let commands: [Command] = [
+        Command(command: .providers, json: #"{"type":"providers"}"#),
+        Command(command: .usage(), json: #"{"type":"usage"}"#),
+        Command(command: .usage(accounts: [PiSavedCredential(provider: "anthropic", id: "b", credential: ["access": "tok-b", "type": "oauth"])]),
+                json: #"{"accounts":[{"credential":{"access":"tok-b","type":"oauth"},"id":"b","provider":"anthropic"}],"type":"usage"}"#),
         Command(command: .login(provider: "anthropic", method: .oauth, flow: .browser),
                 json: #"{"flow":"browser","method":"oauth","provider":"anthropic","type":"login"}"#),
         Command(command: .login(provider: "deepseek", method: .apiKey, flow: .device),
@@ -42,18 +46,37 @@ struct PiSignInProtocolTests {
 
     static let replies: [Reply] = [
         Reply(json: #"{"type":"ready"}"#, reply: .ready),
+        Reply(json: #"{"type":"providers","providers":[{"id":"acme","name":"Acme","oauth":"Acme account"}]}"#,
+              reply: .providers([PiSignInProvider(id: "acme", name: "Acme", oauth: "Acme account")])),
+        Reply(json: #"{"type":"providers","providers":[{"id":"a","name":"A"},{"id":"a","name":"Again"}]}"#, reply: nil),
+        Reply(json: #"{"type":"providers","providers":[{"id":"","name":"Empty"}]}"#, reply: nil),
+        Reply(json: #"{"type":"extensionFailed","path":"/home/your-extensions/added/x.ts"}"#,
+              reply: .extensionFailed(path: "/home/your-extensions/added/x.ts")),
+        Reply(json: #"{"type":"extensionFailed"}"#, reply: nil),
+        Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts","providers":["acme"],"tools":[],"commands":["acme-usage"],"events":[],"shortcuts":["ctrl+x"],"flags":[],"renderers":1}]}"#,
+              reply: .extensions([PiExtensionInventory(path: "/h/x.ts", providers: ["acme"], commands: ["acme-usage"], shortcuts: ["ctrl+x"], renderers: 1)])),
+        Reply(json: #"{"type":"usage","usage":[{"provider":"deepseek","windows":[{"name":"Month","usedPercent":120,"resetsAt":1800000000000}],"balance":{"amount":110,"currency":"CNY"}},{"provider":"acme","windows":[]},{"provider":"anthropic","account":"b","windows":[],"email":"b@example.com"}]}"#,
+              reply: .usage([PiProviderUsage(provider: "deepseek", windows: [PiUsageWindow(name: "Month", usedPercent: 100, resetsAt: Date(timeIntervalSince1970: 1_800_000_000))],
+                                             balance: PiBalance(amount: 110, currency: "CNY")),
+                             PiProviderUsage(provider: "acme"),
+                             PiProviderUsage(provider: "anthropic", account: "b", email: "b@example.com")])),
+        // An older bridge's inventory without some lists reads them as empty.
+        Reply(json: #"{"type":"extensions","extensions":[{"path":"/h/x.ts"}]}"#, reply: .extensions([PiExtensionInventory(path: "/h/x.ts")])),
         Reply(json: #"{"type":"event","event":{"type":"auth_url","url":"https://claude.ai/oauth/authorize?x=1","instructions":"Complete login"}}"#,
               reply: .authURL(URL(string: "https://claude.ai/oauth/authorize?x=1")!, instructions: "Complete login")),
         // Only a web page is ever opened.
         Reply(json: #"{"type":"event","event":{"type":"auth_url","url":"file:///etc/passwd"}}"#, reply: nil),
         Reply(json: #"{"type":"event","event":{"type":"device_code","userCode":"8F3K-Q2WD","verificationUri":"https://github.com/login/device","expiresInSeconds":900}}"#,
               reply: .deviceCode(code: "8F3K-Q2WD", verificationURI: "https://github.com/login/device", expiresIn: 900)),
+        Reply(json: #"{"type":"event","event":{"type":"device_code","userCode":"AB12","verificationUri":"file:///tmp/unsafe"}}"#, reply: nil),
         Reply(json: #"{"type":"event","event":{"type":"progress","message":"Exchanging…"}}"#, reply: .progress("Exchanging…")),
         Reply(json: #"{"type":"event","event":{"type":"info","message":"Configured elsewhere"}}"#, reply: .info("Configured elsewhere")),
         Reply(json: #"{"type":"prompt","id":"p1","kind":"manual_code","message":"Paste","placeholder":"http://localhost"}"#,
               reply: .prompt(PiSignInPrompt(id: "p1", kind: .manualCode, message: "Paste", placeholder: "http://localhost"))),
         Reply(json: #"{"type":"prompt","id":"p2","kind":"select","message":"How?","options":[{"id":"a","label":"A"}]}"#,
               reply: .prompt(PiSignInPrompt(id: "p2", kind: .select, message: "How?", options: [.init(id: "a", label: "A")]))),
+        Reply(json: #"{"type":"prompt","id":"p-key","kind":"secret","message":"API key","keyForm":true}"#,
+              reply: .prompt(PiSignInPrompt(id: "p-key", kind: .secret, message: "API key", keyForm: true))),
         Reply(json: #"{"type":"prompt","id":"p3","kind":"telepathy","message":"?"}"#, reply: nil),
         Reply(json: #"{"type":"promptClosed","id":"p1"}"#, reply: .promptClosed("p1")),
         Reply(json: #"{"type":"done","provider":"anthropic","credential":"oauth"}"#, reply: .done(provider: "anthropic", subscription: true)),
@@ -94,7 +117,7 @@ struct PiSignInProtocolTests {
         #expect(line.argv.prefix(3) == ["/bin/zsh", "-l", "-c"])
         #expect(line.script == PiLaunchTests.clearing
             + "export PI_CODING_AGENT_DIR='/Users/me/Library/Application Support/Shepherd/pi' PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0; "
-            + "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec '/A/Helpers/node' \"$0\" \"$1\" \"$2\"")
+            + "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec '/A/Helpers/node' \"$0\" \"$@\"")
         #expect(line.positional == ["/S/shepherd-sign-in.mjs", "/A/pi-engine/dist/bundle/index.js", "/Users/me/Library/Application Support/Shepherd/pi"])
     }
 }

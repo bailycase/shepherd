@@ -10,10 +10,9 @@ extension SHSidebarMetrics {
     public static let projectToolbarTitle: CGFloat = 13
 }
 
-/// A Project in the sidebar, Activity mode (ProjectLead-Activity): the supplied Project glyph in the 14pt slot
-/// (`lanternText` while selected, else `textTertiary`), the name (semibold while selected) in the density's row
-/// font, and a mono 10 summary (`lanternText` when it needs you). 28pt, radius 8, 8pt in from the sides, 9pt gaps;
-/// the same box as every Activity row. The summary and its tone come only from a real lifecycle.
+/// A Project in the sidebar, Activity mode: the name in the density's row font and a `caption` summary
+/// (`textSecondary` when it needs you, else `textTertiary`), in the same box as every Activity row. The summary
+/// and its tone come only from a real lifecycle.
 public struct SHLeadProjectRow: View, Equatable {
     let name: String
     let selected: Bool
@@ -35,27 +34,26 @@ public struct SHLeadProjectRow: View, Equatable {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.leadProject")
+        // The boards' Projects rows: the name and its summary, like a thread's ("1 asks you").
         HStack(spacing: density.sidebarRowGap) {
-            SHProjectGlyphView(tint: selected ? .sh.lanternText : .sh.textTertiary)
-                .frame(width: SHSidebarMetrics.rowSlot)
             Text(name)
-                .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
+                .font(density.rowTitleFont(weight: .regular))
                 .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: SH.Space.xs)
             if let summary {
                 Text(summary)
-                    .font(.shMono(SHSidebarMetrics.accessoryFont))
-                    .foregroundStyle(needsYou ? Color.sh.lanternText : Color.sh.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(needsYou ? Color.sh.textSecondary : Color.sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
@@ -194,18 +192,21 @@ public struct SHLeadToolbar<Trailing: View>: View {
     }
 }
 
-/// The toolbar's Overview button: the list glyph and the word, on `bgHover` while it is the page shown.
+/// The toolbar's Overview button and the pane's tabs: the glyph and the word, on `bgSelected` while selected.
+/// A tab already on screen takes no action, so it passes none and draws as a static selected pill
+/// (`.isSelected`, no button trait): every control must do something. Overview always passes its toggle,
+/// so it stays a button even while selected.
 public struct SHLeadToolbarButton: View {
     let title: String
     let symbol: String
     let selected: Bool
     let dot: Bool
     let badge: Int
-    let action: () -> Void
+    let action: (() -> Void)?
 
     /// `dot`: a 6pt lantern dot after the title (something needs you, Overview). `badge`: a count in a 16pt `running` pill (the
-    /// Threads tab).
-    public init(_ title: String, symbol: String, selected: Bool, dot: Bool = false, badge: Int = 0, action: @escaping () -> Void) {
+    /// Threads tab). `action`: nil draws the current tab as static text with the selected look.
+    public init(_ title: String, symbol: String, selected: Bool, dot: Bool = false, badge: Int = 0, action: (() -> Void)?) {
         self.title = title
         self.symbol = symbol
         self.selected = selected
@@ -214,32 +215,43 @@ public struct SHLeadToolbarButton: View {
         self.action = action
     }
 
+    private var label: String { dot ? "\(title), needs you" : badge > 0 ? "\(title), \(badge)" : title }
+
     public var body: some View {
-        Button(action: action) {
-            HStack(spacing: SH.Space.s) {
-                Image(systemName: symbol).font(.system(size: SHLeadMetrics.toolbarGlyph, weight: .regular))
-                Text(title).font(.sh(.ui, weight: .regular))
-                if dot {
-                    Circle().fill(Color.sh.lantern).frame(width: SHLeadMetrics.toolbarDot, height: SHLeadMetrics.toolbarDot)
-                        .accessibilityHidden(true)
-                }
-                if badge > 0 {
-                    Text("\(badge)")
-                        .font(.shSans(SHLeadMetrics.badgeSize, .semibold))
-                        .foregroundStyle(Color.sh.textOnRunning)
-                        .frame(minWidth: SHLeadMetrics.badge, minHeight: SHLeadMetrics.badge)
-                        .background(Color.sh.running, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-                }
-            }
-            .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
-            .padding(.horizontal, SH.Space.m)
-            .frame(height: SHLeadMetrics.toolbarButtonHeight)
-            .background(selected ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-            .contentShape(Rectangle())
+        if let action {
+            Button(action: action) { content }
+                .buttonStyle(SHPlainPressStyle())
+                .accessibilityLabel(label)
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        } else {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityAddTraits(selected ? .isSelected : [])
         }
-        .buttonStyle(SHPlainPressStyle())
-        .accessibilityLabel(dot ? "\(title), needs you" : badge > 0 ? "\(title), \(badge)" : title)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var content: some View {
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: symbol).font(.system(size: SHLeadMetrics.toolbarGlyph, weight: .regular))
+            Text(title).font(.sh(.ui, weight: .regular))
+            if dot {
+                Circle().fill(Color.sh.lantern).frame(width: SHLeadMetrics.toolbarDot, height: SHLeadMetrics.toolbarDot)
+                    .accessibilityHidden(true)
+            }
+            if badge > 0 {
+                Text("\(badge)")
+                    .font(.shSans(SHLeadMetrics.badgeSize, .semibold))
+                    .foregroundStyle(Color.sh.textOnRunning)
+                    .frame(minWidth: SHLeadMetrics.badge, minHeight: SHLeadMetrics.badge)
+                    .background(Color.sh.running, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+            }
+        }
+        .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHLeadMetrics.toolbarButtonHeight)
+        .background(selected ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .contentShape(Rectangle())
     }
 }
 

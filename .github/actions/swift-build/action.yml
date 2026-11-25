@@ -1,8 +1,7 @@
 name: Swift build
 description: >
-  `swift build --build-tests`, incrementally on top of the last build. On the self-hosted
-  runner the checkout and `.build` persist between jobs, so nothing is restored or saved. On a
-  hosted runner the dependency checkouts and the branch's newest build come from the cache.
+  `swift build --build-tests`, incrementally on top of the last build. Runners are ephemeral,
+  so the dependency checkouts and the branch's newest build come from the cache.
   Exports SWIFTPM_FLAGS so later steps call SwiftPM (`swift test --skip-build
   $SWIFTPM_FLAGS`) exactly as it built.
 
@@ -36,11 +35,9 @@ runs:
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
     # Hosted PR caches stay in their merge ref: later heads of that PR can reuse them,
-    # not its base or siblings. Build cache seeds nightly on trusted pushes for new PRs.
-    # The self-hosted checkout uses its existing .build instead.
+    # not its base or siblings.
     - name: Restore dependency and build caches
       id: cache
-      if: runner.environment == 'github-hosted'
       uses: actions/cache/restore@v4
       with:
         path: .build
@@ -54,7 +51,7 @@ runs:
       env:
         MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}
       run: |
-        printf 'Swift build cache matched key: %s\n' "${MATCHED_KEY:-none (cold or persistent local build)}"
+        printf 'Swift build cache matched key: %s\n' "${MATCHED_KEY:-none (cold build)}"
 
     # Validate after restoring too. Keep dependency checkouts and verified pi downloads when
     # the toolchain changes or clean=true, but never keep products from the old build.
@@ -74,7 +71,6 @@ runs:
         echo "$VERSION" > "$marker"
 
     - name: Restore unchanged checkout input timestamps
-      if: runner.environment == 'github-hosted'
       shell: bash
       run: python3 scripts/ci_mtimes.py restore
 
@@ -97,13 +93,12 @@ runs:
         done
 
     - name: Record checkout input timestamps for the next build
-      if: runner.environment == 'github-hosted' && inputs.save-cache == 'true'
+      if: inputs.save-cache == 'true'
       shell: bash
       run: python3 scripts/ci_mtimes.py save
 
     # This checks generated Git metadata, not every byte in the build archive.
     - name: Guard hosted cache Git metadata
-      if: runner.environment == 'github-hosted'
       shell: bash
       run: |
         python3 - <<'PY'
@@ -168,7 +163,7 @@ runs:
 
     - name: Save the hosted build
       if: >-
-        inputs.save-cache == 'true' && runner.environment == 'github-hosted' && steps.cache.outputs.cache-hit != 'true' &&
+        inputs.save-cache == 'true' && steps.cache.outputs.cache-hit != 'true' &&
         ((github.event_name == 'pull_request' && github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number)) ||
          ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch'))
       uses: actions/cache/save@v4

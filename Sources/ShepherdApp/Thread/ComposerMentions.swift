@@ -5,17 +5,20 @@ import ShepherdRemote
 import ShepherdUI
 
 // The composer's design references (DesignRefStates › In the composer, RefPasted, RefAtDesigns,
-// RefAtElements, RefAtSearch): the @ picker's rules and a pasted reference becoming a chip. Pure
-// values and rules here; the composer draws them and the view model pins and attaches. The iOS
-// client compiles this file into its own target too (its host threads' picker), so it stays free
-// of AppKit and of anything else in the Mac app.
+// RefAtElements, RefAtSearch) and thread links (ThreadLinkA): the @ picker's rules, a pasted
+// reference becoming a chip, and the threads a link resolves against. Pure values and rules here;
+// the composer draws them and the view model pins and attaches. The iOS client compiles this file
+// into its own target too (its host threads' picker), so it stays free of AppKit and of anything
+// else in the Mac app.
 
-/// The @ mention being typed at the end of a draft: an "@" at the start or after whitespace, and
-/// what follows it on the same line.
+/// The mention being typed at the end of a draft: an "@" (a design) or a "#" (a thread to link) at
+/// the start or after whitespace, and what follows it on the same line.
 struct ComposerMention: Equatable {
-    /// What follows the "@". Declared first, so the synthesized == compares the typed word before
+    /// What follows the trigger. Declared first, so the synthesized == compares the typed word before
     /// the long prefix and stops there when they differ.
     var text: String
+    /// "@" picks a design piece, "#" links a thread.
+    var trigger: Character = "@"
     /// The draft before the "@", kept as a view of the draft so finding a mention costs the word
     /// being typed, not the draft.
     private let prefix: Substring
@@ -26,20 +29,20 @@ struct ComposerMention: Equatable {
     /// A mention runs at most this long; past it the draft is prose.
     static let maxLength = 160
 
-    /// The mention the draft ends in, or nil: an "@" that starts the draft or follows whitespace,
-    /// with no line break after it (an address like a@b.c is no mention). It walks back from the
-    /// end, no further than the longest mention reaches.
+    /// The mention the draft ends in, or nil: an "@" or "#" that starts the draft or follows
+    /// whitespace, with no line break after it (an address like a@b.c is no mention, nor is a
+    /// Markdown heading's "# "). It walks back from the end, no further than the longest mention reaches.
     static func token(in draft: String) -> ComposerMention? {
         var end = draft.endIndex
         var after = 0
         while end > draft.startIndex, after <= maxLength {
             let at = draft.index(before: end)
             let character = draft[at]
-            if character == "@" {
+            if character == "@" || character == "#" {
                 if at != draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
                 let text = draft[end...]
                 guard text.first?.isWhitespace != true else { return nil }
-                return ComposerMention(text: String(text), prefix: draft[..<at])
+                return ComposerMention(text: String(text), trigger: character, prefix: draft[..<at])
             }
             if character.isNewline { return nil }
             end = at
@@ -49,7 +52,7 @@ struct ComposerMention: Equatable {
     }
 
     /// The draft with the mention written as `text` ("@Checkout funnel dashboard › ").
-    func draft(with text: String) -> String { String(prefix) + "@" + text }
+    func draft(with text: String) -> String { String(prefix) + String(trigger) + text }
 }
 
 /// Where the @ picker is: the designs, inside a design (its boards), or inside a board (its
@@ -121,6 +124,8 @@ struct MentionPickerContent: Equatable {
     var empty: SHMentionEmpty?
     /// The catalog's item behind each row, by row id.
     var items: [String: DesignMentionItem] = [:]
+    /// The thread behind each "Link a thread" row, by row id.
+    var threads: [String: SHThreadLink] = [:]
 
     var rows: [SHMentionRow] { sections.flatMap(\.rows) }
 
@@ -214,6 +219,41 @@ struct MentionPickerContent: Equatable {
         return content
     }
 
+    /// At most this many threads list: the most recently active that match.
+    static let threadLimit = 6
+
+    /// "Link a thread" (ThreadLinkA): the threads whose title holds every word of `filter`, most recently active first, each with
+    /// its project (and its Mac, when it is another); every thread the picker may offer while nothing is typed. `excluding` is the
+    /// thread the composer writes in: it never links itself. Nil with none.
+    static func threadSection(_ links: [SHThreadLink], filter: String, excluding: String? = nil)
+        -> (section: SHMentionSection, threads: [String: SHThreadLink])? {
+        let words = filter.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: \.isWhitespace).map(String.init)
+        let own = excluding?.lowercased()
+        let found = links.filter { $0.pickable && $0.id.lowercased() != own && (words.isEmpty || matches($0.title, words)) }
+            .sorted { ($0.activeAt ?? 0, $1.title) > ($1.activeAt ?? 0, $0.title) }
+            .prefix(threadLimit)
+        guard !found.isEmpty else { return nil }
+        var threads: [String: SHThreadLink] = [:]
+        let rows = found.map { link in
+            let id = threadRowID(link.id)
+            threads[id] = link
+            return SHMentionRow(id: id, kind: .thread, title: link.title, subtitle: threadCaption(link), trailing: .pick,
+                                matched: words, state: link.state)
+        }
+        let typed = filter.trimmingCharacters(in: .whitespaces)
+        return (SHMentionSection(id: "threads", title: "Link a thread", trailing: typed.isEmpty ? nil : "#" + typed, rows: rows, caption: true),
+                threads)
+    }
+
+    static func threadRowID(_ id: String) -> String { "thread:" + id }
+
+    /// A thread row's caption: its project, then its Mac when it is another ("web · mini").
+    static func threadCaption(_ link: SHThreadLink) -> String? {
+        let parts = [link.project, link.host].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// A search result: its path before it, and what it is under it.
     static func searchRow(_ item: DesignMentionItem, words: [String], thumbnail: SHReferenceImage?) -> SHMentionRow {
         switch item.kind {
@@ -305,10 +345,33 @@ struct MentionPickerState: Equatable {
     /// choose; the words typed meanwhile filter the rows once they arrive.
     /// `unavailable` is why no design can be attached where this picker is (a New thread project on
     /// another host): it opens on that note alone, reads nothing and lists nothing.
+    /// A "#" mention lists `threads` instead ("Link a thread"), less `excluding`, the composer's own thread, and stays closed when
+    /// none match. `designs` is false where no design can be picked at all (the Design tool is off, or the host takes no
+    /// references): an "@" then opens nothing.
     mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading,
                          unavailable: String? = nil, now: Date = Date(), place: String = MentionPickerContent.thisMac,
+                         threads: [SHThreadLink] = [], excluding: String? = nil, designs: Bool = true,
                          thumbnail: (DesignMentionItem) -> SHReferenceImage? = { _ in nil }) {
         guard draft != dismissed, let mention = ComposerMention.token(in: draft) else {
+            close()
+            return
+        }
+        // "#" links a thread: it lists the threads that match, and stays closed when none do (an issue's "#123" opens nothing).
+        if mention.trigger == "#" {
+            guard let found = MentionPickerContent.threadSection(threads, filter: mention.text, excluding: excluding) else {
+                close()
+                return
+            }
+            if dismissed != nil { dismissed = nil }
+            scope = .designs
+            self.mention = mention
+            content = MentionPickerContent(sections: [found.section], threads: found.threads)
+            let ids = content.rows.map(\.id)
+            if highlighted.map({ !ids.contains($0) }) ?? true { highlighted = ids.first }
+            return
+        }
+        // "@" picks a design piece, only where one can be picked.
+        guard designs else {
             close()
             return
         }
@@ -330,16 +393,12 @@ struct MentionPickerState: Equatable {
         if let unavailable {
             content = MentionPickerContent()
             content.empty = .unavailable(unavailable)
-            highlighted = nil
-            return
-        }
-        guard let catalog else {
+        } else if let catalog {
+            content = MentionPickerContent.make(catalog: catalog, scope: scope, filter: filter ?? "", now: now, place: place, thumbnail: thumbnail)
+        } else {
             content = MentionPickerContent()
             if case .failed(let reason) = stage { content.empty = .failed(reason: reason) } else { content.empty = .loading }
-            highlighted = nil
-            return
         }
-        content = MentionPickerContent.make(catalog: catalog, scope: scope, filter: filter ?? "", now: now, place: place, thumbnail: thumbnail)
         let ids = content.rows.map(\.id)
         if highlighted.map({ !ids.contains($0) }) ?? true { highlighted = ids.first }
     }
@@ -365,11 +424,18 @@ struct MentionPickerState: Equatable {
     enum Choice: Equatable {
         case drill(draft: String)
         case pick(DesignReference, draft: String)
+        /// A thread linked: the draft with the mention replaced by its Markdown link (`[Title](shepherd-thread://<id>)`) and a space.
+        case link(draft: String)
     }
 
     /// `row` chosen: a design or board row drills in, writing its path into the draft; anything
     /// else picks its piece and takes the mention out of the draft.
     mutating func choose(_ row: SHMentionRow) -> Choice? {
+        if let mention, let thread = content.threads[row.id] {
+            let draft = mention.before + thread.markdown + " "
+            close()
+            return .link(draft: draft)
+        }
         guard let mention, let item = content.items[row.id] else { return nil }
         if row.trailing == .drill {
             switch item.kind {
@@ -405,5 +471,48 @@ struct MentionPickerState: Equatable {
     var filterIsEmpty: Bool {
         guard let mention else { return true }
         return (scope.filter(in: mention.text) ?? mention.text).isEmpty
+    }
+}
+
+
+// MARK: Thread links
+
+/// The threads a conversation's links resolve against (`SHThreadLinks`), from what each host says of its agents: their current
+/// title and status, where they run, their project and branch, and the latest line the host keeps about them.
+enum ThreadLinkTable {
+    struct Host {
+        var state: ShepherdState
+        /// The Mac's name as a chip's tag; nil for this device's own host (no tag).
+        var tag: String?
+        /// Where its threads run, as the peek says it: "This Mac", or the host's name.
+        var location: String
+        /// When each agent entered its status, where the host's client knows it.
+        var statusSince: [AgentID: Date] = [:]
+    }
+
+    static let thisMac = "This Mac"
+
+    static func links(_ hosts: [Host]) -> [SHThreadLink] {
+        hosts.flatMap { host in
+            let spaces = Dictionary(host.state.spaces.map { ($0.id, $0) }) { first, _ in first }
+            return host.state.agents.filter { $0.movedTo == nil }.map { agent in
+                link(agent, space: spaces[agent.spaceID], tag: host.tag, location: host.location, since: host.statusSince[agent.id])
+            }
+        }
+    }
+
+    static func link(_ agent: Agent, space: Space?, tag: String?, location: String, since: Date?) -> SHThreadLink {
+        let failed = agent.status == .idle && agent.lastFailure != nil
+        let state: AgentState = failed ? .failed : AgentState(agent.status)
+        let progress = agent.status == .blocked ? agent.waitingOn : failed ? agent.lastFailure : nil
+        return SHThreadLink(id: agent.id.rawValue, title: agent.name, state: state, host: tag, location: location,
+                            project: space?.name, branch: agent.checkout?.branch ?? agent.worktreeBranch,
+                            progress: progress.map(firstLine), since: since, activeAt: agent.lastActiveAt,
+                            pickable: agent.designID == nil && agent.coordinatorFor == nil && space?.hidden != true)
+    }
+
+    /// The first line of a longer text, which the peek's box shows.
+    static func firstLine(_ text: String) -> String {
+        String(text.split(whereSeparator: \.isNewline).first ?? "").trimmingCharacters(in: .whitespaces)
     }
 }

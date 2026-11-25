@@ -371,8 +371,7 @@ final class SHTableWords: @unchecked Sendable {  // NSCache and the counter lock
         #if os(iOS)
         scaled = UIFontMetrics(forTextStyle: code ? .callout : style == .ui ? .callout : .body).scaledValue(for: scaled)
         #endif
-        let name = SHFonts.postScriptName(mono: code, weight: code ? .regular : strong ? (style == .ui ? .semibold : .bold) : .regular)
-        return CTFontCreateWithName(name as CFString, scaled, nil)
+        return SHFonts.platform(mono: code, weight: code ? .regular : strong ? (style == .ui ? .semibold : .bold) : .regular, size: scaled) as CTFont
     }
 
     private static func measure(_ token: String, _ font: CTFont) -> CGFloat {

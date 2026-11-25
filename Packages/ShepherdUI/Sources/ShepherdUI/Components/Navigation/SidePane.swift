@@ -19,9 +19,27 @@ public enum SHSidePaneMetrics {
     public static let tabGlyph: CGFloat = 14
     public static let tabPadding: CGFloat = 10
     public static let narrowTabPadding: CGFloat = 9
+    /// The thread's pane is a card (GXSidePane): this far from the thread before it, and from the window's top, bottom and trailing edges.
+    public static let cardGap: CGFloat = 8
+    public static let cardInset: CGFloat = 8
+    /// The strip's padding: 8pt before the first tab, 6pt after the buttons.
+    public static let stripLeading: CGFloat = 8
+    public static let stripTrailing: CGFloat = 6
 
     /// Whether a strip `width` wide shows its tabs' labels.
     public static func showsLabels(width: CGFloat) -> Bool { width >= labelsMinWidth }
+}
+
+/// What the pane's content sits on: on the Mac the pane is a raised card, so its tabs paint `bgRaised`; elsewhere the review
+/// keeps the window's fill.
+public enum SHPaneSurface {
+    @MainActor public static var fill: Color {
+        #if os(macOS)
+        Color.sh.bgRaised
+        #else
+        Color.sh.bgWindow
+        #endif
+    }
 }
 
 // MARK: Branch chip
@@ -30,7 +48,7 @@ public enum SHSidePaneMetrics {
 /// agent works. A worktree Shepherd made reads "⧉ pi/swiftui-previews ●3"; the space's own
 /// checkout reads "⌂ chore/remove-homarr your checkout ●11" in lantern, since pi edits your
 /// files there. The count is files changed in that checkout (left out at zero), and a remote
-/// host trails it ("▭ horizon").
+/// host trails it ("▭ orbit").
 public struct SHBranchChip: View {
     public enum Kind: Equatable, Sendable {
         case worktree, checkout
@@ -102,7 +120,7 @@ public struct SHBranchChip: View {
         .accessibilityLabel(Self.accessibilityLabel(kind: kind, branch: branch, changedFiles: changedFiles, host: host))
     }
 
-    /// "Worktree, pi/x, 3 files changed, on horizon".
+    /// "Worktree, pi/x, 3 files changed, on orbit".
     public static func accessibilityLabel(kind: Kind, branch: String, changedFiles: Int, host: String?) -> String {
         [kind == .worktree ? "Worktree" : "Your checkout", branch,
          changedFiles > 0 ? "\(changedFiles) file\(changedFiles == 1 ? "" : "s") changed" : nil,
@@ -193,9 +211,6 @@ public struct SHPaneNewsTip: View {
 
 // MARK: Tab strip
 
-/// The strip's own coordinate space, so a tab knows where it sits when its tip hangs from it.
-private let shSidePaneTabsSpace = "sh-side-pane-tabs"
-
 /// One tab of the side pane's strip.
 public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     public let id: String
@@ -212,12 +227,9 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     public let status: AgentState?
     /// The chord that selects it ("⌃1").
     public let shortcut: String?
-    /// What pi opened there, said briefly under the tab while it is news ("Agent opened
-    /// localhost:5173/checkout"); nil says nothing.
-    public let tip: SHSidePaneTabTip?
 
     public init(id: String, title: String, systemImage: String, count: Int? = nil, badge: String? = nil, news: Bool = false,
-                status: AgentState? = nil, shortcut: String? = nil, tip: SHSidePaneTabTip? = nil) {
+                status: AgentState? = nil, shortcut: String? = nil) {
         self.id = id
         self.title = title
         self.systemImage = systemImage
@@ -226,13 +238,12 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
         self.news = news
         self.status = status
         self.shortcut = shortcut
-        self.tip = tip
     }
 }
 
 /// The side pane's tab strip (`SidePaneTabs`, PaneStates, Review): 44pt so it lines up with the
 /// toolbar, tabs 2pt apart, then the pane's ⋯ menu and close. A tab is 28pt: its glyph, its
-/// label, and its count; the current one on `bgSelected`, semibold. A tab pi opened something
+/// label, and its count; the current one on `bgSelected`, medium. A tab pi opened something
 /// in carries a 6pt running dot. Under 480pt the labels drop; glyphs, counts and dots stay.
 public struct SHSidePaneTabs<Options: View>: View {
     let tabs: [SHSidePaneTab]
@@ -245,7 +256,6 @@ public struct SHSidePaneTabs<Options: View>: View {
     let restore: (() -> Void)?
     @ViewBuilder let options: () -> Options
     @State private var showsLabels = true
-    @State private var stripWidth: CGFloat = 0
 
     public init(_ tabs: [SHSidePaneTab], selection: String, select: @escaping (String) -> Void,
                 closeShortcut: String? = nil, close: @escaping () -> Void, restore: (() -> Void)? = nil,
@@ -262,7 +272,7 @@ public struct SHSidePaneTabs<Options: View>: View {
     public var body: some View {
         HStack(spacing: SH.Space.xxs) {
             ForEach(tabs) { tab in
-                TabButton(tab: tab, isSelected: tab.id == selection, showsLabel: showsLabels, stripWidth: stripWidth) { select(tab.id) }
+                TabButton(tab: tab, isSelected: tab.id == selection, showsLabel: showsLabels) { select(tab.id) }
             }
             Spacer(minLength: SH.Space.m)
             HStack(spacing: SH.Space.xs) {
@@ -279,14 +289,13 @@ public struct SHSidePaneTabs<Options: View>: View {
                     .accessibilityLabel("Hide side pane")
             }
         }
-        .padding(.horizontal, SHSidePaneMetrics.tabPadding)
+        .padding(.leading, SHSidePaneMetrics.stripLeading)
+        .padding(.trailing, SHSidePaneMetrics.stripTrailing)
         .frame(height: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .overlay(alignment: .bottom) { SHHairline() }
         .onGeometryChange(for: Bool.self) { SHSidePaneMetrics.showsLabels(width: $0.size.width) } action: { showsLabels = $0 }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
-        .coordinateSpace(.named(shSidePaneTabsSpace))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side pane tabs")
     }
@@ -295,16 +304,8 @@ public struct SHSidePaneTabs<Options: View>: View {
         let tab: SHSidePaneTab
         let isSelected: Bool
         let showsLabel: Bool
-        let stripWidth: CGFloat
         let action: () -> Void
         @State private var hovering = false
-        @State private var tipShown = false
-        @State private var minX: CGFloat = 0
-
-        /// The tip hangs from the tab, moved left when the strip is too narrow for it to fit.
-        private var tipShift: CGFloat {
-            -min(minX, max(0, minX + SHBrowserAgentMetrics.tabTipWidth + SH.Space.m - stripWidth))
-        }
 
         var body: some View {
             let sh = Color.sh
@@ -314,18 +315,18 @@ public struct SHSidePaneTabs<Options: View>: View {
                         .font(.system(size: SHSidePaneMetrics.tabGlyph, weight: .medium))
                     if showsLabel {
                         Text(tab.title)
-                            .font(.sh(.ui, weight: isSelected ? .semibold : .medium))
+                            .font(.sh(.ui, weight: isSelected ? .medium : .regular))
                             .lineLimit(1)
                     }
                     if let count = tab.count {
                         Text("\(count)")
-                            .font(.sh(.micro, weight: .regular))
+                            .font(.sh(.caption))
                             .foregroundStyle(sh.textTertiary)
                             .shContentTransition(.numeric())
                     }
                     if let badge = tab.badge {
                         Text(badge)
-                            .font(.sh(.micro, weight: .regular))
+                            .font(.sh(.caption))
                             .foregroundStyle(sh.textTertiary)
                     }
                     if tab.news {
@@ -354,24 +355,6 @@ public struct SHSidePaneTabs<Options: View>: View {
             .accessibilityValue([tab.count.map { "\($0)" }, tab.badge, tab.news ? "the agent opened something" : nil, tab.status?.label]
                 .compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .overlay(alignment: .topLeading) {
-                if tab.news, let tip = tab.tip, tipShown || hovering {
-                    SHPaneTabTip(tip)
-                        .fixedSize()
-                        .offset(x: tipShift, y: SHToolbarMetrics.height - (SHToolbarMetrics.height - SH.Height.controlM) / 2 + SH.Space.s)
-                        .allowsHitTesting(false)
-                        .shTransition(.overlay, edge: .top)
-                }
-            }
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(shSidePaneTabsSpace)).minX } action: { minX = $0 }
-            .shAnimation(.overlay, value: tab.news && (tipShown || hovering))
-            // Each new thing pi opens shows the tip for a moment.
-            .task(id: tab.news ? tab.tip : nil) {
-                guard tab.news, tab.tip != nil else { tipShown = false; return }
-                tipShown = true
-                try? await Task.sleep(for: .seconds(SHBrowserAgentMetrics.tabTipSeconds))
-                if !Task.isCancelled { tipShown = false }
-            }
         }
     }
 }

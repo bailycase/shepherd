@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The sidebar column (SHNavigation, `SHSidebar`): the 44pt top bar (room for the window
-/// controls, then Search and Hide sidebar at its trailing end; it drags the window), the
-/// destinations and lists, and the footer behind a 1px rule. On `bgBase`; the caller draws the
-/// trailing edge.
+/// The sidebar panel (the redesign boards' `.side`): a 14pt rounded glass panel with a 1px line,
+/// a 1px shine along its top and a soft shadow, holding the 44pt top bar (room for the window
+/// controls, then Hide sidebar and Search; it drags the window), the destinations and lists, and
+/// the 44pt footer. The caller insets it from the window.
 public struct SHSidebar<Content: View, Footer: View>: View {
     let topBar: SHSidebarTopBar
     @ViewBuilder let content: () -> Content
@@ -23,7 +23,27 @@ public struct SHSidebar<Content: View, Footer: View>: View {
                 .frame(maxHeight: .infinity, alignment: .top)
             footer()
         }
-        .background(Color.sh.bgBase)
+        .shGlassPanel()
+    }
+}
+
+extension View {
+    /// The boards' glass panel (`.side`): `bgGlass` in a 14pt rounded rectangle, a 1px `lineSubtle`
+    /// border, a 1px shine inside its top edge, and the far `lift` shadow (light only). No live
+    /// blur: nothing scrolls behind the sidebar, so the fill alone looks the same and costs nothing.
+    public func shGlassPanel(radius: CGFloat = SH.Radius.xl) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius)
+        return clipShape(shape)
+            .background {
+                shape.fill(Color.sh.bgGlass)
+                    .shadow(color: .sh.liftFar, radius: SHSidebarMetrics.panelShadowRadius, y: SHSidebarMetrics.panelShadowOffset)
+            }
+            .overlay {
+                shape.strokeBorder(Color.sh.glassShine, lineWidth: 1)
+                    .mask(alignment: .top) { Rectangle().frame(height: radius / 2) }
+                    .allowsHitTesting(false)
+            }
+            .overlay { shape.strokeBorder(Color.sh.lineSubtle, lineWidth: 1).allowsHitTesting(false) }
     }
 }
 
@@ -35,35 +55,42 @@ extension SHSidebar where Footer == EmptyView {
 
 /// The sidebar's fixed measures (SHNavigation). Row heights follow `SHDensity`.
 public enum SHSidebarMetrics {
+    /// The panel sits this far in from the window's leading, top and bottom edges.
+    public static let panelInset: CGFloat = 8
+    /// The panel's soft shadow (the boards' 0 6 20).
+    public static let panelShadowRadius: CGFloat = 10
+    public static let panelShadowOffset: CGFloat = 6
     /// The top bar: room for the window controls, unified with the title bar (the toolbar
     /// beside it is as tall).
     public static let topBarHeight: CGFloat = 44
-    /// The top bar's Search and Hide sidebar buttons: 26pt circles 4pt apart, 8pt from the edge.
-    public static let topBarButton: CGFloat = 26
+    /// The top bar's Hide sidebar and Search buttons: 28pt rounded squares 4pt apart, 10pt from the edge.
+    public static let topBarButton: CGFloat = 28
     public static let topBarButtonGap: CGFloat = 4
-    public static let topBarTrailing: CGFloat = 8
+    public static let topBarTrailing: CGFloat = 10
     /// The destinations and lists sit 8pt in from the column's sides, rows 1pt apart.
     public static let listInset: CGFloat = 8
     public static let rowSpacing: CGFloat = 1
     /// The destinations' stack is padded 2pt above and below.
     public static let destinationsPadding: CGFloat = 2
-    /// A destination is 2pt taller than a list row at the same density (30 against 28, 24
-    /// against 22).
-    public static let destinationExtra: CGFloat = 2
-    /// A destination's icon slot, and the New thread circle in it.
-    public static let destinationIconSlot: CGFloat = 20
+    /// A destination is as tall as a list row.
+    public static let destinationExtra: CGFloat = 0
+    /// A destination's 16pt icon slot.
+    public static let destinationIconSlot: CGFloat = 16
     /// More's rows (Hosts, Extensions) lead 22pt in instead of 8.
     public static let destinationChildLeading: CGFloat = 22
     /// A list row's leading slot (a dot or a kind's glyph).
     public static let rowSlot: CGFloat = 14
-    /// The footer's avatar and Settings button.
-    public static let footerAvatar: CGFloat = 26
-    /// The footer's rule is 6pt below its top edge (ProjectLead boards: 848 to 854), then 9pt to the avatar and 10pt beneath it.
-    public static let footerAboveRule: CGFloat = 6
-    public static let footerRuleToContent: CGFloat = 9
-    public static let footerBottom: CGFloat = 10
-    /// A row with a second line is padded this much above and below, so it stands about 34pt tall at Standard (FleetSubthreads).
-    public static let subtitleRowPadding: CGFloat = 2
+    /// The footer's buttons.
+    public static let footerAvatar: CGFloat = 28
+    /// The footer line: 44pt, padded 16 before and 10 after.
+    public static let footerHeight: CGFloat = 44
+    public static let footerLeading: CGFloat = 16
+    public static let footerGlyph: CGFloat = 16
+    /// A row with a second line is padded this much above and below, at least 38pt tall.
+    public static let subtitleRowPadding: CGFloat = 5
+    public static let subtitleRowHeight: CGFloat = 38
+    /// A thread under the thread that sent it sits this far in.
+    public static let sentLeading: CGFloat = 26
     /// The trailing reason a Needs you row shows ("retention?") is cut to this many characters.
     public static let reasonLength = 14
 }
@@ -73,13 +100,13 @@ public enum SHSidebarMetrics {
 extension SHDensity {
     /// A row's side padding and the gap after its leading slot.
     public var sidebarRowPadding: CGFloat { self == .compact ? SH.Space.s : SH.Space.m }
-    public var sidebarRowGap: CGFloat { self == .compact ? 7 : 9 }
-    /// A section header's top padding.
-    public var sidebarHeaderTop: CGFloat { self == .compact ? 10 : 14 }
+    public var sidebarRowGap: CGFloat { self == .compact ? SH.Space.s : SH.Space.m }
+    /// A section header's top margin.
+    public var sidebarHeaderTop: CGFloat { self == .compact ? SH.Space.m : 10 }
     /// A destination's title and icon.
-    @MainActor public var destinationFont: Font { self == .compact ? .shSans(12) : .shSans(13) }
+    @MainActor public var destinationFont: Font { self == .compact ? .shSans(12) : .sh(.ui) }
     @MainActor public func destinationFont(weight: Font.Weight) -> Font {
-        self == .compact ? .shSans(12, weight) : .shSans(13, weight)
+        self == .compact ? .shSans(12, weight) : .sh(.ui, weight: weight)
     }
     public var destinationIcon: CGFloat { self == .compact ? 13 : 15 }
     /// A list row's glyph (an automation's bolt).
@@ -90,8 +117,8 @@ extension SHDensity {
 
 // MARK: Top bar
 
-/// The 44pt top bar: the window controls' room, a spacer that drags the window, then Search
-/// (⌘K) and Hide sidebar (⇧⌘S) as 26pt circular icon buttons with 14pt glyphs.
+/// The 44pt top bar: the window controls' room, a spacer that drags the window, then Hide
+/// sidebar (⇧⌘S) and Search (⌘K) as 28pt icon buttons.
 public struct SHSidebarTopBar: View {
     let searchShortcut: String?
     let hideShortcut: String?
@@ -110,11 +137,11 @@ public struct SHSidebarTopBar: View {
             Color.clear
                 .contentShape(Rectangle())
                 .shWindowDrag()
-            if let search {
-                button("magnifyingglass", label: "Search", shortcut: searchShortcut, action: search)
-            }
             if let hide {
                 button("sidebar.left", label: "Hide sidebar", shortcut: hideShortcut, action: hide)
+            }
+            if let search {
+                button("magnifyingglass", label: "Search", shortcut: searchShortcut, action: search)
             }
         }
         .padding(.trailing, SHSidebarMetrics.topBarTrailing)
@@ -131,15 +158,14 @@ public struct SHSidebarTopBar: View {
 
 // MARK: Destinations
 
-/// A destination (SHNavigation, `SHSidebarDestination`): New thread with its chord, Automations,
-/// More and More's rows. 30pt (24 in Compact), radius 8, a 20pt icon slot, the title in Geist 13
-/// (12). The selected one is `bgSelected` with its title in semibold and its icon in
-/// `textPrimary`; hover is `bgHover`. A button; compared without its action.
+/// A destination (the boards' nav rows): New thread with its chord, Designs, Automations, Issues &
+/// PRs. A row tall (28), radius 7, a 16pt icon slot in `textSecondary`, the title in `ui`. The
+/// selected one is `bgSelected`; hover is `bgHover`. A button; compared without its action.
 public struct SHSidebarDestination: View, Equatable {
     public enum Icon: Equatable, Sendable {
         /// A 15pt (13) stroke in `textSecondary`.
         case symbol(String)
-        /// New thread's `plus` in a 20pt `bgSelected` circle.
+        /// New thread's compose glyph.
         case newThread
         /// More's chevron in `textTertiary`: right while closed, down while open.
         case disclosure(open: Bool)
@@ -147,7 +173,7 @@ public struct SHSidebarDestination: View, Equatable {
 
     public enum Trailing: Equatable, Sendable {
         case none
-        /// A chord as keycaps ("⌘N").
+        /// A chord ("⌘N") in `caption` `textTertiary`.
         case keycaps(String)
         /// A problem in mono 10 `failed` ("1 offline").
         case alert(String)
@@ -186,7 +212,7 @@ public struct SHSidebarDestination: View, Equatable {
                 iconView
                     .frame(width: SHSidebarMetrics.destinationIconSlot, height: SHSidebarMetrics.destinationIconSlot)
                 Text(title)
-                    .font(density.destinationFont(weight: selected ? .semibold : .regular))
+                    .font(density.destinationFont(weight: .regular))
                     .foregroundStyle(.sh.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: SH.Space.xs)
@@ -195,8 +221,8 @@ public struct SHSidebarDestination: View, Equatable {
             .padding(.leading, child ? SHSidebarMetrics.destinationChildLeading : density.sidebarRowPadding)
             .padding(.trailing, density.sidebarRowPadding)
             .frame(maxWidth: .infinity, minHeight: density.destinationHeight, alignment: .leading)
-            .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         }
         .buttonStyle(SHPlainPressStyle())
         .onHover { hovering = $0 }
@@ -208,15 +234,13 @@ public struct SHSidebarDestination: View, Equatable {
         switch icon {
         case .symbol(let name):
             Image(systemName: name)
-                .font(.system(size: density.destinationIcon - 2, weight: .regular))
-                .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
+                .font(.system(size: density.destinationIcon - 1, weight: .regular))
+                .foregroundStyle(Color.sh.textSecondary)
                 .accessibilityHidden(true)
         case .newThread:
-            Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.sh.textPrimary)
-                .frame(width: SHSidebarMetrics.destinationIconSlot, height: SHSidebarMetrics.destinationIconSlot)
-                .background(Color.sh.bgSelected, in: Circle())
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: density.destinationIcon - 1, weight: .regular))
+                .foregroundStyle(Color.sh.textSecondary)
                 .accessibilityHidden(true)
         case .disclosure(let open):
             Image(systemName: "chevron.right")
@@ -233,12 +257,13 @@ public struct SHSidebarDestination: View, Equatable {
         case .none:
             EmptyView()
         case .keycaps(let chord):
-            SHKeycap(chord)
+            Text(chord).font(.sh(.caption)).foregroundStyle(.sh.textTertiary).fixedSize()
         case .alert(let text):
-            Text(text).font(.shMono(10)).foregroundStyle(.sh.failed).lineLimit(1).fixedSize()
+            Text(text).font(.sh(.caption)).foregroundStyle(.sh.failed).lineLimit(1).fixedSize()
                 .shContentTransition(.numeric())
         case .count(let count):
-            SHCountBadge(count)
+            Text("\(count)").font(.sh(.caption)).foregroundStyle(.sh.textSecondary).monospacedDigit().fixedSize()
+                .shContentTransition(.numeric())
         }
     }
 }
@@ -306,10 +331,10 @@ public struct SHSidebarSection: View, Equatable {
     }
 }
 
-/// One item in Needs you or Recents (SHNavigation, `SHSidebarRow`): a 14pt leading slot (the
-/// thread's state dot, or the kind's glyph), the title in the row font (semibold when selected),
-/// and one trailing accessory. The density's height (a minimum), radius 8; hover `bgHover`,
-/// selected `bgSelected`. Interaction is the caller's.
+/// One thread in a list (the boards' `.row.thr`): the title in the row font (semibold while it is
+/// unseen) and one trailing accessory in `caption`. No leading slot: the section says the state,
+/// and the accessory says why ("retention?", "failed", "2m"). The density's height (a minimum),
+/// radius 7; hover `bgHover`, selected `bgSelected`. Interaction is the caller's.
 public struct SHSidebarRow: View, Equatable {
     public enum Leading: Equatable, Sendable {
         /// The state dot: hollow while idle, glowing while it needs you.
@@ -399,15 +424,17 @@ public struct SHSidebarRow: View, Equatable {
     let elbow: Bool
     let subtitle: Subtitle?
     let fold: Fold?
+    let unseen: Bool
     @Environment(\.shDensity) private var density
     @State private var hovering = false
 
-    /// `nested` is a thread inside a project of the project tree: its leading slot sits under
-    /// the project's folder (`SHDensity.treeChildLeading`). `elbow` marks a thread under the thread that sent it
-    /// to another Mac (FleetSidebar): a turn arrow before its dot.
+    /// `nested` is a thread inside a project of the project tree: its title sits under the
+    /// project's (`SHDensity.treeChildLeading`). `elbow` marks a thread under the thread that sent it
+    /// to another Mac: it sits `sentLeading` in. `unseen` sets the title semibold (a finished thread not opened yet).
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
                 hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false, subtitle: Subtitle? = nil,
-                fold: Fold? = nil) {
+                fold: Fold? = nil, unseen: Bool = false) {
+        self.unseen = unseen
         self.subtitle = subtitle
         self.fold = fold
         self.elbow = elbow
@@ -424,15 +451,15 @@ public struct SHSidebarRow: View, Equatable {
     /// A thread's row: its state dot.
     public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
                 hasGoal: Bool = false, nested: Bool = false, badge: Badge? = nil, elbow: Bool = false, subtitle: Subtitle? = nil,
-                fold: Fold? = nil) {
+                fold: Fold? = nil, unseen: Bool = false) {
         self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested,
-                  badge: badge, elbow: elbow, subtitle: subtitle, fold: fold)
+                  badge: badge, elbow: elbow, subtitle: subtitle, fold: fold, unseen: unseen)
     }
 
     public nonisolated static func == (a: SHSidebarRow, b: SHSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
             && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested && a.badge == b.badge && a.elbow == b.elbow
-            && a.subtitle == b.subtitle && a.fold == b.fold
+            && a.subtitle == b.subtitle && a.fold == b.fold && a.unseen == b.unseen
     }
 
     public var body: some View {
@@ -440,23 +467,9 @@ public struct SHSidebarRow: View, Equatable {
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
         HStack(spacing: density.sidebarRowGap) {
-            // A sent thread: the elbow sits in its sender's dot column and its own dot follows close, so its title starts 18pt right of the sender's
-            // (FleetCornerFull, FleetSubthreads: x57 against x39 at 232pt).
-            HStack(spacing: elbow ? SH.Space.xs : density.sidebarRowGap) {
-                if elbow {
-                    Image(systemName: "arrow.turn.down.right")
-                        .font(.sh(.micro, weight: .regular))
-                        .foregroundStyle(.sh.textTertiary)
-                        .frame(width: SHSidebarMetrics.rowSlot)
-                        .accessibilityHidden(true)
-                }
-                leadingView
-                    .frame(width: SHSidebarMetrics.rowSlot)
-                    .shAnimation(.content, value: leading)
-            }
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
+                    .font(density.rowTitleFont(weight: unseen ? .semibold : .regular))
                     .foregroundStyle(.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -467,17 +480,17 @@ public struct SHSidebarRow: View, Equatable {
             Spacer(minLength: SH.Space.xs)
             if hasGoal { SHGoalGlyph().foregroundStyle(Color.sh.textTertiary) }
             if let badge {
-                Text(badge.text).font(.shMono(SHSidebarMetrics.accessoryFont)).foregroundStyle(badge.color).monospacedDigit().lineLimit(1).fixedSize()
+                Text(badge.text).font(.sh(.caption)).foregroundStyle(badge.color).monospacedDigit().lineLimit(1).fixedSize()
                     .shAnimation(.content, value: badge)
             }
             SHSidebarAccessoryView(accessory: accessory)
                 .shAnimation(.content, value: accessory.motionKey)
-            // An open sender's chevron shows while the pointer is over it, so its title and sparkline keep their room.
+            // An open sender's chevron shows while the pointer is over it, so its title keeps its room.
             if let fold, !fold.open || hovering {
                 Button(action: fold.toggle) {
                     SHTurningChevron(isOpen: fold.open)
                         .font(.sh(.micro, weight: .semibold))
-                        .foregroundStyle(.sh.textTertiary)
+                        .foregroundStyle(.sh.textSecondary)
                         .frame(width: SHSidebarMetrics.rowSlot, height: SHSidebarMetrics.rowSlot)
                         .contentShape(Rectangle())
                 }
@@ -485,32 +498,16 @@ public struct SHSidebarRow: View, Equatable {
                 .accessibilityLabel(fold.open ? "Hide threads it started" : "Show threads it started")
             }
         }
-        .padding(.leading, (nested ? density.treeChildLeading : density.sidebarRowPadding))
+        .padding(.leading, nested ? density.treeChildLeading : elbow ? SHSidebarMetrics.sentLeading : density.sidebarRowPadding)
         .padding(.trailing, density.sidebarRowPadding)
         .padding(.vertical, subtitle == nil ? 0 : SHSidebarMetrics.subtitleRowPadding)
-        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? density.rowHeight : SHSidebarMetrics.subtitleRowHeight,
+               alignment: subtitle == nil ? .leading : .topLeading)
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .opacity(dimmed ? SHListMetrics.dimmedOpacity : 1)
-    }
-
-    @ViewBuilder private var leadingView: some View {
-        switch leading {
-        case .dot(let state):
-            SHSidebarDot(state: state)
-        case .glyph(let name, let attention):
-            Image(systemName: name)
-                .font(.system(size: density.rowGlyph - 1, weight: .regular))
-                .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
-                .accessibilityHidden(true)
-        case .waiting:
-            Image(systemName: "clock")
-                .font(.system(size: density.rowGlyph - 2, weight: .regular))
-                .foregroundStyle(Color.sh.textSecondary)
-                .accessibilityHidden(true)
-        }
     }
 }
 
@@ -539,13 +536,9 @@ private struct SHSidebarSubtitleView: View {
             .truncationMode(.tail)
     }
 
+    /// The boards set every second line in `textTertiary`; a failure keeps its red.
     private var color: Color {
-        switch subtitle.tone {
-        case .quiet: .sh.textTertiary
-        case .running: .sh.running
-        case .attention: .sh.lanternText
-        case .failed: .sh.failed
-        }
+        subtitle.tone == .failed ? .sh.failed : .sh.textTertiary
     }
 }
 
@@ -590,57 +583,41 @@ private struct SHSidebarAccessoryView: View {
 
     @ViewBuilder private var content: some View {
         switch accessory {
-        case .none:
+        case .none, .activity:
+            // The boards draw nothing after a working thread: its section already says it works.
             EmptyView()
         case .reason(let text):
-            Text(text).font(.shMono(10)).foregroundStyle(.sh.lanternText).lineLimit(1).fixedSize()
+            word(text, color: .sh.textSecondary)
         case .elapsed(let since):
             TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
                 let _ = SHRenderProbe.tick("sidebar.clock")
-                Text(SHDuration.text(context.date.timeIntervalSince(since)))
-                    .font(.shMono(10)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
+                word(SHDuration.text(context.date.timeIntervalSince(since))).monospacedDigit()
             }
-        case .activity(let samples):
-            SHSidebarActivityLine(samples: samples)
-                .stroke(Color.sh.running, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
-                .frame(width: SHSidebarMetrics.activityWidth, height: SHSidebarMetrics.activityHeight)
-                .accessibilityHidden(true)
         case .age(let since):
             TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
                 let _ = SHRenderProbe.tick("sidebar.clock")
-                Text("\(SHDuration.text(max(0, context.date.timeIntervalSince(since)))) ago")
-                    .font(.shMono(SHSidebarMetrics.accessoryFont)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
+                word(SHDuration.text(max(0, context.date.timeIntervalSince(since)))).monospacedDigit()
             }
         case .text(let text, let tone):
-            Text(text).font(.shMono(10)).foregroundStyle(color(tone)).lineLimit(1).fixedSize()
+            word(text, color: tone == .attention ? .sh.textSecondary : .sh.textTertiary)
         case .tag(let name):
-            Text(name)
-                .font(.shMono(10))
-                .foregroundStyle(.sh.textTertiary)
-                .lineLimit(1)
-                .padding(.horizontal, SH.Space.xs)
-                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xs)
-                .fixedSize()
+            word(name)
         case .shortcut(let text):
-            Text(text).font(.sh(.micro, weight: .regular)).foregroundStyle(.sh.textTertiary).fixedSize()
+            word(text)
         }
     }
 
-    private func color(_ tone: AgentState?) -> Color {
-        switch tone {
-        case .failed?, .stuck?: .sh.failed
-        case .attention?: .sh.lanternText
-        default: .sh.textTertiary
-        }
+    /// The boards' `.ac`: `caption` in `textTertiary` (`textSecondary` when it asks you).
+    private func word(_ text: String, color: Color? = nil) -> some View {
+        Text(text).font(.sh(.caption)).foregroundStyle(color ?? .sh.textTertiary).lineLimit(1).fixedSize()
     }
 }
 
 // MARK: Footer
 
-/// The sidebar's footer (SHNavigation): behind a hairline, a 26pt `bgSelected` circle with the
-/// initial, the name in `ui` medium over where it runs in mono 10 `textTertiary` ("This Mac ·
-/// demo-mac"), and a Settings gear. Padded 10pt above and below and 12pt at the sides. While an
-/// update is ready (`updateVersion`), `SHUpdateButton` takes the gear's place (UpdateFooterStates).
+/// The sidebar's footer (the boards' `.foot`): a 44pt line with the Mac glyph, where it runs in
+/// `caption` `textSecondary` ("This Mac · demo-mac"), and the Settings gear. While an update is
+/// ready (`updateVersion`), `SHUpdateButton` takes the gear's place.
 public struct SHSidebarFooter: View, Equatable {
     let name: String
     let detail: String
@@ -669,18 +646,14 @@ public struct SHSidebarFooter: View, Equatable {
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            Text(Self.initial(name))
-                .font(.shSans(11.5, .semibold))
-                .foregroundStyle(.sh.textPrimary)
-                .frame(width: SHSidebarMetrics.footerAvatar, height: SHSidebarMetrics.footerAvatar)
-                .background(Color.sh.bgSelected, in: Circle())
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "desktopcomputer")
+                .font(.system(size: SHSidebarMetrics.footerGlyph - 2))
+                .foregroundStyle(.sh.textSecondary)
+                .frame(width: SHSidebarMetrics.footerGlyph)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.sh(.ui, weight: .medium)).foregroundStyle(.sh.textPrimary).lineLimit(1)
-                Text(detail).font(.shMono(10)).foregroundStyle(.sh.textTertiary).lineLimit(1)
-            }
-            .accessibilityElement(children: .combine)
+            Text(detail).font(.sh(.caption)).foregroundStyle(.sh.textSecondary).lineLimit(1)
+                .accessibilityLabel("\(name), \(detail)")
             Spacer(minLength: 0)
             if let updateVersion {
                 SHUpdateButton(version: updateVersion, action: update)
@@ -691,14 +664,9 @@ public struct SHSidebarFooter: View, Equatable {
                     .accessibilityLabel("Settings")
             }
         }
-        // The boards' footer is 52pt tall and its rule is 46pt above the bottom edge: the content is the 26pt avatar, 9pt below the rule
-        // and 10pt above the bottom; 6pt of the footer's height sits above the rule.
-        .frame(height: SHSidebarMetrics.footerAvatar)
-        .padding(.top, SHSidebarMetrics.footerRuleToContent + 1)
-        .padding(.bottom, SHSidebarMetrics.footerBottom)
-        .padding(.horizontal, SH.Space.l)
-        .overlay(alignment: .top) { SHHairline() }
-        .padding(.top, SHSidebarMetrics.footerAboveRule)
+        .padding(.leading, SHSidebarMetrics.footerLeading)
+        .padding(.trailing, SHSidebarMetrics.topBarTrailing)
+        .frame(height: SHSidebarMetrics.footerHeight)
     }
 }
 

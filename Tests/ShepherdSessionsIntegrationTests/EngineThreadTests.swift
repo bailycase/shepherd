@@ -278,6 +278,126 @@ struct EngineThreadTests {
         #expect(try await ThreadImagesTests.fetch(ref.id, from: pi.agent, session: ready.piSessionID).data == png)
     }
 
+    @Test(arguments: ["Final name", "Hand-set name", "Design name", "Coordinator name"])
+    func anUnmatchedPiNameEventDoesNotRenameAnAgent(name: String) async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine))
+        defer { pi.stop() }
+        let server = pi.host.server
+        _ = try await pi.ready()
+        let id = pi.agent.agent.id
+        var workspace = server.state
+        let index = try #require(workspace.agents.firstIndex { $0.id == id })
+        if name == "Hand-set name" {
+            try await server.renameAgent(id, to: name)
+        } else {
+            workspace.agents[index].name = name
+            switch name {
+            case "Final name": workspace.agents[index].nameIsFinal = true
+            case "Design name":
+                let design = Design(id: DesignID(), name: name, agentID: id, createdAt: 1_000)
+                workspace.agents[index].designID = design.id
+                workspace.designs.append(design)
+            case "Coordinator name":
+                workspace.agents[index].coordinatorFor = ProjectID()
+                workspace.spaces[0].hidden = true
+                workspace.spaces[0].holdsProjects = true
+            default: break
+            }
+            try await pi.host.seed(workspace)
+        }
+
+        // Pi emits the event before answering this RPC. Send it without registering a host rename.
+        let (response, eventTimeAdvanced) = try await withCheckedThrowingContinuation { continuation in
+            server.queue.async {
+                guard let thread = server.rpcThread(forAgent: id) else {
+                    continuation.resume(throwing: WireError("Missing Pi thread"))
+                    return
+                }
+                let before = thread.lastEventAt
+                thread.session.request(.setSessionName("Unsolicited Pi title")) { result in
+                    continuation.resume(with: result.map { ($0, thread.lastEventAt > before) })
+                }
+            }
+        } as (RPCResponse, Bool)
+        try #require(response.success)
+        #expect(eventTimeAdvanced)
+        try await eventually("the host to finish processing the event") {
+            try await server.enqueue { server.stateWritesInFlight == 0 }
+        }
+        #expect(server.state.agents.first { $0.id == id }?.name == name)
+    }
+
+    @Test func localRenamesUsePiAndReachAnAlreadyConnectedDevice() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let caller = try await RealPi.launch(engine: engine, on: remote.host)
+        defer { caller.stop() }
+        let target = try await RealPi.launch(engine: engine, status: true, on: remote.host)
+        defer { target.stop() }
+        _ = try await caller.ready()
+        _ = try await target.ready()
+        let targetID = target.agent.agent.id
+        let callerID = caller.agent.agent.id
+        let extensionSocket = try ExtensionClient(path: remote.host.socketPath)
+        let phone = try await remote.typed()
+        defer { phone.disconnect() }
+        let pushes = Locked([ShepherdState]())
+        phone.onStateChanged = { state in pushes.withValue { $0.append(state) } }
+
+        func rename(_ id: Int, _ name: String, target: AgentID? = nil) async throws -> ExtensionReply {
+            try extensionSocket.send(.renameAgent(id: id, agentID: callerID, targetAgentID: target, name: name))
+            return try await extensionSocket.reply()
+        }
+
+        let england = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"
+        let joinedText = "👨‍👩‍👧‍👦 \(england) می\u{200C}روم क्\u{200D}ष"
+        let callerName = "/Caller role \(joinedText)"
+        #expect(try await rename(101, "  /Caller\r\nro\u{1B}\u{80}\u{202E}\u{200B}\u{E0067}le \(joinedText)  ")
+                == .agentRenamed(id: 101, oldName: "rpc", newName: callerName))
+        let blank = try await rename(102, " \n\u{7}\u{200B} ", target: targetID)
+        #expect(blank == .error(id: 102, code: "rename_refused", message: "Session name cannot be empty"))
+        #expect(try await rename(108, "\u{200D}\u{200C}")
+                == .error(id: 108, code: "rename_refused", message: "Session name cannot be empty"))
+        guard case .error(103, "no_such_agent", _) = try await rename(103, "Missing", target: AgentID()) else {
+            Issue.record("Expected a missing local thread refusal"); return
+        }
+
+        try await remote.server.renameAgent(targetID, to: "Hand named")
+        let title = String(repeating: "X", count: 60)
+        #expect(try await rename(104, title + "overflow", target: targetID) == .agentRenamed(id: 104, oldName: "Hand named", newName: title))
+
+        _ = try await target.send("slow please", from: try await target.ready())
+        _ = try await target.snapshot("the target to be mid-turn") { $0.running }
+        #expect(try await rename(105, "During turn", target: targetID) == .agentRenamed(id: 105, oldName: title, newName: "During turn"))
+        #expect(try await target.request(.snapshot()).snapshotValue?.running == true)
+        try extensionSocket.send(.setAgentName(agentID: targetID, name: "Automatic title", sessionID: target.sessionID))
+        _ = try await target.settled("the target's first turn to finish") { !$0.messages.isEmpty }
+        try await eventually("the target to be done") {
+            remote.server.state.agents.first { $0.id == targetID }?.completedAt != nil
+        }
+        #expect(remote.server.state.agents.first { $0.id == targetID }?.name == "During turn")
+        #expect(try await rename(106, "After turn", target: targetID) == .agentRenamed(id: 106, oldName: "During turn", newName: "After turn"))
+
+        try await eventually("a live state push to the paired-device client, without reconnecting or fetching") {
+            pushes.current.contains { state in
+                state.agents.first { $0.id == targetID }?.name == "After turn"
+                    && state.agents.first { $0.id == callerID }?.name == callerName
+            }
+        }
+        #expect(try remote.host.persisted().agents.first { $0.id == targetID }?.nameIsFinal == true)
+        let savedSession = try String(contentsOf: target.sessionFile, encoding: .utf8)
+        #expect(savedSession.contains("\"type\":\"session_info\""))
+        #expect(savedSession.contains("\"name\":\"After turn\""))
+
+        remote.server.killSession(target.agent.sessionID)
+        try await remote.host.waitForExit(target.agent.sessionID)
+        guard case .error(107, "not_running", _) = try await rename(107, "Offline", target: targetID) else {
+            Issue.record("Expected a stopped Pi refusal"); return
+        }
+        #expect(remote.server.state.agents.first { $0.id == targetID }?.name == "After turn")
+    }
+
     /// Stop on a streaming turn and a message queued behind it: the partial reply is kept as
     /// stopped, the host keeps the queue, and the thread takes the next turn.
     @Test func stoppingAStreamingTurnKeepsItsPartialReplyAndTheQueue() async throws {
@@ -476,11 +596,15 @@ final class RealPi: @unchecked Sendable {
     /// The session file the app seeds and pi appends to, and the id pi resumes it by.
     let sessionFile: URL
     let sessionID: String
+    let project: URL
+    private let ownsHost: Bool
     private let provider: Process
     private let providerInput: Pipe
 
-    private init(host: ScratchServer, agent: PiAgent, sessionFile: URL, sessionID: String, provider: Process, providerInput: Pipe) {
+    private init(host: ScratchServer, ownsHost: Bool, project: URL, agent: PiAgent, sessionFile: URL, sessionID: String, provider: Process, providerInput: Pipe) {
         self.host = host
+        self.ownsHost = ownsHost
+        self.project = project
         self.agent = agent
         self.sessionFile = sessionFile
         self.sessionID = sessionID
@@ -503,29 +627,30 @@ final class RealPi: @unchecked Sendable {
         """
 
     /// `history`: session entries (`{"type":"message",...}`) saved after the header, as a resumed thread's.
-    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false) async throws -> RealPi {
-        let directory = try makeScratchDirectory("real-pi")
+    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = [], retry: Bool = false, model: String = "fixture/fixture", status: Bool = false, nativeChildren: Bool = false, on sharedHost: ScratchServer? = nil) async throws -> RealPi {
+        let directory = try sharedHost?.dir.appendingPathComponent("pi-\(UUID())") ?? makeScratchDirectory("real-pi")
         let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
                             userHome: directory.appendingPathComponent("home").path)
-        let host = try ScratchServer(dir: directory, pi: setup)
+        let host = try sharedHost ?? ScratchServer(dir: directory, pi: setup)
         do {
             let files = FileManager.default
-            let userHome = host.dir.appendingPathComponent("home", isDirectory: true)
-            let temporary = host.dir.appendingPathComponent("tmp", isDirectory: true)
-            let project = host.dir.appendingPathComponent("project", isDirectory: true)
+            let userHome = directory.appendingPathComponent("home", isDirectory: true)
+            let temporary = directory.appendingPathComponent("tmp", isDirectory: true)
+            let project = directory.appendingPathComponent("project", isDirectory: true)
             for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
 
             let script = EngineSmoke.repository.appendingPathComponent("Tests/Extensions/engine-provider.mjs")
             let provider = Process()
             provider.executableURL = engine.node
             provider.arguments = [script.path]
+            provider.currentDirectoryURL = project
             let input = Pipe(), output = Pipe()
             provider.standardInput = input
             provider.standardOutput = output
             try provider.run()
             let port = try await readPort(from: output.fileHandleForReading)
 
-            let home = PiHome(directory: host.dir.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
+            let home = PiHome(directory: directory.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
                               userHome: userHome.path)
             try home.install()
             let models = """
@@ -545,7 +670,7 @@ final class RealPi: @unchecked Sendable {
             try files.createDirectory(at: home.directory.appendingPathComponent("prompts"), withIntermediateDirectories: true)
             try "---\ndescription: Greet someone\n---\nGreet $1 warmly.\n"
                 .write(to: home.directory.appendingPathComponent("prompts/greet.md"), atomically: true, encoding: .utf8)
-            let fixture = host.dir.appendingPathComponent("commands.ts")
+            let fixture = directory.appendingPathComponent("commands.ts")
             try extensionSource.write(to: fixture, atomically: true, encoding: .utf8)
 
             // The session header the app seeds before it starts an agent (PiSessionFile.seedIfMissing),
@@ -558,23 +683,34 @@ final class RealPi: @unchecked Sendable {
             let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
             try ([header] + history).map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) + Data("\n".utf8) }
                 .reduce(Data(), +).write(to: sessionFile)
-            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
-                                          extensions: [fixture.path] + extensions + (status ? [try StatusExtension.installedPath()] : []))
             let agentID = AgentID()
-            let statusEnv = status ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
+            var env = (status || nativeChildren) ? ["SHEPHERD_AGENT_ID": agentID.rawValue, "SHEPHERD_SOCKET": host.socketPath] : [:]
+            var installed = status ? [try StatusExtension.installedPath()] : []
+            if nativeChildren {
+                host.useRealPeerCheck()
+                let children = try ChildrenExtension.installedPath(in: directory, snapshot: EmbeddedExtensions.snapshot)
+                env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+                env["SHEPHERD_EXT_CHILDREN"] = children
+                let publisher = directory.appendingPathComponent("shepherd-subagents.ts")
+                try EmbeddedExtensions.install("shepherd-subagents.ts", at: publisher)
+                installed += [children, publisher.path]
+            }
+            let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: model, thinking: nil,
+                                          extensions: [fixture.path] + extensions + installed)
             let session = try await host.server.createSession(params: CreateSessionParams(
                 cwd: project.path, command: line.argv,
-                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(statusEnv) { a, _ in a }, runtime: .rpc), resuming: sessionID)
+                env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"].merging(env) { a, _ in a }, runtime: .rpc), resuming: sessionID)
             let space = Space(name: "rpc", path: project.path)
             try await host.server.addSpace(space)
             let pane = LeafPane(sessionID: session.id, cwd: project.path)
             let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
             let agent = Agent(id: agentID, name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
             try await host.server.addAgent(agent, withTab: tab)
-            return RealPi(host: host, agent: PiAgent(host: host, agent: agent, sessionID: session.id, log: host.dir.appendingPathComponent("unused.log")),
+            return RealPi(host: host, ownsHost: sharedHost == nil, project: project,
+                          agent: PiAgent(host: host, agent: agent, sessionID: session.id, log: directory.appendingPathComponent("unused.log")),
                           sessionFile: sessionFile, sessionID: sessionID, provider: provider, providerInput: input)
         } catch {
-            host.stop()
+            if sharedHost == nil { host.stop() }
             throw error
         }
     }
@@ -600,7 +736,7 @@ final class RealPi: @unchecked Sendable {
     }
 
     func stop() {
-        host.stop()
+        if ownsHost { host.stop() }
         try? providerInput.fileHandleForWriting.close()
         if provider.isRunning { provider.terminate() }
     }

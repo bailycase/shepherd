@@ -11,7 +11,7 @@ import Testing
 @testable import ShepherdUI
 
 /// Thread images (ThreadImagesComposer, ThreadImageOpen) drawn from the real producers: the
-/// composer's `ComposerAttachments` through `ComposerImageStrip`, and `ImageViewerState` through
+/// composer's `ComposerAttachments` through the thread's card, and `ImageViewerState` through
 /// `SHImageViewer`, in both appearances at text scale 1 and 1.3. The pictures are real PNGs the
 /// test draws, so the thumbnails and the size labels come from bytes, not from board strings.
 @Suite("Thread images previews", .mainActorExclusive,
@@ -74,14 +74,17 @@ struct ThreadImagesPreviewTests {
             attachments.add((1...5).map { ("shot-\($0).png", Self.attachment("shot-\($0).png", bytes: 600_000)) })
         default: break
         }
-        try await Preview.renderMatrix("thread-images-composer-\(state)", size: CGSize(width: 760, height: 160)) {
-            VStack(alignment: .leading, spacing: 0) {
-                ComposerImageStrip(attachments: attachments, open: { _ in }, remove: { _ in })
-                    .padding(SH.Space.l)
-                Spacer(minLength: 0)
-            }
-            .frame(width: 760, height: 160, alignment: .topLeading)
-            .background(Color.sh.bgWindow)
+        // The real thread and its card: the chips are the card's own, the failed line sits under them (GXImagesComposer).
+        let fixture = ThreadFixture(Threads.idle)
+        fixture.snapshot.messages = []
+        fixture.snapshot.supportedActions.append("sendImages")
+        defer { fixture.store.stop() }
+        let input = ThreadInput()
+        input.attachments = attachments
+        fixture.store.draft = "Here it is on the mini and the Pro Max."
+        try await Preview.renderMatrix("thread-images-composer-\(state)", size: CGSize(width: 760, height: 420), ready: { fixture.store.ready }) {
+            ThreadView(store: fixture.store, active: true, isFocused: false, request: fixture.request,
+                       listModels: { .empty }, retainedInput: input)
         }
     }
 
@@ -151,9 +154,11 @@ struct ThreadImagesPreviewTests {
                     Text("Refunds doubled on Tuesday because the retry job re-sent 412 webhooks after a deploy.").font(.sh(.body))
                     // What the agent turn draws for an `images` item: the neutral count, then the pictures (ThreadImagesReceived).
                     VStack(alignment: .leading, spacing: SH.Space.m) {
-                        SHActivityLine(kind: .images, label: nativeCount(made.count, "image"), meta: "")
+                        SHThreadImageLabel(nativeCount(made.count, "image"))
                         ReceivedImages(refs: made)
                     }
+                    // An image the agent linked from the web is never loaded: its row says so (GXImagesReceived).
+                    SHProseImageView(image: SHProseImage(alt: "", source: "https://grafana.internal/d/refunds.png"))
                 }
             }
             .environment(\.threadImages, images)

@@ -28,9 +28,9 @@ enum ThreadAuthNotice: Equatable {
 
     /// What follows "This agent uses `model`.". A provider Shepherd's pi doesn't know at all (one
     /// an extension registers, switched off) is no sign-in's fault: pick another model.
-    static func reason(provider: String?, skipped: Bool) -> String {
+    static func reason(provider: String?, skipped: Bool, available: Bool? = nil) -> String {
         let name = providerName(provider)
-        if let provider, !known(provider) {
+        if let provider, !(available ?? known(provider)) {
             return "Shepherd’s pi has no provider named \(provider); one of your extensions, which came over switched off, may add it. "
                 + "Use another model, or switch the extension on in Settings ▸ Pi. Your message is kept."
         }
@@ -53,6 +53,7 @@ struct ThreadAuthActions {
     var useModel: (String) -> Void
     /// The models Shepherd's pi can use now.
     var models: () async -> [String]
+    var providerKnown: (String) -> Bool = ThreadAuthNotice.known
 }
 
 /// The line or card itself, at the thread's end.
@@ -68,7 +69,7 @@ struct ThreadAuthNoticeView: View {
         case .notSignedIn(let provider, let model, let at, let skipped):
             let usable = models.filter { provider == nil || !$0.hasPrefix(provider! + "/") }
             SHAgentNotSignedInCard(provider: ThreadAuthNotice.providerName(provider), model: model,
-                                   reason: ThreadAuthNotice.reason(provider: provider, skipped: skipped),
+                                   reason: ThreadAuthNotice.reason(provider: provider, skipped: skipped, available: provider.map { actions?.providerKnown($0) ?? ThreadAuthNotice.known($0) }),
                                    time: at.formatted(date: .omitted, time: .shortened), signIn: { actions?.signIn(provider) }) {
                 if usable.isEmpty {
                     Text("No other model is signed in")

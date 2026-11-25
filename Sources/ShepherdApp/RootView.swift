@@ -48,35 +48,47 @@ struct RootView: View {
             // hides it; a window too narrow to dock it overlays it instead. It keeps its width
             // while a right pane is open.
             if docked {
-                HStack(spacing: 0) {
-                    SidebarView(vm: vm)
-                        .frame(width: sidebar.width)
-                        .background(Color.sh.bgBase.ignoresSafeArea())
-                    sidebarResizeHandle(width: sidebar.width)
-                }
+                // The glass panel, inset from the window's leading, top and bottom edges; its
+                // trailing edge is the resize handle.
+                SidebarView(vm: vm)
+                    .frame(width: sidebar.width)
+                    .overlay(alignment: .trailing) { sidebarResizeHandle(width: sidebar.width) }
+                    .padding([.leading, .vertical], SHSidebarMetrics.panelInset)
                 // Over the main column, which takes its new frame at once as it slides.
                 .zIndex(1)
                 .shTransition(.pane, edge: .leading)
             }
 
-            VStack(spacing: 0) {
+            // The toolbar rides over the column's top: a thread's pane card runs up beside it (GXSidePane), so the
+            // toolbar ends where the card begins and the workspace starts under it (`workspaceTopInset`).
+            let noticed = updater.nightlyMovedNoticePending
+            let toolbar = wide ? 0 : AppLayout.headerHeight + AppLayout.toolbarTop
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    // Once, after an update moved this copy off the retired nightly channel. It
+                    // leaves at once: easing the column's height would relay out every mounted
+                    // layout on each frame.
+                    if noticed {
+                        Color.clear.frame(height: toolbar)
+                        NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
+                                           dismiss: { updater.dismissNightlyMovedNotice() })
+                    }
+                    WorkspaceView(vm: vm)
+                        .environment(\.workspaceTopInset, noticed ? 0 : toolbar)
+                }
                 if !wide {
                     WorkspaceHeaderView(
                         vm: vm,
                         leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                         showSidebar: docked ? nil : { vm.toggleSidebar() }
                     )
+                    // The boards' window padding: the toolbar's row is the sidebar top bar's and the window controls'.
+                    .padding(.top, AppLayout.toolbarTop)
+                    .background(Color.sh.bgWindow)
+                    .modifier(PaneReserve(vm: vm))
                     // Over the workspace: the side-pane button's tip hangs below the toolbar.
                     .zIndex(1)
                 }
-                // Once, after an update moved this copy off the retired nightly channel. It
-                // leaves at once: easing the column's height would relay out every mounted
-                // layout on each frame.
-                if updater.nightlyMovedNoticePending {
-                    NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
-                                       dismiss: { updater.dismissNightlyMovedNotice() })
-                }
-                WorkspaceView(vm: vm)
             }
             // A page (New thread, Automations, Hosts) covers the whole column, toolbar included;
             // the layouts under it stay mounted and hidden, as when switching agents.
@@ -134,6 +146,7 @@ struct RootView: View {
             CommandPaletteView(vm: vm)
         }
         .background { MenuStateSync(vm: vm) }
+        .background { ThreadLinksSync(vm: vm) }
         .background { MainWindowReader() }
         .shDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
@@ -182,9 +195,9 @@ struct RootView: View {
                     .accessibilityHidden(true)
                 SidebarView(vm: vm)
                     .frame(width: width)
-                    // The shadow from the fill, never from the scrolling list over it.
-                    .shFloatBackground(Color.sh.bgBase.ignoresSafeArea())
-                    .overlay(alignment: .trailing) { SHHairline(.vertical) }
+                    // The panel floats on the popover's shadow, cast by a fill under it.
+                    .background { RoundedRectangle(cornerRadius: SH.Radius.xl).fill(Color.sh.bgWindow).shFloatShadow() }
+                    .padding([.leading, .vertical], SHSidebarMetrics.panelInset)
                     .shTransition(.pane, edge: .leading)
             }
         }
@@ -193,7 +206,7 @@ struct RootView: View {
     /// The sidebar's trailing edge, and its drag handle (adjustable with VoiceOver). Resizing
     /// never narrows the main column below its minimum.
     private func sidebarResizeHandle(width: CGFloat) -> some View {
-        Color.sh.lineSubtle
+        Color.clear
             .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear
@@ -202,7 +215,7 @@ struct RootView: View {
                     .pointerStyle(.columnResize)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
-                            .onChanged { liveSidebarWidth = fittedSidebarWidth(Double($0.location.x)) }
+                            .onChanged { liveSidebarWidth = fittedSidebarWidth(Double($0.location.x - AppLayout.sidebarGutter)) }
                             .onEnded { _ in
                                 if let width = liveSidebarWidth {
                                     appearance.sidebarWidth = width
@@ -224,12 +237,14 @@ struct RootView: View {
 
     /// A sidebar width within its range that leaves the main column its minimum.
     private func fittedSidebarWidth(_ width: Double) -> Double {
-        AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth)))
+        AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.sidebarGutter - AppLayout.mainColumnMinWidth)))
     }
 }
 
-/// Hides the window's close, minimize and zoom while the maximized side pane's rail draws its
-/// own (ChangesWide), and shows them again after.
+/// Places the window's close, minimize and zoom on the 44pt row the sidebar's top bar and the toolbar share
+/// (GXThread, GXSidebarHidden): the close button's centre `AppLayout.windowControlsCenter` from the window's top
+/// leading corner, the others at AppKit's own spacing. Hides them while the maximized side pane's rail draws its
+/// own (ChangesWide), and shows them again after. In full screen AppKit owns them and they are left alone.
 private struct SystemWindowControls: NSViewRepresentable {
     let hidden: Bool
 
@@ -242,18 +257,53 @@ private struct SystemWindowControls: NSViewRepresentable {
 
     final class Reader: NSView {
         var controlsHidden = false
+        private var observed: [NSObjectProtocol] = []
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            observed.forEach(NotificationCenter.default.removeObserver)
+            observed = []
+            if let window {
+                // AppKit lays the title bar out again on these, putting the buttons back where it keeps them.
+                let names: [Notification.Name] = [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification,
+                                                  NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification,
+                                                  NSWindow.didResignKeyNotification, NSWindow.didChangeBackingPropertiesNotification]
+                observed = names.map { name in
+                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.apply() }
+                    }
+                }
+            }
             apply()
         }
 
+        isolated deinit { observed.forEach(NotificationCenter.default.removeObserver) }
+
         func apply() {
             guard let window else { return }
-            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                if let button = window.standardWindowButton(kind), button.isHidden != controlsHidden {
-                    button.isHidden = controlsHidden
-                }
+            let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
+            for button in buttons where button.isHidden != controlsHidden { button.isHidden = controlsHidden }
+            guard !controlsHidden, !window.styleMask.contains(.fullScreen) else { return }
+            place(buttons, in: window)
+        }
+
+        /// Grows the title bar's container to hold the row, then sets each button's centre on it.
+        private func place(_ buttons: [NSButton], in window: NSWindow) {
+            guard let first = buttons.first, let bar = first.superview, let container = bar.superview else { return }
+            let center = AppLayout.windowControlsCenter
+            let height = 2 * center.y
+            let frame = window.frame
+            let wanted = NSRect(x: 0, y: frame.height - height, width: frame.width, height: height)
+            if container.frame != wanted { container.frame = wanted }
+            if bar.frame != container.bounds { bar.frame = container.bounds }
+            // AppKit's spacing between the buttons, kept as it draws them.
+            let pitch = buttons.count > 1 ? buttons[1].frame.minX - buttons[0].frame.minX : 0
+            for (index, button) in buttons.enumerated() {
+                let size = button.frame.size
+                let y = bar.isFlipped ? center.y - size.height / 2 : bar.bounds.height - center.y - size.height / 2
+                let origin = NSPoint(x: (center.x - first.frame.width / 2 + CGFloat(index) * pitch).rounded(),
+                                     y: y.rounded())
+                if button.frame.origin != origin { button.setFrameOrigin(origin) }
             }
         }
 
@@ -335,10 +385,11 @@ struct WorkspaceHeaderView: View {
                     let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),
                                  project: space ?? connection.config.name, title: vm.presentedThreadName(.remote(remote), hostName: agent.name),
-                                 branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
+                                 branch: nil, directory: nil,
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote },
                                  pin: vm.offersPin(for: .remote(remote)) ? .remote(remote) : nil, row: .remote(remote),
-                                 fleet: vm.fleetSurface(for: agent, onRemote: connection.config.name, hostID: connection.id), online: connection.phase == .connected)
+                                 fleet: vm.fleetSurface(for: agent, onRemote: connection.config.name, hostID: connection.id), online: connection.phase == .connected,
+                                 remoteHost: connection.config.name)
                         .id(remote)
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent),
@@ -399,7 +450,7 @@ struct WorkspaceHeaderView: View {
     private func threadHeader(store: NativeThreadStore, owner: SidePaneOwner, project: String, title: String,
                               branch: AgentBranchLabel?, directory: String?, showChanges: @escaping () -> Void,
                               rename: @escaping () -> Void, pin: SidebarRowID?, row: SidebarRowID, apps: QuickApps? = nil,
-                              fleet: FleetThreadSurface? = nil, online: Bool = true) -> EquatableView<ThreadHeader> {
+                              fleet: FleetThreadSurface? = nil, online: Bool = true, remoteHost: String? = nil) -> EquatableView<ThreadHeader> {
         let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
@@ -408,12 +459,19 @@ struct WorkspaceHeaderView: View {
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
                             pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } },
                             muted: muted, toggleMute: muted == nil ? nil : { vm.togglePushMuted(row) },
-                            move: vm.fleetMoveHeader(for: row), moveWorking: vm.moveSubject(row)?.agent.status == .working || vm.moveSubject(row)?.agent.status == .blocked,
-                            moveTo: { vm.moveThread(row, to: $0, when: $1) },
+                            move: vm.fleetMoveHeader(for: row), moveTo: { vm.requestFleetMove(row, to: $0) },
                             sentBy: fleet?.sentBy, sentByOnline: online,
-                            openSender: fleet?.sender.map { row in { vm.selectSidebarRow(row) } },
+                            openSender: fleet?.sender.map { row in { vm.selectSidebarRow(row) } }, remoteHost: remoteHost,
                             apps: apps, runApp: { vm.runQuickApp($0, showOutput: true) }, stopApp: { vm.stopApp($0) },
                             restartApp: { vm.restartApp($0) }, appOutput: { vm.showAppOutput($0) }, editApps: { vm.openAppsSettings() })
             .equatable()
     }
+}
+
+/// The toolbar ends where a thread's pane card begins. Its own modifier reads the card's width, so a drag of the card's handle
+/// reruns this and not the whole shell.
+private struct PaneReserve: ViewModifier {
+    var vm: ShepherdViewModel
+
+    func body(content: Content) -> some View { content.padding(.trailing, vm.sidePaneReserve) }
 }

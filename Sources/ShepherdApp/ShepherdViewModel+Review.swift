@@ -159,10 +159,12 @@ extension ShepherdViewModel {
     private func finishReview(_ session: ReviewSession, sending text: String, closes: Bool) {
         let sent = { [weak self] in
             session.sentAt = Date().timeIntervalSince1970 * 1000
-            if let owner = self?.owner(of: session) { self?.reviewSentAt[owner] = session.sentAt }
+            let owner = self?.owner(of: session)
+            if let owner { self?.reviewSentAt[owner] = session.sentAt }
             session.scopeChosen = false
             session.comments = []
             session.summary = ""
+            self?.advanceQueuedReview(for: owner)
             guard closes, let self else { return }
             if let target = self.remoteReviews.first(where: { $0.value === session })?.key {
                 self.remoteReviews.removeValue(forKey: target)
@@ -513,11 +515,14 @@ extension ShepherdViewModel {
 
     func loadChangesBranches(_ session: ReviewSession) {
         guard let engine = session.engine else { return }
+        session.branchesError = nil
+        let requestID = UUID()
+        session.branchesRequestID = requestID
         Task {
             do {
                 let branches = try await engine.branches()
-                if isCurrent(session) { session.branches = branches }
-            } catch { fail("Couldn’t read the changes", error) }
+                if isCurrent(session), session.branchesRequestID == requestID { session.branches = branches }
+            } catch { if isCurrent(session), session.branchesRequestID == requestID { session.branchesError = ActionError.describe(error) } }
         }
     }
 
@@ -538,7 +543,7 @@ extension ShepherdViewModel {
         }
     }
 
-    private func owner(of session: ReviewSession) -> SidePaneOwner? {
+    func owner(of session: ReviewSession) -> SidePaneOwner? {
         if reviewSessions[session.paneID] === session { return .local(session.agentID) }
         return remoteReviews.first { $0.value === session }.map { .remote($0.key) }
     }

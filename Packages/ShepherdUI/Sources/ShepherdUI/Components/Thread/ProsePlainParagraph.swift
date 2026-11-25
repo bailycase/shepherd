@@ -49,7 +49,7 @@ private struct SHPlainParagraphLabel: NSViewRepresentable {
         let style = NSMutableParagraphStyle()
         style.lineBreakStrategy = []
         style.lineSpacing = lineSpacing
-        let font = NSFont(name: SHFonts.postScriptName(mono: false, weight: .regular), size: points) ?? .systemFont(ofSize: points)
+        let font = SHFonts.platform(mono: false, weight: .regular, size: points)
         let attributed = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
         if label.attributedStringValue != attributed { label.attributedStringValue = attributed }
     }

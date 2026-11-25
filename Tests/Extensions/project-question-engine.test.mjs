@@ -1,4 +1,5 @@
 // Canonical worker tool, real pinned pi RPC and a scripted loopback provider; no StubPi or user extensions/auth.
+import "./hermetic-env.mjs";
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';

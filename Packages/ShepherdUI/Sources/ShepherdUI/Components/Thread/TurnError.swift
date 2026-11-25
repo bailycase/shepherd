@@ -126,9 +126,9 @@ public struct SHTurnError: View {
     let detailsState: Binding<Bool>?
     let unfoldState: Binding<Bool>?
     @State private var ownDetails: Bool
-    @State private var ownOpened = false
-    @State private var copied = false
-    @State private var copies = 0
+    @State var ownOpened = false
+    @State var copied = false
+    @State var copies = 0
 
     /// `detailsOpen` seeds Details when the card keeps its own state (previews, tests).
     public init(_ content: Content, folded: Bool = false, detailsOpen: Bool = false, details: Binding<Bool>? = nil,
@@ -142,15 +142,19 @@ public struct SHTurnError: View {
         _ownDetails = State(initialValue: detailsOpen)
     }
 
-    private var detailsOpen: Bool { detailsState?.wrappedValue ?? ownDetails }
-    private var unfolded: Bool { unfoldState?.wrappedValue ?? ownOpened }
+    var detailsOpen: Bool { detailsState?.wrappedValue ?? ownDetails }
+    var unfolded: Bool { unfoldState?.wrappedValue ?? ownOpened }
 
-    private func toggleDetails() {
+    func toggleDetails() {
         if let detailsState { detailsState.wrappedValue.toggle() } else { ownDetails.toggle() }
     }
 
-    public var body: some View {
+    @ViewBuilder public var body: some View {
+        #if os(macOS)
+        if folded, !unfolded { macFoldedLine } else { macCard }
+        #else
         if folded, !unfolded { foldedLine } else { card }
+        #endif
     }
 
     // MARK: Folded

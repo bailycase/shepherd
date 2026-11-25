@@ -190,7 +190,14 @@ struct SettingsView: View {
         case .general: GeneralSettings(vm: vm)
         case .appearance: AppearanceSettings(vm: vm)
         case .keyboard: KeyboardSettings(vm: vm)
-        case .models: ModelsSettings(pi: vm.pi, yourPi: vm.yourPi, auth: vm.piAuth, settings: vm.settings) { vm.settingsSection = .fromYourPi }
+        case .models: ModelsSettings(pi: vm.pi, yourPi: vm.yourPi, auth: vm.piAuth, settings: vm.settings,
+                                     openYourPi: { vm.settingsSection = .fromYourPi }, openExtensions: {
+                                         vm.settingsSection = .tools
+                                         vm.settingsScrollTarget = ExtensionsSettingsGroup.scrollID
+                                     }, openExtension: { destination in
+                                         vm.settingsSection = .tools
+                                         vm.settingsScrollTarget = ExtensionsSettingsGroup.rowScrollID(destination)
+                                     })
         case .fromYourPi: FromYourPiSettings(model: vm.yourPi) { vm.settingsSection = .tools }
         case .agents: AgentSettings(pi: vm.pi, settings: vm.settings, profiles: vm.subagentDefinitions.definitions.map(\.name)) { vm.settingsSection = .subagents }
         case .subagents: SubagentsSettings(model: vm.subagentDefinitions, settings: vm.settings)
@@ -237,6 +244,7 @@ struct SettingsView: View {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     Group { page }
                         .shTransition(.content)
@@ -254,6 +262,14 @@ struct SettingsView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .shTransition(.content)
+                // A link into another page's group (Sign-in's Add a provider): after the page lays out.
+                .task(id: vm.settingsScrollTarget) {
+                    guard let target = vm.settingsScrollTarget else { return }
+                    await Task.yield()
+                    withAnimation(SH.Motion.content.animation(reduceMotion: false)) { proxy.scrollTo(target, anchor: .top) }
+                    vm.settingsScrollTarget = nil
+                }
+                }
             }
         }
         .shAnimation(.content, value: vm.settingsSection == .projects && vm.projects.selected != nil)
@@ -407,7 +423,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: ["Mode", "Sidebar rows", "Density", "Text size", "Sidebar width", "Organize by", "Keep idle threads",
                            "Font", "Size", "Shell"]
         case .models: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
-                       "API keys", "Add an API key", "Custom providers",
+                       "API keys", "Add an API key", "Add a provider", "Custom providers",
                        "Model", "Thinking", "Speed", "Titles and commit messages", "Describe images for",
                        "Shepherd's pi", "Models", "Your pi"]
         case .agents: ["Send queued messages", "Threads can start threads", "Where they work", "Compact at",
@@ -417,10 +433,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .subagents: ["New profile", "Restore defaults", "Where they live"]
         case .projects: ["Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
         case .fromYourPi: ["Last brought over", "Re-import all", "Logins", "Custom providers", "Default model",
-                           "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
+                           "Instructions", "Skills", "Prompts", "Themes", "Extensions"]
         case .tools: ["Add server", "Import…", "Also use a repo’s .mcp.json",
-                      "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Design references",
-                      "Commands in the / menu"]
+                      "Terminals and agent tools", "Diff review", "MCP servers", "Browser", "Subscription usage", "Design references",
+                      "Extensions", "Commands in the / menu"]
         case .piSlashCommands: ["Off", "Extensions", "Prompt templates", "Skills"]
         case .apps: ["Add app", "On this Mac", "Run", "Quick action"]
         case .hooks: ["Add hook", "Yours", "Claude Code", "Codex"]
@@ -448,7 +464,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Keep idle threads": ["archive", "idle"],
                            "Font": ["ghostty", "monospace", "terminal", "font family"], "Size": ["terminal", "font size"],
                            "Shell": ["zsh", "bash", "fish", "terminal"]]
-        case .models: ["Model": ["claude", "gpt", "provider", "default model"], "Titles and commit messages": ["name", "title", "rename", "haiku", "naming", "session naming", "generate", "text generation"],
+        case .models: ["Add a provider": ["sign-in extension", "provider extension", "custom sign-in"],
+                       "Model": ["claude", "gpt", "provider", "default model"], "Titles and commit messages": ["name", "title", "rename", "haiku", "naming", "session naming", "generate", "text generation"],
                        "Describe images for": ["vision", "images", "screenshots", "pictures", "describe", "multimodal", "image reading"], "Thinking": ["reasoning", "effort", "default thinking level"],
                        "Speed": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard", "speed for new threads"],
                        "Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",
@@ -480,12 +497,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
                            "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
                            "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
-                           "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
-        case .tools: ["Add server": ["remote", "local", "url", "command", "stdio", "http", "sse", "mcp", "servers", "connectors"],
+                           "Extensions": ["packages", "npm", "re-import"]]
+        case .tools: ["Extensions": ["sign-in extension", "provider extension", "oauth", "git", "add extension", "full access", "switch on", "didn't load"],
+                      "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse", "mcp", "servers", "connectors"],
                       "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
                       "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"],
                       "Terminals and agent tools": ["panes", "notifications", "automations"],
                       "Diff review": ["review_diff"], "MCP servers": ["tool search"], "Browser": ["screenshots"],
+                      "Subscription usage": ["limits", "anthropic", "codex"],
                       "Design references": ["design_get"],
                       "Commands in the / menu": ["slash", "/ menu", "command", "composer"]]
         case .piSlashCommands: ["Off": ["slash", "/ menu", "command", "composer", "hide", "hidden", "turn off", "turned off", "switch", "disabled"],

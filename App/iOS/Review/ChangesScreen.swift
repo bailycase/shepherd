@@ -23,6 +23,11 @@ struct ChangesScreen: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.reviewCardSpacing) {
+                    if let problem = store.overview?.turnHistoryProblem {
+                        SHBanner(.failed, title: "Turn history", message: problem, stacked: true) {
+                            Button("Refresh") { store.refresh() }.buttonStyle(.sh(.ghost, size: .s))
+                        }
+                    }
                     if let error = store.loadError, store.loaded {
                         SHBanner(.failed, title: "Couldn't refresh the changes", message: error)
                     }
@@ -65,7 +70,9 @@ struct ChangesScreen: View {
         .task(id: host?.session) { await BranchStatusStore.of(ref).load(host) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ReviewActionBar(store: store, commitDirectly: CommitHooks.available(host: host)
-                            ? { navigator.present(.review(.commit(ref))) } : nil) { sent in if sent { dismiss() } }
+                            ? { navigator.present(.review(.commit(ref))) } : nil) { sent in
+                if sent { finishReview() }
+            }
         }
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Changes")
@@ -77,7 +84,7 @@ struct ChangesScreen: View {
             // The system's ••• menu, which overflows with the bar where it runs down the side.
             ToolbarOverflowMenu {
                 ReviewOptionsItems(store: store,
-                                   askAgentToCommit: CommitHooks.available(host: host) ? { dismiss() } : nil)
+                                   askAgentToCommit: CommitHooks.available(host: host) ? finishReview : nil)
             }
         }
         .sheet(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
@@ -86,6 +93,10 @@ struct ChangesScreen: View {
         .task(id: host?.session) { await store.loadIfNeeded(hosts: hosts) }
         .reviewViewer(ref)
         .onChange(of: store.pullRequest) { _, _ in store.refresh() }
+    }
+
+    private func finishReview() {
+        if !navigator.finishQueuedReview(ref, hosts: hosts) { dismiss() }
     }
 
     /// A comment in the list opens its file's diff with its line selected.

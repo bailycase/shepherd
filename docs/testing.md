@@ -27,24 +27,63 @@ Run the smallest selection that protects the affected behavior. These are indepe
 not a checklist; replace the suite, test or file with the one relevant to the change:
 
 ```bash
-swift test --filter PaneNodeTests
-SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests/threadActivityIdle
-PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test Tests/Extensions/instructions.test.mjs
+scripts/check.py ShepherdCoreUnitTests PaneNodeTests
+SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews scripts/check.py ShepherdPreviewTests ThreadPreviewTests/threadActivityIdle
+python3 scripts/pi_engine.py stage   # once; re-run after the pin changes
+PI_PACKAGE_DIR="$PWD/.build/pi-engine/Resources/pi-engine" .build/pi-engine/Helpers/node --test Tests/Extensions/instructions.test.mjs
 python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
 ```
 
-`swift test` builds before running; a separate `swift build` is unnecessary. Keep build flags and
-configuration consistent across runs. Use `--skip-build` only after a successful build with the
-same inputs and configuration, never after edits. Check that the intended tests actually ran.
-Filtering narrows execution, not the package build graph; a cold build can still be expensive.
+Use the staged Node locally: older Node versions may lack the TypeScript transform mode some extension tests need. Use `Tests/Extensions/*.test.mjs` for the whole suite.
+
+`scripts/check.py <TestTarget> [filter]` builds only that test target (its folder under `Tests/`)
+and its dependencies, then runs it with the filter. `swift test --filter` builds every test target
+first: about twice the CPU of the app unit target alone, cold. The script holds a per-user lock,
+so builds from several worktrees queue instead of competing for every core, and it prints errors,
+failing tests and the run summary (`--verbose` prints everything). Validate once edits settle, not
+after each one. Check that the summary counts the tests you meant to run.
 Use [Xcode](build-and-run.md) when the change needs app-level validation, not as a test prerequisite.
 Docs-only changes need the applicable docs guards, not Swift builds or tests.
 
-Expand to a whole tier (`--filter UnitTests` or `--filter IntegrationTests`) or `swift test` for
-shared changes or wider regressions. `CI=true swift test` is an unfiltered run with timing-sensitive
-tests skipped; opt-in suites, including previews, remain gated. It is not ordinary PR selection.
-The existing [CI planner](#ci) provides required broader coverage before merge; no duplicate full
-local run is needed solely to reproduce CI.
+The five rebuild checks each run one filtered suite and save evidence under `.build/validation/`. Each exits
+non-zero on failure. `c-launch` is an optional diagnostic, not a required gate.
+
+| Case | What it holds |
+| --- | --- |
+| `c-state` | the `state.json` shapes earlier builds wrote still load and rewrite as recorded |
+| `c-auth` | the host sockets' refusal corpus |
+| `c-settings` | every settings write path |
+| `c-wire` | the codec and the request sequences of a scratch host |
+| `c-launch` | a scratch host starts under launchd's 256-descriptor soft limit with 150 synced checkouts (30 with a worktree). From host start it answers `host.sock` within 20 s and answers again after Fleet's first scan within 30 s. It checks TCP isolation and descriptor samples, then repeats startup from the oldest `state.json` shape, rebased into scratch. |
+
+`c-launch` was red on `nightly` until the Fleet watcher fix (#884) and the index watcher fix (#880)
+merged. Fleet's file watcher opened a descriptor per watched file for every file it added, so a host with 150 synced checkouts
+ran out of descriptors and indexed none of them. #879 (start Fleet after `host.sock`
+binds) is not merged: once it is, `HostLaunchTests` must pass `startFleet: true` to `SessionHost.run`, as `ShepherdHost.main` will;
+without it the test fails on "the index never reached every checkout".
+
+`c-launch` requires a baseline and fresh samples at index readiness and after the first scan. Both counts must stay below 256,
+with growth of at most two descriptors per synced space. It fails on a sampled peak within 32 of the limit, a sampled
+`open()` probe reporting `EMFILE` or `ENFILE`, or evidence of a TCP listener. Samples can miss spikes between ticks. The host
+keeps Bonjour and iCloud lookup off. Run `python3 scripts/validate.py --case c-launch` to opt in.
+
+The child stops when the test process exits, its own deadline expires, or the test writes its `stop` file. Bounded controls
+check that both the workspace and child isolation root are gone after each early stop. The test never signals the host by PID.
+
+An unfiltered `swift test -j 4` now finishes in about an hour. It currently reports roughly 900 to
+1,000 failures; most of those tests pass when run alone. For PR work, use filtered runs and the
+applicable `scripts/validate.py --case` gates. Expand to a whole tier (`--filter UnitTests` or
+`--filter IntegrationTests`) when needed. The [CI planner](#ci) selects broader coverage before merge.
+`CI=true swift test` still skips timing-sensitive tests, and opt-in suites such as previews stay gated.
+
+## Simulator renders
+
+`bash Tests/ShepherdIOSChecks/run-simulator.sh --platform <iphone|ipad|duo> --set <dir> -o <dir> <screen>...`
+renders fixture screens headless and saves light and dark PNGs (`--list` prints the screens).
+Devices are created in a custom simulator set (`--set <dir>` or `SHEPHERD_SIMULATOR_SET`)
+and deleted afterwards; `-d <udid>` reuses a device you own instead. iPhone and iPad render on
+the iOS 27.0 runtime, Duo on iOS 27.1, and Duo poses (`-f`) need Xcode 27.1 (`DEVELOPER_DIR=…`,
+SwiftUI 8.0.85+). A platform whose device cannot be created prints `not run` and is skipped.
 
 ## Helpers
 
@@ -103,7 +142,10 @@ A test that needs process-wide state anyway runs as an exit test
 touches the user's support directory, preferences, pi configuration, `~/.agents` or a running Shepherd.
 
 **Time limits.** Integration and preview suites carry `.integrationTimeLimit` (two minutes per
-test, so a hang fails by name). `@MainActor` suites carry `.mainActorExclusive` instead and never
+test). Swift Testing records an issue and requests cancellation from the cooperative pool. It
+cannot interrupt a blocking call or report on time if that pool is starved. Use async waits;
+use `blocking` when testing an API that must block, and `testHop` to access queue-owned
+state from an async test. `@MainActor` suites carry `.mainActorExclusive` instead and never
 a `.timeLimit` beside it: that clock also runs while the test waits for the main thread.
 `.serialized` orders tests within a suite and isolates nothing; every suite of a target shares
 one process.
@@ -150,9 +192,11 @@ early with status 0 also passes. `ModelSettingsPopoverTests` is the worked examp
 ## CI
 
 PR CI runs only for pull requests targeting `master`, not `nightly`. Pushes to `master`,
-the daily schedule and manual dispatch keep their existing triggers.
+the daily schedule and manual dispatch keep their existing triggers. CI and Release run on
+GitHub's standard runners (`ubuntu-24.04`, `macos-26`, and `xcode-27` for TestFlight), with a
+fresh VM for each job.
 
-The hosted `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
+The `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
 sidebar loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI
 validation. Failed compiler outputs and the client-check log are retained in its CI artifact.
 
@@ -162,13 +206,13 @@ and the integration suites of the areas its paths touch, and a path no area clai
 module's suites. Broad app, sessions and remote selections use four filtered lanes, not one serial
 runner. Remote-client unit tests remain in every Swift run. Shared contracts (`ShepherdCore`, `ShepherdProtocol`, the test
 support, `Package.swift`, the engine pin, the script itself), `master`, the daily run and a
-`full-ci` label run everything across four hosted lanes. The pixel-scanning suites in
+`full-ci` label run everything across four lanes, each on its own hosted macOS runner. The pixel-scanning suites in
 `ci_plan.DEEP` (the completion matrix and reproduction, tail flow, send scrolling, blank screen,
 design performance) normally run only there and on the manual UI diagnostics dispatch. A changed
 test file still runs its own tests, including slow diagnostics. `nightly` ships without rerunning tests. Failed Swift runs keep the log and the
 completion captures as a seven-day artifact.
 
-Hosted builds restore timestamps only for tracked files whose bytes match the cached input
+Builds restore timestamps only for tracked files whose bytes match the cached input
 manifest, so a fresh checkout does not re-emit unchanged modules or recopy resources. Changed
 files keep their checkout timestamps; missing metadata uses normal invalidation. Swift file
 hashing and dependency checks stay enabled. Only one lane saves the shared build cache.

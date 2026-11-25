@@ -94,7 +94,7 @@ private struct SHStyledButton: View {
 
     private func foreground(_ sh: SHPalette) -> Color {
         switch kind {
-        case .primary: sh.textOnLantern
+        case .primary: sh.textOnPrimary
         case .secondary, .raised: tint ?? sh.textPrimary
         case .ghost: tint ?? (hovering && enabled && !configuration.isPressed ? sh.textPrimary : sh.textSecondary)
         case .danger: sh.failed
@@ -106,8 +106,8 @@ private struct SHStyledButton: View {
     private func background(_ sh: SHPalette) -> AnyShapeStyle {
         switch kind {
         case .primary:
-            // Hover lifts the fill, pressed sinks it (the board's #f7b84f and #d9922a).
-            let fill = !enabled ? sh.lantern : configuration.isPressed ? sh.lanternPressed : hovering ? sh.lanternHover : sh.lantern
+            // Hover lifts the fill, pressed sinks it.
+            let fill = !enabled ? sh.primary : configuration.isPressed ? sh.primaryPressed : hovering ? sh.primaryHover : sh.primary
             return AnyShapeStyle(fill)
         case .dangerFill:
             // A confirmed destructive action stays put on hover and sinks while pressed.
@@ -171,8 +171,12 @@ public struct SHIconButtonStyle: ButtonStyle {
     let size: CGFloat
     let tint: Color?
     let hoverFill: Color?
+    /// A circle rather than the rounded square (the composer's attach plus).
+    let round: Bool
 
-    public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil, hoverFill: Color? = nil) {
+    public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil, hoverFill: Color? = nil,
+                round: Bool = false) {
+        self.round = round
         self.bordered = bordered
         self.isOn = isOn
         self.size = size
@@ -190,15 +194,21 @@ extension ButtonStyle where Self == SHIconButtonStyle {
     public static var shIcon: SHIconButtonStyle { SHIconButtonStyle() }
 
     public static func shIcon(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil,
-                              hoverFill: Color? = nil) -> SHIconButtonStyle {
-        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill)
+                              hoverFill: Color? = nil, round: Bool = false) -> SHIconButtonStyle {
+        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill, round: round)
     }
+}
+
+extension EnvironmentValues {
+    /// Icon buttons draw round: inside the toolbar's capsule, whose ends they follow (`SHToolbarCapsule`).
+    @Entry var shIconButtonsRound = false
 }
 
 private struct SHIconButton: View {
     let configuration: ButtonStyleConfiguration
     let style: SHIconButtonStyle
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.shIconButtonsRound) private var roundHere
     @State private var hovering = false
 
     var body: some View {
@@ -209,22 +219,26 @@ private struct SHIconButton: View {
         let side = style.size
         #endif
         let active = enabled && (hovering || configuration.isPressed)
-        let foreground: Color = style.tint ?? (style.isOn ? sh.lanternText : active ? sh.textPrimary : sh.textSecondary)
-        let fill: Color = style.isOn ? sh.lanternTint : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
+        // On is the boards' `.ib.on`: the selection fill with the glyph in ink.
+        let foreground: Color = style.tint ?? (style.isOn || active ? sh.textPrimary : sh.textSecondary)
+        let fill: Color = style.isOn ? sh.bgSelected : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
+        // The boards' icon button: a rounded square (radius 7), not a circle, but in the toolbar's capsule.
+        let round = style.round || roundHere
+        let shape = RoundedRectangle(cornerRadius: round ? side / 2 : SH.Radius.s)
         configuration.label
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(size: 14, weight: .regular))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(foreground)
             .frame(width: side, height: side)
-            .background(fill, in: Circle())
-            .shBorder(style.bordered ? sh.lineStrong : .clear, in: Circle())
+            .background(fill, in: shape)
+            .shBorder(style.bordered ? sh.lineStrong : .clear, in: shape)
             .shEnabledOpacity(enabled)
-            .contentShape(Circle())
+            .contentShape(shape)
             .onHover { hovering = $0 }
             .shAnimation(.hover, value: hovering)
             // A pane toggle lights up however its pane opened (a menu, a shortcut, an agent).
             .shComponentAnimation(.hover, value: style.isOn)
-            .shFocusRingCircle()
+            .shFocusRing(radius: round ? side / 2 : SH.Radius.s)
     }
 }
 

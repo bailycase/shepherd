@@ -9,7 +9,7 @@ import ShepherdUI
 /// they are structural conventions, not preferences.
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case newAgent, newSpace, renameAgent
-    case commandPalette, nextAgent, previousAgent
+    case commandPalette, nextAgent, previousAgent, nextNeedingYou, reviewNext
     case deleteAgent
     /// The terminal's chords keep the names they were stored under (a saved chord survives):
     /// New Terminal was Split Vertically, Close Terminal was Close Pane, and Next and Previous
@@ -54,6 +54,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .commandPalette: return "Command Palette"
         case .nextAgent: return "Next Agent"
         case .previousAgent: return "Previous Agent"
+        case .nextNeedingYou: return "Next Needing You"
+        case .reviewNext: return "Review Next"
         case .newTerminal: return "New Terminal"
         case .closeTerminal: return "Close Terminal"
         case .deleteAgent: return "Delete Agent"
@@ -124,6 +126,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .commandPalette: return KeyChord(key: "k", command: true)
         case .nextAgent: return KeyChord(key: "down", command: true)
         case .previousAgent: return KeyChord(key: "up", command: true)
+        case .nextNeedingYou: return KeyChord(key: "down", command: true, shift: true)
+        case .reviewNext: return KeyChord(key: "r", command: true, shift: true, option: true)
         case .newTerminal: return KeyChord(key: "d", command: true)
         case .closeTerminal: return KeyChord(key: "w", command: true)
         case .deleteAgent: return KeyChord(key: "w", command: true, shift: true)

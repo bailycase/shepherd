@@ -53,6 +53,7 @@ struct SHProseBlockView<Code: SHProseCode>: View, Equatable {
     @Environment(\.shProseSize) private var size
     @Environment(\.shProseHalfLeading) private var halfLeading
     @Environment(\.shProseTaskLinks) private var taskLinks
+    @Environment(\.shThreadLinks) private var threadLinks
     @Environment(\.shProseFileRoot) private var fileRoot
     @Environment(\.shProseFileLinks) private var fileLinks
 
@@ -61,7 +62,8 @@ struct SHProseBlockView<Code: SHProseCode>: View, Equatable {
     }
 
     private var words: SHProseWords {
-        SHProseWords(voice: voice, size: size, halfLeading: halfLeading, taskLinks: taskLinks, fileRoot: fileRoot, fileLinks: fileLinks)
+        SHProseWords(voice: voice, size: size, halfLeading: halfLeading, taskLinks: taskLinks, threadLinks: threadLinks, fileRoot: fileRoot,
+                     fileLinks: fileLinks)
     }
 
     var body: some View {
@@ -103,6 +105,7 @@ struct SHProseBlockView<Code: SHProseCode>: View, Equatable {
                     SHProseListItemView<Code>(item: item, ordered: ordered, number: start + index,
                                               writing: SHProseBlocks<Code>.writing(writing, under: index), depth: depth, voice: voice)
                         .equatable()
+                        .shRaisedWhilePreviewing()
                 }
             }
         case .table(let table):
@@ -132,6 +135,7 @@ struct SHProseListItemView<Code: SHProseCode>: View, Equatable {
     @Environment(\.shProseSize) private var size
     @Environment(\.shProseHalfLeading) private var halfLeading
     @Environment(\.shProseTaskLinks) private var taskLinks
+    @Environment(\.shThreadLinks) private var threadLinks
     @Environment(\.shProseFileRoot) private var fileRoot
     @Environment(\.shProseFileLinks) private var fileLinks
 
@@ -141,7 +145,8 @@ struct SHProseListItemView<Code: SHProseCode>: View, Equatable {
     }
 
     private var words: SHProseWords {
-        SHProseWords(voice: voice, size: size, halfLeading: halfLeading, taskLinks: taskLinks, fileRoot: fileRoot, fileLinks: fileLinks)
+        SHProseWords(voice: voice, size: size, halfLeading: halfLeading, taskLinks: taskLinks, threadLinks: threadLinks, fileRoot: fileRoot,
+                     fileLinks: fileLinks)
     }
 
     var body: some View {
@@ -187,6 +192,7 @@ struct SHProseListItemView<Code: SHProseCode>: View, Equatable {
     let size: SHProseSize
     let halfLeading: Bool
     let taskLinks: SHProseTaskLinks?
+    let threadLinks: SHThreadLinks?
     let fileRoot: URL?
     let fileLinks: SHProseFileLinks?
 
@@ -202,26 +208,37 @@ struct SHProseListItemView<Code: SHProseCode>: View, Equatable {
             if voice == .reply, halfLeading, SHPlainParagraph.isPlain(text) {
                 SHPlainParagraph(text: String(text.characters), size: size, lineSpacing: SHTextStyle.body.lineSpacing(size))
             } else if voice == .reply, let taskLinks, SHProseTaskLinks.hasReference(text) {
-                SHTaskChipText.text(text, links: taskLinks, size: size).shText(.body, size: size)
+                // A thread named beside a task is its words here: one paragraph draws one kind of chip.
+                SHTaskChipText.text(Self.withoutThreadLinks(text), links: taskLinks, size: size)
+                    .shText(.body, size: size)
                     .textRenderer(SHTaskChipRenderer(halfLeading: Self.halfLeadingPad))
                     .modifier(SHTaskChipPressTargets(halfLeading: Self.halfLeadingPad))
+            } else if voice == .reply, let threadLinks, SHThreadLinks.hasReference(text) {
+                SHThreadChipParagraph(text: text, links: threadLinks, size: size)
             } else {
-                // Outside a Project conversation a task reference is only words: nothing opens it, the system included.
-                let shown = SHProseTaskLinks.hasReference(text) ? SHProseTaskLinks.inert(text) : text
+                // Outside a Project conversation a task reference is only words: nothing opens it, the system included. So is a
+                // thread link where no thread resolves (or in a quote).
+                let shown = Self.withoutThreadLinks(SHProseTaskLinks.hasReference(text) ? SHProseTaskLinks.inert(text) : text)
                 SHProseFileLinks.prose(shown, root: fileRoot, actions: fileLinks).shText(.body, size: size).italic(voice == .quoted)
                     .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(shown, root: fileRoot, actions: fileLinks)))
             }
-        case .thinking: Text(text).font(SHThinking.font).italic().lineSpacing(SHThinking.lineSpacing)
+        case .thinking: Text(text).font(SHThinking.font).italic(SHThinking.italic).lineSpacing(SHThinking.lineSpacing)
         }
     }
 
     @ViewBuilder func heading(_ text: AttributedString) -> some View {
         switch voice {
         case .reply, .quoted:
+            let text = Self.withoutThreadLinks(text)
             SHProseFileLinks.prose(text, root: fileRoot, actions: fileLinks).font(.sh(.headline, size: size)).lineSpacing(SHTextStyle.headline.lineSpacing(size))
                 .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
-        case .thinking: Text(text).font(SHThinking.headingFont).italic().lineSpacing(SHThinking.lineSpacing)
+        case .thinking: Text(text).font(SHThinking.headingFont).italic(SHThinking.italic).lineSpacing(SHThinking.lineSpacing)
         }
+    }
+
+    /// `text` with its thread links as their words: a heading, a quote, a paragraph beside a task's chip, or no table.
+    static func withoutThreadLinks(_ text: AttributedString) -> AttributedString {
+        SHThreadLinks.hasReference(text) ? SHThreadLinks.inert(text) : text
     }
 
     /// Bullets alternate by depth, as nested lists read in print.

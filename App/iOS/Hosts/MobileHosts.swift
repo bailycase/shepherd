@@ -410,6 +410,13 @@ final class MobileHosts {
         return identity.token
     }
 
+    /// The fleet id `host` must answer with before its token is sent: a Mac of a fleet is asked who it is first, so a stale route
+    /// that now leads to another Mac never gets it. nil for a Mac reached with a token it wasn't given by a fleet.
+    func expectedFleetID(_ host: MobileHost, token: String? = nil) -> UUID? {
+        guard let fleetID = host.fleetID, let token = token ?? (try? tokens.read(host.id)), token == deviceToken() else { return nil }
+        return fleetID
+    }
+
     /// Keeps the saved Macs in step with the fleet the connected host `host` is in (`RemoteProtocol.fleetFollowCapability`): reads its Macs
     /// and their routes, and applies what changed. Runs when a host connects and again when it says the fleet changed; a host that
     /// doesn't offer it, or that this device reaches with a token it wasn't given by a fleet, is left as it is.
@@ -584,8 +591,7 @@ final class MobileHosts {
         host.set(.connecting)
         let revision = host.stateRevision
         let record = host.record
-        // A Mac of a fleet is asked who it is before the token is sent, so a stale route that now leads to another Mac never gets it.
-        let expecting = host.fleetID != nil && token == deviceToken() ? host.fleetID : nil
+        let expecting = expectedFleetID(host, token: token)
         host.connectTask = Task { [weak self, weak host] in
             var failure: RemoteHostFailure?
             for (index, route) in record.routes.enumerated() {

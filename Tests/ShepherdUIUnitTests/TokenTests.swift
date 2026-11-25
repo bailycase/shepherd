@@ -91,21 +91,23 @@ struct TokenTests {
         #expect(NSImage(systemSymbolName: SHGlyph.hook.symbolName, accessibilityDescription: nil) != nil)
     }
 
-    @Test func theBundledFacesAreRegistered() {
-        #expect(SHFonts.isAvailable)
-        for name in ["Geist-Regular", "Geist-Medium", "Geist-SemiBold", "Geist-Bold", "Geist-Italic", "GeistMono-Regular", "GeistMono-Medium"] {
-            let font = CTFontCreateWithName(name as CFString, 12, nil)
-            #expect(CTFontCopyPostScriptName(font) as String == name)
-        }
+    /// The Mac sets text in the system faces: SF Pro, and SF Mono for anything monospaced.
+    @Test func theMacUsesTheSystemFaces() {
+        let sans = SHFonts.platform(mono: false, weight: .semibold, size: 13)
+        let mono = SHFonts.platform(mono: true, weight: .regular, size: 12)
+        #expect(sans.familyName == NSFont.systemFont(ofSize: 13).familyName)
+        #expect(sans.fontDescriptor.symbolicTraits.contains(.monoSpace) == false)
+        #expect(mono.familyName == NSFont.monospacedSystemFont(ofSize: 12, weight: .regular).familyName)
+        #expect(SHFonts.platform(mono: false, weight: .regular, size: 13, italic: true).fontDescriptor.symbolicTraits.contains(.italic))
     }
 
-    /// The Foundations board's ramp.
+    /// The redesign boards' ramp: 14/22 prose, 13/18 rows and titles, 12/17 meta, SF Mono 12.
     @Test func theTypeRampMatchesTheBoard() {
         let spec: [SHTextStyle: (CGFloat, Font.Weight, CGFloat, Bool)] = [
-            .display: (28, .semibold, 1.15, false), .title: (15, .semibold, 1.3, false),
-            .headline: (13.5, .semibold, 1.35, false), .body: (13.5, .regular, 1.6, false),
-            .ui: (12.5, .medium, 1.3, false), .caption: (11.5, .regular, 1.35, false),
-            .code: (12, .regular, 1.55, true), .mono: (11.5, .regular, 1.3, true), .micro: (10.5, .medium, 1.2, true),
+            .display: (22, .semibold, 28.0 / 22, false), .title: (13, .semibold, 18.0 / 13, false),
+            .headline: (13, .semibold, 18.0 / 13, false), .body: (14, .regular, 22.0 / 14, false),
+            .ui: (13, .regular, 18.0 / 13, false), .caption: (12, .regular, 17.0 / 12, false),
+            .code: (12, .regular, 1.5, true), .mono: (12, .regular, 1.3, true), .micro: (11, .medium, 1.2, true),
         ]
         for style in SHTextStyle.allCases {
             let (size, weight, lineHeight, mono) = spec[style]!
@@ -119,9 +121,9 @@ struct TokenTests {
         let ramp = SHTypeRamp(scale: 1)
         #expect(SHProseSize.regular.step == 0 && SHProseSize.small.step == SHTextStyle.body.size - SHTextStyle.ui.size)
         #if os(macOS)
-        #expect(ramp.font(.body) == Font.custom("Geist-Regular", fixedSize: 13.5))
-        #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", fixedSize: 12.5))
-        #expect(ramp.font(.headline, size: .small) == Font.custom("Geist-SemiBold", fixedSize: 12.5))
+        #expect(ramp.font(.body) == Font.system(size: 14, weight: .regular, design: .default))
+        #expect(ramp.font(.body, size: .small) == Font.system(size: 13, weight: .regular, design: .default))
+        #expect(ramp.font(.headline, size: .small) == Font.system(size: 12, weight: .semibold, design: .default))
         #else
         #expect(ramp.font(.body) == Font.custom("Geist-Regular", size: 13.5, relativeTo: .body))
         #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", size: 12.5, relativeTo: .body))
@@ -156,7 +158,7 @@ struct TokenTests {
     @Test func theScalesMatchTheBoard() {
         #expect([SH.Space.xxs, SH.Space.xs, SH.Space.s, SH.Space.m, SH.Space.l, SH.Space.xl, SH.Space.xxl, SH.Space.xxxl]
             == [2, 4, 6, 8, 12, 16, 24, 32])
-        #expect([SH.Radius.xs, SH.Radius.s, SH.Radius.m, SH.Radius.l] == [4, 6, 8, 12])
+        #expect([SH.Radius.xs, SH.Radius.s, SH.Radius.m, SH.Radius.l, SH.Radius.xl, SH.Radius.xxl, SH.Radius.bubble] == [4, 7, 8, 12, 14, 16, 18])
         #expect(SH.hairline(2) == 0.5 && SH.hairline(1) == 1)
     }
 

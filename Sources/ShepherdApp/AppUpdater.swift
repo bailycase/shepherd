@@ -168,7 +168,7 @@ final class AppUpdater {
 
     /// Where Shepherd Nightly is downloaded: its releases are prereleases with dated tags, so
     /// the list, not a fixed release, is the stable link.
-    static let nightlyDownloadURL = URL(string: "https://github.com/bailycase/shepherd/releases?q=nightly&expanded=true")!
+    static let nightlyDownloadURL = URL(string: "https://github.com/shepherd-app/shepherd/releases?q=nightly&expanded=true")!
 
     private let updater: SPUUpdater
     private let remoteDriver: RemoteUpdateDriver
@@ -388,10 +388,12 @@ struct HostUpdateGate: Sendable {
     /// The background host on this Mac, through whatever connection `client` reads now. A host
     /// out of reach refuses everything.
     static func host(_ client: @escaping @MainActor @Sendable () -> RemoteHostClient?) -> HostUpdateGate {
-        let ask = { @Sendable (step: HostUpdateGateStep) async -> String?? in
-            guard let host = await client() else { return nil }
-            return try? await host.hostUpdateGate(step)
+        // nil: the host couldn't be asked. `.some(nil)`: it said yes. (`try?` on a `String?` would fold a failure into the same `.some(nil)`.)
+        let askHost = { @Sendable (host: RemoteHostClient?, step: HostUpdateGateStep) async -> String?? in
+            guard let host else { return nil }
+            do { return .some(try await host.hostUpdateGate(step)) } catch { return nil }
         }
+        let ask = { @Sendable (step: HostUpdateGateStep) async -> String?? in await askHost(await client(), step) }
         let unreachable = "Shepherd's background service isn't connected. Reconnect and try again."
         return HostUpdateGate(reserve: { await ask(.reserve) == .some(nil) },
                               release: { Task.detached { _ = await ask(.release) } },
@@ -399,7 +401,7 @@ struct HostUpdateGate: Sendable {
                               blockReason: { await ask(.blockReason) ?? unreachable },
                               canTerminate: { done in
                                   let host = MainActor.assumeIsolated { client() }
-                                  Task.detached { done((try? await host?.hostUpdateGate(.canTerminate)) == .some(nil)) }
+                                  Task.detached { done(await askHost(host, .canTerminate) == .some(nil)) }
                               })
     }
 }

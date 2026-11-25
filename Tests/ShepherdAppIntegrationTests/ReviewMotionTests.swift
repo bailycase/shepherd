@@ -135,20 +135,15 @@ struct ReviewMotionTests {
     }
 
     /// A reload of the same side (here after a Revert) lands at once in the diff: easing its
-    /// sections under a pinned header mid-scroll opens blank gaps. The strip closes up over the
-    /// chip that left.
-    @Test func aRevertedFileLeavesTheDiffAtOnceWhileTheStripClosesUp() async {
+    /// sections under a pinned header mid-scroll opens blank gaps.
+    @Test func aRevertedFileLeavesTheDiffAtOnce() async {
         let files = [Self.file("a.txt", lines: 4), Self.file("b.txt", lines: 4), Self.file("c.txt", lines: 4)]
         let (model, window) = Self.pane(files)
         defer { window.close() }
-        let strip = Self.strip
 
         let diff = await MotionProbe.record(window, region: Self.diff, timeout: 1) { model.session.files = files.filter { $0.id != "a.txt" } }
         #expect(diff.settled.firstRow(differingFrom: diff.before) != nil, "the file leaves")
         #expect(diff.inBetween.isEmpty, "the diff lands at once")
-
-        let chips = await MotionProbe.record(window, region: strip) { model.session.files = files.filter { $0.id == "c.txt" } }
-        #expect(!chips.inBetween.isEmpty, "the chips close up")
     }
 
     // MARK: Beside the thread
@@ -243,29 +238,23 @@ struct ReviewMotionTests {
         }
     }
 
-    /// The file strip's chips, under the toolbar and the compare row.
-    private static let strip = CGRect(x: 0, y: 76, width: size.width, height: 38)
+    /// The file rows, under the toolbar and the compare row.
+    private static let strip = CGRect(x: 0, y: 76, width: size.width, height: 120)
 
+    /// The current file's fill moves with no easing, for a key and for a click alike: the rows are a list, not a strip of chips.
     @Test(arguments: [false, true])
-    func theStripsSelectionSlidesToAClickedFileAndJumpsForAKey(reduceMotion: Bool) async throws {
-        let (model, window) = Self.pane((0..<4).map { Self.file("f\($0).txt", lines: 4) }, reduceMotion: reduceMotion)
+    func theRowsSelectionFollowsAFileAtOnce(reduceMotion: Bool) async throws {
+        let (model, window) = Self.pane((0..<3).map { Self.file("f\($0).txt", lines: 4) }, reduceMotion: reduceMotion)
         defer { window.close() }
         // The first file's selection lands as the pane opens.
         _ = await MotionProbe.record(window, region: Self.strip, timeout: 0.5) {}
-        let empty = (x: Int(Self.size.width) - 2, y: 2)
 
         let key = await MotionProbe.record(window, region: Self.strip) { _ = model.handleKey("j") }
-        #expect(key.settled.firstColumn(differingFrom: key.before) != nil, "j selects the next chip")
+        #expect(key.settled.firstRow(differingFrom: key.before) != nil, "j selects the next row")
         #expect(key.inBetween.isEmpty, "at once")
 
-        let click = await MotionProbe.record(window, region: Self.strip) { model.select("f3.txt") }
-        #expect(!click.inBetween.isEmpty, "the selection moves over time")
-        // The selected fill is faint: a few levels from the strip's own background.
-        let away = click.inBetween.flatMap { $0.columnsAway(from: click.before, click.settled, empty: empty, emptyTolerance: 1, drawnThreshold: 6) }
-        if reduceMotion {
-            #expect(away.isEmpty, "the selection fades from chip to chip: \(Set(away).sorted().prefix(8))")
-        } else {
-            #expect(!away.isEmpty, "the selection slides from chip to chip")
-        }
+        let click = await MotionProbe.record(window, region: Self.strip) { model.select("f2.txt") }
+        #expect(click.settled.firstRow(differingFrom: click.before) != nil, "a click selects its row")
+        #expect(click.inBetween.isEmpty, "at once")
     }
 }

@@ -100,6 +100,7 @@ struct ContextPresentationTests {
         #expect(details.variant == .split && details.title == "Context" && details.meta == "claude-opus · 200k")
         #expect(details.total == "42k" && details.ofWindow == "of 200k" && details.trailing == "21%")
         #expect(details.markLabel == "auto-compact · 184k ↑" && abs((details.mark ?? 0) - 0.918) < 0.001)
+        #expect(details.autoCompactText == "184k")
         #expect(details.rows.map(\.label) == ["System prompt and tools", "Instructions · AGENTS.md", "Messages", "Tool results"])
         #expect(details.rows.map(\.value) == ["6.8k", "1.4k", "9.1k", "24.8k"])
         #expect(details.free == "158k")

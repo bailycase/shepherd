@@ -36,7 +36,7 @@ struct PiSignInFlowTests {
             var environment = ProcessInfo.processInfo.environment
             environment["FAKE_PI_CONTROL"] = control.path
             let files = pi.files
-            let store = PiAuthStore(pi: pi, bridge: {
+            let store = PiAuthStore(pi: pi, bridge: { _ in
                 PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: sdk, home: files),
                                environment: environment)
             })
@@ -104,6 +104,34 @@ struct PiSignInFlowTests {
         #expect((try setup.stored()["anthropic"] as? [String: Any])?["type"] as? String == "oauth")
     }
 
+    /// Usage comes from provider extensions, through the bridge: the signed-in account's, and each
+    /// saved account's with its own stored credential. A saved account's reading and email are kept
+    /// with it; one the extension has nothing for keeps what it last read.
+    @Test func everyAccountsUsageComesFromItsExtensionAndIsSaved() async throws {
+        let f = try Setup()
+        defer { f.remove() }
+        let live = 4_000_000_000_000.0
+        func oauth(_ token: String, expires: Double = live) -> [String: Any] { ["type": "oauth", "access": token, "refresh": "r", "expires": expires] }
+        try FileManager.default.createDirectory(at: f.pi.home, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["anthropic": oauth("tok-a")]).write(to: f.pi.home.appendingPathComponent("auth.json"))
+        try JSONSerialization.data(withJSONObject: ["anthropic": ["active": "a", "accounts": [
+            ["id": "a", "name": "Account 1", "credential": oauth("old")],
+            ["id": "b", "name": "Account 2", "credential": oauth("tok-b")],
+            ["id": "c", "name": "Account 3", "credential": oauth("tok-c", expires: 1),
+             "usage": [["name": "5-hour", "used": 7.0]], "usageAt": 1.0],
+        ]]]).write(to: f.pi.home.appendingPathComponent(PiAccounts.fileName))
+        try Data(#"{"tok-a":11,"tok-b":22}"#.utf8).write(to: f.control.appendingPathComponent("usage.json"))
+
+        let store = try f.store()
+        await store.refreshUsage()
+
+        #expect(store.usage["anthropic"]?.first?.usedPercent == 11) // the signed-in token, tok-a
+        let accounts = try #require(PiAccounts(home: f.pi.files).lists()["anthropic"]?.accounts)
+        #expect(accounts.map { $0.usage.first?.usedPercent } == [11, 22, 7])
+        #expect(accounts.map { $0.email } == ["tok-a@x.co", "tok-b@x.co", nil])
+        #expect(accounts[2].usageAt == Date(timeIntervalSince1970: 1))
+    }
+
     @Test func anOldSuccessfulKeyCheckNeverEnablesSaveWhileTheReplacementIsUnchecked() async throws {
         let setup = try Setup()
         defer { setup.remove() }
@@ -111,6 +139,7 @@ struct PiSignInFlowTests {
         let imported = String(decoding: try JSONEncoder().encode(URL(fileURLWithPath: FakePiSDK.path).absoluteString), as: UTF8.self)
         try """
         import { ModelRuntime as Base } from \(imported);
+        export { DefaultResourceLoader, SettingsManager } from \(imported);
         import * as fs from 'node:fs';
         import * as path from 'node:path';
         export class ModelRuntime extends Base {
@@ -151,6 +180,66 @@ struct PiSignInFlowTests {
         withObservationTracking { if session.keyCheck.allowsSave { allowed.withValue { $0 = true } } } onChange: {
             Task { @MainActor in watchKeyChecks(session, allowed: allowed) }
         }
+    }
+
+    @Test(arguments: [("fixture-login", PiSignInMethod.oauth), ("fixture-key", .apiKey)])
+    func aDiscoveredProviderUsesAccountLoginAndNativeQuestionsWithoutACatalogEntry(provider: String, method: PiSignInMethod) async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let auth = try setup.store()
+        await auth.refreshProviders()
+        #expect(auth.providersProblem == nil)
+        #expect(auth.providers?.contains { $0.id == provider } == true)
+        auth.signIn(provider, key: method == .apiKey)
+        let session = try #require(auth.session)
+        defer { auth.closeSheet() }
+        #expect(session.method == method && session.flow != .key)
+        let questions: [(PiSignInPrompt.Kind, String)] = method == .oauth
+            ? [(.select, "west"), (.text, "acme"), (.secret, " fixture-password ")]
+            : [(.secret, " !fixture$password "), (.text, "acme"), (.select, "west")]
+        for (kind, answer) in questions {
+            try await eventuallyOnMain("the provider's \(kind) question") {
+                if case .prompt(let prompt) = session.phase { return prompt.kind == kind }; return false
+            }
+            session.submitPrompt(answer)
+            #expect(session.promptAnswer.isEmpty)
+        }
+        try await eventuallyOnMain("the unfamiliar account to land") { if case .done = session.phase { return true }; return false }
+        await auth.landing?.value
+        let credential = try #require(try setup.stored()[provider] as? [String: Any])
+        #expect(credential["type"] as? String == (method == .oauth ? "oauth" : "api_key"))
+        if method == .apiKey { #expect(credential["key"] as? String == " !fixture$password ") }
+        await auth.signOut(provider)
+        #expect(try setup.stored()[provider] == nil)
+    }
+
+    /// An extension added in Shepherd that registers a provider: Sign-in names it as the provider's
+    /// source, and Tools learns what it registered and what Shepherd can't show of it.
+    @Test func aProviderIsAttributedToTheExtensionThatRegisteredIt() async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let source = setup.dir.appendingPathComponent("acme-login.ts")
+        try Data("export default pi => { pi.on('session_start', () => ctx.ui.setFooter(undefined)); };\n".utf8).write(to: source)
+        let copy = try setup.pi.importedState().addExtension(from: source)
+        let loaded = setup.pi.home.appendingPathComponent(copy.destination).path
+        let listed: [[String: Any]] = [["path": loaded, "providers": ["fixture-login"], "commands": ["acme-usage"],
+                                        "events": ["session_start"], "shortcuts": ["ctrl+shift+x"]]]
+        try JSONSerialization.data(withJSONObject: listed).write(to: setup.control.appendingPathComponent("extensions.json"))
+        let auth = try setup.store()
+
+        await auth.refreshProviders()
+
+        #expect(auth.providerOwners["fixture-login"]?.destination == copy.destination)
+        let survey = setup.pi.importedState().survey()
+        let row = try #require(survey.extensions.first { $0.copy.destination == copy.destination })
+        #expect(row.terminalOnly == ["footer or header"])
+        let support = PiExtensionSupport.make(try #require(auth.extensionInventory[copy.destination]), scanned: row.terminalOnly)
+        #expect(support.providers == ["fixture-login"])
+        #expect(support.level == .partly)
+        #expect(ExtensionsText.subtitle(row, support: support, names: auth.providerNames)
+            == "Adds Acme account sign-in, /acme-usage, 1 event hook · Not shown in Shepherd: shortcut ctrl+shift+x, footer or header · Added from \((source.path as NSString).abbreviatingWithTildeInPath)")
+        let page = PiSignInPage.make(survey: survey, providers: auth.providers, owners: auth.providerOwners)
+        #expect(page.subscriptions.first { $0.id == "fixture-login" }?.source == "acme-login")
     }
 
     @Test func signingOutRemovesOnlyThatProvidersCredentialFromShepherdsPi() async throws {

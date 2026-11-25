@@ -365,6 +365,7 @@ struct SubagentProfileScreen: View {
 /// Settings ▸ Models, first: each provider of the host's pi and whether it is signed in; never a value.
 struct ProviderSections: View {
     let store: SettingsStore
+    @Environment(MobileNavigator.self) private var navigator
     @State private var keyFor: String?
     /// The key form adds a key beside the saved one (Add key) rather than replacing it.
     @State private var addingKey = false
@@ -404,9 +405,9 @@ struct ProviderSections: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .shCard(radius: SHListMetrics.cardRadius)
                 }
-                let groups = Dictionary(grouping: providers, by: \.badge)
+                let page = HostInventoryPresentation.providerPage(providers)
                 ForEach(["Subscription", "API key", "Custom"], id: \.self) { badge in
-                    if let rows = groups[badge], !rows.isEmpty {
+                    if let rows = page.groups[badge], !rows.isEmpty {
                         SettingsSection(badge == "Subscription" ? "Subscriptions" : badge == "API key" ? "API keys" : "Custom providers") {
                             SHListCard {
                                 ForEach(rows) { provider in
@@ -430,6 +431,30 @@ struct ProviderSections: View {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+                if editable, !page.addableKeys.isEmpty || config.servesExtensions(host) {
+                    HStack(spacing: SH.Space.l) {
+                        if !page.addableKeys.isEmpty {
+                            Menu("Add an API key") {
+                                ForEach(page.addableKeys) { provider in
+                                    Button(provider.name) {
+                                        if provider.signIn?.keyForm == false {
+                                            Task { await config.perform(.providerSignIn(provider: provider.id, method: .apiKey), on: host) }
+                                        } else {
+                                            addingKey = false
+                                            keyFor = provider.id
+                                        }
+                                    }
+                                }
+                            }
+                            .buttonStyle(.sh(.secondary))
+                        }
+                        if config.servesExtensions(host) {
+                            // Providers come from extensions, added in Settings ▸ Tools.
+                            Button("Add a provider") { navigator.open(.settings(.tools)) }
+                                .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                         }
                     }
                 }
@@ -506,8 +531,10 @@ private struct ProviderAction: View {
             Menu {
                 if subscription {
                     Button("Add account") { run(.providerAccount(provider: provider.id, action: .add)) }
+                        .disabled(provider.signIn.map { $0.oauth == nil } ?? false)
                 } else if provider.auth == .apiKey {
-                    Button("Add key") { setKey(true) }
+                    Button("Add key") { beginKey(adding: true) }
+                        .disabled(provider.signIn.map { $0.apiKey == nil } ?? false)
                 }
                 Button(subscription ? "Sign out" : "Remove", role: .destructive) { run(.providerSignOut(provider: provider.id)) }
             } label: {
@@ -518,10 +545,20 @@ private struct ProviderAction: View {
             }
         } else if subscription {
             Button(provider.auth == .expired ? "Sign in again" : "Sign in") { run(.providerSignIn(provider: provider.id)) }
+                .disabled(provider.signIn.map { $0.oauth == nil } ?? false)
                 .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
         } else {
-            Button("Set key") { setKey(false) }
+            Button("Set key") { beginKey(adding: false) }
+                .disabled(provider.signIn.map { $0.apiKey == nil } ?? false)
                 .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
+        }
+    }
+
+    private func beginKey(adding: Bool) {
+        if provider.signIn?.keyForm == false {
+            run(.providerSignIn(provider: provider.id, method: .apiKey, adding: adding))
+        } else {
+            setKey(adding)
         }
     }
 }
@@ -557,17 +594,37 @@ private struct HostSignInPanel: View {
                         Button(progress.deviceCode == nil ? "Open sign-in page" : "Open the page") { openURL(address) }
                             .buttonStyle(.sh(.primary))
                     }
-                    if progress.wantsCode {
+                    if let prompt = progress.prompt {
+                        SettingsFootnote(prompt.message)
+                        if prompt.kind == .select {
+                            Menu("Choose…") {
+                                ForEach(prompt.options, id: \.id) { option in
+                                    Button(option.label) { send(option.id, progress: progress) }
+                                }
+                            }
+                            .buttonStyle(.sh(.secondary))
+                        } else {
+                            if prompt.kind == .secret {
+                                SecureField(prompt.placeholder ?? "Answer", text: $code)
+                                    .privacySensitive()
+                                    .textFieldStyle(SHTextFieldStyle(mono: true))
+                                    .accessibilityLabel(prompt.message)
+                            } else {
+                                TextField(prompt.placeholder ?? "Answer", text: $code)
+                                    .textFieldStyle(SHTextFieldStyle(mono: true))
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .accessibilityLabel(prompt.message)
+                            }
+                            Button("Continue") { send(code, progress: progress) }.buttonStyle(.sh(.secondary))
+                        }
+                    } else if progress.wantsCode {
                         SettingsFootnote(codePrompt)
                         TextField("Code or address", text: $code)
                             .textFieldStyle(SHTextFieldStyle(mono: true))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                        Button("Send") {
-                            let value = code
-                            code = ""
-                            Task { await config.complete(signInOn: host, with: value) }
-                        }
+                        Button("Send") { send(code, progress: progress) }
                         .buttonStyle(.sh(.secondary))
                         .disabled(code.isEmpty)
                     }
@@ -585,7 +642,14 @@ private struct HostSignInPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .shCard(radius: SHListMetrics.cardRadius)
             .task(id: progress.id) { await config.follow(signInOn: host, page: page) }
+            .onChange(of: progress.prompt?.id) { code = "" }
         }
+    }
+
+    private func send(_ answer: String, progress: HostSignInProgress) {
+        code = ""
+        let signInID = progress.id, promptID = progress.prompt?.id
+        Task { await config.complete(signInOn: host, with: answer, signInID: signInID, promptID: promptID) }
     }
 }
 

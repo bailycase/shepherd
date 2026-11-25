@@ -200,6 +200,8 @@ public struct AutomationDetail: Equatable, Sendable {
     public var lastRun: AutomationRunRow?
     /// The runs have been read from the host (else they are still loading, or unavailable).
     public var runsKnown: Bool
+    /// Why the host can't give its runs (its run history file is damaged), set by the caller that read them.
+    public var runsProblem: String? = nil
     /// A triggered automation's trigger, status and pending events; nil for a manual one.
     public var trigger: AutomationTriggerDetail? = nil
 

@@ -218,7 +218,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             files: card.rows.map {
                 SHTurnChangesCard.File(path: $0.path, directory: $0.directory, name: $0.name, isNew: $0.isNew, added: $0.added, removed: $0.removed)
             },
-            more: card.moreText, undone: card.state == .undone, busy: changesBusy,
+            total: card.fileCount, undone: card.state == .undone, busy: changesBusy,
             onUndo: card.state == .ready && card.canUndo ? undo : nil,
             onRedo: card.state == .undone && card.canRedo ? redo : nil,
             onReview: review,
@@ -421,6 +421,7 @@ struct ActivityLineView: View, Equatable {
         case .checked: .checked
         case .lookedAt: .lookedAtDesign
         case .browser: .browser
+        case .computer: .computer
         case .other: .other
         }
     }
@@ -434,6 +435,7 @@ struct ActivityLineView: View, Equatable {
     }
 
     private func toggle() {
+        SHRenderProbe.scrollEvent("thread.write.L9", "activity.disclosure", kind: "layout")
         withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
     }
 
@@ -452,6 +454,7 @@ struct ActivityLineView: View, Equatable {
             review(path)
         } else if call.expandable {
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+                SHRenderProbe.scrollEvent("thread.write.L9", "activity.callDisclosure", kind: "layout")
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
         }

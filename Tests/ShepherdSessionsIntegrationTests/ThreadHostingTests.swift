@@ -156,12 +156,12 @@ struct ThreadHostingTests {
         try caller.send(.helloAgent(agentID: lead.id))
 
         try caller.send(.listAgents(id: 1, agentID: lead.id))
-        guard case .agents(1, let peers) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        guard case .agents(1, let peers, _) = try await caller.reply() else { Issue.record("agent_list not served"); return }
         #expect(Set(peers.map(\.id)) == [lead.id, worker.id] && peers.first { $0.isSelf }?.id == lead.id)
 
         try caller.send(.spawnAgent(id: 2, agentID: lead.id, cwd: space.path, prompt: "Check the build",
                                     model: "claude-fable-5-1", thinking: "low"))
-        guard case .agents(2, let spawned) = try await caller.reply(), let id = spawned.first?.id else {
+        guard case .agents(2, let spawned, _) = try await caller.reply(), let id = spawned.first?.id else {
             Issue.record("agent_spawn not served"); return
         }
         let created = h.server.state.agents.first { $0.id == id }
@@ -175,6 +175,149 @@ struct ThreadHostingTests {
         try caller.send(.coordinateAgent(id: 3, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
         guard case .agentResult(3, let result) = try await caller.reply(), result.code == nil else { Issue.record("agent_delete not served"); return }
         #expect(!h.server.state.agents.contains { $0.id == worker.id })
+    }
+
+    /// agent_list names the space of every thread, in every space, with its last activity and whether it is asking. Listing a thread in another
+    /// space widens nothing: agent_read, agent_send and agent_delete reach a thread by id, in any space, exactly as before (the host checks the
+    /// caller's identity and that the target is an ordinary thread, never its space). Pinned so a change to either shows.
+    @Test func agentListNamesEverySpaceAndAThreadInAnotherSpaceIsReachedExactlyAsBefore() async throws {
+        try StubPi.installAsEngine()
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        h.server.setAgentMessagePolicy(.always)
+        let (web, docs) = (Space(name: "acme-web", path: h.dir.path), Space(name: "acme-docs", path: h.dir.appendingPathComponent("docs").path))
+        try await h.server.addSpace(web)
+        try await h.server.addSpace(docs)
+        func thread(_ name: String, in space: Space, lastActiveAt: Double? = nil, waitingOn: String? = nil) async throws -> Agent {
+            let pane = LeafPane(cwd: space.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true, lastActiveAt: lastActiveAt, waitingOn: waitingOn)
+            try await h.server.addAgent(agent, withTab: tab)
+            return agent
+        }
+        let lead = try await thread("lead", in: web, lastActiveAt: 2_000)
+        let far = try await thread("far", in: docs, lastActiveAt: 1_000, waitingOn: "Which branch?")
+        let caller = try ExtensionClient(path: h.socketPath), target = try ExtensionClient(path: h.socketPath)
+        try caller.send(.helloAgent(agentID: lead.id))
+        try target.send(.helloAgent(agentID: far.id))
+        // The target's registration landed once a request addressed to it is answered by the barrier below.
+        try target.send(.coordinateAgent(id: 0, agentID: far.id, targetAgentID: far.id, request: .init(operation: .status)))
+        guard case .error(0, "self_control", _) = try await target.reply() else { Issue.record("no registration barrier"); return }
+
+        try caller.send(.listAgents(id: 1, agentID: lead.id))
+        guard case .agents(1, let peers, _) = try await caller.reply() else { Issue.record("agent_list not served"); return }
+        let byName = Dictionary(uniqueKeysWithValues: peers.map { ($0.name, $0) })
+        #expect(byName["lead"]?.space == "acme-web" && byName["lead"]?.lastActiveAt == 2_000 && byName["lead"]?.asking == false && byName["lead"]?.isSelf == true)
+        #expect(byName["far"]?.space == "acme-docs" && byName["far"]?.lastActiveAt == 1_000 && byName["far"]?.asking == true && byName["far"]?.isSelf == false)
+
+        // The detailed list, over the wire: newest first, and the plain one above stays in the order of the state.
+        try caller.send(.listAgents(id: 5, agentID: lead.id, details: true))
+        guard case .agents(5, let detailed, let omitted) = try await caller.reply() else { Issue.record("detailed agent_list not served"); return }
+        #expect(detailed.map(\.name) == ["lead", "far"] && omitted == 0)
+
+        // agent_read: relayed to the other space's thread.
+        try caller.send(.coordinateAgent(id: 2, agentID: lead.id, targetAgentID: far.id, request: .init(operation: .read)))
+        guard case .agentRequest(0, let token, far.id, let relayed) = try await target.reply() else { Issue.record("a read of a thread in another space was refused"); return }
+        #expect(relayed.operation == .read)
+        try target.send(.agentResponse(agentID: far.id, requestID: token, result: .init(text: "no messages")))
+        #expect(try await caller.reply() == .agentResult(id: 2, result: .init(text: "no messages")))
+        // agent_send: delivered to it.
+        try caller.send(.sendToAgent(id: 3, agentID: lead.id, targetAgentID: far.id, text: "ping", delivery: .report))
+        guard case .message(_, let delivered, .report) = try await target.reply() else { Issue.record("a message to a thread in another space was not delivered"); return }
+        #expect(delivered.contains("ping"))
+        #expect(try await caller.reply() == .ok(id: 3))
+        // agent_delete: deletes it.
+        try caller.send(.coordinateAgent(id: 4, agentID: lead.id, targetAgentID: far.id, request: .init(operation: .delete)))
+        guard case .agentResult(4, let deleted) = try await caller.reply(), deleted.code == nil else { Issue.record("agent_delete of a thread in another space was refused"); return }
+        #expect(!h.server.state.agents.contains { $0.id == far.id })
+    }
+
+    @Test func detailedAgentListReportsCheckoutStatusWithoutFilenamesOrAttribution() async throws {
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let dirty = try makeScratchRepo(files: ["sub/tracked.txt": "base\n"])
+        try git(["branch", "base"], in: dirty)
+        try git(["branch", "--set-upstream-to=base"], in: dirty)
+        try git(["commit", "--allow-empty", "-qm", "one ahead"], in: dirty)
+        let clean = h.dir.appendingPathComponent("linked-checkout")
+        try git(["worktree", "add", "-q", "--detach", clean.path], in: dirty)
+        let nonGit = try makeScratchDirectory("not-git")
+        let unexpected = "private-untracked-name"
+        try "not disclosed".write(to: dirty.appendingPathComponent(unexpected), atomically: true, encoding: .utf8)
+
+        func thread(_ name: String, in directory: URL, expected: PeerCheckoutStatus) async throws -> (AgentID, PeerCheckoutStatus) {
+            let space = Space(name: name, path: directory.path)
+            try await h.server.addSpace(space)
+            let pane = LeafPane(cwd: directory.path)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+            let agent = Agent(name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, nameIsFinal: true)
+            try await h.server.addAgent(agent, withTab: tab)
+            return (agent.id, expected)
+        }
+        let expected = [try await thread("lead", in: dirty, expected: .dirty),
+                        try await thread("shared", in: dirty.appendingPathComponent("sub"), expected: .dirty),
+                        try await thread("clean", in: clean, expected: .clean),
+                        try await thread("unknown", in: nonGit, expected: .unknown)]
+        let caller = try ExtensionClient(path: h.socketPath)
+        let agentID = expected[0].0
+        try caller.send(.listAgents(id: 1, agentID: agentID))
+        guard case .agents(1, let plain, _) = try await caller.reply() else { Issue.record("plain list not served"); return }
+        #expect(plain.count == expected.count && plain.allSatisfy { $0.checkoutStatus == nil && $0.commitsAheadOfLocalUpstream == nil })
+        try caller.send(.listAgents(id: 2, agentID: agentID, details: true))
+        let reply = try await caller.reply()
+        guard case .agents(2, let detailed, _) = reply else { Issue.record("detailed list not served"); return }
+        #expect(detailed.count == expected.count)
+        for (id, checkout) in expected {
+            let row = try #require(detailed.first { $0.id == id })
+            #expect(row.checkoutStatus == checkout)
+            #expect(row.commitsAheadOfLocalUpstream == (checkout == .dirty ? 1 : nil))
+        }
+        #expect(!String(decoding: try NDJSON.encode(reply), as: UTF8.self).contains(unexpected))
+        #expect(h.server.state.agents.count == expected.count)
+    }
+
+    @Test func detailedAgentListUsesTheAgentPaneNotTheFirstTerminal() async throws {
+        let (h, _, _) = try host()
+        defer { h.stop() }
+        let clean = try makeScratchRepo(), dirty = try makeScratchRepo()
+        for repo in [clean, dirty] {
+            try git(["branch", "base"], in: repo)
+            try git(["branch", "--set-upstream-to=base"], in: repo)
+        }
+        try git(["commit", "--allow-empty", "-qm", "agent checkout one ahead"], in: dirty)
+        try "pending work\n".write(to: dirty.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let space = Space(name: "acme-web", path: dirty.path)
+        try await h.server.addSpace(space)
+        let agentID = AgentID()
+        let terminal = LeafPane(cwd: clean.path)
+        let thread = LeafPane(cwd: dirty.path, agentID: agentID)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .split(
+            axis: .horizontal, ratio: 0.5, first: .leaf(terminal), second: .leaf(thread)))
+        var agent = Agent(id: agentID, name: "worker", spaceID: space.id, tabID: tab.id, paneID: thread.id, nameIsFinal: true)
+        try await h.server.addAgent(agent, withTab: tab)
+
+        func row(id: Int, details: Bool) async throws -> AgentPeerInfo {
+            let caller = try ExtensionClient(path: h.socketPath)
+            try caller.send(.listAgents(id: id, agentID: agentID, details: details))
+            let reply = try await caller.reply()
+            let rows: [AgentPeerInfo]
+            if case .agents(let replyID, let listed, _) = reply, replyID == id { rows = listed } else { rows = [] }
+            return try #require(rows.first { $0.id == agentID })
+        }
+
+        let plain = try await row(id: 1, details: false)
+        #expect(plain.cwd == clean.path && plain.checkoutStatus == nil && plain.commitsAheadOfLocalUpstream == nil)
+        let detailed = try await row(id: 2, details: true)
+        #expect(detailed.checkoutStatus == .dirty, "reported \(detailed.checkoutStatus?.rawValue ?? "none"); the first pane is a terminal in a different, clean checkout")
+        #expect(detailed.commitsAheadOfLocalUpstream == 1, "the first pane's checkout is zero ahead")
+        #expect(detailed.cwd == dirty.path)
+
+        agent.paneID = nil
+        try await h.server.updateAgent(agent)
+        let missing = try await row(id: 3, details: true)
+        #expect(missing.checkoutStatus == .unknown)
+        #expect(missing.commitsAheadOfLocalUpstream == nil)
+        #expect(missing.cwd.isEmpty)
     }
 
     /// agent_spawn with place worktree: a new branch from the starter's commit, in the same folder of the repository. A thread three deep
@@ -201,7 +344,7 @@ struct ThreadHostingTests {
         try caller.send(.spawnAgent(id: 9, agentID: lead.id, cwd: web, prompt: "x", place: .checkout, branch: "agent/x"))
         guard case .error(9, "invalid", _) = try await caller.reply() else { Issue.record("a branch with place checkout was accepted"); return }
         try caller.send(.spawnAgent(id: 1, agentID: lead.id, cwd: web, prompt: "Shard the UI tests", place: .worktree, branch: "agent/shard-ui"))
-        guard case .agents(1, let spawned) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
+        guard case .agents(1, let spawned, _) = try await caller.reply(), let id = spawned.first?.id else { Issue.record("agent_spawn not served"); return }
         let child = try #require(h.server.state.agents.first { $0.id == id })
         #expect(child.worktreeBranch == "agent/shard-ui" && child.worktreeBase == head && child.startedBy?.depth == 3)
         let path = try #require(child.worktreePath)
@@ -243,7 +386,7 @@ struct ThreadHostingTests {
         try caller.send(.helloAgent(agentID: lead.id))
         for id in 2...4 {
             try caller.send(.spawnAgent(id: id, agentID: lead.id, cwd: space.path, prompt: "Part \(id)"))
-            guard case .agents(id, _) = try await caller.reply() else { Issue.record("spawn \(id) refused"); return }
+            guard case .agents(id, _, _) = try await caller.reply() else { Issue.record("spawn \(id) refused"); return }
         }
         try caller.send(.spawnAgent(id: 5, agentID: lead.id, cwd: space.path, prompt: "One too many"))
         guard case .error(5, "held_limit", _) = try await caller.reply() else { Issue.record("a fourth thread started while three ran"); return }
@@ -469,6 +612,16 @@ struct ThreadHostingTests {
         #expect(restarted != session)
         try await client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
         #expect(leaf(opened)?.sessionID == restarted, "a running shell is kept")
+
+        // Two demands while it starts (a view shown again, a phone) share the one start, neither fails.
+        h.server.killSession(restarted)
+        try await h.server.updatePaneSession(tabID: agent.tabID, paneID: opened, sessionID: nil)
+        async let first: Void = client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
+        async let second: Void = client.agentAction(agentID: id, action: .startTerminal(paneID: opened))
+        _ = try await (first, second)
+        let shared = try #require(leaf(opened)?.sessionID)
+        #expect(shared != restarted)
+        #expect(await h.server.sessionInfo(sessionID: shared)?.isAlive == true)
 
         // The thread itself is never a terminal.
         await #expect(throws: RemoteHostClientError.self) {

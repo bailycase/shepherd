@@ -65,6 +65,16 @@ struct RemoteBrowserDriveTests {
             diagnostic?("initial-host-owner.after")
         }
 
+        func showTabAndWaitForAdoption() async throws {
+            let session = self.session
+            let browser = try #require(session.remote)
+            var finished = false
+            browser.onClaimAdoptionFinished = { finished = true }
+            defer { browser.onClaimAdoptionFinished = nil }
+            try await showTab(session)
+            try await eventuallyOnMain("the viewer to finish processing the offered page") { finished }
+        }
+
         /// The agent's extension on the host.
         func extensionConnection() throws -> AgentConnection {
             diagnostic?("extension-connect.before")
@@ -209,9 +219,9 @@ struct RemoteBrowserDriveTests {
         #expect(snapshot.contains("- heading \"Checkout\" [level=1]") && snapshot.contains("button \"Pay $148.00\""))
         let email = try ref(in: snapshot, "textbox \"Email\""), apply = try ref(in: snapshot, "button \"Apply promo\"")
 
-        let typed = try await agent.text(.type(ref: email, text: "baily@acme.dev", clear: true, submit: false, note: nil))
-        #expect(typed.contains("Typed 14 characters"))
-        #expect(try await pageText(session, "document.getElementById('echo').textContent") == "typed: baily@acme.dev")
+        let typed = try await agent.text(.type(ref: email, text: "alex@acme.dev", clear: true, submit: false, note: nil))
+        #expect(typed.contains("Typed 13 characters"))
+        #expect(try await pageText(session, "document.getElementById('echo').textContent") == "typed: alex@acme.dev")
         #expect(session.agentOverlay?.note == "typing in “Email”")
 
         let clicked = try await agent.text(.click(ref: apply, double: false, note: nil))
@@ -255,7 +265,7 @@ struct RemoteBrowserDriveTests {
         #expect(back.contains("Went back to \(s.url("/checkout"))"))
     }
 
-    @Test func withNoClaimTheHostsOwnPageAnswersAndTheViewersTabGetsTheDot() async throws {
+    @Test func withNoClaimTheHostsOwnPageAnswersAndTheViewerIsNotMarked() async throws {
         let s = try await setup()
         defer { s.stop() }
         let session = s.session
@@ -266,26 +276,28 @@ struct RemoteBrowserDriveTests {
         let hostSession = try #require(s.hostVM.browsers.existing(s.agent.agent.id))
         #expect(hostSession.hasPage && !session.hasPage, "the viewer's tab is a page of its own")
 
-        // The thread's viewers mark the Browser tab, never opening the pane by itself.
+        // The host still announces the page (`opened`); the viewer neither marks nor opens anything. A later
+        // state push on the same delivery queue shows the announcement was processed.
+        try await s.remote.host.server.renameAgent(s.ref.agentID, to: "Renamed thread")
+        try await eventuallyOnMain("the viewer to process the later state push") {
+            s.connection.state.agents.first { $0.id == s.ref.agentID }?.name == "Renamed thread"
+        }
         let owner = SidePaneOwner.remote(s.ref)
-        try await eventuallyOnMain("the dot on the viewer's Browser tab") { s.vm.subagentInspector.news[owner] == [.browser] }
-        #expect(!s.vm.subagentInspector.open.contains(owner), "nothing opens by itself")
-        #expect(session.openedByAgent?.url.absoluteString == hostPage)
-        #expect(SidePaneTabs.tip(opened: session.openedByAgent)?.text == BrowserAddress.display(URL(string: hostPage))?.host.appending("/checkout"))
-        #expect(s.vm.sidePaneButton(for: owner).news == "Agent opened a page in Browser")
+        #expect(!s.vm.subagentInspector.open.contains(owner) && s.vm.subagentInspector.news[owner] == nil)
+        #expect(s.vm.sidePaneButton(for: owner).news == nil)
     }
 
-    @Test func aViewerThatHasTheTabOnScreenIsNotMarkedForWhatItAlreadySees() async throws {
+    @Test func aShowThroughTheViewersClaimOpensTheViewersPaneOnTheBrowser() async throws {
         let s = try await setup()
         defer { s.stop() }
+        try await s.showTab()
         let owner = SidePaneOwner.remote(s.ref)
-        s.vm.subagentInspector.open.insert(owner)
-        s.vm.subagentInspector.tabs[owner] = .browser
-        s.vm.selectRemoteAgent(hostID: s.ref.hostID, agentID: s.ref.agentID)
+        #expect(!s.vm.subagentInspector.open.contains(owner))
         let agent = try s.extensionConnection()
-        _ = try await agent.text(.open(url: s.web.url("/checkout").absoluteString.replacingOccurrences(of: "127.0.0.1", with: "localhost"), note: nil))
-        try await eventuallyOnMain("the tip to be kept") { s.session.openedByAgent != nil }
-        #expect(s.vm.subagentInspector.news[owner] == nil, "the tab on screen needs no dot")
+        let shown = try await agent.text(.show)
+        #expect(shown.contains(s.session.tabID.uuidString))
+        #expect(s.vm.subagentInspector.open.contains(owner) && s.vm.subagentInspector.tab(for: owner) == .browser)
+        #expect(!s.hostVM.subagentInspector.open.contains(.local(s.ref.agentID)), "the host's own app is not the viewer")
     }
 
     // MARK: Adopting the host's page
@@ -310,15 +322,13 @@ struct RemoteBrowserDriveTests {
         session.load(URL(string: s.url("/terms"))!)
         try await eventuallyOnMain("the viewer's own page") { session.webView?.title == "Terms" }
         s.remote.host.server.onBrowserPageURL = { [port = s.port] _, answer in answer("http://localhost:\(port)/checkout") }
-        try await s.showTab()
-        try await Task.sleep(for: .milliseconds(300))
+        try await s.showTabAndWaitForAdoption()
         #expect(session.url?.absoluteString == s.url("/terms"), "a claim replaces nothing the user opened")
 
         let other = try await setup()
         defer { other.stop() }
         other.remote.host.server.onBrowserPageURL = { _, answer in answer("http://192.168.1.50:8080/admin") }
-        try await other.showTab()
-        try await Task.sleep(for: .milliseconds(300))
+        try await other.showTabAndWaitForAdoption()
         #expect(!other.session.hasPage && other.session.webView == nil, "an address on the viewer's network is not adopted")
     }
 
@@ -421,16 +431,26 @@ struct RemoteBrowserDriveTests {
     }
 
     @Test func aTabThatStaysOutOfSightLetsTheAgentsBrowserGoBackToTheHostAndComesBackClaimingAgain() async throws {
-        let s = try await setup(grace: 0.4)
+        let s = try await setup(grace: 0.1)
         defer { s.stop() }
+        let control = try await setup(grace: 0.1)
+        defer { control.stop() }
         let session = s.session
         try await s.showTab()
+        let owner = try #require(s.remote.host.server.browserOwnerFD(of: s.agent.agent.id))
         s.vm.browserPaneDisappeared(session)
-        // A quick look at another tab keeps the claim.
-        try await Task.sleep(for: .milliseconds(150))
+        try #require(session.remote?.claimant.phase == .owned)
+        try #require(s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == owner)
         s.vm.browserPaneAppeared(session)
-        try await Task.sleep(for: .milliseconds(600))
-        #expect(session.remote?.claimant.phase == .owned && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) != nil)
+
+        // The control hides later and its grace expires while the original claim is shown.
+        try await control.showTab()
+        control.vm.browserPaneDisappeared(control.session)
+        try #require(control.session.remote?.claimant.phase == .owned)
+        try await eventuallyOnMain("the later hidden claim to release") {
+            control.remote.host.server.browserOwnerFD(of: control.agent.agent.id) == nil
+        }
+        #expect(session.remote?.claimant.phase == .owned && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == owner)
 
         s.vm.browserPaneDisappeared(session)
         try await eventuallyOnMain("the host to have its browser back") { s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == nil }
@@ -495,15 +515,15 @@ struct RemoteBrowserDriveTests {
         #expect(s.connection.supportsBrowser, "the tab is there: the tunnel is")
         #expect(session.remote?.driveClient == nil)
         s.vm.browserPaneAppeared(session)
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(session.remote?.claimant.phase == .idle && s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) == nil, "nothing was claimed")
-
-        // The agent's page stays the host's own, and no dot reaches the viewer. (With its capability taken
-        // away this host's own app can't run that page either, so the open itself isn't checked here.)
-        let agent = try s.extensionConnection()
-        let hostPage = s.web.url("/terms").absoluteString.replacingOccurrences(of: "127.0.0.1", with: "localhost")
-        _ = try await agent.ask(.open(url: hostPage, note: nil))
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(!session.hasPage && session.openedByAgent == nil)
+        // An older host must not announce an opened page. Queue the announcement attempt, then
+        // observe the rename's state push on the same viewer delivery queue as any .opened.
+        let server = s.remote.host.server
+        server.announceBrowserPageOpened(agentID: s.ref.agentID, url: s.url("/terms"))
+        try await server.renameAgent(s.ref.agentID, to: "Renamed thread")
+        try await eventuallyOnMain("the viewer to process the later state push") {
+            s.connection.state.agents.first { $0.id == s.ref.agentID }?.name == "Renamed thread"
+        }
+        #expect(session.remote?.claimant.phase == .idle && server.browserOwnerFD(of: s.ref.agentID) == nil, "nothing was claimed")
+        #expect(!session.hasPage)
     }
 }

@@ -219,7 +219,7 @@ public struct SHGlance: Codable, Hashable, Sendable {
         return parts.isEmpty ? "Nothing running" : parts.joined(separator: " · ")
     }
 
-    /// "build-01, This Mac online · horizon offline".
+    /// "build-01, This Mac online · orbit offline".
     public var hostsLine: String {
         let online = hosts.filter(\.online).map(\.name)
         let offline = hosts.filter { !$0.online }.map(\.name)

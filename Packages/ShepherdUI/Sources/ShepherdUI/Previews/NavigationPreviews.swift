@@ -20,11 +20,11 @@ private let started = Date().addingTimeInterval(-41 * 60)
                         SHSidebarSection(.pinned)
                         SHSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
                                      accessory: .elapsed(since: started))
-                        SHSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"))
+                        SHSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("orbit"))
                         SHSidebarSection(.recents)
                         SHSidebarRow("Merge PR #24 after CI", leading: .glyph("bolt", attention: false), accessory: .text("done"))
                         SHSidebarRow("Fix terminal output buffer", state: .done)
-                        SHSidebarRow("Fix remote nightly", state: .failed, accessory: .tag("horizon"))
+                        SHSidebarRow("Fix remote nightly", state: .failed, accessory: .tag("orbit"))
                     }
                     .padding(.horizontal, SHSidebarMetrics.listInset)
                 } footer: {
@@ -48,11 +48,11 @@ private let started = Date().addingTimeInterval(-41 * 60)
                     SHSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
                     SHSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
                                  accessory: .elapsed(since: started), nested: true)
-                    SHSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"), nested: true)
+                    SHSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("orbit"), nested: true)
                     SHProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
                     SHProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
                     SHProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
-                    SHSidebarSection(.host("horizon", unreachable: true))
+                    SHSidebarSection(.host("orbit", unreachable: true))
                     SHProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
                 }
                 .padding(.horizontal, SHSidebarMetrics.listInset)
@@ -81,7 +81,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
                 SHOptionsMenu("Thread options") { Button("Rename…") {} }
             }
             SHThreadToolbar("Deploy media stack", project: "homelab", sidebar: {}) {
-                SHBranchChip(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon")
+                SHBranchChip(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "orbit")
             } trailing: {
                 SHSidePaneButton(isOn: true, shortcut: "⇧⌘B") {}
                 SHOptionsMenu("Thread options") { Button("Rename…") {} }
@@ -125,7 +125,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
     SHPreviewBoth {
         SHPaletteCard {
             SHPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $focused, submit: {}) {
-                SHSegmentedPicker(selection: .constant(0), options: [(0, "All"), (1, "Commands"), (2, "Agents")], size: .s)
+                SHPaletteScope("Scope", selection: .constant(0), options: [(0, "All"), (1, "Commands"), (2, "Agents")])
             }
         } results: {
             VStack(alignment: .leading, spacing: 0) {
@@ -135,6 +135,8 @@ private let started = Date().addingTimeInterval(-41 * 60)
                 SHPaletteSectionHeader("Agents")
                 SHPaletteRow("Dock review pane", systemImage: "bubble.left", context: "running · 8m") {}
             }
+        } footer: {
+            SHPaletteFooter(runs: "New agent")
         }
         .frame(width: SHPaletteMetrics.width)
     }

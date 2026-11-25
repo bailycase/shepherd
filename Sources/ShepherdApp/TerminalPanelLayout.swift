@@ -34,6 +34,8 @@ struct TerminalPanelGeometry: Equatable {
     /// The thread folded to one line over the maximized panel (TerminalStates).
     var fold: CGRect? = nil
     let leaves: [Leaf]
+    /// The raised card around the strip and the terminals (GXTerminal); nil while the panel is hidden.
+    var card: CGRect? = nil
     /// The tab strip and the terminals' area; nil while the panel is hidden.
     let tabBar: CGRect?
     let content: CGRect?
@@ -66,7 +68,12 @@ func terminalPanelGeometry(
     // Hidden, the terminals keep the place they would have: their grids never change on a toggle.
     let panelTop = shown && maximized ? foldHeight : max(0, total - height)
     let panelHeight = shown && maximized ? total - foldHeight : min(height, total)
-    let content = CGRect(x: 0, y: panelTop + barHeight, width: width, height: max(0, panelHeight - barHeight))
+    // The panel is a card inset in its room (GXTerminal): the strip across its top, the terminal under it.
+    let inset = SHTerminalMetrics.cardInsets
+    let card = CGRect(x: inset.leading, y: panelTop + inset.top, width: max(0, width - inset.leading - inset.trailing),
+                      height: max(0, panelHeight - inset.top - inset.bottom))
+    let strip = CGRect(x: card.minX, y: card.minY, width: card.width, height: min(barHeight, card.height))
+    let content = CGRect(x: card.minX, y: strip.maxY, width: card.width, height: max(0, card.height - strip.height))
 
     var leaves: [TerminalPanelGeometry.Leaf] = []
     if let pane = layout.leaf(withID: thread) {
@@ -77,8 +84,8 @@ func terminalPanelGeometry(
     }
     return TerminalPanelGeometry(
         thread: threadRect, fold: foldHeight > 0 ? CGRect(x: 0, y: 0, width: width, height: foldHeight) : nil,
-        leaves: leaves,
-        tabBar: shown ? CGRect(x: 0, y: panelTop, width: width, height: barHeight) : nil,
+        leaves: leaves, card: shown ? card : nil,
+        tabBar: shown ? strip : nil,
         content: shown ? content : nil, tabs: tabs, selected: selected
     )
 }

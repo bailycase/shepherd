@@ -263,8 +263,10 @@ struct AgentLayoutView: View, Equatable {
         let sideTab = model.sideTab
         if let design = model.design, let thread, model.systemBuild {
             DesignSystemLayoutView(vm: vm, model: model, designID: design, thread: thread)
+                .underWorkspaceToolbar()
         } else if let design = model.design, let thread {
             DesignLayoutView(vm: vm, model: model, designID: design, thread: thread)
+                .underWorkspaceToolbar()
         } else {
             threadLayout(thread: thread, inspecting: inspecting, sideTab: sideTab)
         }
@@ -275,7 +277,7 @@ struct AgentLayoutView: View, Equatable {
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
         RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                       maximized: inspecting == nil && model.sideMaximized) {
+                       maximized: inspecting == nil && model.sideMaximized, card: true, publishesReserve: model.isVisible) {
             PaneTreeView(vm: vm, model: model)
         } pane: {
             if let thread {
@@ -450,11 +452,15 @@ struct PaneTreeView: View {
                         }
                     }
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .terminalCardClip(leaf.pane.id != thread.paneID)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
+                        // The terminals draw over the card; the thread under it.
+                        .zIndex(leaf.pane.id == thread.paneID ? 0 : 2)
                 }
+                TerminalPanelCard(geometry: geometry).zIndex(1)
                 LocalFoldedThreadChrome(geometry: geometry, threadTitle: thread.agentName, live: thread.live,
                                         restore: { [vm] in vm.toggleTerminalMaximized() })
                 if let bar = geometry.tabBar {
@@ -599,11 +605,18 @@ struct PaneLeafView: View, Equatable {
                     authActions: ThreadAuthActions(
                         signIn: { [vm] provider in vm.openSignIn(provider, origin: .agentCard) },
                         useModel: { [vm] model in vm.useAnotherModel(agentID, model: model) },
-                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.pi.catalog).models.map(\.id) }),
+                        models: { [vm] in
+                            await vm.piAuth.refreshProviders()
+                            return await ModelCatalog.loadLocal(from: vm.pi.catalog).models.map(\.id)
+                        },
+                        providerKnown: { [vm] id in vm.piAuth.providers?.contains { $0.id == id } ?? ThreadAuthNotice.known(id) }),
                     slashLogin: vm.slashLoginActions
                 )
                 // Design references reach an ordinary thread only.
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
+                // Thread links in its prose and its # picker (ThreadLinkA).
+                .environment(\.shThreadLinks, vm.threadLinks)
+                .environment(\.threadLinkSelf, agentID.rawValue)
                 // Dispatches: what this thread sent, or where it came from (nil outside Fleet).
                 .environment(\.fleetThread, model.fleet)
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
@@ -676,6 +689,8 @@ struct RemoteLayoutModel: Equatable {
         let cwd: String
         /// What it draws of where it came from, when another Mac's thread or the person sent it (`ShepherdViewModel.fleetSurface`).
         var fleet: FleetThreadSurface? = nil
+        /// The branch its card names and the checkout's changed-file count, which moves the card's read.
+        var branch: AgentBranchLabel? = nil
     }
 
     let ref: RemoteAgentRef
@@ -819,7 +834,8 @@ extension RemoteLayoutModel {
         let thread = tab.layout.leaves.lazy.compactMap { leaf in
             primaryAgent(in: tab, pane: leaf, agents: own).map {
                 Thread(paneID: leaf.id, agentName: $0.name, cwd: leaf.cwd,
-                       fleet: screen.fleet.map { var fleet = $0; fleet.offline = dispatchedAway; return fleet })
+                       fleet: screen.fleet.map { var fleet = $0; fleet.offline = dispatchedAway; return fleet },
+                       branch: AgentBranchLabel(agent: $0))
             }
         }.first
         let panel = screen.panel(tab.id)
@@ -939,9 +955,11 @@ struct RemoteAgentPaneContent: View, Equatable {
                 HostAwayBanner(name: host, lastSeen: lastSeen, thisMac: hostID == vm.remoteHosts.localHost?.id) {
                     vm.remoteHosts.reconnect(id: hostID)
                 }
+                .underWorkspaceToolbar()
                 .shTransition(.content)
             case .design(let design, let agent, let name, let threadPaneID):
                 RemoteDesignLayoutView(vm: vm, ref: design, agent: agent, agentName: name, threadPaneID: threadPaneID)
+                    .underWorkspaceToolbar()
                     .id(design.designID)
             case .layout(let model):
                 RemoteAgentLayoutView(vm: vm, model: model)
@@ -949,6 +967,7 @@ struct RemoteAgentPaneContent: View, Equatable {
                     .id(model.tab.id)
             case .placeholder(let text, let phase):
                 PanePlaceholder(text: text)
+                    .underWorkspaceToolbar()
                     .shTransition(.content)
                     .id(phase)
             }
@@ -975,12 +994,14 @@ private struct RemoteAgentLayoutView: View, Equatable {
         let inspecting = model.inspectingRunID
         let sideTab = model.sideTab
         VStack(spacing: 0) {
-            if let offline = model.offline {
-                FleetOfflineBannerView(banner: offline) { [vm, ref] in vm.remoteHosts.reconnect(id: ref.hostID) }
-            }
             RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                           maximized: inspecting == nil && model.sideMaximized) {
-                RemotePaneTreeView(vm: vm, model: model)
+                           maximized: inspecting == nil && model.sideMaximized, card: true, publishesReserve: model.isVisible) {
+                VStack(spacing: 0) {
+                    if let offline = model.offline {
+                        FleetOfflineBannerView(banner: offline) { [vm, ref] in vm.remoteHosts.reconnect(id: ref.hostID) }
+                    }
+                    RemotePaneTreeView(vm: vm, model: model)
+                }
             } pane: {
             if let thread = model.thread {
                 let store = vm.remoteThreadStores.store(for: ref)
@@ -1051,11 +1072,14 @@ private struct RemotePaneTreeView: View {
                         }
                     }
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .terminalCardClip(leaf.pane.id != thread)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                         .opacity(leaf.shown ? 1 : 0)
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
+                        .zIndex(leaf.pane.id == thread ? 0 : 2)
                 }
+                TerminalPanelCard(geometry: geometry).zIndex(1)
                 TerminalPanelChrome(geometry: geometry, threadTitle: model.thread?.agentName ?? "",
                                     threadState: model.foldedState ?? .idle,
                                     restore: { [vm] in vm.toggleTerminalMaximized() })
@@ -1149,7 +1173,8 @@ private struct RemotePaneLeafView: View {
                                       isFocused: shown && model.focusedPaneID == leaf.id,
                                       active: model.isVisible && shown, cwd: thread.cwd,
                                       inspectingRunID: model.inspectingRunID, supportsChanges: model.supportsChanges,
-                                      designReferences: model.designReferences, fleet: thread.fleet)
+                                      designReferences: model.designReferences, fleet: thread.fleet,
+                                      branch: thread.branch, hostName: model.hostName)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1210,6 +1235,9 @@ struct RemoteAgentThreadPane: View {
     var designReferences: DesignReferenceChips? = nil
     /// Where the thread came from, when it was sent (`FleetThreadSurface`).
     var fleet: FleetThreadSurface? = nil
+    /// The branch the thread works on and the Mac it runs on: the card at its right (GXRemote).
+    var branch: AgentBranchLabel? = nil
+    var hostName: String? = nil
 
     var body: some View {
         ThreadView(
@@ -1246,8 +1274,13 @@ struct RemoteAgentThreadPane: View {
         // References to the host's own designs, where it takes them.
         .environment(\.designReferences, designReferences)
         .environment(\.fleetThread, fleet)
+        .environment(\.shThreadLinks, vm.threadLinks)
+        .environment(\.threadLinkSelf, ref.agentID.rawValue)
         // Its hook rows, proposals and glyph open and count the host's hooks.
         .environment(\.hookPresenter, HookPresenter(model: vm))
+        // The branch card's column at the thread's right, naming the Mac it runs on.
+        .modifier(BranchCardDock(store: branch.map { _ in vm.remoteBranchCardStore(for: ref) }, branch: branch?.branch,
+                                 changedFiles: branch?.changedFiles ?? 0, active: active, runsOn: hostName))
     }
 }
 

@@ -1,4 +1,5 @@
 """Signing gates use scratch apps and mocked native tools, never a keychain."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import contextlib
 import io
 from pathlib import Path
@@ -28,6 +29,12 @@ class IOSSigningTests(unittest.TestCase):
             "com.apple.security.application-groups": [release.IOS_GROUP],
         }
         self.widgets_profile = {"Entitlements": self.widgets.copy()}
+        # The Files extension reads the paired Macs and their tokens through the same group.
+        self.files = {
+            "application-identifier": f"{self.team}.{release.IOS_FILES[1]}",
+            "com.apple.security.application-groups": [release.IOS_GROUP],
+        }
+        self.files_profile = {"Entitlements": self.files.copy()}
         # The notification content extension needs nothing but its App ID.
         self.content = {"application-identifier": f"{self.team}.{release.IOS_NOTIFICATION_CONTENT[1]}"}
         self.content_profile = {"Entitlements": self.content.copy()}
@@ -58,9 +65,11 @@ class IOSSigningTests(unittest.TestCase):
             self.assertEqual(args[args.index("--sign") + 1], "-")
         elif args[:2] == ("codesign", "-d"):
             output = plistlib.dumps(self.content if args[-1].endswith("Content.appex")
+                                    else self.files if args[-1].endswith("Files.appex")
                                     else self.widgets if args[-1].endswith(".appex") else self.signed)
         elif args[0] == "security":
             output = plistlib.dumps(self.content_profile if "Content.appex" in args[-1]
+                                    else self.files_profile if "Files.appex" in args[-1]
                                     else self.widgets_profile if ".appex" in args[-1] else self.profile)
         return subprocess.CompletedProcess(args, 0, output, b"private diagnostics")
 
@@ -70,7 +79,8 @@ class IOSSigningTests(unittest.TestCase):
         # The extensions are sealed before the app that contains them.
         self.assertEqual([args[-1] for args in self.commands],
                          ["scratch.app/" + release.IOS_WIDGETS[0]] * 2
-                         + ["scratch.app/" + release.IOS_NOTIFICATION_CONTENT[0]] * 2 + ["scratch.app"] * 2)
+                         + ["scratch.app/" + release.IOS_NOTIFICATION_CONTENT[0]] * 2
+                         + ["scratch.app/" + release.IOS_FILES[0]] * 2 + ["scratch.app"] * 2)
         self.assertFalse(Path(self.commands[0][self.commands[0].index("--entitlements") + 1]).exists())
         self.signed.clear()
         with patch.object(release.subprocess, "run", side_effect=self.native):
@@ -81,13 +91,14 @@ class IOSSigningTests(unittest.TestCase):
         with patch.object(release.subprocess, "run", side_effect=self.native):
             release.verify_ios_ipa("scratch.ipa", "321")
         self.assertEqual([args[0] for args in self.commands],
-                         ["ditto", "codesign", "codesign", "security", "codesign", "security", "codesign", "security"])
+                         ["ditto", "codesign", "codesign", "security", "codesign", "security", "codesign", "security",
+                          "codesign", "security"])
         self.assertEqual(self.commands[1][1:4], ("--verify", "--deep", "--strict"))
         self.assertFalse(Path(self.commands[0][-1]).exists())
 
     def test_signature_and_profile_fail_closed(self):
         for target in (self.signed, self.profile["Entitlements"], self.widgets, self.widgets_profile["Entitlements"],
-                       self.content, self.content_profile["Entitlements"]):
+                       self.files, self.files_profile["Entitlements"], self.content, self.content_profile["Entitlements"]):
             original = target.copy()
             for key in original:
                 for value in (None, "$(UNRESOLVED)", "wrong", True):

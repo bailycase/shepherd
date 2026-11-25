@@ -1,5 +1,6 @@
 // A subagent starts on the first try: a label is not a profile, a near miss of a profile is refused, and every other
 // refusal names the field to change.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

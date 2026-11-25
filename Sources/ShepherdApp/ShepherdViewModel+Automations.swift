@@ -111,8 +111,12 @@ extension ShepherdViewModel {
         var runs: [AutomationID: [AutomationRun]] = [:]
         for automation in state.automations {
             // One the host can't answer keeps what was read before.
-            guard let key = localAutomationKey(automation.id),
-                  case .runs(let list)? = try? await remoteHosts.automation(key, request: .runs) else {
+            guard let key = localAutomationKey(automation.id) else {
+                runs[automation.id] = localAutomationRuns[automation.id]
+                continue
+            }
+            let page = AutomationKey(host: PageHost.localID, automation: automation.id)
+            guard let list = await readAutomationRuns(key, page: page) else {
                 runs[automation.id] = localAutomationRuns[automation.id]
                 continue
             }

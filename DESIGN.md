@@ -31,7 +31,7 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - A Space is the folder a thread runs in. A Project is the feature above Spaces and owns the
   word; copy never calls a folder a project.
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
-  (Settings ▸ Pi, Sign-in).
+  (Settings ▸ Models ▸ Your pi).
 - Experiments (Projects, Goals) are off by default and turning one off never discards its data;
   turning it back on never resumes work by itself.
 
@@ -42,8 +42,11 @@ Every decision has to pass one test: does this help one person supervise ten wor
    under the picture. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
-3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
-4. **Nothing in the thread spins.** One thing moves at a time, and it is text (live text shimmers).
+3. **One line per stretch of work.** The tool calls between two pieces of prose are one activity line
+   (`docs/design/boards/ToolActivity.png`): live, it says what the running call is doing; finished,
+   it is a recap built from the calls' own arguments and results. Every tool has its own words,
+   never "Used <tool>".
+4. **One thing moves at a time.** The live line's spinner and shimmer are the only motion in the thread.
 5. **Nothing in the default view that isn't useful.** No key-hint rows (the question dock's
    footer is the one exception: its 1–N and ↩ hints, QuestionDockRadio), no repeated status text,
    no footers in menus, nothing under the composer but its controls.
@@ -97,7 +100,9 @@ is the source of truth for every Settings page, on the Mac and on iPhone and iPa
 
 - **Navigation** is a 220pt list on `bgBase` with no icons, in groups: General, Appearance,
   Keyboard · Agents: Models, Agents, Instructions, Skills, Tools, Hooks · Work: Spaces, Git, Apps,
-  Fleet · Advanced, Experiments. Esc leaves a sub-page for its parent, else leaves Settings.
+  Fleet · Advanced, Experiments. Keyboard is on the Mac only; the iPhone and iPad list
+  has the rest, with Apps read-only (runs and output; add and edit stay on the Mac). Esc leaves a
+  sub-page for its parent, else leaves Settings.
 - **Pages** are one centered 620pt column: a 15/600 title, then groups. A group has a
   sentence-case caption label (optional links at its right), a card on `bgRaised` (radius `l`,
   1px `lineSubtle`) and an optional footnote. Rows are 44pt with a one-line hint.
@@ -162,8 +167,12 @@ status color, a raw color, a raw glyph name, or a symbol renamed where an animat
 - A store-driven change uses `.shAnimation(_:value:)` and `.shTransition`. An action-driven
   change uses `withSHAnimation`. Never use an ad-hoc `withAnimation`.
 - Switching agents, keyboard navigation, selection, streaming text and terminal resizes land at
-  once (`.shInstant()`). Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
-- Spinners and glows are Core Animation layers, never a view redrawn every frame.
+  once (`.shInstant()`); the one exception is the composer's focus ring in the layout a switch
+  brings on screen, which fades in over the `hover` 120ms (an ease-out, never a spring) and lands at
+  once under Reduce Motion. Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
+- Spinners and glows are Core Animation layers, never a view redrawn every frame; so is the
+  composer's focus line and ring, since a SwiftUI animation lays the visible layout out again on
+  every frame it lasts.
 - A glyph that swaps for another (Send and Stop, copy and its check) is two fixed images
   cross-faded by opacity, or one image keyed on its state; a disclosure chevron is one
   `SHTurningChevron` that turns. Renaming one symbol under any animation (a content transition,
@@ -223,7 +232,7 @@ each rule. Add a budget with any new long list.
 ## Verifying visuals
 
 Render affected surfaces and states with
-`SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<preview suite or test>'`.
+`SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews scripts/check.py ShepherdPreviewTests '<preview suite or test>'`.
 Use real data and inspect the light and dark PNGs beside the design; unrelated previews need not run.
 Appearance-only changes do not also require launching the app. For interactions, focus, menus or
 app lifecycle, use integration tests; add a manual Dev-app check only where the isolated harness

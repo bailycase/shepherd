@@ -43,7 +43,7 @@ struct ProjectProseWrapTests {
 
     /// Core Text's own greedy break of the same words at the same face, size and width: the line the boards' CSS fills.
     private func greedyFirstLine(width: CGFloat, scale: CGFloat) -> (words: String, width: CGFloat) {
-        let font = NSFont(name: "Geist-Regular", size: 13.5 * scale)!
+        let font = SHFonts.platform(mono: false, weight: .regular, size: SHTextStyle.body.size * scale)
         let text = NSAttributedString(string: Self.words, attributes: [.font: font])
         let typesetter = CTTypesetterCreateWithAttributedString(text)
         let count = CTTypesetterSuggestLineBreak(typesetter, 0, Double(width))
@@ -54,7 +54,6 @@ struct ProjectProseWrapTests {
 
     @Test(arguments: [(false, CGFloat(1)), (true, CGFloat(1)), (false, CGFloat(1.3)), (true, CGFloat(1.3))])
     func aWorkerParagraphFillsItsFirstLineAsCoreTextDoesAndAnOrdinaryThreadsIsUnchanged(dark: Bool, scale: CGFloat) {
-        _ = SHFonts.isAvailable ? () : SHFonts.register()
         let expected = greedyFirstLine(width: 447, scale: scale)
         let project = lineEdges(halfLeading: true, width: 447, dark: dark, scale: scale)
         #expect(project.count >= 2, "wraps (dark \(dark), scale \(scale)): \(project)")

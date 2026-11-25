@@ -1,3 +1,4 @@
+import "./hermetic-env.mjs";
 import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // A design agent's helpers use its design tools through it, with real processes: a real parent pi loads the design
 // extension and the children extension against a stand-in Shepherd socket, and starts real helper pis whose

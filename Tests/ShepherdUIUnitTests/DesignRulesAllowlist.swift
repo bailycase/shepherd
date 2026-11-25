@@ -65,7 +65,6 @@ enum DesignRuleAllowlist {
         // Symbols that follow state where no animation reaches them. Each file says why; a disclosure
         // chevron that does animate is an SHTurningChevron, and any other pair that animates fades.
         .init(.symbolRenameUnderAnimation, "App/Widgets/ShepherdWidgets.swift", 1, "A widget draws one snapshot per timeline entry, so a symbol is never renamed on screen."),
-        .init(.symbolRenameUnderAnimation, "App/iOS/Browser/ThreadBrowserPane.swift", 1, unanimated("the page's loading state; nothing in the browser pane animates it")),
         .init(.symbolRenameUnderAnimation, "App/iOS/Composer/ComposerControls.swift", 1, unanimated("the chosen speed; nothing in the composer's chips animates it")),
         .init(.symbolRenameUnderAnimation, "App/iOS/Files/ThreadFilesSplit.swift", 1, unanimated("a folder's open state; nothing in the files tree or its store animates it")),
         .init(.symbolRenameUnderAnimation, "App/iOS/Forge/ForgeDiffScreen.swift", 1, menu),
@@ -110,7 +109,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/SubagentTray.swift", 5, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/AutomationTable.swift", 7, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Browser/Browser.swift", 18, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Browser/BrowserAgent.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ComposerParts.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ContextMeter.swift", 19, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/Menus.swift", 13, font),
@@ -136,7 +134,7 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/FromYourPiParts.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/SheetParts.swift", 10, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/ChangesMenu.swift", 11, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/ChangesToolbar.swift", 18, font),
+        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/ChangesToolbar.swift", 17, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/DiffLines.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/FileHeader.swift", 4, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/FileStrip.swift", 3, font),
@@ -154,8 +152,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/TurnChangesCard.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/TurnError.swift", 5, font),
         .init(.rawFontSize, "Sources/ShepherdApp/ChangesMenus.swift", 2, font),
-        .init(.rawFontSize, "Sources/ShepherdApp/DiffReviewView.swift", 1, font),
-        .init(.rawFontSize, "Sources/ShepherdApp/NewThreadPage.swift", 7, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Thread/SubagentInspector.swift", 9, font),
     ]

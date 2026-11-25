@@ -54,6 +54,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     public func cancelMCP(owner: UUID) async { await mcp?.cancel(owner: owner) }
+    func cancelWaitingMCP(owner: UUID, startedBefore cutoff: ContinuousClock.Instant) async {
+        await mcp?.cancelWaiting(owner: owner, startedBefore: cutoff)
+    }
     public func stopMCP() async { await mcp?.cancelAll() }
 
     public func request(_ request: RemoteProjectsRequest, state: ShepherdState, owner: UUID? = nil) async throws -> RemoteProjectsResult {

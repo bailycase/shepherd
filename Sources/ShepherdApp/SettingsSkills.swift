@@ -63,6 +63,9 @@ struct SkillsSettings: View {
         let groups = model.piGroups(in: hosts, filter: filter, query: "")
         let updates = model.count(.updates, in: hosts)
         return SettingsPage(title: "Skills") {
+            if let problem = model.recordsProblem(in: hosts) {
+                SHInlineProblem(problem)
+            }
             SettingsGroup(title: "Installed", links: [
                 SettingsLink("Add from repo") { sheet = .repo(nil) },
                 SettingsLink("Browse skills.sh") { sheet = .browse },
@@ -278,6 +281,9 @@ private struct SkillDetailPage: View {
     var body: some View {
         let skill = row.skill
         let here = vm.skillFolder(skill.name) != nil
+        if let problem = model.recordsProblem(in: hosts) {
+            SHInlineProblem(problem)
+        }
         SettingsGroup(title: "") {
             SettingsRow(title: "On") {
                 SettingsSwitch(label: "On", isOn: Binding(get: { skill.isOn }, set: { model.setOn(skill.name, $0, in: vm.skillsHosts) }))

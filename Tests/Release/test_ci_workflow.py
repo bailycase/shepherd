@@ -3,6 +3,7 @@
 The workflow is read as text (the repository's tests are stdlib only). Run:
 python3 -m unittest discover -s Tests/Release -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import json
 import os
 import re
@@ -98,9 +99,9 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("python3 scripts/ci_plan.py changed.txt", JOBS["plan"])
         self.assertIn("swift: ${{ steps.plan.outputs.swift }}", JOBS["plan"])
 
-    def test_selfhosted_checkout_preserves_build_outputs_without_retaining_git_credentials(self):
+    def test_checkout_does_not_retain_git_credentials(self):
         checkout = JOBS["tests"].split("uses: actions/checkout@v4", 1)[1].split("- uses:", 1)[0]
-        self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", checkout)
+        self.assertNotIn("clean:", checkout)
         self.assertIn("persist-credentials: false", checkout)
 
     def test_every_script_the_workflow_runs_exists(self):
@@ -146,7 +147,7 @@ class SwiftBuildActionTests(unittest.TestCase):
 
     def test_hosted_git_metadata_guard_blocks_credentials_without_disclosing_them(self):
         step = ACTION.split("- name: Guard hosted cache Git metadata", 1)[1].split("- name:", 1)[0]
-        self.assertIn("if: runner.environment == 'github-hosted'", step)
+        self.assertNotIn("if:", step)
         self.assertNotIn("continue-on-error", step)
         self.assertLess(ACTION.index("swift build --build-tests"), ACTION.index("- name: Guard hosted cache Git metadata"))
         self.assertLess(ACTION.index("- name: Guard hosted cache Git metadata"), ACTION.index("uses: actions/cache/save@v4"))
@@ -480,29 +481,6 @@ class PlanTests(unittest.TestCase):
                     pattern = args[args.index("--filter") + 1]
                     self.assertEqual([name for name in ids if re.search(pattern, name)], matches)
                     self.assertEqual((root / "swift-test.log").read_text(), "native lane run\n")
-
-    def test_missing_gui_session_fails_before_compiling_or_testing_on_the_mini(self):
-        step = JOBS["tests"].split("- name: Require a logged-in build account for AppKit tests", 1)[1].split("- uses:", 1)[0]
-        self.assertIn("if: runner.environment == 'self-hosted'", step)
-        script = run_script(step)
-        fixture = '''id() { echo 502; }; launchctl() {
-          case "$1" in
-            print) [ "$2" = gui/502 ] || exit 42; return "$GUI_STATUS";;
-            managername) printf '%s\\n' "$MANAGER";;
-            *) exit 42;;
-          esac
-        };\n'''
-        for status, manager, expected in ((0, "Aqua", 0), (1, "Aqua", 1), (0, "System", 1), (0, "Background", 1), (0, "", 1)):
-            with self.subTest(status=status, manager=manager):
-                result = subprocess.run(["bash", "-c", fixture + script],
-                                        env={**os.environ, "GUI_STATUS": str(status), "MANAGER": manager},
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                self.assertEqual(result.returncode, expected, result.stderr)
-                if status:
-                    self.assertIn("::error::UI tests need the build account logged into macOS", result.stdout)
-                elif expected:
-                    self.assertIn("::error::UI tests must run inside the build account GUI session", result.stdout)
-        self.assertLess(JOBS["tests"].index("Require a logged-in build account"), JOBS["tests"].index("actions/checkout@v4"))
 
     def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
         script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])

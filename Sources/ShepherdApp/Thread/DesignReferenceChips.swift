@@ -88,6 +88,11 @@ final class DesignReferenceChips {
         /// The line above it: "Drew a board", "B · Pay on phone · draft in Checkout redesign".
         var lineLabel: String? = nil
         var lineMeta: String? = nil
+        /// The card's head over a board the agent drew (GXBoardDraft, GXBoardChange).
+        var header: DesignReferencePresentation.BoardHeader? = nil
+        /// The card's footer: the board's name with its design, over its meta.
+        var title: String? = nil
+        var footerMeta: [String]? = nil
     }
 
     let agentID: AgentID
@@ -169,8 +174,12 @@ final class DesignReferenceChips {
         next.board = payload.reference.board.map { payload.boardTitle ?? $0.stem }
             ?? payload.boards?.first.map { $0.title ?? $0.board.stem } ?? payload.design
         next.meta = DesignReferencePresentation.boardMeta(payload, freshness: standing)
-        next.note = payload.proposal.map { DesignReferencePresentation.boardNote($0, revision: payload.revision) }
-            ?? DesignReferencePresentation.boardNote(standing)
+        // A drawn board says where it stands in its head, so it has no note under it.
+        next.note = payload.proposal == nil ? DesignReferencePresentation.boardNote(standing, shown: payload.revision) : nil
+        next.header = payload.proposal.map { DesignReferencePresentation.boardHeader($0, revision: payload.revision) }
+        let footer = DesignReferencePresentation.boardFooter(payload, board: next.board)
+        next.title = footer.title
+        next.footerMeta = footer.meta
         next.showLatest = DesignReferencePresentation.showLatest(standing)
         next.proposal = payload.proposal
         next.pictureURL = file.map { kept.folder.appendingPathComponent($0.name) }
@@ -421,53 +430,13 @@ final class DesignReferenceChips {
 
 // MARK: - Chips
 
-/// How long the pointer rests on a chip before its preview opens, and lingers after leaving it.
-private enum ChipHoverTiming {
-    static let open: Duration = .milliseconds(450)
-    static let close: Duration = .milliseconds(250)
-}
-
-/// Whether a chip's preview is open: after a short hover on the chip, kept while the pointer is on
-/// the chip or the preview, and closed a moment after it leaves both.
-@MainActor @Observable
-final class ReferenceChipHover {
-    private(set) var shown = false
-    @ObservationIgnored private var inside = 0
-    @ObservationIgnored private var timer: Task<Void, Never>?
-
-    init(shown: Bool = false) { self.shown = shown }
-
-    func pointer(_ entered: Bool) {
-        inside = max(0, inside + (entered ? 1 : -1))
-        timer?.cancel()
-        let wanted = inside > 0
-        guard wanted != shown else { return }
-        timer = Task { [weak self] in
-            try? await Task.sleep(for: wanted ? ChipHoverTiming.open : ChipHoverTiming.close)
-            guard !Task.isCancelled, let self else { return }
-            self.shown = wanted
-        }
-    }
-
-    func close() {
-        timer?.cancel()
-        inside = 0
-        shown = false
-    }
-
-    /// Previews: open at once.
-    func show() {
-        timer?.cancel()
-        shown = true
-    }
-}
+/// Whether a chip's preview is open (ShepherdUI's, shared with thread chips' peeks).
+typealias ReferenceChipHover = SHChipHover
 
 /// Whether a sent chip's preview is open in a thread row: the row draws over the rows after it
-/// while it is, so a preview opening below its chip (near the thread's top) isn't covered.
-struct ReferencePreviewOpenKey: PreferenceKey {
-    static let defaultValue = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
-}
+/// while it is, so a preview opening below its chip (near the thread's top) isn't covered. Thread
+/// chips' peeks say so with the same key.
+typealias ReferencePreviewOpenKey = SHPreviewOpenKey
 
 /// The chips a sent message carries (DesignReferenceChip · sent): each opens its piece in the
 /// design, and after a short hover its preview (RefChipHover) with Open in design, and Send vN

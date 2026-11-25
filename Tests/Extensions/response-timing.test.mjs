@@ -6,6 +6,7 @@
 // first event, so the rest of the stream runs with no handler of Shepherd's on it.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/response-timing.test.mjs
 // Everything runs in a temporary HOME against a local fake provider.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -83,7 +84,7 @@ test("real Pi RPC: each request reports its send, headers and first event, once,
     await until("the extension to connect", () => lines.some((l) => l.type === "setAgentStatus"));
     child.stdin.write(JSON.stringify({ id: "r1", type: "prompt", message: "list the folder" }) + "\n");
     await until("the run to settle", () => events.some((e) => e.type === "agent_settled"), 60000);
-    await sleep(100);
+    await until("the last request's lines", () => lines.filter((l) => l.type === "responseTiming" && l.mark !== "message").length >= 6 && lines.filter((l) => l.mark === "message").length >= 2);
 
     const timing = lines.filter((l) => l.type === "responseTiming");
     assert.equal(events.filter((e) => e.type === "message_start" && e.message.role === "assistant").length, 2, `two requests (${err})`);

@@ -197,6 +197,9 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// reply's first line (`FleetDigest`).
     public var queued = 0
     public var changes: FleetChanges?
+    /// The checkout's changed-file count, which is independent of the latest turn's diff.
+    public var checkoutChangedFiles = 0
+    public var completedAt: Double?
     public var goal: String?
     public var result: String?
     /// The pi session a stop must still be talking to, while it is known.
@@ -364,7 +367,7 @@ public struct FleetHostCard: Identifiable, Equatable, Sendable {
     /// "studio.local:7433".
     public var address: String
     public var phase: RemoteHostPhase
-    /// "2 threads running · Shepherd, horizon", "3 threads", or why it is offline.
+    /// "2 threads running · Shepherd, orbit", "3 threads", or why it is offline.
     public var summary: String
     public var threads: Int
     public var running: Int
@@ -601,6 +604,8 @@ public struct FleetModel: Equatable, Sendable {
         row.subagentsDone = live ? digest?.subagentsDone ?? 0 : 0
         row.queued = digest?.queued ?? 0
         row.changes = digest?.changes
+        row.checkoutChangedFiles = agent.checkout?.changedFiles ?? 0
+        row.completedAt = agent.completedAt
         row.goal = digest?.goal
         row.result = digest?.result
         row.session = digest?.session

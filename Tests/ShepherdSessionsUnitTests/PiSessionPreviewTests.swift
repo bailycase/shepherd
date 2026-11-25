@@ -76,7 +76,8 @@ struct PiSessionPreviewTests {
         defer { remove() }
         let origins = url.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true)
         let store = ThreadOriginStore(directory: origins)
-        store.save(sessionID: "s", records: [("user:1000", ThreadOriginStore.Record(references: [copy]))])
+        store.save(sessionID: "s", records: [("user:1000", ThreadOriginStore.Record(references: [copy]))],
+                   generation: store.loadSession(sessionID: "s").generation)
         store.flush()
 
         let preview = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s", origins: origins))
@@ -86,6 +87,22 @@ struct PiSessionPreviewTests {
         #expect(users.last?.blocks.first?.text == other && users.last?.designReferences == nil)
         let bare = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s"))
         #expect(bare.messages.first?.blocks.first?.text == mine, "no origins: shown as text")
+    }
+
+    @Test func aPreviewRestoresTheFleetResultIDFromDisk() throws {
+        let (url, remove) = try sessionFile(chain([user("Result", at: 1000)]))
+        defer { remove() }
+        let origins = url.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true)
+        let id = UUID()
+        let store = ThreadOriginStore(directory: origins)
+        var record = ThreadOriginStore.Record()
+        record.fleetResultID = id
+        store.save(sessionID: "s", records: [("user:1000", record)], generation: store.loadSession(sessionID: "s").generation)
+        store.flush()
+
+        let preview = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s", origins: origins))
+        let row = try #require(preview.messages.first)
+        #expect(row.fleetResultID == id && row.blocks.first?.text == "Result")
     }
 
     /// A long session: only its end is read, and the page is pi's newest page, with older

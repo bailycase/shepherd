@@ -59,6 +59,27 @@ struct LocalClientTests {
         try await eventuallyOnMain("the app to see its host is gone") { connection.phase != .connected }
     }
 
+    @Test func aNewerAppAsksToDrainEvenIfTheWorkspaceCannotBeFetched() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        host.server.hostBuild = "724"
+        let asked = Locked(false)
+        host.server.onDrainRequest = { asked.withValue { $0 = true } }
+        // Hello still fits but stateFetch drops the connection on the host's frame cap.
+        var space = Fixture.space("acme-web", path: host.dir.path)
+        space.name = String(repeating: "x", count: NDJSON.localMaxPayloadBytes)
+        try await host.server.putState(ShepherdState(spaces: [space]))
+        let socket = host.dir.appendingPathComponent("h.sock").path
+        try host.server.startLocalListener(path: socket, tokenURL: host.dir.appendingPathComponent("remote-token"))
+
+        let hosts = RemoteHostStore(defaults: ScratchDefaults())
+        hosts.appBuild = "796"
+        let connection = hosts.addLocalHost(name: "This Mac", socket: socket)
+        defer { hosts.removeHost(id: connection.id) }
+        try await eventuallyOnMain("the workspace fetch to fail") { connection.phase.failure != nil }
+        #expect(asked.current, "the older host was asked to drain before the workspace fetch")
+    }
+
     @Test func theAppDrawsTheHostsBoardsAndWithNoAppTheHostSaysShepherdIsNotOpen() async throws {
         _ = NSApplication.shared
         let host = try ScratchServer()

@@ -49,7 +49,8 @@ final class ShepherdViewModel {
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
-    /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
+    /// The active Changes review opened from the queue in this window.
+    @ObservationIgnored var queuedReview: SidebarRowID?
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
     @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
@@ -301,8 +302,11 @@ final class ShepherdViewModel {
     /// What the background host reported for the worktree in Delete worktree agent's dialog
     /// (`localHost`): the checkout, its loss warning, and the fingerprint its removal is bound to.
     var hostWorktreeInfo: [AgentID: RemoteWorktreeInfo] = [:]
-    /// What this app last told its background host of the paired Macs it reaches, on which connection.
-    @ObservationIgnored var sentProjectHosts: (ObjectIdentifier, [ProjectHostOption])?
+    /// What this app last told its background host of the paired Macs it reaches, and the client it told it through. The client is
+    /// weak and compared by identity: a restarted host's new client is often allocated at the freed one's address, so an
+    /// `ObjectIdentifier` would match and the new host would never be told, and a strong reference would keep the dead client alive.
+    @ObservationIgnored weak var sentProjectHostsClient: RemoteHostClient?
+    @ObservationIgnored var sentProjectHosts: [ProjectHostOption]?
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     /// A review pane's Commit… sheet by review session, kept while its commit runs.
@@ -454,6 +458,9 @@ final class ShepherdViewModel {
     /// This Mac's automations' runs as the run log kept them, oldest first (read for the
     /// Automations page).
     var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// Why a host could not give an automation's runs (its run history file is damaged), by
+    /// automation, This Mac's under `PageHost.localID`. The Automations page shows it.
+    var automationRunProblems: [AutomationKey: String] = [:]
     /// Each triggered automation's trigger state (paused, pending events, next run), and the
     /// host-wide Pause all triggers switch.
     var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]
@@ -497,6 +504,8 @@ final class ShepherdViewModel {
     /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
     /// thread from the sidebar with nothing to bring it back, so it always confirms.
     var agentDeleteTarget: AgentID?
+    /// The threads Stop all working threads waits to stop (sheet in AppDialogs): it names how many, and nothing stops until confirmed.
+    var stopAllConfirm: [StopAllWorking.Target]?
     /// The last `WorkspaceSelection` and its mounted layouts (`resolvedMountedTabs`).
     @ObservationIgnored var mountedTabsCache: (selection: WorkspaceSelection, tabs: [Tab])?
     /// A confirmed deletion runs after its sheet has dismissed (`sheet(item:onDismiss:)`):
@@ -507,6 +516,8 @@ final class ShepherdViewModel {
     var branchSheet: BranchSheet?
     /// Each local thread's branch card, made when its card first shows.
     @ObservationIgnored var branchCardStores: [AgentID: BranchCardStore] = [:]
+    /// The read-only card of each thread running on another Mac (GXRemote), made when it first shows.
+    @ObservationIgnored var remoteBranchCardStores: [RemoteAgentRef: BranchCardStore] = [:]
 
     @ObservationIgnored private var childSweepTimer: Timer?
     /// Focus is recorded per layout on every change (clicks, tab switches, new terminals),
@@ -531,6 +542,8 @@ final class ShepherdViewModel {
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .general
+    /// A group the Settings page scrolls to once it shows (its view's `id`), then nil.
+    var settingsScrollTarget: String?
     @ObservationIgnored var madeProjects: ProjectsModel?
     @ObservationIgnored var madeLogicalProjects: LogicalProjectsModel?
     /// The Project whose page or settings the main column shows (ProjectLead boards). Ephemeral.
@@ -611,6 +624,9 @@ final class ShepherdViewModel {
     @ObservationIgnored let userActivity = UserActivity()
     /// Hidden readers scrolled into a thread's history, shared by both store sets (`NativeThreadStores`).
     let threadReaderPins = ThreadReaderPins()
+    /// The threads a link in any conversation resolves against (ThreadLinkA), kept by `ThreadLinksSync`; one object, so the
+    /// environment that carries it into each layout never changes.
+    @ObservationIgnored lazy var threadLinks = SHThreadLinks { [weak self] in self?.openThreadLink($0) }
     /// Keyboard commands for the thread on screen.
     let threadCommands = ThreadCommandCenter()
     /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).
@@ -734,6 +750,7 @@ final class ShepherdViewModel {
         self.installThemeMarker = themeInstaller
         self.yourPi = yourPi ?? YourPiModel(pi: pi)
         self.piAuth = piAuth ?? PiAuthStore(pi: pi)
+        self.piAuth.bundledUsage = { [settings = self.settings] in settings.piUsageExtension }
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
@@ -782,6 +799,8 @@ final class ShepherdViewModel {
         self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
+        // An extension added, removed or switched: Sign-in lists the providers it registers.
+        self.yourPi.onExtensionsChanged = { [weak piAuth = self.piAuth] in Task { await piAuth?.refreshProviders() } }
         // A host that comes back takes the skill changes it is owed (instructions sync underneath, over the fleet).
         hosts.onHostConnected = { [weak self] hostID in
             self?.skillsHostConnected(hostID)
@@ -1044,13 +1063,23 @@ final class ShepherdViewModel {
     /// capturing so rebinding these chords still works.
     private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
         guard !keybindings.isRecording else { return false }
+        let chord = KeyChord(event: event)
+        let nextNeedingYou = chord == keybindings.chord(for: .nextNeedingYou)
         let action = Self.navigationKeyAction(
             digit: KeyChord.digit(keyCode: event.keyCode),
-            chord: KeyChord(event: event),
+            chord: chord,
             modifiers: event.modifierFlags.intersection([.command, .shift, .option, .control]),
             next: keybindings.chord(for: .nextAgent),
             previous: keybindings.chord(for: .previousAgent)
         )
+        // Vertical document chords belong to multi-line drafts, including the selection
+        // variant (⇧⌘↓). Handle them before the menu can claim the key equivalent.
+        if nextNeedingYou || action == .adjacentAgent(1) || action == .adjacentAgent(-1),
+           let text = NSApp.keyWindow?.firstResponder as? NSTextView,
+           Self.draftTakesVerticalChord(chord, draft: text.string) {
+            text.interpretKeyEvents([event])
+            return true
+        }
         switch action {
         case .agentDigit(let digit):
             // Mirrors the Agent menu's digit rows: live only for an existing row.
@@ -1059,13 +1088,6 @@ final class ShepherdViewModel {
             selectAgentDigit(digit)
             return true
         case .adjacentAgent(let delta):
-            // ⌘↑ and ⌘↓ in a draft of several lines are the text view's own: the caret goes to
-            // the document's start or end, as in every Mac text view, and the agent stays.
-            if let text = NSApp.keyWindow?.firstResponder as? NSTextView,
-               Self.draftTakesVerticalChord(KeyChord(event: event), draft: text.string) {
-                text.interpretKeyEvents([event])
-                return true
-            }
             selectAdjacentAgent(delta)
             return true
         case nil:
@@ -1073,10 +1095,10 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Whether a plain ⌘↑ or ⌘↓ belongs to the text view under the keyboard: only when the
-    /// draft spans more than one line, so a one-line composer still switches agents.
+    /// Document start/end (with or without selection) belongs to a multi-line draft.
     static func draftTakesVerticalChord(_ chord: KeyChord?, draft: String) -> Bool {
-        guard let chord, chord == KeyChord(key: "up", command: true) || chord == KeyChord(key: "down", command: true) else { return false }
+        guard let chord, chord.key == "up" || chord.key == "down",
+              chord.modifierFlags.subtracting(.shift) == .command else { return false }
         return draft.contains(where: \.isNewline)
     }
 
@@ -1196,8 +1218,9 @@ final class ShepherdViewModel {
             openDestination(.designs)
         }
         // The host's push removed the selected agent (deleted here first, then restated by an
-        // earlier push, or deleted elsewhere): nothing points at it.
-        if selectedAgentID != nil, selectedAgent == nil { selectedAgentID = nil }
+        // earlier push, or deleted elsewhere): nothing points at it. Not while Run Now is replacing
+        // it: the new run takes its place, and the fallback below waits for that.
+        if selectedAgentID != nil, selectedAgent == nil, selectedAgentID != replacingRun { selectedAgentID = nil }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }
         // With nothing on screen (the shown agent went away, or the app just launched), the

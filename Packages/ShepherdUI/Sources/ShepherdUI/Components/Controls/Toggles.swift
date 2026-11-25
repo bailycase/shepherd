@@ -26,7 +26,7 @@ private struct SHSwitch: View {
             if labelsVisibility != .hidden { configuration.label }
             Button { configuration.isOn.toggle() } label: {
                 Capsule()
-                    .fill(on ? sh.lantern : sh.lineStrong)
+                    .fill(on ? sh.primary : sh.lineStrong)
                     .frame(width: 30, height: 18)
                     .overlay(alignment: on ? .trailing : .leading) {
                         Circle()
@@ -77,14 +77,14 @@ private struct SHCheckbox: View {
             HStack(spacing: SH.Space.m) {
                 ZStack {
                     RoundedRectangle(cornerRadius: SH.Radius.xs)
-                        .fill(filled ? sh.lantern : sh.bgRaised)
+                        .fill(filled ? sh.primary : sh.bgRaised)
                     if !filled {
                         RoundedRectangle(cornerRadius: SH.Radius.xs).strokeBorder(sh.lineStrong, lineWidth: 1.5)
                     }
                     if configuration.isMixed {
-                        RoundedRectangle(cornerRadius: 1).fill(sh.textOnLantern).frame(width: 7, height: 2)
+                        RoundedRectangle(cornerRadius: 1).fill(sh.textOnPrimary).frame(width: 7, height: 2)
                     } else if configuration.isOn {
-                        Image(systemName: "checkmark").font(.system(size: 8.5, weight: .bold)).foregroundStyle(sh.textOnLantern)
+                        Image(systemName: "checkmark").font(.system(size: 8.5, weight: .bold)).foregroundStyle(sh.textOnPrimary)
                     }
                 }
                 .frame(width: 14, height: 14)

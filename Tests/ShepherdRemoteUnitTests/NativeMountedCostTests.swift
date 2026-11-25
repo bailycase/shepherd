@@ -166,9 +166,10 @@ struct NativeMountedCostTests {
         let bursts = presentation.items.reduce(0) { total, item in
             if case .activity(_, let bursts) = item { total + bursts.count } else { total }
         }
-        #expect(bursts == 4, "one line to a kind of call")
-        #expect(Cost.presentation(presentation) == 4 * Cost.line + words.utf8.count * Cost.textByte)
-        let reply = 10 * (2 * Cost.rowBase + Cost.presentation(presentation))
+        #expect(bursts == 1, "one line to a stretch of calls")
+        #expect(Cost.presentation(presentation) == Cost.line + words.utf8.count * Cost.textByte)
+        // The calibration measured the four lines these calls drew before a stretch became one line: what a line costs holds.
+        let reply = 10 * (2 * Cost.rowBase + 4 * Cost.line + words.utf8.count * Cost.textByte)
         #expect(abs(reply - 38 * Self.mib) <= 38 * Self.mib * 15 / 100)
     }
 

@@ -1,4 +1,5 @@
 """Keep the removed Shepherd Design design-system bundle out of the shipping app."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import unittest
 from pathlib import Path
 

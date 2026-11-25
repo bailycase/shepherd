@@ -166,6 +166,8 @@ public struct NativeContextDetails: Equatable, Sendable {
     /// Where pi compacts on its own, as a fraction of the window, and its label.
     public var mark: Double?
     public var markLabel: String?
+    /// Where pi compacts on its own, as a size ("184k").
+    public var autoCompactText: String?
     public var rows: [Row]
     /// "158k" free, when the window is known.
     public var free: String?
@@ -203,6 +205,7 @@ public struct NativeContextDetails: Equatable, Sendable {
         segments = []
         mark = context.autoCompactAt.map(fraction)
         markLabel = context.autoCompactAt.map { "auto-compact · \(nativeContextTokens($0)) ↑" }
+        autoCompactText = context.autoCompactAt.map(nativeContextTokens)
         rows = []
         free = nil
         largest = []
@@ -219,6 +222,7 @@ public struct NativeContextDetails: Equatable, Sendable {
             ofWindow = nil
             mark = nil
             markLabel = nil
+            autoCompactText = nil
             emphasis = (run.tokens ?? context.tokens).map(nativeContextTokens)
             let size = emphasis.map { "Summarizing \($0) into a short brief." } ?? "Summarizing the conversation into a short brief."
             note = size + (context.keepRecent.map { " The last \(nativeContextTokens($0)) stay as they are." } ?? "")

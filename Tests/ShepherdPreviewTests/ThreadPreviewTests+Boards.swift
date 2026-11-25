@@ -84,10 +84,10 @@ extension ThreadPreviewTests {
         chips.seed(boards: [boardCopy: DesignReferenceChips.Board(
             design: "Checkout redesign", board: "A · Funnel first",
             meta: ["Checkout", "560 × 410", stale ? "shown at revision 13" : "revision 13"],
-            note: DesignReferencePresentation.boardNote(freshness), showLatest: DesignReferencePresentation.showLatest(freshness),
+            note: DesignReferencePresentation.boardNote(freshness, shown: 13), showLatest: DesignReferencePresentation.showLatest(freshness),
             size: CGSize(width: 560, height: 410),
             picture: SHReferenceImage(id: "funnel", image: Image(decorative: funnelPicture(), scale: 2)), hasPicture: true,
-            reference: boardReference)])
+            reference: boardReference, title: "Checkout redesign, A · Funnel first")])
         return chips
     }
 
@@ -162,13 +162,13 @@ extension ThreadPreviewTests {
         }
     }
 
-    /// ThreadBoardStale: the design moved on; the card keeps revision 13 and offers Show v14.
+    /// ThreadBoardStale: the design moved on; the card keeps revision 13 and offers the board as it is now.
     @Test func threadBoardStale() async throws {
         try await renderBoard("thread-board-stale", Self.boardSnapshot(
             asked: "What did we decide the funnel should look like?",
             said: "This is the board from Checkout redesign.",
             after: "Someone changed the board since I showed it. The card still shows revision 13, the version I looked at."),
-            chips: Self.boardChips(freshness: .updatedSince(latest: 14, changes: ["the board changed"])))
+            chips: Self.boardChips(freshness: .updatedSince(latest: 15, changes: ["the board changed"])))
     }
 
     /// ThreadBoardPane: the card's board open beside the thread, in the side pane's Design tab.
@@ -243,11 +243,14 @@ extension ThreadPreviewTests {
         chips.seed(boards: [draftCopy: DesignReferenceChips.Board(
             design: "Checkout redesign", board: "B · Pay on phone",
             meta: ["Checkout", "320 × 480", kind == .draft ? "not on the canvas yet" : "proposed from revision 13"],
-            note: DesignReferencePresentation.boardNote(proposal, revision: 13), size: CGSize(width: 320, height: 480),
+            size: CGSize(width: 320, height: 480),
             picture: SHReferenceImage(id: "phone-\(kind)", image: Image(decorative: phonePicture(narrowButton: kind == .change), scale: 2)),
             hasPicture: true, reference: reference, copy: draftCopy, proposal: proposal,
             lineLabel: kind == .draft ? "Drew a board" : "Changed a board",
-            lineMeta: kind == .draft ? "B · Pay on phone · draft in Checkout redesign" : "B · Pay on phone · from revision 13")])
+            lineMeta: kind == .draft ? "B · Pay on phone · draft in Checkout redesign" : "B · Pay on phone · from revision 13",
+            header: DesignReferencePresentation.boardHeader(proposal, revision: 13),
+            title: kind == .draft ? "B · Pay on phone" : "Checkout redesign, B · Pay on phone",
+            footerMeta: kind == .draft ? ["Draft for Checkout redesign", "320 × 480"] : ["Checkout", "320 × 480", "proposed from revision 13"])])
         return chips
     }
 
@@ -281,8 +284,22 @@ extension ThreadPreviewTests {
         }
     }
 
-    /// ThreadBoardChange: a change to a board, open beside the thread with Discard and Apply under it.
+    /// ThreadBoardChange: a change the agent made to a board, with Discard and Apply to design.
     @Test func threadBoardChange() async throws {
+        let fixture = ThreadFixture(Self.drawnSnapshot(
+            asked: "Make the pay button a fixed width instead of full width.",
+            said: "Done. The button is a fixed 160 wide now and centered. Apply it to put this version on the canvas."))
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        let chips = Self.drawnChips(.change)
+        try await Preview.render("thread-board-change", size: Self.boardSize, ready: { store.ready && !store.rows.isEmpty }) {
+            fixture.thread(title: "Pay on phone", workingDirectory: "~/Developer/dashboard-web")
+                .environment(\.designReferences, chips)
+        }
+    }
+
+    /// A change to a board open beside the thread, with Discard and Apply under it.
+    @Test func threadBoardChangePane() async throws {
         let chips = Self.drawnChips(.change)
         let board = try #require(chips.boards[Self.draftCopy])
         let fixture = ThreadFixture(Self.drawnSnapshot(
@@ -290,7 +307,7 @@ extension ThreadPreviewTests {
             said: "Done. The button is a fixed 160 wide now and centered. Apply it to put this version on the canvas."))
         defer { fixture.store.stop() }
         let store = fixture.store
-        try await Preview.render("thread-board-change", size: CGSize(width: 1600, height: 900), ready: { store.ready && !store.rows.isEmpty }) {
+        try await Preview.render("thread-board-change-pane", size: CGSize(width: 1600, height: 900), ready: { store.ready && !store.rows.isEmpty }) {
             HStack(spacing: 0) {
                 fixture.thread(title: "Pay on phone", workingDirectory: "~/Developer/dashboard-web")
                     .environment(\.designReferences, chips)

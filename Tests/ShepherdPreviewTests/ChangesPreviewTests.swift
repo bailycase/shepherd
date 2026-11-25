@@ -56,6 +56,35 @@ struct ChangesPreviewTests {
         try await Preview.render("changes-base", size: boardSize) { pane(session) { $0.menu = .base } }
     }
 
+    @Test func changesWithDamagedBaseRecents() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo()
+        try git(["branch", "feat/ledger-v2"], in: repo)
+        try git(["checkout", "-qb", "agent/refund-events"], in: repo)
+        let space = Space(name: "acme", path: repo.path)
+        let (agent, tab) = try await workspace.agent("Edit the ledger", in: space, order: 0)
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let directory = workspace.dir.appendingPathComponent("changes")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"{"truncated":"#.utf8).write(to: directory.appendingPathComponent("bases.json"))
+        let session = ChangesBoard.session(comment: false)
+        let branches = try await workspace.server.changes.branches(agentID: agent.id)
+        try #require(branches.recentsProblem != nil)
+        session.branches = branches
+        try await Preview.render("mac", size: boardSize) { pane(session) { $0.menu = .base } }
+    }
+
+    /// The base picker when the host could not list the branches: its message, not "Reading branches…".
+    @Test func changesBaseFailed() async throws {
+        let session = ChangesBoard.session(comment: false)
+        session.branches = nil
+        session.branchesError = "acme-web is not a git repository."
+        try await Preview.render("changes-base-failed", size: boardSize, showing: "acme-web is not a git repository.") {
+            pane(session) { $0.menu = .base }
+        }
+    }
+
     /// ChangesUnified: unified with word diffs, Diff options open.
     @Test func changesUnified() async throws {
         let session = ChangesBoard.session(comment: false)
@@ -129,6 +158,24 @@ struct ChangesPreviewTests {
                     SHHairline(.vertical)
                 }
             }
+        }
+    }
+
+    @Test func changesWithUnreadableTurnHistory() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "acme", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Edit the ledger", in: space, order: 0)
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let directory = workspace.dir.appendingPathComponent("changes")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("{".utf8).write(to: directory.appendingPathComponent("turns.json"))
+        let session = ChangesBoard.session(comment: false)
+        session.overview = try await workspace.server.changes.overview(agentID: agent.id)
+        try #require(session.overview?.turnHistoryProblem != nil)
+        let width = AppLayout.paneDefaultWidth
+        try await Preview.render("changes-turn-history-damaged", size: CGSize(width: width, height: Self.boardHeight)) {
+            pane(session, width: width)
         }
     }
 

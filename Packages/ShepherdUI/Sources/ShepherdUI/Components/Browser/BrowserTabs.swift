@@ -7,9 +7,17 @@ import SwiftUI
 public enum SHBrowserTabsMetrics {
     /// The strip under the pane's tabs.
     public static let stripHeight: CGFloat = 38
+    #if os(macOS)
+    /// GXPaneBrowserTabs: a tab is 28pt and at most 176pt wide, down to 56pt when many share the strip
+    /// (the board draws 72; eight fit a pane narrower than its 720pt this way).
+    public static let tabHeight: CGFloat = 28
+    public static let tabMinWidth: CGFloat = 56
+    public static let tabMaxWidth: CGFloat = 176
+    #else
     public static let tabHeight: CGFloat = 26
     public static let tabMinWidth: CGFloat = 64
     public static let tabMaxWidth: CGFloat = 200
+    #endif
     /// The close button's hit area. The board draws 20pt wide; 24 is the desktop minimum.
     public static let closeWidth: CGFloat = 24
     public static let closeGlyph: CGFloat = 10
@@ -31,6 +39,8 @@ public enum SHBrowserTabsMetrics {
     public static let noteDismiss: CGFloat = 24
     /// The agent's bar over the console, and the chip when it is on another tab.
     public static let agentBarHeight: CGFloat = SHBrowserMetrics.consoleBarHeight
+    /// The Mac's agent line under the page (GXPaneBrowserAgent's `.astat`): 34pt.
+    public static let agentStatusHeight: CGFloat = 34
     public static let agentSpinner: CGFloat = 11
     public static let agentChipSpinner: CGFloat = 12
     public static let agentTakeOverGlyph: CGFloat = 12
@@ -154,7 +164,7 @@ public struct SHBrowserTabItem: Identifiable, Equatable, Sendable {
 
 // MARK: The strip
 
-public struct SHBrowserTabStrip: View {
+public struct SHBrowserTabStrip<ListButtonModifier: ViewModifier>: View {
     public struct Actions {
         public var select: (UUID) -> Void
         public var close: (UUID) -> Void
@@ -175,48 +185,109 @@ public struct SHBrowserTabStrip: View {
     let canAdd: Bool
     let listOpen: Bool
     let newShortcut: String?
+    let touch: Bool
     let actions: Actions
+    let listButtonModifier: ListButtonModifier
 
-    public init(items: [SHBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil, actions: Actions) {
+    public init(items: [SHBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil,
+                touch: Bool = false, actions: Actions, listButtonModifier: ListButtonModifier) {
         self.items = items
         self.selection = selection
         self.canAdd = canAdd
         self.listOpen = listOpen
         self.newShortcut = newShortcut
+        self.touch = touch
         self.actions = actions
+        self.listButtonModifier = listButtonModifier
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// GXPaneBrowserTabs: the tabs with + right after the last, and the list's chevron at the end. The board
+    /// draws the chevron only with many tabs, and no strip for one page; both stay so New tab and All tabs
+    /// are always a click away.
+    private var macBody: some View {
         HStack(spacing: SH.Space.xxs) {
             HStack(spacing: SH.Space.xxs) {
-                ForEach(items) { item in
-                    Tab(item: item, selected: item.id == selection, showClose: items.count <= SHBrowserTabsMetrics.roomyTabs,
-                        select: { actions.select(item.id) }, close: { actions.close(item.id) })
+                tabs
+                Button(action: actions.new) { Image(systemName: "plus").font(.system(size: SHBrowserTabsMetrics.stripGlyph)) }
+                    .buttonStyle(.shIcon)
+                    .disabled(!canAdd)
+                    .shHelp(canAdd ? "New tab" : "This thread has the most tabs it keeps", shortcut: canAdd ? newShortcut : nil)
+                    .accessibilityLabel("New tab")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Pages in this thread")
+            Button(action: actions.toggleList) { Image(systemName: "chevron.down").font(.system(size: SHBrowserTabsMetrics.stripGlyph)) }
+                .buttonStyle(.shIcon(isOn: listOpen))
+                .shHelp("All tabs")
+                .accessibilityLabel("All tabs")
+                .accessibilityValue(listOpen ? "open" : "closed")
+                .modifier(listButtonModifier)
+        }
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHBrowserTabsMetrics.stripHeight)
+        .overlay(alignment: .bottom) { SHHairline() }
+    }
+    #endif
+
+    private var touchBody: some View {
+        HStack(spacing: SH.Space.xxs) {
+            Group {
+                if touch {
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) { tabs }
+                            .scrollIndicators(.hidden)
+                            .onChange(of: selection, initial: true) { _, id in
+                                if let id { proxy.scrollTo(id) }
+                            }
+                    }
+                } else {
+                    tabs
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Pages in this thread")
             Button(action: actions.new) { Image(systemName: "plus").font(.system(size: SHBrowserTabsMetrics.stripGlyph)) }
-                .buttonStyle(.shIcon(size: SH.Height.controlS))
+                .buttonStyle(.shIcon(size: touch ? SH.Height.touch : SH.Height.controlS))
                 .disabled(!canAdd)
                 .shHelp(canAdd ? "New tab" : "This thread has the most tabs it keeps", shortcut: canAdd ? newShortcut : nil)
                 .accessibilityLabel("New tab")
             Button(action: actions.toggleList) { Image(systemName: "chevron.down").font(.system(size: SHBrowserTabsMetrics.stripGlyph)) }
-                .buttonStyle(.shIcon(size: SH.Height.controlS))
+                .buttonStyle(.shIcon(size: touch ? SH.Height.touch : SH.Height.controlS))
                 .shHelp("All tabs")
                 .accessibilityLabel("All tabs")
                 .accessibilityValue(listOpen ? "open" : "closed")
+                .modifier(listButtonModifier)
         }
         .padding(.horizontal, SH.Space.m)
-        .frame(height: SHBrowserTabsMetrics.stripHeight)
+        .frame(height: touch ? SH.Height.touch : SHBrowserTabsMetrics.stripHeight)
         .overlay(alignment: .bottom) { SHHairline() }
+    }
+
+    private var tabs: some View {
+        HStack(spacing: SH.Space.xxs) {
+            ForEach(items) { item in
+                Tab(item: item, selected: item.id == selection, showClose: items.count <= SHBrowserTabsMetrics.roomyTabs,
+                    touch: touch, select: { actions.select(item.id) }, close: { actions.close(item.id) })
+            }
+        }
     }
 
     private struct Tab: View {
         let item: SHBrowserTabItem
         let selected: Bool
         let showClose: Bool
+        let touch: Bool
         let select: () -> Void
         let close: () -> Void
         @State private var hovering = false
@@ -230,10 +301,18 @@ public struct SHBrowserTabStrip: View {
                             ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.favicon)).accessibilityHidden(true)
                                 .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
                         } else {
+                            #if os(macOS)
+                            // The board draws every page's tile as the plain globe.
+                            Image(systemName: "globe").font(.system(size: SHBrowserTabsMetrics.favicon))
+                                .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                                .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
+                                .accessibilityHidden(true)
+                            #else
                             SHBrowserFavicon(letter: item.letter, tint: item.tint)
+                            #endif
                         }
                         Text(item.title)
-                            .font(.sh(.ui, weight: selected ? .medium : .regular))
+                            .font(.sh(.ui, weight: Self.titleWeight(selected: selected)))
                             .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -243,9 +322,14 @@ public struct SHBrowserTabStrip: View {
                         }
                     }
                     .padding(.leading, SH.Space.m)
+                    #if os(macOS)
+                    .padding(.trailing, SH.Space.xs)
+                    #else
                     .padding(.trailing, SH.Space.s)
+                    #endif
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: SHBrowserTabsMetrics.tabHeight)
+                    .frame(minWidth: touch ? SH.Height.touch : nil)
+                    .frame(height: touch ? SH.Height.touch : SHBrowserTabsMetrics.tabHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -253,11 +337,12 @@ public struct SHBrowserTabStrip: View {
                 .shHelp(item.tooltip.isEmpty ? item.title : item.tooltip)
                 .accessibilityLabel(item.spoken)
                 .accessibilityAddTraits(selected ? .isSelected : [])
-                if selected || showClose || hovering {
+                if Self.alwaysClose || selected || showClose || hovering {
                     Button(action: close) {
                         SHBrowserTabClose().font(.system(size: SHBrowserTabsMetrics.closeGlyph, weight: .medium))
                             .foregroundStyle(hovering ? sh.textPrimary : sh.textTertiary)
-                            .frame(width: SHBrowserTabsMetrics.closeWidth, height: SHBrowserTabsMetrics.tabHeight)
+                            .frame(width: touch ? SH.Height.touch : SHBrowserTabsMetrics.closeWidth,
+                                   height: touch ? SH.Height.touch : SHBrowserTabsMetrics.tabHeight)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -267,11 +352,41 @@ public struct SHBrowserTabStrip: View {
                 }
             }
             .frame(minWidth: SHBrowserTabsMetrics.tabMinWidth, maxWidth: SHBrowserTabsMetrics.tabMaxWidth)
-            .background(selected ? sh.bgSelected : hovering ? sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .background {
+                RoundedRectangle(cornerRadius: SH.Radius.s)
+                    .fill(selected ? sh.bgSelected : hovering ? sh.bgHover : .clear)
+                    .frame(height: touch ? SH.Height.controlL : SHBrowserTabsMetrics.tabHeight)
+            }
             .layoutPriority(selected ? 1 : 0)
             .onHover { hovering = $0 }
             .shAnimation(.hover, value: hovering)
         }
+
+        /// The board shows a × on every tab, selected or not; on the Mac only (a touch tab shows it when roomy).
+        private static var alwaysClose: Bool {
+            #if os(macOS)
+            true
+            #else
+            false
+            #endif
+        }
+
+        /// The Mac's selected tab changes color only (`.btab.on`).
+        private static func titleWeight(selected: Bool) -> Font.Weight {
+            #if os(macOS)
+            .regular
+            #else
+            selected ? .medium : .regular
+            #endif
+        }
+    }
+}
+
+extension SHBrowserTabStrip where ListButtonModifier == EmptyModifier {
+    public init(items: [SHBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil,
+                touch: Bool = false, actions: Actions) {
+        self.init(items: items, selection: selection, canAdd: canAdd, listOpen: listOpen, newShortcut: newShortcut,
+                  touch: touch, actions: actions, listButtonModifier: EmptyModifier())
     }
 }
 
@@ -304,33 +419,58 @@ public struct SHBrowserTabMenu: View {
     let items: [SHBrowserTabItem]
     let selection: UUID?
     let maxTabs: Int
+    let touch: Bool
+    let note: LocalizedStringKey
     let select: (UUID) -> Void
     let closeOthers: () -> Void
     @State private var rowsHeight: CGFloat = 0
 
-    public init(items: [SHBrowserTabItem], selection: UUID?, maxTabs: Int, select: @escaping (UUID) -> Void,
+    public init(items: [SHBrowserTabItem], selection: UUID?, maxTabs: Int, touch: Bool = false,
+                note: LocalizedStringKey = "sign-ins shared across the space", select: @escaping (UUID) -> Void,
                 closeOthers: @escaping () -> Void) {
         self.items = items
         self.selection = selection
         self.maxTabs = maxTabs
+        self.touch = touch
+        self.note = note
         self.select = select
         self.closeOthers = closeOthers
     }
 
     public var body: some View {
+        Group {
+            if touch {
+                menuContent
+            } else {
+                menuContent.frame(width: SHBrowserTabsMetrics.menuWidth).shPopover()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("All tabs")
+    }
+
+    #if os(macOS)
+    /// GXPaneBrowserTabs' list: how many tabs there are, a globe and the title per tab (the chosen one filled),
+    /// Close other tabs under a rule, and the foot's line. A tab's address is its tooltip.
+    private var menuContent: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: 0) {
-            // Rows keep their height; a menu taller than the pane scrolls instead of squeezing them.
+        let listHeight = min(rowsHeight, SHBrowserTabsMetrics.menuListMaxHeight)
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(items.count >= maxTabs ? "\(items.count) tabs, the most a thread keeps" : "\(items.count) of \(maxTabs) tabs")
+                .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                .padding(.horizontal, SH.Space.m)
+                .frame(maxWidth: .infinity, minHeight: SHChangesMenuMetrics.titleHeight + SH.Space.xxs, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(items) { item in
-                        Row(item: item, checked: item.id == selection) { select(item.id) }
+                        Row(item: item, checked: item.id == selection, minHeight: SHBrowserTabsMetrics.menuRowMinHeight) { select(item.id) }
                     }
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(rowsHeight, SHBrowserTabsMetrics.menuListMaxHeight))
+            .frame(minHeight: listHeight, maxHeight: listHeight)
             SHChangesMenuDivider()
             Button(action: closeOthers) {
                 Text("Close other tabs").font(.sh(.ui, weight: .regular))
@@ -341,7 +481,73 @@ public struct SHBrowserTabMenu: View {
             }
             .buttonStyle(.shRow())
             .disabled(items.count < 2)
-            Text("\(items.count) of \(maxTabs) tabs · sign-ins shared across the space")
+            Text(items.count >= maxTabs ? "Close a tab to open another" : note)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, SH.Space.m)
+                .frame(maxWidth: .infinity, minHeight: SHBrowserTabsMetrics.menuRowMinHeight, alignment: .leading)
+        }
+        .padding(SH.Space.s)
+    }
+
+    private struct Row: View {
+        let item: SHBrowserTabItem
+        let checked: Bool
+        let minHeight: CGFloat
+        let action: () -> Void
+
+        var body: some View {
+            let sh = Color.sh
+            Button(action: action) {
+                HStack(spacing: SH.Space.l) {
+                    Image(systemName: "globe").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                        .frame(width: SH.Space.xl)
+                        .accessibilityHidden(true)
+                    Text(item.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    Spacer(minLength: SH.Space.m)
+                    if let tag = item.source.tag {
+                        Text(tag).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    }
+                }
+                .padding(.horizontal, SH.Space.m)
+                .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.shRow(selected: checked))
+            .shHelp(item.tooltip.isEmpty ? item.title : item.tooltip)
+            .accessibilityLabel([item.title, item.address.isEmpty ? nil : item.address, item.source.tag].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityAddTraits(checked ? .isSelected : [])
+        }
+    }
+    #else
+    private var menuContent: some View {
+        let sh = Color.sh
+        let listHeight = min(rowsHeight, SHBrowserTabsMetrics.menuListMaxHeight)
+        return VStack(alignment: .leading, spacing: 0) {
+            // Rows keep their height; a menu taller than the pane scrolls instead of squeezing them.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(items) { item in
+                        Row(item: item, checked: item.id == selection,
+                            minHeight: touch ? SH.Height.touch : SHBrowserTabsMetrics.menuRowMinHeight) { select(item.id) }
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(minHeight: touch ? nil : listHeight, idealHeight: touch ? listHeight : nil, maxHeight: listHeight)
+            SHChangesMenuDivider()
+            Button(action: closeOthers) {
+                Text("Close other tabs").font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(items.count > 1 ? sh.textPrimary : sh.textTertiary)
+                    .padding(.horizontal, SH.Space.m)
+                    .frame(maxWidth: .infinity, minHeight: touch ? SH.Height.touch : SHBrowserTabsMetrics.menuRowMinHeight, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.shRow())
+            .disabled(items.count < 2)
+            Text("\(items.count) of \(maxTabs) tabs · \(Text(note))")
                 .font(.sh(.micro, weight: .regular))
                 .foregroundStyle(sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -350,15 +556,12 @@ public struct SHBrowserTabMenu: View {
                 .padding(.bottom, SH.Space.xs)
         }
         .padding(SH.Space.s)
-        .frame(width: SHBrowserTabsMetrics.menuWidth)
-        .shPopover()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("All tabs")
     }
 
     private struct Row: View {
         let item: SHBrowserTabItem
         let checked: Bool
+        let minHeight: CGFloat
         let action: () -> Void
 
         var body: some View {
@@ -382,7 +585,7 @@ public struct SHBrowserTabMenu: View {
                 }
                 .padding(.horizontal, SH.Space.m)
                 .padding(.vertical, SH.Space.s)
-                .frame(minHeight: SHBrowserTabsMetrics.menuRowMinHeight)
+                .frame(minHeight: minHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.shRow(selected: false))
@@ -390,6 +593,7 @@ public struct SHBrowserTabMenu: View {
             .accessibilityAddTraits(checked ? .isSelected : [])
         }
     }
+    #endif
 }
 
 // MARK: The note
@@ -410,16 +614,19 @@ public struct SHBrowserTabsNote: View {
     let message: String
     let glyph: String
     let action: Action?
+    let touch: Bool
     let dismiss: () -> Void
 
     /// The glyph the cap warns with; every other note is the globe.
     public static let capGlyph = "exclamationmark.triangle"
     public static let globeGlyph = "globe"
 
-    public init(message: String, glyph: String = SHBrowserTabsNote.globeGlyph, action: Action? = nil, dismiss: @escaping () -> Void) {
+    public init(message: String, glyph: String = SHBrowserTabsNote.globeGlyph, action: Action? = nil, touch: Bool = false,
+                dismiss: @escaping () -> Void) {
         self.message = message
         self.glyph = glyph
         self.action = action
+        self.touch = touch
         self.dismiss = dismiss
     }
 
@@ -435,13 +642,13 @@ public struct SHBrowserTabsNote: View {
                 Button(action.title, action: action.run).buttonStyle(.sh(.secondary, size: .s)).fixedSize()
             }
             Button(action: dismiss) { SHBrowserTabClose().font(.system(size: SHBrowserTabsMetrics.closeGlyph, weight: .medium)) }
-                .buttonStyle(.shIcon(size: SHBrowserTabsMetrics.noteDismiss, tint: sh.textTertiary))
-                .padding(.vertical, -SH.Space.xxs)
+                .buttonStyle(.shIcon(size: touch ? SH.Height.touch : SHBrowserTabsMetrics.noteDismiss, tint: sh.textTertiary))
+                .padding(.vertical, touch ? 0 : -SH.Space.xxs)
                 .shHelp("Dismiss")
                 .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.s)
+        .padding(.vertical, touch ? 0 : SH.Space.s)
         .frame(maxWidth: .infinity)
         .background(sh.bgSunken)
         .overlay(alignment: .bottom) { SHHairline() }
@@ -466,8 +673,38 @@ public struct SHAgentBar: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// GXPaneBrowserAgent's `.astat`: 34pt on the pane, "The agent is typing the test card" in `textSecondary`
+    /// and Take over in ink, no tint, rule or spinner (the page's ring says the agent is there).
+    private var macBody: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
+        return HStack(spacing: SH.Space.m) {
+            Text("The agent is \(note)").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                .lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: takeOver) { Text("Take over").frame(minHeight: SH.Height.controlS) }
+                .buttonStyle(.shLink(color: sh.textPrimary, font: .sh(.ui, weight: .medium)))
+                .fixedSize()
+                .padding(.trailing, SH.Space.s)
+        }
+        .padding(.leading, SH.Space.l)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHBrowserTabsMetrics.agentStatusHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Agent is \(note)")
+    }
+    #endif
+
+    private var touchBody: some View {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
             ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.agentSpinner))
                 .frame(width: SHBrowserTabsMetrics.agentSpinner, height: SHBrowserTabsMetrics.agentSpinner)
                 .accessibilityHidden(true)

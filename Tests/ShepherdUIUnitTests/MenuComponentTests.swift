@@ -28,17 +28,22 @@ struct MenuComponentTests {
         #expect(SHModelList(sections: []).height == 0)
     }
 
-    /// The picker's list is 360pt tall at most, less when the room above the card is short (its
-    /// 30pt search and the list's 4pt insets), and never shorter than one row.
-    @Test(arguments: [(nil, 360), (.infinity, 360), (1000, 360), (398, 360), (200, 162), (40, 40)] as [(CGFloat?, CGFloat)])
-    @MainActor func thePickersListFitsTheRoomItIsGiven(room: CGFloat?, list: CGFloat) {
-        #expect(SHModelPicker.listMaxHeight(in: room) == list)
+    /// The picker's list is 360pt tall at most, less when the room above the card is short (its search row and the
+    /// list's insets), and never shorter than one row.
+    @Test(arguments: [nil, .infinity, 1000, 420, 200, 40] as [CGFloat?])
+    @MainActor func thePickersListFitsTheRoomItIsGiven(room: CGFloat?) {
+        let chrome = SHComposerMetrics.modelSearchHeight + 2 * SHComposerMetrics.modelListInset
+        let expected = max(SHComposerMetrics.modelRowHeight, min(SHComposerMetrics.modelPickerMaxHeight, (room ?? .infinity) - chrome))
+        #expect(SHModelPicker.listMaxHeight(in: room) == expected)
+        #expect(SHModelPicker.listMaxHeight(in: nil) == SHComposerMetrics.modelPickerMaxHeight)
     }
 
     /// The slash menu shows eight rows at most, fewer when the room is short, and always one.
-    @Test(arguments: [(nil, 8), (.infinity, 8), (1000, 8), (324, 8), (323, 7), (120, 2), (10, 1)] as [(CGFloat?, Int)])
-    @MainActor func theSlashMenuShowsTheRowsThatFit(room: CGFloat?, rows: Int) {
-        #expect(SHSlashMenu.visibleRows(in: room) == rows)
+    @Test(arguments: [nil, .infinity, 1000, 324, 323, 120, 10] as [CGFloat?])
+    @MainActor func theSlashMenuShowsTheRowsThatFit(room: CGFloat?) {
+        let rowRoom = (room ?? .infinity) - SHComposerMetrics.menuHeaderHeight - 2 * SH.Space.s
+        let fit = rowRoom.isFinite ? Int((rowRoom / SHComposerMetrics.slashRowHeight).rounded(.down)) : SHComposerMetrics.menuMaxRows
+        #expect(SHSlashMenu.visibleRows(in: room) == max(1, min(SHComposerMetrics.menuMaxRows, fit)))
     }
 }
 

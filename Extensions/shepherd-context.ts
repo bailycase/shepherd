@@ -21,6 +21,9 @@
 //      a restart, on another branch only where the entry is, and across a compaction. A provider's prompt cache
 //      is therefore broken once per batch (about once in 25 to 35 calls), not on every call.
 //
+// A call that arrives carrying one of those lines as an argument (the model copied it from its own old calls) is
+// blocked with an error that says so, whatever the tool.
+//
 // Never cleared: user messages, assistant text, thinking text, the compaction summary, the newest calls, and
 // the call's own name and path. The transcript, the session file and the thread keep every result in full: only
 // the request changes. Compaction uses the same clipping and remembered clearing boundary for its summary inputs.
@@ -152,14 +155,70 @@ function withText(content: unknown, text: string): unknown {
 
 // MARK: the stubs
 
-export const resultStub = (tool: string, about: string, tokens: number) =>
-  `[${tool || "tool"}${about ? ` ${about}` : ""} output removed from context: about ${kilo(tokens)} tokens. It was shown earlier in this conversation; run it again if you need it.]`;
+// Each stub is built from these pieces, and `isStub` takes them apart again, so the two cannot drift.
+const RESULT = { mark: " output removed from context: about ", tail: " tokens. It was shown earlier in this conversation; run it again if you need it.]" };
+const CUSTOM = { mark: " message removed from context: about ", tail: " tokens. It was shown earlier in this conversation.]" };
+const sized = (head: string, part: { mark: string; tail: string }, tokens: number) => `[${head}${part.mark}${kilo(tokens)}${part.tail}`;
+
+export const resultStub = (tool: string, about: string, tokens: number) => sized(`${tool || "tool"}${about ? ` ${about}` : ""}`, RESULT, tokens);
 
 export const imageStub = (count: number) => `[${count === 1 ? "image" : `${count} images`} removed from context. It was shown earlier in this conversation.]`;
 
-export const customStub = (type: string, tokens: number) => `[${type || "custom"} message removed from context: about ${kilo(tokens)} tokens. It was shown earlier in this conversation.]`;
+export const customStub = (type: string, tokens: number) => sized(type || "custom", CUSTOM, tokens);
 
-export const argumentStub = (chars: number) => `[${chars} characters removed from context]`;
+// An argument's stub sits where a real value was, so the model sees its own earlier calls carrying it and can copy it
+// into a new call: the stub says it is no value, and `placeholderIn` refuses a call that carries one.
+export const argumentStub = (chars: number) => `[${chars} characters removed from context. Not a value: never send it.]`;
+// What sessions from before the reword hold, and what a model may have written out.
+const legacyArgumentStub = (chars: number) => `[${chars} characters removed from context]`;
+
+// True when `spelled` is exactly what `kilo` writes for some token count: a whole number, or a count of thousands with `k`.
+const isKilo = (spelled: string) => /^(\d+|\d+(\.\d)?k)$/.test(spelled) && kilo(parseFloat(spelled) * (spelled.endsWith("k") ? 1000 : 1)) === spelled;
+
+// True when the whole string, give or take whitespace, is one of the stubs above. One anchored check and one backward
+// search for the marker, so a large string costs a single pass at most.
+function isStub(value: string): boolean {
+  const text = value.trim();
+  if (text[0] !== "[" || text[text.length - 1] !== "]") return false;
+  if (text === imageStub(1)) return true;
+  const count = /^\[(\d{1,15}) /.exec(text);
+  if (count) {
+    const n = Number(count[1]);
+    if (text === argumentStub(n) || text === legacyArgumentStub(n) || text === imageStub(n)) return true;
+  }
+  for (const part of [RESULT, CUSTOM]) {
+    if (!text.endsWith(part.tail)) continue;
+    const end = text.length - part.tail.length;
+    const at = text.lastIndexOf(part.mark, end - part.mark.length);
+    if (at > 1 && isKilo(text.slice(at + part.mark.length, end))) return true;
+  }
+  return false;
+}
+
+/** The path of the first string in `value` that is exactly one of the stubs above (a whole argument, not text that mentions one). */
+export function placeholderIn(value: unknown): string | undefined {
+  // Iterative, so a leaf at any depth is reached, as `clearStrings` reaches it. Paths are built only for the one found.
+  const nodes: Array<{ key: string; parent: number }> = [{ key: "arguments", parent: -1 }];
+  const stack: Array<[unknown, number]> = [[value, 0]];
+  const seen = new Set<object>();
+  while (stack.length > 0) {
+    const [item, at] = stack.pop()!;
+    if (typeof item === "string") {
+      if (!isStub(item)) continue;
+      const keys: string[] = [];
+      for (let i = at; i >= 0; i = nodes[i].parent) keys.push(nodes[i].key);
+      return keys.reverse().join("");
+    }
+    if (!item || typeof item !== "object" || seen.has(item)) continue;
+    seen.add(item);
+    const entries = Object.entries(item);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      nodes.push({ key: Array.isArray(item) ? `[${entries[i][0]}]` : `.${entries[i][0]}`, parent: at });
+      stack.push([entries[i][1], nodes.length - 1]);
+    }
+  }
+  return undefined;
+}
 
 // MARK: clearing what is old
 
@@ -378,6 +437,16 @@ export default function shepherdContext(pi: ExtensionAPI) {
       preparation.turnPrefixMessages = prefix;
     } catch {
       // Leave Pi's default compaction available if its preparation contract changes.
+    }
+  });
+  // The model sometimes copies a stub into a new call; the tool would run with the stub as its argument.
+  pi.on("tool_call", (event) => {
+    try {
+      const where = placeholderIn(event?.input);
+      if (!where) return undefined;
+      return { block: true, reason: `The "${event.toolName}" call was not run: ${where} is a placeholder Shepherd leaves where it removed old text from your context, not a value. Read the source file or reconstruct the argument from available context. If you can't recover it, ask for the missing text rather than retrying the placeholder.` };
+    } catch {
+      return undefined;
     }
   });
   pi.on("context", (event, ctx) => {

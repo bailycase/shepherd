@@ -26,20 +26,25 @@ struct FleetCornerView: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if minimized { minimizedLine } else { header }
-            if !minimized {
-                ForEach(corner.rows) { row in
-                    MacRow(row: row, selected: onPage && focusedMac == row.id) { open(row.id) }
+        Group {
+            if minimized {
+                minimizedLine
+            } else {
+                // The boards' `.flt`: the header, a row per Mac that matters now, and the rest folded.
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    ForEach(corner.rows) { row in
+                        MacRow(row: row, selected: onPage && focusedMac == row.id) { open(row.id) }
+                    }
+                    if let more = corner.more { moreRow(more) }
                 }
-                if let more = corner.more { moreRow(more) }
+                .padding(.horizontal, SH.Space.m)
+                .padding(.top, SH.Space.s)
+                .padding(.bottom, SH.Space.m)
+                .overlay(alignment: .top) { SHHairline() }
             }
         }
-        .padding(.horizontal, SH.Space.s)
-        .padding(.top, SH.Space.s)
-        .padding(.bottom, SH.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { SHHairline() }
         .shAnimation(.disclosure, value: minimized)
     }
 
@@ -48,11 +53,10 @@ struct FleetCornerView: View, Equatable {
     private var header: some View {
         HStack(spacing: SH.Space.xs) {
             Button { open(nil) } label: {
-                HStack(spacing: SH.Space.s) {
-                    glyph(.sh(.ui, weight: .regular))
+                HStack(spacing: SH.Space.m) {
                     Text("Fleet").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                     Text(corner.headline)
-                        .font(.sh(.micro, weight: .regular))
+                        .font(.sh(.caption))
                         .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -65,23 +69,20 @@ struct FleetCornerView: View, Equatable {
             minimizeButton
             settingsButton
         }
-        .padding(.leading, SH.Space.s)
-        .padding(.trailing, SH.Space.xxs)
+        .padding(.leading, SH.Space.m)
         .frame(height: AppLayout.fleetCornerHeaderHeight)
-        .background(onPage && focusedMac == nil ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .background(onPage && focusedMac == nil ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
     }
 
     private func moreRow(_ more: FleetCorner.More) -> some View {
         Button { open(nil) } label: {
             HStack(spacing: SH.Space.s) {
-                Circle().strokeBorder(Color.sh.lineStrong, lineWidth: AppLayout.fleetCornerDotStroke)
-                    .frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                Text(more.text).font(.sh(.caption, weight: .regular)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                Text(more.text).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").font(.sh(.micro, weight: .semibold)).foregroundStyle(Color.sh.textTertiary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, SH.Space.s)
+            .padding(.horizontal, SH.Space.m)
             .frame(height: AppLayout.fleetCornerRowHeight)
             .contentShape(Rectangle())
         }
@@ -92,15 +93,17 @@ struct FleetCornerView: View, Equatable {
 
     // MARK: Minimized
 
+    /// The boards' `.foot`: the Mac glyph, how many are awake, Show Fleet and the gear, on one 44pt line.
     private var minimizedLine: some View {
-        HStack(spacing: SH.Space.xs) {
+        HStack(spacing: SH.Space.m) {
             Button { open(nil) } label: {
                 HStack(spacing: SH.Space.m) {
-                    glyph(.sh(.title, weight: .regular))
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Fleet").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
-                        Text(corner.summary).font(.sh(.caption, weight: .regular)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-                    }
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: SHSidebarMetrics.footerGlyph - 2))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .frame(width: SHSidebarMetrics.footerGlyph)
+                        .accessibilityHidden(true)
+                    Text(corner.summary).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -112,30 +115,24 @@ struct FleetCornerView: View, Equatable {
                 SHStatusDot(.failed, size: AppLayout.fleetDotSize)
                     .accessibilityHidden(true)
             }
-            minimizeButton
-            settingsButton
+            HStack(spacing: SHSidebarMetrics.topBarButtonGap) {
+                minimizeButton
+                settingsButton
+            }
         }
-        .padding(.leading, SH.Space.s)
-        .padding(.trailing, SH.Space.xxs)
-        .frame(minHeight: AppLayout.fleetCornerMinHeight)
-        .background(onPage && focusedMac == nil ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .padding(.leading, SHSidebarMetrics.footerLeading)
+        .padding(.trailing, SHSidebarMetrics.topBarTrailing)
+        .frame(height: SHSidebarMetrics.footerHeight)
+        .background(onPage && focusedMac == nil ? Color.sh.bgSelected : .clear)
     }
 
     // MARK: Parts
-
-    private func glyph(_ font: Font) -> some View {
-        Image(systemName: "display")
-            .font(font)
-            .foregroundStyle(Color.sh.textPrimary)
-            .frame(width: AppLayout.fleetFooterGlyph)
-            .accessibilityHidden(true)
-    }
 
     private var minimizeButton: some View {
         Button { withSHAnimation(.disclosure) { setMinimized(!minimized) } } label: {
             SHTurningChevron(isOpen: !minimized, closed: .up, open: .down)
         }
-        .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
+        .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar, tint: .sh.textTertiary))
         .shHelp(minimized ? "Show Fleet" : "Minimize Fleet")
         .accessibilityLabel(minimized ? "Show Fleet" : "Minimize Fleet")
     }
@@ -152,7 +149,7 @@ struct FleetCornerView: View, Equatable {
     }
 }
 
-/// A Mac of the corner: its dot, name in mono, room gauge and state.
+/// A Mac of the corner (the boards' `.flr`): its dot, its name, and its state at the end.
 private struct MacRow: View {
     let row: FleetCorner.Row
     let selected: Bool
@@ -162,26 +159,23 @@ private struct MacRow: View {
     var body: some View {
         let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: SH.Space.s) {
+            HStack(spacing: AppLayout.fleetCornerRowGap) {
                 dot
                 Text(row.name)
-                    .font(.sh(.mono))
+                    .font(.sh(.ui))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
-                    .frame(width: AppLayout.fleetCornerNameWidth, alignment: .leading)
-                FleetGauge(fraction: row.load, color: row.gauge.fillColor, height: AppLayout.fleetMetricBarHeight)
-                    .frame(width: AppLayout.fleetCornerGaugeWidth)
                 Spacer(minLength: SH.Space.xs)
                 Text(row.state)
-                    .font(.sh(.micro, weight: .regular))
+                    .font(.sh(.caption))
                     .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                     .shContentTransition(.crossFade)
                     .shAnimation(.content, value: row.state)
             }
-            .padding(.horizontal, SH.Space.s)
+            .padding(.horizontal, SH.Space.m)
             .frame(height: AppLayout.fleetCornerRowHeight)
-            .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+            .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -192,14 +186,15 @@ private struct MacRow: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// The boards' `.gd`: `textSecondary` awake, hollow asleep, red when it can't take work.
     @ViewBuilder private var dot: some View {
+        let size = AppLayout.fleetCornerDot
         switch row.dot {
-        case .awake: SHStatusDot(.done, size: AppLayout.fleetDotSize)
-        case .connecting: SHStatusDot(.running, size: AppLayout.fleetDotSize)
-        case .blocked: SHStatusDot(.failed, size: AppLayout.fleetDotSize)
+        case .awake, .connecting: Circle().fill(Color.sh.textSecondary).frame(width: size, height: size)
+        case .blocked: Circle().fill(Color.sh.failed).frame(width: size, height: size)
         case .asleep:
             Circle().strokeBorder(Color.sh.textTertiary, lineWidth: AppLayout.fleetCornerDotStroke)
-                .frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
+                .frame(width: size, height: size)
         }
     }
 }

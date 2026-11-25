@@ -436,12 +436,18 @@ public struct SHLazyListCard<Data: RandomAccessCollection, Row: View>: View wher
 
 /// One row's share of a list card: its corners where it ends the card, the rule above it
 /// otherwise, and the card's border along its sides.
-private struct SHListCardSegment<Content: View>: View {
+public struct SHListCardSegment<Content: View>: View {
     let first: Bool
     let last: Bool
     @ViewBuilder let content: () -> Content
 
-    var body: some View {
+    public init(first: Bool, last: Bool, @ViewBuilder content: @escaping () -> Content) {
+        self.first = first
+        self.last = last
+        self.content = content
+    }
+
+    public var body: some View {
         let _ = SHRenderProbe.tick("listCard.segment")
         let radius = SHListMetrics.cardRadius
         let shape = UnevenRoundedRectangle(topLeadingRadius: first ? radius : 0, bottomLeadingRadius: last ? radius : 0,

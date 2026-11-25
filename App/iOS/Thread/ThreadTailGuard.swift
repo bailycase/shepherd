@@ -57,9 +57,92 @@ final class ThreadTailGuard {
     /// the transcript may have come back and started a walk of its own.
     private var generation = 0
 
-    func register(_ marker: UIView) { markers.add(marker) }
+    func register(_ marker: UIView) {
+        #if DEBUG
+        SHRenderProbe.scrollEvent("thread.write.L1", "row.markerRegistered", from: self,
+                                  target: (marker as? TailRowMarker.Probe)?.rowID, kind: "layout")
+        #endif
+        markers.add(marker)
+    }
 
-    func find(_ view: UIView) { finder = view }
+    func find(_ view: UIView) {
+        finder = view
+        #if DEBUG
+        Self.measured = self
+        #endif
+    }
+
+    #if DEBUG
+    static weak var measured: ThreadTailGuard?
+    var phase = ScrollPhase.idle
+    private var offeredPosition: String?
+    var traceMotion: String {
+        if phase == .interacting || phase == .tracking || scrollView?.isDragging == true || scrollView?.isTracking == true { return "touching" }
+        if phase == .decelerating || scrollView?.isDecelerating == true { return "coasting" }
+        return phase == .animating ? "programmatic" : "idle"
+    }
+
+    private var intent = ScrollIntent()
+    private weak var sampledScroll: UIScrollView?
+    private var sampledGeometry: (offset: CGFloat, size: CGSize, bounds: CGSize, inset: UIEdgeInsets)?
+
+    func resetTraceIntent() {
+        intent = ScrollIntent()
+        sampledScroll = nil
+        sampledGeometry = nil
+        if let scroll = scrollView { _ = traceIntent(in: scroll) }
+    }
+
+    /// Layout can move rows on the next frame without starting a scroll animation.
+    func noteTrace(_ event: SHRenderProbe.ScrollEvent) {
+        switch event.kind {
+        case "layout": intent.noteIOSLayout()
+        case "fixture": break
+        default: intent.noteIOSCommand(animated: event.detail == "find")
+        }
+    }
+
+    /// Displacement with no command or layout change can be reader input without a finger.
+    func traceIntent(in scroll: UIScrollView) -> ScrollIntent.State {
+        guard scroll === scrollView else { return .idle }
+        let now = (offset: scroll.contentOffset.y, size: scroll.contentSize, bounds: scroll.bounds.size, inset: scroll.adjustedContentInset)
+        let before = sampledScroll === scroll ? sampledGeometry : nil
+        sampledGeometry = now
+        sampledScroll = scroll
+        let native: ScrollIntent.Phase
+        if phase == .interacting || phase == .tracking || scroll.isDragging || scroll.isTracking { native = .touching }
+        else if phase == .decelerating || scroll.isDecelerating { native = .coasting }
+        else { native = phase == .animating ? .animating : .idle }
+        return intent.sampleIOS(phase: native, offsetDelta: Double(now.offset - (before?.offset ?? now.offset)),
+                                layoutChanged: before.map { $0.size != now.size || $0.bounds != now.bounds || $0.inset != now.inset } ?? false)
+    }
+
+    /// UIKit's model offset can already be at the destination while a frame still shows the animation.
+    func traceRows(in scroll: UIScrollView) -> [String: CGRect] {
+        guard scroll === scrollView else { return [:] }
+        let inset = scroll.adjustedContentInset.top
+        var rows: [String: CGRect] = [:]
+        for case let marker as TailRowMarker.Probe in markers.allObjects where marker.window != nil && marker.enclosingScrollView === scroll {
+            guard let id = marker.rowID else { continue }
+            var frame: CGRect
+            if let row = marker.layer.presentation(), let viewport = scroll.layer.presentation() {
+                frame = row.convert(row.bounds, to: viewport).offsetBy(dx: 0, dy: -viewport.bounds.minY - inset)
+            } else {
+                frame = marker.convert(marker.bounds, to: scroll).offsetBy(dx: 0, dy: -scroll.bounds.minY - inset)
+            }
+            if frame.height > 0 { rows[id] = frame }
+        }
+        return rows
+    }
+    #endif
+
+    func noteOfferedPosition(_ id: String?) {
+        #if DEBUG
+        guard SHRenderProbe.scrollEvents != nil, offeredPosition != id else { return }
+        offeredPosition = id
+        SHRenderProbe.scrollEvent("thread.write.I1", "position.offered", from: self, target: id, kind: "binding")
+        #endif
+    }
 
     /// A scroll-geometry reading: look again once things are quiet.
     /// `standAside` tells the pin that lands the transcript to stop while a walk is under way.
@@ -114,6 +197,7 @@ final class ThreadTailGuard {
         let inset = scroll.adjustedContentInset
         let target = last.maxY + status().tailGap + inset.bottom - scroll.bounds.height
         SHRenderProbe.tick("thread.tailMountJump")
+        SHRenderProbe.scrollEvent("thread.write.I4", "guard.goToPlacedRows", from: self)
         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(max(target, -inset.top), endOffset(of: scroll))), animated: false)
     }
 
@@ -204,6 +288,7 @@ final class ThreadTailGuard {
         for _ in 0..<MobileLayout.tailGuardSteps where !rowsInView(scroll) {
             guard goesOn(run), !moving(scroll) else { return }
             let from = scroll.contentOffset.y
+            SHRenderProbe.scrollEvent("thread.write.I4", "guard.walkBack", from: self)
             scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: max(from - back, -inset.top)), animated: false)
             if scroll.contentOffset.y == from { return }
             back *= 2
@@ -219,6 +304,7 @@ final class ThreadTailGuard {
             let end = endOffset(of: scroll)
             let from = scroll.contentOffset.y
             if from >= end - 1 { return }
+            SHRenderProbe.scrollEvent("thread.write.I4", "guard.walkDown", from: self)
             scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(from + page, end)), animated: false)
             try? await Task.sleep(for: MobileLayout.tailGuardStep)
             // Past the last row there is nothing to realize: the walk down is over.
@@ -253,9 +339,18 @@ final class ThreadTailGuard {
 /// A built row's placement, for `ThreadTailGuard`: a view the size of the row that registers itself.
 struct TailRowMarker: UIViewRepresentable {
     let guardian: ThreadTailGuard
+    #if DEBUG
+    var rowID: String? = nil
+    final class Probe: UIView { var rowID: String? }
+    #endif
 
     func makeUIView(context: Context) -> UIView {
+        #if DEBUG
+        let view = Probe()
+        view.rowID = rowID
+        #else
         let view = UIView()
+        #endif
         view.isUserInteractionEnabled = false
         view.isAccessibilityElement = false
         view.accessibilityElementsHidden = true
@@ -263,7 +358,11 @@ struct TailRowMarker: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {}
+    func updateUIView(_ view: UIView, context: Context) {
+        #if DEBUG
+        (view as? Probe)?.rowID = rowID
+        #endif
+    }
 }
 
 /// Finds the scroll view the transcript is drawn in from inside its content, where no row has to be built.

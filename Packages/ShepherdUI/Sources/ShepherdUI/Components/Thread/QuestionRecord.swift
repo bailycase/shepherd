@@ -6,8 +6,14 @@ import SwiftUI
 
 public enum SHQuestionRecordMetrics {
     public static let glyph: CGFloat = 12
+    /// The Mac's line: a 14pt bubble, 8pt before the question.
+    public static let macGlyph: CGFloat = 14
     /// Between the line's glyph, "Agent asked:" and the question.
+    #if os(macOS)
+    public static let spacing: CGFloat = SH.Space.m
+    #else
     public static let spacing: CGFloat = 7
+    #endif
     /// On touch the question wraps rather than truncating at a phone's width.
     public static let touchQuestionLines = 3
 }
@@ -40,11 +46,18 @@ public struct SHQuestionRecord: View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(alignment: .firstTextBaseline, spacing: SHQuestionRecordMetrics.spacing) {
+                #if os(macOS)
+                Image(systemName: "bubble.left")
+                    .font(.system(size: SHQuestionRecordMetrics.macGlyph))
+                    .foregroundStyle(sh.textSecondary)
+                    .accessibilityHidden(true)
+                #else
                 Image(systemName: "questionmark.circle")
                     .font(.system(size: SHQuestionRecordMetrics.glyph))
                     .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
                 Text("Agent asked:").foregroundStyle(sh.textTertiary).layoutPriority(1)
+                #endif
                 #if os(iOS)
                 // Wrapping, the "not answered" rides the question's last line.
                 let asked = Text(question).fontWeight(.medium).foregroundStyle(sh.textSecondary)
@@ -54,15 +67,18 @@ public struct SHQuestionRecord: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 #else
-                Text(question).fontWeight(.medium).foregroundStyle(sh.textSecondary)
+                // The board's `.asked`: the question in `textSecondary`, then "You answered" in `textTertiary`.
+                Text(question).foregroundStyle(sh.textSecondary)
                     .lineLimit(1).truncationMode(.tail)
                     .help(question)
-                if !answered {
-                    Text("· not answered").foregroundStyle(sh.textTertiary).layoutPriority(1)
-                }
+                Text(answered ? "You answered" : "Not answered").foregroundStyle(sh.textTertiary).layoutPriority(1)
                 #endif
             }
+            #if os(macOS)
+            .font(.sh(.body))
+            #else
             .font(.sh(.ui, weight: .regular))
+            #endif
             .accessibilityElement(children: .combine)
             if answered {
                 SHUserBubble(text ?? "", title: title, timestamp: timestamp, revealed: revealed)

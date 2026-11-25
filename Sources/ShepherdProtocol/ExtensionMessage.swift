@@ -59,6 +59,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// channel for its agent's native child runs: the app may send
     /// `ExtensionReply.childCommand` frames on it (card buttons, inspector steer).
     case helloChildren(agentID: AgentID, projectScopes: Bool? = nil)
+    case stopBashProcesses(agentID: AgentID, bashScope: UUID)
     case childScope(id: Int, agentID: AgentID, sessionID: String, userTimestamp: Double?)
     /// Outcome of a `childCommand`; `error` is nil on success.
     case childCommandResult(id: Int, error: String?)
@@ -97,8 +98,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
 
     // MARK: Agent peers (request/reply)
 
-    /// The fleet: every top-level agent thread, for agent_send targeting.
-    case listAgents(id: Int, agentID: AgentID)
+    /// The fleet: every top-level agent thread, for agent_send targeting. `details` (agent_list's): newest first, capped, texts one short line,
+    /// answered with the count left out. An older host ignores it and answers the plain list.
+    case listAgents(id: Int, agentID: AgentID, details: Bool = false)
     /// Send framed context only (`report`) or start/queue work (`task`, the legacy default).
     case sendToAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
     /// Spawn a new agent thread with an opening prompt; it records the sender as its starter (`Agent.startedBy`).
@@ -108,6 +110,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                     place: SpawnPlace? = nil, branch: String? = nil)
     /// Move an inactive ordinary thread to a registered space on this host.
     case moveAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
+    case renameAgent(id: Int, agentID: AgentID, targetAgentID: AgentID?, name: String)
     /// Receipt of a tokenized peer task; the host transfers it into its tracked native queue.
     case peerMessageReceived(agentID: AgentID, deliveryID: Int)
 
@@ -126,6 +129,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case fleetDispatchMessage(id: Int, agentID: AgentID, dispatchID: String, text: String, delivery: FleetMessageDelivery)
     /// `fleet_cancel`: stop a dispatched thread. Answered with `ExtensionReply.fleetDispatch`.
     case fleetDispatchCancel(id: Int, agentID: AgentID, dispatchID: String)
+    case fleetDispatchClose(id: Int, agentID: AgentID, dispatchID: String)
+    /// `agent_rename` with a dispatch ID. Answered with the updated dispatch only after Pi confirms the name.
+    case fleetDispatchRename(id: Int, agentID: AgentID, dispatchID: String, name: String)
+    /// `fleet_read` with no dispatch: the dispatches this Mac sent, newest first. Read-only. Answered with `ExtensionReply.fleetDispatches`.
+    case fleetListDispatches(id: Int, agentID: AgentID)
 
     /// Read, steer, interrupt, or poll another live agent (relayed to the target's panes
     /// extension as `ExtensionReply.agentRequest`, never inferred from saved status), or ask
@@ -268,20 +276,20 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case call, proposals
         case what
         case server, challenge, report
-        case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp
+        case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp, bashScope
         case seq, mark, at, expiresAt
-        case action, lines
+        case action, lines, details
     }
 
     private enum Kind: String, Codable {
         case app
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent, responseTiming, nativeQueueBoundary
-        case helloChildren, childCommandResult, childScope, prepareProjectConfiguration
+        case helloChildren, stopBashProcesses, childCommandResult, childScope, prepareProjectConfiguration
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
-        case listAgents, sendToAgent, spawnAgent, moveAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
-        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel
+        case listAgents, sendToAgent, spawnAgent, moveAgent, renameAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
+        case fleetListHosts, fleetDispatch, fleetDispatchStatus, fleetDispatchMessage, fleetDispatchCancel, fleetDispatchClose, fleetDispatchRename, fleetListDispatches
         case suggestInstruction
         case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
@@ -366,6 +374,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             self = .helloAgent(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .helloChildren:
             self = .helloChildren(agentID: try c.decode(AgentID.self, forKey: .agentID), projectScopes: try c.decodeIfPresent(Bool.self, forKey: .projectScopes))
+        case .stopBashProcesses:
+            self = .stopBashProcesses(agentID: try c.decode(AgentID.self, forKey: .agentID), bashScope: try c.decode(UUID.self, forKey: .bashScope))
         case .childScope:
             self = .childScope(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                 sessionID: try c.decode(String.self, forKey: .sessionID), userTimestamp: try c.decodeIfPresent(Double.self, forKey: .userTimestamp))
@@ -437,7 +447,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .listAgents:
             self = .listAgents(
                 id: try c.decode(Int.self, forKey: .id),
-                agentID: try c.decode(AgentID.self, forKey: .agentID)
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                details: try c.decodeIfPresent(Bool.self, forKey: .details) ?? false
             )
         case .sendToAgent:
             self = .sendToAgent(
@@ -449,6 +460,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             )
         case .peerMessageReceived:
             self = .peerMessageReceived(agentID: try c.decode(AgentID.self, forKey: .agentID), deliveryID: try c.decode(Int.self, forKey: .deliveryID))
+        case .renameAgent:
+            self = .renameAgent(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                targetAgentID: try c.decodeIfPresent(AgentID.self, forKey: .targetAgentID), name: try c.decode(String.self, forKey: .name))
         case .moveAgent:
             self = .moveAgent(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                              targetAgentID: try c.decode(AgentID.self, forKey: .targetAgentID), spaceID: try c.decode(SpaceID.self, forKey: .spaceID))
@@ -481,6 +495,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .fleetDispatchCancel:
             self = .fleetDispatchCancel(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                                         dispatchID: try c.decode(String.self, forKey: .dispatchID))
+        case .fleetDispatchRename:
+            self = .fleetDispatchRename(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                        dispatchID: try c.decode(String.self, forKey: .dispatchID), name: try c.decode(String.self, forKey: .name))
+        case .fleetDispatchClose:
+            self = .fleetDispatchClose(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                        dispatchID: try c.decode(String.self, forKey: .dispatchID))
+        case .fleetListDispatches:
+            self = .fleetListDispatches(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .coordinateAgent:
             self = .coordinateAgent(
                 id: try c.decode(Int.self, forKey: .id),
@@ -765,6 +787,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.helloChildren, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encodeIfPresent(projectScopes, forKey: .projectScopes)
+        case .stopBashProcesses(let agentID, let scope):
+            try c.encode(Kind.stopBashProcesses, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(scope, forKey: .bashScope)
         case .childScope(let id, let agentID, let sessionID, let userTimestamp):
             try c.encode(Kind.childScope, forKey: .type)
             try c.encode(id, forKey: .id); try c.encode(agentID, forKey: .agentID)
@@ -832,10 +858,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(cwd, forKey: .cwd)
-        case .listAgents(let id, let agentID):
+        case .listAgents(let id, let agentID, let details):
             try c.encode(Kind.listAgents, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
+            if details { try c.encode(details, forKey: .details) }
         case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             try c.encode(Kind.sendToAgent, forKey: .type)
             if delivery != .task { try c.encode(delivery, forKey: .delivery) }
@@ -847,6 +874,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.peerMessageReceived, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(deliveryID, forKey: .deliveryID)
+        case .renameAgent(let id, let agentID, let targetAgentID, let name):
+            try c.encode(Kind.renameAgent, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(targetAgentID, forKey: .targetAgentID)
+            try c.encode(name, forKey: .name)
         case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
             try c.encode(Kind.moveAgent, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -894,6 +927,21 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(dispatchID, forKey: .dispatchID)
+        case .fleetDispatchRename(let id, let agentID, let dispatchID, let name):
+            try c.encode(Kind.fleetDispatchRename, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
+            try c.encode(name, forKey: .name)
+        case .fleetDispatchClose(let id, let agentID, let dispatchID):
+            try c.encode(Kind.fleetDispatchClose, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(dispatchID, forKey: .dispatchID)
+        case .fleetListDispatches(let id, let agentID):
+            try c.encode(Kind.fleetListDispatches, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
             try c.encode(Kind.coordinateAgent, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1327,6 +1375,9 @@ public struct ChildResultSummary: Codable, Hashable, Sendable {
 /// App → children extension: drive one native child run. Mirrors the tool functions.
 public enum ChildCommandAction: String, Codable, Hashable, Sendable { case message, cancel, resume, pause, `continue` }
 
+/// Git-visible uncommitted work in a local checkout, not work attributed to a thread.
+public enum PeerCheckoutStatus: String, Codable, Hashable, Sendable { case clean, dirty, unknown }
+
 /// One top-level agent thread as reported to peers (agent_list).
 public struct AgentPeerInfo: Codable, Hashable, Sendable {
     public var id: AgentID
@@ -1336,13 +1387,30 @@ public struct AgentPeerInfo: Codable, Hashable, Sendable {
     public var cwd: String
     /// True for the requesting agent's own row.
     public var isSelf: Bool
+    /// The name of the space the thread is in. Nil from an older host.
+    public var space: String?
+    /// When the thread last started or finished a turn or was sent a message (ms since 1970, the host's clock). Nil when unknown.
+    public var lastActiveAt: Double?
+    /// Whether the thread is waiting on a person's answer. Nil from an older host.
+    public var asking: Bool?
+    /// A point-in-time checkout observation. Only the detailed list supplies it; older hosts omit it.
+    public var checkoutStatus: PeerCheckoutStatus?
+    /// Detailed list only. Nil when unknown. The local upstream ref may be stale; this says nothing about publication.
+    public var commitsAheadOfLocalUpstream: Int?
 
-    public init(id: AgentID, name: String, status: String, cwd: String, isSelf: Bool) {
+    public init(id: AgentID, name: String, status: String, cwd: String, isSelf: Bool,
+                space: String? = nil, lastActiveAt: Double? = nil, asking: Bool? = nil,
+                checkoutStatus: PeerCheckoutStatus? = nil, commitsAheadOfLocalUpstream: Int? = nil) {
         self.id = id
         self.name = name
         self.status = status
         self.cwd = cwd
         self.isSelf = isSelf
+        self.space = space
+        self.lastActiveAt = lastActiveAt
+        self.asking = asking
+        self.checkoutStatus = checkoutStatus
+        self.commitsAheadOfLocalUpstream = commitsAheadOfLocalUpstream
     }
 }
 
@@ -1399,6 +1467,8 @@ public struct PaneInfo: Codable, Hashable, Sendable {
 public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Accepted host-queued user input: stop waiting in the parent, without stopping children.
     case parentInput
+    /// Only an explicit Stop may sweep the attempts it aborts.
+    case stopManagedBash(sweepChildren: Bool? = nil)
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
@@ -1406,7 +1476,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case childStart(id: Int, requestID: String, text: String, images: [NativeImage])
     case childScope(id: Int, scope: ProjectChildScope?, deadline: Double? = nil)
     /// Uses the existing childCommandResult acknowledgement, bound to this connection.
-    case projectChildren(id: Int, scope: ProjectChildScope, action: ProjectChildAction)
+    case projectChildren(id: Int, scope: ProjectChildScope, action: ProjectChildAction, sweepChildren: Bool? = nil)
     case ok(id: Int)
     /// Register returns the canonical space; refresh returns nil. Existing spaces are unchanged.
     case projectResult(id: Int, space: Space?, created: Bool)
@@ -1422,11 +1492,15 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Saved automations with their live run state.
     case automations(id: Int, automations: [AutomationInfo])
     /// The fleet, for agent_list / agent_spawn replies.
-    case agents(id: Int, agents: [AgentPeerInfo])
+    /// `omitted`: older threads a detailed list left out (0 from an older host, and for the plain list).
+    case agents(id: Int, agents: [AgentPeerInfo], omitted: Int = 0)
     /// The Macs of the fleet, for `fleet_hosts` (`ExtensionMessage.fleetListHosts`).
     case fleetHosts(id: Int, hosts: [FleetHostInfo])
     /// A dispatch this thread sent, for every other `fleet_*` tool.
     case fleetDispatch(id: Int, info: FleetDispatchInfo)
+    /// The dispatches this Mac sent, for `fleet_read` with no dispatch (`ExtensionMessage.fleetListDispatches`).
+    /// `omitted`: older dispatches the list left out.
+    case fleetDispatches(id: Int, dispatches: [FleetDispatchListRow], omitted: Int = 0)
     /// Unsolicited push on a helloAgent-registered connection: a peer-thread
     /// message for this agent. Positive IDs track delivery; 0 is the legacy untracked form.
     case message(id: Int, text: String, delivery: AgentMessageDelivery = .task)
@@ -1440,6 +1514,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// The outcome of a `coordinateAgent`, correlated by the caller's `id`. A `code` means it
     /// failed.
     case agentResult(id: Int, result: AgentCoordinationResult)
+    case agentRenamed(id: Int, oldName: String, newName: String)
 
     /// A `designRead` without a path: the design's index, revision and board hashes.
     case design(id: Int, snapshot: DesignSnapshot)
@@ -1489,18 +1564,18 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case requestID, targetAgentID, request, result
         case space, created
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
-        case runID, action, mode, scope, deadline
+        case runID, action, mode, scope, deadline, sweepChildren
         case outcome
         case snapshot, board, replaced, path, designs
         case comments, comment
         case listing, system
         case proposals
         case answer, note, project, spaces, models
-        case image, images, hosts, info
+        case image, images, hosts, info, oldName, newName, dispatches, omitted
     }
 
     private enum Kind: String, Codable {
-        case parentInput, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult
+        case parentInput, stopManagedBash, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult, agentRenamed
         case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, appResult, automations, agents, message
         case suggestion
@@ -1509,7 +1584,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
         case browserResult, projectRuntime, projectPublish
-        case fleetHosts, fleetDispatch
+        case fleetHosts, fleetDispatch, fleetDispatches
     }
 
     public init(from decoder: Decoder) throws {
@@ -1518,9 +1593,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case .childScope:
             self = .childScope(id: try c.decode(Int.self, forKey: .id), scope: try c.decodeIfPresent(ProjectChildScope.self, forKey: .scope), deadline: try c.decodeIfPresent(Double.self, forKey: .deadline))
         case .projectChildren:
-            self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action))
+            self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action), sweepChildren: try c.decodeIfPresent(Bool.self, forKey: .sweepChildren))
         case .parentInput:
             self = .parentInput
+        case .stopManagedBash: self = .stopManagedBash(sweepChildren: try c.decodeIfPresent(Bool.self, forKey: .sweepChildren))
         case .childStart:
             self = .childStart(id: try c.decode(Int.self, forKey: .id), requestID: try c.decode(String.self, forKey: .requestID),
                                text: try c.decode(String.self, forKey: .text), images: try c.decode([NativeImage].self, forKey: .images))
@@ -1539,6 +1615,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 targetAgentID: try c.decode(AgentID.self, forKey: .targetAgentID),
                 request: try c.decode(AgentCoordinationRequest.self, forKey: .request)
             )
+        case .agentRenamed:
+            self = .agentRenamed(id: try c.decode(Int.self, forKey: .id), oldName: try c.decode(String.self, forKey: .oldName),
+                                 newName: try c.decode(String.self, forKey: .newName))
         case .agentResult:
             self = .agentResult(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1589,12 +1668,16 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case .agents:
             self = .agents(
                 id: try c.decode(Int.self, forKey: .id),
-                agents: try c.decode([AgentPeerInfo].self, forKey: .agents)
+                agents: try c.decode([AgentPeerInfo].self, forKey: .agents),
+                omitted: try c.decodeIfPresent(Int.self, forKey: .omitted) ?? 0
             )
         case .fleetHosts:
             self = .fleetHosts(id: try c.decode(Int.self, forKey: .id), hosts: try c.decode([FleetHostInfo].self, forKey: .hosts))
         case .fleetDispatch:
             self = .fleetDispatch(id: try c.decode(Int.self, forKey: .id), info: try c.decode(FleetDispatchInfo.self, forKey: .info))
+        case .fleetDispatches:
+            self = .fleetDispatches(id: try c.decode(Int.self, forKey: .id), dispatches: try c.decode([FleetDispatchListRow].self, forKey: .dispatches),
+                                    omitted: try c.decodeIfPresent(Int.self, forKey: .omitted) ?? 0)
         case .message:
             self = .message(
                 id: try c.decodeIfPresent(Int.self, forKey: .id) ?? 0,
@@ -1717,12 +1800,16 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         switch self {
         case .parentInput:
             try c.encode(Kind.parentInput, forKey: .type)
+        case .stopManagedBash(let sweepChildren):
+            try c.encode(Kind.stopManagedBash, forKey: .type)
+            try c.encodeIfPresent(sweepChildren, forKey: .sweepChildren)
         case .childScope(let id, let scope, let deadline):
             try c.encode(Kind.childScope, forKey: .type); try c.encode(id, forKey: .id)
             try c.encodeIfPresent(scope, forKey: .scope); try c.encodeIfPresent(deadline, forKey: .deadline)
-        case .projectChildren(let id, let scope, let action):
+        case .projectChildren(let id, let scope, let action, let sweepChildren):
             try c.encode(Kind.projectChildren, forKey: .type); try c.encode(id, forKey: .id)
             try c.encode(scope, forKey: .scope); try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(sweepChildren, forKey: .sweepChildren)
         case .childStart(let id, let requestID, let text, let images):
             try c.encode(Kind.childStart, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1742,6 +1829,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(requestID, forKey: .requestID)
             try c.encode(targetAgentID, forKey: .targetAgentID)
             try c.encode(request, forKey: .request)
+        case .agentRenamed(let id, let oldName, let newName):
+            try c.encode(Kind.agentRenamed, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(oldName, forKey: .oldName)
+            try c.encode(newName, forKey: .newName)
         case .agentResult(let id, let result):
             try c.encode(Kind.agentResult, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1784,10 +1876,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.automations, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(automations, forKey: .automations)
-        case .agents(let id, let agents):
+        case .agents(let id, let agents, let omitted):
             try c.encode(Kind.agents, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agents, forKey: .agents)
+            if omitted > 0 { try c.encode(omitted, forKey: .omitted) }
         case .fleetHosts(let id, let hosts):
             try c.encode(Kind.fleetHosts, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1796,6 +1889,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.fleetDispatch, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(info, forKey: .info)
+        case .fleetDispatches(let id, let dispatches, let omitted):
+            try c.encode(Kind.fleetDispatches, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(dispatches, forKey: .dispatches)
+            if omitted > 0 { try c.encode(omitted, forKey: .omitted) }
         case .message(let id, let text, let delivery):
             try c.encode(Kind.message, forKey: .type)
             if delivery != .task { try c.encode(delivery, forKey: .delivery) }

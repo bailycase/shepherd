@@ -16,25 +16,25 @@ struct ExtensionMessageTests {
     static func caseName(_ message: ExtensionMessage) -> String {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming, .nativeQueueBoundary,
-             .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
-             .sendPaneInput, .readPane, .requestReview, .app, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
+             .helloChildren, .stopBashProcesses, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
+             .sendPaneInput, .readPane, .requestReview, .app, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .renameAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designList, .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .designPropose,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject,
-             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel:
+             .fleetListHosts, .fleetDispatch, .fleetDispatchStatus, .fleetDispatchMessage, .fleetDispatchCancel, .fleetDispatchClose, .fleetDispatchRename, .fleetListDispatches:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 68
+    static let caseCount = 73
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
-        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(), expectedRevision: 1, request: .read),
+        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(rawValue: "project"), expectedRevision: 1, request: .read),
         .projectPublish(id: 76, agentID: agent, request: .eligibility),
-        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(), sourcePath: "report.txt", artifactName: "result.txt")),
+        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!, sourcePath: "report.txt", artifactName: "result.txt")),
         .registerProject(id: 70, agentID: agent, path: "/tmp/project", name: "Project"),
         .refreshProjects(id: 71, agentID: agent),
         .editProject(id: 73, agentID: agent, projectID: SpaceID(rawValue: "p1"), request: ProjectEdit(name: "New name", parentProjectID: "", folderAction: .none)),
@@ -52,11 +52,12 @@ struct ExtensionMessageTests {
             ChildRun(runID: "r1", childIndex: 2, label: "src/jobs", state: "failed", startedAt: 1, endedAt: 2,
                      currentTool: "read", needsAttention: true, attentionText: "boom", asyncDir: "/tmp/a"),
             ChildRun(runID: "r2", label: "reviewer", state: "queued", role: "worker", name: "card-network-rules", attempt: "fresh-attempt",
-                     projectScope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: agent, sessionID: "session", generation: "generation")),
+                     projectScope: .init(key: Wire.projectKey, workerAgentID: agent, sessionID: "session", generation: "generation")),
         ]),
         .notify(agentID: agent, title: "CI passed", body: "PR #42 is green"),
         .helloAgent(agentID: agent),
         .helloChildren(agentID: agent, projectScopes: true),
+        .stopBashProcesses(agentID: agent, bashScope: UUID(uuidString: "10000000-0000-0000-0000-000000000000")!),
         .childScope(id: 77, agentID: agent, sessionID: "session", userTimestamp: 1234),
         .childCommandResult(id: 2, error: "Child is not running"),
         .listPanes(id: 1, agentID: agent),
@@ -69,6 +70,7 @@ struct ExtensionMessageTests {
         .app(id: 10, agentID: agent, action: .list, name: nil, lines: nil),
         .app(id: 11, agentID: agent, action: .logs, name: "Web app", lines: 40),
         .listAgents(id: 16, agentID: agent),
+        .listAgents(id: 17, agentID: agent, details: true),
         .peerMessageReceived(agentID: agent, deliveryID: 42),
         .prepareProjectConfiguration(id: 116, agentID: agent, cwd: "/project"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
@@ -77,6 +79,8 @@ struct ExtensionMessageTests {
         .spawnAgent(id: 19, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", model: "claude-fable-5-1", thinking: "low"),
         .spawnAgent(id: 20, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests.", place: .worktree, branch: "agent/split-ui-tests"),
         .moveAgent(id: 118, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), spaceID: SpaceID(rawValue: "s2")),
+        .renameAgent(id: 119, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), name: "Peer title"),
+        .renameAgent(id: 120, agentID: agent, targetAgentID: nil, name: "Own title"),
         .fleetListHosts(id: 130, agentID: agent),
         .fleetDispatch(id: 131, agentID: agent, dispatchID: nil, task: "Fix the flaky test.", title: nil, host: nil, model: nil, thinking: nil),
         .fleetDispatch(id: 132, agentID: agent, dispatchID: "toolu_01", task: "Fix the flaky test.", title: "Flaky test", host: "Mac mini", model: "claude-fable-5-1", thinking: "low"),
@@ -84,6 +88,9 @@ struct ExtensionMessageTests {
         .fleetDispatchMessage(id: 134, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Also update the docs.", delivery: .steer),
         .fleetDispatchMessage(id: 135, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", text: "Thanks.", delivery: .followUp),
         .fleetDispatchCancel(id: 136, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetDispatchClose(id: 137, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11"),
+        .fleetDispatchRename(id: 138, agentID: agent, dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", name: "Payment test"),
+        .fleetListDispatches(id: 138, agentID: agent),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
         .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",
@@ -178,7 +185,7 @@ struct ExtensionMessageTests {
         .back(note: nil), .forward(note: "going forward"), .reload(note: nil),
         .tabs, .newTab(url: "about:blank", note: "separate page"),
         .selectTab(id: "00000000-0000-0000-0000-000000000001"), .closeTab(id: "00000000-0000-0000-0000-000000000001"),
-        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)),
+        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)), .show,
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -434,15 +441,15 @@ struct ExtensionReplyTests {
 
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
-        case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
-             .agents, .fleetHosts, .fleetDispatch, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
+        case .parentInput, .stopManagedBash, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .appResult, .automations,
+             .agents, .fleetHosts, .fleetDispatch, .fleetDispatches, .message, .agentRequest, .agentResult, .agentRenamed, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
              .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 43
+    static let caseCount = 46
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -471,14 +478,15 @@ struct ExtensionReplyTests {
 
     static let samples: [ExtensionReply] = [
         .childScope(id: 78, scope: nil),
-        .childScope(id: 80, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), deadline: 1_800_000),
-        .projectChildren(id: 79, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), action: .stop),
-        .projectRuntime(id: 75, project: Project(name: "Owner project")),
-        .projectRuntime(id: 76, project: Project(name: "Owner project"), models: ["provider/a", "provider/b"]),
+        .childScope(id: 80, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), deadline: 1_800_000),
+        .projectChildren(id: 79, scope: .init(key: Wire.projectKey, workerAgentID: AgentID(rawValue: "worker"), sessionID: "session", generation: "generation"), action: .stop),
+        .projectRuntime(id: 75, project: Wire.project(named: "Owner project")),
+        .projectRuntime(id: 76, project: Wire.project(named: "Owner project"), models: ["provider/a", "provider/b"]),
         .projectPublish(id: 76, result: .init(active: false)),
-        .projectResult(id: 70, space: Space(name: "Project", path: "/tmp/project"), created: true),
+        .projectResult(id: 70, space: Space(id: SpaceID(rawValue: "project"), name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),
         .parentInput,
+        .stopManagedBash(),
         .childStart(id: 1, requestID: "queued-1", text: "Review this", images: [NativeImage(mimeType: "image/png", data: Data([1, 2]))]),
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
         .ok(id: 1),
@@ -489,13 +497,20 @@ struct ExtensionReplyTests {
         .reviewResult(id: 7, text: "Looks good.\n\nSummary: ready to merge."),
         .appResult(id: 8, text: "Apps in payments:\n- Web app: running · port 3000"),
         .automations(id: 1, automations: [
-            AutomationInfo(id: AutomationID(), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
-            AutomationInfo(id: AutomationID(), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),
+            AutomationInfo(id: AutomationID(rawValue: "au1"), name: "pr-watch", prompt: "watch", cwd: "/r", enabled: true, agentStatus: "working"),
+            AutomationInfo(id: AutomationID(rawValue: "au2"), name: "nightly", prompt: "check", cwd: "/t", enabled: false, agentStatus: nil),
         ]),
         .agents(id: 1, agents: [
-            AgentPeerInfo(id: AgentID(), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
-            AgentPeerInfo(id: AgentID(), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
+            AgentPeerInfo(id: AgentID(rawValue: "worker"), name: "worker", status: "working", cwd: "/tmp", isSelf: false),
+            AgentPeerInfo(id: AgentID(rawValue: "me"), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
+        .agents(id: 2, agents: [
+            AgentPeerInfo(id: AgentID(rawValue: "far"), name: "far", status: "blocked", cwd: "/docs", isSelf: false, space: "acme-docs", lastActiveAt: 1_700_000_000_000, asking: true, checkoutStatus: .dirty),
+        ], omitted: 3),
+        .fleetDispatches(id: 145, dispatches: [
+            FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test", branch: "fleet/flaky-test", mine: true),
+            FleetDispatchListRow(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c12", state: "done", closed: true),
+        ], omitted: 4),
         .fleetHosts(id: 140, hosts: [FleetHostInfo(name: "Mac mini", isThisMac: false, room: "most room", connected: true, problems: ["muse"], hasRepo: true, weight: "Prefer"),
                                      FleetHostInfo(name: "MacBook Pro", isThisMac: true, room: "no room", connected: true, without: ["bearcli"], weight: "Normal")]),
         .fleetDispatch(id: 141, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "running", host: "Mac mini", title: "Flaky test")),
@@ -503,12 +518,14 @@ struct ExtensionReplyTests {
         .fleetDispatch(id: 142, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "failed", failure: "repo_missing", detail: "Mac mini")),
         .fleetDispatch(id: 143, info: FleetDispatchInfo(dispatchID: "5d4f1f6e-2b0c-4c86-9e43-7f5b7e0a9c11", state: "delivering", host: "Mac mini", title: "Flaky test",
                                                         branch: "fleet/flaky-test", activity: "idle", resultText: "Fixed.",
-                                                        branchFacts: FleetBranchFacts(branch: "fleet/flaky-test", head: "abc", ahead: 1, pushed: true, filesChanged: 1, insertions: 2, deletions: 1))),
+                                                        branchFacts: FleetBranchFacts(branch: "fleet/flaky-test", head: "abc", ahead: 1, pushed: true,
+                                                                                      filesChanged: 1, insertions: 2, deletions: 1, uncommittedModified: 2, uncommittedUntracked: 1))),
         .message(id: 0, text: "[from: worker] done"),
         .message(id: 0, text: "[from: worker] done", delivery: .report),
         .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
                       request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
         .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
+        .agentRenamed(id: 119, oldName: "Before", newName: "After"),
         .suggestion(id: 20, outcome: .dismissed),
         .designList(id: 80, designs: [Design(id: DesignID(rawValue: "d1"), name: "Checkout", createdAt: 1)]),
         .design(id: 21, snapshot: snapshot),
@@ -565,7 +582,7 @@ struct ExtensionReplyTests {
             sourceReport: DesignBoardReport(created: false, bytes: 900, delta: -100),
             checkpoint: DesignCheckpointInfo(name: "before extract", createdAt: 1, boards: 4, bytes: 5, revision: 9), pruned: ["old"])),
         .designComments(id: 24, comments: DesignComments(revision: 3, comments: [
-            comment, DesignComment(number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
+            comment, DesignComment(id: UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!, number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
                                    createdAt: 3, resolvedAt: 4, detached: true),
         ])),
         .designComment(id: 25, comment: comment),
@@ -677,12 +694,21 @@ struct ExtensionReplyTests {
         let initial = try JSONDecoder().decode(ProjectChildScope.self, from: JSONSerialization.data(withJSONObject: legacy))
         #expect(initial.epoch == 0 && initial != scope)
         #expect(initial == ProjectChildScope(key: scope.key, workerAgentID: scope.workerAgentID, sessionID: scope.sessionID, generation: scope.generation))
-        let reply = ExtensionReply.projectChildren(id: 81, scope: scope, action: .stop)
-        #expect(try JSONDecoder().decode(ExtensionReply.self, from: JSONEncoder().encode(reply)) == reply)
+        for sweep in [nil, true] as [Bool?] {
+            let reply = ExtensionReply.projectChildren(id: 81, scope: scope, action: .stop, sweepChildren: sweep)
+            #expect(try JSONDecoder().decode(ExtensionReply.self, from: JSONEncoder().encode(reply)) == reply)
+        }
         let task = ProjectTask(operationID: UUID(), spaceID: .init(), title: "Legacy", prompt: "task")
         #expect(try JSONDecoder().decode(ProjectTask.self, from: JSONEncoder().encode(task)).childScopeEpoch == nil)
         let receipt = ProjectExecutionReceipt(key: scope.key, phase: .cancelled)
         #expect(try JSONDecoder().decode(ProjectExecutionReceipt.self, from: JSONEncoder().encode(receipt)).childScopeEpoch == nil)
+    }
+
+    @Test func stopManagedBashRequiresExplicitSweepAuthorization() throws {
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"stopManagedBash"}"#) == .stopManagedBash())
+        let explicit = ExtensionReply.stopManagedBash(sweepChildren: true)
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"stopManagedBash","sweepChildren":true}"#) == explicit)
+        #expect(try Wire.object(explicit)["sweepChildren"] as? Bool == true)
     }
 
     @Test func parentInputHasNoPayload() throws {
@@ -780,7 +806,7 @@ struct ChildRunTests {
          {"runID":"run-2","label":"scout","state":"complete","needsAttention":false},
          {"runID":"native-1","label":"worker: restyle","state":"running","startedAt":1,"needsAttention":false,
           "role":"worker","name":"restyle-tokens","model":"p/m","thinking":"high","context":"background","step":{"index":1,"total":3},
-          "turns":78,"toolCalls":82,"tokens":922000,"contextPercent":62,
+          "turns":78,"toolCalls":82,"tokens":922000,"cost":3.25,"contextPercent":62,
           "lastActivity":{"kind":"tool","tool":"edit","preview":"Sources/A.swift","diff":{"added":31,"removed":0},"at":2},
           "toolCallID":"call_1","task":"Restyle","sessionFile":"/tmp/c/session.jsonl","paused":true},
          {"runID":"native-2","label":"reviewer","state":"running","needsAttention":true,"attentionText":"Two names collide",
@@ -799,6 +825,7 @@ struct ChildRunTests {
         #expect(rows[1].name == "restyle-tokens" && rows[0].name == nil, "a run from an older publisher decodes without a label")
         #expect(rows[1].step == ChildStep(index: 1, total: 3))
         #expect(rows[1].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
+        // The sample's "cost" is the removed field an older publisher still sends; the row decodes without it.
         #expect(rows[1].contextPercent == 62 && rows[1].paused == true && rows[1].toolCallID == "call_1")
         #expect(rows[2].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"],
                                                   short: "token names?"))
@@ -814,6 +841,28 @@ struct ChildRunTests {
         let question = try Wire.decode(ChildQuestion.self, #"{"text":"Rename or replace?"}"#)
         #expect(question == ChildQuestion(text: "Rename or replace?"))
         #expect(try Wire.object(question).keys.sorted() == ["text"])
+    }
+
+    /// An older host sends agent_list rows without the space, last activity and asking fields; a newer one's rows add them, and an older
+    /// extension ignores them.
+    @Test func anAgentListRowFromAnOlderHostDecodesWithoutTheNewFields() throws {
+        let old = try Wire.decode(AgentPeerInfo.self, #"{"id":"a1","name":"api","status":"idle","cwd":"/work","isSelf":false}"#)
+        #expect(old == AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false))
+        #expect(try Wire.object(old).keys.sorted() == ["cwd", "id", "isSelf", "name", "status"])
+    }
+
+    @Test(arguments: [PeerCheckoutStatus.clean, .dirty, .unknown])
+    func aDetailedAgentListRowCarriesOnlyCheckoutStateAndAnOptionalLocalCount(_ status: PeerCheckoutStatus) throws {
+        var row = AgentPeerInfo(id: AgentID(rawValue: "a1"), name: "api", status: "idle", cwd: "/work", isSelf: false,
+                                checkoutStatus: status)
+        let encoded = try Wire.object(row)
+        #expect(encoded["checkoutStatus"] as? String == status.rawValue)
+        #expect(Set(encoded.keys) == ["cwd", "id", "isSelf", "name", "status", "checkoutStatus"])
+        row.commitsAheadOfLocalUpstream = 0
+        let withCount = try Wire.object(row)
+        #expect(withCount["commitsAheadOfLocalUpstream"] as? Int == 0)
+        #expect(Set(withCount.keys) == Set(encoded.keys).union(["commitsAheadOfLocalUpstream"]))
+        #expect(try JSONDecoder().decode(AgentPeerInfo.self, from: JSONEncoder().encode(row)) == row)
     }
 
     @Test func absentCardFieldsNeverAppearOnTheWire() throws {

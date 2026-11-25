@@ -13,11 +13,25 @@ import SwiftUI
 /// graph, its state and its surfaces, and takes no part in drawing, hit-testing, key equivalents
 /// or accessibility. Switching agents flips two hosts' `isHidden`, never a remount.
 struct AgentLayoutDeck: View, Equatable {
-    var vm: ShepherdViewModel
+    private let vm: ShepherdViewModel?
     /// Every mounted layout's values, in the stable (space, tab) order.
     let models: [AgentLayoutModel]
     /// Hidden terminal layouts keep this size until a live resize or wide side pane ends.
     let frozenSize: CGSize?
+
+    init(vm: ShepherdViewModel, models: [AgentLayoutModel], frozenSize: CGSize?) {
+        self.vm = vm
+        self.models = models
+        self.frozenSize = frozenSize
+    }
+
+    #if DEBUG
+    init(scrollFixtureModels: [AgentLayoutModel]) {
+        vm = nil
+        models = scrollFixtureModels
+        frozenSize = nil
+    }
+    #endif
 
     static func == (a: AgentLayoutDeck, b: AgentLayoutDeck) -> Bool {
         a.vm === b.vm && a.models == b.models && a.frozenSize == b.frozenSize
@@ -32,9 +46,9 @@ struct AgentLayoutDeck: View, Equatable {
     /// hosting view inside a SwiftUI hierarchy inherits it, and follows its changes.
     @MainActor @Observable final class Page {
         var model: AgentLayoutModel
-        @ObservationIgnored let vm: ShepherdViewModel
+        @ObservationIgnored let vm: ShepherdViewModel?
 
-        init(vm: ShepherdViewModel, model: AgentLayoutModel) {
+        init(vm: ShepherdViewModel?, model: AgentLayoutModel) {
             self.vm = vm
             self.model = model
         }
@@ -45,13 +59,25 @@ struct AgentLayoutDeck: View, Equatable {
 
         var body: some View {
             let model = page.model
-            AgentLayoutView(vm: page.vm, model: model)
-                .equatable()
+            content(model)
                 // Nor draw its spinners and glows where no one sees them.
                 .environment(\.shMotionPaused, !model.isVisible)
+                // Nor take the window's drag: a hidden thread lays out nothing for it, so its two changes (the start and the end) would
+                // only rebuild its rows (`ThreadView.eagerCount`).
+                .transformEnvironment(\.liveResizing) { if !model.isVisible { $0 = false } }
                 // Nor run a spring there: a hidden layout is laid out again on every frame of one (the
                 // composer's ring letting go of focus as the layout is hidden), for no one.
                 .transaction { if !model.isVisible { $0.disablesAnimations = true } }
+        }
+
+        @ViewBuilder private func content(_ model: AgentLayoutModel) -> some View {
+            if let vm = page.vm {
+                AgentLayoutView(vm: vm, model: model).equatable()
+            } else {
+                #if DEBUG
+                if let fixturePage = MacScrollValidationTrace.current?.deckPage { fixturePage(model) }
+                #endif
+            }
         }
     }
 
@@ -87,6 +113,12 @@ struct AgentLayoutDeck: View, Equatable {
             return hit === self ? nil : hit
         }
 
+        /// The drag over, the hidden layouts that held their passes back take them, one at a time (`DeckCatchUp`).
+        override func viewDidEndLiveResize() {
+            super.viewDidEndLiveResize()
+            DeckCatchUp.run(pages.values.map(\.host)) { [weak self] in self?.window?.inLiveResize == true }
+        }
+
         /// The visible layout alone: VoiceOver never reaches a hidden one.
         override func accessibilityChildren() -> [Any]? {
             pages.values.filter { !$0.host.isHidden }.map(\.host)
@@ -94,7 +126,7 @@ struct AgentLayoutDeck: View, Equatable {
     }
 
     struct Deck: NSViewRepresentable {
-        var vm: ShepherdViewModel
+        let vm: ShepherdViewModel?
         let models: [AgentLayoutModel]
         let frozenSize: CGSize?
 
@@ -119,7 +151,7 @@ struct AgentLayoutDeck: View, Equatable {
                         // A thread whose rows were let go (`NativeThreadStores`) builds them in this pass, not a later one: left
                         // to a later pass, the running app committed a frame with the layout and an empty transcript for as
                         // long as the rows took to build. A layout that kept its rows has none to build and takes its usual pass.
-                        if let thread = model.thread, vm.threadStores.existing(for: thread.agentID)?.transcriptReleased == true {
+                        if let thread = model.thread, vm?.threadStores.existing(for: thread.agentID)?.transcriptReleased == true {
                             entry.host.layoutSubtreeIfNeeded()
                             SHRenderProbe.tick("deck.flipLayout")
                         }
@@ -161,15 +193,24 @@ struct AgentLayoutDeck: View, Equatable {
 struct DeckProbe {
     let visible: StaticString
     let hidden: StaticString
+    /// A hidden layout's pass held back through a live resize.
+    let held: StaticString
 
-    static let local = DeckProbe(visible: "deck.layout", hidden: "deck.hiddenLayout")
-    static let remote = DeckProbe(visible: "remoteDeck.layout", hidden: "remoteDeck.hiddenLayout")
+    static let local = DeckProbe(visible: "deck.layout", hidden: "deck.hiddenLayout", held: "deck.heldLayout")
+    static let remote = DeckProbe(visible: "remoteDeck.layout", hidden: "remoteDeck.hiddenLayout", held: "remoteDeck.heldLayout")
 }
 
 /// A layout's hosting view. It sizes nothing around it, and has no safe area of its own:
 /// the workspace's column decides both, as it did for the layouts in its own graph.
-final class DeckHost<Root: View>: NSHostingView<Root> {
+final class DeckHost<Root: View>: NSHostingView<Root>, DeckCatchUpHost {
     var probe = DeckProbe.local
+    /// SwiftUI has laid this host out in a window at a usable size. Until it has, no pass is held back: the first one gives
+    /// the layout its size.
+    private var laidOut = false
+    /// A live resize began while the window was shown (`viewWillStartLiveResize`), and has not ended.
+    private var windowResizing = false
+    /// Passes this hidden host held back through a live resize: it still owes the one that catches it up.
+    var owesPass = false
 
     required init(rootView: Root) {
         super.init(rootView: rootView)
@@ -189,11 +230,76 @@ final class DeckHost<Root: View>: NSHostingView<Root> {
     override var acceptsFirstResponder: Bool { isHidden ? false : super.acceptsFirstResponder }
     override var needsPanelToBecomeKey: Bool { isHidden ? false : super.needsPanelToBecomeKey }
 
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        windowResizing = true
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        windowResizing = false
+    }
+
+    /// A host that leaves the window mid-drag, or is never told the drag ended, holds nothing back from then on.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        windowResizing = false
+    }
+
+    func liveResizeEnded() { windowResizing = false }
+
+    /// Whether the window is being resized by hand and this layout is out of sight, so it need not follow: SwiftUI marks every hosting
+    /// view of the window's graphs for an update on each frame of the drag (`NSHostingView` watches its geometry in the window), and a
+    /// hidden layout's pass was most of what a frame cost with a few of them mounted. The pass it owes comes once the drag ends
+    /// (`DeckCatchUp`), or when the layout is shown: showing a host (`updateNSView` sets `needsLayout` before it un-hides it) is the
+    /// backstop for a container that never gets `viewDidEndLiveResize`, for a shown host holds nothing back.
+    private var holdsPass: Bool {
+        isHidden && laidOut && (windowResizing || window?.inLiveResize == true)
+    }
+
     override func layout() {
+        if holdsPass {
+            owesPass = true
+            SHRenderProbe.tick(probe.held)
+            // The pass that would clear it is the one not taken.
+            needsLayout = false
+            return
+        }
         SHRenderProbe.tick(isHidden ? probe.hidden : probe.visible)
         // Even at fixed hidden bounds, AppKit needs this pass to remove transitioned views.
         // Avoid resize work by retaining host frames, never by skipping lifecycle callbacks.
         super.layout()
+        owesPass = false
+        if window != nil, !bounds.isEmpty { laidOut = true }
+    }
+}
+
+/// A hosting view that can hold back the passes of a hidden layout through a live resize (`DeckHost`).
+@MainActor
+protocol DeckCatchUpHost: NSView {
+    var owesPass: Bool { get set }
+    /// The drag is over for this host, whether or not AppKit told it so itself.
+    func liveResizeEnded()
+}
+
+/// The passes hidden layouts held back through a live resize, taken once it ends: one layout per turn of the main run loop, so no
+/// frame carries them all, and the shown one's own relayout and the thread's tail growing back (`ThreadView.returnEagerTail`) go
+/// first. A drag that begins again leaves what is left for its own end.
+@MainActor
+enum DeckCatchUp {
+    static func run(_ hosts: [any DeckCatchUpHost], resizing: @escaping @MainActor () -> Bool) {
+        for host in hosts { host.liveResizeEnded() }
+        let owing = hosts.filter { $0.isHidden && $0.owesPass }
+        guard !owing.isEmpty else { return }
+        step(owing[...], resizing: resizing)
+    }
+
+    private static func step(_ hosts: ArraySlice<any DeckCatchUpHost>, resizing: @escaping @MainActor () -> Bool) {
+        DispatchQueue.main.async {
+            guard let host = hosts.first, !resizing() else { return }
+            if host.isHidden, host.owesPass, host.superview != nil { host.needsLayout = true }
+            step(hosts.dropFirst(), resizing: resizing)
+        }
     }
 }
 

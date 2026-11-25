@@ -331,10 +331,13 @@ public struct ChangesOverview: Codable, Hashable, Sendable {
     public var commitsBase: String?
     public var pullRequest: ChangesPullRequest?
     public var lastTurn: ChangesTurn?
+    /// Why turn history cannot be used. Working-tree comparisons still work.
+    public var turnHistoryProblem: String?
 
     public init(repository: String?, reason: String? = nil, branch: String? = nil, head: String? = nil, defaultScope: ChangesScope,
                 defaultBase: String? = nil, entries: [ChangesOverview.Entry] = [], commits: [ChangesCommit] = [],
-                commitsBase: String? = nil, pullRequest: ChangesPullRequest? = nil, lastTurn: ChangesTurn? = nil) {
+                commitsBase: String? = nil, pullRequest: ChangesPullRequest? = nil, lastTurn: ChangesTurn? = nil,
+                turnHistoryProblem: String? = nil) {
         self.repository = repository
         self.reason = reason
         self.branch = branch
@@ -346,6 +349,7 @@ public struct ChangesOverview: Codable, Hashable, Sendable {
         self.commitsBase = commitsBase
         self.pullRequest = pullRequest
         self.lastTurn = lastTurn
+        self.turnHistoryProblem = turnHistoryProblem
     }
 }
 
@@ -399,12 +403,16 @@ public struct ChangesBranches: Codable, Hashable, Sendable {
     /// Bases picked before in this repository, most recent first.
     public var recents: [String]
     public var branches: [ChangesBranch]
+    /// Host recovery instructions when saved recents can't be read. The branch list is still usable.
+    public var recentsProblem: String?
 
-    public init(defaultBase: String?, pullRequestBase: String? = nil, recents: [String] = [], branches: [ChangesBranch]) {
+    public init(defaultBase: String?, pullRequestBase: String? = nil, recents: [String] = [], branches: [ChangesBranch],
+                recentsProblem: String? = nil) {
         self.defaultBase = defaultBase
         self.pullRequestBase = pullRequestBase
         self.recents = recents
         self.branches = branches
+        self.recentsProblem = recentsProblem
     }
 }
 

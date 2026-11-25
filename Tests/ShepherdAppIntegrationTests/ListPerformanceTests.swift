@@ -1009,8 +1009,8 @@ struct ListPerformanceTests {
         let screenful = 20
         var asking = thread.snapshot
         asking.revision += 1
-        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
-                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Horizon alone\nDeploy from a clean checkout."])]
+        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Orbit’s uncommitted edits?",
+                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Orbit alone\nDeploy from a clean checkout."])]
         var answered = asking
         answered.revision += 1
         answered.dialogs = []
@@ -2421,7 +2421,7 @@ struct ListPerformanceTests {
         OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: ListFixtures.reviewModel(files)))
     }
 
-    @Test func openingAReviewOfThreeHundredFilesBuildsOnlyTheChipsAndLinesInView() throws {
+    @Test func openingAReviewOfThreeHundredFilesBuildsOnlyTheRowsAndLinesInView() throws {
         let files = (0..<300).map { ListFixtures.diffFile("Sources/Module\($0)/File\($0).swift", lines: 12) }
         var window: OffscreenWindow!
         let rows = ListPerf.counting {
@@ -2429,10 +2429,10 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        // A chip is at least its letter, a short name, and padding: about a dozen fit 600pt.
-        #expect(rows["review.fileChip", default: 0] > 0, "\(rows)")
+        // The file rows show the first few; the rest wait behind "Show 297 more".
+        #expect(rows["review.fileRow", default: 0] > 0, "\(rows)")
         #expect(rows["diff.line", default: 0] > 0, "\(rows)")
-        #expect(rows["review.fileChip", default: 0] <= 24, "\(rows)")
+        #expect(rows["review.fileRow", default: 0] <= 2 * SHFileRows.Metrics.collapsed, "\(rows)")
         #expect(rows["diff.line", default: 0] <= 2 * Int(800 / SHDiffMetrics.lineHeight), "\(rows)")
     }
 
@@ -2550,7 +2550,7 @@ struct ListPerformanceTests {
         let pairsIntoView = Int(moved / SHDiffMetrics.lineHeight)
         #expect(moved > 3000, "the diff scrolled \(moved) pt")
         #expect(rows["diff.row", default: 0] <= pairsIntoView + 10, "\(pairsIntoView) rows came into view: \(rows)")
-        #expect(rows["review.toolbar", default: 0] == 0 && rows["review.fileChip", default: 0] == 0, "the chrome stays: \(rows)")
+        #expect(rows["review.toolbar", default: 0] == 0 && rows["review.fileRow", default: 0] == 0, "the chrome stays: \(rows)")
     }
 
     /// Opening and closing the pane's menus (scope, base, options) draws the menu and nothing
@@ -2569,7 +2569,7 @@ struct ListPerformanceTests {
             }
         }
         #expect(rows["diff.row", default: 0] == 0 && rows["diff.line", default: 0] == 0, "\(rows)")
-        #expect(rows["review.fileHeader", default: 0] == 0 && rows["review.fileChip", default: 0] == 0, "\(rows)")
+        #expect(rows["review.fileHeader", default: 0] == 0 && rows["review.fileRow", default: 0] == 0, "\(rows)")
     }
 
     /// ⌥U builds the rows on screen in the other layout, not the whole diff.
@@ -2590,9 +2590,19 @@ struct ListPerformanceTests {
     /// scroll step, and before this the docked pane still carried a clear one on three layers.
     @Test(arguments: [(width: CGFloat(1400), floating: false), (width: ShellLayout.paneDockThreshold - 80, floating: true)])
     func theRightPaneCastsItsShadowFromItsFillOnlyWhileFloating(width: CGFloat, floating: Bool) throws {
+        try checkRightPaneShadows(width: width, floating: floating, card: false)
+    }
+
+    /// The thread's pane card lifts from its fill (the boards' shadow), and floats over the thread from a fill too.
+    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: ShellLayout.paneDockThreshold - 80, floating: true)])
+    func theThreadsPaneCardCastsItsShadowsFromItsFillOnly(width: CGFloat, floating: Bool) throws {
+        try checkRightPaneShadows(width: width, floating: floating, card: true)
+    }
+
+    private func checkRightPaneShadows(width: CGFloat, floating: Bool, card: Bool) throws {
         let model = ListFixtures.reviewModel([ListFixtures.diffFile("Big.swift", lines: 200)])
         let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
-                                     RightPaneSplit(state: RightPaneState(), showPane: true) { Color.clear } pane: { ReviewPaneContent(model: model) })
+                                     RightPaneSplit(state: RightPaneState(), showPane: true, card: card) { Color.clear } pane: { ReviewPaneContent(model: model) })
         defer { window.close() }
         ListPerf.settle(window)
         let all = ListPerf.shadowedLayers(in: window)
@@ -2600,13 +2610,15 @@ struct ListPerformanceTests {
         // from its fill too.
         let headers = all.filter { $0.layer.bounds.height == SHFileHeader.height }
         let shadows = all.filter { $0.layer.bounds.height != SHFileHeader.height }
-        #expect(shadows.count == (floating ? 1 : 0), "\(shadows.map(\.layer))")
+        // The card's lift is two shadows (near and far) on its fill, besides the floating one.
+        #expect(shadows.count == (floating ? 1 : 0) + (card ? 2 : 0), "\(shadows.map(\.layer))")
         #expect(headers.count == 1, "\(headers.map(\.layer))")
         #expect(all.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(all.map(\.subtree))")
     }
 
     /// The sidebar overlaid on a narrow window casts its shadow from its fill alone: on the
     /// sidebar itself, Core Animation redrew the shadow from the scrolling list on every step.
+    /// The cards' lift shadows (the composer's, the branch card's) are cast from fills alone too.
     @Test func theOverlaidSidebarCastsItsShadowFromItsFillAlone() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -2618,16 +2630,18 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
             return vm.sidebarAutoHidden
         }
-        #expect(ListPerf.shadowedLayers(in: window).isEmpty)
+        let cards = ListPerf.shadowedLayers(in: window)
+        #expect(cards.allSatisfy { $0.subtree == 1 }, "a card's shadow over its content: \(cards.map(\.subtree))")
 
         vm.toggleSidebar()
         try await eventuallyOnMain("the sidebar to overlay the workspace") {
             ListPerf.settle(window)
-            return vm.sidebarOverlayShown && !ListPerf.shadowedLayers(in: window).isEmpty
+            return vm.sidebarOverlayShown && ListPerf.shadowedLayers(in: window).count > cards.count
         }
 
         let shadows = ListPerf.shadowedLayers(in: window)
-        #expect(shadows.count == 1, "\(shadows.map(\.layer))")
+        // The overlaid sidebar's float is two shadows (near and far), each from a fill of its own.
+        #expect(shadows.count == cards.count + 2, "\(shadows.map(\.layer))")
         #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the sidebar's list: \(shadows.map(\.subtree))")
     }
 
@@ -2673,7 +2687,7 @@ struct ListPerformanceTests {
         ListPerf.settle(window)
         let scroll = try #require(ListPerf.scrollView(in: window))
 
-        let row = SHDensity.standard.rowHeight
+        let row = SHPaletteMetrics.rowHeight
         let cap = SHPaletteMetrics.placement(in: CGSize(width: 900, height: 700), rowHeight: row).maxListHeight
         let natural = SHPaletteMetrics.sectionHeight + CGFloat(count) * row
         #expect(abs(scroll.frame.height - min(natural, cap)) < 1, "list \(scroll.frame.height), rows \(natural), cap \(cap)")
@@ -2689,6 +2703,6 @@ struct ListPerformanceTests {
         ListPerf.time(window) { highlight.move(to: 200) }
 
         let visible = scroll.contentView.bounds
-        #expect(visible.minY > CGFloat(150) * SHDensity.standard.rowHeight, "scrolled to \(visible.minY)")
+        #expect(visible.minY > CGFloat(150) * SHPaletteMetrics.rowHeight, "scrolled to \(visible.minY)")
     }
 }

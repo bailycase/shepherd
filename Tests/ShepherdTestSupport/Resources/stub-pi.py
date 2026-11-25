@@ -820,8 +820,60 @@ def flaky_turn(message):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
     text = text_of(message)
+    jobs = []
+    if "escaped-job-fixtures" in text:
+        jobs.extend(["orphan", "session", "decoy-no-marker", "decoy-other-thread", "decoy-argv"])
+    jobs.extend(word.removeprefix("escaped-job:") for word in text.split() if word.startswith("escaped-job:"))
+    if jobs:
+        import subprocess
+        # The intermediate parent exits. The test waits for launchd adoption and for the
+        # exec'ed Python to publish its PID, so its environment can be read before signaling.
+        subprocess.run([sys.executable, "-c", '''
+import os, sys, uuid
+for job in sys.argv[1:]:
+    if os.fork() == 0:
+        name, _, scope = job.partition(':')
+        if name == 'orphan':
+            os.setpgid(0, 0)
+        else:
+            os.setsid()
+        env = dict(os.environ, STUB_ESCAPED_JOB=name)
+        thread = env['SHEPHERD_OWNED_THREAD']
+        env.pop('SHEPHERD_OWNED_BASH', None)
+        if scope:
+            env['SHEPHERD_OWNED_BASH'] = scope
+        argv = [sys.executable, '-c', """
+import os, signal, sys, time
+from pathlib import Path
+name = sys.argv[1]
+if name in ('session', 'scoped-first'):
+    signal.signal(signal.SIGTERM, lambda *_: Path(name + '.term').touch())
+Path(name + '.pid').write_text(str(os.getpid()))
+time.sleep(25)
+""", name]
+        if name in ('decoy-no-marker', 'decoy-argv'):
+            env.pop('SHEPHERD_OWNED_THREAD')
+        if name in ('decoy-other-thread', 'decoy-other-thread-scope'):
+            env['SHEPHERD_OWNED_THREAD'] = str(uuid.uuid4())
+        if name == 'decoy-argv':
+            argv.append('SHEPHERD_OWNED_THREAD=' + thread)
+        os.execve(sys.executable, argv, env)
+''', *jobs], check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if "fleet-close-background" in text:
+        import subprocess
+        child = subprocess.Popen(["/usr/bin/nohup", "/bin/sleep", "120"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session="fleet-detached" in text)
+        with open("fleet-child-pid", "w") as pid_file:
+            pid_file.write(str(child.pid))
     if "flaky-hold" in text:
         wait_for_file("flaky-go")
+    if "escaped-abort-hold" in text:
+        RUN["abort"].wait(15)
+        RUN["active"] = False
+    if "fleet-disk-failure" in text:
+        emit({"type": "extension_error", "event": "turn_end", "error": "ENOSPC: no space left on device, write"})
+        FLAKY["failed"] = True
     if not FLAKY["failed"]:
         FLAKY["failed"] = True
         final = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": "529 overloaded",
@@ -1203,7 +1255,7 @@ def question_turn(prompt):
     say({"role": "user", "content": [{"type": "text", "text": prompt}], "timestamp": now_ms()})
     call = f"call_ask{QUESTION['count'] + 1}"
     ask = {"role": "assistant", "content": [
-        {"type": "text", "text": "Horizon's checkout isn't clean."},
+        {"type": "text", "text": "Orbit's checkout isn't clean."},
         {"type": "toolCall", "id": call, "name": "ask_user", "arguments": {"question": "How should I handle it?"}}],
         "stopReason": "toolUse", "timestamp": now_ms()}
     say(ask)
@@ -1213,9 +1265,9 @@ def question_turn(prompt):
     QUESTION["answered"].clear()
     QUESTION["response"] = None
     request = {"type": "extension_ui_request", "id": QUESTION["id"], "method": "select",
-               "title": "How should I handle Horizon's uncommitted edits?",
+               "title": "How should I handle Orbit's uncommitted edits?",
                "options": ["Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
-                           "Leave Horizon alone"]}
+                           "Leave Orbit alone"]}
     timeout = 0.15 if prompt.startswith("question-timeout") else 30.0
     if prompt.startswith("question-timeout"):
         # Model a host timer delayed behind the history refresh, without blocking test queues.
@@ -1636,6 +1688,16 @@ for raw in sys.stdin.buffer:
             respond(held_history_request, "get_messages", data={"messages": stale_history})
             held_history_request = None
             stale_history = None
+    elif t == "set_session_name":
+        name = cmd["name"].strip()
+        if os.path.exists("hold-session-rename"):
+            continue  # No reply or event, but keep serving other RPCs.
+        if not name:
+            respond(cmd, t, success=False, error="Session name cannot be empty")
+        else:
+            STATE["sessionName"] = name
+            emit({"type": "session_info_changed", "name": name})
+            respond(cmd, t)
     elif t == "new_session":
         STATE["sessionId"] = "stub-session-2"
         del MESSAGES[:]
@@ -2036,6 +2098,8 @@ for raw in sys.stdin.buffer:
             turn_aborted = False
             turn_thread = threading.Thread(target=flaky_turn, args=(user_message(message, cmd.get("images") or [], now_ms()),),
                                            daemon=True)
+            if "escaped-abort-hold" in message:
+                RUN.update(active=True, thread=turn_thread)
             turn_thread.start()
         elif message == "provider-error":
             turn_aborted = False

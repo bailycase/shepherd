@@ -1,4 +1,5 @@
 """A restored cache may reuse timestamps, never stale source or outside files."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import contextlib
 import importlib.util
 import io

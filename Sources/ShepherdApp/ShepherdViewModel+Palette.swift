@@ -22,7 +22,13 @@ extension ShepherdViewModel {
         // Commands.
         items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
                                  title: "New thread", subtitle: newThreadPlaceName.map(Self.newThreadContext),
-                                 shortcut: keys.display(.newAgent), icon: "plus"))
+                                 shortcut: keys.display(.newAgent), icon: "square.and.pencil"))
+        items += supervisionPaletteItems(keys: keys)
+        let working = workingThreads.count
+        if working > 0 {
+            items.append(PaletteItem(id: "action.stopAll", kind: .action("stopAll"), section: .commands,
+                                     title: "Stop all working threads…", subtitle: "\(working) working", icon: "stop.circle"))
+        }
         // The New thread page's project: what the sidebar's space rows offered.
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
@@ -32,7 +38,7 @@ extension ShepherdViewModel {
                                      title: "Remove space…", subtitle: space.name, icon: "trash"))
         }
         items.append(PaletteItem(id: "action.newSpace", kind: .action("newSpace"), section: .commands,
-                                 title: "New space…", shortcut: keys.display(.newSpace), icon: "square.stack"))
+                                 title: "New space…", shortcut: keys.display(.newSpace), icon: "folder"))
         for connection in remoteHosts.connections where connection.phase == .connected {
             items.append(PaletteItem(id: "action.newRemoteSpace.\(connection.id.uuidString)",
                                      kind: .remoteSpace(hostID: connection.id), section: .commands,
@@ -46,7 +52,7 @@ extension ShepherdViewModel {
                                  title: "Settings…", shortcut: "⌘,", icon: "gearshape"))
         // The pages the boards' sidebar no longer lists (it draws New thread, Designs and Automations only).
         items.append(PaletteItem(id: "action.openFleet", kind: .action("openFleet"), section: .commands, title: "Open Fleet",
-                                 subtitle: fleetPage.page.footer.paletteDetail, icon: "macbook.and.iphone"))
+                                 subtitle: fleetPage.page.footer.paletteDetail, icon: "desktopcomputer"))
         if designToolEnabled {
             items.append(PaletteItem(id: "action.openDesignSystems", kind: .action("openDesignSystems"), section: .commands,
                                      title: "Open Design systems", icon: "paintpalette"))
@@ -54,7 +60,7 @@ extension ShepherdViewModel {
         items.append(PaletteItem(id: "action.openExtensions", kind: .action("openExtensions"), section: .commands,
                                  title: "Open Extensions", icon: "puzzlepiece.extension"))
         items.append(PaletteItem(id: "action.openAutomations", kind: .action("openAutomations"), section: .commands,
-                                 title: "Open Automations", icon: "clock.arrow.2.circlepath"))
+                                 title: "Open Automations", icon: SHGlyph.automation.symbolName))
         items.append(PaletteItem(id: "action.openForge", kind: .action("openForge"), section: .commands,
                                  title: "Open Issues & PRs", icon: "arrow.triangle.pull"))
         if designToolEnabled {
@@ -371,12 +377,16 @@ extension ShepherdViewModel {
                 mcpOpenServer = nil
                 settingsSection = .tools
                 showSettings = true
+                settingsScrollTarget = ExtensionsSettingsGroup.scrollID
+            case "nextNeedingYou": openNextNeedingYou()
+            case "reviewNext": openReviewNext()
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
             case "toggleTerminal": toggleTerminalPanel()
             case "newTerminal": newTerminalTab()
             case "maximizeTerminal": toggleTerminalMaximized()
             case "stop": stopVisibleAgent()
+            case "stopAll": requestStopAll()
             case "openAutomations": openDestination(.automations)
             case "openForge": openForge()
             case "openDesigns": openDestination(.designs)

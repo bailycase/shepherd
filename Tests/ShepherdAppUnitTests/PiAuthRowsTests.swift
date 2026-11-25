@@ -97,6 +97,30 @@ struct PiAuthRowsTests {
         #expect(!PiSignInPage.make(survey: Self.survey, needed: ["anthropic", "openrouter"]).needsAttention, "those are signed in")
     }
 
+    @Test func runtimeProvidersSupplyNativeRowsAndKeyChoicesWithoutStaticEntries() throws {
+        let providers = [PiSignInProvider(id: "acme", name: "Acme account", oauth: "Acme plan"),
+                         PiSignInProvider(id: "acme-key", name: "Acme key", apiKey: "Acme API key"),
+                         PiSignInProvider(id: "anthropic", name: "Replacement", oauth: "Replacement account")]
+        let page = PiSignInPage.make(survey: YourPiSurvey(), providers: providers)
+        #expect(page.subscriptions.map(\.id) == ["anthropic", "acme"])
+        #expect(page.subscriptions.filter { $0.id == "anthropic" }.count == 1)
+        let acme = try #require(Self.row(page, "acme"))
+        #expect(acme.name == "Acme account" && acme.auth == .notSignedIn(plan: "Acme plan"))
+        #expect(page.addable == ["acme-key"] && page.providerNames["acme-key"] == "Acme key")
+        let choices = SlashLogin.choices(page)
+        #expect(SlashLogin.parse("/login Acme account", choices: choices)?.provider == "acme")
+        #expect(SlashLogin.matches("acme", in: choices).map(\.id).contains("acme"))
+    }
+
+    @Test func aMissingProviderStillOffersItsSavedAccountsForSignOut() throws {
+        var survey = YourPiSurvey()
+        survey.logins = [Login(provider: "acme", shepherd: .subscription)]
+        let page = PiSignInPage.make(survey: survey, providers: [])
+        let row = try #require(Self.row(page, "acme"))
+        #expect(!row.signInAvailable && row.auth.isSignedIn && row.problem != nil)
+        #expect(page.addable.isEmpty)
+    }
+
     @Test func addingAKeySummarisesTheProvidersNotListed() {
         #expect(PiSignInPage.addableSummary(["groq", "mistral", "fireworks", "together", "a", "b"]) == "Groq, Mistral, Fireworks, Together and 2 more")
         #expect(PiSignInPage.addableSummary(["deepseek"]) == "DeepSeek")

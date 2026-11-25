@@ -23,25 +23,63 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var session: String?
     @ObservationIgnored private var generation = 0
 
-    func begin(_ id: String?, session: String?) -> Int {
+    #if DEBUG
+    @ObservationIgnored weak var measuredHistory: ThreadMeasuredHistory?
+    @ObservationIgnored private var prepend: (delta: CGFloat, oldDocumentHeight: CGFloat)?
+    @ObservationIgnored private(set) var correctingPrepend = false
+    var hasPrepend: Bool { prepend != nil || correctingPrepend }
+
+    func preparePrepend(before firstID: String, delta: CGFloat) {
+        guard firstID == rowID, prepend == nil, let scroll, delta > 0 else { return }
+        prepend = (delta, scroll.contentView.documentRect.height)
+    }
+
+    func correctPrepend(in scroll: NSScrollView?, pass: String) -> Bool {
+        guard measuredHistory?.physicalScrollerHeld != true, let prepend, let scroll, self.scroll === scroll else { return false }
+        let clip = scroll.contentView
+        let height = clip.documentRect.height
+        let origin = clip.bounds.minY
+        let target = clip.bounds.offsetBy(dx: 0, dy: prepend.delta)
+        SHRenderProbe.scrollEvent("probe.prepend.pass", "\(pass) document=\(height) clip=\(origin)",
+                                  from: scroll, target: rowID, kind: "layout")
+        // A stack callback can arrive before the scroll view can accommodate the new origin.
+        guard height > prepend.oldDocumentHeight, abs(clip.constrainBoundsRect(target).minY - target.minY) <= 1 else { return false }
+        self.prepend = nil
+        correctingPrepend = true
+        defer { correctingPrepend = false }
+        Self.correct(prepend.delta, in: scroll, rowID: rowID)
+        SHRenderProbe.scrollEvent("probe.prepend.result",
+                                  "\(pass) delta=\(prepend.delta) clip=\(origin)->\(clip.bounds.minY)",
+                                  from: scroll, target: rowID, kind: "layout")
+        return true
+    }
+    #endif
+
+    func begin(_ id: String?, session: String?, measuredScroll: NSScrollView? = nil) -> Int {
         cancel()
         guard let id else { return generation }
         self.session = session
         waiting = true
         rowID = id
-        scroll = marker?.enclosingScrollView
+        scroll = measuredScroll ?? marker?.enclosingScrollView
         if marker?.rowID == id { savedTop = marker?.viewportTop }
         return generation
     }
 
     func cancel() {
-        if rowID != nil { position = ScrollPosition(idType: String.self) }
+        if rowID != nil {
+            ThreadScrollTrace.write("thread.write.M5", "history.cancel", in: scroll, target: rowID)
+            position = ScrollPosition(idType: String.self)
+        }
         generation &+= 1
         savedTop = nil
         scroll = nil
         restoring = false
         waiting = false
         pendingMaterialization = nil
+        #if DEBUG
+        prepend = nil
+        #endif
         rowID = nil
     }
 
@@ -52,6 +90,12 @@ final class ThreadHistoryAnchor {
             cancel()
             return
         }
+        #if DEBUG
+        if measuredHistory != nil {
+            waiting = false
+            return
+        }
+        #endif
         // SwiftUI can observe the prepend before this awaiting task resumes. Do not replace
         // the saved offset with a position already shifted by the new rows in that ordering.
         let pending = pendingMaterialization
@@ -63,6 +107,9 @@ final class ThreadHistoryAnchor {
 
     func prepended(firstID: String?, session: String?, active: Bool, materialize: @escaping (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
+        #if DEBUG
+        if measuredHistory != nil { return }
+        #endif
         guard !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
         if waiting {
             pendingMaterialization = materialize
@@ -98,12 +145,18 @@ final class ThreadHistoryAnchor {
                   let top = marker.viewportTop else { return }
             let delta = top - savedTop
             guard abs(delta) > 0.25 else { return }
-            let clip = scroll.contentView
-            var bounds = clip.bounds
-            bounds.origin.y += delta
-            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
-            scroll.reflectScrolledClipView(clip)
+            Self.correct(delta, in: scroll, rowID: self.rowID)
         }
+    }
+
+    static func correct(_ delta: CGFloat, in scroll: NSScrollView, rowID: String?,
+                        actor: StaticString = "thread.write.M6", caller: String = "history.correct") {
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        bounds.origin.y += delta
+        ThreadScrollTrace.write(actor, caller, in: scroll, target: rowID)
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,

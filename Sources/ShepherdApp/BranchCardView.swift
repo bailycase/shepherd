@@ -20,6 +20,8 @@ struct BranchCardDock: ViewModifier {
     /// the store instead, so the count is no input of the layout.
     var changedFiles = 0
     let active: Bool
+    /// The Mac the thread runs on, for a thread on another one: its card is read-only (GXRemote).
+    var runsOn: String?
     @State private var wide = true
 
     func body(content: Content) -> some View {
@@ -28,7 +30,7 @@ struct BranchCardDock: ViewModifier {
             .padding(.trailing, docked ? AppLayout.branchCardColumn : 0)
             .overlay(alignment: .topTrailing) {
                 if let store, let branch {
-                    BranchCardOverlay(store: store, branch: branch, active: active, wide: wide)
+                    BranchCardOverlay(store: store, branch: branch, active: active, wide: wide, runsOn: runsOn)
                 }
             }
             .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.branchCardWideThread } action: { wide = $0 }
@@ -60,31 +62,48 @@ struct BranchCardOverlay: View {
     let active: Bool
     /// The thread docks the whole card (`BranchCardDock`); else it folds to one row.
     let wide: Bool
+    /// A thread on another Mac: the card names that Mac and offers only what this Mac can do (`BranchCardView.runsOn`).
+    var runsOn: String?
     @State private var hovering = false
     @State private var pinnedOpen = false
-    /// Switch branch and Change base show the Branch picker in the card's place.
+    /// Switch branch and Change base open the Branch picker under the card's branch.
     @State private var picking: Picking?
 
     enum Picking { case branch, base }
 
+    /// `picking` opens the card with a picker already out (previews).
+    init(store: BranchCardStore, branch: String, active: Bool, wide: Bool, runsOn: String? = nil, picking: Picking? = nil) {
+        self.store = store
+        self.branch = branch
+        self.active = active
+        self.wide = wide
+        self.runsOn = runsOn
+        _picking = State(initialValue: picking)
+    }
+
     var body: some View {
         Group {
             if let card = store.card {
-                if let picking {
-                    picker(picking, card: card)
-                } else if wide || hovering || pinnedOpen {
-                    BranchCardView(card: card, status: store.status) { action in
-                        switch action {
-                        case .pickBranch: picking = .branch
-                        case .pickBase: picking = .base
-                        default:
-                            pinnedOpen = false
-                            store.handle.perform(action)
+                if wide || hovering || pinnedOpen || picking != nil {
+                    // The picker opens under the card's branch row, over the rest of the card (GXBranchPicker).
+                    ZStack(alignment: .topTrailing) {
+                        BranchCardView(card: card, status: runsOn == nil ? store.status : nil, runsOn: runsOn) { action in
+                            switch action {
+                            case .pickBranch: picking = picking == .branch ? nil : .branch
+                            case .pickBase: picking = .base
+                            default:
+                                pinnedOpen = false
+                                store.handle.perform(action)
+                            }
+                        }
+                        .shCard(lift: true)
+                        if let picking {
+                            picker(picking, card: card)
+                                .padding(.top, AppLayout.branchCardHeaderHeight)
                         }
                     }
-                    .shPopover()
                 } else {
-                    Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: store.status?.git) }
+                    Button { pinnedOpen = true } label: { BranchCardCompact(branch: card.branch, git: runsOn == nil ? store.status?.git : nil) }
                         .buttonStyle(.plain)
                         .help("\(card.branch): show the branch card")
                 }
@@ -95,8 +114,8 @@ struct BranchCardOverlay: View {
             if !inside { pinnedOpen = false }
         }
         .onExitCommand { picking = nil }
-        .padding(.top, SH.Space.m)
-        .padding(.trailing, SH.Space.l)
+        .padding(.top, AppLayout.branchCardTop)
+        .padding(.trailing, SH.Space.xl)
         .focusable(false)
         .shAnimation(.content, value: wide || hovering || pinnedOpen || picking != nil)
         // The pane's width decides the form; only crossing the line redraws it.
@@ -119,12 +138,12 @@ extension BranchCardOverlay {
         }
         switch mode {
         case .branch:
-            BranchPickerMenu(title: "Switch branch", selected: card.branch, load: handle.branches,
+            BranchPickerMenu(selected: card.branch, load: handle.branches,
                              choose: { finish($0.map(BranchCardAction.switchBranch)) },
                              move: { finish(.moveToCheckout($0, $1)) },
                              newBranch: { finish(.newBranch) }, fetch: fetch, close: { picking = nil })
         case .base:
-            BranchPickerMenu(title: "Change base", selected: store.status?.git.base.map { "origin/\($0)" }, load: handle.branches,
+            BranchPickerMenu(prompt: "Search for a base branch", selected: store.status?.git.base.map { "origin/\($0)" }, load: handle.branches,
                              choose: { finish($0.map(BranchCardAction.changeBase)) }, fetch: fetch, close: { picking = nil })
         }
     }
@@ -156,83 +175,126 @@ struct BranchCardCompact: View {
     }
 }
 
-/// The card itself, from values: the space and its menu, the branch, Changes, how far behind the
-/// base, the pull request and its checks, then the space's other branches.
+/// The card itself, from values (the boards' `.bk`): the branch with its switcher and +/−, then a row each for the pull
+/// request and its checks, how far behind the base it is with Update, and the space's other branches, which open in place.
 struct BranchCardView: View {
     let card: BranchCardModel
     let status: BranchCardStatus?
+    /// The Mac the thread runs on, when it is not this one (GXRemote's "Runs on mini").
+    var runsOn: String?
     let perform: (BranchCardAction) -> Void
+    @State private var othersOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(card.space).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+            HStack(spacing: SH.Space.m) {
+                // Another Mac's checkout is read there: this Mac can't switch it.
+                if runsOn == nil {
+                    Button { perform(.pickBranch) } label: {
+                        HStack(spacing: SH.Space.xs) {
+                            Text(card.branch).font(.sh(.mono, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                                .lineLimit(1).truncationMode(.middle)
+                            SHChipChevron()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Switch branch")
+                } else {
+                    Text(card.branch).font(.sh(.mono, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
                 Spacer(minLength: SH.Space.m)
-                SHOptionsMenu("Branch actions", size: SH.Height.controlS) { menu }
-            }
-            .padding(.leading, AppLayout.branchCardInset).padding(.trailing, SH.Space.s)
-            Button { perform(.pickBranch) } label: {
-                row(SHGlyph.gitBranch.symbolName) {
-                    Text(card.branch).font(.sh(.code)).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: SH.Space.m)
-                    Image(systemName: "chevron.right").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                if let git = status?.git {
+                    Button { perform(.showChanges) } label: { SHDiffStat(added: git.additions, removed: git.deletions, font: .sh(.caption)) }
+                        .buttonStyle(.plain)
+                        .help("Show Changes")
                 }
+                SHOptionsMenu("Branch actions", size: SH.Height.controlS + 2) { menu }
             }
-            .buttonStyle(.shRow(radius: 0))
-            .help("Switch branch")
-            Button { perform(.showChanges) } label: {
-                row("plus.forwardslash.minus") {
-                    Text("Changes")
-                    Spacer(minLength: SH.Space.m)
-                    if let git = status?.git { SHDiffStat(added: git.additions, removed: git.deletions, font: .sh(.caption)) }
-                }
-            }
-            .buttonStyle(.shRow(radius: 0))
-            if let git = status?.git, let base = git.base, git.behind > 0 {
-                row("arrow.down") {
-                    Text("\(git.behind) behind \(base)")
-                    Spacer(minLength: SH.Space.m)
-                    Button("Update") { perform(.update) }
-                        .buttonStyle(.shLink(font: .sh(.caption)))
-                        .help("Update from \(base)")
-                }
+            .padding(EdgeInsets(top: SH.Space.m, leading: AppLayout.branchCardInset, bottom: SH.Space.xs, trailing: SH.Space.xs))
+            if let runsOn {
+                row { Text("Runs on") } value: { Text(runsOn) }
             }
             if let pull = status?.pull {
                 Button { perform(.openPull(pull.ref)) } label: {
-                    row(ForgeSymbol.pullRequest) {
+                    row {
                         Text("Pull request #\(pull.ref.number)")
-                        Spacer(minLength: SH.Space.m)
+                    } value: {
                         let word = Self.pullWord(pull)
-                        Text(word.text).font(.sh(.caption)).foregroundStyle(word.color)
+                        // Passing checks are the boards' green tick before quiet words; anything else says itself in its color.
+                        let passed = pull.checks == .passed && pull.state != .merged && pull.state != .closed
+                        if passed {
+                            SHGlyph.resolved.image.foregroundStyle(Color.sh.done).accessibilityHidden(true)
+                        }
+                        Text(word.text).foregroundStyle(passed ? Color.sh.textSecondary : word.color)
                     }
                 }
                 .buttonStyle(.shRow(radius: 0))
             }
-            if !card.others.isEmpty {
-                SHHairline().padding(.top, SH.Space.s)
-                Text("Other branches in \(card.space)").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                    .padding(.horizontal, AppLayout.branchCardInset).padding(.top, SH.Space.l).padding(.bottom, SH.Space.xs)
-                ForEach(card.others) { other in
-                    Button { perform(.select(other.id)) } label: {
-                        row(nil) {
-                            SHStatusDot(other.state)
-                                .frame(width: AppLayout.branchCardGlyph)
-                            Text(other.branch).font(.sh(.code)).lineLimit(1).truncationMode(.middle)
-                            Spacer(minLength: SH.Space.m)
-                            Text(other.detail).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                        }
+            if let git = status?.git, let base = git.base {
+                row {
+                    Text(base).font(.shMono(AppLayout.branchCardCodeSize))
+                } value: {
+                    if git.behind > 0 {
+                        Text("\(git.behind) new commit\(git.behind == 1 ? "" : "s")")
+                        Button("Update") { perform(.update) }
+                            .buttonStyle(.plain)
+                            .font(.sh(.ui, weight: .medium))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .padding(.leading, SH.Space.s)
+                            .help("Update from \(base)")
+                    } else {
+                        Text("Up to date")
                     }
-                    .buttonStyle(.shRow(radius: 0))
-                    .accessibilityLabel("\(other.branch), \(other.detail)")
+                }
+            }
+            if !card.others.isEmpty {
+                Button { withSHAnimation(.disclosure) { othersOpen.toggle() } } label: {
+                    row {
+                        Text(card.others.count == 1 ? "1 other branch" : "\(card.others.count) other branches")
+                    } value: {
+                        // Threads waiting on you, before the chevron (GXAppsRunning).
+                        if card.asking > 0 {
+                            Circle().fill(Color.sh.lantern).frame(width: AppLayout.branchCardDot, height: AppLayout.branchCardDot)
+                                .accessibilityHidden(true)
+                            Text("\(card.asking) asked you")
+                        }
+                        SHTurningChevron(isOpen: othersOpen).foregroundStyle(Color.sh.textTertiary)
+                    }
+                }
+                .buttonStyle(.shRow(radius: 0))
+                .accessibilityValue(othersOpen ? "shown" : "hidden")
+                if othersOpen {
+                    ForEach(card.others) { other in
+                        Button { perform(.select(other.id)) } label: {
+                            row {
+                                Text(other.branch).font(.sh(.mono)).lineLimit(1).truncationMode(.middle)
+                            } value: {
+                                Text(other.detail)
+                            }
+                        }
+                        .buttonStyle(.shRow(radius: 0))
+                        .accessibilityLabel("\(other.branch), \(other.detail)")
+                    }
                 }
             }
         }
-        .padding(.vertical, SH.Space.m)
+        .padding(.bottom, SH.Space.s)
         .frame(width: AppLayout.branchCardWidth)
-        .background(Color.sh.bgRaised)
     }
 
     @ViewBuilder private var menu: some View {
+        if runsOn != nil {
+            Button("Show Changes") { perform(.showChanges) }
+            Divider()
+            Button("Copy Branch Name") { perform(.copyBranch) }
+        } else {
+            localMenu
+        }
+    }
+
+    @ViewBuilder private var localMenu: some View {
         let git = status?.git
         Button("Commit…") { perform(.commit) }
         Button(Self.pushTitle(git?.ahead ?? 0)) { perform(.push) }.disabled(git == nil || git?.ahead == 0)
@@ -247,17 +309,14 @@ struct BranchCardView: View {
         if card.directory != nil { Button("Show in Finder") { perform(.showInFinder) } }
     }
 
-    /// A 28pt row in body type (the board's rows are regular weight): a glyph in its column (none for a dot row, which draws its own), then content.
-    private func row<Content: View>(_ symbol: String?, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: SH.Space.m) {
-            if let symbol {
-                Image(systemName: symbol).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                    .frame(width: AppLayout.branchCardGlyph)
-            }
-            content()
+    /// The boards' `.bkr`: a 28pt row, what it is in `ui` at its start and its value in `caption` `textSecondary` at its end.
+    private func row<Key: View, Value: View>(@ViewBuilder _ key: () -> Key, @ViewBuilder value: () -> Value) -> some View {
+        HStack(spacing: SH.Space.l) {
+            key().font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Spacer(minLength: 0)
+            HStack(spacing: SH.Space.xs + 1) { value() }
+                .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1).fixedSize()
         }
-        .font(.sh(.body))
-        .foregroundStyle(Color.sh.textPrimary)
         .padding(.horizontal, AppLayout.branchCardInset)
         .frame(maxWidth: .infinity, minHeight: SH.Height.row, alignment: .leading)
         .contentShape(Rectangle())

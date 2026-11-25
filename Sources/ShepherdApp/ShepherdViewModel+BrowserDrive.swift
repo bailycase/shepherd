@@ -36,8 +36,8 @@ extension ShepherdViewModel {
                 } else {
                     await session.perform(request)
                 }
+                if request.shows, case .result = outcome { self?.agentShowedBrowser(session) }
                 client.browserAnswer(token: token, outcome: outcome)
-                if request.opensPage, case .result = outcome, let url = session.tabs.agentTarget?.url { self?.agentOpenedPage(session, url) }
             }
         case .abandoned:
             (own ? browsers.existing(push.agentID) : browsers.existing(ref))?.abandonQueued()
@@ -45,11 +45,10 @@ extension ShepherdViewModel {
             browsers.existing(ref)?.remote?.driveEnded(reason: reason)
         case .handBack:
             (own ? browsers.existing(push.agentID) : browsers.existing(ref))?.handBack()
-        case .opened(_, let address):
-            // The agent opened a page in the host's own browser (no viewer owned it): the tab says
-            // so, and nothing opens by itself.
-            guard BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else { return }
-            agentOpenedPage(own ? browsers.session(for: push.agentID) : browsers.session(for: ref, hosts: remoteHosts), url)
+        case .opened:
+            // The agent opened a page in the host's own browser (no viewer owned it). Nothing marks
+            // or opens the pane for it: the agent calls browser_show when the user should look.
+            break
         }
     }
 

@@ -763,10 +763,14 @@ public struct ForgeSidebar: Codable, Hashable, Sendable {
     /// Pull requests waiting on your review, yours with changes requested or failing checks,
     /// and new issues assigned to you, across the repositories this host knows.
     public var needsYou: Int
+    /// Why the host can't read its pins (the file is damaged): words for the person, with the file's
+    /// path. `pins` is empty meanwhile. Nil from an older host, and while the pins read fine.
+    public var pinsProblem: String?
 
-    public init(pins: [ForgePinnedItem], needsYou: Int) {
+    public init(pins: [ForgePinnedItem], needsYou: Int, pinsProblem: String? = nil) {
         self.pins = pins
         self.needsYou = needsYou
+        self.pinsProblem = pinsProblem
     }
 }
 

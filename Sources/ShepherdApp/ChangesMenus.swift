@@ -221,6 +221,10 @@ private struct ChangesBasePicker: View {
             } else {
                 SHChangesMenuTitle("Compare against")
                 if let branches = session.branches {
+                    if let problem = branches.recentsProblem {
+                        SHBanner(.failed, title: "Recent bases", message: problem)
+                            .padding(.horizontal, SH.Space.m)
+                    }
                     list {
                         ForEach(options) { option in
                             SHChangesMenuRow(option.name, systemImage: SHGlyph.gitBranch.symbolName, titleIsMono: true,
@@ -234,6 +238,8 @@ private struct ChangesBasePicker: View {
                         SHChangesMenuRow("The PR’s base", systemImage: SHChangesScopeGlyph.pullRequest.systemImage,
                                          trailing: .text(pullBase)) { choose(pullBase) }
                     }
+                } else if let failure = session.branchesError {
+                    SHChangesMenuNote(failure)
                 } else {
                     HStack(spacing: SH.Space.m) {
                         ProgressView().progressViewStyle(.shSpinner(size: 10))

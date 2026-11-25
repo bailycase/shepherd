@@ -1,4 +1,5 @@
 """The optional Sentry uploader never contacts a service during these tests."""
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import hashlib
 import importlib.util
 import io

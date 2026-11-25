@@ -30,17 +30,16 @@ struct ProjectBrowserControlTests {
     }
 
     @Test @MainActor func fractionalFontsKeepTheBoardsTextWidths() {
-        SHFonts.register()
         let scale = ThemeStore.shared.textScale
         defer { ThemeStore.shared.textScale = scale }
         ThemeStore.shared.textScale = 1
         let sample = "Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other spaces"
-        let font = CTFontCreateWithName("Geist-Regular" as CFString, 13.5, nil)
+        let font = NSFont.systemFont(ofSize: 13.5)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: font]))
         let expected = CTLineGetTypographicBounds(line, nil, nil, nil)
         let host = NSHostingView(rootView: Text(sample).font(.shSans(13.5)).fixedSize())
         #expect(abs(host.fittingSize.width - expected) <= 1)
-        #expect(expected < 610, "13.5pt Geist must not round up to 14pt")
+        #expect(abs(expected - CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: NSFont.systemFont(ofSize: 14)])), nil, nil, nil)) > 1, "13.5pt must not round up to 14pt")
     }
 
     @Test func projectsAndBrowserFillTheSettingsWidthAfterNavigationAndResize() async throws {
@@ -205,11 +204,23 @@ struct ProjectBrowserControlTests {
         let clear = try ControlPress.press("Clear cookies for one.test", under: window.host)
         #expect(ControlPress.undersized([clear], minimum: .desktop).isEmpty)
         #expect(await store.httpCookieStore.allCookies().count == 2)
-        window.layout()
+        func confirmationShown() -> Bool { window.layout(); return AccessibilityNode.all(under: window.host).contains { $0.label == "Cancel" } }
+        try await eventuallyOnMain("the confirmation") { confirmationShown() }
         let confirmationNodes = AccessibilityNode.all(under: window.host)
-        #expect(!confirmationNodes.contains { $0.label == "Back to Shepherd" || $0.label == "Space category Instructions" || $0.label == "Clear cookies for two.test" })
+        // The page behind the confirmation is out of reach: its controls are not in the tree and cannot be pressed.
+        #expect(!confirmationNodes.contains { $0.label == "Space category Instructions" || $0.label == "Clear cookies for two.test" }, "\(confirmationNodes.compactMap(\.label))")
+        #expect(throws: ControlPressError.self) { try ControlPress.press("Clear cookies for two.test", under: window.host) }
+        #expect(vm.projectCookies.pending == .site("one.test"))
         let labels = confirmationNodes.compactMap(\.label).joined(separator: " ")
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
+        // "Back to Shepherd" stays in reach: it is Esc, which cancels the confirmation first and goes nowhere else.
+        try ControlPress.press("Back to Shepherd", under: window.host)
+        #expect(vm.projectCookies.pending == nil)
+        #expect(vm.showSettings && vm.settingsSection == .projects && vm.projects.showingBrowser, "Back stayed on the page")
+        #expect(await store.httpCookieStore.allCookies().count == 2)
+        try await eventuallyOnMain("the confirmation to close") { !confirmationShown() }
+        try ControlPress.press("Clear cookies for one.test", under: window.host)
+        try await eventuallyOnMain("the confirmation again") { confirmationShown() }
         try ControlPress.press("Cancel", under: window.host)
         #expect(await store.httpCookieStore.allCookies().count == 2)
         for width in [900.0, 720.0] {

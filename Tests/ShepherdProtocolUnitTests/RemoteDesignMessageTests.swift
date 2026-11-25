@@ -102,14 +102,14 @@ enum RemoteDesignSamples {
     static let gitMerge = DesignGitMerge(phase: .ready, ours: gitCommit, theirs: gitCommit, oursHash: "abc1234", theirsHash: "def5678",
                                          reviewedTree: "0123abc")
 
-    static let keptPayload = DesignReferencePayload(agentID: AgentID(rawValue: "thread"), reference: DesignReference(designID: design, board: board, revision: 7)!,
+    static let keptPayload = DesignReferencePayload(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!, agentID: AgentID(rawValue: "thread"), reference: DesignReference(designID: design, board: board, revision: 7)!,
                                                     design: "Checkout funnel", revision: 7, capturedAt: 1_700_000_000_000)
     static let markup = DesignMarkup(strokes: [
         DesignMarkupStroke(kind: .circle, board: phone.viewName, element: DesignElementID(board: phone.viewName, tid: 31, path: [1, 1, 2]),
                            label: "Steps", note: "thicker bars on phone"),
         DesignMarkupStroke(kind: .mark, board: board.viewName),
     ])
-    static let settled = DesignComment(number: 2, board: phone, tid: 31, path: [1, 1, 2], label: "Steps", target: "Steps list",
+    static let settled = DesignComment(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!, number: 2, board: phone, tid: 31, path: [1, 1, 2], label: "Steps", target: "Steps list",
                                        text: "Thicker bars on phone.", createdAt: 1_700_000_000_000, proposal: "call-7#0",
                                        proposalSettledAt: 1_700_000_060_000)
 
@@ -176,23 +176,41 @@ enum RemoteDesignSamples {
         .importFailed(.unreadableBoards(importPreview.unreadable, readable: 1)),
         .importFailed(.fileTooLarge(path: "hero.mp4", bytes: 9, limit: 8)),
     ]
+
+    static let wireRequests = requests.map { RemoteRequest.design(id: 41, request: $0) }
+    static let wireReplies = results.map { RemoteReply.design(id: 41, result: $0) }
+    static let pushes: [RemoteReply] = [
+        .designChanged(designID: design, revision: 8, commentsRevision: nil),
+        .designChanged(designID: design, revision: nil, commentsRevision: 6),
+        .designChanged(designID: design, revision: 9, commentsRevision: 6),
+        .designSystemsChanged,
+        .capabilitiesChanged(capabilities: RemoteProtocol.capabilities),
+        .capabilitiesChanged(capabilities: []),
+    ]
 }
 
 @Suite("Remote design messages")
 struct RemoteDesignMessageTests {
     typealias S = RemoteDesignSamples
 
-    @Test(arguments: RemoteDesignSamples.requests)
-    func everyDesignRequestRoundTrips(_ request: RemoteDesignRequest) throws {
-        let message = RemoteRequest.design(id: 41, request: request)
+    @Test(arguments: S.wireRequests)
+    func everyDesignRequestRoundTrips(_ message: RemoteRequest) throws {
         #expect(try Wire.roundTrip(message) == message)
         #expect(try Wire.object(message)["type"] as? String == "design")
     }
 
-    @Test(arguments: RemoteDesignSamples.results)
-    func everyDesignResultRoundTrips(_ result: RemoteDesignResult) throws {
-        let message = RemoteReply.design(id: 41, result: result)
+    @Test(arguments: S.wireReplies)
+    func everyDesignResultRoundTrips(_ message: RemoteReply) throws {
         #expect(try Wire.roundTrip(message) == message)
+    }
+
+    @Test func threadNotesWarningIsOptionalOnTheWire() throws {
+        var snapshot = S.snapshot
+        #expect(try Wire.object(snapshot)["threadNotesWarning"] == nil)
+        #expect(try JSONDecoder().decode(DesignSnapshot.self, from: JSONEncoder().encode(snapshot)).threadNotesWarning == nil)
+        snapshot.threadNotesWarning = "Restore /tmp/design/thread-notes.json from a backup or repair its JSON."
+        let index = RemoteDesignIndex(snapshot: snapshot, files: [])
+        #expect(try Wire.roundTrip(index) == index)
     }
 
     /// Exhaustive on purpose: a new request fails to compile here until it is named, then the
@@ -223,14 +241,7 @@ struct RemoteDesignMessageTests {
         #expect(Set(S.results.map(Self.caseName)).count == 32)
     }
 
-    @Test(arguments: [
-        RemoteReply.designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: nil),
-        .designChanged(designID: RemoteDesignSamples.design, revision: nil, commentsRevision: 6),
-        .designChanged(designID: RemoteDesignSamples.design, revision: 9, commentsRevision: 6),
-        .designSystemsChanged,
-        .capabilitiesChanged(capabilities: RemoteProtocol.capabilities),
-        .capabilitiesChanged(capabilities: []),
-    ])
+    @Test(arguments: S.pushes)
     func pushedDesignRepliesRoundTrip(_ reply: RemoteReply) throws {
         #expect(try Wire.roundTrip(reply) == reply)
     }

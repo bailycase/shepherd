@@ -63,6 +63,7 @@ final class ThreadTailGuard {
     func registerRow(_ marker: RowMarker, id: String) {
         marker.rowID = id
         guard rowIDs.contains(id), rowMarkers.object(forKey: id as NSString) !== marker else { return }
+        SHRenderProbe.scrollEvent("thread.write.L1", "row.markerRegistered", from: self, target: id, kind: "layout")
         rowMarkers.setObject(marker, forKey: id as NSString)
         suspect()
     }
@@ -156,7 +157,15 @@ final class ThreadTailGuard {
 
     private var hasRows: Bool { !rowIDs.isEmpty }
     // A cached lazy-stack marker cannot override geometry that puts the answer below view.
-    private var tailInView: Bool { visible.contains(bottomID) && distance <= Self.band }
+    private var tailInView: Bool { visible.contains(bottomID) && distance <= Self.band && !endOutOfView }
+
+    /// The end of the document is farther below the clip view than the composer's inset, by AppKit's own measure: the bottom marker
+    /// is out of view whatever SwiftUI's cached targets and scroll geometry say. SwiftUI applies an offset to the clip view that its
+    /// own geometry never reports (a lazy stack that joins above the tail), reads distance 0 for good, and no event comes to check.
+    private var endOutOfView: Bool {
+        guard let scroll = scrollView(), let gap = endDistance(of: scroll) else { return false }
+        return gap > Double(scroll.contentInsets.bottom) + Self.slack
+    }
     /// Cached IDs, including current rows, need physical placement evidence in the production view.
     /// A weak/dead/missing marker cannot prove content, nor can one in another or hidden transcript.
     var rowsInView: Bool {
@@ -175,7 +184,7 @@ final class ThreadTailGuard {
 
     /// No content in view, the tail missing from it while the thread follows it from afar, or a
     /// thread that was just repaired resting short of its end.
-    private var strayed: Bool { !rowsInView || (following && !tailInView && distance > Self.band) || shortOfTheTail }
+    private var strayed: Bool { !rowsInView || (following && !tailInView && (distance > Self.band || endOutOfView)) || shortOfTheTail }
 
     /// A repaired, following thread whose marker is in view and that rests short of the end of its
     /// document (`shortfall`).
@@ -269,6 +278,17 @@ final class ThreadTailGuard {
             suspect(quiet: Self.recheck)
         }
         SHRenderProbe.tick("thread.tailRepair")
+        // The end of the document is where the tail's rows are (they are laid out for real, not estimated), so a thread that follows its
+        // tail and rests short of it goes there first, and not through the estimates of the lazy stack above it.
+        if following, endOutOfView, !userScrolling, ContinuousClock.now >= readerUntil, let scroll = scrollView() {
+            let clip = scroll.contentView
+            var bounds = clip.bounds
+            bounds.origin.y = (scroll.documentView?.bounds.height ?? 0) - bounds.height + scroll.contentInsets.bottom
+            ThreadScrollTrace.write("thread.write.M7", "guard.end", in: scroll)
+            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+            scroll.reflectScrolledClipView(clip)
+            try? await Task.sleep(for: Self.stepWait)
+        }
         if !rowsInView { await walk(by: -1, until: { self.rowsInView }, doubling: true) }
         guard following else { return }
         // A cached clear marker is not a landing if the walk found no content.
@@ -277,7 +297,10 @@ final class ThreadTailGuard {
             return
         }
         if attempts > 1 || !rowsInView { await walk(by: 1, until: { self.tailInView }, doubling: false) }
-        if following, !userScrolling, active, ContinuousClock.now >= readerUntil { land() }
+        if following, !userScrolling, active, ContinuousClock.now >= readerUntil {
+            SHRenderProbe.scrollEvent("thread.write.M7", "guard.land", from: self, target: bottomID)
+            land()
+        }
     }
 
     /// Scrolls the rest of the way to the end of the document, from where the marker is already in
@@ -288,6 +311,7 @@ final class ThreadTailGuard {
         let clip = scroll.contentView
         var bounds = clip.bounds
         bounds.origin.y += gap
+        ThreadScrollTrace.write("thread.write.M7", "guard.reachTheEnd", in: scroll)
         clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
         scroll.reflectScrolledClipView(clip)
     }
@@ -308,6 +332,7 @@ final class ThreadTailGuard {
             let from = clip.bounds.origin.y
             var bounds = clip.bounds
             bounds.origin.y += direction * (doubling ? page : clip.bounds.height * 0.9)
+            ThreadScrollTrace.write("thread.write.M7", "guard.walk", in: scroll)
             clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
             scroll.reflectScrolledClipView(clip)
             // At an end of the scroll view there is nowhere further to go.
@@ -319,10 +344,36 @@ final class ThreadTailGuard {
         }
     }
 
+    #if DEBUG
+    var measuredHistoryForTests: ThreadMeasuredHistory?
+
+    func rowTop(_ id: String, in scroll: NSScrollView) -> CGFloat? {
+        guard let marker = rowMarkers.object(forKey: id as NSString), marker.enclosingScrollView === scroll,
+              marker.window != nil, !marker.isHiddenOrHasHiddenAncestor, !marker.bounds.isEmpty else { return nil }
+        let clip = scroll.contentView
+        return marker.convert(marker.bounds, to: clip).minY - clip.bounds.minY
+    }
+
+    /// Reuse the already-mounted row markers. Target visibility can be stale during a jump.
+    func scrollTraceRows(in scroll: NSScrollView) -> [String: NSRect] {
+        let clip = scroll.contentView
+        var rows: [String: NSRect] = [:]
+        for marker in rowMarkers.objectEnumerator()?.allObjects as? [RowMarker] ?? [] {
+            guard marker.enclosingScrollView === scroll, marker.window != nil,
+                  !marker.isHiddenOrHasHiddenAncestor, !marker.bounds.isEmpty else { continue }
+            rows[marker.rowID] = marker.convert(marker.bounds, to: clip).offsetBy(dx: 0, dy: -clip.bounds.minY)
+        }
+        return rows
+    }
+    #endif
+
     /// Passive placement evidence for one lazy row, without retaining it or adding a scroll target.
     struct RowProbe: NSViewRepresentable {
         let guardian: ThreadTailGuard
         let rowID: String
+        #if DEBUG
+        var measuredHistory: ThreadMeasuredHistory? = nil
+        #endif
 
         func makeNSView(context: Context) -> RowMarker {
             let marker = RowMarker()
@@ -332,26 +383,88 @@ final class ThreadTailGuard {
 
         func updateNSView(_ view: RowMarker, context: Context) {
             guardian.registerRow(view, id: rowID)
+            #if DEBUG
+            view.measuredHistory = measuredHistory
+            #endif
         }
     }
 
     final class RowMarker: NSView {
         var rowID = ""
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        #if DEBUG
+        weak var measuredHistory: ThreadMeasuredHistory?
+        override func setFrameSize(_ newSize: NSSize) {
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed && measuredHistory != nil { needsLayout = true }
+        }
+        override func layout() {
+            if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.rowMarkerLayout") }
+            super.layout()
+            measuredHistory?.rowLaidOut(rowID, height: bounds.height, in: enclosingScrollView)
+        }
+        #endif
     }
 }
 
 /// Finds the scroll view a SwiftUI `ScrollView` is drawn in, from inside its content.
 struct ThreadScrollViewFinder: NSViewRepresentable {
     let guardian: ThreadTailGuard
+    #if DEBUG
+    var historyAnchor: ThreadHistoryAnchor? = nil
+    var measuredHistory: ThreadMeasuredHistory? = nil
+    #endif
 
     func makeNSView(context: Context) -> Finder { Finder() }
 
     func updateNSView(_ view: Finder, context: Context) {
         guardian.scrollView = { [weak view] in view?.enclosingScrollView }
+        view.guardian = guardian
+        view.observeClip()
+        #if DEBUG
+        view.measuredHistory = measuredHistory
+        historyAnchor?.measuredHistory = measuredHistory
+        measuredHistory?.paging = historyAnchor
+        measuredHistory?.guardrail = guardian
+        #endif
     }
 
     final class Finder: NSView {
+        weak var guardian: ThreadTailGuard?
+        private weak var observedClip: NSClipView?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observeClip()
+        }
+
+        /// The clip view moves without SwiftUI's geometry saying so (`ThreadTailGuard.endOutOfView`): every move is a reason to look again.
+        func observeClip() {
+            let clip = window == nil ? nil : enclosingScrollView?.contentView
+            guard clip !== observedClip else { return }
+            let center = NotificationCenter.default
+            if let observedClip { center.removeObserver(self, name: NSView.boundsDidChangeNotification, object: observedClip) }
+            observedClip = clip
+            if let clip {
+                clip.postsBoundsChangedNotifications = true
+                center.addObserver(self, selector: #selector(clipMoved), name: NSView.boundsDidChangeNotification, object: clip)
+            }
+        }
+
+        @objc private func clipMoved() { guardian?.suspect() }
+
+        #if DEBUG
+        weak var measuredHistory: ThreadMeasuredHistory?
+
+        override func setFrameSize(_ newSize: NSSize) {
+            if ThreadScrollValidation.timingWheel { SHRenderProbe.tick("thread.wheel.finderFrameSize") }
+            let changed = newSize.height != frame.height
+            super.setFrameSize(newSize)
+            if changed { measuredHistory?.columnLaidOut(in: enclosingScrollView) }
+        }
+        #endif
     }
 }

@@ -129,7 +129,6 @@ struct CodeViewportDrawingTests {
     func visibleCodeMatchesNativePixels(dark: Bool, unicode: Bool) throws {
         let suffix = unicode ? "\"🐑 e\u{301}\" // שלום" : "\"flock\" // a comment"
         let code = (0..<100).map { "let sheep\($0) = \(suffix)" }.joined(separator: "\n")
-        SHFonts.register()
         var images: [[Data]] = []
         for optimized in [false, true] {
             let field: NSTextField = optimized ? SHNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
@@ -139,7 +138,7 @@ struct CodeViewportDrawingTests {
             var captures: [Data] = []
             let fonts = try [12.0, 18.0].flatMap { points in
                 [NSFont.monospacedSystemFont(ofSize: points, weight: .regular),
-                 try #require(NSFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: points))]
+                 try #require(NSFont(name: "Menlo-Regular", size: points))]
             }
             for font in fonts {
                 field.font = font
@@ -272,7 +271,6 @@ struct CodeViewportDrawingTests {
     /// whole, in both appearances, and lays out only what each chunk adds once its renderer exists.
     @Test(arguments: [false, true])
     func aFenceGrownChunkByChunkDrawsAndMeasuresLikeTheSameFenceBuiltWhole(dark: Bool) throws {
-        SHFonts.register()
         let lines = (0..<400).map { "let sheep\($0) = compute(\($0), from: flock) // note \($0)" }
         let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
         defer { window.close() }
@@ -366,7 +364,6 @@ struct CodeViewportDrawingTests {
     /// The pool serves renderers that drew other code in another font, appearance and size.
     @Test(arguments: [false, true])
     func aRecycledRendererDrawsLikeANativeField(dark: Bool) throws {
-        SHFonts.register()
         let earlier = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: !dark)
         let earlierField = SHNativeCodeText.Field(labelWithString: "")
         let earlierScroll = mount(earlierField, in: earlier)

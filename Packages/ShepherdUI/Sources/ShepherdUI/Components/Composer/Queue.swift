@@ -7,14 +7,42 @@ import SwiftUI
 /// The queue's dimensions (Queue & steer boards).
 public enum SHQueueMetrics {
     /// The "Up next" header, its glyph and its two buttons.
+    #if os(macOS)
+    /// The redesign's `.qh` and `.qr` (GXQueue): a 34pt header and 32pt rows.
+    public static let headerHeight: CGFloat = 34
+    #else
     public static let headerHeight: CGFloat = 32
+    #endif
     public static let headerGlyph: CGFloat = 12
     public static let headerButton: CGFloat = SH.Height.controlS
     /// A row: queued, steering, deleted. Fixed, like the composer's other parts (not scaled by
     /// Density).
+    #if os(macOS)
+    public static let rowHeight: CGFloat = 32
+    #else
     public static let rowHeight: CGFloat = 40
+    #endif
     /// "Show N more".
     public static let moreRowHeight: CGFloat = 32
+    #if os(macOS)
+    /// A row on the Mac: 6pt in from the card (its hover fill's margin), 10pt inside the fill, its parts 12pt
+    /// apart, radius 8; the number a plain 12pt column; the header 16pt in and 10pt out, 8pt between parts.
+    public static let macRowMargin: CGFloat = SH.Space.s
+    public static let macRowPadding: CGFloat = 10
+    public static let macRowGap: CGFloat = SH.Space.l
+    public static let macRowRadius: CGFloat = SH.Radius.m
+    public static let macNumberWidth: CGFloat = 12
+    public static let macHeaderLeading: CGFloat = SH.Space.xl
+    public static let macHeaderTrailing: CGFloat = 10
+    /// Steer now as the board's pill: 24pt, 9pt at the sides.
+    public static let macPillHeight: CGFloat = 24
+    public static let macPillPadding: CGFloat = 9
+    /// The editor: 2pt above and 4pt below, a `textTertiary` line at radius 9, padded 8·10·6; its buttons 14pt apart.
+    public static let macEditorMargin = EdgeInsets(top: SH.Space.xxs, leading: SH.Space.s, bottom: SH.Space.xs, trailing: SH.Space.s)
+    public static let macEditorPadding = EdgeInsets(top: SH.Space.m, leading: 10, bottom: SH.Space.s, trailing: 10)
+    public static let macEditorRadius: CGFloat = 9
+    public static let macEditorActions: CGFloat = 14
+    #endif
     /// A queued row's number; a steering row has its still steer glyph in its place (LiveText:
     /// waiting isn't working), so its text starts a little further left.
     public static let numberSize: CGFloat = 18
@@ -43,8 +71,16 @@ public enum SHQueueMetrics {
     public static let editorMaxLines = 6
     public static let editorLineSpacing: CGFloat = 3
     /// The Send menu (right-click or hold Send while pi works).
+    #if os(macOS)
+    public static let sendMenuWidth: CGFloat = 250
+    #else
     public static let sendMenuWidth: CGFloat = 268
+    #endif
+    #if os(macOS)
+    public static let sendMenuRowPadding = EdgeInsets(top: 7, leading: SH.Space.m, bottom: 7, trailing: SH.Space.m)
+    #else
     public static let sendMenuRowPadding = EdgeInsets(top: SH.Space.m, leading: 10, bottom: SH.Space.m, trailing: 10)
+    #endif
     public static let sendMenuGlyph: CGFloat = 14
     /// The glyph and the keys sit this much lower, level with the title.
     public static let sendMenuTitleInset: CGFloat = 1
@@ -141,6 +177,16 @@ public struct SHQueueNumber: View {
     public init(_ number: Int) { self.number = number }
 
     public var body: some View {
+        #if os(macOS)
+        Text("\(number)")
+            .font(.sh(.caption))
+            .foregroundStyle(.sh.textTertiary)
+            .monospacedDigit()
+            .shContentTransition(.numeric())
+            .shComponentAnimation(.content, value: number)
+            .frame(width: SHQueueMetrics.macNumberWidth, alignment: .leading)
+            .accessibilityHidden(true)
+        #else
         Text("\(number)")
             .font(.shMono(10.5))
             .foregroundStyle(.sh.textSecondary)
@@ -150,6 +196,7 @@ public struct SHQueueNumber: View {
             .frame(width: SHQueueMetrics.numberSize, height: SHQueueMetrics.numberSize)
             .shBorder(.sh.lineStrong, in: Circle())
             .accessibilityHidden(true)
+        #endif
     }
 }
 
@@ -199,7 +246,7 @@ public struct SHQueueStack<Rows: View, Options: View>: View {
 
     public var body: some View {
         let sh = Color.sh
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        let shape = RoundedRectangle(cornerRadius: Self.cardRadius)
         VStack(spacing: 0) {
             SHQueueHeader(count: count, paused: paused, afterGoalCheck: afterGoalCheck, collapsed: collapsed, showsOptions: showsOptions,
                           onToggle: onToggle, options: options)
@@ -214,26 +261,43 @@ public struct SHQueueStack<Rows: View, Options: View>: View {
                         } else {
                             list(subviews[...], first: subviews.first?.id)
                         }
-                        if let pinned { pinned.overlay(alignment: .top) { SHHairline() } }
+                        if let pinned { pinned.overlay(alignment: .top) { if Self.rowRules { SHHairline() } } }
                     }
                 }
-                .overlay(alignment: .top) { SHHairline() }
+                .overlay(alignment: .top) { if Self.rowRules { SHHairline() } }
                 // The rows keep to the card's bottom corners; a lifted row floats past its edges.
-                .clipShape(SHOutsideBottomCorners(radius: SH.Radius.m), style: FillStyle(eoFill: true))
+                .clipShape(SHOutsideBottomCorners(radius: framed ? Self.cardRadius : Self.unframedRadius), style: FillStyle(eoFill: true))
                 .shTransition(.disclosure)
             }
         }
+        #if os(macOS)
+        .background { if framed { Color.clear.shLift(shape) } }
+        .shBorder(framed ? sh.lineSubtle : .clear, radius: Self.cardRadius)
+        #else
         .background(framed ? sh.bgRaised : .clear, in: shape)
         .shBorder(framed ? sh.lineStrong : .clear, radius: SH.Radius.m)
+        #endif
         .accessibilityElement(children: .contain)
     }
+
+    /// The card's corners: the redesign's 14 on the Mac, whose rows have no rules between them.
+    #if os(macOS)
+    private static var cardRadius: CGFloat { SH.Radius.xl }
+    /// Unframed, the stack shares a card whose corners are not its own.
+    private static var unframedRadius: CGFloat { 0 }
+    private static var rowRules: Bool { false }
+    #else
+    private static var cardRadius: CGFloat { SH.Radius.m }
+    private static var unframedRadius: CGFloat { SH.Radius.m }
+    private static var rowRules: Bool { true }
+    #endif
 
     /// Rows, a hairline above each but the first, and the drop line under them.
     private func list(_ rows: SubviewsCollection.SubSequence, first: Subview.ID?) -> some View {
         VStack(spacing: 0) {
             ForEach(rows) { subview in
                 subview.overlay(alignment: .top) {
-                    if subview.id != first { SHHairline() }
+                    if subview.id != first, Self.rowRules { SHHairline() }
                 }
             }
         }
@@ -277,11 +341,19 @@ private struct SHQueueHeader<Options: View>: View {
         let sh = Color.sh
         HStack(spacing: SH.Space.m) {
             HStack(spacing: SH.Space.m) {
+                #if os(macOS)
+                // The boards' `.qh`: "Up next" and its count in 12 `textTertiary`, no glyph.
+                Text("Up next").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                Text("\(count)").font(.sh(.caption)).foregroundStyle(sh.textTertiary).monospacedDigit()
+                    .shContentTransition(.numeric())
+                    .shComponentAnimation(.content, value: count)
+                #else
                 SHQueueGlyph().foregroundStyle(sh.textTertiary)
                 Text("Up next").font(.shSans(12, .semibold)).foregroundStyle(sh.textSecondary)
                 Text("\(count)").font(.shMono(11)).foregroundStyle(sh.textTertiary).monospacedDigit()
                     .shContentTransition(.numeric())
                     .shComponentAnimation(.content, value: count)
+                #endif
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Up next, \(count) \(count == 1 ? "message" : "messages")")
@@ -306,8 +378,13 @@ private struct SHQueueHeader<Options: View>: View {
             .accessibilityLabel(collapsed ? "Expand the queue" : "Collapse the queue")
         }
         .shComponentAnimation(.content, value: paused != nil)
+        #if os(macOS)
+        .padding(.leading, SHQueueMetrics.macHeaderLeading)
+        .padding(.trailing, SHQueueMetrics.macHeaderTrailing)
+        #else
         .padding(.leading, SH.Space.l)
         .padding(.trailing, SH.Space.s)
+        #endif
         .frame(height: SHQueueMetrics.headerHeight)
     }
 }
@@ -428,8 +505,10 @@ public struct SHQueueRow: View {
         let sh = Color.sh
         let steering = kind == .steering
         let active = hovering || focused || lifted
-        HStack(spacing: SH.Space.m) {
+        HStack(spacing: Self.gap) {
+            #if !os(macOS)
             grip(shown: active && !steering && drag != nil)
+            #endif
             ZStack {
                 switch kind {
                 case .queued(let number):
@@ -437,13 +516,13 @@ public struct SHQueueRow: View {
                 case .steering:
                     Image(systemName: "arrow.turn.down.right")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(sh.running)
+                        .foregroundStyle(Self.steerColor)
                         .frame(width: SHQueueMetrics.steerGlyph, height: SHQueueMetrics.steerGlyph)
                         .accessibilityHidden(true)
                         .shTransition(.content)
                 }
             }
-            .frame(width: steering ? SHQueueMetrics.steerGlyph : SHQueueMetrics.numberSize, height: SHQueueMetrics.numberSize)
+            .frame(width: Self.numberColumn(steering: steering), height: SHQueueMetrics.numberSize)
             label
             if !attachments.isEmpty {
                 HStack(spacing: SH.Space.xs) {
@@ -460,7 +539,11 @@ public struct SHQueueRow: View {
             ZStack(alignment: .trailing) {
                 if steering {
                     HStack(spacing: SH.Space.xs) {
+                        #if os(macOS)
+                        Text("Steering").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                        #else
                         SHStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right")
+                        #endif
                         if let back = actions.back {
                             iconButton("arrow.uturn.backward", "Back to the queue", action: back)
                         }
@@ -504,6 +587,21 @@ public struct SHQueueRow: View {
             .layoutPriority(1)
         }
         .shComponentAnimation(.content, value: kind)
+        #if os(macOS)
+        .padding(.horizontal, SHQueueMetrics.macRowPadding)
+        .frame(height: SHQueueMetrics.rowHeight)
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .leading) { grip(shown: active && !steering && drag != nil) }
+        .background { fill }
+        .overlay {
+            if focused && !lifted {
+                RoundedRectangle(cornerRadius: SHQueueMetrics.macRowRadius).inset(by: SH.Space.xxs)
+                    .strokeBorder(sh.focusRing, lineWidth: SH.Space.xxs)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(.horizontal, SHQueueMetrics.macRowMargin)
+        #else
         .padding(.leading, SH.Space.m)
         .padding(.trailing, SH.Space.s)
         .frame(height: SHQueueMetrics.rowHeight)
@@ -516,6 +614,7 @@ public struct SHQueueRow: View {
                     .allowsHitTesting(false)
             }
         }
+        #endif
         .padding(.leading, lifted ? SHQueueMetrics.liftInset.leading : 0)
         .padding(.trailing, lifted ? -SHQueueMetrics.liftInset.trailing : 0)
         .rotationEffect(.degrees(lifted ? SHQueueMetrics.liftTilt : 0))
@@ -533,10 +632,42 @@ public struct SHQueueRow: View {
                 .shBorder(sh.lineStrong, radius: SH.Radius.m)
                 .shFloatShadow()
         } else {
+            #if os(macOS)
+            // The board's `.qr.on`: a steering row sits on the same wash as the pointer's.
+            RoundedRectangle(cornerRadius: SHQueueMetrics.macRowRadius)
+                .fill(focused ? sh.bgSelected : hovering || kind == .steering ? sh.bgHover : Color.clear)
+                .shAnimation(.hover, value: hovering)
+            #else
             Rectangle()
                 .fill(kind == .steering ? sh.runningTint : focused ? sh.bgSelected : hovering ? sh.bgHover : Color.clear)
                 .shAnimation(.hover, value: hovering)
+            #endif
         }
+    }
+
+    private static var gap: CGFloat {
+        #if os(macOS)
+        SHQueueMetrics.macRowGap
+        #else
+        SH.Space.m
+        #endif
+    }
+
+    /// The glyph that stands for a steering row: `running` blue on touch, quiet on the Mac.
+    @MainActor private static var steerColor: Color {
+        #if os(macOS)
+        .sh.textSecondary
+        #else
+        .sh.running
+        #endif
+    }
+
+    private static func numberColumn(steering: Bool) -> CGFloat {
+        #if os(macOS)
+        SHQueueMetrics.macNumberWidth
+        #else
+        steering ? SHQueueMetrics.steerGlyph : SHQueueMetrics.numberSize
+        #endif
     }
 
     private var subagentWidth: CGFloat { actions.subagent == nil ? 0 : SHQueueMetrics.actionSize + SH.Space.xxs }
@@ -558,7 +689,7 @@ public struct SHQueueRow: View {
     }
 
     @ViewBuilder private var label: some View {
-        let text = Text(text).font(.shSans(13)).foregroundStyle(Color.sh.textPrimary)
+        let text = Text(text).font(Self.textFont).foregroundStyle(Color.sh.textPrimary)
             .lineLimit(1).truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
         if let edit = actions.edit, kind != .steering {
@@ -570,13 +701,29 @@ public struct SHQueueRow: View {
         }
     }
 
+    @MainActor private static var textFont: Font {
+        #if os(macOS)
+        .sh(.ui, weight: .regular)
+        #else
+        .shSans(13)
+        #endif
+    }
+
     /// Steer now with its words (`secondary`, small): the glyph, then "Steer now" ("Send now" while pi is idle),
     /// its tooltip what it does with its chord.
     private func labelledSteer(_ action: @escaping () -> Void) -> some View {
+        #if os(macOS)
+        // The board's pill carries its words alone.
+        Button(action: action) { Text(actions.steerLabel) }
+            .buttonStyle(SHQueuePillStyle())
+            .shHelp(actions.steerHelp ?? actions.steerLabel, shortcut: actions.steerShortcut)
+            .accessibilityHint(actions.steerHelp ?? "")
+        #else
         Button(action: action) { Label(actions.steerLabel, systemImage: "arrow.turn.down.right") }
             .buttonStyle(.sh(.secondary, size: .s))
             .shHelp(actions.steerHelp ?? actions.steerLabel, shortcut: actions.steerShortcut)
             .accessibilityHint(actions.steerHelp ?? "")
+        #endif
     }
 
     /// `help` is what the tooltip says when the name alone would not tell ("Steer now" stops the agent).
@@ -589,6 +736,39 @@ public struct SHQueueRow: View {
             .accessibilityHint(help ?? "")
     }
 }
+
+#if os(macOS)
+/// The board's `.pill` in a queue row: 24pt, a capsule on `bgRaised` with a `lineSubtle` line, 12pt in
+/// `textPrimary`; the pointer lights it `bgHover`.
+struct SHQueuePillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        SHQueuePill(configuration: configuration)
+    }
+}
+
+private struct SHQueuePill: View {
+    let configuration: ButtonStyleConfiguration
+    @State private var hovering = false
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        let sh = Color.sh
+        configuration.label
+            .font(.sh(.caption))
+            .foregroundStyle(sh.textPrimary)
+            .lineLimit(1)
+            .padding(.horizontal, SHQueueMetrics.macPillPadding)
+            .frame(height: SHQueueMetrics.macPillHeight)
+            .background(configuration.isPressed ? sh.bgSelected : hovering ? sh.bgHover : sh.bgRaised, in: Capsule())
+            .shBorder(sh.lineSubtle, in: Capsule())
+            .shEnabledOpacity(enabled)
+            .contentShape(Capsule())
+            .onHover { hovering = $0 }
+            .shAnimation(.hover, value: hovering)
+            .shFocusRing(radius: SHQueueMetrics.macPillHeight / 2)
+    }
+}
+#endif
 
 /// A message the editor is open on (Queue & steer boards · QueueItem editing), in its place: its
 /// number, then the text in a field with a lantern line and ring, and Cancel and Save. ↩ saves,
@@ -613,6 +793,44 @@ public struct SHQueueEditor: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The board's `.qe`: the words in a box on a `textTertiary` line (no number), Cancel and Save under them.
+        let box = RoundedRectangle(cornerRadius: SHQueueMetrics.macEditorRadius)
+        VStack(alignment: .trailing, spacing: SH.Space.s) {
+            TextField(text: $text, selection: $selection, axis: .vertical) { Text("Queued message") }
+                .lineLimit(1...SHQueueMetrics.editorMaxLines)
+                .textFieldStyle(.plain)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
+                .autocorrectionDisabled()
+                .focused($focused)
+                .onKeyPress(.return, phases: .down) { press in
+                    if let result = SHReturnKey.lineBreak(for: press) { return result }
+                    if canSave { onSave() }
+                    return .handled
+                }
+                .onKeyPress(.escape) { onCancel(); return .handled }
+                .accessibilityLabel("Edit queued message \(number)")
+            HStack(spacing: SHQueueMetrics.macEditorActions) {
+                // Text words with room to hit: padded above and below, never shrunk to the glyphs.
+                Button("Cancel", action: onCancel).buttonStyle(.plain).foregroundStyle(sh.textSecondary)
+                    .font(.sh(.caption)).padding(.vertical, SH.Space.xs).contentShape(Rectangle())
+                Button("Save", action: onSave).buttonStyle(.plain).foregroundStyle(sh.textPrimary)
+                    .font(.sh(.caption, weight: .medium)).padding(.vertical, SH.Space.xs).contentShape(Rectangle())
+                    .disabled(!canSave)
+            }
+        }
+        .padding(SHQueueMetrics.macEditorPadding)
+        .shBorder(sh.textTertiary, in: box)
+        .padding(SHQueueMetrics.macEditorMargin)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { focused = true }
+        // Taking focus selects the whole field; the caret goes after the text instead.
+        .onChange(of: focused) { _, focused in
+            if focused { selection = TextSelection(insertionPoint: text.endIndex) }
+        }
+        #else
         let field = RoundedRectangle(cornerRadius: SH.Radius.s)
         HStack(alignment: .top, spacing: SH.Space.m) {
             SHQueueNumber(number)
@@ -656,6 +874,7 @@ public struct SHQueueEditor: View {
         .onChange(of: focused) { _, focused in
             if focused { selection = TextSelection(insertionPoint: text.endIndex) }
         }
+        #endif
     }
 }
 
@@ -683,32 +902,86 @@ public struct SHQueueDeletedRow: View {
 
     public var body: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
+        HStack(spacing: Self.gap) {
             Image(systemName: "trash")
                 .font(.system(size: SHQueueMetrics.deletedGlyph, weight: .medium))
-                .foregroundStyle(sh.textTertiary)
+                .foregroundStyle(Self.glyphColor)
                 .accessibilityHidden(true)
             Group {
+                #if os(macOS)
+                // The board's `.qr.gone`: the struck words in `textTertiary`, no "Deleted".
+                if let deleted {
+                    Text(deleted).strikethrough()
+                } else {
+                    Text("Cleared \(cleared) \(cleared == 1 ? "message" : "messages")")
+                }
+                #else
                 if let deleted {
                     Text("Deleted \(Text(deleted).strikethrough())")
                 } else {
                     Text("Cleared \(cleared) \(cleared == 1 ? "message" : "messages")")
                 }
+                #endif
             }
-            .font(.sh(.ui, weight: .regular))
+            .font(Self.wordsFont)
             .foregroundStyle(sh.textTertiary)
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Undo", action: onUndo).buttonStyle(.shLink(font: .sh(.ui)))
+            #if os(macOS)
+            // Undo is ink, as the board draws it.
+            Button("Undo", action: onUndo).buttonStyle(.plain).font(Self.undoFont).foregroundStyle(sh.textPrimary)
+                .padding(.vertical, SH.Space.xs).contentShape(Rectangle())
+            #else
+            Button("Undo", action: onUndo).buttonStyle(.shLink(font: Self.undoFont))
+            #endif
         }
+        #if os(macOS)
+        .padding(.leading, SHQueueMetrics.macRowMargin + SHQueueMetrics.macRowPadding)
+        .padding(.trailing, SHQueueMetrics.macRowMargin + SHQueueMetrics.macRowPadding)
+        #else
         .padding(.leading, SHQueueMetrics.secondaryInset)
         .padding(.trailing, SH.Space.l)
+        #endif
         .frame(height: SHQueueMetrics.rowHeight)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(deleted.map { "Deleted: \($0)" } ?? "Cleared \(cleared) queued messages")
         .accessibilityAction(named: "Undo", onUndo)
+    }
+}
+
+extension SHQueueDeletedRow {
+    fileprivate static var gap: CGFloat {
+        #if os(macOS)
+        SHQueueMetrics.macRowGap
+        #else
+        SH.Space.m
+        #endif
+    }
+
+    @MainActor fileprivate static var glyphColor: Color {
+        #if os(macOS)
+        .sh.textSecondary
+        #else
+        .sh.textTertiary
+        #endif
+    }
+
+    @MainActor fileprivate static var wordsFont: Font {
+        #if os(macOS)
+        .sh(.ui, weight: .regular)
+        #else
+        .sh(.ui, weight: .regular)
+        #endif
+    }
+
+    @MainActor fileprivate static var undoFont: Font {
+        #if os(macOS)
+        .sh(.ui, weight: .medium)
+        #else
+        .sh(.ui)
+        #endif
     }
 }
 
@@ -727,7 +1000,11 @@ public struct SHQueueMoreRow: View {
     public var body: some View {
         Button(expanded ? "Show fewer" : "Show \(hidden) more", action: action)
             .buttonStyle(.shLink(font: .shSans(12)))
+            #if os(macOS)
+            .padding(.leading, SHQueueMetrics.macRowMargin + SHQueueMetrics.macRowPadding + SHQueueMetrics.macNumberWidth + SHQueueMetrics.macRowGap)
+            #else
             .padding(.leading, SHQueueMetrics.secondaryInset)
+            #endif
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: SHQueueMetrics.moreRowHeight)
     }
@@ -780,12 +1057,21 @@ public struct SHSendMenu: View {
         _selection = State(initialValue: highlighted)
     }
 
+    @MainActor private static var highlight: Color? {
+        #if os(macOS)
+        .sh.bgSelected
+        #else
+        nil
+        #endif
+    }
+
     public var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.xxs) {
             ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                 SHMenuRow(highlighted: index == selection, alignment: .top, padding: SHQueueMetrics.sendMenuRowPadding,
-                          action: { onChoose(option) }, onHover: { selection = index }) {
+                          highlight: Self.highlight, action: { onChoose(option) }, onHover: { selection = index }) {
+                    #if !os(macOS)
                     Group {
                         switch option.glyph {
                         case .queue: SHQueueGlyph(size: SHQueueMetrics.sendMenuGlyph)
@@ -796,13 +1082,25 @@ public struct SHSendMenu: View {
                     .foregroundStyle(sh.textSecondary)
                     .frame(width: SHQueueMetrics.sendMenuGlyph, height: SHQueueMetrics.sendMenuGlyph)
                     .padding(.top, SHQueueMetrics.sendMenuTitleInset)
+                    #endif
                     VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        #if os(macOS)
+                        // The boards' `.mi.two`: the words in 14, what they do in 12 `textTertiary`, its keys as plain text.
+                        Text(option.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
+                        Text(option.detail).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        #else
                         Text(option.title).font(.shSans(13, .medium)).foregroundStyle(sh.textPrimary)
                         Text(option.detail).shText(.caption).foregroundStyle(sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
+                        #endif
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    #if os(macOS)
+                    if let shortcut = option.shortcut { Text(shortcut).font(.sh(.caption)).foregroundStyle(sh.textTertiary) }
+                    #else
                     if let shortcut = option.shortcut { SHKeycap(shortcut).padding(.top, SHQueueMetrics.sendMenuTitleInset) }
+                    #endif
                 }
                 .accessibilityLabel("\(option.title), \(option.detail)")
             }

@@ -160,7 +160,11 @@ extension SessionServer {
             },
             notify: { title, body in await MainActor.run { server?.automationHosting?.notify(title, body) } },
             changed: { Task { @MainActor in server?.automationHosting?.triggersChanged() } },
-            holdReason: { automation in await MainActor.run { server?.triggerHoldReason(automation) } }
+            holdReason: { automation in
+                // With the run history unreadable, nothing fires: events wait in the queue.
+                if let problem = await server?.automationRunHistoryProblem() { return problem }
+                return await MainActor.run { server?.triggerHoldReason(automation) }
+            }
         )
         let triggers = automationTriggers
         Task {
@@ -248,7 +252,11 @@ extension SessionServer {
                 }
                 // Stop the run too: a skill deleting an automation means
                 // "make it gone", not "orphan its agent".
-                try stopAutomation(automationID)
+                do {
+                    try await stopAutomation(automationID)
+                } catch is AutomationTriggers.Damaged {
+                    // The trigger already cannot fire. Deleting its definition doesn't need to rewrite its state.
+                }
                 try await removeAutomation(automationID)
                 await automationTriggers.forget(automationID)
                 automationHosting?.stateChanged()
@@ -260,7 +268,7 @@ extension SessionServer {
                 guard state.automations.contains(where: { $0.id == automationID }) else {
                     return .failed(code: "not_found", message: "unknown automation \(automationID)")
                 }
-                try stopAutomation(automationID)
+                try await stopAutomation(automationID)
                 return .ok
             }
         } catch {
@@ -281,6 +289,7 @@ extension SessionServer {
         guard previous.projectID == nil else {
             throw LogicalProjectsError("project_scope", "Use the Project's revision-checked run action.")
         }
+        if let problem = await automationRunHistoryProblem() { throw AgentStartFailure(message: problem) }
         if previous.isTriggered {
             // Run now on a triggered automation: one run with no event, outside its limits.
             try await startTriggeredRun(previous, events: [])
@@ -367,17 +376,14 @@ extension SessionServer {
     /// Stops an unscoped run: a triggered automation's trigger pauses (its runs are ordinary
     /// threads, stopped one by one); otherwise its run's agent goes. Project-owned runs refuse.
     @MainActor
-    public func stopAutomation(_ id: AutomationID) throws {
+    public func stopAutomation(_ id: AutomationID) async throws {
         let automation = state.automations.first { $0.id == id }
         guard automation?.projectID == nil else {
             throw LogicalProjectsError("project_scope", "Use the Project's revision-checked automation controls.")
         }
         if automation?.isTriggered == true {
-            let triggers = automationTriggers
-            Task { @MainActor [weak self] in
-                await triggers.pause(id)
-                self?.automationHosting?.triggersChanged()
-            }
+            try await automationTriggers.pause(id)
+            automationHosting?.triggersChanged()
             return
         }
         if startingAutomationRuns.contains(id) { cancelledAutomationRuns.insert(id) }
@@ -438,6 +444,7 @@ extension SessionServer {
     @MainActor
     public func startTriggeredRun(_ automation: Automation, events: [AutomationEvent]) async throws {
         guard let hosting = automationHosting else { throw AgentStartFailure(message: "automations aren't served") }
+        if let problem = await automationRunHistoryProblem() { throw AgentStartFailure(message: problem) }
         let prompt = AutomationRunText.prompt(automation, events: events, now: Date())
         if let projectID = automation.projectID {
             guard let project = state.projects.first(where: { $0.id == projectID }) else {

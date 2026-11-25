@@ -33,6 +33,20 @@ final class FleetFSEvents {
     private let latency: TimeInterval
     private let handler: ([Event]) -> Void
     private var stream: FSEventStreamRef?
+    private var rootTimer: DispatchSourceTimer?
+    private var identity: RootIdentity?
+
+    private struct RootIdentity: Equatable {
+        let device: dev_t
+        let inode: ino_t
+
+        init?(_ path: String) {
+            var info = stat()
+            guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { return nil }
+            (device, inode) = (info.st_dev, info.st_ino)
+        }
+    }
+
     /// Tests: events are received and thrown away, the way a dropped one is, so a test can make an index drift.
     var isDropping: Bool {
         get { lock.withLock { dropping } }
@@ -45,7 +59,8 @@ final class FleetFSEvents {
     private var dropped = 0
 
     init(root: String, queue: DispatchQueue, latency: TimeInterval = 0.05, handler: @escaping ([Event]) -> Void) {
-        self.root = FleetContentIndex.realPath(root)
+        self.root = root
+        self.identity = RootIdentity(root)
         self.queue = queue
         self.latency = latency
         self.handler = handler
@@ -65,6 +80,15 @@ final class FleetFSEvents {
     @discardableResult
     func start(since: UInt64?) -> Bool {
         guard stream == nil else { return true }
+        // WatchRoot opens every ancestor of every root. Check the root by name instead. A quiet stream
+        // may never report a rename of an ancestor, so also check it on a timer without holding an fd.
+        if rootTimer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + .seconds(2), repeating: .seconds(2), leeway: .seconds(1))
+            timer.setEventHandler { [weak self] in self?.checkRoot() }
+            timer.activate()
+            rootTimer = timer
+        }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, ids in
             guard let info else { return }
@@ -75,7 +99,7 @@ final class FleetFSEvents {
             for index in 0..<min(count, names.count) { events.append(Event(path: names[index], flags: flags[index], id: ids[index])) }
             owner.deliver(events)
         }
-        let options = kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagUseCFTypes
+        let options = kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes
         guard let stream = FSEventStreamCreate(nil, callback, &context, [root] as CFArray, since ?? FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
                                                latency, FSEventStreamCreateFlags(options)) else { return false }
         FSEventStreamSetDispatchQueue(stream, queue)
@@ -92,7 +116,18 @@ final class FleetFSEvents {
         guard !events.isEmpty else { return }
         let drop = lock.withLock { () -> Bool in if dropping { dropped += events.count }; return dropping }
         if drop { return }
-        handler(events)
+        if let change = rootChange() { handler([change] + events) } else { handler(events) }
+    }
+
+    func checkRoot() {
+        if let change = rootChange() { handler([change]) }
+    }
+
+    private func rootChange() -> Event? {
+        let current = RootIdentity(root)
+        guard current != identity else { return nil }
+        identity = current
+        return Event(path: root, flags: UInt32(kFSEventStreamEventFlagRootChanged), id: 0)
     }
 
     /// Delivers the events the system already has for the root, then returns. Never from the stream's own queue.
@@ -104,6 +139,8 @@ final class FleetFSEvents {
     var latestEventID: UInt64? { stream.map { FSEventStreamGetLatestEventId($0) } }
 
     func stop() {
+        rootTimer?.cancel()
+        rootTimer = nil
         guard let stream else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)

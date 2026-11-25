@@ -144,7 +144,9 @@ struct AutomationDetailContent: View {
 
     @ViewBuilder
     private func runs(_ detail: AutomationDetail) -> some View {
-        if !detail.runsKnown {
+        if let problem = detail.runsProblem {
+            SHBanner(.failed, title: "Run history is damaged", message: problem) { EmptyView() }
+        } else if !detail.runsKnown {
             if detail.row.abilities.readOnlyReason == nil {
                 HStack(spacing: SH.Space.s) {
                     ProgressView().progressViewStyle(.shSpinner)
@@ -230,7 +232,9 @@ struct AutomationDetailContent: View {
     /// Why the trigger is paused or retrying (Resume is in the footer).
     @ViewBuilder
     private func triggerBanner(_ trigger: AutomationTriggerDetail, row: AutomationListRow) -> some View {
-        if let state = trigger.state, row.enabled, let reason = state.reason {
+        if trigger.storageDamaged {
+            SHBanner(.failed, title: "Trigger state is damaged", message: trigger.state?.reason) { EmptyView() }
+        } else if let state = trigger.state, row.enabled, let reason = state.reason {
             SHBanner(state.tone == .failed ? .failed : .attention, title: "\(state.word): \(reason)",
                      message: trigger.retry.map { "Checks again \($0)." } ?? (state.paused ? "Resume checks again now." : nil)) { EmptyView() }
         }
@@ -306,7 +310,7 @@ struct AutomationDetailContent: View {
                 .disabled(!row.abilities.edit)
             Spacer(minLength: SH.Space.s)
             if let trigger {
-                if row.enabled, let state = trigger.state, state.tone != .off {
+                if row.enabled, !trigger.storageDamaged, let state = trigger.state, state.tone != .off {
                     Button(state.paused ? "Resume" : "Pause") { state.paused ? store.resume(key) : store.pause(key) }
                         .buttonStyle(.sh(.secondary, size: .l))
                         .disabled(!row.abilities.triggers || busy)

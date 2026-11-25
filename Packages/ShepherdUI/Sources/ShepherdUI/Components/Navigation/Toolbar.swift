@@ -4,23 +4,31 @@ import SwiftUI
 public enum SHToolbarMetrics {
     /// The thread toolbar and pane headers, unified with the title bar.
     public static let height: CGFloat = 44
-    public static let leadingPadding: CGFloat = 14
-    public static let trailingPadding: CGFloat = 8
+    /// The thread toolbar's title sits 28pt in from the column (the boards' `.tbar`), its capsule 4pt from the edge.
+    public static let leadingPadding: CGFloat = 28
+    public static let trailingPadding: CGFloat = 4
+    /// The trailing controls' capsule (the boards' `.cap`): 32pt tall, its buttons 2pt apart. Padded 2, not the boards' 4,
+    /// so a round button at either end is concentric with the capsule's.
+    public static let capsuleHeight: CGFloat = 32
+    public static let capsulePadding: CGFloat = 2
+    public static let capsuleGap: CGFloat = 2
     /// Pane headers sit a little tighter.
     public static let paneLeadingPadding: CGFloat = 12
     public static let paneTrailingPadding: CGFloat = 6
 }
 
-/// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards): 44pt, the space and
-/// the title as a breadcrumb ("Shepherd / Investigate…"), an accessory beside them (the branch
-/// chip), and the trailing controls (the side-pane button and the options menu). No status sits
-/// beside the title: the thread and the sidebar already say what an agent is doing. A sidebar
-/// button leads while the sidebar is not docked; `leadingInset` clears the window controls. The
-/// space gives way first when the toolbar narrows, then the chip's branch and the title truncate.
+/// The thread toolbar (the boards' `.tbar`): 44pt, no rule under it. The thread that started this
+/// one (a link, when it is a sub-thread), the title in `title`, then its space in `textTertiary`
+/// ("Speed up checkout CI  payments-api"), an accessory, and the trailing controls in a raised
+/// capsule (the side-pane button and the options menu). While the sidebar is not docked, Show
+/// sidebar leads; `leadingInset` clears the window controls. The space gives way
+/// first when the toolbar narrows, then the parent, then the title truncates.
 public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     let title: String
     let project: String?
     let titleHelp: String?
+    let parent: String?
+    let openParent: (() -> Void)?
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
@@ -28,12 +36,15 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     public init(_ title: String, project: String? = nil, titleHelp: String? = nil,
+                parent: String? = nil, openParent: (() -> Void)? = nil,
                 leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
                 @ViewBuilder accessory: @escaping () -> Accessory,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
         self.project = project
         self.titleHelp = titleHelp
+        self.parent = parent
+        self.openParent = openParent
         self.leadingInset = leadingInset
         self.sidebar = sidebar
         self.sidebarLabel = sidebarLabel
@@ -43,46 +54,55 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("toolbar.thread")
-        HStack(spacing: 10) {
+        HStack(spacing: SH.Space.m) {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }
                     .buttonStyle(.shIcon)
                     .shHelp(sidebarLabel)
                     .accessibilityLabel(sidebarLabel)
+                    .padding(.trailing, SH.Space.l)
             }
             // The space gives way first: it shows only while everything fits at full length.
             ViewThatFits(in: .horizontal) {
-                breadcrumb(showsProject: project != nil)
-                breadcrumb(showsProject: false)
+                breadcrumb(showsProject: project != nil, showsParent: parent != nil)
+                breadcrumb(showsProject: false, showsParent: parent != nil)
+                breadcrumb(showsProject: false, showsParent: false)
             }
             Spacer(minLength: SH.Space.l)
-            HStack(spacing: SH.Space.xs) {
-                trailing()
+            if Trailing.self != EmptyView.self {
+                SHToolbarCapsule { trailing() }
+                    .layoutPriority(1)
             }
-            .fixedSize()
-            .layoutPriority(1)
         }
-        .padding(.leading, SHToolbarMetrics.leadingPadding + leadingInset)
+        // Past the window controls the boards start Show sidebar 24pt on (GXSidebarHidden).
+        .padding(.leading, (sidebar == nil ? SHToolbarMetrics.leadingPadding : SH.Space.xxl) + leadingInset)
         .padding(.trailing, SHToolbarMetrics.trailingPadding)
         .frame(height: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
         .background(Color.sh.bgWindow)
-        .overlay(alignment: .bottom) { SHHairline() }
     }
 
-    private func breadcrumb(showsProject: Bool) -> some View {
+    private func breadcrumb(showsProject: Bool, showsParent: Bool) -> some View {
         HStack(spacing: SH.Space.m) {
-            if showsProject, let project {
-                Text(project)
-                    .foregroundStyle(.sh.textSecondary)
-                    .lineLimit(1)
-                    .accessibilityHidden(true)
+            if showsParent, let parent {
+                Group {
+                    if let openParent {
+                        Button(action: openParent) { Text(parent).foregroundStyle(.sh.running) }
+                            .buttonStyle(.plain)
+                            .shHelp("Open \(parent)")
+                            .accessibilityLabel("Started by \(parent)")
+                    } else {
+                        Text(parent).foregroundStyle(.sh.textSecondary)
+                            .accessibilityLabel("Started by \(parent)")
+                    }
+                }
+                .lineLimit(1)
                 Text("/")
                     .foregroundStyle(.sh.textTertiary)
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.shSans(13, .semibold))
+                .font(.sh(.title))
                 .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -91,9 +111,16 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
                 // A rename or a settled name cross-fades.
                 .shContentTransition(.crossFade)
                 .shAnimation(.content, value: title)
+            if showsProject, let project {
+                Text(project)
+                    .foregroundStyle(.sh.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityLabel("in \(project)")
+            }
             accessory()
         }
-        .font(.shSans(13))
+        .font(.sh(.ui))
     }
 }
 
@@ -123,6 +150,26 @@ extension SHThreadToolbar where Accessory == EmptyView, Trailing == EmptyView {
     public init(_ title: String, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar") {
         self.init(title, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel,
                   accessory: { EmptyView() }, trailing: { EmptyView() })
+    }
+}
+
+/// The toolbar's trailing controls in the boards' `.cap`: a 32pt capsule on `bgRaised` with a 1px
+/// line and the `lift` shadow, its icon buttons 2pt apart and round, so their fills follow its ends.
+/// Nothing at all when it holds nothing.
+public struct SHToolbarCapsule<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    public init(@ViewBuilder content: @escaping () -> Content) { self.content = content }
+
+    public var body: some View {
+        let shape = Capsule()
+        HStack(spacing: SHToolbarMetrics.capsuleGap) { content() }
+            .environment(\.shIconButtonsRound, true)
+            .padding(.horizontal, SHToolbarMetrics.capsulePadding)
+            .frame(height: SHToolbarMetrics.capsuleHeight)
+            .shLift(shape)
+            .overlay { shape.strokeBorder(Color.sh.lineStrong, lineWidth: 1).allowsHitTesting(false) }
+            .fixedSize()
     }
 }
 

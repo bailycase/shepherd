@@ -141,6 +141,7 @@ struct ActivityLineView: View, Equatable {
         case .checked: .checked
         case .lookedAt: .lookedAtDesign
         case .browser: .browser
+        case .computer: .computer
         case .other: .other
         }
     }
@@ -156,6 +157,7 @@ struct ActivityLineView: View, Equatable {
     /// A click on this line: the whole thread eases around the calls as they open, so the
     /// change animates as one transaction rather than from a container.
     private func toggle() {
+        SHRenderProbe.scrollEvent("thread.write.L9", "activity.disclosure", kind: "layout")
         withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
             if !expanded { seedScripts = true }
             expanded.toggle()
@@ -202,13 +204,16 @@ private struct ActivityCallDetails: View {
                 text = arguments
             }
             guard !text.isEmpty else { continue }
+            // GXExpanded lists the calls alone: a call's arguments stay one click away (Show Call, or ⌥-click), a script opens in its line.
+            if !script { continue }
             let id = "\(call.id):input"
             let lines = text.components(separatedBy: "\n")
             inputs[id] = SHActivityCallRow(
                 id: id, label: script ? "script" : "input", detail: script ? "JavaScript" : call.name,
                 output: Array(lines.prefix(NativeActivityCall.outputHeadLines)),
                 moreLines: max(0, lines.count - NativeActivityCall.outputHeadLines),
-                accessibilityLabel: "\(call.name) \(script ? "script" : "arguments")")
+                // A line holds a stretch's calls, often several of one tool: the detail tells their inputs apart.
+                accessibilityLabel: script ? "\(call.name) script" : "\(call.name) arguments" + (call.detail.isEmpty ? "" : ", \(call.detail)"))
             texts[id] = text
         }
         inputRows = inputs
@@ -236,10 +241,22 @@ private struct ActivityCallDetails: View {
         seedScripts = false
     }
 
+    /// The row's first word (GXExpanded): "Read", "Edited", "Ran"; any other tool by its own name, capitalised.
+    static func verb(_ label: String) -> String {
+        switch label {
+        case "read": "Read"
+        case "edit": "Edited"
+        case "write": "Wrote"
+        case "bash": "Ran"
+        default: label.prefix(1).uppercased() + label.dropFirst()
+        }
+    }
+
     private func row(_ call: NativeActivityCall) -> SHActivityCallRow {
         let open = expandedCalls.contains(call.id)
         return SHActivityCallRow(
-            id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
+            id: call.id, label: Self.verb(call.label), detail: call.detail, isPath: call.isPath, stat: call.stat,
+            diff: call.kind == .edit && !call.failed ? SHCallDiff(added: call.added, removed: call.removed) : nil, failed: call.failed,
             output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
             truncated: call.truncated, isExpanded: open,
             // An edit's or write's file, or the one a read read: their rows offer Open in (OpenInD).
@@ -251,6 +268,7 @@ private struct ActivityCallDetails: View {
         // Also covers a quick reopen before the outgoing disclosure transition unmounted.
         seedInputDisclosure()
         if inputTexts[id] != nil {
+            SHRenderProbe.scrollEvent("thread.write.L9", "activity.inputDisclosure", target: id, kind: "layout")
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
@@ -264,6 +282,7 @@ private struct ActivityCallDetails: View {
         if call.kind == .edit, let path = call.path, let review {
             review(path)
         } else if call.expandable {
+            SHRenderProbe.scrollEvent("thread.write.L9", "activity.callDisclosure", target: id, kind: "layout")
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }

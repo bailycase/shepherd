@@ -2,6 +2,7 @@
 // variable, one tool, a question that goes through pi's native dialog in the shape Shepherd's
 // question dock reads, and a cancel that is never an answer.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/ask.test.mjs
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";

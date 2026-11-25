@@ -2,6 +2,7 @@
 // design's agent, design_get and design_note registered only once the thread holds a reference,
 // and their frames and answers over a stand-in Shepherd socket. No model provider, only
 // temporary files.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

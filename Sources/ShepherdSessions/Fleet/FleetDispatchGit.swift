@@ -117,29 +117,140 @@ enum FleetDispatchGit {
         let lowered = title.lowercased().unicodeScalars.map { scalar -> Character in
             scalar.isASCII && (scalar.properties.isAlphabetic || ("0"..."9").contains(Character(scalar))) ? Character(scalar) : "-"
         }
-        let words = String(lowered).split(separator: "-", omittingEmptySubsequences: true).prefix(6).joined(separator: "-")
-        let cut = String(words.prefix(40)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return cut.isEmpty ? "dispatch" : cut
-    }
-
-    /// What the finished thread left on its branch, as the host reads it: the head, the commits beyond
-    /// the start, whether origin has the head, and the diffstat against the start. Facts only.
-    static func branchFacts(worktree: String, branch: String, start: String?) -> FleetBranchFacts {
-        var facts = FleetBranchFacts(branch: branch)
-        if let head = run(["rev-parse", "HEAD"], in: worktree), head.status == 0, isCommit(head.output) { facts.head = head.output }
-        guard let head = facts.head else { return facts }
-        if let start, isCommit(start) {
-            if let ahead = run(["rev-list", "--count", "\(start)..HEAD"], in: worktree), ahead.status == 0 { facts.ahead = Int(ahead.output) ?? 0 }
-            if let stat = run(["diff", "--shortstat", "\(start)..HEAD"], in: worktree), stat.status == 0 {
-                (facts.filesChanged, facts.insertions, facts.deletions) = parseShortstat(stat.output)
+        var slug = ""
+        for word in String(lowered).split(separator: "-").prefix(6) {
+            if slug.isEmpty {
+                // A title whose first word alone exceeds the budget still gets a meaningful name.
+                slug = String(word.prefix(40))
+            } else {
+                guard slug.count + 1 + word.count <= 40 else { break }
+                slug += "-" + word
             }
         }
-        // Pushed: origin has the branch, at this head (asked of origin now, so a push made since the last fetch counts).
-        _ = run(["fetch", "--quiet", "origin", "+refs/heads/\(branch):refs/remotes/origin/\(branch)"], in: worktree, timeout: 30)
-        if let remote = run(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(branch)"], in: worktree), remote.status == 0 {
-            facts.pushed = remote.output == head
+        return slug.isEmpty ? "dispatch" : slug
+    }
+
+    /// A configured origin base wins, then the sending checkout's origin upstream. A Fleet branch's
+    /// push upstream is its own result, not an integration base.
+    static func comparisonBranch(cwd: String, configured: [String?]) -> String? {
+        for value in configured.compactMap({ $0 }) where value.hasPrefix("origin/") {
+            let name = String(value.dropFirst("origin/".count))
+            if !name.hasPrefix("fleet/"), run(["check-ref-format", "refs/heads/\(name)"], in: cwd)?.status == 0 { return name }
         }
-        return facts
+        let prefix = "refs/remotes/origin/"
+        if let upstream = run(["rev-parse", "--symbolic-full-name", "@{upstream}"], in: cwd),
+           upstream.status == 0, upstream.output.hasPrefix(prefix) {
+            let name = String(upstream.output.dropFirst(prefix.count))
+            if !name.hasPrefix("fleet/") { return name }
+        }
+        if let branch = run(["symbolic-ref", "--quiet", "--short", "HEAD"], in: cwd), branch.status == 0,
+           !branch.output.hasPrefix("fleet/"), run(["show-ref", "--verify", "--quiet", prefix + branch.output], in: cwd)?.status == 0 {
+            return branch.output
+        }
+        return GitWorktree.defaultBranch(repo: cwd, network: false)
+    }
+
+    /// One porcelain row per changed path, including staged changes. Git quotes embedded newlines,
+    /// excludes ignored files and leaves the index alone (`GIT_OPTIONAL_LOCKS=0` in `run`).
+    static func uncommittedFiles(worktree: String) -> (modified: Int, untracked: Int)? {
+        guard let status = run(["status", "--porcelain=v1", "--untracked-files=all", "--", "."], in: worktree),
+              status.status == 0 else { return nil }
+        let rows = status.output.split(separator: "\n")
+        let untracked = rows.count(where: { $0.hasPrefix("?? ") })
+        return (rows.count - untracked, untracked)
+    }
+
+    /// What the finished thread left on its branch, as the receiving host reads it. Compare with
+    /// its merge base against the target, falling back to the pinned start when unavailable.
+    static func branchFacts(worktree: String?, branch: String, start: String?, comparison: String? = nil) -> FleetBranchFacts {
+        let changes = worktree.flatMap { uncommittedFiles(worktree: $0) }
+        var facts = FleetBranchFacts(branch: branch, uncommittedModified: changes?.modified, uncommittedUntracked: changes?.untracked,
+                                     uncommittedCheckFailed: changes == nil ? true : nil)
+        guard let worktree, let start, isCommit(start) else { return facts }
+        let assigned = committedBranchFacts(facts, worktree: worktree, start: start, comparison: comparison)
+        let prefix = "refs/heads/"
+        // Prefer the assigned branch unless it has no commits ahead and no ref on origin.
+        guard assigned.facts.ahead == 0, assigned.onOrigin == false,
+              let current = run(["symbolic-ref", "--quiet", "HEAD"], in: worktree), current.status == 0,
+              current.output.hasPrefix(prefix), current.output != prefix + branch else { return assigned.facts }
+        facts.branch = String(current.output.dropFirst(prefix.count))
+        let checkedOut = committedBranchFacts(facts, worktree: worktree, start: start, comparison: comparison)
+        return checkedOut.onOrigin == true ? checkedOut.facts : assigned.facts
+    }
+
+    private static func committedBranchFacts(_ initial: FleetBranchFacts, worktree: String, start: String,
+                                             comparison: String?) -> (facts: FleetBranchFacts, onOrigin: Bool?) {
+        var facts = initial
+        let branch = facts.branch
+        let ref = "refs/heads/\(branch)"
+        // Pin the ref so the count and diff describe the same commit.
+        guard let tip = run(["rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"], in: worktree),
+              tip.status == 0, isCommit(tip.output) else { return (facts, nil) }
+        let head = tip.output
+        var diffBase = start
+        var comparedTo: String?
+        if let comparison, comparison != branch,
+           run(["check-ref-format", "refs/heads/\(comparison)"], in: worktree)?.status == 0,
+           let target = run(["rev-parse", "--verify", "--quiet", "--end-of-options", "refs/remotes/origin/\(comparison)^{commit}"], in: worktree),
+           target.status == 0, isCommit(target.output),
+           let merge = run(["merge-base", target.output, head], in: worktree), merge.status == 0, isCommit(merge.output) {
+            diffBase = merge.output
+            comparedTo = "origin/\(comparison)"
+        }
+        let range = "\(diffBase)..\(head)"
+        guard let count = run(["rev-list", "--count", range], in: worktree), count.status == 0,
+              let ahead = Int(count.output),
+              let stat = run(["diff", "--shortstat", range, "--"], in: worktree, environment: ["LC_ALL": "C"]), stat.status == 0
+        else { return (facts, nil) }
+        facts.head = head
+        facts.ahead = ahead
+        (facts.filesChanged, facts.insertions, facts.deletions) = parseShortstat(stat.output)
+        facts.comparedTo = comparedTo
+        // Ask origin without writing refs or falling back to a possibly stale remote-tracking ref.
+        let remote = run(["ls-remote", "--exit-code", "--refs", "origin", ref], in: worktree, timeout: 30)
+        switch remote?.status {
+        case 0:
+            let match = remote?.output.split(separator: "\n").first { $0.hasSuffix("\t\(ref)") }
+            facts.pushed = match == "\(head)\t\(ref)"[...]
+            return (facts, match != nil)
+        case 2: return (facts, false) // No matching ref.
+        default:
+            facts.originCheckFailed = true
+            return (facts, nil)
+        }
+    }
+
+    static let buildOutputNames = [".build", "DerivedData"]
+
+    /// Explicit Fleet close only. Require the assigned, Shepherd-managed worktree, an ignored,
+    /// untracked directory, and a build-system marker. Never follow directory symlinks.
+    static func cleanBuildOutput(worktree: String, branch: String, names: [String]) -> (bytes: UInt64, removed: [String]) {
+        let folder = URL(fileURLWithPath: worktree).resolvingSymlinksInPath()
+        let root = URL(fileURLWithPath: ShepherdPaths.supportDirectory().appendingPathComponent("worktrees").path).resolvingSymlinksInPath()
+        guard folder.path.hasPrefix(root.path + "/"),
+              let identity = try? GitWorktree.identity(at: folder.path), identity.branch == branch else { return (0, []) }
+        let fm = FileManager.default
+        var bytes: UInt64 = 0, removed: [String] = []
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey, .totalFileAllocatedSizeKey]
+        for name in buildOutputNames where names.contains(name) {
+            // Ignore rules and an empty index are both necessary: a tracked file can also match an ignore rule.
+            guard run(["check-ignore", "-q", "--", name + "/"], in: folder.path)?.status == 0,
+                  let tracked = run(["ls-files", "--", name], in: folder.path), tracked.status == 0, tracked.output.isEmpty else { continue }
+            let output = folder.appendingPathComponent(name)
+            guard let values = try? output.resourceValues(forKeys: keys), values.isDirectory == true, values.isSymbolicLink != true else { continue }
+            let marker = output.appendingPathComponent(name == ".build" ? "workspace-state.json" : "info.plist")
+            guard let markerValues = try? marker.resourceValues(forKeys: keys), markerValues.isRegularFile == true, markerValues.isSymbolicLink != true,
+                  let files = fm.enumerator(at: output, includingPropertiesForKeys: Array(keys), options: []) else { continue }
+            var size: UInt64 = 0
+            for case let file as URL in files {
+                guard let values = try? file.resourceValues(forKeys: keys) else { continue }
+                if values.isSymbolicLink == true { files.skipDescendants() }
+                else if values.isRegularFile == true { size += UInt64(max(0, values.totalFileAllocatedSize ?? 0)) }
+            }
+            do { try fm.removeItem(at: output); bytes += size; removed.append(name) }
+            catch { continue }
+        }
+        return (bytes, removed)
     }
 
     /// "3 files changed, 10 insertions(+), 2 deletions(-)".

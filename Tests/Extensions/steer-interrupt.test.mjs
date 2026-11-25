@@ -3,6 +3,7 @@
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/steer-interrupt.test.mjs
 // Everything runs in a temporary HOME against a local fake provider; only boundary tests load the status extension.
 // Set STEER_INTERRUPT_TRACE=1 to print each test's event order.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

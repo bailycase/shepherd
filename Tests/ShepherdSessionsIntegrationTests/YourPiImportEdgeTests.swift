@@ -149,22 +149,82 @@ struct YourPiImportEdgeTests {
         }
     }
 
-    /// A state file that can't be read counts as a copy that ran: a second launch never copies
-    /// again, and never overwrites a login Shepherd's pi changed since.
-    @Test func aDamagedStateFileNeverCopiesAgain() throws {
+    @Test(arguments: [#"{"truncated":"#, #"{"copies":"not an array"}"#, #"{"extensionEntries":["sample.ts",null]}"#, nil])
+    func damagedImportStateRefusesWritesWithoutCopyingAgain(malformed: String?) throws {
         let setup = try Setup()
         defer { setup.remove() }
-        #expect(setup.importer().copyOnce().first)
-        _ = try PiSettingsFile(url: setup.home.directory.appendingPathComponent("auth.json")).update { auth in
+        let importer = setup.importer()
+        #expect(importer.copyOnce().first)
+        let authURL = setup.home.directory.appendingPathComponent("auth.json")
+        _ = try PiSettingsFile(url: authURL).update { auth in
             auth.removeValue(forKey: "openai")
             return []
         }
-        try Self.write("{ not json", to: setup.importer().stateURL)
+        let auth = try Data(contentsOf: authURL)
+        let settings = try Data(contentsOf: setup.home.settings)
+        let url = importer.stateURL
+        defer { if malformed == nil { chmod(url.path, 0o600) } }
+        if let malformed { try Self.write(malformed, to: url) }
+        let original = try Data(contentsOf: url)
+        if malformed == nil {
+            try #require(chmod(url.path, 0o000) == 0)
+            try #require((try? Data(contentsOf: url)) == nil)
+        }
 
-        let again = setup.importer().copyOnce()
-
+        #expect(importer.copiedOnce)
+        let again = importer.copyOnce()
         #expect(!again.first && again.logins.isEmpty)
-        #expect(try setup.json("auth.json")["openai"] == nil)
+        #expect(throws: YourPiFileError.self) { try importer.reimport(.logins) }
+        #expect(throws: YourPiFileError.self) {
+            try importer.applySyncedExtension(destination: "your-extensions/sample.ts", name: "sample", entries: nil, on: false)
+        }
+
+        if malformed == nil { try #require(chmod(url.path, 0o600) == 0) }
+        #expect(try Data(contentsOf: url) == original)
+        #expect(try Data(contentsOf: authURL) == auth)
+        #expect(try Data(contentsOf: setup.home.settings) == settings)
+    }
+
+    @Test func surveyReportsADamagedMarkerInsteadOfANeverRunImport() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let importer = setup.importer()
+        #expect(!importer.survey().copied)
+        try Self.write(#"{"copies":42}"#, to: importer.stateURL)
+
+        let survey = importer.survey()
+        let problem = try #require(survey.problems.first)
+        #expect(problem.contains(importer.stateURL.path))
+        #expect(problem.contains("typeMismatch") && problem.contains("copies"))
+        #expect(problem.contains("Restore the file from a backup or fix its JSON."))
+        #expect(survey.copied && survey.copiedAt == nil)
+        #expect(survey.stateProblem == problem)
+
+        _ = importer.copyOnce()
+        let diagnostic = try #require(setup.logged.current.last)
+        #expect(diagnostic.contains(importer.stateURL.path))
+        #expect(diagnostic.contains("typeMismatch") && diagnostic.contains("copies"))
+    }
+
+    @Test func anEnvelopedImportStateIsReadAndWrittenAsLegacyJSON() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let importer = setup.importer(yourPi: false)
+        try Self.write(#"{"version":1,"value":{"version":2,"copied":false,"copiedAt":"2025-01-01T00:00:00Z","digests":{"defaultModel":"mock-digest"}}}"#,
+                       to: importer.stateURL)
+
+        #expect(importer.state()?.copied == false)
+        try importer.updateState { $0.copied = true }
+
+        let legacy = Data("""
+            {"version":2,"copied":true,"copiedAt":"2025-01-01T00:00:00Z","copies":[],
+             "extensionsOn":[],"extensionFailures":{},"extensionEntries":[],"digests":{"defaultModel":"mock-digest"}}
+            """.utf8)
+        func canonicalJSON(_ data: Data) throws -> Data {
+            try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: data), options: [.sortedKeys])
+        }
+        #expect(try canonicalJSON(Data(contentsOf: importer.stateURL)) == canonicalJSON(legacy))
+        #expect(importer.state()?.copied == true)
     }
 
     /// A state saved before the first copy (a copy that overran its deadline) neither stops the

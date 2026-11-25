@@ -34,6 +34,10 @@ struct ThreadComposer: View {
     @State private var focused = false
     /// The @ picker for the host's designs (`design.references.v1`), the Mac's picker rules.
     @State private var mentions = MentionPickerState()
+    /// The threads the picker links on "#" (ThreadLinkA): the thread's own host's.
+    @Environment(\.shThreadLinks) private var threadLinks
+    /// Something is being dragged over the composer.
+    @State private var dropTargeted = false
 
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
 
@@ -46,6 +50,11 @@ struct ThreadComposer: View {
         let wide = sizeClass == .regular
         let goalSize: SHGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
+            if let banner = NativeStartBanner(store: store, offered: restartOffered(host), connected: host?.connectedClient != nil,
+                                              host: host?.name ?? "the host") {
+                StartProblemBanner(banner: banner, perform: restartAgent).equatable()
+                    .shTransition(.list, edge: .bottom)
+            }
             if let notice = store.notice {
                 banner(notice)
             }
@@ -164,6 +173,7 @@ struct ThreadComposer: View {
         .padding(.top, designChat ? MobileLayout.padDesignComposerTop : SH.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.sh.bgWindow)
+        .modifier(ComposerImageDrop(state: state, enabled: live && acceptsImages(store), targeted: $dropTargeted))
         .shAnimation(.content, value: store.dialogs.isEmpty)
         .shAnimation(.list, value: store.hasTray)
         .shAnimation(.list, value: store.goalID)
@@ -244,7 +254,7 @@ struct ThreadComposer: View {
         if !state.attachments.isEmpty {
             attachments(state)
         }
-        let capsuleField = field(store: store, placeholder: store.running ? "Queue a follow-up…" : "Follow up…")
+        let capsuleField = field(store: store, state: state, live: live, placeholder: store.running ? "Queue a follow-up…" : "Follow up…")
         let capsuleAction = HStack(spacing: 0) {
             contextMeter(store: store, state: state)
             sendButton(store: store, state: state, live: live)
@@ -258,14 +268,28 @@ struct ThreadComposer: View {
 
     // MARK: iPad
 
+    /// A tap on the Can't start banner's button: asks the agent's host to start pi again (the store keeps the progress and any refusal).
+    private func restartAgent(_ action: NativeStartAction) {
+        let host = hosts.host(ref.host)
+        guard let client = host?.connectedClient else { return }
+        let store = threads.store(for: ref), agent = ref.agent, offered = restartOffered(host)
+        Task {
+            await NativeStartRestart.perform(action, store: store, offered: offered, connected: true) {
+                try await client.agentAction(agentID: agent, action: $0)
+            }
+        }
+    }
+
+    private func restartOffered(_ host: MobileHost?) -> Bool { host.map { NativeStartRestart.isOffered(by: $0.capabilities) } ?? false }
+
     private func card(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
-        SHComposer(isFocused: focused) {
+        SHComposer(isFocused: focused || dropTargeted) {
             referenceChips(store)
             elementChips(store)
             if !state.attachments.isEmpty { attachmentChips(state) }
         } field: {
             // A command draft shows in mono while its list is open (iPadPortrait).
-            field(store: store, placeholder: designChat ? MobileLayout.padDesignComposerPlaceholder : store.running ? "Queue a follow-up…"
+            field(store: store, state: state, live: live, placeholder: designChat ? MobileLayout.padDesignComposerPlaceholder : store.running ? "Queue a follow-up…"
                   : store.commands.isEmpty ? "Follow up…"
                   : store.commands.contains(where: { $0.source == "skill" }) ? "Follow up, / for commands, $ for skills…"
                   : "Follow up, or / for commands…", command: state.matches != nil)
@@ -297,10 +321,12 @@ struct ThreadComposer: View {
 
     // MARK: Parts
 
-    private func field(store: NativeThreadStore, placeholder: String, command: Bool = false, style: SHTextStyle = .body) -> some View {
+    private func field(store: NativeThreadStore, state: ComposerState, live: Bool, placeholder: String, command: Bool = false,
+                       style: SHTextStyle = .body) -> some View {
         @Bindable var bindable = store
+        let paste: (([NSItemProvider]) -> Void)? = live && acceptsImages(store) ? { providers in state.attach(providers: providers) } : nil
         return ComposerTextView(text: $bindable.draft, placeholder: placeholder, focused: $focused, style: command ? .code : style,
-                                label: "Message to agent")
+                                label: "Message to agent", pasteImages: paste)
     }
 
     @ViewBuilder private func chips(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
@@ -355,7 +381,7 @@ struct ThreadComposer: View {
             SHComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
                 .background {
                     Button("Steer now · ⌘↩") { Self.send(NativeSendChoice.now.delivery, store: store, state: state) }
-                        .keyboardShortcut(.return, modifiers: .command)
+                        .keyboardShortcut(MobileShortcut.alternateSend.shortcut)
                         .disabled(!enabled)
                         .hidden()
                         .accessibilityHidden(true)
@@ -391,14 +417,11 @@ struct ThreadComposer: View {
         guard state.pendingImports == 0 else { return Task {} }
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
-        let earlier = Set(store.submissions.map(\.id))
         return Task {
-            let accepted = await store.send(images: images, delivery: delivery)
-            // Taken, or kept by the store as a refused or unknown send (its images with it): the
-            // composer lets go of the images it sent. Images added meanwhile stay; a send the
-            // store never took keeps them where they were.
-            if accepted || store.submissions.contains(where: { !earlier.contains($0.id) }) {
-                for id in submitted { state.remove(id) }
+            // Let go of the images as soon as the store owns them, not after the host answers. New attachments stay.
+            _ = await store.send(images: images, delivery: delivery) {
+                // The synchronous callback follows appending this send's record. A host without image support captures only text.
+                if store.submissions.last?.images.isEmpty == false { for id in submitted { state.remove(id) } }
                 if state.attachments.isEmpty { state.clearAttachments() }
             }
             state.saveDraft(store)
@@ -451,21 +474,27 @@ struct ThreadComposer: View {
                                appear: { id in if let item = mentions.content.items[id] { designs.wantMentionPicture(item, host: host) } })
     }
 
-    /// Follows the draft: open while it ends in an @ mention, where the host takes references to
-    /// its designs (never in a design's own chat).
+    /// Follows the draft: open while it ends in a "#" mention, on the host's threads to link, or an "@"
+    /// mention where the host takes references to its designs (never in a design's own chat).
     private func updateMentions(store: NativeThreadStore) {
         let designs = MobileDesigns.of(hosts)
+        let threads = threadLinks.map { Array($0.links.values) } ?? []
         guard store.supports("designReferences"), !designChat, let library = designs.library(ref.host) else {
-            if mentions.isOpen { mentions.close() }
+            if !designChat, threadLinks != nil {
+                mentions.update(draft: store.draft, catalog: nil, threads: threads, excluding: ref.agent.rawValue, designs: false)
+            } else if mentions.isOpen {
+                mentions.close()
+            }
             return
         }
         let opening = mentions.opens(for: store.draft)
-        if opening, library.listing == nil { Task { await library.refresh() } }
+        if opening, library.listing == nil, ComposerMention.token(in: store.draft)?.trigger == "@" { Task { await library.refresh() } }
         let scope = mentions.scope
         let host = ref.host
         let version = designs.mentionPicturesVersion
         mentions.update(draft: store.draft, catalog: library.listing == nil ? nil : library.mentionCatalog(),
-                        place: hosts.host(host)?.name ?? "the host") { item in
+                        place: hosts.host(host)?.name ?? "the host", threads: threads,
+                        excluding: ref.agent.rawValue) { item in
             designs.mentionPicture(item, host: host).map { SHReferenceImage(id: item.id + "@\(version)", image: Image(uiImage: $0)) }
         }
         guard mentions.isOpen, opening || mentions.scope != scope else { return }
@@ -492,6 +521,8 @@ struct ThreadComposer: View {
                     state.attachmentError = "That design reference didn't attach: \(MobileDesignsError.words(error))"
                 }
             }
+        case .link(let draft)?:
+            store.draft = draft
         case nil:
             break
         }

@@ -55,12 +55,14 @@ public struct SHPageHeader<Accessory: View, Trailing: View>: View {
     let sidebar: (() -> Void)?
     let sidebarLabel: String
     let sidebarShortcut: String?
+    let rule: Bool
     let accessory: Accessory
     let trailing: Trailing
 
     public init(_ title: String, subtitle: String? = nil, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil,
-                sidebarLabel: String = "Show sidebar", sidebarShortcut: String? = nil,
+                sidebarLabel: String = "Show sidebar", sidebarShortcut: String? = nil, rule: Bool = true,
                 @ViewBuilder accessory: () -> Accessory, @ViewBuilder trailing: () -> Trailing) {
+        self.rule = rule
         self.accessory = accessory()
         self.title = title
         self.subtitle = subtitle
@@ -99,7 +101,7 @@ public struct SHPageHeader<Accessory: View, Trailing: View>: View {
         .frame(height: SHPageMetrics.headerHeight)
         .frame(maxWidth: .infinity)
         .background(Color.sh.bgWindow)
-        .overlay(alignment: .bottom) { SHHairline() }
+        .overlay(alignment: .bottom) { if rule { SHHairline() } }
         .contentShape(Rectangle())
         .shWindowDrag()
     }

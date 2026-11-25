@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s Tests/Release -v
 
 Nothing here reaches the network or a real pi: staging runs against archives built in memory.
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import base64
 import copy
 import errno
@@ -229,28 +230,6 @@ class SkillPatchTests(unittest.TestCase):
         with patch.object(pi_engine, "sha256_of", side_effect=lambda path: "0" * 64 if path.endswith("skill-watch.js") else digest(path)):
             with self.assertRaisesRegex(pi_engine.EngineError, "source differs"):
                 pi_engine.engine_patch(pi_engine.load_pin())
-
-    def test_anthropic_oauth_port_sources_and_both_runtime_copies_are_pinned(self):
-        directory = os.path.join(ROOT, "scripts", "pi-engine-patches", "anthropic-oauth")
-        upstream = os.path.join(directory, "upstream")
-        manifest = json.loads(read(upstream, "pin.json"))
-        self.assertEqual(manifest["revision"], "0078268804557bbbc82c60e364a34debf0450a90")
-        self.assertEqual(manifest["version"], "0.3.9")
-        self.assertEqual(set(manifest["sha256"]), {"auth.ts", "convert.ts", "index.ts", "prompt.ts", "stream.ts", "usage.ts", "version.ts", "LICENSE"})
-        for name, digest in manifest["sha256"].items():
-            self.assertEqual(pi_engine.sha256_of(os.path.join(upstream, name)), digest, name)
-        changes = pi_engine.engine_patch(pi_engine.load_pin())["files"]
-        for module in ("auth", "convert", "prompt", "stream", "version"):
-            source = f"anthropic-oauth/{module}.js"
-            copies = [change for change in changes if change.get("source") == source]
-            self.assertEqual({change["path"] for change in copies}, {
-                f"node_modules/@earendil-works/pi-ai/dist/api/{source}",
-                f"dist/bundle/chunks/{source}",
-            })
-            self.assertIn("Copyright (c) 2026 Leo Henon", read(directory, f"{module}.js"))
-            self.assertIn(manifest["revision"], read(directory, f"{module}.js"))
-        self.assertFalse(any(change.get("source", "").endswith("index.ts") for change in changes))
-        self.assertFalse(any(change.get("source", "") == "anthropic-oauth/usage.js" for change in changes))
 
     def test_patch_checks_source_anchor_and_result_before_staging(self):
         change = {"path": "test.js", "before": hashlib.sha256(b"old").hexdigest(),
@@ -984,11 +963,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("path: .build/pi-engine-cache", cache)
         self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
 
-    def test_derived_data_persists_locally_and_hosted_builds_start_clean(self):
+    def test_derived_data_is_not_cached_and_builds_start_clean(self):
         names = [title for title, _ in self.steps()]
         self.assertNotIn("Cache DerivedData", names)
         workflow = read(".github", "workflows", "release-build.yml")
-        self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", workflow)
+        self.assertNotIn("runner.environment", workflow)
+        self.assertNotIn("clean:", workflow)
         version = self.step("Xcode version")
         self.assertIn("xcrun --show-sdk-version", version)
         self.assertIn("git ls-files -s Sources Packages Package.swift Package.resolved", version)
@@ -996,6 +976,53 @@ class ReleaseWorkflowTests(unittest.TestCase):
         over = self.step("Start over when shared build inputs changed")
         self.assertIn("${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}", over)
         self.assertIn("marker=build/ci-toolchain", over)
+
+    def test_nightly_only_restores_compiler_results_after_cleaning_derived_data(self):
+        names = [title for title, _ in self.steps()]
+        cache = self.step("Cache Nightly compiler results")
+        self.assertIn("if: env.CHANNEL == 'nightly'", cache)
+        self.assertRegex(cache, r"(?m)^          path: build/CompilationCache\.noindex$")
+        self.assertIn("steps.xcode.outputs.version", cache)
+        self.assertLess(names.index("Start over when shared build inputs changed"),
+                        names.index("Cache Nightly compiler results"))
+        self.assertLess(names.index("Cache Nightly compiler results"), names.index("Build ${{ env.APP_NAME }}"))
+        build = self.step("Build ${{ env.APP_NAME }}")
+        self.assertIn("env.CHANNEL == 'nightly' && 'YES' || 'NO'", build)
+        self.assertIn('COMPILATION_CACHE_ENABLE_CACHING="$COMPILATION_CACHE"', build)
+
+    def test_only_nightly_overrides_swift_compilation_mode(self):
+        body = self.step("Build ${{ env.APP_NAME }}").split("run: |\n", 1)[1]
+        script = "\n".join(line[10:] for line in body.splitlines() if line.startswith("          "))
+        batch_settings = {
+            "SWIFT_OPTIMIZATION_LEVEL=-O",
+            "SWIFT_WHOLE_MODULE_OPTIMIZATION=NO",
+            "SWIFT_COMPILATION_MODE=singlefile",
+        }
+        for channel in ("nightly", "beta", "stable"):
+            with self.subTest(channel=channel):
+                result = subprocess.run(
+                    ["bash", "-e", "-c", 'xcodebuild() { printf "%s\\n" "$@"; }\n' + script],
+                    env={**os.environ, "CHANNEL": channel}, capture_output=True, text=True, check=True,
+                )
+                settings = {line for line in result.stdout.splitlines() if line.startswith("SWIFT_")}
+                self.assertEqual(settings, batch_settings if channel == "nightly" else set())
+
+    def test_package_cache_misses_resolve_and_save_before_the_build(self):
+        steps = dict(self.steps())
+        names = list(steps)
+        order = ("Restore Swift package checkouts", "Resolve pinned Swift packages",
+                 "Save Swift package checkouts", "Build ${{ env.APP_NAME }}")
+        self.assertEqual([name for name in names if name in order], list(order))
+        restore, resolve, save = (steps[name] for name in order[:3])
+        self.assertIn("uses: actions/cache/restore@", restore)
+        self.assertIn("swiftpm/Package.resolved", restore)
+        self.assertIn("-onlyUsePackageVersionsFromResolvedFile -resolvePackageDependencies", resolve)
+        self.assertIn("uses: actions/cache/save@", save)
+        self.assertIn("key: ${{ steps.spm.outputs.cache-primary-key }}", save)
+        for step in (restore, save):
+            self.assertIn("path: build/SourcePackages", step)
+        for step in (resolve, save):
+            self.assertIn("if: steps.spm.outputs.cache-hit != 'true'", step)
 
     def test_changed_shared_inputs_drop_release_products_but_keep_package_downloads(self):
         body = self.step("Start over when shared build inputs changed")

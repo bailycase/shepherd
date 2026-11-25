@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import ShepherdProtocol
 import ShepherdRemote
@@ -123,9 +124,12 @@ public enum PiSessionFile {
         sessionsRoot: URL
     ) -> NativeThreadSnapshot? {
         guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return nil }
-        return PiSessionPreview.snapshot(file: url, sessionID: sessionID,
-                                         origins: ShepherdPaths.supportDirectory().appendingPathComponent("thread-origins", isDirectory: true))
+        return PiSessionPreview.snapshot(file: url, sessionID: sessionID, originStore: previewOrigins)
     }
+
+    private static let previewOrigins = ThreadOriginStore(
+        directory: ShepherdPaths.supportDirectory().appendingPathComponent("thread-origins", isDirectory: true)
+    )
 
     /// `preview(sessionID:cwd:)` for a thread's store, read off the main actor, from the cwd pi
     /// is launched in.
@@ -416,6 +420,44 @@ public enum PiSessionFile {
     /// is missing or holds nothing said. File work: call it off the main actor.
     public static func transcript(file: URL) -> String? {
         guard let data = FileManager.default.contents(atPath: file.path) else { return nil }
+        let paragraphs = transcriptMessages(data).map { "\($0.role): \($0.text)" }
+        return paragraphs.isEmpty ? nil : paragraphs.joined(separator: "\n\n")
+    }
+
+    static func transcriptSnapshot(file: URL?, sessionID: String, beforeEntryID: String?) -> NativeThreadResult {
+        var snapshot = PiSessionPreview.empty(sessionID: sessionID, model: nil, thinking: nil)
+        snapshot.supportedActions = []
+        guard let file else {
+            return beforeEntryID == nil ? .snapshot(value: snapshot) : staleTranscriptCursor
+        }
+        guard let data = try? Data(contentsOf: file) else {
+            return .failure(code: "transcript_unavailable", message: "The saved transcript couldn’t be read. Nothing was copied.")
+        }
+        // A page from a different file revision must never be mixed into the clipboard.
+        snapshot.generation = SHA256.hash(data: data).description
+        let history = transcriptMessages(data).enumerated().map { index, message in
+            NativeThreadMessage(entryID: String(index), role: message.role, blocks: [.init(kind: .text, text: message.text)])
+        }
+        let end: Int
+        if let beforeEntryID {
+            guard let index = Int(beforeEntryID), history.indices.contains(index) else { return staleTranscriptCursor }
+            end = index
+        } else {
+            end = history.count
+        }
+        RPCThreadState.fillPage(&snapshot, from: history, end: end)
+        // The thread UI can display a large single row, but it still has to fit on the wire.
+        guard end == 0 || (!snapshot.messages.isEmpty && RPCThreadState.bytes(snapshot) < NDJSON.maxPayloadBytes - 1024) else {
+            return .failure(code: "transcript_unavailable", message: "A transcript message is too large to copy on this device. Nothing was copied.")
+        }
+        return .snapshot(value: snapshot)
+    }
+
+    private static let staleTranscriptCursor: NativeThreadResult = .failure(
+        code: "stale_cursor", message: "The saved transcript changed. Try copying it again."
+    )
+
+    private static func transcriptMessages(_ data: Data) -> [(role: String, text: String)] {
         var entries: [String: [String: Any]] = [:]
         var order: [String] = []
         for line in data.split(separator: UInt8(ascii: "\n")) {
@@ -435,7 +477,7 @@ public enum PiSessionFile {
             cursor = entry["parentId"] as? String
         }
         if branch.count < order.count, !order.contains(where: { entries[$0]?["parentId"] is String }) { branch = order.reversed() }
-        let paragraphs = branch.reversed().compactMap { id -> String? in
+        return branch.reversed().compactMap { id -> (String, String)? in
             guard let entry = entries[id], entry["type"] as? String == "message",
                   let message = entry["message"] as? [String: Any],
                   let role = message["role"] as? String, role == "user" || role == "assistant" else { return nil }
@@ -447,9 +489,8 @@ public enum PiSessionFile {
                 text = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
             }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : "\(role): \(trimmed)"
+            return trimmed.isEmpty ? nil : (role, trimmed)
         }
-        return paragraphs.isEmpty ? nil : paragraphs.joined(separator: "\n\n")
     }
 
     /// `2026-08-22T01:34:01.750Z`

@@ -28,6 +28,9 @@ final class BrowserRemote {
     /// Where an agent on the host may take this page (`BrowserViewerPolicy`); tests give it a
     /// resolver that never asks the network.
     var policy: BrowserViewerPolicy
+    /// The ports each open tab of the thread asked for. The tabs share the owner, so a port is let
+    /// go when the last tab that asked for it closes, not before.
+    private var tabPorts: [UUID: Set<Int>] = [:]
     /// The page this claim drives, set as the session is made.
     weak var session: BrowserSession?
 
@@ -36,6 +39,8 @@ final class BrowserRemote {
     /// The connection the claim was made on: a claim dies with its connection.
     private var claimClient: RemoteHostClient?
     private var releaseTask: Task<Void, Never>?
+    /// Tests wait here even when adoption leaves the page unchanged.
+    var onClaimAdoptionFinished: (() -> Void)?
 
     init(ref: RemoteAgentRef, hosts: RemoteHostStore?, ports: BrowserPortForwarder,
          policy: BrowserViewerPolicy = BrowserViewerPolicy(),
@@ -68,13 +73,25 @@ final class BrowserRemote {
     /// Forwards the port `url` names on the host, when it names one there (a `localhost`,
     /// `127.0.0.1` or `[::1]` URL: any other is on the web and loads from this Mac as any page
     /// does). Nil when it is forwarded, or needs no forward; else why not, and nothing should load.
-    func forward(_ url: URL, limit: Int? = nil) -> BrowserPortForwarder.Refusal? {
+    func forward(_ url: URL, tab: UUID, limit: Int? = nil) -> BrowserPortForwarder.Refusal? {
         guard forwardsPorts, let port = BrowserTunnelTarget.port(of: url) else { return nil }
         if let limit {
             let held = ports.ports(of: owner)
             if !held.contains(port), held.count >= limit { return .tooMany(port: port, limit: limit) }
         }
-        return ports.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: connection?.hubSlot ?? emptySlot, agent: ref.agentID)
+        if let refusal = ports.claim(port: port, hostPort: hostPorts[port], owner: owner, slot: connection?.hubSlot ?? emptySlot, agent: ref.agentID) {
+            return refusal
+        }
+        tabPorts[tab, default: []].insert(port)
+        return nil
+    }
+
+    /// A tab closed: the ports only it asked for are let go (new connections refused, bridges ended).
+    func release(tab: UUID) {
+        guard let mine = tabPorts.removeValue(forKey: tab) else { return }
+        let others = tabPorts.values.reduce(into: Set<Int>()) { $0.formUnion($1) }
+        let unused = mine.subtracting(others)
+        if !unused.isEmpty { ports.releaseAndWait(owner, ports: unused) }
     }
 
     /// The page is gone: its ports go with it, and the agent's browser goes back to the host.
@@ -83,8 +100,11 @@ final class BrowserRemote {
         releaseTask = nil
         if claimant.holds { claimClient?.browserRelease(agentID: ref.agentID) }
         claimClient = nil
+        tabPorts.removeAll()
         _ = claimant.connection(up: false)
-        ports.release(owner)
+        // Waits for the sockets to close: a page made again at once claims the port, and a claim
+        // that found the old socket still bound would read it as another program's.
+        ports.releaseAndWait(owner)
     }
 
     /// Whether `port` answers on the host, through the tunnel.
@@ -204,12 +224,16 @@ final class BrowserRemote {
     /// nothing open opens the page the agent left on the host, through the tunnel, when it is one
     /// this Mac may open (cookies are not carried over).
     private func claimed(adopting address: String?) {
-        guard let session else { return }
+        guard let session else { onClaimAdoptionFinished?(); return }
         if session.notice?.message == Self.supersededMessage { session.dismissNotice() }
         session.handBack()
         guard let page = session.tabs.agentTarget, !page.hasPage, let address,
-              BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else { return }
+              BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else {
+            onClaimAdoptionFinished?()
+            return
+        }
         Task { @MainActor [weak self, weak page] in
+            defer { self?.onClaimAdoptionFinished?() }
             guard let self, let page, !page.tabClosed, !page.hasPage else { return }
             if case .refused = await self.policy.verdict(for: url) { return }
             if !page.tabClosed, !page.hasPage { page.load(url) }

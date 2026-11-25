@@ -91,7 +91,7 @@ final class RPCThreadState {
     let queue: DispatchQueue
     private(set) var piSessionID: String?
     /// A readiness failure, independent of whether any client is watching this thread.
-    private var bootstrapFailure: String?
+    private(set) var bootstrapFailure: String?
     private var bootstrapTimeout: TimeInterval?
     private var bootstrapWaitingForHuman: Bool?
     private var bootstrapDeadline = UUID()
@@ -155,7 +155,7 @@ final class RPCThreadState {
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
     /// Stop was pressed (or sent): the host cancels what the thread dispatched to other Macs.
-    var onStopRequested: (() -> Void)?
+    var onStopRequested: ((Bool) -> Void)?
     var onDiagnosticDuration: ((String, Double) -> Void)?
     var onDiagnosticActivity: ((String) -> Void)?
     var onDiagnosticActivityDetails: ((String, DiagnosticFailureDetails) -> Void)?
@@ -170,7 +170,7 @@ final class RPCThreadState {
     /// the first snapshot still shows it (#449).
     private var stagingOpening: OpeningPrompt?
     /// Requests get a snapshot rather than `native_starting`.
-    var isServable: Bool { piSessionID != nil && !historyPending }
+    var isServable: Bool { piSessionID != nil && !historyPending && !originsPending }
     private(set) var generation = UUID().uuidString
     private(set) var revision: UInt64 = 0
     /// Called on the session queue each time `revision` moves.
@@ -205,7 +205,7 @@ final class RPCThreadState {
     /// From `agent_start` until `agent_settled`: pi's own `isStreaming`. A run's `agent_end` is not
     /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
     /// needs a streaming behavior.
-    private(set) var running = false
+    private(set) var running = false { didSet { if running != oldValue { runDisagreement.reset() } } }
     /// What a running hook says (`setStatus` key `shepherd.hook`), until it clears or the turn settles.
     private(set) var hookStatus: String?
     private(set) var model: String?
@@ -303,7 +303,7 @@ final class RPCThreadState {
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
-    var stopProjectChildren: ((@escaping (String?) -> Void) -> Void)?
+    var stopProjectChildren: ((Bool, @escaping (String?) -> Void) -> Void)?
     private(set) var history: [NativeThreadMessage] = []
     /// Each history row's encoded size, taken by the first snapshot that shows it (-1 until then).
     private var historyBytes: [Int] = []
@@ -473,6 +473,7 @@ final class RPCThreadState {
     private(set) var liveLeftOut = 0
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
+    private var turnDiskFailure: String?
     /// That error's message, when pi gave one.
     private var runError: String?
     // Ephemeral push eligibility: restored history/recovery never replays notifications.
@@ -492,6 +493,13 @@ final class RPCThreadState {
     /// The stall watch (`RPCThreadState+Stall.swift`): when pi last said anything, the tool calls
     /// running now, whether a check is scheduled, and the failure a stalled run ends with.
     var lastEventAt = ContinuousClock.now
+    /// Project the stall watchdog's monotonic reading to wall time on demand. Before the first
+    /// turn there is no event time to report to the sender of a Fleet dispatch.
+    var lastTurnEventAt: Double? {
+        guard turnSequence > 0 else { return nil }
+        let age = lastEventAt.duration(to: .now).components
+        return (Date().timeIntervalSince1970 * 1000 - (Double(age.seconds) * 1000 + Double(age.attoseconds) / 1e15)).rounded()
+    }
     var runningTools: Set<String> = []
     var stallWatching = false
     var stallMessage: String?
@@ -506,7 +514,8 @@ final class RPCThreadState {
     var dispatches: [Dispatch] = []
     /// A Retry on its way (`RPCThreadState+Retry.swift`): its dispatch, until the run it starts
     /// does (or pi says it started none).
-    var retryDispatch: UUID?
+    /// Starting or clearing one moves the thread's served running state, so it restarts the run-versus-status count like `running` does.
+    var retryDispatch: UUID? { didSet { if (retryDispatch != nil) != (oldValue != nil) { runDisagreement.reset() } } }
     var recoveryPending: (id: UUID, completion: (NativeThreadResult) -> Void)?
     var checkpointRecovery: NativeCheckpointRecovery?
     var paused = false
@@ -619,11 +628,20 @@ final class RPCThreadState {
     /// shown the run settle yet (the extension's socket can be a whole run ahead while a long
     /// record decodes). `idleAfterQueue` applies it once pi is idle and nothing continues.
     var doneHeld = false
+    /// Whether the thread has served `running` against its agent's status for a while (`SessionServer.logRunDisagreement`).
+    var runDisagreement = RunDisagreement()
+    /// How long ago pi last said anything, in whole seconds.
+    var secondsSinceLastEvent: Int { Int(lastEventAt.duration(to: .now).components.seconds) }
     /// pi is retrying a failed request (`auto_retry_start` until `auto_retry_end`).
     private(set) var retry: NativeThreadRetry?
 
     /// Where messages Shepherd delivered came from, by entry id (persisted per pi session).
     let originStore: ThreadOriginStore?
+    private var originsGeneration: UInt64?
+    private var originsProblem: String?
+    private var pendingOriginChanges: [(id: UUID, change: ThreadOriginStore.Change)] = []
+    private var originsPending = false
+    private var afterOpeningOriginReads: [() -> Void] = []
     var origins: [String: ThreadOriginStore.Record] = [:]
     /// Entry ids in `origins`, oldest first.
     var originOrder: [String] = []
@@ -697,7 +715,8 @@ final class RPCThreadState {
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self, self.bootstrapDeadline == deadline, self.generation == generation,
                   !self.isServable, self.session.isAlive else { return }
-            let waiting = [self.piSessionID == nil ? "get_state" : nil, self.historyPending ? "get_messages" : nil].compactMap { $0 }.joined(separator: ", ")
+            let waiting = [self.piSessionID == nil ? "get_state" : nil, self.historyPending ? "get_messages" : nil,
+                           self.originsPending ? "thread metadata" : nil].compactMap { $0 }.joined(separator: ", ")
             self.bootstrapFailure = "The agent is running but was not ready within \(timeout.formatted()) seconds (waiting for \(waiting)). Your first message is kept. Check Settings > Pi; Reconnect checks readiness again."
             ShepherdLog.warning("rpc session \(self.session.id) readiness deadline: waiting for \(waiting)")
             self.onRevision?()
@@ -826,6 +845,7 @@ final class RPCThreadState {
             running = true
             runFailed = false
             runError = nil
+            turnDiskFailure = nil
             watchForStall()
             // A buffered start can arrive after Stop. Only newly authorized input clears it.
             settleAwaitingSteers = false
@@ -1027,6 +1047,9 @@ final class RPCThreadState {
         case .extensionUIRequest(let request):
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
+            // The engine can report a failed session write separately from the assistant stop
+            // reason. Never classify assistant text (or arbitrary tool output) as a host failure.
+            if running, error.contains("ENOSPC:") { turnDiskFailure = "No space left on device (ENOSPC)." }
             diagnosticActivity("extension.failed")
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
             recordCommandFailure(path: path, event: event, error: error)
@@ -1056,7 +1079,7 @@ final class RPCThreadState {
             beginDiagnostic("model.response", operation: "model.response")
         case .entryAppended(let entry):
             entryAppended(entry)
-        case .turnEnd, .unknown:
+        case .turnEnd, .sessionInfoChanged, .unknown:
             break
         }
         runDueFold()
@@ -1108,7 +1131,9 @@ final class RPCThreadState {
 
     /// The run ended in a provider error the user did not cause by stopping it.
     var turnFailure: TurnFailure? {
-        runFailed && !stopRequested ? TurnFailure(message: runError) : nil
+        guard !stopRequested else { return nil }
+        if let turnDiskFailure { return TurnFailure(message: turnDiskFailure) }
+        return runFailed ? TurnFailure(message: runError) : nil
     }
 
     /// Server queue: full replacement from a setAgentChildren publish.
@@ -1178,7 +1203,18 @@ final class RPCThreadState {
                 completion(.unchanged(piSessionID: piSessionID, generation: generation, revision: revision))
                 return
             }
-            completion(snapshot(beforeEntryID: beforeEntryID))
+            if beforeEntryID == nil, afterRevision == nil {
+                let requestedIn = generation
+                recheckOrigins { [weak self] in
+                    guard let self, self.generation == requestedIn else {
+                        completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                        return
+                    }
+                    completion(self.snapshot(beforeEntryID: nil))
+                }
+            } else { completion(snapshot(beforeEntryID: beforeEntryID)) }
+        case .transcriptSnapshot:
+            completion(.failure(code: "invalid", message: "A transcript copy requires the host's saved session."))
         case .image(let expectedSessionID, let imageID, let offset):
             guard expectedSessionID == piSessionID else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
@@ -1351,7 +1387,7 @@ final class RPCThreadState {
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.
-            stop { settle($0) }
+            stop(explicit: true) { settle($0) }
         case .queue(_, _, _, let action):
             perform(action, operationID: operationID, authorization: inputAuthorization, completion: completion)
         case .setModel(_, _, _, let model):
@@ -1472,7 +1508,7 @@ final class RPCThreadState {
         case .retry(_, _, _, let entryID, let checkpoint):
             retryTurn(entryID: entryID, checkpoint: checkpoint, operationID: operationID, binding: recoveryBinding,
                       authorized: recoveryAuthorization, completion: completion)
-        case .snapshot, .subagentTranscript, .image:
+        case .snapshot, .transcriptSnapshot, .subagentTranscript, .image:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
     }
@@ -1721,7 +1757,10 @@ final class RPCThreadState {
         session.request(.getAvailableThinkingLevels, timeout: timeout,
                         onLateResponse: acceptLateResponse ? { receiveLevels(.success($0)) } : nil, completion: receiveLevels)
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
-            defer { done?(result); self?.refreshSkillsIfIdle() }
+            var waitsForOrigins = false
+            defer {
+                if !waitsForOrigins { done?(result); self?.refreshSkillsIfIdle() }
+            }
             guard let self, (!acceptLateResponse || self.generation == generation),
                   case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
@@ -1729,7 +1768,25 @@ final class RPCThreadState {
                 let goalController = self.goalsAvailable
                 if switched { self.resetForNewSession() }
                 self.piSessionID = id
-                self.loadOrigins(sessionID: id)
+                if let store = self.originStore {
+                    waitsForOrigins = true
+                    self.originsPending = true
+                    let requestedIn = self.generation, queue = self.queue
+                    store.loadSession(sessionID: id) { [weak self] loaded in
+                        queue.async { [weak self] in
+                            defer { done?(result) }
+                            guard let self, self.generation == requestedIn else { return }
+                            self.applyOrigins(loaded, initial: true)
+                            self.originsPending = false
+                            let waiting = self.afterOpeningOriginReads
+                            self.afterOpeningOriginReads.removeAll()
+                            waiting.forEach { $0() }
+                            self.commit()
+                            self.announceIfServable()
+                            self.refreshSkillsIfIdle()
+                        }
+                    }
+                }
                 if switched {
                     self.refreshMessages(timeout: timeout)
                     self.refreshStats(timeout: timeout, verifiesHistory: true)
@@ -1883,8 +1940,13 @@ final class RPCThreadState {
                 }
             }
         }
+        let receiveAfterOrigins: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self else { return }
+            if self.originsPending { self.afterOpeningOriginReads.append { receive(result) } }
+            else { receive(result) }
+        }
         session.request(.getMessages, timeout: timeout,
-                        onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
+                        onLateResponse: bootstrap ? { receiveAfterOrigins(.success($0)) } : nil, completion: receiveAfterOrigins)
         return sequence
     }
 
@@ -2001,6 +2063,7 @@ final class RPCThreadState {
                     value.origin = origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
                 }
                 value.typedCommand = origins[value.entryID]?.command
+                value.fleetResultID = origins[value.entryID]?.fleetResultID
                 value.operationID = operationsByEntry[value.entryID]
             }
         }
@@ -2487,6 +2550,11 @@ final class RPCThreadState {
         liveLeftOut = 0
         operationsByEntry.removeAll()
         questions.removeAll()
+        origins.removeAll()
+        originOrder.removeAll()
+        originsGeneration = nil
+        originsProblem = nil
+        pendingOriginChanges.removeAll()
         commandNotices.removeAll()
         cancelWaitingInputs()
         inputLaneID = nil
@@ -2524,57 +2592,92 @@ final class RPCThreadState {
 
     // MARK: - Live rows
 
-    /// The session's record of where delivered messages came from.
-    private func loadOrigins(sessionID: String) {
-        guard let originStore else { return }
-        let loaded = originStore.loadSession(sessionID: sessionID)
-        origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
-        originOrder = loaded.entries.map(\.id)
-        let startupQuestions = questions
-        let startupIDs = Set(startupQuestions.map(\.id))
-        questions = Array((loaded.questions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
-        if !startupQuestions.isEmpty { saveOrigins() }
+    private func applyOrigins(_ loaded: ThreadOriginStore.Snapshot, initial: Bool = false, rebased: Bool = false) {
+        guard initial || rebased || originsGeneration != loaded.generation || originsProblem != loaded.problem else { return }
+        originsGeneration = loaded.generation
+        originsProblem = loaded.problem
+        // Keep displaying the live lists if a file we already loaded goes bad.
+        if initial || loaded.problem == nil {
+            origins = Dictionary(loaded.entries.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
+            originOrder = loaded.entries.map(\.id)
+            questions = loaded.questions
+            // A write acknowledgement can arrive after the thread records a newer change.
+            // Keep those changes visible; never replay changes the store already refused.
+            for pending in pendingOriginChanges { applyOriginChange(pending.change) }
+            let questionIDs = Set(questions.map(\.id))
+            live.removeAll { if case .question(let id) = $0.kind { !questionIDs.contains(id) } else { false } }
+            if !initial { refreshMessages() }
+        }
+        if initial {
+            for pending in pendingOriginChanges { saveOriginChange(pending.change, id: pending.id) }
+        } else { commit() }
+    }
+
+    /// Full snapshot requests check for damage or repair. Incremental updates use memory only.
+    private func recheckOrigins(_ done: @escaping () -> Void) {
+        guard let store = originStore, let id = piSessionID else { done(); return }
+        let requestedIn = generation, queue = queue
+        store.loadSession(sessionID: id) { [weak self] loaded in
+            queue.async { [weak self] in
+                if let self, self.generation == requestedIn { self.applyOrigins(loaded) }
+                done()
+            }
+        }
     }
 
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
-        guard var record = ThreadOriginStore.Record(origin) else { return }
-        record.references = origins[entryID]?.references
-        record.command = origins[entryID]?.command
-        keepOrigin(record, entryID: entryID)
+        guard let details = ThreadOriginStore.Record(origin) else { return }
+        keepOriginChange(.origin(id: entryID) { record in
+            record.steered = details.steered
+            record.parts = details.parts
+        })
     }
 
     /// Records the prompt template command the user typed for the message `entryID`, so the
     /// thread names the template instead of showing its text (and after a relaunch).
     func recordCommand(_ command: String, entryID: String) {
-        var record = origins[entryID] ?? ThreadOriginStore.Record()
-        record.command = command
-        keepOrigin(record, entryID: entryID)
+        keepOriginChange(.origin(id: entryID) { $0.command = command })
     }
 
     /// Records that the user sent the message `entryID` in this thread with these design
     /// references' copies, so the thread draws its fence as chips (and after a relaunch).
     func recordReferences(_ payloads: [String], entryID: String) {
-        var record = origins[entryID] ?? ThreadOriginStore.Record(references: payloads)
-        record.references = payloads
-        keepOrigin(record, entryID: entryID)
+        keepOriginChange(.origin(id: entryID) { $0.references = payloads })
     }
 
-    private func keepOrigin(_ record: ThreadOriginStore.Record, entryID: String) {
-        origins[entryID] = record
-        originOrder.removeAll { $0 == entryID }
-        originOrder.append(entryID)
-        if originOrder.count > ThreadOriginStore.limit {
-            for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
-            originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+    private func applyOriginChange(_ change: ThreadOriginStore.Change) {
+        switch change {
+        case .origin(let id, let edit):
+            edit(&origins[id, default: ThreadOriginStore.Record()])
+            originOrder.removeAll { $0 == id }
+            originOrder.append(id)
+            if originOrder.count > ThreadOriginStore.limit {
+                for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
+                originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+            }
+        case .question(let question):
+            ThreadOriginStore.keep(question, in: &questions)
         }
-        saveOrigins()
     }
 
-    /// Writes the session's origins and questions.
-    func saveOrigins() {
-        guard let piSessionID, let originStore else { return }
-        originStore.save(sessionID: piSessionID, records: originOrder.compactMap { id in origins[id].map { (id, $0) } },
-                         questions: questions)
+    func keepOriginChange(_ change: ThreadOriginStore.Change) {
+        applyOriginChange(change)
+        guard originStore != nil else { return }
+        let id = UUID()
+        pendingOriginChanges.append((id, change))
+        saveOriginChange(change, id: id)
+    }
+
+    private func saveOriginChange(_ change: ThreadOriginStore.Change, id: UUID) {
+        guard let piSessionID, let originStore, let originsGeneration else { return }
+        let builtIn = generation
+        originStore.update(sessionID: piSessionID, change: change, generation: originsGeneration) { [weak self] loaded in
+            self?.queue.async { [weak self] in
+                guard let self, self.generation == builtIn else { return }
+                self.pendingOriginChanges.removeAll { $0.id == id }
+                if let loaded { self.applyOrigins(loaded, rebased: loaded.problem == nil) }
+            }
+        }
     }
 
     /// The id history will give a live user message, so the row keeps it when it settles: a
@@ -3138,6 +3241,8 @@ final class RPCThreadState {
         hasher.combine(goal)
         hasher.combine(goalsAvailable)
         hasher.combine(historyUnread)
+        hasher.combine(originsProblem)
+        hasher.combine(originsPending)
         hasher.combine(liveLeftOut)
         hasher.combine(running || retryDispatch != nil)
         hasher.combine(checkpointRecovery)
@@ -3231,6 +3336,7 @@ final class RPCThreadState {
             initializing: initializing ? true : nil, checkpointRecovery: initializing ? nil : checkpointRecovery
         )
         base.hookStatus = running ? hookStatus : nil
+        base.originsProblem = originsProblem
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
         let baseBytes = measured(base) + Self.queueFieldBytes + queueBytes(queue)

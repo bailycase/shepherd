@@ -1,4 +1,5 @@
 // Private FAKE native providers exercise both shipped SDKs without credentials or network.
+import "./hermetic-env.mjs";
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

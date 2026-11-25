@@ -179,10 +179,10 @@ private struct SHReviewBarButton: View {
             .font(.sh(.body, weight: primary ? .semibold : .medium))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .foregroundStyle(primary ? sh.textOnLantern : sh.textPrimary)
+            .foregroundStyle(primary ? sh.textOnPrimary : sh.textPrimary)
             .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: SHReviewBarButtonStyle.height)
-            .background(primary ? (configuration.isPressed && enabled ? sh.lanternPressed : sh.lantern) : configuration.isPressed ? sh.bgSelected : sh.bgRaised,
+            .background(primary ? (configuration.isPressed && enabled ? sh.primaryPressed : sh.primary) : configuration.isPressed ? sh.bgSelected : sh.bgRaised,
                         in: shape)
             .shBorder(primary ? .clear : sh.lineStrong, radius: SH.Radius.l)
             .opacity(enabled ? 1 : SHControlMetrics.disabledOpacity)

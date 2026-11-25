@@ -4,6 +4,8 @@ extension SHSidebarMetrics {
     public static let sectionChevron: CGFloat = 9
     public static let sectionChevronStroke: CGFloat = sectionChevron / 8
     public static let sectionTop: CGFloat = 6
+    /// A header's trailing plus: the boards' 20pt `.grp .r .ib`.
+    public static let sectionAction: CGFloat = 20
     public static let sectionPulse: CGFloat = 5
     public static let markSeenHeight: CGFloat = 20
     public static let activityWidth: CGFloat = 28
@@ -32,8 +34,10 @@ struct SHSidebarActivityLine: Shape {
     }
 }
 
-/// SidebarSectionHeader, SHNavigation: the disclosure, title and adjacent count are one
-/// button. Done's action is a separate button, so it never toggles the disclosure.
+/// A list's header (the boards' `.grp`): the title in `caption` medium and its count in `caption`,
+/// both `textTertiary`, 28pt tall and 10pt below what is above. The title and count are one button
+/// that folds the list; a folded list shows a trailing chevron. Done's Mark all seen is a separate
+/// text button, so it never folds the list; a chip ("New project") is a trailing plus.
 public struct SHSidebarSectionHeader: View {
     let title: String
     let count: Int
@@ -42,7 +46,7 @@ public struct SHSidebarSectionHeader: View {
     let pulse: Bool
     let toggle: () -> Void
     let markAllSeen: (() -> Void)?
-    /// A text chip trailing the title ("New project"), in the same pill as Mark all seen.
+    /// A trailing action ("New project"), drawn as a plus with the title as its tip.
     let chip: (title: String, action: () -> Void)?
     @Environment(\.shDensity) private var density
 
@@ -63,36 +67,31 @@ public struct SHSidebarSectionHeader: View {
         HStack(spacing: SH.Space.s) {
             Button(action: toggle) {
                 HStack(spacing: SH.Space.s) {
-                    Path { path in
-                        let unit = SHSidebarMetrics.sectionChevron / 16
-                        path.move(to: CGPoint(x: 6 * unit, y: 3 * unit))
-                        path.addLine(to: CGPoint(x: 11 * unit, y: 8 * unit))
-                        path.addLine(to: CGPoint(x: 6 * unit, y: 13 * unit))
-                    }
-                        .stroke(Color.sh.textTertiary, style: StrokeStyle(lineWidth: SHSidebarMetrics.sectionChevronStroke,
-                                                                        lineCap: .round, lineJoin: .round))
-                        .frame(width: SHSidebarMetrics.sectionChevron, height: SHSidebarMetrics.sectionChevron)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .shAnimation(.disclosure, value: isExpanded)
-                        .accessibilityHidden(true)
                     Text(title)
-                        .font(.shSans(SHSidebarMetrics.sectionTitleFont, .medium))
-                        .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textSecondary)
+                        .font(.sh(.caption, weight: .medium))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                         .fixedSize()
                     Text("\(count)")
-                        .font(.shMono(SHSidebarMetrics.sectionCountFont))
-                        .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .monospacedDigit()
                         .shContentTransition(.numeric())
                         .shAnimation(.content, value: count)
                         .fixedSize()
+                    // A folded Working list still says something works.
                     if pulse && !isExpanded {
                         SHLayerGlowDot(color: .sh.running)
                             .frame(width: SHSidebarMetrics.sectionPulse, height: SHSidebarMetrics.sectionPulse)
                             .accessibilityHidden(true)
                     }
                     Spacer(minLength: 0)
+                    if !isExpanded {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: SHSidebarMetrics.sectionChevron, weight: .semibold))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: max(density.rowHeight, SH.Height.controlS))
                 .contentShape(Rectangle())
@@ -100,16 +99,18 @@ public struct SHSidebarSectionHeader: View {
             .buttonStyle(SHPlainPressStyle())
             .accessibilityLabel("\(title), \(count), \(isExpanded ? "expanded" : "collapsed")\(pulse && !isExpanded ? ", running" : "")")
             .accessibilityAddTraits(.isHeader)
-            if let chip { SHSidebarHeaderChip(chip.title, action: chip.action) }
+            if let chip {
+                Button(action: chip.action) { Image(systemName: "plus") }
+                    .buttonStyle(.shIcon(size: SHSidebarMetrics.sectionAction))
+                    .shHelp(chip.title)
+                    .accessibilityLabel(chip.title)
+            }
             if let markAllSeen {
                 Button(action: markAllSeen) {
                     Text("Mark all seen")
-                        .font(.shSans(SHSidebarMetrics.sectionActionFont))
-                        .foregroundStyle(.sh.textSecondary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(.sh.textTertiary)
                         .fixedSize()
-                        .padding(.horizontal, SH.Space.s)
-                        .frame(height: SHSidebarMetrics.markSeenHeight)
-                        .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                         .frame(minHeight: SH.Height.controlS)
                         .contentShape(Rectangle())
                 }
@@ -119,6 +120,6 @@ public struct SHSidebarSectionHeader: View {
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
-        .padding(.top, SHSidebarMetrics.sectionTop)
+        .padding(.top, density.sidebarHeaderTop)
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 extension ProjectsModel {

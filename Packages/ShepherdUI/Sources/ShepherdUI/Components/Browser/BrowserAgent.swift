@@ -1,7 +1,6 @@
 import SwiftUI
 
-// The Browser while the agent is using it (PaneStates › BrowserPane · the agent is using it, and
-// SidePaneTabs · the agent opened a tab): a `running` ring inset the page, a pointer where pi
+// The Browser while the agent is using it (PaneStates › BrowserPane · the agent is using it): a `running` ring inset the page, a pointer where pi
 // points; the words and Take over are the bar under the page (BrowserTabs.swift). All of it is drawn
 // over or under the page by the app, never in it. The app supplies the words and the pointer's place.
 
@@ -19,33 +18,54 @@ public enum SHBrowserAgentMetrics {
     public static let cardGap: CGFloat = 10
     public static let cardLeading: CGFloat = SH.Space.l
     public static let cardOther: CGFloat = SH.Space.m
-    /// The tab's brief tip: 300pt wide, a little more for a long page.
-    public static let tabTipWidth: CGFloat = 300
-    public static let tabTipMaxWidth: CGFloat = 420
-    /// How long the tab's tip stays after pi opens something (and again while the tab is hovered).
-    public static let tabTipSeconds: Double = 4
 }
 
-/// The 2pt `running` ring inset the page.
+/// The 2pt ring inset the page: `running` blue, and on the Mac the board's gray (GXPaneBrowserAgent's `.web.driven`).
 public struct SHAgentRing: View {
     public init() {}
 
+    private var color: Color {
+        #if os(macOS)
+        Color.sh.textSecondary
+        #else
+        Color.sh.running
+        #endif
+    }
+
     public var body: some View {
         Rectangle()
-            .strokeBorder(Color.sh.running, lineWidth: SHBrowserAgentMetrics.ringWidth)
+            .strokeBorder(color, lineWidth: SHBrowserAgentMetrics.ringWidth)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }
 
-/// The pointer glyph: the board's arrow, `running` with a white edge.
+/// The pointer glyph: the board's arrow, `running` with a white edge; on the Mac the system cursor's look,
+/// a white arrow with a dark edge.
 public struct SHAgentPointer: View {
     public init() {}
 
+    private var fill: Color {
+        #if os(macOS)
+        Color.sh.selectionHandle
+        #else
+        Color.sh.running
+        #endif
+    }
+
+    private var edge: Color {
+        #if os(macOS)
+        // Dark in both appearances: the page under it is usually light.
+        Color.sh.textOnLantern
+        #else
+        Color.sh.selectionHandle
+        #endif
+    }
+
     public var body: some View {
         SHAgentPointerShape()
-            .fill(Color.sh.running)
-            .overlay { SHAgentPointerShape().stroke(Color.sh.selectionHandle, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)) }
+            .fill(fill)
+            .overlay { SHAgentPointerShape().stroke(edge, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)) }
             .frame(width: SHBrowserAgentMetrics.pointerWidth, height: SHBrowserAgentMetrics.pointerHeight)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -90,67 +110,5 @@ public struct SHBrowserAgentOverlay: View {
         }
         .allowsHitTesting(false)
         .shAnimation(.overlay, value: pointer)
-    }
-}
-
-// MARK: The tab's tip
-
-/// What pi opened in a tab, for its brief tip.
-public struct SHSidePaneTabTip: Equatable, Sendable {
-    /// The page, host and path ("localhost:5173/checkout").
-    public let text: String
-    public let openedAt: Date
-
-    public init(text: String, openedAt: Date) {
-        self.text = text
-        self.openedAt = openedAt
-    }
-}
-
-/// "Agent opened localhost:5173/checkout   10s" under the tab (PaneStates › SidePaneTabs · the agent
-/// opened a tab): 300pt, a popover with padding 4, a row of 4 × 6 with a 12pt globe, Geist 12, the
-/// URL in mono and its age in `textTertiary`.
-public struct SHPaneTabTip: View {
-    let tip: SHSidePaneTabTip
-
-    public init(_ tip: SHSidePaneTabTip) {
-        self.tip = tip
-    }
-
-    /// "10s", "2m", "1h": how long ago, for the tip's trailing age.
-    public static func age(seconds: TimeInterval) -> String {
-        let whole = max(0, Int(seconds))
-        if whole < 60 { return "\(whole)s" }
-        if whole < 3600 { return "\(whole / 60)m" }
-        return "\(whole / 3600)h"
-    }
-
-    public var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
-            Image(systemName: "globe")
-                .font(.system(size: SHBrowserAgentMetrics.cardGlyph))
-                .foregroundStyle(sh.textSecondary)
-                .accessibilityHidden(true)
-            (Text("Agent opened ").font(.shSans(12)) + Text(tip.text).font(.shMono(12)))
-                .foregroundStyle(sh.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: SH.Space.m)
-            TimelineView(.periodic(from: tip.openedAt, by: 1)) { context in
-                Text(Self.age(seconds: context.date.timeIntervalSince(tip.openedAt)))
-                    .font(.shSans(12))
-                    .foregroundStyle(sh.textTertiary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(.horizontal, SH.Space.s)
-        .padding(.vertical, SH.Space.xs)
-        .padding(SH.Space.xs)
-        // 300pt as drawn; a longer page widens it a little rather than cutting the address.
-        .frame(minWidth: SHBrowserAgentMetrics.tabTipWidth, maxWidth: SHBrowserAgentMetrics.tabTipMaxWidth)
-        .shPopover(radius: SH.Radius.l)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Agent opened \(tip.text)")
     }
 }

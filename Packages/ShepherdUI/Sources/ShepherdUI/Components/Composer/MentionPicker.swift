@@ -8,6 +8,10 @@ import SwiftUI
 /// The picker's own measures.
 public enum SHMentionMetrics {
     public static let rowHeight: CGFloat = 48
+    /// A thread's row (ThreadLinkA's `.opt`): a dot, the title and its project, no picture.
+    public static let threadRowHeight: CGFloat = 34
+    /// "Link a thread"'s label row, in the caption's words rather than a menu's section label.
+    public static let captionHeaderHeight: CGFloat = 30
     public static let rowPaddingHorizontal: CGFloat = 10
     public static let rowSpacing: CGFloat = 10
     public static let rowRadius: CGFloat = 7
@@ -32,6 +36,8 @@ public enum SHMentionMetrics {
 public struct SHMentionRow: Identifiable, Equatable, Sendable {
     public enum Kind: Sendable {
         case design, page, board, element, file
+        /// Another thread, to link (ThreadLinkA): its status dot, title and project.
+        case thread
     }
 
     public enum Trailing: Sendable {
@@ -54,12 +60,14 @@ public struct SHMentionRow: Identifiable, Equatable, Sendable {
     public var hostOffline: Bool
     public var trailing: Trailing
     public var thumbnail: SHReferenceImage?
-    /// Words of the search, underlined where the title holds them.
+    /// Words of the search, underlined where the title holds them (a thread's, bold).
     public var matched: [String]
+    /// A thread's status: its row's dot.
+    public var state: AgentState?
 
     public init(id: String, kind: Kind, title: String, crumbs: [String] = [], subtitle: String? = nil, lead: String? = nil,
                 host: String? = nil, hostOffline: Bool = false, trailing: Trailing, thumbnail: SHReferenceImage? = nil,
-                matched: [String] = []) {
+                matched: [String] = [], state: AgentState? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
@@ -71,7 +79,11 @@ public struct SHMentionRow: Identifiable, Equatable, Sendable {
         self.trailing = trailing
         self.thumbnail = thumbnail
         self.matched = matched
+        self.state = state
     }
+
+    /// The row's height in the list.
+    var height: CGFloat { kind == .thread ? SHThreadMetrics.touchable(SHMentionMetrics.threadRowHeight) : SHMentionMetrics.rowHeight }
 }
 
 /// A labelled run of rows: "Designs · 4 on this Mac", "Elements · 14", "Designs, boards and
@@ -81,13 +93,18 @@ public struct SHMentionSection: Identifiable, Equatable, Sendable {
     public var title: String
     public var trailing: String?
     public var rows: [SHMentionRow]
+    /// The label in the caption's words, sentence case ("Link a thread", ThreadLinkA), the typed mention mono at its right.
+    public var caption: Bool
 
-    public init(id: String, title: String, trailing: String? = nil, rows: [SHMentionRow]) {
+    public init(id: String, title: String, trailing: String? = nil, rows: [SHMentionRow], caption: Bool = false) {
         self.id = id
         self.title = title
         self.trailing = trailing
         self.rows = rows
+        self.caption = caption
     }
+
+    var headerHeight: CGFloat { caption ? SHMentionMetrics.captionHeaderHeight : SHMentionMetrics.headerHeight }
 }
 
 /// What the picker says with nothing to list.
@@ -155,10 +172,10 @@ public struct SHMentionPicker: View {
     /// no more than `room` leaves.
     public static func listHeight(_ sections: [SHMentionSection], room: CGFloat?) -> CGFloat {
         let M = SHMentionMetrics.self
-        let rows = sections.reduce(0) { $0 + $1.rows.count }
-        let headers = CGFloat(sections.filter { !$0.title.isEmpty }.count) * M.headerHeight
-        let full = headers + CGFloat(rows) * M.rowHeight
-        let cap = headers + CGFloat(M.maxRows) * M.rowHeight
+        let rows = sections.flatMap(\.rows)
+        let headers = sections.filter { !$0.title.isEmpty }.reduce(0) { $0 + $1.headerHeight }
+        let full = headers + rows.reduce(0) { $0 + $1.height }
+        let cap = headers + rows.prefix(M.maxRows).reduce(0) { $0 + $1.height }
         var height = min(full, cap)
         if let room, room.isFinite { height = min(height, max(M.rowHeight + M.headerHeight, room)) }
         return height
@@ -279,6 +296,9 @@ public struct SHMentionPicker: View {
                     ForEach(Self.entries(sections)) { entry in
                         VStack(alignment: .leading, spacing: 0) {
                             switch entry {
+                            case .header(let section) where section.caption:
+                                SHMentionCaptionHeader(title: section.title, trailing: section.trailing)
+                                    .frame(height: section.headerHeight)
                             case .header(let section):
                                 SHMenuHeader(section.title, trailing: section.trailing, inset: SHMentionMetrics.rowPaddingHorizontal)
                                     .padding(.top, SH.Space.xs)
@@ -342,9 +362,34 @@ struct SHMentionRowView: View, Equatable {
 
     var body: some View {
         let _ = SHRenderProbe.tick("mention.row")
+        if row.kind == .thread { thread } else { piece }
+    }
+
+    /// A thread (ThreadLinkA's `.opt`): its dot, the title with the typed words bold, its project (and Mac) at the right.
+    private var thread: some View {
+        let sh = Color.sh
+        return SHMenuRow(highlighted: highlighted, spacing: SH.Space.m,
+                         padding: EdgeInsets(top: 0, leading: SH.Space.l, bottom: 0, trailing: SH.Space.l),
+                         height: SHThreadMetrics.touchable(SHMentionMetrics.threadRowHeight), action: { choose(row) }, onHover: hover) {
+            SHStatusDot(row.state ?? .idle)
+            Text(Self.bolded(row.title, words: row.matched))
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let subtitle = row.subtitle {
+                Text(subtitle).font(.sh(.caption)).foregroundStyle(sh.textSecondary).lineLimit(1).layoutPriority(1)
+            }
+        }
+        .accessibilityLabel([row.title, row.state?.label.lowercased(), row.subtitle].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint("Links this thread in the message")
+    }
+
+    private var piece: some View {
         let sh = Color.sh
         let M = SHMentionMetrics.self
-        SHMenuRow(highlighted: highlighted, spacing: M.rowSpacing,
+        return SHMenuRow(highlighted: highlighted, spacing: M.rowSpacing,
                   padding: EdgeInsets(top: 0, leading: M.rowPaddingHorizontal, bottom: 0, trailing: M.rowPaddingHorizontal),
                   height: M.rowHeight, action: { row.trailing == .drill ? drill(row) : choose(row) }, onHover: hover) {
             if row.kind == .page {
@@ -400,6 +445,17 @@ struct SHMentionRowView: View, Equatable {
         }
     }
 
+    /// `title` with each of `words` it holds (ignoring case and accents) semibold: a thread's row.
+    static func bolded(_ title: String, words: [String]) -> AttributedString {
+        var text = AttributedString(title)
+        for range in matchRanges(title, words: words) {
+            guard let lower = AttributedString.Index(range.lowerBound, within: text),
+                  let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
+            text[lower..<upper].font = Font.sh(.ui, weight: .semibold)
+        }
+        return text
+    }
+
     /// `title` with each of `words` it holds (ignoring case and accents) bold and underlined.
     static func highlighted(_ title: String, words: [String]) -> AttributedString {
         var text = AttributedString(title)
@@ -418,6 +474,23 @@ struct SHMentionRowView: View, Equatable {
             guard !word.isEmpty else { return nil }
             return title.range(of: word, options: [.caseInsensitive, .diacriticInsensitive])
         }
+    }
+}
+
+/// "Link a thread" in the caption's words, and the typed mention (`@post`) mono at its right (ThreadLinkA).
+private struct SHMentionCaptionHeader: View {
+    let title: String
+    let trailing: String?
+
+    var body: some View {
+        HStack(spacing: SH.Space.s) {
+            Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            if let trailing { Text(trailing).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1) }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .padding(.top, SH.Space.s)
+        .padding(.bottom, SH.Space.m)
     }
 }
 

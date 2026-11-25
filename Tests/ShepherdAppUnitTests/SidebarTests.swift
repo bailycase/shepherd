@@ -26,7 +26,7 @@ struct SidebarRecentsTests {
 
     private func source(_ local: [Agent], remote: [Agent] = []) -> SidebarSource {
         SidebarSource(local: ShepherdState(spaces: [space], agents: local),
-                      hosts: remote.isEmpty ? [] : [SidebarSource.Host(id: host, name: "horizon",
+                      hosts: remote.isEmpty ? [] : [SidebarSource.Host(id: host, name: "orbit",
                                                                         state: ShepherdState(spaces: [space], agents: remote))])
     }
 
@@ -72,19 +72,19 @@ struct SidebarRecentsTests {
         let lists = SidebarDerivation.lists(SidebarSource(
             local: ShepherdState(spaces: [space], agents: [failed, running, agent("idle", at: 3), agent("done", status: .done, at: 2)]),
             failedTurns: [failed.id], statusSince: [running.id: since],
-            hosts: [SidebarSource.Host(id: host, name: "horizon",
+            hosts: [SidebarSource.Host(id: host, name: "orbit",
                                        state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]))]))
         let rows = Dictionary(uniqueKeysWithValues: lists.all.map { ($0.title, $0) })
         #expect(rows["failed"]?.leading == .dot(.failed))
-        #expect(rows["failed"]?.accessory == SHSidebarRow.Accessory.none)
+        #expect(rows["failed"]?.accessory == .text("failed", tone: .failed), "no dot says it failed: the word does")
         #expect(rows["running"]?.leading == .dot(.running))
         #expect(rows["running"]?.accessory == .elapsed(since: since))
         #expect(rows["idle"]?.leading == .dot(.idle))
         #expect(rows["done"]?.leading == .dot(.done))
         // A remote thread carries its host's name as a tag; This Mac's carry none.
         #expect(rows["remote"]?.leading == .dot(.running))
-        #expect(rows["remote"]?.accessory == .tag("horizon"))
-        #expect(rows["remote"]?.accessibilityLabel == "remote, running, on horizon")
+        #expect(rows["remote"]?.accessory == .tag("orbit"))
+        #expect(rows["remote"]?.accessibilityLabel == "remote, running, on orbit")
     }
 
     @Test func goalsSupplementTheAskElapsedAndHostAccessories() {
@@ -97,14 +97,14 @@ struct SidebarRecentsTests {
         remote.goalState = "checking"
         let lists = SidebarDerivation.lists(SidebarSource(
             local: ShepherdState(spaces: [space], agents: [working, asking]), statusSince: [working.id: since],
-            hosts: [SidebarSource.Host(id: host, name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]))]))
+            hosts: [SidebarSource.Host(id: host, name: "orbit", state: ShepherdState(spaces: [space], agents: [remote]))]))
         let rows = Dictionary(uniqueKeysWithValues: (lists.working + lists.recents + lists.needsYou).map { ($0.title, $0) })
         #expect(rows["working"]?.hasGoal == true)
         #expect(rows["working"]?.accessory == .elapsed(since: since))
         #expect(rows["asking"]?.hasGoal == true)
         #expect(rows["asking"]?.accessory == .reason("Retention?"))
         #expect(rows["remote"]?.hasGoal == true)
-        #expect(rows["remote"]?.accessory == .tag("horizon"))
+        #expect(rows["remote"]?.accessory == .tag("orbit"))
     }
 
     /// An agent whose pi stopped before it served reads "can't start" in red, a thread's or a
@@ -142,19 +142,19 @@ struct SidebarRecentsTests {
     }
 
     /// A host that dropped keeps its threads in Recents as it last sent them, dimmed and tagged
-    /// (NavHosts' horizon rows); nothing there can be answered, so none of it needs you.
+    /// (NavHosts' orbit rows); nothing there can be answered, so none of it needs you.
     @Test func anOfflineHostsThreadsStayInRecentsDimmed() {
         let asking = agent("asks", status: .blocked, at: 3, waiting: "Ship it?")
         let lists = SidebarDerivation.lists(SidebarSource(
             local: ShepherdState(spaces: [space], agents: [agent("here", at: 1)]),
-            hosts: [SidebarSource.Host(id: host, name: "horizon",
+            hosts: [SidebarSource.Host(id: host, name: "orbit",
                                        state: ShepherdState(spaces: [space], agents: [asking, agent("idle", at: 2)]),
                                        offline: true)]))
         #expect(lists.needsYou.isEmpty)
         #expect(lists.recents.map(\.title) == ["asks", "idle", "here"])
         #expect(lists.recents.map(\.offline) == [true, true, false])
-        #expect(lists.recents.first?.accessory == .tag("horizon"))
-        #expect(lists.recents.first?.accessibilityLabel == "asks, needs you, on horizon, host offline")
+        #expect(lists.recents.first?.accessory == .tag("orbit"))
+        #expect(lists.recents.first?.accessibilityLabel == "asks, needs you, on orbit, host offline")
     }
 
     /// A watcher whose pi stopped on its own keeps its thread, idle, with its run ended failed: the
@@ -267,7 +267,7 @@ struct SidebarNeedsYouTests {
         remote.waitingOn = "Approve the plan as written?"
         remote.waitingReason = "approve plan"
         let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], agents: [local]), hosts: [
-            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote])),
+            SidebarSource.Host(id: UUID(), name: "orbit", state: ShepherdState(spaces: [space], agents: [remote])),
         ]))
         let rows = Dictionary(uniqueKeysWithValues: lists.needsYou.map { ($0.title, $0) })
         #expect(rows["local"]?.accessory == .reason("retention?"))
@@ -302,13 +302,13 @@ struct SidebarNeedsYouTests {
         remote.status = .blocked
         remote.waitingOn = "merge?"
         let lists = SidebarDerivation.lists(SidebarSource(local: state, hosts: [
-            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote])),
+            SidebarSource.Host(id: UUID(), name: "orbit", state: ShepherdState(spaces: [space], agents: [remote])),
         ]))
         let rows = Dictionary(uniqueKeysWithValues: lists.needsYou.map { ($0.title, $0) })
         #expect(rows["Nightly"]?.leading == .glyph("bolt", attention: true))
         #expect(rows["Nightly"]?.accessory == .reason("ASK"))
         #expect(rows["remote"]?.accessory == .reason("merge?"))
-        #expect(rows["remote"]?.accessibilityLabel == "remote, needs you, on horizon")
+        #expect(rows["remote"]?.accessibilityLabel == "remote, needs you, on orbit")
     }
 }
 
@@ -356,14 +356,14 @@ struct NewThreadPlacesTests {
 
     private var hosts: [NewThreadPlaces.Host] {
         [NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [mono, sub]),
-         NewThreadPlaces.Host(id: hostID, name: "horizon", spaces: [web], takesNoSpace: false)]
+         NewThreadPlaces.Host(id: hostID, name: "orbit", spaces: [web], takesNoSpace: false)]
     }
 
     @Test func everyHostsProjectsAreListedFlatWithTheChosenOneChecked() {
         let sections = NewThreadPlaces.sections(hosts, chosen: NewThreadPlace(host: nil, space: sub.id))
-        #expect(sections.map(\.title) == ["This Mac", "horizon"])
+        #expect(sections.map(\.title) == ["This Mac", "orbit"])
         #expect(sections[0].options.map(\.title) == ["No space", "mono", "sub"])
-        #expect(sections[0].options.dropFirst().map(\.detail) == ["~/mono", "~/mono/sub"])
+        #expect(sections[0].options.dropFirst().map(\.path) == ["~/mono", "~/mono/sub"])
         #expect(sections[0].options.map(\.isCurrent) == [false, false, true])
         #expect(sections.allSatisfy { $0.addTitle == "Add folder…" })
         #expect(NewThreadPlaces.place(sections[1].options[0]) == NewThreadPlace(host: hostID, space: web.id))
@@ -420,7 +420,7 @@ struct NewThreadPlacesTests {
     }
 
     @Test func theChipSaysProjectAndHost() {
-        #expect(NewThreadPlaces.chip(hosts, chosen: NewThreadPlace(host: hostID, space: web.id)) == ("web", "horizon"))
+        #expect(NewThreadPlaces.chip(hosts, chosen: NewThreadPlace(host: hostID, space: web.id)) == ("web", "orbit"))
         #expect(NewThreadPlaces.chip(hosts, chosen: nil) == ("Choose a space", "This Mac"))
     }
 

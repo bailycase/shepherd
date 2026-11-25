@@ -73,6 +73,9 @@ extension MobileLayout {
     /// A waiting line, in mono 13.
     static let suggestionLineHeight: CGFloat = 1.45
 
+    /// The space overview shows the first few lines without taking over the page.
+    static let spaceInlineEditorHeight = SH.Height.touch * 3
+
     // MARK: Skills
 
     /// A skill's row (MobileSkills): its name in sans 15 bold over its description at 12.5, 3pt

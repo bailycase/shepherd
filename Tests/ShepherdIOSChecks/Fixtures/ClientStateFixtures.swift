@@ -9,6 +9,8 @@ extension FixtureCatalog {
     static var clientState: [FixtureScreen] {
         [FixtureScreen(name: "client-state-regressions", hosts: ClientStateChecks.hosts(), prepare: { app in
             await ClientStateChecks.run(app)
+        }), FixtureScreen(name: "keyboard-command-regression", hosts: FixtureData.hosts(), prepare: { app in
+            await ClientStateChecks.keyboardCommands(app)
         }), FixtureScreen(name: "forgotten-design-regression", hosts: DesignsFixtures.hosts(updating: false), prepare: { app in
             await ClientStateChecks.forgottenDesign(app)
         }), FixtureScreen(name: "forgotten-automation-regression", hosts: AutomationsFixtureData.fleet(), prepare: { app in
@@ -46,6 +48,70 @@ enum ClientStateChecks {
         await creation(app)
         await review(app)
         await reviewColors(app)
+        await reviewCancellation(app)
+    }
+
+    static func keyboardCommands(_ app: MobileApp) async {
+        let nav = MobileNavigator()
+        let ref = FixtureData.ref(FixtureData.preview)
+        nav.adopt(.pad)
+        nav.open(.thread(ref))
+        let target = MobileCommandTarget(app: app, navigator: nav)
+        let store = app.threads.store(for: ref)
+        var snapshot = FixtureData.snapshot([])
+        snapshot.supportedActions.append("setModel")
+        let serving = Task { await store.run { _ in .snapshot(value: snapshot) } }
+        defer { serving.cancel(); store.stop() }
+        await FixtureWindows.wait(seconds: 5) { store.ready }
+
+        func menu() -> MobileCommandFocus.MenuState? { target.menu(supportsMultipleWindows: true) }
+
+        func observeMenu() -> ClientStateFlag {
+            let changed = ClientStateFlag()
+            withObservationTracking { _ = menu() } onChange: { changed.raised = true }
+            return changed
+        }
+
+        check(menu()?.canStop == false && menu()?.canRename == true && menu()?.canChooseModel == true,
+              "idle thread can rename and choose a model, but not stop")
+        let started = observeMenu()
+        snapshot.running = true
+        await store.refresh()
+        check(started.raised && menu()?.canStop == true, "a running thread invalidates and enables Stop")
+
+        snapshot.running = false
+        await store.refresh()
+        await FixtureWindows.wait("Stop disabled after the run ends", seconds: 5) { menu()?.canStop == false }
+        let asked = observeMenu()
+        snapshot.dialogs = FixtureData.questionThread().dialogs
+        await store.refresh()
+        check(asked.raised && menu()?.canStop == true, "a pending question invalidates and enables Stop without a run")
+
+        let presentation = nav.composerPresentation.state(for: ref)
+        let presented = observeMenu()
+        presentation.showingContext = true
+        check(presented.raised && menu()?.canStart == false && menu()?.canRename == false
+              && menu()?.canChooseModel == false, "context sheet invalidates and blocks other presentations")
+        presentation.showingContext = false
+        check(menu()?.canRename == true && menu()?.canChooseModel == true, "dismissing context restores commands")
+
+        nav.hingeClosed = false
+        check(menu()?.canOpenWindows == true, "Duo held upright offers New Window")
+        let rotated = observeMenu()
+        nav.padSidebarOverlays = true
+        check(rotated.raised && menu()?.canOpenWindows == false, "turning Duo sideways invalidates and hides New Window")
+
+        let disconnected = observeMenu()
+        app.hosts.disconnect(ref.host)
+        check(disconnected.raised && menu()?.canStop == false && menu()?.canRename == false
+              && menu()?.canChooseModel == false, "disconnect invalidates and disables host actions")
+
+        nav.open(.forge(.list))
+        check(menu()?.canToggleSidebar == true, "Issues & PRs list allows toggling the sidebar")
+        let wideForge = observeMenu()
+        nav.padForgeDiff = true
+        check(wideForge.raised && menu()?.canToggleSidebar == false,
+              "a diff beside Issues & PRs invalidates and disables the sidebar command")
     }
 
     static func sentImagesKeepTheNextAttachment() async {
@@ -98,19 +164,68 @@ enum ClientStateChecks {
                 serving.cancel(); store.stop(); check(false, "next attachment loaded while awaiting send"); return
             }
             check(submitted == [a.image], "only captured image A went to the delayed send")
+            // The store holds A with the send's record, so the composer lets go of it at capture, while the host has not answered.
+            check(state.attachments.map(\.id) == [b.id], "image A is gone while the ack is held and newly attached B stays")
             switch outcome {
             case "accepted": gate.finish(.success(.accepted(operationID: operation)))
             case "rejected": gate.finish(.success(.failure(code: "refused", message: "Not accepted")))
             default: gate.finish(.failure(RemoteHostClientError.outcomeUnknown(message: "Connection lost")))
             }
             await sending.value
-            check(state.attachments.map(\.id) == (outcome == "accepted" ? [b.id] : [a.id, b.id]),
-                  "\(outcome) send removes only its acknowledged image IDs")
-            check(store.sentCount == (outcome == "accepted" ? 1 : 0), "attachment cleanup follows acceptance")
+            check(state.attachments.map(\.id) == [b.id], "\(outcome) send removes only the images it captured")
+            check(outcome == "accepted" || store.submissions.first?.images == [a.image],
+                  "\(outcome) send keeps image A with its recovery record")
+            check(store.sentCount == (outcome == "accepted" ? 1 : 0), "send count follows acceptance")
             serving.cancel()
             store.stop()
             await serving.value
         }
+        await rejectedBeforeCaptureKeepsImages()
+    }
+
+    /// A send the store never captures (no words, and the host takes no images) leaves the composer's images where they were.
+    private static func rejectedBeforeCaptureKeepsImages() async {
+        let store = NativeThreadStore(pause: { _ in
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in stream {}
+            continuation.finish()
+            throw CancellationError()
+        })
+        var requests = 0
+        let serving = Task {
+            await store.run { request in
+                if case .snapshot = request { return .snapshot(value: FixtureData.snapshot([])) }
+                requests += 1
+                return .failure(code: "fixture", message: "Unexpected request")
+            }
+        }
+        await FixtureWindows.wait(seconds: 5) { store.isLive }
+        let state = ComposerState()
+        guard store.isLive, let image = NewThreadFixtures.image(.systemTeal, name: "kept") else {
+            serving.cancel(); store.stop(); check(false, "uncaptured send fixture prepared"); return
+        }
+        await state.attach([(image.image.data, "kept.png")])
+        let kept = state.attachments.map(\.id)
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        check(kept.count == 1 && state.attachments.map(\.id) == kept && store.submissions.isEmpty && requests == 0,
+              "a send rejected before capture keeps image A in the composer")
+        store.draft = "Inspect this"
+        await ThreadComposer.send(.followUp, store: store, state: state).value
+        let refused = store.submissions.first
+        let restored = refused.flatMap { store.restoreSubmission($0.id) }
+        check(requests == 1 && refused?.state == .failed && refused?.images.isEmpty == true && restored != nil
+              && store.draft == "Inspect this" && state.attachments.map(\.id) == kept,
+              "a refused text send keeps the unsupported image in the composer and can restore the text")
+        // A text-only send never reaches the image removal, but it still ends the error an earlier import left.
+        let wordsOnly = ComposerState()
+        await wordsOnly.attach(files: [URL(fileURLWithPath: "/tmp/design-notes.pdf")])
+        check(wordsOnly.attachmentError != nil && wordsOnly.attachments.isEmpty, "a rejected import shows an error with no attachments")
+        store.draft = "Words only"
+        await ThreadComposer.send(.followUp, store: store, state: wordsOnly).value
+        check(requests == 2 && wordsOnly.attachmentError == nil, "a text-only send clears the attachment error")
+        serving.cancel()
+        store.stop()
+        await serving.value
     }
 
     static func selectedHostSummaries(_ app: MobileApp) async {
@@ -540,6 +655,93 @@ extension ClientStateChecks {
             store.setWordDiffs(split)
             check(changed.raised, "cached \(split ? "split" : "unified") diff rows update when their colors change")
         }
+    }
+}
+
+extension ClientStateChecks {
+    /// A cancelled read (the screen left, or a newer load took over) is not a failure: no error
+    /// text, the files already shown stay. With nothing to show and nothing taking over, the
+    /// review is idle (Try again), never a spinner. A refusal still shows.
+    static func reviewCancellation(_ app: MobileApp) async {
+        let path = "file.swift"
+        let file = DiffFile(oldPath: path, newPath: path, displayPath: path, isNew: false, isDeleted: false, isRenamed: false, isBinary: false,
+                            hunks: [DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "let x = 1", oldLine: nil, newLine: 1, id: 1)])])
+        let list = ChangesList(scope: .uncommitted, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
+                               comparison: ChangesComparison(head: "working", base: "HEAD"),
+                               files: [ChangesFile(path: path, status: .modified, added: 1, removed: 0)])
+        var failure: Error = CancellationError()
+        var listed = false
+        var served = false
+        var asked = 0
+        let store = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            asked += 1
+            switch query {
+            case .changesList:
+                if listed { throw failure }
+                return .changesList(list)
+            case .changesBranches:
+                if served { return .changesBranches(ChangesBranches(defaultBase: "main", branches: [])) }
+                throw failure
+            case .changesFile:
+                if served { return .changesFile(ChangesFileDiff(file: file)) }
+                throw failure
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        listed = true
+        await store.load(hosts: app.hosts)
+        await Task.yield()
+        let afterFirst = asked
+        check(store.loadError == nil && !store.loaded && !store.loading, "a cancelled first load shows no error and stays unloaded")
+        check(store.loadIdle, "a cancelled first load with nothing after it is idle, not loading")
+        check(asked == afterFirst, "reading the idle state starts no request")
+        listed = false
+        await store.refresh()?.value
+        listed = true
+        check(store.loaded && !store.loadIdle && store.entries.map(\.id) == [path], "Try again from idle loads the review")
+        await store.load(hosts: app.hosts)
+        check(store.loadError == nil && store.loaded && store.entries.map(\.id) == [path], "a cancelled reload keeps the files on hand")
+        await store.loadBranches()
+        let afterBranches = asked
+        check(store.branchesError == nil && store.branches == nil && store.branchesCancelled,
+              "a cancelled branch list is idle: no error, none loaded")
+        check(asked == afterBranches, "reading the idle branch list starts no request")
+        let fetch = store.ensure(path)
+        check(fetch != nil, "the review asks for the file's hunks")
+        await fetch?.value
+        let afterFile = asked
+        check(store.fileErrors[path] == nil && store.state(of: path) == .idle, "a cancelled file fetch is idle, not loading and not failed")
+        check(asked == afterFile, "reading the idle file starts no request")
+        served = true
+        await store.loadBranches()
+        check(store.branches != nil && !store.branchesCancelled, "Try again from an idle branch list loads it")
+        await store.ensure(path)?.value
+        check(store.state(of: path) == .lines, "Try again from an idle file loads its hunks")
+        failure = RemoteHostClientError.rejected(code: "fixture", message: "The host refused.")
+        await store.load(hosts: app.hosts)
+        check(store.loadError == "The host refused.", "a refused load still shows its message")
+
+
+        // Branch request A is pending, B starts and is cancelled: the picker is still loading, not idle.
+        var heldBranches: CheckedContinuation<Void, Never>?
+        let second = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            switch query {
+            case .changesList: return .changesList(list)
+            case .changesBranches:
+                if heldBranches != nil { throw CancellationError() }
+                await withCheckedContinuation { heldBranches = $0 }
+                return .changesBranches(ChangesBranches(defaultBase: "main", branches: []))
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        await second.load(hosts: app.hosts)
+        let requestA = Task { await second.loadBranches() }
+        while heldBranches == nil { await Task.yield() }
+        await second.loadBranches()
+        check(!second.branchesCancelled && second.branches == nil, "a cancelled branch request with another still pending is loading, not idle")
+        heldBranches?.resume()
+        await requestA.value
+        check(second.branches != nil && !second.branchesCancelled, "the pending branch request's reply fills the list")
     }
 }
 

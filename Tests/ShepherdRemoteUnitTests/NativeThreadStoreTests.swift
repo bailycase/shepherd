@@ -56,10 +56,15 @@ final class FakeHost {
 
 /// Suspends until `condition` holds, woken by the store's observation rather than polling.
 @MainActor
-func until(_ condition: @escaping @MainActor () -> Bool) async {
+func until(sourceLocation: SourceLocation = #_sourceLocation, _ condition: @escaping @MainActor () -> Bool) async {
     while !condition() {
-        await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
-            withObservationTracking { _ = condition() } onChange: { changed.resume() }
+        let (changes, change) = AsyncStream<Void>.makeStream()
+        withObservationTracking { _ = condition() } onChange: { change.finish() }
+        var iterator = changes.makeAsyncIterator()
+        _ = await iterator.next()
+        if Task.isCancelled {
+            Issue.record("Cancelled while waiting for a store change", sourceLocation: sourceLocation)
+            return
         }
     }
 }
@@ -76,8 +81,9 @@ final class FirstPullGate {
 /// cancelled. Every refresh is the test's, so no poll lands between a test's steps however
 /// slowly the machine runs it.
 @MainActor
-func manualStore(startingLimit: Duration = .seconds(60)) -> NativeThreadStore {
+func manualStore(startingLimit: Duration = .seconds(60), onPause: (@Sendable () -> Void)? = nil) -> NativeThreadStore {
     NativeThreadStore(startingLimit: startingLimit) { _ in
+        onPause?()
         let (cancelled, continuation) = AsyncStream<Void>.makeStream()
         for await _ in cancelled {}
         continuation.finish()
@@ -526,6 +532,7 @@ struct NativeThreadStoreTests {
         host.snapshot = stopped
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
         #expect(!store.busy && store.draft == "hello" && host.actions.isEmpty)
     }
@@ -706,6 +713,7 @@ struct NativeThreadStoreTests {
 
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
 
         guard case .send(let session, _, _, let text, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
@@ -727,6 +735,7 @@ struct NativeThreadStoreTests {
 
         host.starting = false
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
 
         let texts = host.actions.compactMap { action -> String? in
@@ -756,6 +765,7 @@ struct NativeThreadStoreTests {
         await until { store.busy }
         host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent exited (code 127)."))]
         await store.refresh()
+        if Task.isCancelled { store.stop() }
         await sending.value
         #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
         #expect(!store.starting && store.loadError == "native_unavailable: The agent exited (code 127).")
@@ -1068,18 +1078,20 @@ struct NativeThreadStoreTests {
         #expect(store.displayedMessages.map(\.entryID) == ["a", echo.entryID, "live"], "history, then the echo, then the live reply")
     }
 
-    @Test func aLegacyHostsEchoLeavesOnlyWhenPiPersistsTheSameText() async {
-        let (store, host, task) = await started()
+    /// A host that never names the send leaves the echo standing until a message the thread did not hold arrives after it: by
+    /// position, whatever its words (pi may save a command expanded), never by a match against older history.
+    @Test func aLegacyHostsEchoLeavesWithTheNextMessageAfterItNotByItsWords() async {
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("do the thing", id: "old"), hi]))
         defer { task.cancel() }
         host.acceptAll()
         store.draft = "do the thing"
         await store.send()
-        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("something else")])
+        host.snapshot = F.snapshot(revision: 2, messages: [F.user("do the thing", id: "old"), hi])
         await store.refresh()
-        #expect(store.pending.count == 1)
-        host.snapshot = F.snapshot(revision: 3, messages: [hi, F.user("do the thing\n", id: "u")])
+        #expect(store.pending.count == 1, "the earlier message with the same words is not it")
+        host.snapshot = F.snapshot(revision: 3, messages: [F.user("do the thing", id: "old"), hi, F.user("Do the thing, carefully", id: "u")])
         await store.refresh()
-        #expect(store.pending.isEmpty && store.displayedMessages.map(\.entryID) == ["a", "u"])
+        #expect(store.pending.isEmpty && store.displayedMessages.map(\.entryID) == ["old", "a", "u"] && store.rows.last?.id.hasPrefix("pending:") == true, "one copy, under the echo's identity")
     }
 
     @Test func aSessionChangeDiscardsEchoes() async {
@@ -2095,7 +2107,7 @@ struct NativeThreadStoreTests {
     /// A streamed chunk changes `liveRow` and leaves `listRows` as it was: the streaming reply
     /// sits in the list as a content-less shell, so the transcript that iterates the list is not
     /// invalidated per chunk. The turn ending puts the full row into the list.
-    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async {
+    @Test func aStreamedChunkChangesTheLiveRowAndNotTheList() async throws {
         let prompt = F.user("go", id: "u")
         let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt],
                                                            provisional: [F.assistant("Wri", status: "streaming", id: "p")]))
@@ -2110,10 +2122,15 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(store.listRows == list, "the chunk is the live row's alone")
         #expect(store.liveRow != nil && store.liveRow?.presentation != store.rows.first?.presentation)
+        let (hold, release) = AsyncStream<Void>.makeStream()
+        store.settlePause = { _ in for await _ in hold {} }
+        defer { release.finish() }
         host.snapshot = F.snapshot(revision: 3, messages: [prompt, F.assistant("Writing more.", id: "p")])
         await store.refresh()
-        // The end of a run settles after a short hold (`settleRunning`).
-        for _ in 0..<50 where store.liveRow != nil { try? await Task.sleep(for: .milliseconds(20)) }
+        #expect(store.settledRunning, "the reply stays live during the end-of-run hold")
+        let settling = try #require(store.settleTask)
+        release.finish()
+        await settling.value
         #expect(store.liveRow == nil)
         #expect(store.listRows == store.rows, "settled, the list holds every row's content")
         #expect(store.listRows.last?.live == false && store.listRows.last?.presentation != nil)

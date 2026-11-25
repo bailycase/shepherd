@@ -84,6 +84,10 @@ struct Composer: View, Equatable {
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
     @Environment(\.designReferences) private var references
+    /// The threads the picker links on "#" (ThreadLinkA); nil where none resolve.
+    @Environment(\.shThreadLinks) private var threadLinks
+    /// This thread's own agent, left out of "Link a thread".
+    @Environment(\.threadLinkSelf) private var threadLinkSelf
     /// The @ picker: where it is and what it lists, derived once per change of the draft.
     @State private var mentions = MentionPickerState()
     /// Where the field's caret is, for ⌫ at the start of the words (not observed: the caret
@@ -114,6 +118,7 @@ struct Composer: View, Equatable {
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @State private var composing = false
+    @State private var inputOwner: UUID?
     @State private var claimed = ClaimedLayout()
     /// "Up next": what the stack shows of the store's queue, and its own view state.
     @State private var ownQueueStack = QueueStackState()
@@ -293,12 +298,14 @@ struct Composer: View, Equatable {
     private var menuOpen: Bool { commandQuery != nil || loginQuery != nil || mentionShown || menu != nil }
 
     /// @ picks design pieces here: a local thread (not a design's chat) whose host takes references.
-    private var mentionsAvailable: Bool { references != nil && !designChat && store.supportedActions.contains("designReferences") }
+    private var designsAvailable: Bool { references != nil && !designChat && store.supportedActions.contains("designReferences") }
+    /// @ opens the picker: on design pieces, or on threads to link (any thread but a design's chat).
+    private var mentionsAvailable: Bool { designsAvailable || (threadLinks != nil && !designChat) }
 
     /// The @ picker is up: a mention is being typed. It opens at once, saying "Loading designs…"
     /// until the catalog is read (MentionPickerState).
     private var mentionShown: Bool {
-        mentions.isOpen && commandQuery == nil && loginQuery == nil && references != nil
+        mentions.isOpen && commandQuery == nil && loginQuery == nil && mentionsAvailable
     }
 
     private var openMenu: OpenMenu {
@@ -381,22 +388,22 @@ struct Composer: View, Equatable {
             }
             if let problem = store.startProblem, !(hidesNotSignedIn && problem.kind == .notSignedIn) {
                 SHBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
-                    if let restartPi {
-                        if problem.kind == .resumedAsNew {
+                    // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
+                    ForEach(problem.actions(canRestart: restartPi != nil, canLocateFolder: true), id: \.self) { action in
+                        switch action {
+                        case .startNewConversation:
                             Button("Start new conversation") {
                                 store.restarting()
-                                restartPi(true)
+                                restartPi?(true)
                             }
                             .buttonStyle(.sh(.ghost, size: .s))
-                        }
-                        if problem.kind == .folderMissing {
-                            // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
-                            Button("Locate Folder…") { restartPi(false) }
+                        case .locateFolder:
+                            Button("Locate Folder…") { restartPi?(false) }
                                 .buttonStyle(.sh(.secondary, size: .s))
-                        } else {
+                        case .retry:
                             Button("Retry") {
                                 store.restarting()
-                                restartPi(false)
+                                restartPi?(false)
                             }
                             .buttonStyle(.sh(.secondary, size: .s))
                         }
@@ -428,15 +435,13 @@ struct Composer: View, Equatable {
                         .shTransition(.list, edge: .bottom)
                 }
             }
-            // The images waiting to send, with what keeps Send held (ThreadImagesComposer).
-            ComposerImageStrip(attachments: input.attachments, open: openAttachment, remove: { input.attachments.remove($0) })
             // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
             if let dock = projectSend?.dock { dock().shTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
-            if store.hasGoal || showsTray || queueStack.isVisible {
+            if store.hasGoal || showsTray || (queueStack.isVisible && !joinsQueue) {
                 ComposerDock(store: store, trayState: trayState, actions: subagents,
-                             showsQueue: queueStack.isVisible, goalActive: active) {
-                    if queueStack.isVisible {
+                             showsQueue: queueStack.isVisible && !joinsQueue, goalActive: active) {
+                    if queueStack.isVisible && !joinsQueue {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
                                        readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
@@ -542,14 +547,16 @@ struct Composer: View, Equatable {
         // A hold that opened the Send menu and let go elsewhere leaves the next click a send.
         .onChange(of: menu) { _, menu in if menu != .send { sendHeld = false } }
         .onChange(of: active && questionKey == nil, initial: true) { _, available in
-            input.available = available
+            let owner = inputOwner ?? UUID()
+            if inputOwner == nil { inputOwner = owner }
+            input.setAvailable(available, for: owner)
         }
         .onChange(of: input.focusRequest) { _, _ in
             guard active, questionKey == nil else { return }
             composing = true
         }
         .onDisappear {
-            input.available = false
+            if let inputOwner { input.setAvailable(false, for: inputOwner) }
             dismissal.watch(false)
             keyMonitor.watch(false)
         }
@@ -558,6 +565,7 @@ struct Composer: View, Equatable {
         .task(id: FieldClaim(active: active, focused: active && isFocused, question: questionKey != nil)) {
             // The layout coming on screen or going off it is a flip: the card's ring follows at once, as the
             // toolbar does, and a spring it left running would lay the whole layout out again on every frame.
+            // The one coming on still fades its ring in (Core Animation, so no frame lays anything out).
             let flip = claimed.active != active
             claimed.active = active
             claim(false, flip: flip)
@@ -699,7 +707,7 @@ struct Composer: View, Equatable {
                     pickModel(model)
                 } close: { menu = nil; composing = true }
                 .equatable()
-                .shTransition(.overlay, anchor: .bottomLeading)
+                .modifier(OverModelChip())
             }
             if menu == .settings {
                 SHModelSettings(models: settingsModels, searchModels: catalog?.settingsSearchModels ?? [],
@@ -716,7 +724,7 @@ struct Composer: View, Equatable {
                                 chooseSpeed: { id in
                                     if let tier = ServiceTier(rawValue: id) { Task { await store.setServiceTier(tier) } }
                                 }, allModels: { openModels() }, close: { menu = nil; composing = true })
-                    .shTransition(.overlay, anchor: .bottomLeading)
+                    .modifier(OverModelChip())
             }
         }
         // Its own height, not the card's, which the overlay proposes.
@@ -776,11 +784,28 @@ struct Composer: View, Equatable {
         withTransaction(instant) { composing = value }
     }
 
+    /// Whether Up next draws inside the composer's card: always, until a question takes the card's place.
+    private var joinsQueue: Bool {
+        queueStack.isVisible && !(dialogs.first != nil && store.session != nil && questionKey != nil)
+    }
+
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
-        return SHComposer(isFocused: focused) {
-            // Design references sit first, above the words (DesignReferenceChip(ref)).
+        let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
+        return SHComposer(isFocused: focused, layout: .inline, joined: joinsQueue) {
+            // Up next shares the card, above its line (the boards' `.cmp` with `.qh`), unless a question has taken the card's place.
+            if joinsQueue {
+                QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: false,
+                               focusedRow: $focusedRow, focusComposer: { composing = true },
+                               readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
+            }
+        } top: {
+            // The images waiting to send, first in the card (GXImagesComposer); what keeps Send held is said under them.
+            ForEach(input.attachments.items) { attachment in
+                attachment.chip(open: { openAttachment(attachment) }, remove: { input.attachments.remove(attachment.id) })
+            }
+            // Design references sit next, above the words (DesignReferenceChip(ref)).
             ForEach(store.attachedReferences) { attached in
                 ComposerReferenceChip(attached: attached, references: references) { store.detachReference(attached.id) }
                     .shTransition(.list, edge: .leading)
@@ -796,12 +821,15 @@ struct Composer: View, Equatable {
                     .help(file.path)
                     .shTransition(.list, edge: .leading)
             }
+        } leading: {
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store, part: .leading).equatable()
         } field: {
             ComposerFieldHost(store: store) { field }.shEntrance(.content)
         } controls: {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store,
-                             dismissal: dismissal).equatable()
+                             dismissal: dismissal, part: .trailing).equatable()
         }
+        .environment(\.shComposerNotice, input.attachments.error)
         .coordinateSpace(.named(Self.cardSpace))
     }
 
@@ -809,8 +837,10 @@ struct Composer: View, Equatable {
         if let projectSend { return projectSend.placeholder }
         if let workerStyle { return workerStyle.placeholder }
         if designChat { return "Describe a change, or click something on the canvas to comment…" }
-        if !hasTurns { return "Describe the task, or / for commands…" }
-        return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
+        // As the iPhone and iPad say it: "$" opens the skills where pi has any.
+        let skills = store.commands.contains { $0.source == "skill" }
+        if !hasTurns { return skills ? "Describe the task, / for commands, $ for skills…" : "Describe the task, or / for commands…" }
+        return commands.isEmpty ? "Follow up…" : skills ? "Follow up, / for commands, $ for skills…" : "Follow up, or / for commands…"
     }
 
     private var field: some View {
@@ -1104,7 +1134,7 @@ struct Composer: View, Equatable {
 
     private func sendDraft(delivery: NativeThreadDelivery) {
         // `/login …` typed out and sent: Sign-in opens; nothing reaches pi.
-        if slashLogin != nil, let command = SlashLogin.parse(store.draft) {
+        if let slashLogin, let command = SlashLogin.parse(store.draft, choices: slashLogin.choices()) {
             openLogin(command)
             return
         }
@@ -1112,13 +1142,14 @@ struct Composer: View, Equatable {
             // The Project's own send. No delivery choice: the project runtime queues, orders and (while paused) holds the message,
             // and reports it back through the Project record. The images on the card go with it, and only the ones submitted are
             // cleared once the runtime accepts; a refusal keeps the draft and every image.
-            let text = ComposerSkillToken.message(store.draft).trimmingCharacters(in: .whitespacesAndNewlines)
+            let draft = store.draft
+            let text = ComposerSkillToken.message(draft).trimmingCharacters(in: .whitespacesAndNewlines)
             let images = input.attachments.images
             let submitted = input.attachments.ids
             guard !text.isEmpty || !images.isEmpty else { return }
             Task {
                 if await projectSend.send(text, images) {
-                    store.draft = ""
+                    if store.draft == draft { store.draft = "" }
                     for id in submitted { input.attachments.remove(id) }
                 } else if !images.isEmpty, let why = projectSend.refusal() {
                     // The composer's own failed line says why the images (and words) were kept.
@@ -1156,7 +1187,7 @@ struct Composer: View, Equatable {
             if mentions.isOpen { mentions.close() }
             return
         }
-        if let pasted = ComposerReferencePaste.extract(new, previous: old) {
+        if designsAvailable, let pasted = ComposerReferencePaste.extract(new, previous: old) {
             store.draft = pasted.draft
             for reference in pasted.references { attachReference(reference) }
             return
@@ -1164,18 +1195,27 @@ struct Composer: View, Equatable {
         updateMentions()
     }
 
-    /// Derives what the @ picker lists for the draft as it is; opening it reads this Mac's designs.
+    /// Derives what the picker lists for the draft as it is: "#" the threads to link, "@" the designs (opening it reads this
+    /// Mac's designs).
     private func updateMentions() {
-        guard mentionsAvailable, let references else { return }
+        guard mentionsAvailable else { return }
         // A closed picker whose draft opens nothing would only close again: a prose key writes nothing.
         guard mentions.isOpen || mentions.opens(for: store.draft) else { return }
+        let designs = designsAvailable
+        let threads = threadLinks.map { Array($0.links.values) } ?? []
+        guard designs, let references else {
+            mentions.update(draft: store.draft, catalog: nil, threads: threads, excluding: threadLinkSelf, designs: false)
+            return
+        }
         let wasOpen = mentions.isOpen, scope = mentions.scope
         // Opening reads the designs afresh: from this call the picker says it is loading, not what
         // the last opening ended with.
-        if mentions.opens(for: store.draft) { references.startCatalogRead() }
-        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage, place: references.place) {
+        if mentions.opens(for: store.draft), ComposerMention.token(in: store.draft)?.trigger == "@" { references.startCatalogRead() }
+        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage, place: references.place,
+                        threads: threads, excluding: threadLinkSelf) {
             references.rowPicture($0)
         }
+        guard mentions.mention?.trigger == "@" else { return }
         if mentions.isOpen, !wasOpen {
             referenceError = nil
             references.io.wantPictures(mentions.scope)
@@ -1193,6 +1233,8 @@ struct Composer: View, Equatable {
         case .pick(let reference, let draft):
             store.draft = draft
             attachReference(reference)
+        case .link(let draft):
+            store.draft = draft
         case nil:
             break
         }
@@ -1386,12 +1428,68 @@ struct ComposerControls: View, Equatable {
     /// Marks the controls that open a menu, so a click on one is its own and never a click away.
     /// A constant of the composer, outside `==`.
     var dismissal: ComposerMenuDismissal? = nil
+    /// Which of the row it draws: all of it, or the thread card's attach plus before the words and the rest after them.
+    var part: Part = .all
+
+    enum Part { case all, leading, trailing }
 
     @Environment(\.shComposerSize) private var size
 
-    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
+    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store && a.part == b.part }
 
     var body: some View {
+        if part == .leading {
+            attachButton
+        } else {
+            row
+        }
+    }
+
+    /// The boards' `.plus`: a 30pt round button before the words.
+    @ViewBuilder private var attachButton: some View {
+        if model.canAttach {
+            Button(action: actions.attach) { Image(systemName: "plus").font(.system(size: SHComposerMetrics.sendGlyph + 2)) }
+                .buttonStyle(.shIcon(size: SHComposerMetrics.actionSize, round: true))
+                .disabled(model.attachFull)
+                .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
+                .accessibilityLabel("Attach file")
+        }
+    }
+
+    @ViewBuilder private var row: some View {
+        if part == .trailing {
+            // After the words on the thread card's line, laid out before them (the priority) so the words take the rest.
+            // Through `ComposerControlsMinimum` like the full row, so a keystroke's minimum-size pass never measures the chips.
+            ComposerControlsMinimum {
+                HStack(spacing: SH.Space.xxs) {
+                    ViewThatFits(in: .horizontal) {
+                        chips(compact: size == .compact, startingLabel: true)
+                        chips(compact: true, startingLabel: false)
+                    }
+                    .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
+                    meterAndPrimary
+                }
+            }
+            .layoutPriority(1)
+        } else {
+            fullRow
+        }
+    }
+
+    private var meterAndPrimary: some View {
+        HStack(spacing: SH.Space.s) {
+            ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                .equatable()
+                .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                        - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                } action: { actions.meterInset($0) }
+            primary
+        }
+    }
+
+    private var fullRow: some View {
         ComposerControlsMinimum {
             HStack(spacing: SH.Space.xxs) {
                 ViewThatFits(in: .horizontal) {
@@ -1404,16 +1502,7 @@ struct ComposerControls: View, Equatable {
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
                 .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
                 // The ring and Send keep their place outside the fitting candidates.
-                HStack(spacing: SH.Space.s) {
-                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
-                        .equatable()
-                        .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
-                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
-                        } action: { actions.meterInset($0) }
-                    primary
-                }
+                meterAndPrimary
             }
         }
     }
@@ -1421,7 +1510,7 @@ struct ComposerControls: View, Equatable {
     private func chips(compact: Bool, startingLabel: Bool) -> some View {
         let _ = SHRenderProbe.tick("composer.chips")
         return HStack(spacing: SH.Space.xxs) {
-            if model.canAttach {
+            if model.canAttach, part == .all {
                 Button(action: actions.attach) { Image(systemName: "paperclip") }
                     .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
                     .disabled(model.attachFull)
@@ -1429,7 +1518,7 @@ struct ComposerControls: View, Equatable {
                     .accessibilityLabel("Attach file")
             }
             modelChip(compact: compact)
-            Spacer(minLength: SH.Space.m)
+            if part == .all { Spacer(minLength: SH.Space.m) }
             if model.startingShown { startingIndicator(label: startingLabel).shTransition(.content) }
             if let hooks = model.hooks { HookComposerGlyph(indicator: hooks, open: actions.hooks) }
         }
@@ -1875,5 +1964,16 @@ struct WidgetRow: View {
         }
         .textSelection(.enabled)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The model picker and the model's settings open over the model chip at the card's trailing end (GXModel's
+/// `.pop`, `right: 40px`), not at its leading edge where the slash and mention menus open.
+private struct OverModelChip: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.trailing, AppLayout.modelMenuTrailing)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .shTransition(.overlay, anchor: .bottomTrailing)
     }
 }

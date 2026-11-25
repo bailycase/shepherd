@@ -86,7 +86,7 @@ struct SidebarListRow: Identifiable, Equatable {
     var offline = false
     /// The title, the worktree's branch and its pull request.
     var help: String
-    /// "Fix the login, worktree, running, on horizon"; ", pinned" follows a pinned thread's.
+    /// "Fix the login, worktree, running, on orbit"; ", pinned" follows a pinned thread's.
     var accessibilityLabel: String
     /// A worktree agent: its menu offers Delete Worktree Agent.
     let worktree: Bool
@@ -207,15 +207,18 @@ struct SidebarLists: Equatable {
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
+    /// Next and Review Next read the whole sidebar.
+    var supervisionQueues = SupervisionQueues<SidebarRowID>(blocked: [], unseenDone: [])
 
     var all: [SidebarListRow] { sections.flatMap(\.rows) }
 
-    /// Needs you, Designs and Automations have no digit; folded groups have no visible hint or target.
+    /// Needs you, Designs and Automations have no digit; folded groups and the threads under a closed sender have no
+    /// visible hint or target. The badges and ⌘1–9 both read this.
     var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
 
-    func shortcutRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
+    func shortcutRows(collapsed: Set<SidebarActivitySection>, openFolds: Set<String> = []) -> [SidebarListRow] {
         sections.filter { ![.needsYou, .designs, .automations].contains($0.section) && !collapsed.contains($0.section) }
-            .flatMap(\.rows).filter { $0.id.dispatchID == nil }
+            .flatMap { $0.rows.foldingSent(open: openFolds) }.filter { $0.id.dispatchID == nil }
     }
 
     func presented(selected: SidebarRowID?, shortcuts: Bool,
@@ -224,7 +227,7 @@ struct SidebarLists: Equatable {
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents] {
             lists[keyPath: path] = lists[keyPath: path].foldingSent(open: openFolds)
         }
-        let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed).prefix(9).enumerated()
+        let digits = shortcuts ? Dictionary(uniqueKeysWithValues: lists.shortcutRows(collapsed: collapsed, openFolds: openFolds).prefix(9).enumerated()
             .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs, \.automations] {
             for index in lists[keyPath: path].indices {
@@ -290,15 +293,17 @@ struct SidebarSource: Equatable {
     /// What this Mac sent to others: the dispatches that are on their way or going, and what sentences about them need.
     var fleet = SidebarFleet()
 
-    /// Child work affects sidebar presentation, never the parent's actual turn status. What no
-    /// row shows is dropped too (layouts, checkouts), so a pane divider drag or a changed-files
-    /// count leaves the derivation's cache key unchanged.
+    /// Child work affects sidebar presentation, never the parent's actual turn status. Ignore tab
+    /// layout and keep only whether each checkout has changes: Review Next needs that flag, not the
+    /// exact file count.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
         state.tabs = []
         for index in state.agents.indices {
             let agent = state.agents[index]
-            if agent.checkout != nil { state.agents[index].checkout = nil }
+            if let checkout = agent.checkout {
+                state.agents[index].checkout = checkout.changedFiles > 0 ? AgentCheckout(branch: "", changedFiles: 1) : nil
+            }
             if (agent.status == .idle || agent.status == .done),
                children[agent.id]?.contains(where: { !$0.isTerminal && $0.paused != true }) == true {
                 state.agents[index].status = .working
@@ -550,7 +555,30 @@ enum SidebarDerivation {
         var grouped = [lists.needsYou, lists.working, lists.done, lists.pinned, lists.recents]
         SidebarSent.arrange(&grouped, by: sent)
         (lists.needsYou, lists.working, lists.done, lists.pinned, lists.recents) = (grouped[0], grouped[1], grouped[2], grouped[3], grouped[4])
+        lists.supervisionQueues = supervisionQueues(source, lists: lists, seen: seen)
         return lists
+    }
+
+    private static func supervisionQueues(_ source: SidebarSource, lists: SidebarLists,
+                                          seen: [SidebarRowID: Int]) -> SupervisionQueues<SidebarRowID> {
+        let blocked = lists.needsYou + lists.pinned.filter { $0.section == .needsYou }
+        let done = lists.done + lists.pinned.filter { $0.section == .done && seen[$0.id] != $0.completion }
+        guard !blocked.isEmpty || !done.isEmpty else { return SupervisionQueues(blocked: [], unseenDone: []) }
+        var agents: [SidebarRowID: Agent] = [:]
+        for agent in source.local.agents { agents[.local(agent.id)] = agent }
+        for host in source.hosts where !host.offline {
+            for agent in host.state.agents { agents[.remote(.init(hostID: host.id, agentID: agent.id))] = agent }
+        }
+        return SupervisionQueues(blocked: blocked.compactMap { row in
+            guard !row.offline, let agent = agents[row.id] else { return nil }
+            let since: Double? = if case .local(let id) = row.id {
+                source.statusSince[id].map { $0.timeIntervalSince1970 * 1000 }
+            } else { nil }
+            return .init(row.id, since: since ?? agent.lastActiveAt)
+        }, unseenDone: done.compactMap { row in
+            guard !row.offline, let agent = agents[row.id] else { return nil }
+            return .init(row.id, since: agent.completedAt ?? agent.lastActiveAt, changedFiles: agent.checkout?.changedFiles ?? 0)
+        })
     }
 
     /// The row of the thread that sent `agent` to another Mac (`Agent.dispatchedFrom`): This Mac's, or a connected host's. Nil for a
@@ -618,7 +646,9 @@ enum SidebarDerivation {
             }
         } else {
             leading = .dot(failed ? .failed : AgentState(agent.status))
-            accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none : .none
+            // No dot says it failed any more: the word does.
+            accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none
+                : failed ? .text("failed", tone: .failed) : .none
             word = AgentRow.statusWord(agent.status, turnFailed: failed)
         }
         // A completion the host says was opened, here or on another device, is no longer Done.

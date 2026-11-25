@@ -22,7 +22,7 @@ struct ExperimentsSettings: View {
     @State private var permissions = ComputerUsePermissions()
     @Bindable private var bindable: AppSettings
 
-    static let feedbackURL = URL(string: "https://github.com/bailycase/shepherd/issues/new?title=Suggested%20instructions%3A%20")!
+    static let feedbackURL = URL(string: "https://github.com/shepherd-app/shepherd/issues/new?title=Suggested%20instructions%3A%20")!
 
     init(model: SuggestionsModel, instructions: InstructionsModel, settings: AppSettings, page: Binding<ExperimentsPage?> = .constant(nil),
          openInstructions: @escaping () -> Void) {
@@ -39,8 +39,12 @@ struct ExperimentsSettings: View {
             switch page {
             case .waiting?:
                 SettingsPage(title: SuggestionsPresentation.waitingTitle(model.snapshot.waiting.count)) {
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        WaitingSuggestions(model: model, instructions: instructions, now: context.date)
+                    if let message = model.unavailable {
+                        recoveryBanner(message)
+                    } else {
+                        TimelineView(.periodic(from: .now, by: 60)) { context in
+                            WaitingSuggestions(model: model, instructions: instructions, now: context.date)
+                        }
                     }
                 }
             case .apps?:
@@ -82,48 +86,62 @@ struct ExperimentsSettings: View {
         }
     }
 
-    private var list: some View {
-        SettingsPage(title: "Experiments") {
-            SettingsGroup(title: "") {
-                SettingsRow(title: "Suggested instructions", subtitle: "Learn rules from your corrections") {
-                    SettingsSwitch(label: "Suggested instructions",
-                                   isOn: Binding(get: { model.settings.enabled }, set: { on in Task { await model.setEnabled(on) } }))
-                        .disabled(model.busy)
+    private func recoveryBanner(_ message: String) -> some View {
+        SHBanner(.failed, title: "Suggested instructions unavailable", message: message) {
+            Button("Refresh") { Task { await model.refresh() } }.buttonStyle(.sh(.secondary, size: .s))
+        }
+    }
+
+    private var suggestionsGroup: some View {
+        SettingsGroup(title: "") {
+            SettingsRow(title: "Suggested instructions", subtitle: "Learn rules from your corrections") {
+                SettingsSwitch(label: "Suggested instructions",
+                               isOn: Binding(get: { model.settings.enabled }, set: { on in Task { await model.setEnabled(on) } }))
+                    .disabled(model.busy)
+            }
+            if model.settings.enabled || !model.snapshot.waiting.isEmpty {
+                let waiting = model.snapshot.waiting.count
+                SettingsDrillRow(title: "Waiting", subtitle: waiting == 0 ? "Nothing to review" : "\(waiting) line\(waiting == 1 ? "" : "s") to review",
+                                 value: waiting == 0 ? nil : "\(waiting)", action: { page = .waiting })
+            }
+            if model.settings.enabled {
+                SettingsRow(title: "Learn from") {
+                    SHPopupMenu(learnsFrom, minWidth: 0) {
+                        Toggle("Threads", isOn: Binding(get: { model.settings.sources.contains(.thread) },
+                                                        set: { on in Task { await model.setLearns(from: .thread, on) } }))
+                        Toggle("Automations", isOn: Binding(get: { model.settings.sources.contains(.automation) },
+                                                            set: { on in Task { await model.setLearns(from: .automation, on) } }))
+                    }
+                    .accessibilityLabel("Learn from")
                 }
-                if model.settings.enabled || !model.snapshot.waiting.isEmpty {
-                    let waiting = model.snapshot.waiting.count
-                    SettingsDrillRow(title: "Waiting", subtitle: waiting == 0 ? "Nothing to review" : "\(waiting) line\(waiting == 1 ? "" : "s") to review",
-                                     value: waiting == 0 ? nil : "\(waiting)", action: { page = .waiting })
-                }
-                if model.settings.enabled {
-                    SettingsRow(title: "Learn from") {
-                        SHPopupMenu(learnsFrom, minWidth: 0) {
-                            Toggle("Threads", isOn: Binding(get: { model.settings.sources.contains(.thread) },
-                                                            set: { on in Task { await model.setLearns(from: .thread, on) } }))
-                            Toggle("Automations", isOn: Binding(get: { model.settings.sources.contains(.automation) },
-                                                                set: { on in Task { await model.setLearns(from: .automation, on) } }))
+                SettingsRow(title: "Can suggest for", subtitle: "APPEND_SYSTEM.md overrides everything else") {
+                    SHPopupMenu(InstructionFile.allCases.filter { model.settings.files.contains($0) }.map(\.fileName).joined(separator: ", ").nonEmpty ?? "Nothing",
+                                mono: true, minWidth: 0) {
+                        ForEach(InstructionFile.allCases, id: \.self) { file in
+                            Toggle(file.fileName, isOn: Binding(get: { model.settings.files.contains(file) },
+                                                                set: { on in Task { await model.setSuggests(for: file, on) } }))
                         }
-                        .accessibilityLabel("Learn from")
                     }
-                    SettingsRow(title: "Can suggest for", subtitle: "APPEND_SYSTEM.md overrides everything else") {
-                        SHPopupMenu(InstructionFile.allCases.filter { model.settings.files.contains($0) }.map(\.fileName).joined(separator: ", ").nonEmpty ?? "Nothing",
-                                    mono: true, minWidth: 0) {
-                            ForEach(InstructionFile.allCases, id: \.self) { file in
-                                Toggle(file.fileName, isOn: Binding(get: { model.settings.files.contains(file) },
-                                                                    set: { on in Task { await model.setSuggests(for: file, on) } }))
-                            }
-                        }
-                        .accessibilityLabel("Can suggest for")
-                    }
-                    SettingsRow(title: "Where lines go", subtitle: "Settings › Instructions, shared by the whole fleet") {
-                        Button("Open Instructions", action: openInstructions).buttonStyle(.sh(.secondary, size: .s))
-                    }
+                    .accessibilityLabel("Can suggest for")
                 }
-                if let problem = model.problem {
-                    SettingsRow(title: "", problem: problem) { EmptyView() }
+                SettingsRow(title: "Where lines go", subtitle: "Settings › Instructions, shared by the whole fleet") {
+                    Button("Open Instructions", action: openInstructions).buttonStyle(.sh(.secondary, size: .s))
                 }
             }
-            .disabled(model.busy)
+            if let problem = model.problem {
+                SettingsRow(title: "", problem: problem) { EmptyView() }
+            }
+        }
+        .disabled(model.busy)
+    }
+
+    private var list: some View {
+        SettingsPage(title: "Experiments") {
+            if let message = model.unavailable {
+                recoveryBanner(message)
+            } else {
+                suggestionsGroup
+            }
             SettingsGroup(title: "", footnote: "Experiments can change or go away.") {
                 SettingsRow(title: "Design tool", subtitle: "Boards and design systems") {
                     SettingsSwitch(label: "Design tool", isOn: $bindable.designToolEnabled)

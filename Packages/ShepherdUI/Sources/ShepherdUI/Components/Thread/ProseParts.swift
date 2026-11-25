@@ -62,7 +62,14 @@ struct SHProseImageView: View {
     }
 
     @ViewBuilder private func chip(_ source: SHProseImageSource) -> some View {
+        #if os(macOS)
+        // GXImagesReceived: a web image's row names its address and says it was never loaded.
+        let web: URL? = if case .web(let url) = source { url } else { nil }
+        let label = SHProseImageChip(name: web.map { ($0.host() ?? "") + $0.path } ?? (image.alt.isEmpty ? source.name : image.alt),
+                                     detail: web == nil ? nil : "Web image, not loaded")
+        #else
         let label = SHProseImageChip(name: image.alt.isEmpty ? source.name : image.alt, detail: source.detail)
+        #endif
         if case .web(let url) = source {
             Button { router?.open(url) } label: { label }
                 .buttonStyle(.plain)
@@ -129,6 +136,17 @@ struct SHProseImageChip: View {
 
     var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: "photo").imageScale(.small).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+            Text(name).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+            if let detail { Text(detail).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1) }
+        }
+        .frame(minHeight: SHThreadImageMetrics.lineHeight)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Image, \(name)")
+        #else
         HStack(spacing: SH.Space.s) {
             Image(systemName: "photo")
                 .font(.system(size: 11, weight: .medium))
@@ -146,6 +164,7 @@ struct SHProseImageChip: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Image, \(name)")
+        #endif
     }
 }
 
@@ -212,6 +231,7 @@ struct SHProseDetails<Code: SHProseCode>: View {
                 label(expandable: false)
             } else {
                 Button {
+                    SHRenderProbe.scrollEvent("thread.write.L9", "prose.disclosure", kind: "layout")
                     withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { open.toggle() }
                 } label: {
                     label(expandable: true)

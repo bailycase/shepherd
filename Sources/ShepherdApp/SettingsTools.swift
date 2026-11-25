@@ -14,6 +14,7 @@ struct ToolsSettings: View {
     var body: some View {
         MCPSettings(vm: vm, store: store, initiallyExpanded: nil, title: "Tools") {
             ExtensionsSettings(settings: settings)
+            ExtensionsSettingsGroup(model: vm.yourPi, auth: vm.piAuth)
             SettingsGroup(title: "Slash commands") {
                 SettingsDrillRow(title: "Commands in the / menu", subtitle: vm.slashCommands.presentation.summary,
                                  value: "Manage", action: manageSlashCommands)
@@ -41,6 +42,9 @@ struct ExtensionsSettings: View {
             }
             SettingsRow(title: "Browser", subtitle: "Screenshots and clicks") {
                 SettingsSwitch(label: "Browser tools", isOn: $settings.piBrowserExtension)
+            }
+            SettingsRow(title: "Subscription usage", subtitle: "Anthropic and OpenAI Codex limits in Sign-in") {
+                SettingsSwitch(label: "Subscription usage", isOn: $settings.piUsageExtension)
             }
             if settings.designToolEnabled {
                 SettingsRow(title: "Design references") {

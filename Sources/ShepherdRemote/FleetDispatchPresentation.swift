@@ -216,9 +216,10 @@ public enum FleetDispatchPresentation {
             card.detail = rowDetail(record, macs: macs)
             card.actions = record.remoteAgentID == nil ? [] : [.open]
         case .failed:
-            (card.pill, card.tone) = ("Not sent", .bad)
+            let ran = record.failure == FleetDispatchCode.turnFailed
+            (card.pill, card.tone) = (ran ? "Failed" : "Not sent", .bad)
             card.detail = failureWords(record, in: context)
-            card.actions = [.runHere, .tryAgain]
+            card.actions = ran ? (record.remoteAgentID == nil ? [] : [.open]) : [.runHere, .tryAgain]
         }
         card.compact = compact(card, record: record, host: host)
         return card
@@ -391,7 +392,7 @@ public enum FleetDispatchPresentation {
         records.filter { $0.parentAgentID == record.parentAgentID && $0.id != record.id && $0.state.countsAgainstCap }
     }
 
-    /// Why it wasn't sent, in a sentence, from the code.
+    /// Why dispatch failed, in a sentence, from the code.
     static func failureWords(_ record: FleetDispatchRecord, in context: FleetCardContext) -> String {
         let host = hostName(of: record, macs: context.snapshot.macNames).map { the($0, capitalized: true) } ?? "That Mac"
         let repo = repoName(record.repoKey)
@@ -412,6 +413,8 @@ public enum FleetDispatchPresentation {
             return "No Mac named \(requestedName(record.requestedHost, macs: context.snapshot.macNames) ?? "that") is in the fleet."
         case FleetDispatchCode.peerGone:
             return "\(host) stopped answering and doesn't know this thread. Run it again, or run it here."
+        case FleetDispatchCode.turnFailed:
+            return record.failureDetail ?? "The model request failed."
         case FleetDispatchCode.snapshotTooLarge:
             return "The changes to send are too large to send. Run it here, or commit and push them first."
         case FleetDispatchCode.snapshotMismatch, FleetDispatchCode.snapshotFailed:
@@ -453,20 +456,20 @@ public enum FleetDispatchPresentation {
 
 // MARK: - The dispatched thread
 
-/// What the dispatched thread draws of where it came from (FleetRemote): the header's host pill and "started by" link, the
+/// What the dispatched thread draws of where it came from (FleetRemote): the sender in the header's breadcrumb, the Mac in its options menu, the
 /// From box over the task, and the line saying where its last message goes. Derived from `Agent.dispatchedFrom`.
 public struct FleetSentBy: Equatable, Sendable {
-    /// The Mac running the thread, as the header's pill names it.
+    /// The Mac running the thread, as the options menu's "Runs on" names it.
     public var host: String
     /// The thread that sent it; "you" for one the person started.
     public var sender: String
-    /// The sender is a thread (the header offers its link, the banner says its last message goes back).
+    /// The sender is a thread (the breadcrumb offers its link, the banner says its last message goes back).
     public var fromThread: Bool
     /// "This Mac" or the Mac's own name: where the sender lives.
     public var senderHost: String
     /// Epoch milliseconds the dispatch was sent.
     public var at: Double
-    /// The header names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
+    /// The options menu names the Mac it runs on: false for a thread another thread started on the same Mac (`StartedBy`).
     public var showsHost = true
 
     /// "From Speed up checkout CI on This Mac".
@@ -486,7 +489,7 @@ public struct FleetSentBy: Equatable, Sendable {
         at = from.at
     }
 
-    /// A thread `agent_spawn` started on the Mac it runs on: only "started by" shows.
+    /// A thread `agent_spawn` started on the Mac it runs on: only its parent in the breadcrumb shows.
     public init(_ started: StartedBy, host: String) {
         self.host = host
         fromThread = true
@@ -536,16 +539,19 @@ public struct FleetOfflineBanner: Equatable, Sendable {
 /// A dispatched thread's result as it reaches the thread that sent it (FleetDispatch's second card): the message the
 /// host delivers (`FleetDispatch.resultMessage`), read back. The text is data from another agent, drawn, never acted on.
 public struct FleetResultMessage: Equatable, Sendable {
+    public var dispatchID: UUID? = nil
     public var title: String
     public var host: String
     public var text: String
     /// The branch line the host adds: the branch, and whether origin has it.
     public var branch: String?
     public var pushed: Bool?
+    /// The host's plain checkout notice, separate from the agent's words.
+    public var checkoutNotice: String? = nil
 
     /// Nil unless `text` is a result the host delivered: the header it frames agent messages with, then "Result from
     /// <title> on <Mac>:".
-    public static func parse(_ text: String) -> FleetResultMessage? {
+    public static func parse(_ text: String, dispatchID: UUID? = nil) -> FleetResultMessage? {
         guard text.hasPrefix("[from: "), let close = text.range(of: "] Result from ") else { return nil }
         var rest = text[close.upperBound...]
         guard let lineEnd = rest.firstIndex(of: "\n") else { return nil }
@@ -555,22 +561,30 @@ public struct FleetResultMessage: Equatable, Sendable {
         let host = String(first[on.upperBound...].dropLast())
         rest = rest[rest.index(after: lineEnd)...]
         var body = String(rest)
-        var branch: String?, pushed: Bool?
+        var branch: String?, pushed: Bool?, checkoutNotice: String?
         if let facts = body.range(of: "\n\nBranch ", options: .backwards) {
             let line = body[facts.upperBound...]
             if let colon = line.firstIndex(of: ":") {
                 branch = String(line[..<colon])
-                pushed = line.contains("pushed to origin")
+                let notice = line.range(of: ". Uncommitted in the checkout on ")
+                    ?? line.range(of: ". Could not check the checkout for uncommitted work.")
+                let committed = line[..<(notice?.lowerBound ?? line.endIndex)]
+                if committed.contains(", pushed to origin,") { pushed = true }
+                else if committed.contains(", not on origin,") { pushed = false }
                 body = String(body[..<facts.lowerBound])
+                if let notice { checkoutNotice = String(line[line.index(notice.lowerBound, offsetBy: 2)...]) }
             }
         }
-        return FleetResultMessage(title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines), branch: branch, pushed: pushed)
+        return FleetResultMessage(dispatchID: dispatchID, title: title, host: host, text: body.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  branch: branch, pushed: pushed, checkoutNotice: checkoutNotice)
     }
 
-    /// The dispatch this result belongs to, among the sending thread's records: its title, the Mac and a finished state.
+    /// The dispatch this result belongs to, among the sending thread's records.
     public func record(in records: [FleetDispatchRecord], parent: AgentID) -> FleetDispatchRecord? {
-        records.filter {
-            $0.parentAgentID == parent && $0.title == title && $0.targetHostName == host && [.delivering, .done].contains($0.state)
+        let owned = records.filter { $0.parentAgentID == parent }
+        if let dispatchID { return owned.first { $0.id == dispatchID } }
+        return owned.filter {
+            $0.title == title && $0.targetHostName == host && [.delivering, .done].contains($0.state)
         }.max { $0.updatedAt < $1.updatedAt }
     }
 }

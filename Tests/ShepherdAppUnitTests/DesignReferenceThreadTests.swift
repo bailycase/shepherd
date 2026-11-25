@@ -94,7 +94,7 @@ struct DesignReferenceThreadTests {
         #expect(mention.before == before && mention.text == text)
     }
 
-    @Test(arguments: ["mail me at baily@example.com", "@funnel\nand more", "plain words", "@ spaced", "@ ", "see @\u{00A0}", "@\tx"])
+    @Test(arguments: ["mail me at alex@acme.dev", "@funnel\nand more", "plain words", "@ spaced", "@ ", "see @\u{00A0}", "@\tx"])
     func anAddressALineBreakOrNoAtIsNoMention(draft: String) {
         #expect(ComposerMention.token(in: draft) == nil)
     }
@@ -342,7 +342,8 @@ struct DesignReferenceThreadTests {
         await chips.loadBoard(payload.id)
         let stale = try #require(chips.boards[payload.id])
         #expect(stale.meta.last == "shown at revision 13" && stale.showLatest == "Show v14")
-        #expect(stale.note == "The design moved on since the agent showed this. It shows what the agent saw.")
+        #expect(stale.note == "Changed since. This is revision 13; the board is at 14.")
+        #expect(stale.title == "Checkout redesign, A · Funnel first" && stale.header == nil)
         chips.io.open(stale.reference.unpinned)
         chips.io.open(stale.reference)
         #expect(opened.map(\.revision) == [nil, 13])
@@ -370,7 +371,9 @@ struct DesignReferenceThreadTests {
             }))
         await chips.loadBoard(payload.id)
         let card = try #require(chips.boards[payload.id])
-        #expect(card.proposal?.state == .pending && card.copy == payload.id && card.note?.hasPrefix("Drawn in this thread") == true)
+        #expect(card.proposal?.state == .pending && card.copy == payload.id && card.note == nil)
+        #expect(card.header == .init(label: "Drew a board", tag: "Draft") && card.title == "B · Pay on phone")
+        #expect(card.footerMeta == ["Draft for Checkout redesign", "320 × 480"])
         #expect(card.meta.last == "not on the canvas yet" && card.showLatest == nil, "a draft isn't on the canvas to be stale")
         #expect(card.lineLabel == "Drew a board" && card.lineMeta == "B · Pay on phone · draft in Checkout redesign")
 

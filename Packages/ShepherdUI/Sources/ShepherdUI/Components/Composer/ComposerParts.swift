@@ -4,8 +4,25 @@ import SwiftUI
 public enum SHComposerMetrics {
     /// Chips and the attach button under the field.
     public static let chipHeight: CGFloat = 26
-    /// Send and Stop.
+    /// Send and Stop (the boards' 30pt `.send`), and the Mac's attach plus.
+    #if os(macOS)
+    public static let actionSize: CGFloat = 30
+    #else
     public static let actionSize: CGFloat = 28
+    #endif
+    /// The card's corner: the boards' 14 on the Mac.
+    #if os(macOS)
+    public static let radius: CGFloat = SH.Radius.xl
+    #else
+    public static let radius: CGFloat = SH.Radius.m
+    #endif
+    /// The Mac's one-line card (the boards' `.line`): 48pt, padded 8 at its sides, its parts 10pt apart.
+    public static let lineHeight: CGFloat = 48
+    public static let linePadding: CGFloat = 8
+    public static let lineGap: CGFloat = 10
+    /// New thread's card puts the words over the line, padded 16 above and at the sides, at least 64pt tall.
+    public static let stackedFieldPadding: CGFloat = 16
+    public static let stackedFieldMinHeight: CGFloat = 64
     /// Send's arrow and Stop's square.
     public static let sendGlyph: CGFloat = 13
     public static let stopGlyph: CGFloat = 10
@@ -16,18 +33,44 @@ public enum SHComposerMetrics {
     public static let branchCount: CGFloat = 10.5
     public static let fieldMaxLines = 8
     /// Menus: 28pt rows under a 24pt section header, in a 6pt-padded popover.
+    #if os(macOS)
+    /// The redesign's menus (`.mi`, `.mh`): 30pt rows under a 26pt header.
+    public static let menuRowHeight: CGFloat = 30
+    public static let menuHeaderHeight: CGFloat = 26
+    #else
     public static let menuRowHeight: CGFloat = 28
     public static let menuHeaderHeight: CGFloat = 24
+    #endif
     public static let menuMaxRows = 8
     /// The slash menu (SlashMenu board) spans the composer card: 36pt rows with 12pt sides, the
     /// command in a column at least 150pt wide.
+    #if os(macOS)
+    public static let slashRowHeight: CGFloat = 30
+    /// The board sets each description right after its command, not in a column.
+    public static let slashNameWidth: CGFloat = 0
+    #else
     public static let slashRowHeight: CGFloat = 36
     public static let slashNameWidth: CGFloat = 150
+    #endif
     /// The model picker (ModelPicker board): 380pt, two-line 40pt rows, sections 4pt apart.
+    #if os(macOS)
+    /// The redesign's picker (GXModel): 360pt, a 38pt search row, 52pt rows (a check, the id over its levels, the context
+    /// size), sections butted together, the list 6pt in from the card.
+    public static let modelPickerWidth: CGFloat = 360
+    public static let modelRowHeight: CGFloat = 52
+    public static let modelSectionGap: CGFloat = 0
+    public static let modelSearchHeight: CGFloat = 38
+    public static let modelListInset: CGFloat = SH.Space.s
+    /// The model id in mono (the board's 12.5).
+    public static let modelIdSize: CGFloat = 12.5
+    #else
     public static let modelPickerWidth: CGFloat = 380
     public static let modelRowHeight: CGFloat = 40
     public static let modelSectionGap: CGFloat = 4
     public static let modelSearchHeight: CGFloat = 30
+    public static let modelListInset: CGFloat = SH.Space.xs
+    public static let modelIdSize: CGFloat = 12.5
+    #endif
     public static let modelPickerMaxHeight: CGFloat = 360
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
@@ -81,24 +124,114 @@ public struct SHComposerCommandsLabel: View {
 /// field has focus (or a menu is open, or a drop hovers) the line turns `textTertiary` with a
 /// 3pt `bgSelected` ring. Top: attachments; then the field (it grows to 8 lines); then one row
 /// of controls. Nothing else lives under the field.
-public struct SHComposer<Top: View, Field: View, Controls: View>: View {
+public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Controls: View>: View {
+    /// How the Mac lays the card out: the thread's one line (attach, the words, the controls), or New
+    /// thread's words over the line.
+    public enum Layout: Sendable { case inline, stacked }
+
     let isFocused: Bool
+    let layout: Layout
+    /// Something that shares the card above its line (the Mac's Up next): inside the card's shape, line and focus ring.
+    let above: Above
+    let joined: Bool
     let top: Top
+    let leading: Leading
     let field: Field
     let controls: Controls
+    @Environment(\.shComposerNotice) private var notice
 
-    public init(isFocused: Bool, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
-                @ViewBuilder controls: () -> Controls) {
+    /// `joined` says `above` draws something: the card then clips only what is below it, so a row lifted by a drag floats free.
+    public init(isFocused: Bool, layout: Layout = .stacked, joined: Bool = false, @ViewBuilder above: () -> Above,
+                @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
+                @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
         self.isFocused = isFocused
+        self.layout = layout
+        self.joined = joined
+        self.above = above()
         self.top = top()
+        self.leading = leading()
         self.field = field()
         self.controls = controls()
     }
 
     public var body: some View {
+        #if os(macOS)
+        mac
+        #else
+        touch
+        #endif
+    }
+
+    /// The boards' `.cmp`: `bgRaised` at radius 14 on the `lift` shadow, attachments over one line.
+    private var mac: some View {
+        let shape = RoundedRectangle(cornerRadius: SHComposerMetrics.radius)
+        let below = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(
+            topLeading: joined ? 0 : SHComposerMetrics.radius, bottomLeading: SHComposerMetrics.radius,
+            bottomTrailing: SHComposerMetrics.radius, topTrailing: joined ? 0 : SHComposerMetrics.radius))
+        return VStack(alignment: .leading, spacing: 0) {
+            above
+            VStack(alignment: .leading, spacing: 0) {
+            chips
+            switch layout {
+            case .inline:
+                HStack(alignment: .bottom, spacing: SHComposerMetrics.lineGap) {
+                    leading.frame(height: SHComposerMetrics.lineHeight)
+                    // One line of words sits centred in the 48pt line; more grow the card upward.
+                    field
+                        .padding(.vertical, (SHComposerMetrics.lineHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
+                        .frame(maxWidth: .infinity, minHeight: SHComposerMetrics.lineHeight, alignment: .leading)
+                    HStack(spacing: SH.Space.xxs) { controls }
+                        .frame(height: SHComposerMetrics.lineHeight)
+                }
+                .padding(.horizontal, SHComposerMetrics.linePadding)
+            case .stacked:
+                field
+                    .padding(EdgeInsets(top: SHComposerMetrics.stackedFieldPadding, leading: SHComposerMetrics.stackedFieldPadding,
+                                        bottom: 0, trailing: SHComposerMetrics.stackedFieldPadding))
+                    .frame(minHeight: SHComposerMetrics.stackedFieldMinHeight, alignment: .topLeading)
+                HStack(spacing: SHComposerMetrics.lineGap) {
+                    leading
+                    HStack(spacing: SH.Space.xxs) { controls }
+                }
+                .padding(.horizontal, SHComposerMetrics.linePadding)
+                .frame(height: SHComposerMetrics.lineHeight)
+            }
+            }
+            // As the card eases to a new height (a question taking the field's place, attachments
+            // arriving), what it holds is revealed by its edge rather than drawn outside it.
+            .clipShape(below)
+        }
+        .modifier(SHComposerFocus(isFocused: isFocused))
+        .shLift(shape)
+    }
+
+    private var chips: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Group(subviews: top) { subviews in
+                if !subviews.isEmpty {
+                    // Chips wrap to more rows (design references are wide). The board's `.att`: 8pt apart, 10pt in.
+                    SHFlowLayout(spacing: SH.Space.m, lineSpacing: SH.Space.m) { subviews }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 10)
+                        .padding(.horizontal, 10)
+                }
+            }
+            // Why an attachment cannot go, under the chips in `failed` (the board's `.aerr`).
+            if let notice {
+                Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, SH.Space.s).padding(.horizontal, 14)
+                    .shTransition(.list, edge: .bottom)
+            }
+        }
+    }
+
+    private var touch: some View {
         let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             Group(subviews: top) { subviews in
                 if !subviews.isEmpty {
                     // Chips wrap to more rows (design references are wide).
@@ -111,7 +244,7 @@ public struct SHComposer<Top: View, Field: View, Controls: View>: View {
             field
                 .padding(EdgeInsets(top: SH.Space.l, leading: 14, bottom: SH.Space.xs, trailing: 14))
                 .frame(minHeight: SHComposerMetrics.fieldMinHeight, alignment: .topLeading)
-            HStack(spacing: SH.Space.xxs) { controls }
+            HStack(spacing: SH.Space.xxs) { leading; controls }
                 .padding(EdgeInsets(top: SH.Space.xs, leading: SH.Space.s, bottom: SH.Space.s, trailing: SH.Space.s))
         }
         .background(sh.bgRaised, in: shape)
@@ -120,24 +253,64 @@ public struct SHComposer<Top: View, Field: View, Controls: View>: View {
         .clipShape(shape)
         // The line and the ring fade with focus; keyed on focus alone, so they never lag the
         // card as it grows.
-        .overlay {
-            Color.clear
-                .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
-                .shAnimation(.hover, value: isFocused)
-                .allowsHitTesting(false)
-        }
-        .background {
-            RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
-                .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
-                .opacity(isFocused ? 1 : 0)
-                .shAnimation(.hover, value: isFocused)
-        }
+        .modifier(SHComposerFocus(isFocused: isFocused))
     }
 }
 
-extension SHComposer where Top == EmptyView {
-    public init(isFocused: Bool, @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
-        self.init(isFocused: isFocused, top: { EmptyView() }, field: field, controls: controls)
+extension EnvironmentValues {
+    /// A line in `failed` under the Mac card's attachments: why one cannot go (GXImagesComposer).
+    @Entry public var shComposerNotice: String? = nil
+}
+
+/// The card's edge. On the Mac the boards' `.cmp`: one 1pt `lineStrong` line, the same focused or not, and no ring.
+/// Elsewhere the line darkens and a `bgSelected` ring comes round the card while it holds the keyboard.
+private struct SHComposerFocus: ViewModifier {
+    let isFocused: Bool
+
+    func body(content: Content) -> some View {
+        let sh = Color.sh
+        #if canImport(AppKit)
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: SHComposerMetrics.radius)
+                    .strokeBorder(sh.lineStrong, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        #else
+        content
+            .overlay {
+                Color.clear
+                    .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
+                    .shAnimation(.hover, value: isFocused)
+                    .allowsHitTesting(false)
+            }
+            .background {
+                RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
+                    .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
+                    .opacity(isFocused ? 1 : 0)
+                    .shAnimation(.hover, value: isFocused)
+            }
+        #endif
+    }
+}
+
+extension SHComposer where Above == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder leading: () -> Leading,
+                @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: top, leading: leading, field: field, controls: controls)
+    }
+}
+
+extension SHComposer where Above == EmptyView, Leading == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
+                @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: top, leading: { EmptyView() }, field: field, controls: controls)
+    }
+}
+
+extension SHComposer where Above == EmptyView, Top == EmptyView, Leading == EmptyView {
+    public init(isFocused: Bool, layout: Layout = .stacked, @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
+        self.init(isFocused: isFocused, layout: layout, above: { EmptyView() }, top: { EmptyView() }, leading: { EmptyView() }, field: field, controls: controls)
     }
 }
 
@@ -221,13 +394,20 @@ public struct SHComposerActionButton: View {
     public var body: some View {
         let sh = Color.sh
         let send = mode == .send
+        // The Mac draws the boards' Send and Stop: both on the ink fill, Send on `bgSelected` with a dim arrow while there is
+        // nothing to send. The iPhone and iPad keep Stop on `failed` and a faded Send.
+        #if os(macOS)
+        let (stopFill, stopGlyph, arrow) = (sh.primary, sh.textOnPrimary, enabled ? sh.textOnPrimary : sh.textTertiary)
+        #else
+        let (stopFill, stopGlyph, arrow) = (sh.failed, sh.textOnFailed, sh.textOnPrimary)
+        #endif
         Button(action: action) {
             ZStack {
-                glyph("arrow.up", size: SHComposerMetrics.sendGlyph, color: sh.textOnLantern, shown: send)
-                glyph("stop.fill", size: SHComposerMetrics.stopGlyph, color: sh.textOnFailed, shown: !send)
+                glyph("arrow.up", size: SHComposerMetrics.sendGlyph, color: arrow, shown: send)
+                glyph("stop.fill", size: SHComposerMetrics.stopGlyph, color: stopGlyph, shown: !send)
             }
         }
-        .buttonStyle(SHComposerActionStyle(fill: send ? sh.lantern : sh.failed))
+        .buttonStyle(SHComposerActionStyle(fill: send ? sh.primary : stopFill))
         .disabled(!enabled)
         .background {
             Circle().inset(by: -SHComposerMetrics.focusRing).fill(sh.lanternTint)
@@ -265,11 +445,19 @@ private struct SHComposerActionCircle: View {
 
     var body: some View {
         let pressed = enabled && configuration.isPressed
+        #if os(macOS)
+        // Nothing to send: the boards' `.send.off`, the selection fill under a dim arrow.
+        let shown = enabled ? fill.mix(with: .black, by: pressed ? 0.1 : 0) : Color.sh.bgSelected
+        let faded = 1.0
+        #else
+        let shown = fill.mix(with: .black, by: pressed ? 0.1 : 0)
+        // Send brightens as soon as there is something to send.
+        let faded = enabled ? 1 : 0.35
+        #endif
         configuration.label
             .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
-            .background(fill.mix(with: .black, by: pressed ? 0.1 : 0), in: Circle())
-            // Send brightens as soon as there is something to send.
-            .opacity(enabled ? 1 : 0.35)
+            .background(shown, in: Circle())
+            .opacity(faded)
             .shAnimation(.hover, value: enabled)
             .shAnimation(.hover, value: hovering)
             .contentShape(Circle())

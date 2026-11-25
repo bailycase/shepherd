@@ -120,9 +120,9 @@ public struct SHRadioGroup<Value: Hashable>: View {
                 Button { selection = option.value } label: {
                     HStack(spacing: SH.Space.m) {
                         ZStack {
-                            Circle().fill(on ? sh.lantern : sh.bgRaised)
+                            Circle().fill(on ? sh.primary : sh.bgRaised)
                             if on {
-                                Circle().fill(sh.textOnLantern).frame(width: 6, height: 6)
+                                Circle().fill(sh.textOnPrimary).frame(width: 6, height: 6)
                             } else {
                                 Circle().strokeBorder(sh.lineStrong, lineWidth: 1.5)
                             }
@@ -341,10 +341,10 @@ private struct SHSliderTrack: View {
             let filled = settings ? x : x + knob / 2
             ZStack(alignment: .leading) {
                 Capsule().fill(sh.lineStrong).frame(height: track)
-                Capsule().fill(sh.lantern).frame(width: filled, height: track)
+                Capsule().fill(sh.primary).frame(width: filled, height: track)
                 // A hairline ring outside the knob, as the board's 1px spread shadow draws.
                 Circle()
-                    .fill(settings ? sh.textPrimary : sh.knobOn)
+                    .fill(settings ? sh.textPrimary : sh.knobOff)
                     .background { Circle().fill(sh.lineStrong).padding(settings ? 0 : -SH.hairline(displayScale)) }
                     .shadow(color: settings ? .clear : sh.knobShadow, radius: 1.5, y: 1)
                     .frame(width: knob, height: knob)

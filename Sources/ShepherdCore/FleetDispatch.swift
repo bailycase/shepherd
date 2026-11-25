@@ -105,6 +105,9 @@ public enum FleetDispatchCode {
     public static let snapshotTooLarge = "snapshot_too_large"
     public static let snapshotMismatch = "snapshot_mismatch"
     public static let snapshotFailed = "snapshot_failed"
+    /// The receiving thread started, but its provider failed the turn.
+    public static let turnFailed = "turn_failed"
+    public static let diskLow = "disk_low"
     /// The Mac that was to run the work couldn't clone the repository from its origin. The sender answers by sending the repository
     /// itself (a bundle); only when that isn't possible, or fails too, does the dispatch end `repo_missing` with git's own error.
     public static let cloneFailed = "clone_failed"
@@ -210,16 +213,26 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
     public var branch: String
     /// The branch's head commit.
     public var head: String?
-    /// Commits the branch has beyond the commit the work started from.
+    /// Commits the branch has beyond the comparison base.
     public var ahead: Int
-    /// Origin has this head.
+    /// The origin branch used to select the merge base, or nil when compared with the dispatch's start.
+    public var comparedTo: String?
+    /// Origin has this head on the dispatch branch.
     public var pushed: Bool
+    /// When true, origin could not be reached or read; `pushed` is not known. Absent on older records.
+    public var originCheckFailed: Bool?
     public var filesChanged: Int
     public var insertions: Int
     public var deletions: Int
+    /// Tracked or staged changes in the checkout, separate from the branch diff. Nil when not reported.
+    public var uncommittedModified: Int?
+    public var uncommittedUntracked: Int?
+    /// When true, Git status failed. Absent on older records.
+    public var uncommittedCheckFailed: Bool?
 
     public init(branch: String, head: String? = nil, ahead: Int = 0, pushed: Bool = false,
-                filesChanged: Int = 0, insertions: Int = 0, deletions: Int = 0) {
+                filesChanged: Int = 0, insertions: Int = 0, deletions: Int = 0,
+                uncommittedModified: Int? = nil, uncommittedUntracked: Int? = nil, uncommittedCheckFailed: Bool? = nil) {
         self.branch = branch
         self.head = head
         self.ahead = ahead
@@ -227,6 +240,9 @@ public struct FleetBranchFacts: Codable, Hashable, Sendable {
         self.filesChanged = filesChanged
         self.insertions = insertions
         self.deletions = deletions
+        self.uncommittedModified = uncommittedModified
+        self.uncommittedUntracked = uncommittedUntracked
+        self.uncommittedCheckFailed = uncommittedCheckFailed
     }
 }
 
@@ -297,11 +313,18 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var targetHostName: String?
     /// The Mac the sender asked for by name; nil for Auto.
     public var requestedHost: String?
+    /// How many dispatches the named Mac reported running when it last declined admission.
+    public var hostRunningDispatches: Int?
     public var state: FleetDispatchState
     /// The code it failed or was refused with (`FleetDispatchCode`); set with `.failed`.
     public var failure: String?
     public var failureDetail: String?
     public var title: String
+    /// The receiving Mac increments this on each confirmed rename. Older status pushes cannot restore a previous title.
+    public var titleRevision: UInt64?
+    /// The sender gave `title` (else it is the task's first line, so a thread other than the sender must not be shown it). False from an older
+    /// build, whose titles are all treated as the task's.
+    public var titleGiven: Bool
     /// What the thread was asked to do. Data: nothing reads it as an instruction but the thread it was sent to.
     public var task: String
     public var repoKey: String
@@ -311,6 +334,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var subdir: String?
     /// The branch the target made (`fleet/<slug>`), written before the worktree exists so a retry agrees.
     public var branch: String?
+    /// Origin branch expected to receive the work (unqualified name). The start commit is independent.
+    public var comparisonBranch: String?
     public var model: String?
     public var thinking: String?
     public var reasonCodes: [FleetPlacementReason]
@@ -321,6 +346,10 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
     public var remoteAgentID: AgentID?
     /// What the thread is doing, in a line, as the target last said.
     public var activity: String?
+    /// Receiving Mac's time of the last pi event, in epoch milliseconds. Supplied on a live status read.
+    public var lastThreadEventAt: Double?
+    /// The receiving Mac's acknowledgement of a sender-requested close.
+    public var closeReport: String?
     public var resultText: String?
     public var resultBranchFacts: FleetBranchFacts?
     /// The snapshot that went with the work (`FleetSnapshotHeader`): bytes to send, bytes sent so far, the files it names, whether it
@@ -357,7 +386,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
 
     public init(id: UUID = UUID(), kind: Kind = .agentDispatch, parentAgentID: AgentID? = nil, parentHostID: UUID, parentHostName: String,
                 parentTitle: String = "", targetHostID: UUID? = nil, targetHostName: String? = nil, requestedHost: String? = nil,
-                state: FleetDispatchState = .placing, failure: String? = nil, failureDetail: String? = nil, title: String, task: String,
+                state: FleetDispatchState = .placing, failure: String? = nil, failureDetail: String? = nil, title: String, titleGiven: Bool = false, task: String,
                 repoKey: String, commitSHA: String? = nil, subdir: String? = nil, branch: String? = nil, model: String? = nil,
                 thinking: String? = nil, reasonCodes: [FleetPlacementReason] = [], without: [String] = [], remoteAgentID: AgentID? = nil, activity: String? = nil,
                 resultText: String? = nil, resultBranchFacts: FleetBranchFacts? = nil, snapshotBytes: UInt64? = nil, snapshotProgress: UInt64? = nil,
@@ -381,6 +410,7 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         self.failure = failure
         self.failureDetail = failureDetail
         self.title = title
+        self.titleGiven = titleGiven
         self.task = task
         self.repoKey = repoKey
         self.commitSHA = commitSHA
@@ -408,8 +438,8 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentAgentID, parentHostID, parentHostName, parentTitle, targetHostID, targetHostName, requestedHost, state
-        case failure, failureDetail, title, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
-        case activity, resultText, resultBranchFacts, createdAt, updatedAt
+        case failure, failureDetail, title, titleGiven, titleRevision, task, repoKey, commitSHA, subdir, branch, model, thinking, reasonCodes, without, remoteAgentID
+        case activity, lastThreadEventAt, resultText, resultBranchFacts, createdAt, updatedAt, hostRunningDispatches, closeReport, comparisonBranch
         case snapshotBytes, snapshotProgress, snapshotFiles, sendWarning, fileMillis
         case spaceID, origin, clone, start, fixes, move, movedOn, limitProvider, parentDepth
     }
@@ -425,22 +455,28 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         targetHostID = try c.decodeIfPresent(UUID.self, forKey: .targetHostID)
         targetHostName = try c.decodeIfPresent(String.self, forKey: .targetHostName)
         requestedHost = try c.decodeIfPresent(String.self, forKey: .requestedHost)
+        hostRunningDispatches = try c.decodeIfPresent(Int.self, forKey: .hostRunningDispatches)
         // A state this build doesn't know (a newer build's) reads as failed: nothing resumes it.
         state = (try? c.decodeIfPresent(FleetDispatchState.self, forKey: .state)) ?? .failed
         failure = try c.decodeIfPresent(String.self, forKey: .failure)
         failureDetail = try c.decodeIfPresent(String.self, forKey: .failureDetail)
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        titleGiven = try c.decodeIfPresent(Bool.self, forKey: .titleGiven) ?? false
+        titleRevision = try c.decodeIfPresent(UInt64.self, forKey: .titleRevision)
         task = try c.decodeIfPresent(String.self, forKey: .task) ?? ""
         repoKey = try c.decodeIfPresent(String.self, forKey: .repoKey) ?? ""
         commitSHA = try c.decodeIfPresent(String.self, forKey: .commitSHA)
         subdir = try c.decodeIfPresent(String.self, forKey: .subdir)
         branch = try c.decodeIfPresent(String.self, forKey: .branch)
+        comparisonBranch = try c.decodeIfPresent(String.self, forKey: .comparisonBranch)
         model = try c.decodeIfPresent(String.self, forKey: .model)
         thinking = try c.decodeIfPresent(String.self, forKey: .thinking)
         reasonCodes = (try? c.decodeIfPresent([FleetPlacementReason].self, forKey: .reasonCodes)) ?? []
         without = try c.decodeIfPresent([String].self, forKey: .without) ?? []
         remoteAgentID = try c.decodeIfPresent(AgentID.self, forKey: .remoteAgentID)
         activity = try c.decodeIfPresent(String.self, forKey: .activity)
+        lastThreadEventAt = try c.decodeIfPresent(Double.self, forKey: .lastThreadEventAt)
+        closeReport = try c.decodeIfPresent(String.self, forKey: .closeReport)
         resultText = try c.decodeIfPresent(String.self, forKey: .resultText)
         resultBranchFacts = try c.decodeIfPresent(FleetBranchFacts.self, forKey: .resultBranchFacts)
         snapshotBytes = try c.decodeIfPresent(UInt64.self, forKey: .snapshotBytes)
@@ -472,21 +508,27 @@ public struct FleetDispatchRecord: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(targetHostID, forKey: .targetHostID)
         try c.encodeIfPresent(targetHostName, forKey: .targetHostName)
         try c.encodeIfPresent(requestedHost, forKey: .requestedHost)
+        try c.encodeIfPresent(hostRunningDispatches, forKey: .hostRunningDispatches)
         try c.encode(state, forKey: .state)
         try c.encodeIfPresent(failure, forKey: .failure)
         try c.encodeIfPresent(failureDetail, forKey: .failureDetail)
         try c.encode(title, forKey: .title)
+        if titleGiven { try c.encode(titleGiven, forKey: .titleGiven) }
+        try c.encodeIfPresent(titleRevision, forKey: .titleRevision)
         try c.encode(task, forKey: .task)
         try c.encode(repoKey, forKey: .repoKey)
         try c.encodeIfPresent(commitSHA, forKey: .commitSHA)
         try c.encodeIfPresent(subdir, forKey: .subdir)
         try c.encodeIfPresent(branch, forKey: .branch)
+        try c.encodeIfPresent(comparisonBranch, forKey: .comparisonBranch)
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(thinking, forKey: .thinking)
         if !reasonCodes.isEmpty { try c.encode(reasonCodes, forKey: .reasonCodes) }
         if !without.isEmpty { try c.encode(without, forKey: .without) }
         try c.encodeIfPresent(remoteAgentID, forKey: .remoteAgentID)
         try c.encodeIfPresent(activity, forKey: .activity)
+        try c.encodeIfPresent(lastThreadEventAt, forKey: .lastThreadEventAt)
+        try c.encodeIfPresent(closeReport, forKey: .closeReport)
         try c.encodeIfPresent(resultText, forKey: .resultText)
         try c.encodeIfPresent(resultBranchFacts, forKey: .resultBranchFacts)
         try c.encodeIfPresent(snapshotBytes, forKey: .snapshotBytes)

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -43,9 +44,24 @@ final class PushNotifications: @unchecked Sendable {
         let registrationID: String
         let cancel: () -> Void
     }
+    /// Disk-only metadata. Keep the old keys flat; missing metadata decodes as nil.
+    struct Registration: Codable, Equatable {
+        var id: String
+        let sendToken: String
+        let preferences: RemotePushPreferences?
+        let deviceID: UUID?
+        var ownerlessFirstSeen: Date?
+    }
+    private static let ownerlessLifetime: TimeInterval = 7 * 24 * 60 * 60
+    private static let fileLimit = 32_768
+    private static let registrationLimit = 16
+    private static let deviceLimit = 2
     private let file: URL
     private let queue: DispatchQueue
-    private(set) var registrations: [String: RemotePushRegistration] = [:]
+    /// Keep the last readable bytes separate from in-memory unregisters that haven't reached disk.
+    private var diskBytes: Data?
+    private var storageDamaged = false
+    private(set) var registrations: [String: Registration] = [:]
     private var deliveries: [UUID: Delivery] = [:]
     private var window = Date.distantPast
     private var eventCount = 0
@@ -57,15 +73,19 @@ final class PushNotifications: @unchecked Sendable {
     var focused: AgentID?
     /// Whether the person muted this thread's pushes (`Agent.pushMuted`); set by the server.
     var muted: (AgentID) -> Bool = { _ in false }
-    var now: () -> Date = Date.init
+    /// Consult pairing state even after restart or when an older copy of the file is restored.
+    var canDeliverToDevice: (UUID) -> Bool = { _ in true }
+    var isDeviceRevoked: (UUID) -> Bool = { _ in false }
+    var now: () -> Date
     /// Seconds since the person last touched this Mac, for away-only phones.
     var idleSeconds: () -> TimeInterval = {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
     }
 
-    init(file: URL, queue: DispatchQueue) {
+    init(file: URL, queue: DispatchQueue, now: @escaping () -> Date = Date.init) {
         self.file = file
         self.queue = queue
+        self.now = now
         transport = { request, finished in
             let task = PushHTTP.session.dataTask(with: request) { _, response, _ in
                 finished((response as? HTTPURLResponse)?.statusCode)
@@ -73,44 +93,198 @@ final class PushNotifications: @unchecked Sendable {
             task.resume()
             return { task.cancel() }
         }
-        if let data = try? Data(contentsOf: file), data.count <= 32_768,
-           let saved = try? JSONDecoder().decode([RemotePushRegistration].self, from: data), saved.count <= 16 {
-            for registration in saved where Self.valid(registration) {
-                let id = UUID(uuidString: registration.id)!.uuidString
-                registrations[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken,
-                                                           preferences: registration.preferences)
-            }
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        _ = try? refreshRegistrations()
+    }
+
+    func load() {
+        try? refreshAndExpire() // Read and save failures are logged at their source.
+    }
+
+    private static func validToken(_ token: String) -> Bool {
+        token.utf8.count == 64
+            && token.utf8.allSatisfy { (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }
+    }
+
+    // A nil caller is the local owner. A paired device can adopt an unowned legacy row.
+    func register(_ registration: RemotePushRegistration, deviceID: UUID? = nil) throws {
+        guard let id = UUID(uuidString: registration.id)?.uuidString,
+              Self.validToken(registration.sendToken) else { throw Failure.invalid }
+        try pruneRevoked(replacing: refreshRegistrations())
+        let now = now()
+        var next = expiringOwnerless(at: now)
+        let current = next[id]
+        let foreign = deviceID != nil && current?.deviceID != nil && current?.deviceID != deviceID
+        guard (current != nil && !foreign) || next.count < Self.registrationLimit else { throw Failure.full }
+        if let deviceID, current?.deviceID != deviceID {
+            guard next.values.filter({ $0.deviceID == deviceID }).count < Self.deviceLimit else { throw Failure.full }
         }
-    }
-
-    static func valid(_ registration: RemotePushRegistration) -> Bool {
-        UUID(uuidString: registration.id) != nil && registration.sendToken.utf8.count == 64
-            && registration.sendToken.utf8.allSatisfy { (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }
-    }
-
-    func register(_ registration: RemotePushRegistration) throws {
-        guard Self.valid(registration) else { throw Failure.invalid }
-        let id = UUID(uuidString: registration.id)!.uuidString
-        guard registrations[id] != nil || registrations.count < 16 else { throw Failure.full }
-        var next = registrations
-        next[id] = RemotePushRegistration(id: id, sendToken: registration.sendToken, preferences: registration.preferences)
-        try persist(next)
+        // A foreign ID gets the reply for a new ID at the same capacity, without changing the row.
+        guard !foreign else { return }
+        let owner = deviceID ?? current?.deviceID
+        next[id] = Registration(id: id, sendToken: registration.sendToken, preferences: registration.preferences,
+                                deviceID: owner, ownerlessFirstSeen: owner == nil ? current?.ownerlessFirstSeen ?? now : nil)
+        // Save expiry and registration together. A refused request must not stamp the file.
+        try saveWithExpiry(next, replacing: diskBytes)
         cancel(id)
+    }
+
+    func unregister(_ rawID: String, deviceID: UUID? = nil, matching expired: Registration? = nil) throws {
+        guard let id = UUID(uuidString: rawID)?.uuidString else { throw Failure.invalid }
+        let original = try refreshRegistrations()
+        guard expired == nil || registrations[id] == expired else { return }
+        // An unknown ID still goes through the normal write, including normalization of legacy rows.
+        let foreign = deviceID != nil && registrations[id]?.deviceID != nil && registrations[id]?.deviceID != deviceID
+        try remove(foreign ? [] : [id], replacing: original)
+    }
+
+    func pruneRevokedDevices() {
+        do { try pruneRevoked(replacing: refreshRegistrations()) }
+        catch { ShepherdLog.warning("Could not remove push registrations for a revoked device: \(error.localizedDescription)") }
+    }
+
+    private func pruneRevoked(replacing original: Data?) throws {
+        let next = registrations.filter { $0.value.deviceID.map(isDeviceRevoked) != true }
+        guard next.count != registrations.count else { return }
+        for id in registrations.keys where next[id] == nil { cancel(id) }
+        // Delivery already checks pairing. Keep the rows visible to pruning until the save succeeds.
+        try persist(next, replacing: original)
         registrations = next
     }
 
-    func unregister(_ rawID: String) throws {
-        guard let id = UUID(uuidString: rawID)?.uuidString else { throw Failure.invalid }
-        // Revocation takes effect even if disk fails; the caller gets an error and may retry.
-        cancel(id)
-        registrations.removeValue(forKey: id)
-        try persist(registrations)
+    private func remove(_ ids: [String], replacing original: Data?) throws {
+        // After a healthy read, revoke in memory even if the save fails.
+        for id in ids {
+            cancel(id)
+            registrations.removeValue(forKey: id)
+        }
+        try persist(registrations, replacing: original)
     }
 
-    private func persist(_ next: [String: RemotePushRegistration]) throws {
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try PiHome.write(JSONEncoder().encode(Array(next.values)), to: file, mode: 0o600)
+    /// Only run expiry after a healthy read. Keep expiry in memory even if the save fails.
+    private func refreshAndExpire() throws {
+        let original = try refreshRegistrations()
+        let now = now()
+        let next = expiringOwnerless(at: now)
+        guard next != registrations else { return }
+        cancelExpired(keeping: next)
+        registrations = next
+        do { try persist(next, replacing: original) }
+        catch {
+            guard !storageDamaged else { throw error } // The reader already reported the damage.
+            ShepherdLog.warning("Could not update ownerless push registrations: \(error.localizedDescription)")
+            // If the save's re-read found a replacement file, expire its rows instead of restoring the old ones.
+            if diskBytes != original {
+                let current = expiringOwnerless(at: now)
+                cancelExpired(keeping: current)
+                registrations = current
+            }
+        }
+    }
+
+    private func expiringOwnerless(at now: Date) -> [String: Registration] {
+        var next = registrations
+        for (id, var row) in registrations where row.deviceID == nil {
+            if let firstSeen = row.ownerlessFirstSeen {
+                if now.timeIntervalSince(firstSeen) >= Self.ownerlessLifetime {
+                    next.removeValue(forKey: id)
+                }
+            } else {
+                row.ownerlessFirstSeen = now
+                next[id] = row
+            }
+        }
+        return next
+    }
+
+    private func saveWithExpiry(_ next: [String: Registration], replacing original: Data?) throws {
+        cancelExpired(keeping: next)
+        try persist(next, replacing: original)
+        registrations = next
+    }
+
+    private func cancelExpired(keeping next: [String: Registration]) {
+        for id in registrations.keys where next[id] == nil { cancel(id) }
+    }
+
+    private func refreshRegistrations() throws -> Data? {
+        do {
+            try readRegistrations()
+            storageDamaged = false
+            return diskBytes
+        } catch {
+            let problem = Failure.damaged(file.path)
+            if !storageDamaged {
+                ShepherdLog.warning(problem.localizedDescription)
+                stop()
+            }
+            storageDamaged = true
+            throw problem
+        }
+    }
+
+    private func readRegistrations() throws {
+        let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        if fd < 0, errno == ENOENT {
+            if diskBytes != nil {
+                registrations.removeAll()
+                stop()
+            }
+            diskBytes = nil
+            return
+        }
+        guard fd >= 0 else { throw CocoaError(.fileReadUnknown) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_size <= Self.fileLimit else { throw CocoaError(.fileReadCorruptFile) }
+        let data = try handle.read(upToCount: Self.fileLimit + 1) ?? Data()
+        guard data.count <= Self.fileLimit else { throw CocoaError(.fileReadCorruptFile) }
+        if data != diskBytes || storageDamaged {
+            switch PersistedFile<[Registration]>.decode(data, validate: { saved in
+                guard saved.count <= Self.registrationLimit,
+                      saved.allSatisfy({ UUID(uuidString: $0.id) != nil && Self.validToken($0.sendToken) }) else { throw Failure.invalid }
+            }) {
+            case .loaded(let saved):
+                var next: [String: Registration] = [:]
+                let now = now()
+                for var registration in saved {
+                    registration.id = UUID(uuidString: registration.id)!.uuidString
+                    // A rewrite must never silently drop a row with a colliding ID.
+                    guard next[registration.id] == nil else { throw Failure.invalid }
+                    if registration.deviceID == nil, let firstSeen = registration.ownerlessFirstSeen, firstSeen > now {
+                        registration.ownerlessFirstSeen = now
+                    }
+                    next[registration.id] = registration
+                }
+                for (id, old) in registrations where next[id] != old { cancel(id) }
+                registrations = next
+                diskBytes = data
+            case .damaged(_, let error): throw error
+            case .missing: throw CocoaError(.fileReadUnknown) // A supplied body cannot be missing.
+            }
+        }
+        if info.st_mode & 0o7777 != 0o600 { _ = fchmod(fd, 0o600) }
+    }
+
+    private func persist(_ next: [String: Registration], replacing original: Data?) throws {
+        let directory = file.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let staged = directory.appendingPathComponent(".push-registrations-\(UUID().uuidString)")
+        let bytes = try JSONEncoder().encode(Array(next.values))
+        let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
+        defer { _ = unlink(staged.path) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        try handle.write(contentsOf: bytes)
+        try handle.close()
+        // Recheck after staging. An exclusive first write cannot clobber a late arrival.
+        // An external editor can still race replacement of an existing file after this check.
+        guard try refreshRegistrations() == original else { throw Failure.changed }
+        guard renamex_np(staged.path, file.path, original == nil ? UInt32(RENAME_EXCL) : 0) == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        diskBytes = bytes
     }
 
     private func cancel(_ id: String) {
@@ -168,16 +342,24 @@ final class PushNotifications: @unchecked Sendable {
         }
     }
 
+    private func canDeliver(to registration: Registration) -> Bool {
+        registration.deviceID.map(canDeliverToDevice) ?? true
+    }
+
     /// `group` stacks the alert with its thread's others; `subtitle` names the kind.
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil,
               group: String? = nil, subtitle: String? = nil,
               topic: RemotePushPreferences.Topic? = nil, detail: PushDetail? = nil) {
         let topic = topic ?? Self.topic(kind)
         let skip = { (why: String) in ShepherdLog.push("push \(kind.rawValue) for \(agentID.rawValue) skipped: \(why)") }
+        do { try refreshAndExpire() }
+        catch { return skip("push registrations unavailable") }
         guard !registrations.isEmpty else { return skip("no phone registered") }
+        let eligible = registrations.values.filter { canDeliver(to: $0) }
+        guard !eligible.isEmpty else { return skip("all registrations skipped because their devices are not paired") }
         let idle = idleSeconds()
         let away = idle >= RemotePushPreferences.awayAfter
-        let wanted = registrations.values.filter { registration in
+        let wanted = eligible.filter { registration in
             guard let preferences = registration.preferences else { return true }
             return (away || !preferences.awayOnly) && preferences.allows(topic)
         }
@@ -219,7 +401,7 @@ final class PushNotifications: @unchecked Sendable {
 
     /// One delivery of `bodies.first`; the rest are the same event in older relays' shapes, each sent once
     /// if the one before is refused.
-    private func post(_ bodies: ArraySlice<(Relay, Data)>, to registration: RemotePushRegistration) {
+    private func post(_ bodies: ArraySlice<(Relay, Data)>, to registration: Registration) {
         guard let body = bodies.first?.1 else { return }
         let id = UUID()
         var request = URLRequest(url: URL(string: "https://api.useshepherd.app/api/push/registrations/\(registration.id)/events")!)
@@ -232,18 +414,20 @@ final class PushNotifications: @unchecked Sendable {
             guard let self else { return }
             ShepherdLog.push("push relay answered \(status.map(String.init) ?? "no response") (\(bodies.first?.0 ?? .legacy) shape)")
             self.queue.async {
-                self.deliveries.removeValue(forKey: id)
+                guard self.deliveries.removeValue(forKey: id) != nil else { return }
                 // The relay validates before it claims the event id, so the same event may go again.
-                if status == 400, let older = bodies.dropFirst().first, self.registrations[registration.id] == registration {
+                if status == 400, let older = bodies.dropFirst().first {
+                    do { try self.refreshAndExpire() }
+                    catch { return }
+                    guard self.registrations[registration.id] == registration, self.canDeliver(to: registration) else { return }
                     self.relay = max(self.relay, older.0)
                     self.post(bodies.dropFirst(), to: registration)
                     return
                 }
-                guard status == 401 || status == 410,
-                      self.registrations[registration.id] == registration else { return }
+                guard status == 401 || status == 410 else { return }
                 // A revoked relay credential must not permanently consume a host slot.
                 // Never remove a replacement credential because an old request finished late.
-                try? self.unregister(registration.id)
+                try? self.unregister(registration.id, matching: registration)
             }
         }
         deliveries[id] = Delivery(registrationID: registration.id, cancel: cancel)
@@ -252,7 +436,14 @@ final class PushNotifications: @unchecked Sendable {
         }
     }
 
-    enum Failure: Error { case invalid, full }
+    enum Failure: LocalizedError {
+        case invalid, full, changed, damaged(String)
+
+        var errorDescription: String? {
+            guard case .damaged(let path) = self else { return nil }
+            return "Push registrations could not be read at \(path) on the host. Fix access or restore a known-good backup there. To start with no registrations, move or delete the file. Then retry registration or reconnect to the host."
+        }
+    }
 }
 
 final class PushHTTP: NSObject, URLSessionTaskDelegate {

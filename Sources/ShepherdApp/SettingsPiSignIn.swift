@@ -1,6 +1,8 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdSessions
+import ShepherdRemote
+import ShepherdProtocol
 
 /// Settings ▸ Models ▸ Accounts (SettingsPiSignIn, SettingsPiSignInKeys):
 /// Subscriptions, API keys and Custom providers, each provider with its state and what to do
@@ -8,6 +10,10 @@ import ShepherdSessions
 struct PiSignInSettings: View {
     let yourPi: YourPiModel
     let auth: PiAuthStore
+    /// Opens Settings ▸ Tools, where extensions that add providers are added. Nil hides the link.
+    var openExtensions: (() -> Void)? = nil
+    /// Opens Settings ▸ Tools at one extension's row, by its copy's destination.
+    var openExtension: ((String) -> Void)? = nil
     @State private var renaming: Renaming?
     @State private var newName = ""
 
@@ -20,15 +26,19 @@ struct PiSignInSettings: View {
 
     var body: some View {
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: auth.expired,
-                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts)
+                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts, providers: auth.providers,
+                                     owners: auth.providerOwners)
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                if let problem = auth.providersProblem { SHInlineProblem(problem) }
                 SettingsGroup(title: "Subscriptions", footnote: PiSignInWords.sharedLoginNote(page.subscriptions.filter(\.sharedLoginNote).map(\.name)),
                               links: [SettingsLink("Re-import from pi",
                                                    enabled: yourPi.survey?.folder != nil && !yourPi.busy.contains(YourPiModel.rowID(.logins)),
                                                    help: yourPi.survey?.folder == nil ? "Shepherd found no pi of yours." : "Copies every sign-in from your pi again.") {
                                   Task { await yourPi.reimport(.logins) }
-                              }]) {
+                              }] + (openExtensions.map { open in
+                                  [SettingsLink("Add a provider", help: "Providers come from extensions, added in Settings ▸ Tools.", action: open)]
+                              } ?? [])) {
                     ForEach(page.subscriptions) { row in
                         providerRow(row).id(row.id)
                     }
@@ -37,7 +47,7 @@ struct PiSignInSettings: View {
                     ForEach(page.apiKeys) { row in
                         providerRow(row).id(row.id)
                     }
-                    AddKeyRow(providers: page.addable) { auth.signIn($0, key: true) }
+                    AddKeyRow(providers: page.addable, names: page.providerNames) { auth.signIn($0, key: true) }
                 }
                 if !page.customProviders.isEmpty {
                     SettingsGroup(title: "Custom providers",
@@ -59,7 +69,10 @@ struct PiSignInSettings: View {
             }
         }
         .task { await yourPi.refresh() }
-        .task { await auth.refreshAccounts() }
+        .task(id: yourPi.survey?.extensions) {
+            await auth.refreshProviders()
+            await auth.refreshAccounts()
+        }
         // Again after a sign-in, sign-out, account switch or new account. Keyed on ids alone: the
         // read saves usage into the accounts, which must not start another read.
         .task(id: UsageInputs(subscriptions: page.subscriptions.map(\.auth),
@@ -127,14 +140,16 @@ struct PiSignInSettings: View {
         parts += status.parts.map(\.text)
         if let list { parts.append("\(list.accounts.count) accounts") }
         else if row.auth.isSignedIn, let window = (auth.usage[row.id] ?? []).max(by: { $0.usedPercent < $1.usedPercent }) {
-            parts.append("\(Int(window.usedPercent.rounded()))% of the \(window.name.lowercased()) used")
+            parts.append(HostInventoryPresentation.usageWords(HostUsageWindow(name: window.name, usedPercent: window.usedPercent)))
         }
+        if row.auth.isSignedIn, let balance = auth.balances[row.id] { parts.append(PiSignInWords.balance(balance)) }
+        if let source = row.source { parts.append("from \(source)") }
         return parts.joined(separator: " · ")
     }
 
     /// Subscriptions and keys in auth.json can save more than one account; a variable or custom provider can't.
     private func canAddAccount(_ row: ProviderRowModel) -> Bool {
-        guard !row.custom else { return false }
+        guard !row.custom, row.signInAvailable else { return false }
         switch row.auth {
         case .signedIn, .key: return true
         default: return false
@@ -151,10 +166,12 @@ struct PiSignInSettings: View {
                 .help((row.accounts?.accounts.count ?? 0) > 1 ? "Signs out of every saved \(row.name) account." : "")
         case .expired:
             Button("Sign in again") { auth.signIn(row.id) }
+                .disabled(!row.signInAvailable)
                 .buttonStyle(.sh(.primary, size: .s))
                 .accessibilityLabel("Sign in to \(row.name) again")
         case .notSignedIn:
             Button("Sign in") { auth.signIn(row.id) }
+                .disabled(!row.signInAvailable)
                 .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Sign in to \(row.name)")
         case .signingIn:
@@ -163,6 +180,7 @@ struct PiSignInSettings: View {
                 .accessibilityLabel("Cancel signing in to \(row.name)")
         case .key, .environment:
             Button("Change key") { auth.signIn(row.id, key: true) }
+                .disabled(!row.signInAvailable)
                 .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Change \(row.name)’s key")
         case .noKey:
@@ -191,24 +209,33 @@ struct PiSignInSettings: View {
         }
         switch row.auth {
         case .key, .environment:
-            Button("Change key…") { auth.signIn(row.id, key: true) }
+            Button("Change key…") { auth.signIn(row.id, key: true) }.disabled(!row.signInAvailable)
             if canAddAccount(row) {
                 Button("Add another account…") { Task { await auth.addAccount(row.id, key: true) } }
             }
             reimportItem(row)
+            extensionItem(row)
             Divider()
             Button("Remove key", role: .destructive) { Task { await auth.signOut(row.id) } }
                 .disabled({ if case .environment = row.auth { true } else { false } }())
         default:
-            Button("Sign in again") { auth.signIn(row.id) }
+            Button("Sign in again") { auth.signIn(row.id) }.disabled(!row.signInAvailable)
             if canAddAccount(row) {
                 Button("Add another account…") { Task { await auth.addAccount(row.id) } }
             }
             reimportItem(row)
+            extensionItem(row)
             if row.auth.isSignedIn || { if case .expired = row.auth { true } else { false } }() {
                 Divider()
                 Button("Sign out", role: .destructive) { Task { await auth.signOut(row.id) } }
             }
+        }
+    }
+
+    /// Show the extension a provider came from, in Settings ▸ Tools.
+    @ViewBuilder private func extensionItem(_ row: ProviderRowModel) -> some View {
+        if let source = row.source, let id = row.sourceID, let openExtension {
+            Button("Show the \(source) extension") { openExtension(id) }
         }
     }
 
@@ -225,13 +252,14 @@ struct PiSignInSettings: View {
 /// Add an API key: a row whose menu lists the providers with no key yet.
 private struct AddKeyRow: View {
     let providers: [String]
+    var names: [String: String] = [:]
     let add: (String) -> Void
 
     var body: some View {
         SettingsRow(title: "Add an API key") {
             SHPopupMenu("Choose a provider", minWidth: 0) {
                 ForEach(providers, id: \.self) { provider in
-                    Button(PiSignInCatalog.name(provider)) { add(provider) }
+                    Button(names[provider] ?? PiSignInCatalog.name(provider)) { add(provider) }
                 }
             }
             .disabled(providers.isEmpty)
@@ -242,6 +270,11 @@ private struct AddKeyRow: View {
 
 /// How a provider's sign-in reads: its dot, word and details.
 enum PiSignInWords {
+    /// "Credit $18.40": the remote client's words, so both read the same.
+    static func balance(_ balance: PiBalance, locale: Locale = .current) -> String {
+        HostInventoryPresentation.balanceWords(HostBalance(amount: balance.amount, currency: balance.currency, label: balance.label), locale: locale)
+    }
+
     /// "resets 3:40 PM" today, "resets Thu 3:40 PM" later. A window whose reset has passed (an
     /// old reading) is back to 0%.
     static func usage(_ windows: [PiUsageWindow], now: Date = Date()) -> [SHUsageWindow] {

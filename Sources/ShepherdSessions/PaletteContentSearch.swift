@@ -40,7 +40,7 @@ public enum PaletteContentSearch {
         readSnippet: @escaping @Sendable (String, URL) -> String? = { snippet(for: $0, inSessionAt: $1) }
     ) async -> [Match] {
         guard query.count >= minQueryLength, !Task.isCancelled else { return [] }
-        let work = Task.detached(priority: .userInitiated) { () -> [Match] in
+        let work = Task.detached(executorPreference: BlockingTaskExecutor.shared, priority: .userInitiated) { () -> [Match] in
             var directories: [URL] = []
             var wanted: [URL: Set<String>] = [:]
             for agent in agents {

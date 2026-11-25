@@ -185,6 +185,8 @@ struct ComponentGallery: View {
                     SHPaletteRow("New agent", systemImage: "plus", shortcut: keys.display(.newAgent), highlighted: true) {}
                     SHPaletteRow("Settings…", systemImage: "gearshape", shortcut: "⌘,") {}
                 }
+            } footer: {
+                SHPaletteFooter(runs: "New agent")
             }
             .frame(width: AppLayout.paletteWidth)
         }

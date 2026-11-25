@@ -250,6 +250,44 @@ struct YourPiImportTests {
 
     /// Re-imports at once (two rows pressed together, or one while a first copy runs past its
     /// deadline) wait for one another: none clears or replaces another's copy under way.
+    /// A skill folder is one of the skills Settings ▸ Skills keeps records of (`skills.json`, beside the
+    /// home): replacing or adding one is refused, with the records' own message, while that file can't be read.
+    @Test func copyingSkillsAgainIsRefusedWhileTheSkillRecordsAreDamaged() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let theirs = setup.yours.appendingPathComponent("skills")
+        let ours = setup.home.directory.appendingPathComponent("skills")
+        #expect(setup.importer().copyOnce().copied(.skills).map(\.name) == ["fixture-skill"])
+        let copied = try String(contentsOf: ours.appendingPathComponent("fixture-skill/SKILL.md"), encoding: .utf8)
+        try Self.write("---\nname: fixture-skill\ndescription: Edited.\n---\n", to: theirs.appendingPathComponent("fixture-skill/SKILL.md"))
+        try Self.write("---\nname: added\ndescription: New.\n---\n", to: theirs.appendingPathComponent("added/SKILL.md"))
+        let records = setup.home.directory.deletingLastPathComponent().appendingPathComponent("skills/skills.json")
+        try Self.write("{", to: records)
+
+        let error = try #require(throws: YourPiFileError.self) { try setup.importer().reimport(.files(.skills)) }
+        #expect(error.description.contains(records.path) && error.description.contains("backup"), "\(error)")
+        #expect(try String(contentsOf: ours.appendingPathComponent("fixture-skill/SKILL.md"), encoding: .utf8) == copied, "a replacement was refused")
+        #expect(!FileManager.default.fileExists(atPath: ours.appendingPathComponent("added").path), "an addition was refused")
+        #expect(try Data(contentsOf: records) == Data("{".utf8))
+
+        try FileManager.default.removeItem(at: records)
+        let repaired = try setup.importer().reimport(.files(.skills))
+        #expect(repaired.copied(.skills).map(\.name) == ["added", "fixture-skill"])
+        #expect(try String(contentsOf: ours.appendingPathComponent("fixture-skill/SKILL.md"), encoding: .utf8).contains("Edited."))
+    }
+
+    @Test func theFirstCopyAddsNoSkillWhileTheSkillRecordsAreDamaged() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let records = setup.home.directory.deletingLastPathComponent().appendingPathComponent("skills/skills.json")
+        try Self.write("{", to: records)
+        let report = setup.importer().copyOnce()
+        #expect(report.copied(.skills).isEmpty)
+        #expect(report.problems.contains { $0.contains(records.path) })
+        #expect(!FileManager.default.fileExists(atPath: setup.home.directory.appendingPathComponent("skills/fixture-skill").path))
+        #expect(!report.copied(.instructions).isEmpty, "what isn't a skill is copied as before")
+    }
+
     @Test func reimportsAtOnceNeverClearEachOthersCopies() throws {
         let setup = try Setup()
         defer { setup.remove() }

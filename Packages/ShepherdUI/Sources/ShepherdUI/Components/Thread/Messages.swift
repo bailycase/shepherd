@@ -15,7 +15,7 @@ enum SHMessageDetails {
     }
 }
 
-/// A user bubble's measure and inset: the Mac's (and the phone's) at most 600pt with 10×14
+/// A user bubble's measure and inset: the Mac's (and the phone's) at most 560pt with 9×15
 /// inside, or the iPad boards' 520pt with 12×16 (iPadThread).
 public struct SHUserBubbleMetrics: Equatable, Sendable {
     public var maxWidth: CGFloat
@@ -28,17 +28,32 @@ public struct SHUserBubbleMetrics: Equatable, Sendable {
     /// (13.5 on 1.5), which measured 2pt a line taller than the ordinary bubble's.
     public var leadingAdjustment: CGFloat = -1
 
+    #if os(macOS)
+    public static let standard = SHUserBubbleMetrics(maxWidth: SHThreadMetrics.bubbleMaxWidth, vertical: 9, horizontal: 15)
+    #else
     public static let standard = SHUserBubbleMetrics(maxWidth: SHThreadMetrics.bubbleMaxWidth, vertical: 10, horizontal: 14)
+    #endif
     /// The Project conversation's bubble (ProjectLead-Started): a 520pt measure inside 12 / 16 padding and a 1pt border (554pt), caption overlaid. The 2.25pt is the half-leading CSS puts above and below a 20.25pt line that SwiftUI's first and last lines lack.
     public static let lead = SHUserBubbleMetrics(maxWidth: 554, vertical: SH.Space.l + 2.25, horizontal: SH.Space.xl, overlaysCaption: true, leadingAdjustment: -2)
     public static let pad = SHUserBubbleMetrics(maxWidth: 520, vertical: SH.Space.l, horizontal: SH.Space.xl)
+}
+
+extension SHUserBubbleMetrics {
+    /// The bubble's corner and line: the redesign's 18pt and none on the Mac; the iPhone and iPad keep 8pt and a strong line.
+    #if os(macOS)
+    static let radius = SH.Radius.bubble
+    @MainActor static var line: Color { .clear }
+    #else
+    static let radius = SH.Radius.m
+    @MainActor static var line: Color { .sh.lineStrong }
+    #endif
 }
 
 extension EnvironmentValues {
     @Entry public var shUserBubbleMetrics = SHUserBubbleMetrics.standard
 }
 
-/// The user's turn: right-aligned, at most 600pt (`shUserBubbleMetrics`), `bgBubble` with a 1px strong line, radius 8.
+/// The user's turn (the boards' `.you`): right-aligned, at most 560pt (`shUserBubbleMetrics`), `bgBubble` at radius 18, no line.
 /// No avatar and no name; the time sits beneath, shown only while the message is hovered. A
 /// message steered into a running turn wears "Steered" above it and a `running` line. Its text
 /// follows `shProseSize`. `leading` sits above the words inside the bubble: the design references
@@ -54,6 +69,21 @@ public struct SHUserBubble<Leading: View>: View {
 
     /// The "Steered" label's glyph.
     static var steeredGlyph: CGFloat { 11 }
+    /// The label and the bubble's line: the redesign's quiet `textTertiary` and none on the Mac, `running` blue elsewhere.
+    @MainActor static var steeredColor: Color {
+        #if os(macOS)
+        .sh.textTertiary
+        #else
+        .sh.running
+        #endif
+    }
+    @MainActor static var steeredLine: Color {
+        #if os(macOS)
+        .clear
+        #else
+        .sh.running
+        #endif
+    }
 
     let text: String
     let title: String?
@@ -66,6 +96,8 @@ public struct SHUserBubble<Leading: View>: View {
     @Environment(\.shProseSize) private var proseSize
     @Environment(\.shUserBubbleMetrics) private var metrics
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    /// A thread linked in the message (the @ picker writes `[Title](shepherd-thread://<id>)`) draws as its chip.
+    @Environment(\.shThreadLinks) private var threadLinks
 
     /// `attachments` name the images sent with the message. `timestamp` shows only while
     /// `revealed` (the pointer is over the message); `note` follows it and always shows ("from
@@ -90,9 +122,13 @@ public struct SHUserBubble<Leading: View>: View {
             if steered {
                 HStack(spacing: SH.Space.xs) {
                     Image(systemName: "arrow.turn.down.right").font(.system(size: Self.steeredGlyph, weight: .medium))
+                    #if os(macOS)
+                    Text("Steered in").font(.sh(.caption))
+                    #else
                     Text("Steered").font(.sh(.caption, weight: .medium))
+                    #endif
                 }
-                .foregroundStyle(sh.running)
+                .foregroundStyle(Self.steeredColor)
             }
             VStack(alignment: .leading, spacing: SH.Space.m) {
                 // Above the words: what it holds may open over them (a chip's preview).
@@ -106,7 +142,15 @@ public struct SHUserBubble<Leading: View>: View {
                 }
                 if title != nil || !text.isEmpty {
                     VStack(alignment: .leading, spacing: SH.Space.xs) {
+                        #if os(macOS)
+                        if let title { line(title, weight: .regular) } // the redesign's answer is one plain line
+                        #else
+                        #if os(macOS)
+                        if let title { line(title, weight: .regular) } // the redesign's answer is one plain line
+                        #else
                         if let title { line(title, weight: .semibold) }
+                        #endif
+                        #endif
                         if !text.isEmpty { line(text, weight: nil) }
                     }
                 }
@@ -116,8 +160,8 @@ public struct SHUserBubble<Leading: View>: View {
             // The border is drawn under the content, so a chip's preview that opens over the
             // bubble's edge isn't crossed by it.
             .background {
-                RoundedRectangle(cornerRadius: SH.Radius.m).fill(sh.bgBubble)
-                    .shBorder(steered ? sh.running : sh.lineStrong, radius: SH.Radius.m)
+                RoundedRectangle(cornerRadius: SHUserBubbleMetrics.radius).fill(sh.bgBubble)
+                    .shBorder(steered ? Self.steeredLine : SHUserBubbleMetrics.line, radius: SHUserBubbleMetrics.radius)
             }
             .frame(maxWidth: metrics.maxWidth, alignment: .trailing)
             if !metrics.overlaysCaption, timestamp != nil || note != nil {
@@ -131,13 +175,22 @@ public struct SHUserBubble<Leading: View>: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func line(_ value: String, weight: Font.Weight?) -> some View {
-        Text(value)
-            .font(.sh(.body, weight: weight, size: proseSize))
-            .lineSpacing(max(0, SHTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment))
-            .foregroundStyle(Color.sh.textPrimary)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
+    /// The words as typed; only a thread link is read, and draws as its chip (unresolved: its words).
+    @ViewBuilder private func line(_ value: String, weight: Font.Weight?) -> some View {
+        let spacing = max(0, SHTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment)
+        if let threadLinks, let linked = SHThreadLinks.linkingThreads(in: value) {
+            SHThreadChipParagraph(text: linked, links: threadLinks, size: proseSize, weight: weight, lineSpacing: spacing)
+                .foregroundStyle(Color.sh.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(value)
+                .font(.sh(.body, weight: weight, size: proseSize))
+                .lineSpacing(spacing)
+                .foregroundStyle(Color.sh.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// "2:41 PM", or "10:58 · from parent": the time (and its separator) fades in place beside a
@@ -344,6 +397,17 @@ struct SHCopyGlyph: View {
 
 // MARK: Thinking
 
+extension View {
+    /// A thinking row's words: the boards' `.meta` on the Mac (`ui`, upright), italic 12 on the iPhone and iPad.
+    @MainActor func shThinkingTitle() -> some View {
+        #if os(macOS)
+        font(.sh(.ui))
+        #else
+        font(.shSans(12)).italic()
+        #endif
+    }
+}
+
 /// The model's thinking (SHThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
 /// italic 12. Expanded: the text as Markdown (bold, italic, code and links inline; paragraphs,
 /// lists and quotes as blocks) in italic 12.5 on a 2pt rule. Live (LiveText): "Thinking…"
@@ -405,9 +469,18 @@ public struct SHThinking: View {
 
     /// Expanded thinking's text: Geist 12.5 (italic where it is drawn) at 1.55, headings
     /// semibold.
+    /// The Mac's (GXExpanded): the `ui` size upright in `textSecondary` on 20pt lines.
+    #if os(macOS)
+    @MainActor static var font: Font { .sh(.ui, weight: .regular) }
+    @MainActor static var headingFont: Font { .sh(.ui, weight: .semibold) }
+    @MainActor static var lineSpacing: CGFloat { SH.Space.xs }
+    static let italic = false
+    #else
     @MainActor static var font: Font { .shSans(12.5) }
     @MainActor static var headingFont: Font { .shSans(12.5, .semibold) }
     @MainActor static var lineSpacing: CGFloat { SHTextStyle.caption.lineSpacing + 2 }
+    static let italic = true
+    #endif
 
     /// What the row is: only a disclosure has something to open, so only it wears a chevron
     /// and takes a press.
@@ -454,8 +527,9 @@ public struct SHThinking: View {
                     }
                 }
                 .padding(.vertical, SH.Space.xxs)
-                .padding(.leading, SH.Space.l)
-                .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
+                .padding(.leading, SHThreadMetrics.stepsPadding)
+                .overlay(alignment: .leading) { SHThreadMetrics.stepsRule(sh).frame(width: SHThreadMetrics.stepsRuleWidth) }
+                .padding(.leading, SHThreadMetrics.stepsInset)
                 .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
                 .shProseLinks()
                 .shTransition(.disclosure)
@@ -476,7 +550,7 @@ public struct SHThinking: View {
         let note = "\(spokenTitle). The model didn't share its reasoning."
         return HStack(spacing: SH.Space.s) {
             SHThreadChevron(isExpanded: false, shown: false)
-            Text(title).font(.shSans(12)).italic()
+            Text(title).shThinkingTitle()
                 .shContentTransition(.numeric())
                 .shAnimation(.content, value: title)
         }
@@ -491,6 +565,7 @@ public struct SHThinking: View {
 
     private var toggle: some View {
         Button {
+            SHRenderProbe.scrollEvent("thread.write.L9", "thinking.disclosure", kind: "layout")
             withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
         } label: {
             HStack(spacing: SH.Space.s) {
@@ -503,7 +578,7 @@ public struct SHThinking: View {
                         SHElapsedText(since: since, style: .long)
                     }
                 }
-                .font(.shSans(12)).italic()
+                .shThinkingTitle()
                 .shContentTransition(.numeric())
                 .shAnimation(.content, value: title)
             }

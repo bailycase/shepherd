@@ -15,6 +15,66 @@ import Testing
 @Suite("Remote provider sign-in", .mainActorExclusive, .enabled(if: TestNode.url != nil, "needs node 22.6 or later"))
 @MainActor
 struct RemoteProviderConfigFlowTests {
+    @Test(arguments: [("fixture-login", HostProviderSignInMethod.oauth), ("fixture-key", .apiKey)])
+    func aClientDiscoversAndAnswersAnUnfamiliarProvidersAccountFlow(provider: String, method: HostProviderSignInMethod) async throws {
+        let setup = try PiSignInFlowTests.Setup()
+        defer { setup.remove() }
+        let auth = try setup.store()
+        let app = try AppHarness(pi: setup.pi)
+        defer { app.stop() }
+        try await app.start(piAuth: auth)
+        let tokenURL = app.dir.appendingPathComponent("provider-token")
+        let port = try app.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = RemoteHostClient()
+        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "phone")
+        defer { client.disconnect() }
+
+        guard case .providers(let rows) = try await client.hostInventory(.providers) else { Issue.record("expected providers"); return }
+        let row = try #require(rows.first { $0.id == provider })
+        #expect(row.badge == (method == .oauth ? "Subscription" : "API key"))
+        #expect(row.signIn?.keyForm == false)
+        await #expect(throws: RemoteHostClientError.self) {
+            try await client.hostConfig(.providerKey(provider: provider, key: "not-an-api-key"))
+        }
+
+        for adding in [false, true] {
+            let request: RemoteHostConfigRequest = adding && method == .oauth ? .providerAccount(provider: provider, action: .add)
+                : .providerSignIn(provider: provider, method: method, adding: adding)
+            guard case .signIn(let started) = try await client.hostConfig(request) else { Issue.record("expected sign-in"); return }
+            let questions: [(HostSignInPrompt.Kind, String)] = method == .oauth
+                ? [(.select, "west"), (.text, "acme"), (.secret, " fixture-password ")]
+                : [(.secret, " !fixture$password "), (.text, "acme"), (.select, "west")]
+            for (kind, answer) in questions {
+                var progress: HostSignInProgress?
+                try await eventuallyAsync("the remote provider's \(kind) question") {
+                    if case .signIn(let value) = try await client.hostConfig(.signIn(id: started.id, action: .poll)) {
+                        progress = value
+                        return value.prompt?.kind == kind
+                    }
+                    return false
+                }
+                let waiting = try #require(progress)
+                #expect(waiting.wantsCode == (kind == .text))
+                let wire = String(decoding: try JSONEncoder().encode(waiting), as: UTF8.self)
+                #expect(!wire.contains("fixture-password"))
+                await #expect(throws: RemoteHostClientError.self) {
+                    try await client.hostConfig(.signIn(id: started.id, action: .complete(answer, promptID: "stale-question")))
+                }
+                _ = try await client.hostConfig(.signIn(id: started.id, action: .complete(answer, promptID: waiting.prompt?.id)))
+            }
+            try await eventuallyAsync("the remote account to land") {
+                if case .signIn(let value) = try await client.hostConfig(.signIn(id: started.id, action: .poll)) { return value.phase == .done }
+                return false
+            }
+        }
+        await auth.landing?.value
+        #expect(auth.accounts[provider]?.accounts.count == 2)
+        #expect((try setup.stored()[provider] as? [String: Any])?["type"] as? String == (method == .oauth ? "oauth" : "api_key"))
+        _ = try await client.hostConfig(.providerSignOut(provider: provider))
+        #expect(try setup.stored()[provider] == nil)
+    }
+
     @Test func aClientSavesAddsSwitchesAndSignsOutOfKeys() async throws {
         let dir = try makeScratchDirectory("rpsign")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -29,7 +89,7 @@ struct RemoteProviderConfigFlowTests {
         // The second key: a variable the login shell sets, as Settings' key form allows.
         environment["REMOTE_TEST_DEEPSEEK_KEY"] = FakePiSDK.goodKey
         let files = pi.files
-        let auth = PiAuthStore(pi: pi, bridge: {
+        let auth = PiAuthStore(pi: pi, bridge: { _ in
             PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: FakePiSDK.path, home: files),
                            environment: environment)
         })

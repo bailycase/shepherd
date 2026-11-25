@@ -81,6 +81,9 @@ public final class ChangesService: @unchecked Sendable {
         self.trash = trash
         recents = ChangesRecents(url: directory.appendingPathComponent("bases.json"))
         turnStore = TurnStore(url: directory.appendingPathComponent("turns.json"))
+        turnStore.onAvailabilityChanged = { [weak self] agents in
+            for agent in agents { self?.publish(agent) }
+        }
     }
 
     var indexDirectory: URL { directory.appendingPathComponent("index", isDirectory: true) }
@@ -315,7 +318,8 @@ public final class ChangesService: @unchecked Sendable {
             guard let mergeBase = try? ChangesGit.checked(["merge-base", baseID, head], in: repository.root).trimmed, !mergeBase.isEmpty else {
                 throw ChangesError(ChangesError.unavailable, "\(headName()) and \(base) share no history.")
             }
-            if let requested { recents.note(requested, repository: repository.commonDir) }
+            // Recents are best-effort. A damaged file stays untouched and the picker reports it.
+            if let requested { try? recents.note(requested, repository: repository.commonDir) }
             let snapshot = try snapshot(repository)
             return Resolution(revision: .init(old: mergeBase, new: snapshot.tree),
                               comparison: .init(head: headName(), base: base, baseName: ChangesParse.baseName(base, remotes: remotes(repository)),
@@ -336,8 +340,9 @@ public final class ChangesService: @unchecked Sendable {
                               comparison: .init(head: pull.head, base: base, baseName: pull.base, mergeBase: shortID(mergeBase)))
         case .lastTurn, .turn:
             guard let agentID else { throw ChangesError(ChangesError.unavailable, "Only an agent has turns.") }
+            let history = try turnStore.history(agentID).records
             let record: TurnRecord?
-            if case .turn(let id) = scope { record = turnStore.record(agentID, id) } else { record = turnStore.latest(agentID) }
+            if case .turn(let id) = scope { record = history.first { $0.turn.id == id } } else { record = history.last }
             guard let record else { throw ChangesError(ChangesError.unavailable, "No turn yet.") }
             guard let start = record.startTree, exists(start, in: repository) else {
                 throw ChangesError(ChangesError.unavailable, record.turn.reason ?? "The turn’s starting point is no longer available.")
@@ -353,7 +358,7 @@ public final class ChangesService: @unchecked Sendable {
             }
             return Resolution(revision: .init(old: start, new: end),
                               comparison: .init(head: record.endTree == nil ? "Working tree" : "End of turn", base: "Start of turn",
-                                                turn: turnStore.published(agentID).first { $0.id == record.turn.id } ?? record.turn),
+                                                turn: TurnStore.published(history).first { $0.id == record.turn.id } ?? record.turn),
                               skipped: skipped)
         }
     }
@@ -514,6 +519,13 @@ public final class ChangesService: @unchecked Sendable {
     // MARK: Branches and commits
 
     func branches(_ repository: Repository, context: AgentContext) throws -> ChangesBranches {
+        let recentBases: [String]
+        var recentsProblem: String?
+        do { recentBases = try recents.list(repository.commonDir) }
+        catch {
+            recentBases = []
+            recentsProblem = (error as? ChangesError)?.message ?? String(describing: error)
+        }
         let current = currentBranch(repository)
         let result = try ChangesGit.checked(["for-each-ref", "--sort=-committerdate", "--count=500",
                                              "--format=%(refname)%00%(refname:short)%00%(committerdate:unix)%00%(worktreepath)",
@@ -521,8 +533,9 @@ public final class ChangesService: @unchecked Sendable {
         let pull = pullRequest(repository, branch: current)
         return ChangesBranches(defaultBase: defaultBase(repository, agentBase: context.worktreeBase),
                                pullRequestBase: pull.flatMap { pullRequestBase($0, repository: repository) },
-                               recents: recents.list(repository.commonDir).filter { commit($0, in: repository) != nil },
-                               branches: ChangesParse.branches(result.text, current: current))
+                               recents: recentBases.filter { commit($0, in: repository) != nil },
+                               branches: ChangesParse.branches(result.text, current: current),
+                               recentsProblem: recentsProblem)
     }
 
     /// The branch's commits against `base`, newest first; HEAD's recent history without one.
@@ -585,33 +598,33 @@ final class ChangesCache<Value>: @unchecked Sendable {
 /// Bases picked in each repository, most recent first (the base picker's recents).
 final class ChangesRecents: @unchecked Sendable {
     private let url: URL
-    private let state: ChangesLocked<[String: [String]]?> = ChangesLocked(nil)
+    private let lock = NSLock()
     static let limit = 5
 
     init(url: URL) { self.url = url }
 
-    private func load(_ value: inout [String: [String]]?) -> [String: [String]] {
-        if let value { return value }
-        let loaded = (try? JSONDecoder().decode([String: [String]].self, from: Data(contentsOf: url))) ?? [:]
-        value = loaded
-        return loaded
+    private func load() throws -> [String: [String]] {
+        switch PersistedFile<[String: [String]]>.load(from: url) {
+        case .loaded(let bases): return bases
+        case .missing: return [:]
+        case .damaged:
+            throw ChangesError(ChangesError.unavailable, "Can't read the recents file on the host Mac:\n\(url.path)\nFix its permissions, restore a backup, or move or delete it to reset recents.")
+        }
     }
 
-    func list(_ repository: String) -> [String] {
-        state.withValue { load(&$0)[repository] ?? [] }
+    func list(_ repository: String) throws -> [String] {
+        try lock.withLock { try load()[repository] ?? [] }
     }
 
-    func note(_ base: String, repository: String) {
-        let snapshot: [String: [String]] = state.withValue { value in
-            var all = load(&value)
+    func note(_ base: String, repository: String) throws {
+        try lock.withLock {
+            var all = try load()
             var list = all[repository] ?? []
             list.removeAll { $0 == base }
             list.insert(base, at: 0)
             all[repository] = Array(list.prefix(Self.limit))
-            value = all
-            return all
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? JSONEncoder().encode(all).write(to: url, options: .atomic)
         }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
     }
 }

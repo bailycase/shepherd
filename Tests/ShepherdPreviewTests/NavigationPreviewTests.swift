@@ -62,7 +62,7 @@ extension PreviewTests {
         vm.failedTurns.insert(agents[6].id)
         vm.applyAgentChildren(agents[3].id, Array(Threads.liveRuns.prefix(3)))
         vm.applyAgentChildren(agents[4].id, Threads.doneRuns)
-        vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
+        vm.remoteHosts.addHost(name: "Orbit", host: "127.0.0.1", port: 1, token: "x")
         return (workspace, agents)
     }
 
@@ -219,7 +219,7 @@ extension PreviewTests {
         let space = Space(name: "Shepherd", path: workspace.dir.path)
         let rows: [(String, AgentStatus, String?, String?)] = [
             ("Checkout funnel events", .blocked, "Retention: 30 days or 13 months?", "retention?"),
-            ("Deploy media stack", .blocked, "How should I handle Horizon’s uncommitted edits?", nil),
+            ("Deploy media stack", .blocked, "How should I handle Orbit’s uncommitted edits?", nil),
             ("Restyle native UI", .working, nil, nil),
             ("Dock review pane", .blocked, "Approve the plan as written?", "approve plan"),
             ("Triage new Sentry issues", .working, nil, nil),
@@ -839,6 +839,19 @@ extension PreviewTests {
         }
     }
 
+    /// The palette as it opens (GXPalette): no query, the commands and This thread, the first row highlighted.
+    @Test func commandPaletteIdle() async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.selectAgent(agents[3].id)
+        try await Preview.render("command-palette-idle", size: CGSize(width: 1000, height: 900)) {
+            Color.sh.bgWindow
+                .shCommandPalette(isPresented: .constant(true)) {
+                    PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {})
+                }
+        }
+    }
+
     /// "an" reaches the agents: a working one with its time ("Shepherd · running · 8m").
     @Test func commandPaletteAgents() async throws {
         let (workspace, agents) = try await populatedWorkspace()
@@ -883,7 +896,7 @@ extension PreviewTests {
                              branch: worktree, directory: "~/code/shepherd-previews",
                              paneShortcut: "⇧⌘B", togglePane: {}, showChanges: {}, rename: {})
                 ThreadHeader(store: running.store, project: "homelab", title: "Deploy media stack",
-                             branch: AgentBranchLabel(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon"),
+                             branch: AgentBranchLabel(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "orbit"),
                              paneOpen: true, paneShortcut: "⇧⌘B", togglePane: {}, showChanges: {})
                 ThreadHeader(store: idle.store, project: "payments", title: "Add refund events",
                              branch: AgentBranchLabel(kind: .worktree, branch: "pi/refund-events"),

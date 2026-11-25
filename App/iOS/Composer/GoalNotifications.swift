@@ -1,11 +1,10 @@
 import Foundation
 import Observation
-import UIKit
 import UserNotifications
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Local iPhone alerts from threads the client is already watching. This is not APNs:
+/// Local goal alerts from threads the iOS client is already watching. This is not APNs:
 /// disconnected, suspended, and never-opened threads have no live goal updates here.
 @MainActor
 final class GoalNotifications: NSObject {
@@ -15,26 +14,28 @@ final class GoalNotifications: NSObject {
     private var wasLive: [AgentRef: Bool] = [:]
     /// When push is enabled for a host, skip local goal alerts for its agents to avoid duplicates.
     var pushEnabledHosts: Set<UUID> = []
-    // The fixture app must never prompt for permission or post a real notification.
-    private let available = Bundle.main.bundleIdentifier == "com.bailycase.shepherd.ios"
-        && UIDevice.current.userInterfaceIdiom == .phone
+    private let bundleID: String?
 
-    override init() {
+    init(bundleID: String? = Bundle.main.bundleIdentifier) {
+        self.bundleID = bundleID
         super.init()
         // The notification center delegate is set by PushAppDelegate,
         // which consolidates both push and local goal notification handling.
     }
 
     func watch(_ store: NativeThreadStore, hosts: MobileHosts, ref: AgentRef) {
-        guard available, watching.insert(ref).inserted else { return }
+        guard watching.insert(ref).inserted else { return }
         track(store, hosts: hosts, ref: ref)
     }
 
     /// Permission may suspend while another window enables push for this host.
     func authorizeLocalAlert(host: UUID, request: () async throws -> Bool) async throws -> Bool {
-        guard !pushEnabledHosts.contains(host) else { return false }
+        // Check the bundle before asking so fixtures never prompt for real permission.
+        guard GoalAlertPolicy.isAvailable(bundleID: bundleID, authorizationGranted: true),
+              !pushEnabledHosts.contains(host) else { return false }
         let granted = try await request()
-        return granted && !pushEnabledHosts.contains(host)
+        return GoalAlertPolicy.isAvailable(bundleID: bundleID, authorizationGranted: granted)
+            && !pushEnabledHosts.contains(host)
     }
 
     private func track(_ store: NativeThreadStore, hosts: MobileHosts, ref: AgentRef) {
@@ -58,12 +59,10 @@ final class GoalNotifications: NSObject {
         let previouslyLive = wasLive[ref] == true
         previous[ref] = goal
         wasLive[ref] = live
-        // A first snapshot is a baseline, not a newly completed goal. Reconnecting must not
-        // replay an old alert, and elapsed/metadata revisions must not post another one.
-        guard live, previouslyLive, let goal, let old, old.id == goal.id, old.state != goal.state,
-              goal.state == .met || goal.state == .needsYou,
-              // Skip local alert if push is enabled for this host (push delivers it instead).
-              !pushEnabledHosts.contains(ref.host) else { return }
+        // Skip local alert if push is enabled for this host (push delivers it instead).
+        guard GoalAlertPolicy.shouldPost(old: old, new: goal, previouslyLive: previouslyLive,
+                                         live: live, pushEnabled: pushEnabledHosts.contains(ref.host)) else { return }
+        guard let goal else { return }
         Task { [weak self, weak store, weak hosts] in
             guard let self else { return }
             let center = UNUserNotificationCenter.current()

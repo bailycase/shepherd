@@ -57,6 +57,28 @@ struct FleetUserThreadTests {
         #expect(ended.all == [bID], "once per dispatch")
     }
 
+    @Test func acknowledgingAnOlderPushKeepsNewActivityWithTheSameTimestampPending() async throws {
+        let origin = try await D.makeOrigin()
+        let mac = try await D.Mac("MacBook Pro", origin: origin)
+        defer { mac.stop() }
+
+        let id = try mac.server.queue.sync {
+            let dispatch = try #require(mac.server.fleet?.dispatch)
+            let record = FleetDispatchRecord(parentHostID: dispatch.hostID, parentHostName: mac.name, targetHostID: dispatch.hostID,
+                                             state: .running, title: "Check build tools", task: "Check build tools", repoKey: D.repoKey,
+                                             activity: "idle", createdAt: dispatch.now)
+            dispatch.outbound[record.id] = record
+            dispatch.inbound[record.id] = .init(record: record, unsent: true)
+            dispatch.pushPending()
+
+            // The local push replies on a later queue turn. Make new activity pending before that reply, without advancing the clock.
+            dispatch.inbound[record.id]?.record.activity = "working"
+            dispatch.pushPending()
+            return record.id
+        }
+        try await D.wait("the sender to see working after acknowledging idle") { mac.sent().first { $0.id == id }?.activity == "working" }
+    }
+
     @Test func autoKeepsTheThreadOnThisMacWhenItHasTheRoomAndMakesNoRecord() async throws {
         let (a, b, _) = try await D.pair(busyA: 10, busyB: 90)
         defer { a.stop(); b.stop() }
@@ -66,7 +88,7 @@ struct FleetUserThreadTests {
     }
 
     @Test func aNamedMacThatIsAsleepHoldsTheThreadAndStartsItWhenItWakes() async throws {
-        let (a, b, origin) = try await D.pair()
+        let (a, b, origin) = try await D.pair(loopbackOnly: true)
         defer { a.stop() }
         let (dir, port) = (b.host.dir, b.port)
         b.stop(keepFiles: true)
@@ -78,7 +100,7 @@ struct FleetUserThreadTests {
         #expect(a.sent().first?.state == .waitingWake, "it never moves to another Mac")
         #expect(a.dispatched.isEmpty)
 
-        let woken = try await D.Mac("Mac mini", origin: origin, dir: dir, port: port)
+        let woken = try await D.Mac("Mac mini", origin: origin, dir: dir, port: port, loopbackOnly: true)
         defer { woken.stop() }
         try await D.wait("the thread to start on Mac mini once it is back", timeout: .seconds(60)) { !woken.dispatched.isEmpty }
         #expect(woken.dispatched.first?.dispatchedFrom?.agentID == nil)

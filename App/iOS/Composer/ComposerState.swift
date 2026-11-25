@@ -117,6 +117,32 @@ final class ComposerState {
 
     var room: Int { NativeImagePreparation.room(attachments.count) }
 
+    /// An image resized for the send, with its thumbnail.
+    typealias Prepared = Result<(image: NativeImage, thumbnail: UIImage?), Error>
+
+    /// `data` resized for the send and thumbnailed. Slow for a camera photo: call it off the main thread.
+    nonisolated static func prepare(_ data: Data, name: String, thumbnailPixels: CGSize) -> Prepared {
+        Result {
+            let image = try NativeImagePreparation.prepare(data, name: name)
+            return (image, UIImage(data: image.data)?.preparingThumbnail(of: thumbnailPixels))
+        }
+    }
+
+    /// Adds a prepared image; returns why it was refused, nil when it was taken (or the thread is gone).
+    func append(_ prepared: Prepared) -> String? {
+        guard !forgotten else { return nil }
+        switch prepared {
+        case .success(let (image, thumbnail)):
+            // Another attach may have filled the message meanwhile.
+            guard room > 0 else { return NativeImagePreparation.Failure.full.description }
+            attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail.map { Image(uiImage: $0) }))
+            saveImagePresence()
+            return nil
+        case .failure(let error):
+            return String(describing: error)
+        }
+    }
+
     /// Adds images the picker loaded, resized for the send off the main thread (a camera photo
     /// takes a moment to decode and re-encode); refused ones say why.
     func attach(_ loaded: [(data: Data, name: String)]) async {
@@ -124,31 +150,17 @@ final class ComposerState {
         pendingImports += 1
         defer { pendingImports -= 1 }
         attachmentError = nil
-        for item in loaded {
+        for (data, name) in loaded {
             guard room > 0 else {
                 attachmentError = NativeImagePreparation.Failure.full.description
                 break
             }
-            let (data, name) = item
             let thumbnailPixels = MobileLayout.attachmentThumbnailPixels
-            let prepared = await Task.detached(priority: .userInitiated) { () -> Result<(NativeImage, UIImage?), Error> in
-                Result {
-                    let image = try NativeImagePreparation.prepare(data, name: name)
-                    return (image, UIImage(data: image.data)?.preparingThumbnail(of: thumbnailPixels))
-                }
-            }.value
+            let prepared = await Task.detached(priority: .userInitiated) { Self.prepare(data, name: name, thumbnailPixels: thumbnailPixels) }.value
             guard !forgotten else { return }
-            switch prepared {
-            case .success(let (image, thumbnail)):
-                // Another attach may have filled the message meanwhile.
-                guard room > 0 else {
-                    attachmentError = NativeImagePreparation.Failure.full.description
-                    return
-                }
-                attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail.map { Image(uiImage: $0) }))
-                saveImagePresence()
-            case .failure(let error):
-                attachmentError = String(describing: error)
+            if let error = append(prepared) {
+                attachmentError = error
+                if room == 0 { return }
             }
         }
     }

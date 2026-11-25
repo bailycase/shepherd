@@ -43,11 +43,49 @@ struct PiSignInSheet: View {
     // MARK: Content
 
     @ViewBuilder private var content: some View {
-        switch session.flow {
-        case .browser: browser
-        case .paste: paste
-        case .device: device
-        case .key: keyForm
+        if case .prompt(let prompt) = session.phase {
+            VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
+                SHFieldLabel(prompt.message)
+                if prompt.kind == .select {
+                    SHPopupMenu("Choose…") {
+                        ForEach(prompt.options, id: \.id) { option in
+                            Button(option.label) { session.submitPrompt(option.id) }
+                        }
+                    }
+                } else if prompt.kind == .secret {
+                    SecureField(prompt.placeholder ?? "", text: $session.promptAnswer)
+                        .privacySensitive()
+                        .textFieldStyle(.sh(mono: true))
+                        .focused($fieldFocused)
+                        .onSubmit { session.submitPrompt() }
+                        .accessibilityLabel(prompt.message)
+                } else {
+                    TextField(prompt.placeholder ?? "", text: $session.promptAnswer)
+                        .textFieldStyle(.sh(mono: true))
+                        .focused($fieldFocused)
+                        .onSubmit { session.submitPrompt() }
+                        .accessibilityLabel(prompt.message)
+                }
+            }
+            .task(id: prompt.id) { fieldFocused = true }
+        } else if session.phase == .starting, session.method == .apiKey, session.flow != .key {
+            SHSignInSteps { SHSignInStepRow("Starting sign-in to \(session.name)", state: .now) }
+        } else if session.authURL == nil, session.flow == .browser, session.phase == .saving {
+            SHSignInSteps { SHSignInStepRow("Signing in to \(session.name)", state: .now) }
+        } else if session.authURL == nil, session.flow == .browser, case .done(let pickedUp) = session.phase {
+            SHSignInSteps {
+                SHSignInStepRow("Signed in", state: .done)
+                SHSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
+            }
+        } else if session.authURL == nil, session.flow == .browser, case .failed(let reason) = session.phase {
+            SHFailureBox("Sign-in failed", detail: reason)
+        } else {
+            switch session.flow {
+            case .browser: browser
+            case .paste: paste
+            case .device: device
+            case .key: keyForm
+            }
         }
     }
 
@@ -274,6 +312,14 @@ struct PiSignInSheet: View {
                 Button("Close", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                 Button { session.tryAgain() } label: { Label("Try again", systemImage: "arrow.clockwise") }
                     .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+            }
+        case .prompt(let prompt):
+            SHSheetFooter {
+                Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
+                if prompt.kind != .select {
+                    Button("Continue") { session.submitPrompt() }
+                        .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+                }
             }
         case .portBusy:
             SHSheetFooter {

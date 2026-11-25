@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The terminal panel's strip (TerminalSplit, TerminalStates boards): the tabs with + for a new
-/// one, then Maximize or Restore, and Hide. Its top edge is the divider.
+/// one, then Maximize or Restore, and Hide (the chevron). Its top edge is the divider.
 struct TerminalPanelBar: View {
     var vm: ShepherdViewModel
     let target: ShepherdViewModel.TerminalTarget
@@ -34,7 +34,7 @@ struct TerminalPanelBar: View {
             }
             .shHelp(maximized ? "Restore" : "Maximize", shortcut: keys.display(.maximizeTerminal))
             .accessibilityLabel(maximized ? "Restore" : "Maximize")
-            Button { vm.toggleTerminalPanel() } label: { Image(systemName: "xmark") }
+            Button { vm.toggleTerminalPanel() } label: { Image(systemName: "chevron.down") }
                 .shHelp("Hide terminal", shortcut: keys.display(.toggleTerminal))
                 .accessibilityLabel("Hide terminal")
         }
@@ -46,6 +46,33 @@ struct TerminalPanelBar: View {
     /// The selected tab and how far its news has got, while it is on screen.
     private var seenMark: TerminalSeenMark {
         TerminalPanel.seenMark(selected: selected, onScreen: onScreen, activity: vm.terminalPanels.activity[target.key] ?? [:])
+    }
+}
+
+/// The raised card the panel is (GXTerminal's `.term`): the fill, the lift and the 1px line under the strip
+/// and the terminal, which clip themselves to its corners. It draws under them and takes no clicks.
+struct TerminalPanelCard: View {
+    let geometry: TerminalPanelGeometry
+
+    var body: some View {
+        if let card = geometry.card {
+            let shape = RoundedRectangle(cornerRadius: SHTerminalMetrics.cardRadius)
+            Color.clear
+                .shLift(shape)
+                .shBorder(Color.sh.lineSubtle, in: shape)
+                .frame(width: card.width, height: card.height)
+                .offset(x: card.minX, y: card.minY)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    /// A terminal under the strip keeps to the card's rounded bottom; the thread above it keeps its own shape.
+    func terminalCardClip(_ isTerminal: Bool) -> some View {
+        clipShape(UnevenRoundedRectangle(bottomLeadingRadius: isTerminal ? SHTerminalMetrics.cardRadius : 0,
+                                         bottomTrailingRadius: isTerminal ? SHTerminalMetrics.cardRadius : 0))
     }
 }
 

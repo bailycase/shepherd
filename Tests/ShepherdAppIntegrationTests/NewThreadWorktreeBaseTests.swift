@@ -46,8 +46,10 @@ struct NewThreadWorktreeBaseTests {
         #expect(agent.worktreeBase == "release", "the agent records the picked base")
         let branch = try #require(agent.worktreeBranch)
         let path = try #require(agent.worktreePath)
-        #expect(FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("release.txt").path),
-                "the worktree has release's commit, which main (checked out) does not")
+        // The thread shows at once; the host makes its worktree while it does.
+        try await eventuallyOnMain("the worktree to be checked out", timeout: .seconds(60)) {
+            FileManager.default.fileExists(atPath: URL(fileURLWithPath: path).appendingPathComponent("release.txt").path)
+        }
         #expect(try git(["rev-parse", branch], in: repo) == (try git(["rev-parse", "release"], in: repo)))
         #expect(draft.worktreeBase == nil, "the pick is spent with the thread")
     }
@@ -187,7 +189,12 @@ extension NewThreadWorktreeBaseTests {
         try await eventuallyOnMain("the thread to start", timeout: .seconds(60)) { vm.selectedAgentID != nil && !draft.starting }
         let agent = try #require(vm.state.agents.first)
         #expect(agent.worktreeBase == "origin/main", "the pick is kept whatever the fetch did")
-        let head = try git(["rev-parse", try #require(agent.worktreeBranch)], in: sandbox.repo)
+        let branch = try #require(agent.worktreeBranch)
+        // The thread shows at once; the host fetches, then makes its branch, while it does.
+        try await eventuallyOnMain("the worktree's branch to be made", timeout: .seconds(60)) {
+            (try? git(["rev-parse", "--verify", "--quiet", branch], in: sandbox.repo)) != nil
+        }
+        let head = try git(["rev-parse", branch], in: sandbox.repo)
         #expect(head == (fetch ? newest : cached))
     }
 
@@ -245,8 +252,10 @@ extension NewThreadWorktreeBaseTests {
             // SwiftUI routes keys to the field's handlers one main-queue turn after AppKit makes it first responder.
             await Task.yield()
             window.layout()
-            // The rows after the space are Branch, then Base: two arrows reach Base.
-            for (characters, code) in [("\u{F701}", UInt16(125)), ("\u{F701}", UInt16(125)), ("\r", UInt16(36))] {
+            // The rows after the space are New Worktree…, Import Existing Worktree…, Branch, then Base: four arrows reach Base.
+            let rows = ["New Worktree…", "Import Existing Worktree…", "Branch: ", "Base branch: Default"]
+            let keys = rows.map { _ in ("\u{F701}", UInt16(125)) } + [("\r", UInt16(36))]
+            for (characters, code) in keys {
                 let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                         windowNumber: window.window.windowNumber, context: nil,
                                                         characters: characters, charactersIgnoringModifiers: characters,
@@ -256,8 +265,8 @@ extension NewThreadWorktreeBaseTests {
                 #expect(!window.window.isKeyWindow, "local key dispatch never takes the user's focus")
                 if code == 125 {
                     downs += 1
-                    let row = downs == 1 ? "Branch: " : "Base branch: Default"
-                    try await eventuallyOnMain("the arrow key to highlight \(downs == 1 ? "Branch" : "Base")") {
+                    let row = rows[downs - 1]
+                    try await eventuallyOnMain("the arrow key to highlight \(row)") {
                         window.layout()
                         return window.controls().contains { $0.label?.hasPrefix(row) == true && $0.isSelected }
                     }
@@ -302,9 +311,9 @@ extension NewThreadWorktreeBaseTests {
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         let window = OffscreenWindow(size: CGSize(width: 700, height: 520), dark: true, NewWorktreeSheet(vm: vm, space: space))
         defer { window.close() }
-        try await eventuallyOnMain("the base to resolve") { window.layout(); return window.controls().first { $0.label == "Create and open" }?.isEnabled == true }
+        try await eventuallyOnMain("the base to resolve") { window.layout(); return window.controls().first { $0.label == "Create" }?.isEnabled == true }
 
-        let link = try window.press("Choose…")
+        let link = try window.press("Choose base")
         #expect(link.frame.height >= 24, "the link is a real target: \(link)")
         // The picker is a popover: its own window, so read every window of the app.
         func rows() -> [AccessibilityNode] {
@@ -321,7 +330,7 @@ extension NewThreadWorktreeBaseTests {
             window.layout()
             return window.elements().contains { $0.value == "release" }
         }
-        try window.press("Create and open")
+        try window.press("Create")
         try await eventuallyOnMain("the agent to be made", timeout: .seconds(60)) { vm.state.agents.first != nil }
         #expect(vm.state.agents.first?.worktreeBase == "release")
         let branch = try #require(vm.state.agents.first?.worktreeBranch)
@@ -355,8 +364,9 @@ extension NewThreadWorktreeBaseTests {
         draft.send(vm)
         try await eventuallyOnMain("the thread to start", timeout: .seconds(60)) { !draft.starting && (vm.selectedAgentID != nil || draft.error != nil) }
         #expect(draft.error == nil)
+        // The thread shows at once; the host makes its worktree, then records the base it started from.
+        try await eventuallyOnMain("the worktree to be made from the project's base", timeout: .seconds(60)) { vm.state.agents.first?.worktreeBase == "release" }
         let agent = try #require(vm.state.agents.first)
-        #expect(agent.worktreeBase == "release")
         #expect(try git(["rev-parse", try #require(agent.worktreeBranch)], in: repo) == (try git(["rev-parse", "release"], in: repo)))
         #expect(draft.worktree, "the next thread here is in a worktree too")
 

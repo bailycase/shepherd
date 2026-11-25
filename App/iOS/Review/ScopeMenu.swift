@@ -159,6 +159,10 @@ struct ChangesBasePicker: View {
         NavigationStack {
             List {
                 if let branches = store.branches {
+                    if let problem = branches.recentsProblem {
+                        SHBanner(.failed, title: "Recent bases", message: problem)
+                            .listRowBackground(Color.clear)
+                    }
                     Section {
                         ForEach(changesBaseOptions(branches, selected: store.base, query: query)) { option in
                             Button { choose(option.name) } label: { row(option) }
@@ -185,6 +189,11 @@ struct ChangesBasePicker: View {
                 } else if let error = store.branchesError {
                     SHEmptyState(Text("Couldn't list the branches"), message: error)
                         .listRowBackground(Color.clear)
+                } else if store.branchesCancelled {
+                    SHEmptyState(Text("Couldn't list the branches"), message: "") {
+                        Button("Try again") { Task { await store.loadBranches() } }.buttonStyle(.sh(.secondary))
+                    }
+                    .listRowBackground(Color.clear)
                 } else {
                     ProgressView().progressViewStyle(SHSpinnerStyle())
                         .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)

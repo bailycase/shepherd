@@ -456,6 +456,79 @@ struct ChangesTurnTests {
         #expect(try Data(contentsOf: repo.url.appendingPathComponent(".git/index")) == index)
     }
 
+    @Test(arguments: [false, true])
+    func writerWindowClosesAcrossHistoryDamage(startDamaged: Bool) async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original\n"])
+        let directory = try makeScratchDirectory("damaged-window")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("turns.json")
+        let damaged = Data("{".utf8)
+        if startDamaged { try damaged.write(to: url) }
+        let service = ChangesService(directory: directory)
+        let agent = AgentID()
+        service.agentContext = { _ in .init(cwd: repo.path) }
+        service.turnStarted(agentID: agent)
+        await drain(service, agent)
+        service.turnStore.flush()
+        #expect(service.writers.withValue { $0.windows.last?.agent == agent && $0.windows.last?.interval.end == nil })
+        if !startDamaged { try damaged.write(to: url, options: .atomic) }
+        #expect(throws: ChangesError.self) { try service.turnStore.history(agent) }
+        service.turnSettled(agentID: agent)
+        await drain(service, agent)
+        service.turnStore.flush()
+        #expect(service.writers.withValue { $0.windows.last?.interval.end != nil })
+        #expect(try Data(contentsOf: url) == damaged)
+    }
+
+    @Test(arguments: [false, true])
+    func partialUndoKeepsItsCardAndJournalWhenHistoryIsDamaged(repairDuringUndo: Bool) async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original a\n"])
+        let directory = try makeScratchDirectory("damaged-undo")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("turns.json")
+        let store = Locked<TurnStore?>(nil)
+        let backup = Locked<Data?>(nil)
+        let agent = AgentID()
+        let service = ChangesService(directory: directory, trash: { file in
+            try FileManager.default.moveItem(at: file, to: directory.appendingPathComponent(file.lastPathComponent))
+            guard let saved = backup.current else { return }
+            try Data("{".utf8).write(to: url, options: .atomic)
+            if repairDuringUndo, let store = store.current {
+                #expect(throws: ChangesError.self) { try store.history(agent) }
+                try saved.write(to: url, options: .atomic)
+                _ = try store.history(agent) // The next checkpoint now sees a clean, different generation.
+            }
+        })
+        store.withValue { $0 = service.turnStore }
+        service.agentContext = { _ in .init(cwd: repo.path) }
+        let publications = Locked<[[ChangesTurn]]>([])
+        service.onTurnsChanged = { _, turns in publications.withValue { $0.append(turns) } }
+        service.turnStarted(agentID: agent)
+        await drain(service, agent)
+        try repo.write("a.txt", "changed a\n")
+        try repo.write("b.txt", "new b\n")
+        try repo.write("c.txt", "new c\n")
+        service.turnSettled(agentID: agent)
+        await drain(service, agent)
+        service.turnStore.flush()
+        let turn = try #require(service.turns(agentID: agent).last)
+        let saved = try Data(contentsOf: url) // Deliberately older than the partial operation's journal.
+        backup.withValue { $0 = saved }
+        publications.withValue { $0 = [] }
+
+        let error = await #expect(throws: ChangesError.self) { _ = try await service.undoTurn(agentID: agent, turnID: turn.id) }
+        #expect(error?.message.contains("Undo partially applied") == true)
+        #expect(!publications.current.contains([]) && service.turns(agentID: agent).last?.id == turn.id)
+        #expect(repo.read("a.txt") == "original a\n" && repo.read("b.txt") == nil && repo.read("c.txt") == "new c\n")
+        if !repairDuringUndo {
+            #expect(try Data(contentsOf: url) == Data("{".utf8))
+            try saved.write(to: url, options: .atomic)
+        }
+        backup.withValue { $0 = nil }
+        let retried = try await service.undoTurn(agentID: agent, turnID: turn.id)
+        #expect(retried.state == .undone && repo.read("c.txt") == nil)
+    }
+
     @Test func anUnreadableChangedFileCannotBeMistakenForTheTurnSnapshot() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "start\n"])
         let h = try ChangesHarness(repo: repo)
@@ -527,6 +600,42 @@ struct ChangesTurnTests {
         #expect(try Data(contentsOf: repo.url.appendingPathComponent(".git/index")) == index)
     }
 
+    @Test func refreshingRepairedHistoryRepublishesCardsToAnAlreadySeededThread() async throws {
+        let directory = try makeScratchDirectory("repair-cards")
+        let changesDir = directory.appendingPathComponent("changes")
+        try FileManager.default.createDirectory(at: changesDir, withIntermediateDirectories: true)
+        let url = changesDir.appendingPathComponent("turns.json")
+        try Data("{".utf8).write(to: url)
+        let host = try ScratchServer(dir: directory)
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host)
+        let seeded = try await pi.ready()
+        #expect(seeded.turnChanges == nil)
+        let changes = host.server.changes
+        let damaged = try await changes.overview(agentID: pi.agent.id)
+        #expect(damaged.turnHistoryProblem != nil)
+
+        let prompt = "Edit the ledger"
+        #expect(try await pi.send(prompt, from: seeded).failureCode == nil)
+        let settled = try await pi.snapshot("the new thread's turn to settle") {
+            !$0.running && $0.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == prompt } }
+        }
+        let timestamp = try #require(settled.messages.last { $0.role == "user" }?.timestamp)
+        #expect(settled.turnChanges == nil)
+        #expect(try Data(contentsOf: url) == Data("{".utf8))
+
+        // Cold-start damage blocks capture. Supply the turn's record in the repaired file.
+        let turn = ChangesTurn(messageTimestamp: timestamp, startedAt: timestamp, state: .ready, fileCount: 1)
+        let record = TurnRecord(turn: turn, cwd: directory.path)
+        try JSONEncoder().encode([pi.agent.id.rawValue: [record]]).write(to: url, options: .atomic)
+        let repaired = try await changes.overview(agentID: pi.agent.id)
+        #expect(repaired.turnHistoryProblem == nil)
+        let snapshot = try await pi.snapshot("the already-seeded thread's repaired card") {
+            $0.turnChanges?.last?.id == turn.id && $0.turnChanges?.last?.canUndo == true
+        }
+        #expect(changesTurn(forMessageAt: timestamp, in: snapshot.turnChanges)?.id == turn.id)
+    }
+
     /// The next turn ends the last one's Undo; the engine's turns and their Undo also reach a
     /// remote client, which falls back to nothing it does not know.
     @Test func turnsAndUndoTravelTheRemoteProtocol() async throws {
@@ -545,10 +654,51 @@ struct ChangesTurnTests {
 
         let client = try await remote.typed()
         #expect(client.capabilities.contains(RemoteProtocol.changesCapability))
+        // Damage after a good read must not allow a cached turn to mutate the worktree.
+        changes.turnStore.flush()
+        let url = changes.directory.appendingPathComponent("turns.json")
+        let backup = try Data(contentsOf: url)
+        let damaged = Data("{".utf8)
+        try damaged.write(to: url, options: .atomic)
+        let before = try repo.state()
+        let turnID = try #require(changes.turns(agentID: pi.agent.id).last?.id)
+        let undo = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.agentQuery(agentID: pi.agent.id, query: .changesUndoTurn(turnID: turnID))
+        }
+        let redo = await #expect(throws: RemoteHostClientError.self) {
+            _ = try await client.agentQuery(agentID: pi.agent.id, query: .changesRedoTurn(turnID: turnID))
+        }
+        guard case .changesOverview(let damagedOverview) = try await client.agentQuery(agentID: pi.agent.id, query: .changesOverview()) else {
+            Issue.record("expected an overview for damaged history"); return
+        }
+        let problem = try #require(damagedOverview.turnHistoryProblem)
+        #expect(problem.contains("Undo/Redo history can't be read") && problem.contains(url.path))
+        #expect(problem.contains("The given data was not valid JSON.") && !problem.contains("dataCorrupted"))
+        #expect(problem.contains("known-good backup") && problem.contains("As a last resort, delete"))
+        #expect(problem.contains("working tree") && problem.contains("past turns"))
+        #expect(undo?.description.contains(problem) == true && redo?.description.contains(problem) == true)
+        #expect(damagedOverview.lastTurn == nil && damagedOverview.entries.first?.unavailable == problem)
+        guard case .changesList(let working) = try await client.agentQuery(agentID: pi.agent.id, query: .changesList(scope: .uncommitted, options: ChangesOptions())) else {
+            Issue.record("working-tree comparisons are still available"); return
+        }
+        #expect(working.summary == ["M a.txt"])
+        try repo.expectUnchanged(since: before)
+        #expect(try Data(contentsOf: url) == damaged)
+        let disabled = try await pi.snapshot("the existing turn card with Undo disabled during damage") {
+            $0.turnChanges?.last?.id == turnID && $0.turnChanges?.last?.canUndo == false
+        }
+        #expect(disabled.turnChanges?.last?.id == turnID)
+        try backup.write(to: url, options: .atomic)
+
         guard case .changesOverview(let overview) = try await client.agentQuery(agentID: pi.agent.id, query: .changesOverview()) else {
             Issue.record("expected an overview"); return
         }
+        #expect(overview.turnHistoryProblem == nil)
         #expect(overview.lastTurn?.fileCount == 1 && overview.entries.first?.files == 1)
+        try await eventually("the restored card with Undo over the remote thread protocol") {
+            let thread = try await client.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue
+            return thread?.turnChanges?.last?.id == turnID && thread?.turnChanges?.last?.canUndo == true
+        }
         guard case .changesList(let list) = try await client.agentQuery(agentID: pi.agent.id, query: .changesList(scope: .lastTurn, options: ChangesOptions())) else {
             Issue.record("expected a list"); return
         }
@@ -558,7 +708,7 @@ struct ChangesTurnTests {
             Issue.record("expected a file"); return
         }
         #expect(file.file.hunks.flatMap(\.lines).filter { $0.kind == .added }.map(\.text) == ["two"])
-        let turnID = try #require(list.comparison.turn?.id)
+        #expect(list.comparison.turn?.id == turnID)
         guard case .changesTurn(let undone) = try await client.agentQuery(agentID: pi.agent.id, query: .changesUndoTurn(turnID: turnID)) else {
             Issue.record("expected the undone turn"); return
         }

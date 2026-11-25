@@ -54,17 +54,14 @@ extension AppLayout {
     static let fleetTagFont: CGFloat = 10
     /// A card of a Mac that isn't answering fades.
     static let fleetAsleepOpacity: Double = 0.72
-    /// The sidebar's Fleet corner (FleetCornerFull, FleetCornerMin): its glyph 16pt, the header and a Mac's row 24pt tall, a Mac's name in a 68pt
-    /// column, its room gauge 36pt wide.
-    static let fleetFooterGlyph: CGFloat = 16
-    static let fleetCornerHeaderHeight: CGFloat = 28
-    static let fleetCornerRowHeight: CGFloat = 24
-    static let fleetCornerNameWidth: CGFloat = 64
-    static let fleetCornerGaugeWidth: CGFloat = 36
+    /// The sidebar's Fleet corner (the boards' `.flt`): the header 30pt tall, a Mac's row 26pt.
+    static let fleetCornerHeaderHeight: CGFloat = 30
+    static let fleetCornerRowHeight: CGFloat = 26
+    /// A Mac's dot and the gap after it (the boards' `.gd`, `.flr`).
+    static let fleetCornerDot: CGFloat = 6
+    static let fleetCornerRowGap: CGFloat = 9
     /// An asleep Mac's hollow dot.
     static let fleetCornerDotStroke: CGFloat = 1
-    /// The minimized corner's two lines stand 36pt tall.
-    static let fleetCornerMinHeight: CGFloat = 36
 
     // The Check tab (FleetCheck): the grid beside a panel.
     /// The panel's width, the grid's head and its rows' least height.
@@ -87,20 +84,12 @@ extension AppLayout {
     /// A sent thread as one line in the thread that sent it (FleetDispatch): 36pt tall, its arrow in a 14pt slot.
     static let fleetCompactRowHeight: CGFloat = 36
     static let fleetCompactRowGlyph: CGFloat = 14
-    /// The header's host pill is 24pt tall; its dot is the Fleet page's.
-    static let fleetHeaderPillHeight: CGFloat = 24
     /// A card's buttons are 26pt tall.
     static let fleetCardButtonHeight: CGFloat = 26
     /// The thread behind an offline banner fades to this.
     static let fleetOfflineOpacity: Double = 0.6
-    /// New thread's Where it runs popover hangs 33pt in from the card's trailing edge (FleetNewThread).
-    static let fleetPlaceTrailingInset: CGFloat = 33
 
     // Moving a thread to another Mac (FleetMove).
-    /// The header chip's menu and its confirmation are 400pt wide; a Mac's room bar is 56 by 4pt.
-    static let fleetMoveMenuWidth: CGFloat = 400
-    static let fleetMoveBarWidth: CGFloat = 56
-    static let fleetMoveBarHeight: CGFloat = 4
     /// A step's mark column in the progress card.
     static let fleetMoveMarkWidth: CGFloat = 14
 }

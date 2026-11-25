@@ -1,4 +1,5 @@
 // Owned scratch servers only: MCP close must finish wrappers even when their leader exits first.
+import "./hermetic-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";

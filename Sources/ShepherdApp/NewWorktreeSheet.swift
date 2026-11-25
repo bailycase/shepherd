@@ -36,59 +36,70 @@ struct NewWorktreeSheet: View {
     }
 
     var body: some View {
-        SHDialog("New worktree",
-                 message: "Creates a git worktree of \(space.name) on a new branch and starts an agent in it.",
-                 width: AppLayout.newWorktreeSheetWidth) {
-            SheetRow("Branch") {
-                TextField("Branch", text: $branch, prompt: Text("branch name").foregroundStyle(Color.sh.textTertiary))
+        let sh = Color.sh
+        let M = NewWorktreeSheetMetrics.self
+        SHCardSheet("New worktree in \(space.name)", message: Text("The new worktree starts this branch from the base."),
+                    status: creating ? "Creating the worktree…" : nil, width: AppLayout.newWorktreeSheetWidth) {
+            SHCardSheetLabel("Branch name")
+            SHCardSheetLineField {
+                TextField("Branch name", text: $branch, prompt: Text("branch name").foregroundStyle(sh.textTertiary))
+                    .textFieldStyle(.plain)
+                    .font(.shMono(SHCardSheetMetrics.codeSize))
                     .focused($branchFocused)
-                    .shField(focused: branchFocused, mono: true)
                     .onSubmit(create)
             }
-            SheetRow("Base") {
-                HStack(spacing: SH.Space.m) {
-                    TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(Color.sh.textTertiary))
-                        .textFieldStyle(.sh(mono: true))
-                        .frame(maxWidth: AppLayout.baseFieldMaxWidth)
-                    SheetLinkButton(label: "Choose…") { choosing = true }
-                        .disabled(creating)
-                        .popover(isPresented: $choosing, arrowEdge: .bottom) {
-                            WorktreeBasePicker(vm: vm, space: space.id, repo: space.path, selected: base.isEmpty ? nil : base) { branch in
-                                base = branch
-                                self.picked = true
-                                baseNote = "chosen"
-                                baseResolved = true
-                                choosing = false
-                            } close: { choosing = false }
-                        }
-                    Text(baseNote)
-                        .font(.sh(.caption))
-                        .foregroundStyle(Color.sh.textTertiary)
-                        .lineLimit(1)
-                        .shContentTransition(.crossFade)
+            SHCardSheetLabel("Base")
+            SHCardSheetLineField {
+                TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(sh.textTertiary))
+                    .textFieldStyle(.plain)
+                    .font(.shMono(SHCardSheetMetrics.codeSize))
+                Button { choosing = true } label: {
+                    Image(systemName: "chevron.down").font(.system(size: M.chevron, weight: .medium)).foregroundStyle(sh.textSecondary)
+                        .frame(width: M.chevronTarget, height: M.chevronTarget)
+                        .contentShape(Rectangle())
                 }
-                .shComponentAnimation(.content, value: baseNote)
+                .buttonStyle(.plain)
+                .disabled(creating)
+                .help("Choose the base branch")
+                .accessibilityLabel("Choose base")
+                .popover(isPresented: $choosing, arrowEdge: .bottom) {
+                    WorktreeBasePicker(vm: vm, space: space.id, repo: space.path, selected: base.isEmpty ? nil : base) { branch in
+                        base = branch
+                        self.picked = true
+                        baseNote = "chosen"
+                        baseResolved = true
+                        choosing = false
+                    } close: { choosing = false }
+                }
             }
-            SheetRow("Checkout") {
+            // What the base resolved from, and where the checkout will be.
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text(baseNote)
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                    .shContentTransition(.crossFade)
                 Text(destination)
                     .font(.sh(.mono))
-                    .foregroundStyle(Color.sh.textTertiary)
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(destination)
                     .textSelection(.enabled)
+                    .accessibilityLabel("Checkout \(destination)")
             }
+            .padding(.top, SH.Space.m)
+            .shComponentAnimation(.content, value: baseNote)
             if let errorText {
                 DialogBanner(state: .failed, title: "Couldn't create the worktree", message: errorText)
+                    .padding(.top, SH.Space.l)
             }
-        } status: {
-            if creating { SHDialogStatus("Creating the worktree…") }
         } actions: {
             Button("Cancel") { vm.worktreeSheetTarget = nil }
-                .buttonStyle(.sh(.ghost))
+                .buttonStyle(.shCardSheet(.dim))
                 .keyboardShortcut(.cancelAction)
-            Button(creating ? "Creating…" : "Create and open") { create() }
-                .buttonStyle(.sh(.primary))
+            Button(creating ? "Creating…" : "Create") { create() }
+                .buttonStyle(.shCardSheet(.pill))
                 .keyboardShortcut(.defaultAction)
                 .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
         }
@@ -170,12 +181,8 @@ struct NewWorktreeSheet: View {
     }
 }
 
-/// Quiet inline action in a sheet row ("Choose…"): a ghost button.
-struct SheetLinkButton: View {
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(label, action: action).buttonStyle(.sh(.ghost, size: .s))
-    }
+/// The Base field's chevron button: its glyph and its target.
+private enum NewWorktreeSheetMetrics {
+    static let chevron: CGFloat = 10
+    static let chevronTarget: CGFloat = 24
 }

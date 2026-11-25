@@ -26,10 +26,12 @@ function writeAuth(file, data) {
 }
 
 const providers = {
-  anthropic: { id: "anthropic", name: "Anthropic", auth: { oauth: { name: "Anthropic (Claude Pro/Max)" } } },
-  "openai-codex": { id: "openai-codex", name: "OpenAI Codex", auth: { oauth: { name: "OpenAI (ChatGPT Plus/Pro)" } } },
-  "github-copilot": { id: "github-copilot", name: "GitHub Copilot", auth: { oauth: { name: "GitHub Copilot" } } },
-  deepseek: { id: "deepseek", name: "DeepSeek", auth: { apiKey: { name: "DeepSeek API key" } } },
+  anthropic: { id: "anthropic", name: "Anthropic", auth: { oauth: { name: "Anthropic (Claude Pro/Max)", login: browserLogin } } },
+  "openai-codex": { id: "openai-codex", name: "OpenAI Codex", auth: { oauth: { name: "OpenAI (ChatGPT Plus/Pro)", login: browserLogin } } },
+  "github-copilot": { id: "github-copilot", name: "GitHub Copilot", auth: { oauth: { name: "GitHub Copilot", login: deviceLogin } } },
+  deepseek: { id: "deepseek", name: "DeepSeek", auth: { apiKey: { name: "DeepSeek API key", login: keyLogin } } },
+  "fixture-login": { id: "fixture-login", name: "Acme account", auth: { oauth: { name: "Acme subscription" } } },
+  "fixture-key": { id: "fixture-key", name: "Acme key account", auth: { apiKey: { name: "Acme credentials", login: keyLogin } } },
 };
 const models = {
   deepseek: [
@@ -99,6 +101,53 @@ async function keyLogin(interaction) {
   return { type: "api_key", key };
 }
 
+// The bridge loads provider services without creating an agent session.
+export const SettingsManager = { create: () => ({}) };
+// Extensions as pi's loader records them: `FAKE_PI_CONTROL/extensions.json`, when a test writes it,
+// lists each one's path, the providers it registers (by id, from `providers` above) and what else.
+// `FAKE_PI_CONTROL/usage.json`, when a test writes it, maps a token to the percent an extension's
+// "shepherd:usage" hook reports for Anthropic (as Shepherd's bundled usage extension would), with
+// the email `<token>@x.co`; a token not in it reports nothing.
+export function createEventBus() {
+  const handlers = new Map();
+  return {
+    on(channel, handler) { handlers.set(channel, [...(handlers.get(channel) ?? []), handler]); return () => {}; },
+    emit(channel, data) { for (const handler of handlers.get(channel) ?? []) handler(data); },
+  };
+}
+
+export class DefaultResourceLoader {
+  constructor(options = {}) {
+    this.eventBus = options.eventBus;
+  }
+
+  async reload() {
+    let percents;
+    try { percents = JSON.parse(fs.readFileSync(path.join(control, "usage.json"), "utf8")); } catch { return; }
+    this.eventBus?.emit("shepherd:usage", { provider: "anthropic", async usage(auth) {
+      const percent = percents[auth.credential?.access];
+      return percent === undefined ? undefined
+        : { windows: [{ name: "5-hour", usedPercent: percent }], email: `${auth.credential.access}@x.co` };
+    } });
+  }
+  getExtensions() {
+    let listed = [];
+    try { listed = JSON.parse(fs.readFileSync(path.join(control, "extensions.json"), "utf8")); } catch {}
+    const names = list => new Map((list ?? []).map(name => [name, {}]));
+    return {
+      errors: [],
+      extensions: listed.map(e => ({
+        path: e.path, tools: names(e.tools), commands: names(e.commands), handlers: names(e.events), shortcuts: names(e.shortcuts),
+        flags: names(e.flags), messageRenderers: names(e.renderers), entryRenderers: new Map(),
+      })),
+      runtime: {
+        pendingProviderRegistrations: [],
+        pendingNativeProviderRegistrations: listed.flatMap(e => (e.providers ?? []).map(id => ({ provider: providers[id], extensionPath: e.path }))),
+      },
+    };
+  }
+}
+
 export class ModelRuntime {
   constructor(options) {
     this.authPath = options.authPath;
@@ -108,8 +157,22 @@ export class ModelRuntime {
     return new ModelRuntime(options);
   }
 
+  async refresh() {}
+
+  registerNativeProvider() {}
+
   getProvider(id) {
     return providers[id];
+  }
+
+  async getAuth(id) {
+    let stored;
+    try { stored = JSON.parse(fs.readFileSync(this.authPath, "utf8"))[id]; } catch {}
+    return stored && { auth: { apiKey: stored.access ?? stored.key, headers: {} } };
+  }
+
+  getProviders() {
+    return Object.values(providers);
   }
 
   getModels(id) {
@@ -133,6 +196,18 @@ export class ModelRuntime {
       credential = await browserLogin(interaction);
     } else if (providerId === "github-copilot") {
       credential = await deviceLogin(interaction);
+    } else if (providerId === "fixture-login" && type === "oauth") {
+      const region = await interaction.prompt({ type: "select", message: "Choose region", options: [{ id: "east", label: "East" }, { id: "west", label: "West" }] });
+      const tenant = await interaction.prompt({ type: "text", message: "Tenant" });
+      const password = await interaction.prompt({ type: "secret", message: "Account password" });
+      if (region !== "west" || tenant !== "acme" || password !== " fixture-password ") throw Error("The fixture rejected the answer.");
+      credential = oauthCredential();
+    } else if (providerId === "fixture-key" && type === "api_key") {
+      const password = await interaction.prompt({ type: "secret", message: "Account password" });
+      const tenant = await interaction.prompt({ type: "text", message: "Tenant" });
+      const region = await interaction.prompt({ type: "select", message: "Choose region", options: [{ id: "east", label: "East" }, { id: "west", label: "West" }] });
+      if (region !== "west" || tenant !== "acme" || password !== " !fixture$password ") throw Error("The fixture rejected the answer.");
+      credential = { type: "api_key", key: password, env: { ACME_TENANT: tenant } };
     } else if (providerId === "deepseek" && type === "api_key") {
       credential = await keyLogin(interaction);
     } else {

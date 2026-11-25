@@ -17,6 +17,7 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     var beforeInstructions: (@Sendable (RemoteInstructionsRequest) async throws -> Void)?
     var beforeHostSettings: (@Sendable () async -> Void)?
     var beforeSuggestions: (@Sendable () async -> Void)?
+    var suggestionsFailure: RemoteHostClientError?
     /// Saved versions a restore can put back (their entries are in the files' history).
     var revisions: [InstructionRevision] = []
 
@@ -29,6 +30,10 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
 
     var requests: [String] { lock.withLock { log } }
     var saved: InstructionsSnapshot { lock.withLock { files } }
+
+    func spaceLifecycle(_ action: RemoteSpaceLifecycle, spaceID: SpaceID) async throws {
+        lock.withLock { log.append("spaceLifecycle.\(action)") }
+    }
 
     /// Settings' pages never ask for skills (ClientSkillsTests has a host that answers them).
     func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult {
@@ -66,8 +71,9 @@ class FakeSettingsClient: SettingsClient, @unchecked Sendable {
 
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot {
         await beforeSuggestions?()
-        return lock.withLock {
+        return try lock.withLock {
             log.append("suggestions.\(String(describing: request).prefix { $0 != "(" })")
+            if let suggestionsFailure { throw suggestionsFailure }
             switch request {
             case .fetch:
                 break
@@ -103,6 +109,12 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
     private var log: [String] = []
     private var server = HostMCPServer(name: "github", kind: .remote, endpoint: "https://x", status: .connected)
     private var signedIn = false
+    private var extensionRows = [HostExtension(id: "your-extensions/added/acme-login", name: "acme-login", subtitle: "Added from https://example.invalid/acme/pi-login",
+                                               on: true, added: true)]
+    private var pendingPrompt: HostSignInPrompt?
+    private var configLog: [RemoteHostConfigRequest] = []
+    var configRequests: [RemoteHostConfigRequest] { lock.withLock { configLog } }
+    func showPrompt(_ prompt: HostSignInPrompt) { lock.withLock { pendingPrompt = prompt } }
     var refuses = false
     var requests: [String] { lock.withLock { log } }
 
@@ -118,8 +130,13 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
         lock.withLock {
             log.append("inventory.\(request)")
             switch request {
-            case .providers: return .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription",
-                                                                   auth: signedIn ? .signedIn : .notSignedIn)])
+            case .providers:
+                var rows = [HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: signedIn ? .signedIn : .notSignedIn)]
+                if extensionRows.contains(where: { $0.name == "acme-login" }) {
+                    rows.append(HostProviderStatus(id: "acme", name: "Acme", badge: "Subscription", auth: .notSignedIn))
+                }
+                return .providers(rows)
+            case .extensions: return .extensions(extensionRows)
             default: return .mcp(HostMCPInventory(servers: [server], configPath: "~/mcp.json"))
             }
         }
@@ -128,14 +145,24 @@ final class FakeConfigClient: SettingsClient, @unchecked Sendable {
     func hostConfig(_ request: RemoteHostConfigRequest) async throws -> RemoteHostConfigResult {
         try lock.withLock {
             log.append("config.\(String(describing: request).prefix { $0 != "(" })")
+            configLog.append(request)
             if refuses { throw RemoteHostClientError.rejected(code: "config_failed", message: "The host said no.") }
             let id = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
             switch request {
             case .mcpSetEnabled(_, let on):
                 server.enabled = on
                 return .mcp(HostMCPInventory(servers: [server], configPath: "~/mcp.json"))
+            case .extensionSetEnabled(let destination, let on):
+                if let index = extensionRows.firstIndex(where: { $0.id == destination }) { extensionRows[index].on = on }
+                return .extensions(extensionRows)
+            case .extensionRemove(let destination):
+                extensionRows.removeAll { $0.id == destination }
+                return .extensions(extensionRows)
+            case .extensionAddGit(let url):
+                extensionRows.append(HostExtension(id: "your-extensions/added/acme-tools", name: "acme-tools", subtitle: "Added from \(url)", on: true, added: true))
+                return .extensions(extensionRows)
             case .providerSignIn:
-                return .signIn(HostSignInProgress(id: id, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai", wantsCode: true))
+                return .signIn(HostSignInProgress(id: id, phase: .waiting, name: "Anthropic", authorizationURL: "https://claude.ai", wantsCode: true, prompt: pendingPrompt))
             case .signIn:
                 signedIn = true
                 return .signIn(HostSignInProgress(id: id, phase: .done, name: "Anthropic"))
@@ -268,6 +295,45 @@ struct ClientSettingsTests {
         #expect(model.providers[live.id]?.first?.auth == .signedIn, "a finished sign-in reads the page again")
     }
 
+    @Test func extensionsShowOnlyOnAHostThatServesThemAndRefreshSignIn() async {
+        let client = FakeConfigClient()
+        let model = ClientHostConfig()
+        let base = [RemoteProtocol.hostInventoryCapability, RemoteProtocol.hostConfigCapability]
+        let old = SettingsHost(id: UUID(), name: "old", client: client, capabilities: Set(base))
+        let live = SettingsHost(id: UUID(), name: "new", client: client, capabilities: Set(base + [RemoteProtocol.hostExtensionsCapability]))
+        #expect(!model.servesExtensions(old))
+        #expect(model.servesExtensions(live))
+
+        await model.refresh(.extensions, on: live)
+        #expect(model.extensions[live.id]?.map(\.name) == ["acme-login"])
+        await model.perform(.extensionSetEnabled(destination: "your-extensions/added/acme-login", on: false), on: live)
+        #expect(model.extensions[live.id]?.first?.on == false)
+        #expect(model.providers[live.id]?.map(\.id) == ["anthropic", "acme"], "an extension change reads the providers again")
+        await model.perform(.extensionAddGit(url: "https://example.invalid/acme/pi-tools"), on: live)
+        #expect(model.extensions[live.id]?.map(\.name) == ["acme-login", "acme-tools"])
+        await model.perform(.extensionRemove(destination: "your-extensions/added/acme-login"), on: live)
+        #expect(model.extensions[live.id]?.map(\.name) == ["acme-tools"])
+        #expect(model.providers[live.id]?.map(\.id) == ["anthropic"])
+        #expect(!model.busy.contains(live.id))
+        model.forget(host: live.id)
+        #expect(model.extensions[live.id] == nil)
+    }
+
+    @Test func anAnswerUsesTheRenderedQuestionRatherThanTheLatestPolledQuestion() async throws {
+        let client = FakeConfigClient()
+        let host = SettingsHost(id: UUID(), name: "studio", client: client,
+                                capabilities: [RemoteProtocol.hostInventoryCapability, RemoteProtocol.hostConfigCapability])
+        let model = ClientHostConfig()
+        client.showPrompt(HostSignInPrompt(id: "p1", kind: .secret, message: "Password"))
+        await model.perform(.providerSignIn(provider: "acme"), on: host)
+        let rendered = try #require(model.signIns[host.id])
+        client.showPrompt(HostSignInPrompt(id: "p2", kind: .text, message: "Tenant"))
+        await model.perform(.providerSignIn(provider: "acme"), on: host)
+        #expect(model.signIns[host.id]?.prompt?.id == "p2")
+        await model.complete(signInOn: host, with: "fixture-password", signInID: rendered.id, promptID: rendered.prompt?.id)
+        #expect(client.configRequests.last == .signIn(id: rendered.id, action: .complete("fixture-password", promptID: "p1")))
+    }
+
     /// A host's model menus offer its own catalog, keeping a current model it no longer lists.
     @Test func aHostsModelMenusOfferItsOwnCatalog() async {
         let model = ClientHostSettings()
@@ -310,7 +376,7 @@ struct ClientSettingsTests {
 
     @Test func aHostsSettingsSayWhetherTheyCanBeShown() async {
         let model = ClientHostSettings()
-        let offline = Self.host("horizon", nil)
+        let offline = Self.host("orbit", nil)
         let old = Self.host("studio", FakeSettingsClient(), capabilities: [])
         let live = Self.host("demo-mac", FakeSettingsClient(settings: HostSettings(piVersion: "0.87.1")))
         #expect(model.state(of: offline) == .offline)
@@ -355,7 +421,7 @@ struct ClientSettingsTests {
     @Test func theFirstHostThatAnswersIsEditedAndOnlyItIsWritten() async throws {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- old\n", appendSystem: "rule\n", directory: "~/i"))
-        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("orbit", nil)]
         let model = ClientInstructions(origin: "iPhone")
         await model.refresh(hosts)
         #expect(model.edited(in: hosts)?.name == "demo-mac")
@@ -473,7 +539,7 @@ struct ClientSettingsTests {
         let on = SuggestedInstructionsSettings(enabled: true, since: 1)
         let first = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
         let second = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- b", at: 20)]))
-        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("orbit", nil)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         #expect(model.isOn(hosts))
@@ -492,6 +558,57 @@ struct ClientSettingsTests {
         #expect(model.waiting(hosts).isEmpty)
         // Only the host with lines waiting was asked.
         #expect(!second.requests.contains("suggestions.addAll"))
+    }
+
+    @Test func damageOnOneHostDoesNotHideHealthyHostsAndRefreshPicksUpRepair() async {
+        let studio = FakeSettingsClient()
+        let build = FakeSettingsClient()
+        let hosts = [Self.host("acme-studio", studio), Self.host("acme-build", build)]
+        let model = ClientSuggestions()
+        await model.refresh(hosts)
+        let message = "Couldn't read /tmp/acme/instructions/suggestions.json on the host."
+        studio.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        await model.refresh(hosts)
+        #expect(model.unavailable == [hosts[0].id: message])
+        #expect(model.hosts(hosts).map(\.id) == [hosts[1].id])
+        await model.configure(hosts) { $0.enabled = true }
+        #expect(!studio.requests.contains("suggestions.configure"))
+        #expect(build.requests.contains("suggestions.configure"))
+
+        studio.suggestionsFailure = nil
+        await model.refresh(hosts)
+        #expect(model.unavailable.isEmpty)
+        #expect(model.hosts(hosts).map(\.id) == hosts.map(\.id))
+    }
+
+    @Test func mutationDamageIsOnlyReportedAsAHostWarning() async {
+        let client = FakeSettingsClient()
+        let host = Self.host("acme-studio", client)
+        let model = ClientSuggestions()
+        await model.refresh([host])
+
+        let message = "Couldn't read /tmp/acme/instructions/suggestions.json on the host."
+        client.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        await model.configure([host]) { $0.enabled = true }
+        #expect(client.requests.contains("suggestions.configure"))
+        #expect(model.unavailable == [host.id: message])
+        #expect(model.problem == nil)
+    }
+
+    @Test func disconnectClearsOnlyThatHostsSuggestionsWarningWithoutARefresh() async {
+        let studio = FakeSettingsClient(), build = FakeSettingsClient()
+        let message = "Couldn't read suggestions.json on the host."
+        studio.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        build.suggestionsFailure = .rejected(code: "suggestions_unavailable", message: message)
+        let first = Self.host("acme-studio", studio), second = Self.host("acme-build", build)
+        let model = ClientSuggestions()
+        await model.refresh([first, second])
+        #expect(model.unavailable == [first.id: message, second.id: message])
+
+        model.use([Self.host(first.name, nil, id: first.id), second])
+        #expect(model.unavailable == [second.id: message])
+        model.use([Self.host(first.name, nil, id: first.id), Self.host(second.name, nil, id: second.id)])
+        #expect(model.unavailable.isEmpty)
     }
 
     @Test func theExperimentChangesOnEveryHost() async {

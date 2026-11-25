@@ -2,6 +2,7 @@
 
 Run: python3 -m unittest discover -s Tests/Release -v
 """
+import hermetic_env  # noqa: F401  (must stay first: scrubs ambient SHEPHERD_*/PI_*)
 import base64
 import contextlib
 import hashlib
@@ -36,11 +37,11 @@ STAMP = "202609232100"
 def item(version, channel=None, archive="Shepherd-v1.0.0.dmg", deltas=()):
     tag = f"<sparkle:channel>{channel}</sparkle:channel>" if channel else ""
     delta_xml = "".join(
-        f'<enclosure url="https://github.com/bailycase/shepherd/releases/download/{d}" sparkle:deltaFrom="1"/>'
+        f'<enclosure url="https://github.com/shepherd-app/shepherd/releases/download/{d}" sparkle:deltaFrom="1"/>'
         for d in deltas
     )
     return (f"<item><title>{version}</title>{tag}<sparkle:version>{version}</sparkle:version>"
-            f'<enclosure url="https://github.com/bailycase/shepherd/releases/download/{archive}" length="1"/>'
+            f'<enclosure url="https://github.com/shepherd-app/shepherd/releases/download/{archive}" length="1"/>'
             f"<sparkle:deltas>{delta_xml}</sparkle:deltas></item>")
 
 
@@ -435,7 +436,7 @@ FOOTER = "    </channel>\n</rss>\n"
 def generated_item(version, url, channel="", deltas=(), requirement=""):
     """An item as generate_appcast writes it, indented, with its signatures."""
     lines = [f"<title>{version}</title>", "<pubDate>Sun, 27 Sep 2026 17:38:08 +0000</pubDate>",
-             "<link>https://github.com/bailycase/shepherd</link>"]
+             "<link>https://github.com/shepherd-app/shepherd</link>"]
     if channel:
         lines.append(f"<sparkle:channel>{channel}</sparkle:channel>")
     lines += [f"<sparkle:version>{version}</sparkle:version>",
@@ -451,7 +452,7 @@ def generated_item(version, url, channel="", deltas=(), requirement=""):
     return "        <item>\n" + "".join(f"            {line}\n" for line in lines) + "        </item>\n"
 
 
-DOWNLOAD = "https://github.com/bailycase/shepherd/releases/download"
+DOWNLOAD = "https://github.com/shepherd-app/shepherd/releases/download"
 # One fixture per feed shape the workflow publishes. The newest beta and nightly items carry the
 # requirement already, as generate_appcast writes it for an archive with no x86_64 slice.
 FEED_SHAPES = {
@@ -702,7 +703,7 @@ class VerifyAppTests(unittest.TestCase):
             installer = installers[consumer.stem.removeprefix("shepherd-")]
             source = Path(ROOT, "Sources", "ShepherdSessions", installer + "Extension.swift").read_text()
             if installer == "Children":
-                self.assertIn('(\"shepherd-lines.mjs\", EmbeddedExtensions.source(\"shepherd-lines.mjs\"))', source)
+                self.assertIn('"shepherd-lines.mjs",', source)
             else:
                 self.assertRegex(source, r'EmbeddedExtensions\.install\("shepherd-lines\.mjs", at: \w+\.appendingPathComponent\("shepherd-lines\.mjs"\)\)')
 
@@ -1692,15 +1693,14 @@ class RetireCommandTests(unittest.TestCase):
 
 
 class ReleaseConcurrencyTests(unittest.TestCase):
-    """Nightly supersedes old runs; TestFlight and tagged releases keep their existing queues."""
+    """Nightly batches pushes behind a running release; nothing cancels a release in progress."""
 
-    def test_only_nightly_mac_runs_cancel_superseded_releases(self):
+    def test_a_running_release_finishes_and_later_pushes_batch_into_one_pending_run(self):
         with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
             release_yml = f.read()
         m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
         self.assertIsNotNone(m)
-        self.assertIn("cancel-in-progress: ${{ github.ref == 'refs/heads/nightly' && !inputs.testflight }}\n",
-                      m.group(1))
+        self.assertIn("cancel-in-progress: false\n", m.group(1))
 
     def test_a_testflight_run_queues_apart_from_the_pushes(self):
         # One group would let a TestFlight run replace a waiting push, or a push replace it.
@@ -1772,7 +1772,7 @@ class RetireWorkflowTests(unittest.TestCase):
             self.assertFalse(release.plan(ref, "202609250000", asc_key=True, testflight=True)["ios"], ref)
 
     def test_it_runs_on_linux_and_reads_the_repo_without_writing_it(self):
-        self.assertRegex(self.job, r"(?m)^    runs-on: ubuntu-latest$")
+        self.assertRegex(self.job, r"(?m)^    runs-on: ubuntu-24\.04$")
         self.assertRegex(self.job, r"(?m)^    timeout-minutes: 60$")
         permissions = self.block(self.job, "permissions", "    ")
         self.assertEqual(re.findall(r"^      (\S+): (\S+)", permissions, re.M), [("contents", "read")])

@@ -8,13 +8,22 @@ import Testing
 @testable import ShepherdUI
 
 /// Switching between two mounted threads is a visibility flip: it evaluates what the flip
-/// changes and then leaves both layouts alone. A spring left running in either one (the
-/// composer's ring fading with focus) lays that layout out again on every frame for a third of a
-/// second, whoever sees it, and the window's display cycle with it.
+/// changes and then leaves both layouts alone, bar one thing: the composer's focus ring fades
+/// in, in the layout that comes on screen only, on the render server over the hover motion's
+/// duration. A SwiftUI animation or spring left running in either layout lays that layout out
+/// again on every frame (a spring for a third of a second), whoever sees it, and the window's
+/// display cycle with it.
 @Suite("Mounted switch", .mainActorExclusive)
 @MainActor
 struct MountedSwitchTests {
-    /// How long the window runs after a switch's frame, longer than any of the springs a switch could set off.
+    /// How long the ring takes to come in: the hover motion's duration.
+    private static let fade = Duration.seconds(SH.Motion.hover.duration)
+
+    /// How long the window runs while the ring fades: its duration, and a little room for a late frame.
+    /// A spring set off with it (`SH.Motion.hover`) would run on for another 150 ms.
+    private static let fading = fade + .milliseconds(80)
+
+    /// How long the window runs once it has faded, longer than any of the springs a switch could set off.
     private static let afterwards = Duration.milliseconds(700)
 
     /// Every thread mounted and shown once, and the window held still.
@@ -45,14 +54,15 @@ struct MountedSwitchTests {
         }
     }
 
-    /// The probe counts of running `window` for `span`.
-    private static func counts(running window: OffscreenWindow, for span: Duration) async throws -> [String: Int] {
+    /// The probe counts of running `window` for `span`, and on until `ready` holds if it does not yet.
+    private static func counts(running window: OffscreenWindow, for span: Duration,
+                               until ready: @MainActor () -> Bool = { true }) async throws -> [String: Int] {
         let end = ContinuousClock.now + span
         SHRenderProbe.start()
         do {
             try await eventuallyOnMain("the window to run for \(span)", timeout: .seconds(30)) {
                 ListPerf.settle(window)
-                return ContinuousClock.now >= end
+                return ContinuousClock.now >= end && ready()
             }
         } catch {
             SHRenderProbe.stop()
@@ -61,7 +71,12 @@ struct MountedSwitchTests {
         return SHRenderProbe.stop()
     }
 
-    @Test func aSwitchLeavesNeitherLayoutRunningASpringAfterItsFrame() async throws {
+    /// Whether the keyboard is in `host`.
+    private static func holdsKeyboard(_ host: NSView, in window: OffscreenWindow) -> Bool {
+        (window.window.firstResponder as? NSView)?.isDescendant(of: host) == true
+    }
+
+    @Test func aSwitchLeavesNothingRunningOnceTheShownRingHasFaded() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let (vm, agents) = try await MountedWorkspace.start(4, in: app)
@@ -71,24 +86,34 @@ struct MountedSwitchTests {
 
         for round in 0..<4 {
             let target = agents[round % 2 == 0 ? 1 : 0]
+            let shown = try #require(try WorkspaceNavigationTests.deck(in: window).pages[target.tab.id]).host
             let frame = ListPerf.counting {
                 vm.selectAgent(target.agent.id)
                 ListPerf.settle(window)
             }
+            // The composer takes the keyboard in one more body.
+            let landing = try await Self.counts(running: window, for: .zero) { Self.holdsKeyboard(shown, in: window) }
+            let during = try await Self.counts(running: window, for: Self.fading)
             let after = try await Self.counts(running: window, for: Self.afterwards)
-            // The claim still lands, only without the fade: the shown thread's composer holds the keyboard.
-            let shown = try #require(try WorkspaceNavigationTests.deck(in: window).pages[target.tab.id]).host
-            #expect((window.window.firstResponder as? NSView)?.isDescendant(of: shown) == true, "round \(round): the composer holds the keyboard")
+            #expect(Self.holdsKeyboard(shown, in: window), "round \(round): the composer holds the keyboard")
 
             // The switch's own frame: the two rows, the two layouts, one pass over each host.
             #expect(frame["sidebar.row", default: 0] <= 2, "round \(round): \(frame)")
             #expect(frame["layout.agentLayout", default: 0] <= 2, "round \(round): \(frame)")
             #expect(frame["thread.view", default: 0] <= 2, "round \(round): \(frame)")
             #expect(frame["deck.hiddenLayout", default: 0] <= 2, "round \(round): \(frame)")
-            // And then nothing: the composer takes the keyboard in one more body, and no host is laid out again.
-            #expect(after["deck.hiddenLayout", default: 0] == 0, "round \(round), after the frame: \(after)")
-            #expect(after["deck.layout", default: 0] <= 2, "round \(round), after the frame: \(after)")
-            #expect(after["composer.body", default: 0] <= 1, "round \(round), after the frame: \(after)")
+            // The layout that went off screen is left alone: no pass over it, ever after.
+            #expect(landing["deck.hiddenLayout", default: 0] + during["deck.hiddenLayout", default: 0] == 0,
+                    "round \(round), as the ring fades: \(landing) \(during)")
+            #expect(after["deck.hiddenLayout", default: 0] == 0, "round \(round), after the fade: \(after)")
+            // Nothing animates on the shown layout after it lands: no pass over it (a SwiftUI fade is one per frame,
+            // a spring's tail a hundred in 50 ms), and no body to run.
+            #expect(during["deck.layout", default: 0] <= 2, "round \(round), as the ring fades: \(during)")
+            #expect(after["deck.layout", default: 0] <= 2, "round \(round), after the fade: \(after)")
+            #expect(frame["composer.body", default: 0] <= 2, "round \(round): \(frame)")
+            #expect(landing["composer.body", default: 0] + during["composer.body", default: 0] <= 1, "round \(round): \(landing) \(during)")
+            #expect(after["composer.body", default: 0] == 0, "round \(round), after the fade: \(after)")
         }
     }
+
 }

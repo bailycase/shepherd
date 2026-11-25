@@ -35,6 +35,12 @@ extension FixtureCatalog {
                 ChangesFixture.store.pickingBase = true
                 await ReviewFixture.until { ChangesFixture.store.branches != nil }
             }),
+            FixtureScreen(name: "damaged-change-bases", hosts: ChangesFixture.hosts(damagedRecents: true), routes: [thread, changes], prepare: { _ in
+                let store = ChangesFixture.store
+                await ReviewFixture.loaded(store)
+                store.pickingBase = true
+                await ReviewFixture.until { store.branches?.recentsProblem != nil }
+            }),
             // Last turn: what the agent changed since the last message (ChangesLastTurn).
             FixtureScreen(name: "changes-pad-turn", hosts: ChangesFixture.hosts(), routes: [thread, changes], prepare: { _ in
                 let store = ChangesFixture.store
@@ -42,6 +48,11 @@ extension FixtureCatalog {
                 store.pick(.lastTurn)
                 await ReviewFixture.until { store.list?.scope == .lastTurn && !store.loading }
                 await ChangesFixture.filesLoaded(store)
+            }),
+            FixtureScreen(name: "changes-history-damaged", hosts: ChangesFixture.hosts(damaged: true), routes: [thread, changes], prepare: { _ in
+                let store = ChangesFixture.store
+                await ReviewFixture.loaded(store)
+                await ReviewFixture.until { store.overview?.turnHistoryProblem != nil }
             }),
             // Every file folded (Collapse all), and the unified diff forced wide.
             FixtureScreen(name: "changes-pad-collapsed", hosts: ChangesFixture.hosts(), routes: [thread, changes], prepare: { _ in
@@ -162,7 +173,7 @@ enum ChangesFixture {
     }
 
     /// Studio serving the refund agent: its thread, the engine's reads and the commit's.
-    static func hosts() -> [FixtureHostData] {
+    static func hosts(damaged: Bool = false, damagedRecents: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         if let index = hosts[0].state.agents.firstIndex(where: { $0.id == FixtureData.preview }) {
             hosts[0].state.agents[index].name = "Add refund events"
@@ -172,7 +183,8 @@ enum ChangesFixture {
         }
         hosts[0].threads[FixtureData.preview] = thread()
         let changes = reply(Repo(files: files, branch: branch, base: base, baseName: "main", mergeBase: "3f2a91c", lastTurn: turn,
-                                 turnFiles: files.map(\.id)))
+                                 turnFiles: files.map(\.id), turnHistoryProblem: damaged ? damage : nil,
+                                 recentsProblem: damagedRecents ? recentsDamage : nil))
         let info = RemoteCommitInfo(repository: "/Users/dev/payments", branch: branch, head: "a1c9f2e", upstream: nil, pushRemote: "origin",
                                     defaultBranch: "main", files: files.map {
                                         RemoteCommitFile(path: $0.id, status: $0.isNew ? "A" : "M", added: $0.addedCount, removed: $0.removedCount,
@@ -203,6 +215,10 @@ enum ChangesFixture {
         return hosts
     }
 
+    static let damage = "Undo/Redo history can't be read.\n/Users/dev/Library/Application Support/Shepherd/changes/turns.json\nThe given data was not valid JSON.\nOn the host Mac, fix the file's permissions if access was denied, or restore a known-good backup. As a last resort, delete this file to drop Undo/Redo history for past turns. This leaves the working tree untouched. Then refresh Changes; no restart is needed."
+
+    static let recentsDamage = "Can't read the recents file on the host Mac:\n/Users/dev/Library/Application Support/Shepherd/changes/bases.json\nFix its permissions, restore a backup, or move or delete it to reset recents."
+
     struct Repo: Sendable {
         var files: [DiffFile]
         var branch: String
@@ -213,6 +229,8 @@ enum ChangesFixture {
         /// The files the last turn changed.
         var turnFiles: [String]
         var listError: String? = nil
+        var turnHistoryProblem: String? = nil
+        var recentsProblem: String? = nil
     }
 
     static let revision = ChangesRevision(old: "3f2a91c0d4", new: "9b8e7d60aa")
@@ -253,7 +271,8 @@ enum ChangesFixture {
         return ChangesOverview(
             repository: "/Users/dev/payments", branch: repo.branch, head: "a1c9f2e", defaultScope: .branch(base: nil), defaultBase: repo.base,
             entries: [
-                .init(scope: .lastTurn, files: turn.0, added: turn.1, removed: turn.2),
+                repo.turnHistoryProblem.map { .init(scope: .lastTurn, unavailable: $0) }
+                    ?? .init(scope: .lastTurn, files: turn.0, added: turn.1, removed: turn.2),
                 .init(scope: .uncommitted, files: 2, added: 33, removed: 11),
                 .init(scope: .unstaged, files: 1, added: 21, removed: 8),
                 .init(scope: .staged, files: 1, added: 12, removed: 3),
@@ -270,7 +289,7 @@ enum ChangesFixture {
             commitsBase: repo.base,
             pullRequest: ChangesPullRequest(number: 31, title: "Refund events", isDraft: true, state: "OPEN", base: "main", head: repo.branch,
                                             url: "https://github.com/acme/payments/pull/31"),
-            lastTurn: repo.lastTurn)
+            lastTurn: repo.turnHistoryProblem == nil ? repo.lastTurn : nil, turnHistoryProblem: repo.turnHistoryProblem)
     }
 
     static func list(_ repo: Repo, scope: ChangesScope) -> ChangesList {
@@ -304,7 +323,8 @@ enum ChangesFixture {
 
     static func branches(_ repo: Repo) -> ChangesBranches {
         let now = Date().timeIntervalSince1970
-        return ChangesBranches(defaultBase: repo.base, pullRequestBase: repo.base, recents: ["origin/release/2.4"], branches: [
+        return ChangesBranches(defaultBase: repo.base, pullRequestBase: repo.base,
+                               recents: repo.recentsProblem == nil ? ["origin/release/2.4"] : [], branches: [
             ChangesBranch(name: repo.base, isRemote: true, committedAt: now - 3_600),
             ChangesBranch(name: "origin/release/2.4", isRemote: true, committedAt: now - 7_200),
             ChangesBranch(name: "feat/ledger-v2", isRemote: false, committedAt: now - 9_000),
@@ -312,7 +332,7 @@ enum ChangesFixture {
             ChangesBranch(name: "fix/outbox-retry", isRemote: false, committedAt: now - 20_000),
             ChangesBranch(name: "agent/retry-plan", isRemote: false, worktree: "/Users/dev/payments/.worktrees/retry", committedAt: now - 30_000),
             ChangesBranch(name: repo.branch, isRemote: false, isCurrent: true, committedAt: now - 600),
-        ])
+        ], recentsProblem: repo.recentsProblem)
     }
 
     /// outbox.go's comment on its wrapped error, refund.go and the migration viewed (folded), as

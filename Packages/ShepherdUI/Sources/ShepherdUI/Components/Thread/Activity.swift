@@ -1,22 +1,23 @@
 import SwiftUI
 
-// Tool activity (SHThread, ToolRows, LiveText): one quiet line per burst of work, its calls on a
+// Tool activity (ToolFeed › A · One live line): one line per stretch of work, its calls on a
 // hairline rail, and the changes card that ends a turn with edits.
 
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
 /// with a hover fill that expands the burst into its calls. A failed burst turns `failed` and
-/// stays visible. A live one is the thread's live indicator (LiveText): the tool's own glyph in
-/// `textSecondary`, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time
-/// in mono 11 `textTertiary`, and its last output lines. Nothing spins.
+/// stays visible. A live one is the thread's live indicator (ToolFeed › A · One live line): the running spinner where the glyph
+/// goes, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time in mono 11 `textTertiary`, and its last
+/// output lines.
 public struct SHActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
     /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
     /// acme-web"): the nib and the shield. `lookedAtDesign` is a thread reading a design piece it
     /// was sent ("Looked at Checkout funnel dashboard › A · Funnel first"): the nib too. `browser`
-    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `images` is the neutral count of the
+    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `computer` is an agent
+    /// working this Mac's apps ("5 actions in Safari"): the pointer. `images` is the neutral count of the
     /// images a message or a tool result carries ("2 images", ThreadImagesSent and ThreadImagesReceived): the `photo` glyph.
-    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, images, other }
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, computer, images, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -86,6 +87,7 @@ public struct SHActivityLine: View {
         case .drew, .lookedAtDesign: "pencil.tip"
         case .checked: "checkmark.shield"
         case .browser: "globe"
+        case .computer: "cursorarrow"
         case .images: "photo"
         case .other: "wrench.adjustable"
         }
@@ -129,7 +131,7 @@ public struct SHActivityLine: View {
                     .shContentTransition(.numeric())
                 if !meta.isEmpty {
                     Text(meta)
-                        .font(.shMono(11))
+                        .font(.sh(.mono))
                         .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -147,14 +149,13 @@ public struct SHActivityLine: View {
         .frame(minHeight: SHThreadMetrics.activityHeight)
     }
 
-    /// The running call (LiveText): its own glyph, still, in `textSecondary`; the verb and the
+    /// The running call (ToolFeed › A): the running spinner in the glyph's place (still under Reduce Motion); the verb and the
     /// command shimmer; the clock ticks beside them in tertiary.
     private func liveHeader(since: Date?) -> some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(sh.textSecondary)
+            ProgressView()
+                .progressViewStyle(.shSpinner(size: SHThreadMetrics.activityIcon))
                 .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
             SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
                 Text(label).font(.sh(.ui, weight: .regular))
@@ -163,7 +164,7 @@ public struct SHActivityLine: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .shShimmer(active: true)
                 if !meta.isEmpty {
-                    Text(meta).font(.shMono(11)).lineLimit(1).truncationMode(.tail)
+                    Text(meta).font(.sh(.mono)).lineLimit(1).truncationMode(.tail)
                         .shShimmer(active: true)
                 }
             }
@@ -317,6 +318,13 @@ public struct SHLookedAtDetails: View {
 }
 
 /// One call behind an activity line.
+/// The lines an edit added and removed.
+public struct SHCallDiff: Equatable, Sendable {
+    public var added: Int
+    public var removed: Int
+    public init(added: Int, removed: Int) { self.added = added; self.removed = removed }
+}
+
 public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     public var id: String
     /// The kind column: "read", "edit", "bash".
@@ -325,6 +333,8 @@ public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     public var detail: String
     public var isPath: Bool
     public var stat: String?
+    /// An edit's lines added and removed, which the Mac draws in their colours in place of `stat`.
+    public var diff: SHCallDiff?
     public var failed: Bool
     /// The call's first output lines, shown while the row is expanded; `moreLines` counts the rest.
     public var output: [String]
@@ -337,14 +347,15 @@ public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     /// "edit, Sources/A.swift, +58 −41"
     public var accessibilityLabel: String
 
-    public init(id: String, label: String, detail: String, isPath: Bool = false, stat: String? = nil, failed: Bool = false,
-                output: [String] = [], moreLines: Int = 0, truncated: Bool = false, isExpanded: Bool = false,
+    public init(id: String, label: String, detail: String, isPath: Bool = false, stat: String? = nil, diff: SHCallDiff? = nil,
+                failed: Bool = false, output: [String] = [], moreLines: Int = 0, truncated: Bool = false, isExpanded: Bool = false,
                 filePath: String? = nil, accessibilityLabel: String? = nil) {
         self.id = id
         self.label = label
         self.detail = detail
         self.isPath = isPath
         self.stat = stat
+        self.diff = diff
         self.failed = failed
         self.output = output
         self.moreLines = moreLines
@@ -379,7 +390,7 @@ public struct SHActivityCalls<Menu: View>: View {
         let longest = min(rows.map(\.label.count).max() ?? 0, SHThreadMetrics.callLabelMaxCharacters)
         let labelWidth = max(SHThreadMetrics.callLabelWidth, (CGFloat(longest) * 11 * 0.6 * ThemeStore.shared.textScale).rounded(.up))
         SHActivityRail {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: SHThreadMetrics.callRowGap) {
                 ForEach(rows) { row in
                     SHActivityCallRowView(row: row, labelWidth: labelWidth, onSelect: onSelect, onShowAll: onShowAll, menu: menu)
                 }
@@ -401,7 +412,7 @@ struct SHActivityRail<Content: View>: View {
     var body: some View {
         content
             .padding(.leading, SHThreadMetrics.railPadding)
-            .overlay(alignment: .leading) { SHHairline(.vertical, color: .sh.lineStrong) }
+            .overlay(alignment: .leading) { SHHairline(.vertical, color: SHThreadMetrics.stepsRule(Color.sh)) }
             .padding(.leading, SHThreadMetrics.railInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
@@ -424,10 +435,36 @@ private struct SHActivityCallRowView<Menu: View>: View {
     @State private var statWidth: CGFloat = 0
     @State private var openInWidth: CGFloat = 0
 
+    #if os(macOS)
+    /// An edit's lines in the diff colours, else its stat in `textTertiary` (`failed` when it did).
+    @ViewBuilder private func statView(_ sh: SHPalette) -> some View {
+        if let diff = row.diff, !row.failed {
+            SHDiffStat(added: diff.added, removed: diff.removed, font: .sh(.ui, weight: .regular), hidesZero: true).fixedSize()
+        } else if let stat = row.stat {
+            Text(stat).font(.sh(.ui, weight: .regular)).foregroundStyle(row.failed ? sh.failed : sh.textTertiary).lineLimit(1).fixedSize()
+        }
+    }
+    #endif
+
     var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.xs) {
             Button { onSelect(row.id) } label: {
+                #if os(macOS)
+                // The board's `.tl` (GXExpanded): the verb in words, the path or command in mono, then what came of it.
+                HStack(spacing: SH.Space.s) {
+                    Text(row.label).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
+                    Text(row.detail).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                        .truncationMode(row.isPath ? .head : .tail)
+                        .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
+                    statView(sh)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { statWidth = $0 }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, SH.Space.xs)
+                .frame(minHeight: SHThreadMetrics.callRowHeight)
+                .padding(.vertical, SHThreadMetrics.callRowPress)
+                #else
                 HStack(spacing: 10) {
                     Text(row.label).foregroundStyle(sh.textTertiary).lineLimit(1).frame(width: labelWidth, alignment: .leading)
                     Text(row.detail).foregroundStyle(sh.textSecondary).lineLimit(1)
@@ -442,12 +479,14 @@ private struct SHActivityCallRowView<Menu: View>: View {
                 .font(.shMono(11))
                 .padding(.horizontal, SH.Space.xs)
                 .frame(minHeight: SHThreadMetrics.callRowHeight)
+                #endif
             }
             .buttonStyle(.shRow(radius: SH.Radius.xs))
             .shOpenIn(row.filePath, hovering: hovering, trailing: SH.Space.xs + (row.stat == nil ? 0 : statWidth + 10), width: $openInWidth)
             // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
             .onHover { hovering = row.filePath != nil && $0 }
             .padding(.horizontal, -SH.Space.xs)
+            .padding(.vertical, -SHThreadMetrics.callRowPress)
             .contextMenu { menu(row) }
             .help(row.detail)
             .accessibilityLabel(row.accessibilityLabel)
@@ -510,10 +549,37 @@ public struct SHChangedFile: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A changes card's last row once it lists `shown` of the `listed` files it has (the host sends a
+/// turn's first 20) out of `total`: "Show 10 more" lists the next batch in place, so a turn of a
+/// hundred files never floods the thread; past the listed files, "N more in Review" opens the pane.
+public enum SHChangesMore: Equatable, Sendable {
+    case show(Int)
+    case review(Int)
+    case none
+
+    public init(shown: Int, listed: Int, total: Int) {
+        if shown < listed {
+            self = .show(min(SHThreadMetrics.changesMoreFiles, listed - shown))
+        } else if total > shown {
+            self = .review(total - shown)
+        } else {
+            self = .none
+        }
+    }
+
+    public var text: String? {
+        switch self {
+        case .show(let count): "Show \(count) more"
+        case .review(let count): "\(count) more in Review"
+        case .none: nil
+        }
+    }
+}
+
 /// Ends every turn that edited files (ChangesCard(turn.changes), SHThread, Main): a header with
 /// a 30pt tile, "Edited 5 files" over its diff stat, Undo and Review; then the first three files
-/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "N more".
-/// Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
+/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "Show N
+/// more", which lists the next files (`SHChangesMore`). Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
 /// "Undid the agent’s edits to 5 files", with Redo (ChangesCard · after Undo).
 public struct SHChangesCard: View {
     public enum Phase: Equatable, Sendable {
@@ -533,6 +599,7 @@ public struct SHChangesCard: View {
     let onOpen: ((String) -> Void)?
     let onUndo: (() -> Void)?
     let onRedo: (() -> Void)?
+    @State private var shownCount = SHThreadMetrics.changesShownFiles
 
     /// `total` counts every file the turn changed (the card lists the first three); without it,
     /// `files` are all of them. `onUndo` and `onRedo` are left out where they can't apply (not the
@@ -572,63 +639,76 @@ public struct SHChangesCard: View {
         .shAnimation(.content, value: notice)
     }
 
+    /// The boards' `.ed`: a raised card on the `lift` shadow, "Edited 7 files" and its stat with Undo
+    /// and Review as words, then a row per file (its name, its folder dimmed after it, its stat and a
+    /// bar of its size against the largest), and "Show N more".
     private var edited: some View {
         let sh = Color.sh
-        let shown = Array(files.prefix(SHThreadMetrics.changesShownFiles))
-        let more = total - shown.count
+        let shown = Array(files.prefix(shownCount))
+        let more = SHChangesMore(shown: shown.count, listed: files.count, total: total)
+        let largest = max(1, files.map { $0.added + $0.removed }.max() ?? 1)
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "plus.forwardslash.minus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: SHThreadMetrics.changesTile, height: SHThreadMetrics.changesTile)
-                    .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.shSans(13, .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                    SHDiffStat(added: added, removed: removed, font: .shMono(11))
+                HStack(spacing: 10) {
+                    Text(title).font(.sh(.headline)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    SHDiffStat(added: added, removed: removed, font: .sh(.caption))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 if let onUndo {
-                    Button(action: onUndo) {
-                        HStack(spacing: 5) {
-                            Text("Undo")
-                            Image(systemName: "arrow.uturn.backward").font(.system(size: 10, weight: .medium))
-                        }
-                    }
-                    .buttonStyle(.sh(.ghost, size: .s))
-                    .disabled(busy)
-                    .help("Put back this turn’s edits in the worktree")
-                    .accessibilityLabel("Undo the agent’s edits to \(total) file\(total == 1 ? "" : "s")")
+                    Button("Undo", action: onUndo)
+                        .buttonStyle(SHCardLinkStyle(dim: true))
+                        .disabled(busy)
+                        .help("Put back this turn’s edits in the worktree")
+                        .accessibilityLabel("Undo the agent’s edits to \(total) file\(total == 1 ? "" : "s")")
                 }
                 if let onReview {
                     Button("Review", action: onReview)
-                        .buttonStyle(.sh(.secondary, size: .s))
+                        .buttonStyle(SHCardLinkStyle(dim: false))
                         .accessibilityLabel("Review \(title)")
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.leading, SH.Space.l)
-            .padding(.trailing, 10)
+            .padding(EdgeInsets(top: SH.Space.l, leading: SHThreadMetrics.changesInset, bottom: SH.Space.s, trailing: SHThreadMetrics.changesInset))
             ForEach(shown) { file in
-                SHHairline()
-                row(file)
+                SHChangedFileRow(file: file, largest: largest, label: label(file), onOpen: onOpen)
             }
-            if more > 0 {
-                SHHairline()
-                moreRow(more)
-            }
+            if more != .none { moreRow(more) }
         }
+        .padding(.bottom, SH.Space.s)
         .frame(maxWidth: .infinity)
-        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
         .clipShape(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
+        .shLift(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
         .shBorder(sh.lineSubtle, radius: SHThreadMetrics.changesRadius)
         .accessibilityElement(children: .contain)
     }
 
-    private var undone: some View {
+    /// The Mac's (GXExpanded): the same raised card as the edited one, "Undid the agent’s edits to 7 files" in
+    /// `textSecondary` and Redo as a word at its end; the iPhone and iPad keep the dashed line.
+    @ViewBuilder private var undone: some View {
+        #if os(macOS)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m + SH.Space.xxs) {
+            Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let onRedo {
+                Button("Redo", action: onRedo)
+                    .buttonStyle(SHCardLinkStyle(dim: false))
+                    .disabled(busy)
+                    .help("Put the agent’s edits back")
+            }
+        }
+        .padding(EdgeInsets(top: SH.Space.l, leading: SHThreadMetrics.changesInset, bottom: SHThreadMetrics.undoneBottom,
+                            trailing: SHThreadMetrics.changesInset))
+        .frame(maxWidth: .infinity)
+        .shLift(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
+        .shBorder(sh.lineSubtle, radius: SHThreadMetrics.changesRadius)
+        .accessibilityElement(children: .contain)
+        #else
+        dashedUndone
+        #endif
+    }
+
+    private var dashedUndone: some View {
         let sh = Color.sh
         return HStack(spacing: 10) {
             Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)
@@ -651,22 +731,38 @@ public struct SHChangesCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func row(_ file: SHChangedFile) -> some View {
-        SHChangedFileRow(file: file, label: "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed", onOpen: onOpen)
+    private func label(_ file: SHChangedFile) -> String {
+        "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed"
     }
 
-    @ViewBuilder private func moreRow(_ count: Int) -> some View {
-        let label = Text("\(count) more").font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
-            .padding(.horizontal, SH.Space.l)
+    @ViewBuilder private func moreRow(_ more: SHChangesMore) -> some View {
+        let text = if case .review(let count) = more, onReview == nil { "\(count) more" } else { more.text ?? "" }
+        let label = HStack(spacing: SH.Space.s) {
+            if case .show = more {
+                Image(systemName: "chevron.down").font(.system(size: SHThreadMetrics.chevron, weight: .semibold)).accessibilityHidden(true)
+            }
+            Text(text)
+        }
+            .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            .padding(.horizontal, SHThreadMetrics.changesInset)
             .frame(maxWidth: .infinity, minHeight: SHThreadMetrics.changesRowHeight, alignment: .leading)
             .contentShape(Rectangle())
-        if let onReview {
-            Button(action: onReview) { label }
+        switch more {
+        case .show(let count):
+            Button { shownCount += count } label: { label }
                 .buttonStyle(.shRow(radius: 0))
-                .accessibilityLabel("\(count) more files")
-                .accessibilityHint("Opens the Changes pane")
-        } else {
-            label
+                .accessibilityLabel("Show \(count) more files")
+        case .review(let count):
+            if let onReview {
+                Button(action: onReview) { label }
+                    .buttonStyle(.shRow(radius: 0))
+                    .accessibilityLabel("\(count) more files")
+                    .accessibilityHint("Opens the Changes pane")
+            } else {
+                label
+            }
+        case .none:
+            EmptyView()
         }
     }
 
@@ -679,10 +775,13 @@ public struct SHChangesCard: View {
     }
 }
 
-/// A changes card's file row: the path (the folder dims), "new" or "deleted", its stat; while the pointer is over it, Open in
+/// A changes card's file row (the boards' `.edf`): the name, its folder dimmed after it, "new" or "deleted", the stat, and a
+/// 56pt-wide bar of its size against the card's largest, green for what it added; while the pointer is over it, Open in
 /// <app> before the stat (OpenInD). A click opens the file in Shepherd.
 private struct SHChangedFileRow: View {
     let file: SHChangedFile
+    /// The card's largest file, in lines added and removed: its bar is the full width.
+    let largest: Int
     let label: String
     let onOpen: ((String) -> Void)?
     @State private var hovering = false
@@ -691,20 +790,26 @@ private struct SHChangedFileRow: View {
 
     var body: some View {
         let sh = Color.sh
-        let content = HStack(spacing: SH.Space.m) {
-            Text("\(Text(file.directory).foregroundStyle(sh.textTertiary))\(Text(file.name).foregroundStyle(sh.textPrimary))")
-                .font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
-            HStack(spacing: SH.Space.m) {
-                if file.status != .modified {
-                    Text(file.status == .added ? "new" : "deleted").font(.shSans(11)).foregroundStyle(sh.textTertiary)
+        let content = HStack(spacing: SHThreadMetrics.changesColumnGap) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Text(file.name).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Text(file.directory.hasSuffix("/") ? String(file.directory.dropLast()) : file.directory)
+                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.head)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
+            HStack(spacing: SHThreadMetrics.changesColumnGap) {
+                HStack(spacing: SH.Space.s) {
+                    if file.status != .modified {
+                        Text(file.status == .added ? "new" : "deleted").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    }
+                    SHDiffStat(added: file.added, removed: file.removed, font: .sh(.caption), hidesZero: true)
                 }
-                SHDiffStat(added: file.added, removed: file.removed, font: .shMono(11))
+                bar
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { statWidth = $0 }
         }
-        .padding(.horizontal, SH.Space.l)
+        .padding(.horizontal, SHThreadMetrics.changesInset)
         .frame(minHeight: SHThreadMetrics.changesRowHeight)
         .contentShape(Rectangle())
         Group {
@@ -718,9 +823,53 @@ private struct SHChangedFileRow: View {
             }
         }
         // A deleted file has nothing to open.
-        .shOpenIn(file.status == .deleted ? nil : file.path, hovering: hovering, trailing: SH.Space.l + statWidth + SH.Space.m,
+        .shOpenIn(file.status == .deleted ? nil : file.path, hovering: hovering, trailing: SHThreadMetrics.changesInset + statWidth + SH.Space.m,
                   width: $openInWidth)
         // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
         .onHover { hovering = $0 }
+    }
+
+    /// The boards' `.bar`: right-aligned in its 56pt column, as wide as the file's share of the largest.
+    private var bar: some View {
+        let lines = max(1, file.added + file.removed)
+        let width = max(SHThreadMetrics.changesBarHeight, SHThreadMetrics.changesBarWidth * CGFloat(lines) / CGFloat(max(largest, lines)))
+        let green = width * CGFloat(file.added) / CGFloat(lines)
+        return HStack(spacing: 0) {
+            Color.sh.done.frame(width: green)
+            Color.sh.failed
+        }
+        .frame(width: width, height: SHThreadMetrics.changesBarHeight)
+        .clipShape(Capsule())
+        .frame(width: SHThreadMetrics.changesBarWidth, alignment: .trailing)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The changes card's Undo and Review: words, not buttons (the boards' `.lk`): Review in ink at medium, Undo dimmed.
+struct SHCardLinkStyle: ButtonStyle {
+    let dim: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        SHCardLink(configuration: configuration, dim: dim)
+    }
+}
+
+private struct SHCardLink: View {
+    let configuration: ButtonStyleConfiguration
+    let dim: Bool
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+
+    var body: some View {
+        configuration.label
+            .font(.sh(.ui, weight: dim ? .regular : .medium))
+            .foregroundStyle(dim && !hovering ? Color.sh.textSecondary : Color.sh.textPrimary)
+            .padding(.horizontal, SH.Space.xs)
+            .frame(minHeight: SH.Height.controlS)
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .shEnabledOpacity(enabled)
+            .onHover { hovering = $0 }
+            .shFocusRing(radius: SH.Radius.xs)
     }
 }

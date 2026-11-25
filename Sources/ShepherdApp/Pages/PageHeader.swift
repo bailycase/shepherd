@@ -7,12 +7,14 @@ struct DestinationPageHeader<Accessory: View, Trailing: View>: View {
     let title: String
     var subtitle: String?
     let chrome: PageHeaderChrome
+    /// The hairline under it; New thread draws none (the boards' `.tbar`).
+    var rule = true
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
         SHPageHeader(title, subtitle: subtitle, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
-                     sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), accessory: accessory, trailing: trailing)
+                     sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), rule: rule, accessory: accessory, trailing: trailing)
     }
 }
 
@@ -23,7 +25,7 @@ extension DestinationPageHeader where Accessory == EmptyView {
 }
 
 extension DestinationPageHeader where Trailing == EmptyView, Accessory == EmptyView {
-    init(title: String, subtitle: String? = nil, chrome: PageHeaderChrome) {
-        self.init(title: title, subtitle: subtitle, chrome: chrome, accessory: { EmptyView() }, trailing: { EmptyView() })
+    init(title: String, subtitle: String? = nil, chrome: PageHeaderChrome, rule: Bool = true) {
+        self.init(title: title, subtitle: subtitle, chrome: chrome, rule: rule, accessory: { EmptyView() }, trailing: { EmptyView() })
     }
 }

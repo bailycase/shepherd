@@ -367,15 +367,17 @@ struct DesignSystemReference: Equatable {
             let hint: String?
             /// The name prefixes it takes, after the leading `--`.
             let prefixes: [String]
-            func matches(_ name: String) -> Bool { prefixes.contains { name.hasPrefix("--" + $0) } }
+            /// Whole names it takes, after the leading `--` (a prefix would take another system's `--primary-main`).
+            var names: Set<String> = []
+            func matches(_ name: String) -> Bool { names.contains(String(name.dropFirst(2))) || prefixes.contains { name.hasPrefix("--" + $0) } }
         }
 
         static let colorGroups = [
             Group(title: "Surfaces", hint: "Chrome, thread, cards and code", prefixes: ["bg-"]),
-            Group(title: "Lines", hint: "Hairlines, never shadows", prefixes: ["line-"]),
+            Group(title: "Lines", hint: "Hairlines and borders", prefixes: ["line-"]),
             Group(title: "Text", hint: nil, prefixes: ["text-primary", "text-secondary", "text-tertiary"]),
             Group(title: "Brand and state", hint: "Lantern is you, blue is work",
-                  prefixes: ["lantern", "running", "done", "failed", "text-on-"]),
+                  prefixes: ["lantern", "running", "done", "failed", "text-on-"], names: ["primary"]),
             Group(title: "Syntax", hint: "Code blocks and diffs", prefixes: ["syn-"]),
         ]
 

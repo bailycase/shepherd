@@ -1,5 +1,6 @@
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children.test.mjs
 // All child sessions/configuration use a temporary directory and a local fake provider.
+import "./hermetic-env.mjs";
 import test, { after, mock } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -168,7 +169,7 @@ test("bash operations preserve cwd/env/output, timeouts and abort kill normal de
   assert.equal(Buffer.concat(burst).length, 200000);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-abort-")), pidfile = path.join(dir, "pid");
   const controller = new AbortController();
-  const promise = ops.exec(`sleep 30 >/dev/null 2>&1 & echo $! > '${pidfile}'`, dir, { onData() {}, signal: controller.signal });
+  const promise = ops.exec(`sleep 30 >/dev/null 2>&1 & echo $! > '${pidfile}'; wait`, dir, { onData() {}, signal: controller.signal });
   try { await until(() => fs.existsSync(pidfile)); const pid = Number(fs.readFileSync(pidfile)); controller.abort(); await assert.rejects(promise); await until(() => !live(pid)); }
   finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -846,13 +847,14 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
       const reportsBefore = requests.length;
       await rpc("prompt", {message:"/shepherd-subagents-doctor"});
       assert.equal(requests.length, reportsBefore, "doctor never calls a provider");
-      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/switch-child'` });
+      // `wait` keeps the child running, so the parent's replacement (not the child finishing on its own) is what ends it.
+      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/switch-child'; wait` });
       await until(() => fs.existsSync(path.join(dir, "switch-child")));
       const switchPID = Number(fs.readFileSync(path.join(dir, "switch-child")));
       const replacement = await rpc("new_session"); assert.equal(replacement.cancelled, false);
       await until(() => !live(switchPID));
       const state = await rpc("get_state"); assert.equal(state.messageCount, 0);
-      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/reload-child'` });
+      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/reload-child'; wait` });
       await until(() => fs.existsSync(path.join(dir, "reload-child")));
       const reloadPID = Number(fs.readFileSync(path.join(dir, "reload-child")));
       await rpc("prompt", { message: "/fixture-reload" });
@@ -1092,6 +1094,165 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
     await new Promise((r) => control.close(r));
     server.closeAllConnections();
     await new Promise((r) => server.close(r));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a helper launch keeps only the parent's thread marker, with a fresh attempt scope", () => {
+  const run = { attempt: "attempt-2", tools: ["read"], cwd: os.tmpdir(), dir: os.tmpdir(), sessionFile: path.join(os.tmpdir(), "s.jsonl"), model: "fixture/fixture", thinking: "low" };
+  const parentEnv = {
+    PATH: "/usr/bin", CALLER: "kept",
+    SHEPHERD_AGENT_ID: "parent-agent", SHEPHERD_SOCKET: "/tmp/parent.sock", SHEPHERD_OWNED_THREAD: "thread-marker", SHEPHERD_OWNED_BASH: "old-scope",
+    PI_SESSION_ID: "parent-session", PI_MODEL: "parent-model",
+  };
+  const { env } = mod.childLaunch({ run, bridge: source, parentEnv });
+  assert.deepEqual(env, {
+    PATH: "/usr/bin", CALLER: "kept",
+    SHEPHERD_OWNED_THREAD: "thread-marker", SHEPHERD_OWNED_BASH: "attempt-2",
+    SHEPHERD_CHILD: "1", PI_OFFLINE: "1", SHEPHERD_CHILD_TOOLS: JSON.stringify(["read", "shepherd_parent_message"]),
+  });
+});
+
+test("host stop frames sweep a live child attempt only with sweepChildren true", { timeout: 60000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-child-stop-")), saved = { ...process.env };
+  const { server } = fixtureServer(), frames = [];
+  let h, socket, scope;
+  const control = net.createServer((s) => {
+    socket = s;
+    s.on("error", () => {});
+    s.on("data", mod.jsonLines((frame) => {
+      frames.push(frame);
+      if (frame.type === "childScope") send({ type: "childScope", id: frame.id, scope, deadline: Date.now() + 60000 });
+      if (frame.type === "prepareProjectConfiguration") send({ type: "ok", id: frame.id });
+    }, assert.fail));
+  });
+  const send = (frame) => socket.write(JSON.stringify(frame) + "\n");
+  try {
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    Object.assign(process.env, { HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1",
+      SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "fixture", SHEPHERD_OWNED_THREAD: "thread-marker",
+      SHEPHERD_SOCKET: path.join(dir, "s.sock"), SHEPHERD_EXT_CHILDREN: source });
+    delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
+    delete process.env.SHEPHERD_PROJECT_CONTEXT;
+    delete process.env.SHEPHERD_PROJECT_COORDINATOR;
+    delete process.env.SHEPHERD_CHILD;
+    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
+    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
+      baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
+      models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    } } }));
+    await new Promise((r) => control.listen(process.env.SHEPHERD_SOCKET, r));
+
+    // Project launches now skip helper registration. Simulate a controller with an already
+    // admitted Project workflow by enabling scope checks after the registration guard reads env.
+    const env = process.env;
+    let contextReads = 0, pending;
+    try {
+      process.env = new Proxy(env, { get: (target, key) => key === "SHEPHERD_PROJECT_CONTEXT" && ++contextReads === 2 ? "{}" : target[key] });
+      pending = harness(dir);
+    } finally { process.env = env; }
+    h = await pending;
+    await until(() => frames.some((f) => f.type === "helloChildren"));
+
+    let id = 0;
+    for (const type of ["stopManagedBash", "projectChildren"]) {
+      for (const sweep of [false, true]) {
+        scope = { key: { ownerID: "owner", projectID: "project", operationID: `op-${++id}` },
+          workerAgentID: "fixture", sessionID: "parent-fixture", generation: 1 };
+        const name = `child-${id}`, ready = path.join(dir, `${name}.ready`);
+        const task = `SHELL:touch '${ready}'; sleep 30`;
+        const done = h.tool("shepherd_workflow", { async: false, workflowScript:
+          `return runs.run("child", ${JSON.stringify({ name, agent: "worker", task })})` });
+        await until(() => fs.existsSync(ready));
+        const child = h.projections.at(-1).children.find((c) => c.name === name);
+        assert.equal(child.state, "running");
+        assert.ok(child.attempt);
+        const flag = sweep ? { sweepChildren: true } : {};
+        const start = frames.length;
+        if (type === "stopManagedBash") send({ type, ...flag });
+        // The Project ACK follows all scoped cleanup and any sweep writes on this socket.
+        // For stopManagedBash it also settles the workflow if the frame did not stop it.
+        send({ type: "projectChildren", id, scope, action: "stop", ...(type === "projectChildren" ? flag : {}) });
+        await until(() => frames.some((f) => f.type === "childCommandResult" && f.id === id));
+        assert.equal(frames.find((f) => f.type === "childCommandResult" && f.id === id).error, undefined);
+        assert.equal((await done).children[0].state, "stopped");
+        assert.deepEqual(frames.slice(start).filter((f) => f.type === "stopBashProcesses"), sweep ? [
+          { type: "stopBashProcesses", agentID: "fixture", bashScope: child.attempt },
+        ] : [], `${type} ${sweep ? "with" : "without"} sweepChildren`);
+      }
+    }
+  } finally {
+    await h?.shutdown();
+    socket?.destroy();
+    await new Promise((r) => control.close(r));
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the parent's Bash asks its control socket to sweep only stopped, aborted or timed-out calls", { timeout: 60000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-bash-sweep-"));
+  const frames = [], sockets = new Set();
+  const control = net.createServer((socket) => {
+    sockets.add(socket); socket.on("error", () => {});
+    socket.on("data", mod.jsonLines((frame) => frames.push(frame), () => {}));
+  });
+  const saved = { ...process.env };
+  let h;
+  try {
+    process.env.HOME = dir;
+    process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
+    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR, { recursive: true });
+    process.env.PI_OFFLINE = "1";
+    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "sweep-agent";
+    process.env.SHEPHERD_OWNED_THREAD = "thread-marker";
+    process.env.SHEPHERD_SOCKET = path.join(dir, "shepherd.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    await new Promise((r) => control.listen(process.env.SHEPHERD_SOCKET, r));
+    h = await harness(dir, []);
+    await until(() => frames.some((f) => f.type === "helloChildren"));
+    assert.equal(frames[0].type, "helloChildren", "the sweep request follows the agent's own hello");
+    assert.equal(frames[0].agentID, "sweep-agent");
+
+    const bash = h.tools.get("bash");
+    const run = (name, params, signal) => {
+      const file = path.join(dir, name);
+      const done = bash.execute(name, { command: `printf '%s|%s' "$SHEPHERD_OWNED_THREAD" "$SHEPHERD_OWNED_BASH" > '${file}'; sleep 30`, ...params }, signal, undefined, h.ctx);
+      return { done, scope: async () => { await until(() => fs.existsSync(file) && fs.readFileSync(file, "utf8").includes("|")); return fs.readFileSync(file, "utf8").split("|"); } };
+    };
+    // A normal return asks for nothing.
+    const normal = await bash.execute("normal", { command: "exit 0" }, undefined, undefined, h.ctx);
+    assert.ok(normal);
+    const controller = new AbortController();
+    const aborted = run("aborted", {}, controller.signal);
+    const [abortedThread, abortedScope] = await aborted.scope();
+    controller.abort();
+    await assert.rejects(aborted.done);
+    const timedOut = run("timed", { timeout: 1 });
+    const [, timedScope] = await timedOut.scope();
+    await assert.rejects(timedOut.done);
+    const stopController = new AbortController();
+    const stopped = run("stopped", { timeout: 5 }, stopController.signal);
+    const stoppedResult = assert.rejects(stopped.done, /supervisor exited without reporting a status/);
+    const [, stoppedScope] = await stopped.scope();
+    // The host sends this before clear_queue and abort. Bash can settle before the abort arrives.
+    sockets.values().next().value.write('{"type":"stopManagedBash"}\n');
+    await stoppedResult;
+    stopController.abort();
+    assert.equal(abortedThread, "thread-marker");
+    assert.equal(new Set([abortedScope, timedScope, stoppedScope]).size, 3);
+    await until(() => frames.some((f) => f.type === "stopBashProcesses" && f.bashScope === stoppedScope), 2000);
+    assert.deepEqual(frames.filter((f) => f.type === "stopBashProcesses"), [
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: abortedScope },
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: timedScope },
+      { type: "stopBashProcesses", agentID: "sweep-agent", bashScope: stoppedScope },
+    ]);
+  } finally {
+    await h?.shutdown();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((r) => control.close(r));
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
     fs.rmSync(dir, { recursive: true, force: true });
   }

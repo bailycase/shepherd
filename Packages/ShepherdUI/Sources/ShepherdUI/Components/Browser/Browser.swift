@@ -5,13 +5,19 @@ import SwiftUI
 // element chip, and the console drawer. The page itself is a web view the app hosts.
 
 public enum SHBrowserMetrics {
-    /// The toolbar under the tabs.
+    /// The toolbar under the tabs (GXPaneBrowser's `.bbar` is 46pt on the Mac).
+    #if os(macOS)
+    public static let toolbarHeight: CGFloat = 46
+    #else
     public static let toolbarHeight: CGFloat = 44
+    #endif
     /// The address capsule.
     public static let addressHeight: CGFloat = 30
     public static let addressGlyph: CGFloat = 12
     public static let addressLeading: CGFloat = 12
     public static let addressTrailing: CGFloat = 5
+    /// The Mac's address field is 10pt in on both sides.
+    public static let addressMacPadding: CGFloat = 10
     /// The host chip inside it.
     public static let hostChipHeight: CGFloat = 20
     public static let hostChipPadding: CGFloat = 7
@@ -38,6 +44,16 @@ public enum SHBrowserMetrics {
     public static let consoleListHeight: CGFloat = 136
     public static let consoleGap: CGFloat = 14
     public static let consoleToggle: CGFloat = 24
+    /// The Mac's page card and console card (GXPaneBrowser's `.web` and `.cons`): the page 8pt in from the
+    /// pane's sides at radius 10, the console 8pt in from the page and the pane's edge at radius 10.
+    public static let pageInset: CGFloat = SH.Space.m
+    public static let pageRadius: CGFloat = 10
+    public static let consoleHeaderHeight: CGFloat = 30
+    public static let consoleHeaderLeading: CGFloat = 10
+    public static let consoleLineHeight: CGFloat = 19
+    /// A menu row in the picked element's popover (GXPaneBrowser's `.mi`) and its width.
+    public static let popoverRowHeight: CGFloat = 30
+    public static let popoverMacWidth: CGFloat = 220
     /// A notice's first line, so its glyph sits on it.
     public static let noticeLine: CGFloat = 18
 }
@@ -113,33 +129,56 @@ public struct SHBrowserToolbar<Address: View>: View {
                  enabled: state.canReload, action: actions.reload)
             address
                 .padding(.horizontal, SH.Space.s)
-            Button(action: actions.select) { Image(systemName: shElementGlyph) }
+            Button(action: actions.select) { Image(systemName: Self.selectGlyph) }
                 .buttonStyle(.shIcon(isOn: state.selecting))
                 .disabled(!state.canReload)
+                #if !os(macOS)
                 .opacity(state.canReload ? 1 : SHBrowserToolbar.disabledOpacity)
+                #endif
                 .shHelp(state.selecting ? "Stop selecting" : "Select an element", shortcut: selectShortcut)
                 .accessibilityLabel("Select an element")
                 .accessibilityAddTraits(state.selecting ? .isSelected : [])
+            #if os(macOS)
+            Button(action: actions.viewport) { Image(systemName: "iphone") }
+                .buttonStyle(.shIcon(isOn: state.viewportMenuOpen))
+                .shHelp("Viewport size")
+                .accessibilityLabel("Viewport size")
+            #else
             Button(action: actions.viewport) { Image(systemName: "iphone") }
                 .buttonStyle(.shIcon)
                 .background(state.viewportMenuOpen ? Color.sh.bgSelected : .clear, in: Circle())
                 .shHelp("Viewport size")
                 .accessibilityLabel("Viewport size")
+            #endif
             icon("arrow.up.forward.square", "Open in your browser", enabled: state.canOpenExternally, action: actions.openExternally)
         }
         .padding(.horizontal, SH.Space.m)
         .frame(height: SHBrowserMetrics.toolbarHeight)
         .frame(maxWidth: .infinity)
+        #if !os(macOS)
         .overlay(alignment: .bottom) { SHHairline() }
+        #endif
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Browser toolbar")
+    }
+
+    /// Select an element: the board's two overlapping rectangles on the Mac.
+    private static var selectGlyph: String {
+        #if os(macOS)
+        "rectangle.on.rectangle"
+        #else
+        shElementGlyph
+        #endif
     }
 
     private func icon(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: symbol) }
             .buttonStyle(.shIcon)
             .disabled(!enabled)
+            // The icon button dims itself on the Mac, where the board's `.ib.off` reads the same.
+            #if !os(macOS)
             .opacity(enabled ? 1 : SHBrowserToolbar.disabledOpacity)
+            #endif
             .shHelp(label)
             .accessibilityLabel(label)
     }
@@ -181,7 +220,7 @@ public struct SHBrowserAddressField: View {
         HStack(spacing: SH.Space.m) {
             Image(systemName: "globe")
                 .font(.system(size: SHBrowserMetrics.addressGlyph))
-                .foregroundStyle(sh.textTertiary)
+                .foregroundStyle(Self.glyphColor(sh))
                 .accessibilityHidden(true)
             ZStack(alignment: .leading) {
                 TextField(text: $text, prompt: Text(Self.placeholder).foregroundStyle(sh.textTertiary)) { Text("Address") }
@@ -196,7 +235,7 @@ public struct SHBrowserAddressField: View {
                     }
                     .opacity(isFocused.wrappedValue || host == nil ? 1 : 0)
                 if !isFocused.wrappedValue, let host {
-                    (Text(host).foregroundStyle(sh.textPrimary) + Text(path ?? "").foregroundStyle(sh.textSecondary))
+                    (Text(host).foregroundStyle(sh.textPrimary) + Text(path ?? "").foregroundStyle(Self.pathColor(sh)))
                         .font(.shMono(12))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -207,14 +246,45 @@ public struct SHBrowserAddressField: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            #if os(macOS)
+            // The board's `.url .h`: the host in words, no chip.
+            Text(hostChip).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize()
+                .accessibilityLabel("On \(hostChip)")
+            #else
             SHBrowserHostChip(hostChip)
+            #endif
         }
+        #if os(macOS)
+        // GXPaneBrowser's `.url`: 30pt, 10pt in, `bgHover`, radius 8, no line.
+        .padding(.horizontal, SHBrowserMetrics.addressMacPadding)
+        .frame(height: SHBrowserMetrics.addressHeight)
+        .frame(maxWidth: .infinity)
+        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        #else
         .padding(.leading, SHBrowserMetrics.addressLeading)
         .padding(.trailing, SHBrowserMetrics.addressTrailing)
         .frame(height: SHBrowserMetrics.addressHeight)
         .frame(maxWidth: .infinity)
         .background(sh.bgSunken, in: Capsule())
         .shBorder(sh.lineSubtle, in: Capsule())
+        #endif
+    }
+
+    /// The Mac's address is one color (the board's `.u`), its glyph a step stronger.
+    private static func pathColor(_ sh: SHPalette) -> Color {
+        #if os(macOS)
+        sh.textPrimary
+        #else
+        sh.textSecondary
+        #endif
+    }
+
+    private static func glyphColor(_ sh: SHPalette) -> Color {
+        #if os(macOS)
+        sh.textSecondary
+        #else
+        sh.textTertiary
+        #endif
     }
 }
 
@@ -522,6 +592,63 @@ public struct SHElementPopover: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// GXPaneBrowser's popover: 220pt, its source in mono 11.5 `textTertiary` over two menu rows (a plus and
+    /// a copy glyph), the popover's fill, line and shadow.
+    private var macBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let source {
+                Text(source)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .padding(.horizontal, SH.Space.m)
+                    .frame(maxWidth: .infinity, minHeight: SHChangesMenuMetrics.titleHeight + SH.Space.xxs, alignment: .leading)
+            }
+            PopoverRow(title: "Add to message", systemImage: "plus", action: add)
+            PopoverRow(title: "Copy selector", systemImage: "doc.on.doc", action: copy)
+        }
+        .padding(SH.Space.s)
+        .frame(width: SHBrowserMetrics.popoverMacWidth)
+        .shPopover()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Picked element")
+    }
+
+    private struct PopoverRow: View {
+        let title: String
+        let systemImage: String
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: SH.Space.l) {
+                    Image(systemName: systemImage)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .frame(width: SH.Space.xl)
+                        .accessibilityHidden(true)
+                    Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, SH.Space.m)
+                .frame(maxWidth: .infinity, minHeight: SHBrowserMetrics.popoverRowHeight, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.shRow())
+        }
+    }
+    #endif
+
+    private var touchBody: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
             if let source {
                 Text(source)
@@ -634,18 +761,90 @@ public struct SHConsoleBar: View {
     let network: Int
     let warnings: Int
     let open: Bool
+    let touch: Bool
     let toggle: () -> Void
 
-    public init(network: Int, warnings: Int, open: Bool, toggle: @escaping () -> Void) {
+    public init(network: Int, warnings: Int, open: Bool, touch: Bool = false, toggle: @escaping () -> Void) {
         self.network = network
         self.warnings = warnings
         self.open = open
+        self.touch = touch
         self.toggle = toggle
     }
 
     public var body: some View {
+        #if os(macOS)
+        // The Mac's console is a card (GXPaneBrowser's `.cons`): the drawer draws its fill and line.
+        macBar
+        #else
+        Group {
+            if touch { touchBar } else { desktopBar }
+        }
+        .background(Color.sh.bgBase)
+        .overlay(alignment: .top) { SHHairline(color: Color.sh.lineStrong) }
+        #endif
+    }
+
+    #if os(macOS)
+    /// GXPaneBrowser's `.consh`: 30pt, a chevron that turns, Console, then the network and warning counts in
+    /// `textTertiary`; the whole row opens and closes it.
+    private var macBar: some View {
         let sh = Color.sh
-        HStack(spacing: SHBrowserMetrics.consoleGap) {
+        return Button(action: toggle) {
+            HStack(spacing: SH.Space.l) {
+                SHTurningChevron(isOpen: open)
+                    .font(.sh(.micro))
+                    .foregroundStyle(sh.textTertiary)
+                    .frame(width: SH.Space.l)
+                Text("Console").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                Label("\(network)", systemImage: "globe").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    .labelStyle(SHConsoleCountStyle())
+                if warnings > 0 {
+                    Label("\(warnings)", systemImage: "exclamationmark.triangle").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                        .labelStyle(SHConsoleCountStyle())
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, SHBrowserMetrics.consoleHeaderLeading)
+            .frame(maxWidth: .infinity, minHeight: SHBrowserMetrics.consoleHeaderHeight, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .shHelp(open ? "Hide console" : "Show console")
+        .accessibilityLabel(open ? "Hide console" : "Show console")
+        .accessibilityValue("\(network) network resources, \(warnings) warnings")
+    }
+    #endif
+
+    private var touchBar: some View {
+        let sh = Color.sh
+        return Button(action: toggle) {
+            HStack(spacing: SH.Space.l) {
+                ZStack {
+                    Image(systemName: "chevron.down").opacity(open ? 1 : 0)
+                    Image(systemName: "chevron.up").opacity(open ? 0 : 1)
+                }
+                Text("Console")
+                Label("\(network)", systemImage: "globe").font(.sh(.mono))
+                if warnings > 0 {
+                    Label("\(warnings)", systemImage: "exclamationmark.triangle")
+                        .font(.sh(.mono)).foregroundStyle(sh.lanternText)
+                }
+            }
+            .font(.sh(.caption))
+            .foregroundStyle(sh.textSecondary)
+            .padding(.horizontal, SH.Space.l)
+            .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(open ? "Hide console" : "Show console")
+        .accessibilityValue("\(network) network resources, \(warnings) warnings")
+    }
+
+    private var desktopBar: some View {
+        let sh = Color.sh
+        return HStack(spacing: SHBrowserMetrics.consoleGap) {
             Text("Console").font(.shSans(12, .semibold)).foregroundStyle(sh.textPrimary)
             HStack(spacing: SH.Space.xs) {
                 Text("Network").font(.shSans(12)).foregroundStyle(sh.textSecondary)
@@ -667,11 +866,21 @@ public struct SHConsoleBar: View {
         .padding(.leading, 14)
         .padding(.trailing, SH.Space.m)
         .frame(height: SHBrowserMetrics.consoleBarHeight)
-        .background(sh.bgBase)
-        .overlay(alignment: .top) { SHHairline(color: sh.lineStrong) }
         .accessibilityElement(children: .contain)
     }
 }
+
+#if os(macOS)
+/// A count beside its glyph (the console bar's network and warning counts): the glyph, 4pt, the number.
+private struct SHConsoleCountStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: SH.Space.xs) {
+            configuration.icon.font(.sh(.caption))
+            configuration.title
+        }
+    }
+}
+#endif
 
 /// A console line (PaneBrowser): at least 22pt, 14pt sides, Geist Mono 11: the time in
 /// `textTertiary`, the message in `textSecondary`, truncating. A warning (the page's own errors
@@ -684,6 +893,21 @@ public struct SHConsoleRow: View, Equatable {
     public var body: some View {
         let _ = SHRenderProbe.tick("browser.consoleRow")
         let sh = Color.sh
+        #if os(macOS)
+        // GXPaneBrowser's `.consb`: mono 11.5 on 19pt lines, 10pt in; the time in `textTertiary`, a warning in ink.
+        HStack(spacing: SH.Space.l) {
+            Text(line.time).foregroundStyle(sh.textTertiary)
+            Text(line.text)
+                .foregroundStyle(line.level == .warning ? sh.textPrimary : sh.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .font(.sh(.mono))
+        .padding(.horizontal, SHBrowserMetrics.consoleHeaderLeading)
+        .frame(minHeight: SHBrowserMetrics.consoleLineHeight)
+        .help(line.text)
+        #else
         HStack(spacing: 10) {
             Text(line.time).foregroundStyle(sh.textTertiary)
             Text(line.text)
@@ -697,5 +921,6 @@ public struct SHConsoleRow: View, Equatable {
         .frame(minHeight: SHBrowserMetrics.consoleRowHeight)
         .background(line.level == .warning ? sh.lanternTint : .clear)
         .help(line.text)
+        #endif
     }
 }

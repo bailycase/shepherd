@@ -1,27 +1,27 @@
 import SwiftUI
 import CoreText
 
-/// The Shepherd Design type ramp (Foundations board). Geist for prose and chrome, Geist Mono for
+/// The Shepherd Design type ramp (the redesign boards). SF Pro for prose and chrome, SF Mono for
 /// anything the agent touched. Sizes are points and scale with Settings ▸ Appearance ▸ Text size;
 /// on iOS they follow the phone and iPad boards' larger ramp and Dynamic Type (`relativeTo:`).
 public enum SHTextStyle: Int, CaseIterable, Sendable {
-    /// Geist 28/600/1.15: empty states, onboarding.
+    /// SF Pro 22/600/28: empty states, onboarding.
     case display
-    /// Geist 15/600/1.3: thread and pane titles.
+    /// SF Pro 13/600/18: thread and pane titles.
     case title
-    /// Geist 13.5/600/1.35: card titles, section heads.
+    /// SF Pro 13/600/18: card titles, section heads.
     case headline
-    /// Geist 13.5/400/1.6: agent prose, bubbles.
+    /// SF Pro 14/400/22: agent prose, bubbles.
     case body
-    /// Geist 12.5/500/1.3: rows, buttons, controls.
+    /// SF Pro 13/400/18: rows, buttons, controls.
     case ui
-    /// Geist 11.5/400/1.35: secondary info.
+    /// SF Pro 12/400/17: secondary info.
     case caption
-    /// Geist Mono 12/400/1.55: code blocks, output.
+    /// SF Mono 12/400/1.5: code blocks, output.
     case code
-    /// Geist Mono 11.5/400/1.3: paths, commands, tool rows.
+    /// SF Mono 12/400/1.3: paths, commands, tool rows.
     case mono
-    /// Geist Mono 10.5/500/1.2: section labels (uppercase, via `.shSectionLabel()`).
+    /// SF Mono 11/500/1.2: section labels (uppercase, via `.shSectionLabel()`).
     case micro
 
     public var size: CGFloat {
@@ -39,13 +39,11 @@ public enum SHTextStyle: Int, CaseIterable, Sendable {
         }
         #else
         switch self {
-        case .display: 28
-        case .title: 15
-        case .headline, .body: 13.5
-        case .ui: 12.5
-        case .caption, .mono: 11.5
-        case .code: 12
-        case .micro: 10.5
+        case .display: 22
+        case .title, .headline, .ui: 13
+        case .body: 14
+        case .caption, .mono, .code: 12
+        case .micro: 11
         }
         #endif
     }
@@ -53,25 +51,39 @@ public enum SHTextStyle: Int, CaseIterable, Sendable {
     public var weight: Font.Weight {
         switch self {
         case .display, .title, .headline: .semibold
-        case .ui, .micro: .medium
+        case .micro: .medium
+        #if os(iOS)
+        case .ui: .medium
+        #else
+        case .ui: .regular
+        #endif
         case .body, .caption, .code, .mono: .regular
         }
     }
 
     /// Line height as a multiple of the size.
     public var lineHeight: CGFloat {
+        #if os(iOS)
         switch self {
         case .display: 1.15
         case .title, .ui, .mono: 1.3
         case .headline, .caption: 1.35
-        #if os(iOS)
         case .body: 1.5
-        #else
-        case .body: 1.6
-        #endif
         case .code: 1.55
         case .micro: 1.2
         }
+        #else
+        // The boards' line boxes: 28 on 22, 18 on 13, 22 on 14, 17 on 12.
+        switch self {
+        case .display: 28.0 / 22
+        case .title, .headline, .ui: 18.0 / 13
+        case .body: 22.0 / 14
+        case .caption: 17.0 / 12
+        case .code: 1.5
+        case .mono: 1.3
+        case .micro: 1.2
+        }
+        #endif
     }
 
     public var isMonospaced: Bool { self == .code || self == .mono || self == .micro }
@@ -91,23 +103,69 @@ public enum SHTextStyle: Int, CaseIterable, Sendable {
     }
 }
 
-/// The bundled faces (SIL OFL, `Resources/Fonts/OFL.txt`), registered for the process from the
-/// package bundle: no Info.plist entry needed.
+#if canImport(AppKit)
+public typealias SHPlatformFont = NSFont
+#else
+public typealias SHPlatformFont = UIFont
+#endif
+
+/// The faces: SF Pro and SF Mono on the Mac, nothing to register or look up by name. The iPhone
+/// and iPad client keeps the bundled Geist (SIL OFL, `Resources/Fonts/OFL.txt`) until its own
+/// redesign, so custom fonts keep scaling with Dynamic Type there.
 public enum SHFonts {
+    #if os(macOS)
+    public static let sansFamily = "SF Pro"
+    public static let monoFamily = "SF Mono"
+    #else
     public static let sansFamily = "Geist"
     public static let monoFamily = "Geist Mono"
+    #endif
+    /// The CSS stacks that reach the system faces in a web view (Mermaid, page overlays).
+    public static let sansCSS = "-apple-system, BlinkMacSystemFont, system-ui, sans-serif"
+    public static let monoCSS = "ui-monospace, SFMono-Regular, Menlo, monospace"
 
-    /// Registers every bundled face once; later calls are free. `ThemeStore` calls it, so any
-    /// token read registers the fonts, and the app calls it at launch.
-    public static func register() { _ = registration }
-
-    /// Whether the faces are available to CoreText (registered from the bundle, or installed).
-    public static var isAvailable: Bool {
-        register()
-        let font = CTFontCreateWithName(postScriptName(mono: false, weight: .regular) as CFString, 12, nil)
-        return (CTFontCopyFamilyName(font) as String) == sansFamily
+    /// Registers the bundled faces once (iOS); free, and a no-op on the Mac.
+    public static func register() {
+        #if !os(macOS)
+        _ = registration
+        #endif
     }
 
+    /// The face for `mono` at `weight` and `size` points, as an AppKit or UIKit font.
+    public static func platform(mono: Bool, weight: Font.Weight, size: CGFloat, italic: Bool = false) -> SHPlatformFont {
+        #if os(macOS)
+        let w = platformWeight(weight)
+        let font: NSFont = mono ? .monospacedSystemFont(ofSize: size, weight: w) : .systemFont(ofSize: size, weight: w)
+        return italic ? NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) : font
+        #else
+        register()
+        return UIFont(name: postScriptName(mono: mono, weight: weight, italic: italic), size: size)
+            ?? (mono ? .monospacedSystemFont(ofSize: size, weight: platformWeight(weight)) : .systemFont(ofSize: size, weight: platformWeight(weight)))
+        #endif
+    }
+
+    static func platformWeight(_ weight: Font.Weight) -> SHPlatformFont.Weight {
+        switch weight {
+        case .ultraLight: .ultraLight
+        case .thin: .thin
+        case .light: .light
+        case .medium: .medium
+        case .semibold: .semibold
+        case .bold: .bold
+        case .heavy: .heavy
+        case .black: .black
+        default: .regular
+        }
+    }
+
+    /// The face's natural line height (ascent, descent, leading) at `size`.
+    static func naturalLineHeight(mono: Bool, weight: Font.Weight, size: CGFloat, roundedUp: Bool = false) -> CGFloat {
+        let ct = platform(mono: mono, weight: weight, size: size) as CTFont
+        let parts = [CTFontGetAscent(ct), CTFontGetDescent(ct), CTFontGetLeading(ct)]
+        return parts.reduce(0) { $0 + (roundedUp ? $1.rounded(.up) : $1) }
+    }
+
+    #if !os(macOS)
     private static let registration: Void = {
         guard let directory = Bundle.module.url(forResource: "Fonts", withExtension: nil),
               let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -129,6 +187,7 @@ public enum SHFonts {
         if italic { return face == "Regular" ? "Geist-Italic" : "Geist-\(face)Italic" }
         return "Geist-\(face)"
     }
+    #endif
 }
 
 /// How a thread's prose and bubbles are set: the thread's own ramp, or one step smaller in a
@@ -162,15 +221,9 @@ public final class SHTypeRamp: Sendable {
             var sizeSpacing: [CGFloat] = []
             for style in SHTextStyle.allCases {
                 let size = (style.size - proseSize.step) * scale
-                let name = SHFonts.postScriptName(mono: style.isMonospaced, weight: style.weight)
-                #if os(macOS)
-                sizeFonts.append(.custom(name, fixedSize: size))
-                #else
-                sizeFonts.append(.custom(name, size: size, relativeTo: style.dynamicTypeStyle))
-                #endif
+                sizeFonts.append(Font.shSystem(size, weight: style.weight, mono: style.isMonospaced, relativeTo: style.dynamicTypeStyle))
                 // Extra leading that takes the face's natural line height to the ramp's.
-                let ct = CTFontCreateWithName(name as CFString, size, nil)
-                let natural = CTFontGetAscent(ct) + CTFontGetDescent(ct) + CTFontGetLeading(ct)
+                let natural = SHFonts.naturalLineHeight(mono: style.isMonospaced, weight: style.weight, size: size)
                 sizeSpacing.append(max(0, (size * style.lineHeight - natural).rounded(.toNearestOrEven)))
             }
             fonts.append(sizeFonts)
@@ -194,26 +247,29 @@ extension Font {
         return .shFace(style.size - size.step, weight: weight, mono: style.isMonospaced, relativeTo: style.dynamicTypeStyle)
     }
 
-    /// A one-off Geist size the ramp does not name (the empty-state title, a palette search
+    /// A one-off SF Pro size the ramp does not name (the empty-state title, a palette search
     /// field). Prefer a ramp style.
     @MainActor public static func shSans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .shFace(size, weight: weight, mono: false, relativeTo: .body)
     }
 
-    /// A one-off Geist Mono size the ramp does not name. Prefer a ramp style.
+    /// A one-off SF Mono size the ramp does not name. Prefer a ramp style.
     @MainActor public static func shMono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .shFace(size, weight: weight, mono: true, relativeTo: .body)
     }
 
     @MainActor private static func shFace(_ size: CGFloat, weight: Font.Weight, mono: Bool, relativeTo: Font.TextStyle) -> Font {
-        let name = SHFonts.postScriptName(mono: mono, weight: weight)
-        let points = size * ThemeStore.shared.textScale
+        shSystem(size * ThemeStore.shared.textScale, weight: weight, mono: mono, relativeTo: relativeTo)
+    }
+
+    /// The system face at `points`: fixed on the Mac (our text scale already sets the size), and
+    /// scaled with Dynamic Type relative to `relativeTo` on iOS.
+    static func shSystem(_ points: CGFloat, weight: Font.Weight, mono: Bool, relativeTo: Font.TextStyle) -> Font {
         #if os(macOS)
-        // Our text scale already sets the size. Relative custom fonts round fractional
-        // points through the macOS body-text scaling path, changing layout and wrapping.
-        return .custom(name, fixedSize: points)
+        return .system(size: points, weight: weight, design: mono ? .monospaced : .default)
         #else
-        return .custom(name, size: points, relativeTo: relativeTo)
+        SHFonts.register()
+        return .custom(SHFonts.postScriptName(mono: mono, weight: weight), size: points, relativeTo: relativeTo)
         #endif
     }
 }
@@ -241,7 +297,7 @@ extension View {
     }
 
     /// The Settings boards' section label ("BUNDLED EXTENSIONS", "HOW THE AGENT READS THEM"):
-    /// Geist 11/600, uppercase, tracked 6%, in `textSecondary`. `table` is a list's column header
+    /// SF Pro 11/600, uppercase, tracked 6%, in `textSecondary`. `table` is a list's column header
     /// and a detail's label (Skill, Source, Use it): 10.5 in `textTertiary`.
     @MainActor public func shSettingsLabel(table: Bool = false) -> some View {
         let size: CGFloat = table ? 10.5 : 11
@@ -277,8 +333,7 @@ extension View {
     /// `extra` rounds to a whole point (13.5pt at 1.6 is 21.6, and a line the text system sets at 18 needs 1.8 each side, not 2).
     static func halfLeading(size: CGFloat, lineHeight: CGFloat) -> CGFloat {
         let scaled = size * ThemeStore.shared.textScale
-        let ct = CTFontCreateWithName(SHFonts.postScriptName(mono: false, weight: .regular) as CFString, scaled, nil)
-        let line = CTFontGetAscent(ct).rounded(.up) + CTFontGetDescent(ct).rounded(.up) + CTFontGetLeading(ct).rounded(.up)
+        let line = SHFonts.naturalLineHeight(mono: false, weight: .regular, size: scaled, roundedUp: true)
         return max(0, (scaled * lineHeight - line) / 2)
     }
 
@@ -286,8 +341,7 @@ extension View {
         let scaled = size * ThemeStore.shared.textScale
         let key = Key(size: scaled, weight: weight, mono: mono, lineHeight: lineHeight)
         if let cached = cache[key] { return cached }
-        let ct = CTFontCreateWithName(SHFonts.postScriptName(mono: mono, weight: weight) as CFString, scaled, nil)
-        let natural = CTFontGetAscent(ct) + CTFontGetDescent(ct) + CTFontGetLeading(ct)
+        let natural = SHFonts.naturalLineHeight(mono: mono, weight: weight, size: scaled)
         let extra = max(0, (scaled * lineHeight - natural).rounded(.toNearestOrEven))
         cache[key] = extra
         return extra

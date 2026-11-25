@@ -34,6 +34,7 @@ struct ProviderRowModel: Equatable, Identifiable {
     var badge: String
     /// A custom provider: its id is its title, in mono.
     var custom = false
+    var signInAvailable = true
     var auth: ProviderAuth
     /// "Signing in here and in your terminal pi can sign one of them out."
     var sharedLoginNote = false
@@ -42,6 +43,18 @@ struct ProviderRowModel: Equatable, Identifiable {
     var problem: String?
     /// Its saved accounts, when it has any (`PiAccounts`).
     var accounts: PiAccountList?
+    /// The extension it came from, by name ("acme-login"), and that copy's destination.
+    var source: String?
+    var sourceID: String?
+}
+
+extension ProviderRowModel {
+    /// Names the extension copy that registered this provider, when one did.
+    mutating func attribute(_ owners: [String: YourPiCopy]) {
+        guard let copy = owners[id] else { return }
+        source = copy.name
+        sourceID = copy.destination
+    }
 }
 
 /// Settings ▸ Pi ▸ Sign-in's rows, derived once per change from the survey. Pure, so the state table has a unit test.
@@ -51,18 +64,28 @@ struct PiSignInPage: Equatable {
     var customProviders: [ProviderRowModel] = []
     /// Key providers with no row yet: Add an API key's menu.
     var addable: [String] = []
+    var providerNames: [String: String] = [:]
     /// The nav's lantern dot: a sign-in expired, or a provider an agent waits on isn't signed in.
     var needsAttention = false
 
     /// `signingIn` is the provider whose sheet is up; `expired` those pi said failed to refresh;
     /// `needed` the providers agents wait on; `problems` a failed sign-out by provider.
     static func make(survey: YourPiSurvey, signingIn: String? = nil, expired: Set<String> = [], needed: Set<String> = [],
-                     problems: [String: String] = [:], accounts: [String: PiAccountList] = [:]) -> PiSignInPage {
+                     problems: [String: String] = [:], accounts: [String: PiAccountList] = [:],
+                     providers: [PiSignInProvider]? = nil, owners: [String: YourPiCopy] = [:]) -> PiSignInPage {
         var page = PiSignInPage()
+        page.providerNames = Dictionary((providers ?? []).map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let logins = Dictionary(survey.logins.map { ($0.provider, $0) }, uniquingKeysWith: { first, _ in first })
         let custom = Set(survey.customProviderDetails.map(\.id))
 
-        for subscription in PiSignInCatalog.subscriptions {
+        var subscriptions = PiSignInCatalog.subscriptions(for: providers)
+        // Disabled or missing extensions must not strand saved accounts without Sign out.
+        for login in survey.logins where login.shepherd == .subscription && !subscriptions.contains(where: { $0.id == login.provider }) {
+            subscriptions.append(PiSignInCatalog.account(id: login.provider))
+        }
+        let subscriptionIDs = Set(subscriptions.map(\.id))
+        for subscription in subscriptions {
+            let available = providers?.contains { $0.id == subscription.id && $0.oauth != nil } ?? true
             let login = logins[subscription.id]
             let auth: ProviderAuth
             if signingIn == subscription.id {
@@ -73,14 +96,16 @@ struct PiSignInPage: Equatable {
                 auth = .notSignedIn(plan: subscription.plan)
             }
             page.subscriptions.append(ProviderRowModel(
-                id: subscription.id, name: subscription.name, badge: PiSignInCatalog.badge(subscription.id), auth: auth,
+                id: subscription.id, name: subscription.name, badge: PiSignInCatalog.badge(subscription.id),
+                signInAvailable: available, auth: auth,
                 sharedLoginNote: subscription.sharedLogin, freshness: survey.freshness["login:\(subscription.id)"],
-                problem: problems[subscription.id], accounts: accounts[subscription.id]))
+                problem: problems[subscription.id] ?? (available ? nil : "This provider is unavailable. Enable its extension to sign in."),
+                accounts: accounts[subscription.id]))
         }
 
         for login in survey.logins where !custom.contains(login.provider) {
             let auth: ProviderAuth
-            if signingIn == login.provider, PiSignInCatalog.subscription(login.provider) == nil {
+            if signingIn == login.provider, !subscriptionIDs.contains(login.provider) {
                 auth = .signingIn(plan: nil)
             } else if case .apiKey? = login.shepherd {
                 auth = .key(survey.keys[login.provider] ?? PiKeyDisplay(masked: "••••"), copied: survey.copiedLogins.contains(login.provider))
@@ -90,17 +115,20 @@ struct PiSignInPage: Equatable {
                 continue
             }
             page.apiKeys.append(ProviderRowModel(
-                id: login.provider, name: PiSignInCatalog.name(login.provider), badge: PiSignInCatalog.badge(login.provider),
+                id: login.provider, name: page.providerNames[login.provider] ?? PiSignInCatalog.name(login.provider), badge: PiSignInCatalog.badge(login.provider),
+                signInAvailable: providers?.contains { $0.id == login.provider && $0.apiKey != nil } ?? true,
                 auth: auth, freshness: survey.freshness["login:\(login.provider)"], problem: problems[login.provider],
                 accounts: accounts[login.provider]))
         }
         // A key being added shows as signing in until it lands.
-        if let signingIn, PiSignInCatalog.subscription(signingIn) == nil, !custom.contains(signingIn),
+        if let signingIn, !subscriptionIDs.contains(signingIn), !custom.contains(signingIn),
            !page.apiKeys.contains(where: { $0.id == signingIn }) {
-            page.apiKeys.append(ProviderRowModel(id: signingIn, name: PiSignInCatalog.name(signingIn),
+            page.apiKeys.append(ProviderRowModel(id: signingIn, name: page.providerNames[signingIn] ?? PiSignInCatalog.name(signingIn),
                                                  badge: PiSignInCatalog.badge(signingIn), auth: .signingIn(plan: nil)))
         }
         page.apiKeys.sort { ($0.name.lowercased(), $0.id) < ($1.name.lowercased(), $1.id) }
+        for index in page.subscriptions.indices { page.subscriptions[index].attribute(owners) }
+        for index in page.apiKeys.indices { page.apiKeys[index].attribute(owners) }
 
         for provider in survey.customProviderDetails {
             let auth: ProviderAuth
@@ -116,18 +144,21 @@ struct PiSignInPage: Equatable {
         }
 
         let listed = Set(page.apiKeys.map(\.id))
-        page.addable = PiSignInCatalog.keyProviders.filter { !listed.contains($0) && !custom.contains($0) }
+        let keyProviders = providers?.filter { $0.apiKey != nil }.map(\.id) ?? PiSignInCatalog.keyProviders
+        page.addable = keyProviders.filter { !listed.contains($0) && !custom.contains($0) }
+            .sorted { (page.providerNames[$0] ?? PiSignInCatalog.name($0)).localizedCaseInsensitiveCompare(page.providerNames[$1] ?? PiSignInCatalog.name($1)) == .orderedAscending }
         let signedIn = Set((page.subscriptions + page.apiKeys + page.customProviders).filter { $0.auth.isSignedIn }.map(\.id))
+        let available = providers.map { Set($0.map(\.id)) } ?? subscriptionIDs.union(keyProviders)
         page.needsAttention = page.subscriptions.contains { if case .expired = $0.auth { true } else { false } }
-            || needed.contains { !signedIn.contains($0) }
+            || needed.contains { available.contains($0) && !signedIn.contains($0) }
         return page
     }
 
     /// Add an API key's second line: "Groq, Mistral, Fireworks, Together and 26 more".
-    static func addableSummary(_ providers: [String]) -> String {
+    static func addableSummary(_ providers: [String], names providerNames: [String: String] = [:]) -> String {
         let preferred = ["groq", "mistral", "fireworks", "together", "openai", "openrouter", "deepseek"]
         let first = (preferred.filter(providers.contains) + providers.filter { !preferred.contains($0) }).prefix(4)
-        let names = first.map(PiSignInCatalog.name)
+        let names = first.map { providerNames[$0] ?? PiSignInCatalog.name($0) }
         let rest = providers.count - names.count
         guard !names.isEmpty else { return "Every provider has a key" }
         return names.joined(separator: ", ") + (rest > 0 ? " and \(rest) more" : "")

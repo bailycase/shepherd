@@ -17,6 +17,17 @@ final class FakeUpdater: @unchecked Sendable {
         var newBuild: String
         /// Its feed has nothing newer than it runs.
         var feedHasNothing = false
+        /// The Mac's app is closed: the host answers for it, as it does with no app open.
+        var appClosed = false
+        /// The app quits the moment it takes an install, before anyone looks at it again: a look afterwards never sees it download.
+        var quitsOnInstall = false
+        /// This many installs are answered with the offer unchanged, and nothing starts.
+        var ignoredInstalls = 0
+        /// Runs once, after the next request is answered.
+        var afterNext: (@Sendable () -> Void)?
+        /// The next request is carried out and its answer never sent: the Mac's host goes before it reaches the asker.
+        var swallowNext: (@Sendable (RemoteHostUpdateRequest) -> Bool)?
+        var swallowed = 0
     }
     private let state: Locked<State>
     let offer: UUID
@@ -35,7 +46,16 @@ final class FakeUpdater: @unchecked Sendable {
             nonisolated(unsafe) let authorized = authorized, completion = completion
             Task {
                 guard await authorized() else { return }
-                completion(handle(request))
+                let answer = handle(request)
+                let swallowed = state.withValue { state -> Bool in
+                    guard let matches = state.swallowNext, matches(request) else { return false }
+                    (state.swallowNext, state.swallowed) = (nil, state.swallowed + 1)
+                    return true
+                }
+                if swallowed { return }
+                let after = state.withValue { state in defer { state.afterNext = nil }; return state.afterNext }
+                completion(answer)
+                after?()
             }
         }
     }
@@ -43,9 +63,39 @@ final class FakeUpdater: @unchecked Sendable {
     /// Its feed has nothing newer: the next step of a check says so.
     func feedOffersNothing() { state.withValue { $0.feedHasNothing = true } }
 
+    /// An install is taken and nothing starts: the offer is still there, as it is when Sparkle lost the choice it held.
+    func ignoreInstall(times: Int = .max) { state.withValue { $0.ignoredInstalls = times } }
+
+    /// Something happens right after the next request is answered: the asker's Mac slept, say.
+    func afterNextRequest(_ body: @escaping @Sendable () -> Void) { state.withValue { $0.afterNext = body } }
+
+    /// The next request that `matches` is carried out by the updater, but its answer is never sent.
+    func swallowAnswer(to matches: @escaping @Sendable (RemoteHostUpdateRequest) -> Bool) { state.withValue { $0.swallowNext = matches } }
+    var swallowedAnswers: Int { state.current.swallowed }
+
+    /// The app quits the moment it takes an install.
+    func quitOnInstall() { state.withValue { $0.quitsOnInstall = true } }
+
+    /// The app quits to install: the host answers for it until the app is back.
+    func quitApp() { state.withValue { $0.appClosed = true } }
+
+    /// The app is back on `build`, with nothing under way.
+    func relaunch(build: String) {
+        state.withValue { state in
+            state.appClosed = false
+            state.status = HostUpdateStatus(version: state.status.version, build: build, channel: state.status.channel, phase: .idle)
+        }
+    }
+
     func handle(_ request: RemoteHostUpdateRequest) -> HostUpdateStatus {
         state.withValue { state in
             state.asked.append(request)
+            if state.appClosed {
+                var closed = HostUpdateStatus(version: state.status.version, build: state.status.build, channel: "", phase: .unsupported)
+                closed.error = SessionServer.hostUpdateWindowClosed
+                return closed
+            }
+            if state.ignoredInstalls > 0, case .install = request { state.ignoredInstalls -= 1; return state.status }
             switch request {
             case .status: break
             case .check:
@@ -57,6 +107,7 @@ final class FakeUpdater: @unchecked Sendable {
                 state.status.phase = .downloading
                 state.status.waitingForIdle = false
                 state.status.canInstall = false
+                if state.quitsOnInstall { defer { state.appClosed = true }; return state.status }
             case .installWhenIdle(let offerID, let consent):
                 guard consent, state.status.phase == .available, state.status.offerID == offerID else { state.status.error = "Confirm the current update."; break }
                 state.status.waitingForIdle = true
@@ -117,11 +168,11 @@ struct FleetUpdateTests {
 
     /// Two paired Macs that share an origin, each with a fake updater (A's and B's). `open` and `blocked` say which can dial the other.
     static func fleet(_ routingA: LinkRouting = LinkRouting(), _ routingB: LinkRouting = LinkRouting(), updaterA: FakeUpdater = FakeUpdater(),
-                      updaterB: FakeUpdater = FakeUpdater(), pairing: Bool = true) async throws -> (a: Mac, b: Mac, origin: FleetDispatchTests.Origin) {
+                      updaterB: FakeUpdater = FakeUpdater(), pairing: Bool = true, loopbackOnly: Bool = false) async throws -> (a: Mac, b: Mac, origin: FleetDispatchTests.Origin) {
         try StubPi.installAsEngine()
         let origin = try FleetDispatchTests.makeOrigin(extra: [:])
-        let a = try await Mac("MacBook Pro", origin: origin, links: routingA.options, prepare: { updaterA.install(on: $0) })
-        let b = try await Mac("Mac mini", origin: origin, links: routingB.options, prepare: { updaterB.install(on: $0) })
+        let a = try await Mac("MacBook Pro", origin: origin, links: routingA.options, loopbackOnly: loopbackOnly, prepare: { updaterA.install(on: $0) })
+        let b = try await Mac("Mac mini", origin: origin, links: routingB.options, loopbackOnly: loopbackOnly, prepare: { updaterB.install(on: $0) })
         if pairing {
             try await a.pair(with: b)
             try await FleetDispatchTests.waitForReports(a, b)
@@ -355,7 +406,7 @@ struct FleetUpdateTests {
     /// A Mac that is asleep starts when it wakes; one that goes away to install is relaunching and the job ends when it is back on another build.
     @Test func aMacThatIsAsleepStartsWhenItWakesAndOneThatRelaunchesIsFollowedBack() async throws {
         let (updaterA, updaterB) = (FakeUpdater(), FakeUpdater())
-        let (a, b, origin) = try await Self.fleet(updaterA: updaterA, updaterB: updaterB)
+        let (a, b, origin) = try await Self.fleet(updaterA: updaterA, updaterB: updaterB, loopbackOnly: true)
         defer { a.stop() }
         let id = try await b.hostID()
         let (dir, port) = (b.host.dir, b.port)
@@ -369,7 +420,7 @@ struct FleetUpdateTests {
 
         // It wakes (the same Mac, on its own files and port): the job begins.
         let woke = FakeUpdater()
-        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { woke.install(on: $0) })
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, loopbackOnly: true, prepare: { woke.install(on: $0) })
         defer { b2.stop() }
         try await Self.waitForStage(.checking, on: a, of: id)
         try await woke.answerTheCheck()
@@ -382,11 +433,369 @@ struct FleetUpdateTests {
         b2.stop(keepFiles: true)
         try await Self.waitForStage(.relaunching, on: a, of: id)
         let relaunched = FakeUpdater(build: "675", phase: .idle)
-        let b3 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { relaunched.install(on: $0) })
+        let b3 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, loopbackOnly: true, prepare: { relaunched.install(on: $0) })
         defer { b3.stop() }
         try await Self.waitForStage(.updated, on: a, of: id)
         // Check looks at the Mac again once it is back (the page's row changes).
         #expect(relaunched.asked.contains(.status))
+    }
+
+    // MARK: Ending in a visible state
+
+    /// An app closed while the install still waits for the Mac's threads handed nothing to an installer: the person is told to open it, the
+    /// wait that is left on its host is let go, and it is neither "relaunching" nor an install that failed.
+    @Test func anAppClosedWhileTheInstallWaitsForThreadsNeedsToBeOpened() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        _ = try await Self.busy(b)
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+
+        updater.quitApp()
+        try await Self.waitForStage(.needsApp, on: a, of: id)
+        #expect(try await Self.job(a, id)?.message == "Open Shepherd on Mac mini to update it.")
+        try await FleetDispatchTests.wait("the host to let go of its wait") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
+    }
+
+    /// With no thread working any more, the host sends the install it held and the app quits to install: that is the Mac relaunching, and the host
+    /// says so (`installHandedOff`), which a look that comes after the app quit can't otherwise tell from an app that was closed.
+    @Test func anAppThatQuitsAfterTheHostSentItsInstallIsRelaunching() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        try await Self.settle(pi)
+        try await updater.waitFor("install the held offer") { if case .install = $0 { true } else { false } }
+
+        updater.quitApp()
+        #expect(try await b.local.hostUpdate(.status).installHandedOff == true, "the host says the install was handed over")
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        #expect(try await Self.job(a, id)?.message == nil)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// The host held the install for a thread and sent it when the thread settled; the app quit to install before this host looked again, so it
+    /// never saw "downloading". Held for threads, then handed over: a host that says nothing of its handoff (one from before the field) is not
+    /// a closed app, so the Mac is waited for until it is back on the new build.
+    @Test func aHostFromBeforeTheHandoffFieldThatInstalledWhileUnseenIsRelaunching() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.omitsInstallHandoff = true }
+        updater.quitOnInstall()
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        try await Self.settle(pi)
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// The handoff was seen, then the Mac's host restarted and forgot it while the app was still gone: the job doesn't take back what it saw.
+    @Test func aHostThatRestartsAfterTheHandoffWasSeenDoesNotReverseIt() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        updater.quitOnInstall()
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        try await Self.settle(pi)
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        // The stage is only "relaunching" once a look read the handoff: a dropped link shows "waiting" while the install is held.
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        // The restarted host knows of no handoff; the job looks at it that way before the app is back.
+        let looks = updater.asked.count
+        try await FleetDispatchTests.wait("a look at the restarted host") { updater.asked.count > looks }
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// The host sent its install and the app quit to install, then the host restarted before the job looked: the job never saw the handoff. The
+    /// host keeps it across the restart, or the job would read the app that quit to install as one that was closed.
+    @Test func aHostThatRestartsBeforeTheHandoffWasSeenIsRelaunching() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 0.02 }
+        updater.quitOnInstall()
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        // The job's next look is seconds away: the handoff and the restart both come first.
+        a.server.queue.sync { a.server.fleet?.updates.interval = .seconds(3) }
+        let looks = updater.asked.filter { $0 == .status }.count
+        try await FleetDispatchTests.wait("a look after the pause") { updater.asked.filter { $0 == .status }.count > looks }
+        try await Self.settle(pi)
+        try await updater.waitFor("install the held offer") { if case .install = $0 { true } else { false } }
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        #expect(try await b2.local.hostUpdate(.status).installHandedOff == true, "the restarted host still says the install was handed over")
+        try await Self.waitForStage(.relaunching, on: a, of: id)
+        updater.relaunch(build: "675")
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// No thread works any more but the host hasn't sent its install yet: an app that quits now handed nothing to an installer. Zero busy threads
+    /// is not a handoff, so the person is told to open the app, and the wait that is left on its host is let go.
+    @Test func anAppThatQuitsBeforeTheHostSentItsInstallNeedsToBeOpened() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        let pi = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 3600 }   // the host doesn't send the install itself in this test
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+        try await Self.settle(pi)
+        try await FleetDispatchTests.wait("the job to know the threads settled") { try await Self.job(a, id)?.threads == 0 }
+
+        updater.quitApp()
+        try await Self.waitForStage(.needsApp, on: a, of: id)
+        #expect(!updater.sawInstallNow)
+        try await FleetDispatchTests.wait("the host to let go of its wait") { b.server.queue.sync { !b.server.isWaitingForIdleInstall } }
+    }
+
+    /// The link drops during a look at a Mac whose install waits for its threads, and the Mac's app is closed when it is back. No installer had
+    /// the offer, so the job asks the person to open the app; it doesn't read the drop as the Mac relaunching.
+    @Test func aLinkThatDropsWhileTheInstallWaitsForThreadsDoesNotMakeAClosedAppRelaunching() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        _ = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 3600 }
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+
+        updater.swallowAnswer { $0 == .status }   // a look the link drops under
+        try await FleetDispatchTests.wait("a look the host never answers") { updater.swallowedAnswers == 1 }
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        updater.quitApp()
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        try await Self.waitForStage(.needsApp, on: a, of: id)
+    }
+
+    /// A Mac's host restarted while its app held the offer for idle threads: the host lost its wait. The job looks at the offer again and
+    /// goes on, instead of reading "checking" until it gives up hours later.
+    @Test func aHostThatRestartedWhileItsAppHeldTheOfferIsAskedAgain() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        _ = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 3600 }   // the old host's last look at its threads must not send the install as it stops
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.waitingForThreads, on: a, of: id)
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        // Its app still holds the offer, which the new host knows nothing of: the job checks again, and the threads are idle now.
+        try await FleetDispatchTests.wait("the Mac to be checked again") { updater.asked.filter { $0 == .check }.count == 2 }
+        updater.advance()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+    }
+
+    /// The same, when the host restarts after its app holds the offer but before the answer that says so reaches the job: the job never saw the
+    /// wait, and still looks at the offer again instead of reading "checking" until it gives up hours later.
+    @Test func aHostThatRestartedBeforeTheJobSawTheWaitIsAskedAgain() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        _ = try await Self.busy(b)
+        b.server.queue.sync { b.server.idleInstallInterval = 3600 }
+        Self.quicken(a)
+        try await Self.start(a, id, .idle)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        updater.swallowAnswer { if case .installWhenIdle = $0 { true } else { false } }   // the app holds the offer; the answer is lost
+        try await updater.answerTheCheck()
+        try await FleetDispatchTests.wait("the app to hold the offer") { updater.swallowedAnswers == 1 }
+        #expect(updater.status.waitingForIdle)
+
+        let (dir, port) = (b.host.dir, b.port)
+        b.stop(keepFiles: true)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { updater.install(on: $0) })
+        defer { b2.stop() }
+        try await FleetDispatchTests.wait("the Mac to be checked again") { updater.asked.filter { $0 == .check }.count == 2 }
+        updater.advance()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+    }
+
+    /// A Mac that began to install and never comes back on another build, whether its link is up or not, ends the job with a reason.
+    @Test func aMacThatNeverFinishesInstallingEndsTheJobAsFailed() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+        updater.advance()   // installing, and it stays so
+        try await Self.waitForStage(.installing, on: a, of: id)
+        // Past the patience a Mac that went to install is given, seen look by look.
+        for _ in 0..<25 {
+            let looks = updater.asked.count
+            a.clock.advance(25)
+            try await FleetDispatchTests.wait("a look at the Mac") { updater.asked.count > looks }
+        }
+        try await Self.waitForStage(.failed, on: a, of: id)
+        #expect(try await Self.job(a, id)?.message?.contains("Mac mini") == true)
+    }
+
+    /// This host slept while a Mac installed, and the Mac is on the new build when it wakes: the job reads that before it calls the Mac stuck.
+    @Test func aHostThatSleptThroughASuccessfulInstallReportsUpdated() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+        updater.advance()
+        try await Self.waitForStage(.installing, on: a, of: id)
+
+        let clock = a.clock
+        updater.afterNextRequest { clock.advance(11 * 60); updater.advance() }   // it installed while this host was asleep
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// This host slept in the middle of a look at the Mac, and the look fails when it wakes (the link is gone): the time asleep isn't time the Mac was
+    /// seen doing nothing, so the Mac that comes back on the new build is Updated, not Failed.
+    @Test func aHostThatSleptDuringALookThatFailedReportsUpdatedWhenTheMacIsBack() async throws {
+        let updater = FakeUpdater()
+        let (a, b, origin) = try await Self.fleet(updaterB: updater)
+        defer { a.stop() }
+        let id = try await b.hostID()
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+        updater.advance()
+        try await Self.waitForStage(.installing, on: a, of: id)
+
+        updater.swallowAnswer { $0 == .status }
+        try await FleetDispatchTests.wait("a look the host never answers") { updater.swallowedAnswers == 1 }
+        let (dir, port) = (b.host.dir, b.port)
+        a.clock.advance(11 * 60)   // this host sleeps, and the link is gone when it wakes
+        b.stop(keepFiles: true)
+        let relaunched = FakeUpdater(build: "675", phase: .idle)
+        let b2 = try await Mac("Mac mini", origin: origin, dir: dir, port: port, links: LinkRouting().options, prepare: { relaunched.install(on: $0) })
+        defer { b2.stop() }
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// The time this host slept isn't time the Mac was seen doing nothing: a Mac still installing when it wakes gets its patience again.
+    @Test func aHostThatSleptIsNotSlowToWakeUpOnAMacStillInstalling() async throws {
+        let updater = FakeUpdater()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+        updater.advance()
+        try await Self.waitForStage(.installing, on: a, of: id)
+
+        let clock = a.clock
+        updater.afterNextRequest { clock.advance(11 * 60) }
+        let looks = updater.asked.count
+        try await FleetDispatchTests.wait("looks at the Mac after it woke") { updater.asked.count > looks + 3 }
+        #expect(try await Self.job(a, id)?.stage == .installing)
+        updater.advance()
+        try await Self.waitForStage(.updated, on: a, of: id)
+    }
+
+    /// An offer the Mac keeps taking an install for without starting it ends the job, not a spinner that asks its feed for ever.
+    @Test func aMacThatTakesTheInstallAndNeverStartsItEndsTheJobAsFailed() async throws {
+        let updater = FakeUpdater()
+        updater.ignoreInstall()
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.failed, on: a, of: id)
+        #expect(try await Self.job(a, id)?.message?.contains("Mac mini") == true)
+        #expect(updater.asked.filter { if case .install = $0 { true } else { false } }.count == FleetUpdates.installAttempts)
+    }
+
+    /// An offer that is still there after an install was asked for isn't a stall yet: the Mac may be about to begin. The install is asked again
+    /// at a later look, not at once, so a Mac that takes a moment still gets it.
+    @Test func anInstallIsAskedAgainAtALaterLookNotAtOnce() async throws {
+        let updater = FakeUpdater()
+        updater.ignoreInstall(times: FleetUpdates.installAttempts - 1)
+        let (a, b, _) = try await Self.fleet(updaterB: updater)
+        defer { a.stop(); b.stop() }
+        let id = try await b.hostID()
+        Self.quicken(a)
+        try await Self.start(a, id, .now)
+        try await Self.waitForStage(.checking, on: a, of: id)
+        try await updater.answerTheCheck()
+        try await Self.waitForStage(.downloading, on: a, of: id)
+        let asked = updater.asked
+        let installs = asked.indices.filter { if case .install = asked[$0] { true } else { false } }
+        #expect(installs.count == FleetUpdates.installAttempts)
+        for (earlier, later) in zip(installs, installs.dropFirst()) { #expect(later - earlier > 1, "a look at the Mac came between the two installs") }
+    }
+
+    /// A request to another Mac that times out takes the whole link down, so the host's own "the updater didn't answer" must come first.
+    @Test func theAskerWaitsLongerThanTheHostDoes() {
+        #expect(RemoteHostUpdateRequest.askerTimeout > RemoteHostUpdateRequest.hostReplyDeadline)
     }
 
     // MARK: A Mac with no app

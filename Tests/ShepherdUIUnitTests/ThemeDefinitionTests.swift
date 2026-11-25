@@ -6,9 +6,9 @@ import Testing
 struct ThemeDefinitionTests {
     /// The Foundations board's roles, by their Swift names. A rename or a dropped role fails here.
     static let boardRoles = [
-        "bgBase", "bgWindow", "bgRaised", "bgSunken", "bgBubble", "bgHover", "bgSelected",
+        "bgBase", "bgWindow", "bgRaised", "bgSunken", "bgBubble", "bgHover", "bgSelected", "bgGlass",
         "lineSubtle", "lineStrong", "textPrimary", "textSecondary", "textTertiary", "textOnLantern",
-        "lantern", "lanternText", "lanternTint", "running", "runningTint", "textOnRunning",
+        "primary", "textOnPrimary", "lantern", "lanternText", "lanternTint", "running", "runningTint", "textOnRunning",
         "done", "doneTint", "failed", "failedTint",
     ]
 
@@ -26,14 +26,15 @@ struct ThemeDefinitionTests {
         }
     }
 
-    /// Hover, selection, and the state tints are translucent; everything else is solid.
+    /// Hover, selection, the glass panel, lines, and the state tints are translucent (the boards
+    /// draw them as rgba over whatever is under them); everything else is solid.
     @Test(arguments: Variant.all)
     func onlyHoverSelectionAndTintsAreTranslucent(_ variant: Variant) {
         let translucent = Mirror(reflecting: variant.colors).children.compactMap { child -> String? in
             guard let label = child.label, let value = child.value as? String, let color = HexColor(value) else { return nil }
             return color.isOpaque ? nil : label
         }
-        #expect(translucent == ["bgHover", "bgSelected", "lanternTint", "runningTint", "doneTint", "failedTint"])
+        #expect(translucent == ["bgHover", "bgSelected", "bgGlass", "lineSubtle", "lineStrong", "lanternTint", "runningTint", "doneTint", "failedTint"])
     }
 
     @Test(arguments: Variant.all)
@@ -57,7 +58,12 @@ struct ThemeDefinitionTests {
     @Test(arguments: Variant.all)
     func terminalFollowsTheWindowSurface(_ variant: Variant) {
         let terminal = variant.value.terminal
+        #if os(macOS)
+        // The Mac's terminal sits in the panel's raised card.
+        #expect(HexColor(terminal.background) == HexColor(variant.colors.bgRaised))
+        #else
         #expect(HexColor(terminal.background) == HexColor(variant.colors.bgWindow))
+        #endif
         #expect(HexColor(terminal.foreground) == HexColor(variant.colors.textPrimary))
         #expect(HexColor(terminal.cursor) == HexColor(variant.colors.textPrimary))
     }

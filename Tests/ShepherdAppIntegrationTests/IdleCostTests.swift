@@ -81,7 +81,7 @@ struct IdleCostTests {
     }
 
     /// Layouts the workspace keeps mounted behind the visible one draw no clock frames, and
-    /// nothing in them moves. Each hidden thread has a turn running (stub pi `slow`, held at its
+    /// nothing in them moves or turns. Each hidden thread has a turn running (stub pi `slow`, held at its
     /// second pause, mid-tool), so it keeps a live line whose shimmer must rest while its layout
     /// is hidden.
     @Test func hiddenLayoutsDrawNoClockFrames() async throws {
@@ -142,7 +142,8 @@ struct IdleCostTests {
             }
             print("Hidden-layout spinners: count/turning=\(spinners), stores=\(states), ancestor classes=\(ancestors)")
         }
-        #expect(spinners.all == 0, "nothing in a thread spins")
+        // Each hidden turn's live line wears the running spinner (ToolFeed › A, ced9bd7ab); in a hidden layout it rests.
+        #expect(spinners.all == agents.count - 1 && spinners.turning == 0, "only the live lines' spinners, none turning: \(spinners)")
     }
 
     /// A paused shimmer moves again as its layout comes back on screen. Between tools the
@@ -164,9 +165,10 @@ struct IdleCostTests {
         #expect(shown.moving == shown.all, "\(shown)")
     }
 
-    /// LiveText: nothing in a running thread spins. Its one live line shimmers, and a steering
-    /// message in "Up next" waits still (waiting isn't working). The shimmer rests while the
-    /// layout is hidden and moves again on screen.
+    /// ToolFeed › A: a running thread's one live line wears the running spinner and shimmers, and a
+    /// steering message in "Up next" waits still (waiting isn't working), so that spinner is the
+    /// thread's only one. The spinner and the shimmer rest while the layout is hidden and move
+    /// again on screen.
     @Test func aRunningThreadWithASteerSpinsNothing() async throws {
         var snapshot = ThreadFixture.snapshot(ThreadFixture.history(2) + [ThreadFixture.user("u", "Go")],
                                               provisional: [ThreadFixture.streaming("Working on it.")], running: true)
@@ -178,7 +180,8 @@ struct IdleCostTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         ListPerf.settle(thread.window)
-        #expect(Self.spinners(in: thread.window.host).all == 0, "nothing spins")
+        let turning = Self.spinners(in: thread.window.host)
+        #expect(turning.all == 1 && turning.turning == 1, "only the live line's spinner turns: \(turning)")
         let shown = Self.shimmers(in: thread.window.host)
         #expect(shown.all >= 1 && shown.moving == shown.all, "the live line's: \(shown)")
 
@@ -186,11 +189,15 @@ struct IdleCostTests {
         ListPerf.settle(thread.window)
         let hidden = Self.shimmers(in: thread.window.host)
         #expect(hidden.all == shown.all && hidden.moving == 0, "\(hidden)")
+        let resting = Self.spinners(in: thread.window.host)
+        #expect(resting.all == 1 && resting.turning == 0, "\(resting)")
 
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
         let back = Self.shimmers(in: thread.window.host)
         #expect(back.moving == back.all, "\(back)")
+        let again = Self.spinners(in: thread.window.host)
+        #expect(again.turning == again.all, "\(again)")
     }
 
     /// A shimmer on screen costs the app no frames: its band slides on the render server, in
