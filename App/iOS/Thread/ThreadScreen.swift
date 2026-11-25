@@ -144,16 +144,8 @@ struct ThreadScreen: View {
                         title.frame(maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
                     }
                 }
-                // Keep Next clear of the status bar in the wide iPad toolbar.
-                if agent != nil, sizeClass == .regular, !inlineTitle {
-                    ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton() }
-                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
-                        // A phone's bar holds only Back, the title and •••; Next waits in the menu (`NextThreadItem`).
-                        if inlineTitle {
-                            NextNeedingYouButton()
-                        }
                         if arranged {
                             // What sits above the composer in the laptop pose (DuoLaptop's capsule).
                             ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
