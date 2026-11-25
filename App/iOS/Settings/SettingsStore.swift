@@ -171,8 +171,8 @@ final class SettingsStore {
     }
 
     /// Fleet's value on the list: "3 Macs · 1 asleep", in the quiet value tone (a sleeping Mac isn't an alarm).
-    var fleetValue: SHListRow.Trailing {
-        FleetDeviceList.trail(fleetRows).map(SHListRow.Trailing.value) ?? .none
+    var fleetValue: SettingsRow.Trailing {
+        FleetDeviceList.trail(fleetRows).map(SettingsRow.Trailing.value) ?? .none
     }
 
     /// About's agent: "agent 0.87.1", from the settings host.

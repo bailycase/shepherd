@@ -155,19 +155,47 @@ struct SettingsLead: View {
 /// One row of a card (the boards' `gt-r`): what leads it, a title over a note, a trailing value
 /// and a chevron. 52pt at least, 16pt in at the sides.
 struct SettingsRow: View, Equatable {
+    /// What leads a row.
+    enum Leading: Equatable, Sendable {
+        case none
+        /// A status dot.
+        case state(AgentState)
+        /// An SF Symbol, tinted by a state (lantern for attention) or secondary.
+        case symbol(String, AgentState? = nil)
+        /// A state's glyph.
+        case glyph(AgentState)
+        /// A symbol in the leading column.
+        case badge(String)
+    }
+
+    /// What trails a row.
+    enum Trailing: Equatable, Sendable {
+        case none
+        /// A plain value in tertiary.
+        case value(String)
+        /// Why it needs you, in lantern.
+        case reason(String)
+        /// A problem, in failed.
+        case alert(String)
+        /// The host it lives on.
+        case host(String)
+        /// A quiet word.
+        case meta(String)
+    }
+
     let title: String
     let subtitle: String?
     let subtitleMono: Bool
     let subtitleTone: AgentState?
-    let leading: SHListRow.Leading
-    let trailing: SHListRow.Trailing
+    let leading: SettingsRow.Leading
+    let trailing: SettingsRow.Trailing
     let chevron: Bool
     let selected: Bool
     let dimmed: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
 
     init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = false, subtitleTone: AgentState? = nil,
-         leading: SHListRow.Leading = .none, trailing: SHListRow.Trailing = .none, chevron: Bool = true,
+         leading: SettingsRow.Leading = .none, trailing: SettingsRow.Trailing = .none, chevron: Bool = true,
          selected: Bool = false, dimmed: Bool = false) {
         self.title = title
         self.subtitle = subtitle
@@ -254,7 +282,7 @@ private struct SettingsLeading<Glyph: View>: View {
 
 /// A row's trailing text, by what it says.
 struct SettingsRowValue: View {
-    let trailing: SHListRow.Trailing
+    let trailing: SettingsRow.Trailing
 
     var body: some View {
         switch trailing {
