@@ -63,12 +63,12 @@ public enum DesignReferencePresentation {
         revision.map { "v\($0)" }
     }
 
-    /// The chip's state line: "updated since · now v26", "design deleted · the copy sent here is
+    /// The chip's state line: "updated since, now v26", "design deleted · the copy sent here is
     /// kept", "offline · uses the copy from Sep 26"; nil while it is current.
     public static func state(_ freshness: DesignReferenceFreshness, formatDate: (Date) -> String = day) -> String? {
         switch freshness {
         case .current: nil
-        case .updatedSince(let latest, _): "updated since · now v\(latest)"
+        case .updatedSince(let latest, _): "updated since, now v\(latest)"
         case .deleted: "design deleted · the copy sent here is kept"
         case .hostOffline(let cachedAt): "offline · uses the copy from \(formatDate(Date(timeIntervalSince1970: cachedAt / 1000)))"
         }

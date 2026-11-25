@@ -49,7 +49,7 @@ public struct SHDesignReferenceSpecimens: View {
                     specimen("in the composer") { SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23", thumbnail: picture, remove: {}) }
                     specimen("sent") { SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23", thumbnail: picture) }
                     specimen("updatedSince") {
-                        SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23", state: .updated("updated since · now v26"), thumbnail: picture)
+                        SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23", state: .updated("updated since, now v26"), thumbnail: picture)
                     }
                     specimen("deleted") {
                         SHDesignReferenceChip(crumbs: Self.crumbs, version: "v23",
@@ -132,13 +132,18 @@ public struct SHDesignReferenceSpecimens: View {
                                          sends: SHImplementSheet<EmptyView>.sends("Sends a picture, its HTML, 11 styles and 8 tokens from ",
                                                                                    mono: "acme-web", after: "."),
                                          canSend: true, close: {}, send: {}) {
+                            SHSearchField("Search threads", text: .constant("")).padding(.top, SHImplementMetrics.searchTop)
                             SHImplementThreadList(threads: [
                                 SHImplementThread(id: "1", name: "Checkout page polish", project: "dashboard-web", age: "4m"),
                                 SHImplementThread(id: "2", name: "Funnel events backfill", project: "analytics-ingest", host: "demo-mac", age: "1h"),
                                 SHImplementThread(id: "3", name: "Fix CSV export encoding", project: "dashboard-web", age: "yesterday"),
                             ], selection: .constant("1"))
-                            SHImplementField("Message") { SHImplementMessageField(text: .constant("Build this in the checkout page.")) }
+                            .padding(.top, SHImplementMetrics.listTop)
+                            SHImplementField("Message") {
+                                SHImplementMessageField(text: .constant("Build this in the checkout page. Keep our existing table component for the steps."))
+                            }
                             Toggle("Open the thread after sending", isOn: .constant(true)).toggleStyle(.shCheckbox)
+                                .padding(.top, SHImplementMetrics.checkTop)
                         }
                         SHImplementSheet(picture: picture, title: "Implement A · Funnel first", crumbs: ["Checkout funnel dashboard"],
                                          version: "v23", mode: .constant(.new),
@@ -151,11 +156,12 @@ public struct SHDesignReferenceSpecimens: View {
                             }
                             SHImplementField("Message") { SHImplementMessageField(text: .constant("")) }
                             Toggle("Open the thread after sending", isOn: .constant(false)).toggleStyle(.shCheckbox)
+                                .padding(.top, SHImplementMetrics.checkTop)
                         }
                     }
                     HStack(alignment: .top, spacing: SH.Space.xl) {
                         SHReferenceToast(.sent, message: Text("Sent card “Checkout funnel” to \(Text("Checkout page polish").fontWeight(.semibold))."),
-                                         actionTitle: "Open thread", actionSymbol: "text.bubble", action: {}, dismiss: {})
+                                         actionTitle: "Open thread", action: {}, dismiss: {})
                         SHReferenceToast(.copied, message: Text("Copied a reference to card “Checkout funnel”. Paste it into any thread’s composer."),
                                          dismiss: {})
                     }

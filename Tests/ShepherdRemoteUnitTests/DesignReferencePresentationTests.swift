@@ -37,7 +37,7 @@ struct DesignReferencePresentationTests {
 
     @Test func theChipSaysHowItStands() {
         #expect(DesignReferencePresentation.state(.current) == nil)
-        #expect(DesignReferencePresentation.state(.updatedSince(latest: 26, changes: ["padding 24px → 20px"])) == "updated since · now v26")
+        #expect(DesignReferencePresentation.state(.updatedSince(latest: 26, changes: ["padding 24px → 20px"])) == "updated since, now v26")
         #expect(DesignReferencePresentation.state(.deleted) == "design deleted · the copy sent here is kept")
         #expect(DesignReferencePresentation.state(.hostOffline(cachedAt: 1_000), formatDate: { _ in "Sep 26" })
             == "offline · uses the copy from Sep 26")

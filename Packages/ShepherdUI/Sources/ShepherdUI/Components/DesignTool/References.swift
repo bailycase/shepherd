@@ -7,7 +7,7 @@ import SwiftUI
 
 /// The boards' own measures for design references (DesignRefStates, RefChipHover, RefNoteBack).
 public enum SHReferenceMetrics {
-    // The chip
+    // The phone's chip (the Mac's are the board* measures below)
     public static let chipPaddingLeading: CGFloat = 6
     public static let chipPaddingTrailing: CGFloat = 8
     public static let chipPaddingVertical: CGFloat = 6
@@ -32,56 +32,89 @@ public enum SHReferenceMetrics {
     public static let hostTagHeight: CGFloat = 16
     public static let hostTagPadding: CGFloat = 5
     public static let hostTagSize: CGFloat = 10
-    // The preview
+
+    // MARK: The Mac (RefPasted, RefChipHover, RefNoteBack, RefCopied)
+    // The chip (.gdz-ref): 44pt, its picture 48×34, on the composer's hover wash (raised in a bubble)
+    public static let chipHeight: CGFloat = 44
+    public static let boardChipPaddingLeading: CGFloat = 4
+    public static let boardChipRadius: CGFloat = 10
+    public static let boardChipSpacing: CGFloat = 10
+    public static let chipRing: CGFloat = 1.5
+    public static let boardThumbnail = CGSize(width: 48, height: 34)
+    public static let boardThumbnailRadius: CGFloat = 6
+    /// A picker row's picture (.gdz-ar).
+    public static let rowThumbnail = CGSize(width: 46, height: 30)
+    public static let rowThumbnailRadius: CGFloat = 5
+    public static let boardCrumbSize: CGFloat = 13
+    public static let crumbLine: CGFloat = 16
+    public static let boardMetaSize: CGFloat = 12
+    public static let boardRemoveGlyph: CGFloat = 9
+    // The preview (.gdz-prev)
     public static let previewWidth: CGFloat = 340
-    public static let previewPadding: CGFloat = 12
-    public static let previewSpacing: CGFloat = 10
-    public static let previewPicture = CGSize(width: 316, height: 107)
-    public static let previewPictureRadius: CGFloat = 6
-    public static let previewMetaSize: CGFloat = 11.5
-    public static let previewVersionSize: CGFloat = 11
+    public static let previewPadding: CGFloat = 10
+    public static let previewRadius: CGFloat = 14
+    public static let previewTray: CGFloat = 150
+    public static let previewTrayRadius: CGFloat = 8
+    public static let previewPictureInset = CGSize(width: 24, height: 14)
+    public static let previewPictureRadius: CGFloat = 5
+    /// The picture's size in the tray: the preview's width less its padding and the inset on each side.
+    public static let previewPicture = CGSize(width: 340 - 2 * 10 - 2 * 24, height: 150 - 2 * 14)
+    public static let previewCrumbTop: CGFloat = 9
+    public static let previewMetaTop: CGFloat = 2
+    public static let previewInset: CGFloat = 2
+    public static let previewMetaSize: CGFloat = 12
     public static let previewGap: CGFloat = 6
+    public static let sectionTop: CGFloat = 10
     public static let changesPaddingVertical: CGFloat = 8
     public static let changesPaddingHorizontal: CGFloat = 10
-    public static let changesSpacing: CGFloat = 5
+    public static let changesRadius: CGFloat = 8
     public static let changesTitleSize: CGFloat = 12
-    public static let changesLineSize: CGFloat = 11
-    public static let getsTagHeight: CGFloat = 18
-    public static let getsTagSize: CGFloat = 10.5
-    public static let getsSpacing: CGFloat = 3
-    public static let getsTagPadding: CGFloat = 4
-    // The thread's pin and its note
-    public static let notePin: CGFloat = 26
-    public static let notePinPoint: CGFloat = 4
-    public static let notePinRing: CGFloat = 1.5
-    public static let notePinGlyph: CGFloat = 11
+    public static let changesLineSize: CGFloat = 12
+    public static let changesLineSpacing: CGFloat = 3
+    public static let getsTagHeight: CGFloat = 20
+    public static let getsTagSize: CGFloat = 12
+    public static let getsSpacing: CGFloat = 4
+    public static let getsTagPadding: CGFloat = 6
+    public static let footerSpacing: CGFloat = 16
+    public static let footerPaddingTop: CGFloat = 8
+    public static let linkSize: CGFloat = 13
+    public static let linkGlyphSpacing: CGFloat = 5
+    // The thread's pin and its note (.gdz-pin.th, .gdz-pop)
+    public static let notePinRing: CGFloat = 1
+    public static let notePinGlyph: CGFloat = 12
     public static let noteWidth: CGFloat = 300
     public static let notePaddingVertical: CGFloat = 12
     public static let notePaddingHorizontal: CGFloat = 14
-    public static let noteSpacing: CGFloat = 10
-    public static let noteTagHeight: CGFloat = 18
-    public static let noteTagSize: CGFloat = 11
-    public static let noteMetaSize: CGFloat = 11.5
+    public static let noteRadius: CGFloat = 12
+    public static let noteTextTop: CGFloat = 5
+    public static let noteFooterTop: CGFloat = 10
+    public static let noteMetaSize: CGFloat = 12
+    public static let noteNameSize: CGFloat = 13
     public static let noteTextSize: CGFloat = 13
     public static let noteCodeSize: CGFloat = 12
-    public static let noteFooterSize: CGFloat = 11
+    public static let noteTextSpacing: CGFloat = 4
     /// The note opens this far after its pin.
     public static let noteGap: CGFloat = 14
-    // The toasts
-    public static let toastWidth: CGFloat = 520
+    // The toasts (.gdz-toast)
+    /// The words wrap at this width, so the toast hugs them up to its 620pt (.gdz-toast).
+    public static let toastMessageWidth: CGFloat = 500
+    public static let toastMinHeight: CGFloat = 40
     public static let toastSpacing: CGFloat = 12
-    public static let toastPaddingVertical: CGFloat = 11
+    public static let toastPadding: CGFloat = 8
     public static let toastPaddingLeading: CGFloat = 14
-    public static let toastPaddingTrailing: CGFloat = 12
     public static let toastGlyph: CGFloat = 14
     public static let toastTextSize: CGFloat = 13
+    public static let toastClose: CGFloat = 24
     /// The toast sits this far above the canvas's bottom edge.
     public static let toastBottom: CGFloat = 22
     // The agent's line
-    public static let detailRowHeight: CGFloat = 22
-    public static let detailLabelWidth: CGFloat = 32
-    public static let detailIndent: CGFloat = 9
-    public static let detailRail: CGFloat = 16
+    public static let detailRowHeight: CGFloat = 18
+    public static let detailRowGap: CGFloat = 3
+    public static let detailLabelWidth: CGFloat = 40
+    public static let detailColumnGap: CGFloat = 10
+    public static let detailIndent: CGFloat = 5
+    public static let detailRail: CGFloat = 14
+    public static let detailSize: CGFloat = 12
 }
 
 /// A picture handed to a design reference's views: the image and what it shows, so a view
@@ -99,7 +132,7 @@ public struct SHReferenceImage: Equatable, @unchecked Sendable {
 }
 
 /// How a reference stands (DesignReferenceChip(ref, state:)): as sent; the design moved on since
-/// (an amber dot, "updated since · now v26"); the design is gone (the chip dims and its picture
+/// (amber words, "updated since, now v26"); the design is gone (the chip dims and its picture
 /// is a dashed trash tile); on another host (the host's name as a tag); or on a host that is
 /// offline (the tag and the words in amber). Each carries its words.
 public enum SHReferenceState: Equatable, Sendable {
@@ -154,12 +187,33 @@ public struct SHReferenceThumbnail: View, Equatable {
     }
 }
 
-/// design › board › element on one line (12.5): the parents in `textSecondary`, the piece last in
-/// `textPrimary` semibold, `›` between in `textTertiary`. The design's name gives way first.
+/// design › board › element on one line (13): the parents in `textSecondary`, the piece last in
+/// `textPrimary` semibold, `›` between in `textSecondary`. One line, so a long path gives way at
+/// its end (the board's `.cr`). The phone's gives way at the design's name first.
 struct SHReferenceCrumbs: View {
     let crumbs: [String]
+    #if os(macOS)
+    var size: CGFloat = SHReferenceMetrics.boardCrumbSize
+    #else
     var size: CGFloat = SHReferenceMetrics.crumbSize
+    #endif
 
+    #if os(macOS)
+    var body: some View {
+        let sh = Color.sh
+        var line = Text("")
+        for (index, crumb) in crumbs.enumerated() {
+            if index > 0 { line = Text("\(line) › ") }
+            let last = index == crumbs.count - 1
+            line = Text("\(line)\(Text(crumb).fontWeight(last ? .semibold : .regular).foregroundStyle(last ? sh.textPrimary : sh.textSecondary))")
+        }
+        return line
+            .font(.shSans(size))
+            .foregroundStyle(sh.textSecondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+    #else
     var body: some View {
         let sh = Color.sh
         HStack(spacing: SHReferenceMetrics.crumbSpacing) {
@@ -177,6 +231,7 @@ struct SHReferenceCrumbs: View {
         }
         .font(.shSans(size))
     }
+    #endif
 }
 
 /// A host's name as its small mono tag (build-01), amber when the host is offline.
@@ -201,8 +256,9 @@ public struct SHReferenceHostTag: View {
     }
 }
 
-/// The reference chip (DesignReferenceChip): the only design UI a thread ever shows. A 40×26
-/// picture, the breadcrumb, and under it the version and how the reference stands. In the
+/// The reference chip (DesignReferenceChip): the only design UI a thread ever shows. A 48×34
+/// picture, the breadcrumb, and under it the version and how the reference stands, in a 44pt
+/// capsule on the hover wash (`raised`: on `bgRaised`, inside a sent message's bubble). In the
 /// composer it has a remove button; in a sent message it opens the design. `highlighted` is its
 /// hover ring, while its preview is open.
 public struct SHDesignReferenceChip: View {
@@ -211,20 +267,96 @@ public struct SHDesignReferenceChip: View {
     let state: SHReferenceState
     let thumbnail: SHReferenceImage?
     let highlighted: Bool
+    let raised: Bool
+    let fills: Bool
     let remove: (() -> Void)?
 
+    /// `fills`: as wide as it is offered, up to its most (a sent message's chip fills its bubble).
     public init(crumbs: [String], version: String?, state: SHReferenceState = .current, thumbnail: SHReferenceImage? = nil,
-                highlighted: Bool = false, remove: (() -> Void)? = nil) {
+                highlighted: Bool = false, raised: Bool = false, fills: Bool = false, remove: (() -> Void)? = nil) {
         self.crumbs = crumbs
         self.version = version
         self.state = state
         self.thumbnail = thumbnail
         self.highlighted = highlighted
+        self.raised = raised
+        self.fills = fills
         self.remove = remove
     }
 
     private var deleted: Bool { if case .deleted = state { true } else { false } }
 
+    #if os(macOS)
+    public var body: some View {
+        let sh = Color.sh
+        let M = SHReferenceMetrics.self
+        let shape = RoundedRectangle(cornerRadius: M.boardChipRadius)
+        HStack(spacing: M.boardChipSpacing) {
+            SHReferenceThumbnail(thumbnail, size: M.boardThumbnail, radius: M.boardThumbnailRadius, deleted: deleted)
+            VStack(alignment: .leading, spacing: 0) {
+                SHReferenceCrumbs(crumbs: crumbs).frame(height: M.crumbLine)
+                meta.frame(height: M.crumbLine)
+            }
+            .layoutPriority(1)
+            if fills { Spacer(minLength: 0) }
+            if let remove {
+                Button(action: remove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: M.boardRemoveGlyph, weight: .semibold))
+                        .foregroundStyle(sh.textTertiary)
+                        .frame(width: M.removeSize, height: M.removeSize)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, SH.Space.xs)
+                .help("Remove")
+                .accessibilityLabel("Remove")
+            }
+        }
+        .padding(.leading, M.boardChipPaddingLeading)
+        .padding(.trailing, M.chipPaddingTrailing)
+        .frame(height: M.chipHeight)
+        .background(raised ? sh.bgRaised : sh.bgHover, in: shape)
+        .overlay { shape.strokeBorder(sh.textTertiary, lineWidth: M.chipRing).opacity(highlighted ? 1 : 0) }
+        .frame(maxWidth: M.chipMaxWidth, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .opacity(deleted ? M.deletedOpacity : 1)
+        .shAnimation(.hover, value: highlighted)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// "v23 · design reference" in 12 `textTertiary`; amber when the design moved on or its host is away.
+    private var meta: some View {
+        let sh = Color.sh
+        let M = SHReferenceMetrics.self
+        let amber: Bool = switch state {
+        case .updated, .hostOffline: true
+        case .current, .deleted, .anotherHost: false
+        }
+        return HStack(spacing: M.crumbSpacing) {
+            Text(metaWords)
+                .font(.shSans(M.boardMetaSize))
+                .foregroundStyle(amber ? sh.lanternText : sh.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            switch state {
+            case .anotherHost(let host): SHReferenceHostTag(host)
+            case .hostOffline(let host, _): SHReferenceHostTag(host, offline: true)
+            case .current, .updated, .deleted: EmptyView()
+            }
+        }
+    }
+
+    private var metaWords: String {
+        let words: String = switch state {
+        case .current, .anotherHost: "design reference"
+        case .updated(let text), .deleted(let text), .hostOffline(_, let text): text
+        }
+        return [version, words].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    #else
     public var body: some View {
         let sh = Color.sh
         let M = SHReferenceMetrics.self
@@ -296,6 +428,8 @@ public struct SHDesignReferenceChip: View {
         Text(text).font(.shSans(SHReferenceMetrics.metaSize)).foregroundStyle(color).lineLimit(1).truncationMode(.tail)
     }
 
+    #endif
+
     private var accessibilityText: String {
         var parts = ["Design reference", crumbs.joined(separator: ", ")]
         if let version { parts.append(version) }
@@ -321,10 +455,10 @@ public struct SHReferenceChanges: Equatable, Sendable {
     }
 }
 
-/// The chip's bigger preview (DesignReferencePreview), after a short hover: the picture, the
-/// breadcrumb, the version with when it was pinned and its system, what changed since (amber,
-/// when the design moved on), what the agent gets, and Open in design (and Send vN). 340pt on the
-/// popover's surface.
+/// The chip's bigger preview (DesignReferencePreview), after a short hover: the picture on its
+/// tray, the breadcrumb, the version with when it was pinned and its system, what changed since
+/// (amber, when the design moved on), what the agent gets, and Open in design (and Send vN).
+/// 340pt at radius 14 on the popover's surface.
 public struct SHDesignReferencePreview: View {
     let picture: SHReferenceImage?
     let crumbs: [String]
@@ -356,69 +490,87 @@ public struct SHDesignReferencePreview: View {
         self.sendLatest = sendLatest
     }
 
+    /// "v23 · pinned Sep 27, 10:42 · acme-web".
+    private var meta: String { [version, pinned, system].compactMap { $0 }.joined(separator: " · ") }
+
     public var body: some View {
         let sh = Color.sh
         let M = SHReferenceMetrics.self
-        VStack(alignment: .leading, spacing: M.previewSpacing) {
+        VStack(alignment: .leading, spacing: 0) {
+            let tray = RoundedRectangle(cornerRadius: M.previewTrayRadius)
             SHReferenceThumbnail(picture, size: M.previewPicture, radius: M.previewPictureRadius, deleted: deleted)
+                .frame(maxWidth: .infinity)
+                .frame(height: M.previewTray)
+                .background(sh.bgHover, in: tray)
+                .shBorder(sh.lineStrong, in: tray)
             SHReferenceCrumbs(crumbs: crumbs)
-            HStack(spacing: SH.Space.s) {
-                if let version { Text(version).font(.shMono(M.previewVersionSize)).foregroundStyle(sh.textSecondary) }
-                if let pinned { Text(pinned) }
-                if let system {
-                    Text("·")
-                    Text(system).font(.shMono(M.previewVersionSize))
-                }
+                .padding(.top, M.previewCrumbTop)
+                .padding(.horizontal, M.previewInset)
+            if !meta.isEmpty {
+                Text(meta)
+                    .font(.shSans(M.previewMetaSize))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                    .padding(.top, M.previewMetaTop)
+                    .padding(.horizontal, M.previewInset)
             }
-            .font(.shSans(M.previewMetaSize))
-            .foregroundStyle(sh.textTertiary)
-            .lineLimit(1)
             if let changes {
-                VStack(alignment: .leading, spacing: M.changesSpacing) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(changes.title).font(.shSans(M.changesTitleSize, .semibold)).foregroundStyle(sh.lanternText)
                     Text(changes.lines.joined(separator: "\n"))
                         .font(.shMono(M.changesLineSize))
-                        .foregroundStyle(sh.textSecondary)
-                        .lineSpacing(SH.Space.xs)
+                        .foregroundStyle(sh.textPrimary)
+                        .lineSpacing(M.changesLineSpacing)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, M.changesPaddingVertical)
                 .padding(.horizontal, M.changesPaddingHorizontal)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: M.changesRadius))
+                .padding(.top, M.sectionTop)
             }
             if !gets.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: M.previewGap) {
+                SHFlowLayout(spacing: M.previewGap, lineSpacing: M.getsSpacing) {
                     Text("The agent gets").font(.shSans(M.previewMetaSize)).foregroundStyle(sh.textTertiary)
-                        .fixedSize()
-                    SHFlowLayout(spacing: M.getsSpacing) {
-                        ForEach(gets, id: \.self) { SHReferenceGetsTag($0) }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: M.getsTagHeight)
+                    ForEach(gets, id: \.self) { SHReferenceGetsTag($0) }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, M.sectionTop)
+                .padding(.horizontal, M.previewInset)
             }
             if open != nil || sendLatest != nil {
-                HStack(spacing: SH.Space.s) {
+                HStack(spacing: M.footerSpacing) {
                     if let open {
-                        Button(openTitle, systemImage: "arrow.up.forward.square", action: open)
-                            .buttonStyle(.sh(.secondary, size: .s))
+                        Button(action: open) {
+                            HStack(spacing: M.linkGlyphSpacing) {
+                                Image(systemName: "arrow.up.forward.square")
+                                Text(openTitle)
+                            }
+                        }
+                        .buttonStyle(.shLink(color: sh.textPrimary, font: .shSans(M.linkSize, .medium)))
                     }
                     if let sendLatest, let sendLatestTitle {
-                        Button(sendLatestTitle, systemImage: "arrow.counterclockwise", action: sendLatest)
-                            .buttonStyle(.sh(.ghost, size: .s))
+                        Button(sendLatestTitle, action: sendLatest)
+                            .buttonStyle(.shLink(color: sh.textSecondary, font: .shSans(M.linkSize)))
                     }
+                    Spacer(minLength: 0)
                 }
+                .padding(.top, M.footerPaddingTop)
+                .padding(.horizontal, M.previewInset)
+                .overlay(alignment: .top) { SHHairline() }
+                .padding(.top, M.sectionTop)
             }
         }
         .padding(M.previewPadding)
         .frame(width: M.previewWidth, alignment: .leading)
-        .shPopover(radius: SH.Radius.l)
+        .shPopover(radius: M.previewRadius)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Design reference preview")
     }
 }
 
-/// One of "The agent gets" tags: mono 10.5 on `bgSelected`, 18pt, radius 4.
+/// One of "The agent gets" tags: mono 12 on `bgHover`, 20pt, radius 4.
 struct SHReferenceGetsTag: View {
     let text: String
 
@@ -431,44 +583,36 @@ struct SHReferenceGetsTag: View {
             .lineLimit(1)
             .padding(.horizontal, SHReferenceMetrics.getsTagPadding)
             .frame(height: SHReferenceMetrics.getsTagHeight)
-            .background(Color.sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+            .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .fixedSize()
     }
 }
 
 // MARK: - Notes back
 
-/// The pin a thread's note sits under on the canvas (CanvasNotePin(.thread)): the comment pin's
-/// teardrop in `running` blue with a code glyph, so it never reads as a lantern comment or as the
-/// design agent's.
+/// The pin a thread's note sits under on the canvas (.gdz-pin.th): the canvas's pin size, a
+/// raised disc with a line and a code glyph, so it never reads as a comment's number.
 public struct SHThreadNotePin: View {
     public init() {}
 
     public var body: some View {
         let M = SHReferenceMetrics.self
-        let side = M.notePin
-        let shape = UnevenRoundedRectangle(topLeadingRadius: side / 2, bottomLeadingRadius: M.notePinPoint,
-                                           bottomTrailingRadius: side / 2, topTrailingRadius: side / 2)
+        let side = SHDesignMetrics.pinSize
         Image(systemName: "chevron.left.forwardslash.chevron.right")
             .font(.system(size: M.notePinGlyph, weight: .semibold))
-            .foregroundStyle(Color.sh.running)
+            .foregroundStyle(Color.sh.textPrimary)
             .frame(width: side, height: side)
-            .background {
-                ZStack {
-                    shape.fill(Color.sh.bgRaised)
-                    shape.fill(Color.sh.runningTint)
-                }
-            }
-            .overlay { shape.strokeBorder(Color.sh.running, lineWidth: M.notePinRing) }
+            .background(Color.sh.bgRaised, in: Circle())
+            .overlay { Circle().strokeBorder(Color.sh.lineStrong, lineWidth: M.notePinRing) }
             .shadow(color: Color.sh.knobShadow, radius: SHDesignMetrics.pinShadowRadius, y: SHDesignMetrics.pinShadowY)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Note from a thread")
     }
 }
 
-/// A thread's note as the canvas shows it beside its pin (ThreadNoteCard): "Thread" and the
-/// thread's name with its age, the note (its `code` and #123 in mono), then Open thread, Resolve
-/// and the version it was sent.
+/// A thread's note as the canvas shows it beside its pin (ThreadNoteCard): "Note from" and the
+/// thread's name with its age, the note (its `code` in mono), then Open thread, Resolve and the
+/// version it was sent. 300pt on the popover's surface.
 public struct SHThreadNoteCard: View {
     let thread: String
     let age: String
@@ -489,38 +633,30 @@ public struct SHThreadNoteCard: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHReferenceMetrics.self
-        VStack(alignment: .leading, spacing: M.noteSpacing) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: SH.Space.m) {
-                Label("Thread", systemImage: "text.bubble")
-                    .labelStyle(SHTightLabelStyle())
-                    .font(.shSans(M.noteTagSize, .medium))
-                    .foregroundStyle(sh.running)
-                    .padding(.horizontal, SH.Space.s)
-                    .frame(height: M.noteTagHeight)
-                    .background(sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-                    .fixedSize()
-                Text(thread).font(.shSans(M.noteMetaSize, .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Text("Note from").font(.shSans(M.noteMetaSize)).foregroundStyle(sh.textTertiary).fixedSize()
+                Text(thread).font(.shSans(M.noteNameSize, .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
                 Spacer(minLength: SH.Space.s)
                 Text(age).font(.shSans(M.noteMetaSize)).foregroundStyle(sh.textTertiary).fixedSize()
             }
-            SHThreadNoteText(text)
-            HStack(spacing: SH.Space.s) {
+            SHThreadNoteText(text).padding(.top, M.noteTextTop)
+            HStack(spacing: M.footerSpacing) {
                 if let openThread {
-                    Button("Open thread", systemImage: "text.bubble", action: openThread).buttonStyle(.sh(.secondary, size: .s))
+                    Button("Open thread", action: openThread).buttonStyle(.shLink(color: sh.textPrimary, font: .shSans(M.linkSize, .medium)))
                 }
                 if let resolve {
-                    Button("Resolve", systemImage: "checkmark", action: resolve).buttonStyle(.sh(.ghost, size: .s))
+                    Button("Resolve", action: resolve).buttonStyle(.shLink(color: sh.textSecondary, font: .shSans(M.linkSize)))
                 }
                 Spacer(minLength: SH.Space.s)
-                if let from { Text(from).font(.shSans(M.noteFooterSize)).foregroundStyle(sh.textTertiary).fixedSize() }
+                if let from { Text(from).font(.shSans(M.noteMetaSize)).foregroundStyle(sh.textTertiary).fixedSize() }
             }
-            .padding(.top, M.noteSpacing)
-            .overlay(alignment: .top) { SHHairline() }
+            .padding(.top, M.noteFooterTop)
         }
         .padding(.vertical, M.notePaddingVertical)
         .padding(.horizontal, M.notePaddingHorizontal)
         .frame(width: M.noteWidth, alignment: .leading)
-        .shPopover(radius: SH.Radius.l)
+        .shPopover(radius: M.noteRadius)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Note from \(thread)")
     }
@@ -536,8 +672,8 @@ struct SHTightLabelStyle: LabelStyle {
     }
 }
 
-/// A note's words: plain text, with its `code` spans in mono and "#142" in mono `running`, the
-/// rest 13 `textPrimary`. Nothing in it is a link.
+/// A note's words: plain text, with its `code` spans in mono, the rest 13 `textPrimary`. Nothing
+/// in it is a link.
 public struct SHThreadNoteText: View {
     let text: String
 
@@ -588,13 +724,13 @@ public struct SHThreadNoteText: View {
             switch run {
             case .words(let words): line = Text("\(line)\(words)")
             case .code(let code): line = Text("\(line)\(Text(code).font(.shMono(M.noteCodeSize)))")
-            case .number(let number): line = Text("\(line)\(Text(number).font(.shMono(M.noteCodeSize)).foregroundStyle(Color.sh.running))")
+            case .number(let number): line = Text("\(line)\(number)")
             }
         }
         return line
             .font(.shSans(M.noteTextSize))
             .foregroundStyle(Color.sh.textPrimary)
-            .lineSpacing(SH.Space.xxs)
+            .lineSpacing(M.noteTextSpacing)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
@@ -602,9 +738,9 @@ public struct SHThreadNoteText: View {
 
 // MARK: - The toasts
 
-/// A toast on the canvas after a design reference goes (Toast · sent, Toast · copied): a glyph
-/// (a `done` check, or a link), the words in 13 with the thread's name semibold, an optional
-/// button (Open thread), and a close. 520pt on the popover's surface at radius 12.
+/// A toast on the canvas after a design reference goes (Toast · sent, Toast · copied): a link glyph
+/// for a copy, the words in 13 with the thread's name semibold, an optional text button (Open
+/// thread), and a close. At most 620pt on the popover's surface at radius 12.
 public struct SHReferenceToast: View {
     public enum Kind: Sendable {
         case sent
@@ -614,46 +750,46 @@ public struct SHReferenceToast: View {
     let kind: Kind
     let message: Text
     let actionTitle: String?
-    let actionSymbol: String?
     let action: (() -> Void)?
     let dismiss: () -> Void
 
-    public init(_ kind: Kind, message: Text, actionTitle: String? = nil, actionSymbol: String? = nil, action: (() -> Void)? = nil,
-                dismiss: @escaping () -> Void) {
+    public init(_ kind: Kind, message: Text, actionTitle: String? = nil, action: (() -> Void)? = nil, dismiss: @escaping () -> Void) {
         self.kind = kind
         self.message = message
         self.actionTitle = actionTitle
-        self.actionSymbol = actionSymbol
         self.action = action
         self.dismiss = dismiss
     }
 
     public var body: some View {
+        let sh = Color.sh
         let M = SHReferenceMetrics.self
         HStack(spacing: M.toastSpacing) {
-            Image(systemName: kind == .sent ? "checkmark" : "link")
-                .font(.system(size: M.toastGlyph, weight: .medium))
-                .foregroundStyle(kind == .sent ? Color.sh.done : Color.sh.textSecondary)
-                .accessibilityHidden(true)
+            if kind == .copied {
+                Image(systemName: "link")
+                    .font(.system(size: M.toastGlyph, weight: .medium))
+                    .foregroundStyle(sh.textSecondary)
+                    .accessibilityHidden(true)
+            }
             message
                 .font(.shSans(M.toastTextSize))
-                .foregroundStyle(Color.sh.textPrimary)
+                .foregroundStyle(sh.textPrimary)
                 .lineSpacing(SH.Space.xxs)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: M.toastMessageWidth, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             if let action, let actionTitle {
-                Button(actionTitle, systemImage: actionSymbol ?? "arrow.right", action: action)
-                    .buttonStyle(.sh(.secondary, size: .s))
+                Button(actionTitle, action: action)
+                    .buttonStyle(.shLink(color: sh.textPrimary, font: .shSans(M.linkSize, .medium)))
+                    .padding(.leading, SH.Space.xs)
             }
             Button(action: dismiss) { Image(systemName: "xmark") }
-                .buttonStyle(.shIcon(size: SH.Height.controlS))
+                .buttonStyle(.shIcon(size: M.toastClose))
                 .help("Dismiss")
                 .accessibilityLabel("Dismiss")
         }
-        .padding(.vertical, M.toastPaddingVertical)
-        .padding(.leading, M.toastPaddingLeading)
-        .padding(.trailing, M.toastPaddingTrailing)
-        .frame(maxWidth: M.toastWidth)
+        .padding(M.toastPadding)
+        .padding(.leading, M.toastPaddingLeading - M.toastPadding)
+        .frame(minHeight: M.toastMinHeight)
         .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isStaticText)
