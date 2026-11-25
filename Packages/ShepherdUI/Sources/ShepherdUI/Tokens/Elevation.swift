@@ -3,8 +3,13 @@ import SwiftUI
 extension View {
     /// Card (panes, cards, the composer, tool groups): raised fill and a 1px line, sitting on the
     /// soft `lift` shadow when `lift` is set (the composer, the edits card, the side pane card).
-    public func shCard(radius: CGFloat = SH.Radius.xl, fill: Color? = nil, line: Color? = nil, lift: Bool = false) -> some View {
-        modifier(SHCardModifier(radius: radius, fill: fill, line: line, lift: lift))
+    ///
+    /// `roundsContent` false clips the content to the card's bounds rather than its rounded corners: for a card whose content
+    /// never reaches a corner and scrolls (the subagent inspector). A rounded clip makes Core Animation draw what is inside it
+    /// offscreen and mask it again on every scroll step.
+    public func shCard(radius: CGFloat = SH.Radius.xl, fill: Color? = nil, line: Color? = nil, lift: Bool = false,
+                       roundsContent: Bool = true) -> some View {
+        modifier(SHCardModifier(radius: radius, fill: fill, line: line, lift: lift, roundsContent: roundsContent))
     }
 
     /// The boards' `lift`: a close 1pt shadow and a soft 20pt one under a card's fill. Cast by the
@@ -13,10 +18,19 @@ extension View {
         // Each shadow cast by a fill of its own: stacked on one fill, the outer shadow is cast from a layer with a child,
         // which Core Animation redraws from its whole subtree.
         background {
+            #if os(macOS)
+            // From a path set at layout (`SHShadowFill`): a card whose size follows a drag draws no shadow offscreen.
+            // Both shadows are black, so the order they stack in draws the same pixels.
+            SHShadowFill(shape: shape, fill: fill ?? .sh.bgRaised, shadows: [
+                SHShadowSpec(color: .sh.liftNear, radius: SHLift.nearRadius, y: SHLift.nearOffset),
+                SHShadowSpec(color: .sh.liftFar, radius: SHLift.farRadius, y: SHLift.farOffset),
+            ])
+            #else
             ZStack {
                 shape.fill(fill ?? .sh.bgRaised).shadow(color: .sh.liftFar, radius: SHLift.farRadius, y: SHLift.farOffset)
                 shape.fill(fill ?? .sh.bgRaised).shadow(color: .sh.liftNear, radius: SHLift.nearRadius, y: SHLift.nearOffset)
             }
+            #endif
         }
     }
 
@@ -37,7 +51,11 @@ extension View {
     public func shFloatCardShadow<S: Shape>(_ shape: S, floating: Bool) -> some View {
         background {
             if floating {
+                #if os(macOS)
+                SHShadowFill(shape: shape, fill: .sh.bgRaised, shadows: [SHShadowSpec(color: .sh.popoverShadow, radius: SHPopoverModifier.shadowRadius)])
+                #else
                 shape.fill(Color.sh.bgRaised).shadow(color: .sh.popoverShadow, radius: SHPopoverModifier.shadowRadius)
+                #endif
             }
         }
     }
@@ -61,7 +79,15 @@ extension View {
     /// at 60%). Cast by the fill, never the content, and clipped by the list at its top and sides.
     public func shPinnedBackground(_ fill: Color, pinned: Bool) -> some View {
         background {
+            #if os(macOS)
+            if pinned {
+                SHShadowFill(shape: Rectangle(), fill: fill, shadows: [SHShadowSpec(color: .sh.popoverShadow, radius: SHPinnedShadow.radius, y: SHPinnedShadow.offset)])
+            } else {
+                fill
+            }
+            #else
             fill.shadow(color: pinned ? .sh.popoverShadow : .clear, radius: SHPinnedShadow.radius, y: SHPinnedShadow.offset)
+            #endif
         }
     }
 
@@ -145,12 +171,13 @@ private struct SHCardModifier: ViewModifier {
     let fill: Color?
     let line: Color?
     let lift: Bool
+    let roundsContent: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)
         if lift {
             content
-                .clipShape(shape)
+                .clipShape(RoundedRectangle(cornerRadius: roundsContent ? radius : 0))
                 .shLift(shape, fill: fill)
                 .shBorder(line ?? .sh.lineSubtle, radius: radius)
         } else {

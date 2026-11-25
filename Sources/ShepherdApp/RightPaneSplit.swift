@@ -146,7 +146,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                             let shape = RoundedRectangle(cornerRadius: SH.Radius.xl)
                             pane()
                                 .frame(width: paneWidth, height: max(0, geo.size.height - cardTop - cardBottom))
-                                .shCard(lift: true)
+                                // The inspector's content stops short of the corners and scrolls: no rounded clip over it.
+                                .shCard(lift: true, roundsContent: !floating)
                                 .shFloatCardShadow(shape, floating: !docked && !covers)
                                 .padding(.top, cardTop)
                                 .padding(.bottom, cardBottom)

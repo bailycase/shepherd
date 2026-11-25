@@ -35,8 +35,14 @@ extension View {
         let shape = RoundedRectangle(cornerRadius: radius)
         return clipShape(shape)
             .background {
+                #if os(macOS)
+                // From a path set at layout, so dragging the sidebar's edge draws no shadow offscreen.
+                SHShadowFill(shape: shape, fill: .sh.bgGlass,
+                             shadows: [SHShadowSpec(color: .sh.liftFar, radius: SHSidebarMetrics.panelShadowRadius, y: SHSidebarMetrics.panelShadowOffset)])
+                #else
                 shape.fill(Color.sh.bgGlass)
                     .shadow(color: .sh.liftFar, radius: SHSidebarMetrics.panelShadowRadius, y: SHSidebarMetrics.panelShadowOffset)
+                #endif
             }
             .overlay {
                 shape.strokeBorder(Color.sh.glassShine, lineWidth: 1)
