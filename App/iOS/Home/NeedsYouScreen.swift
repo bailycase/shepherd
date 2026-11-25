@@ -8,6 +8,8 @@ import ShepherdRemote
 struct NeedsYouScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The list and detail don't fit side by side (iPhone Duo): the cards carry the board's big title instead of the bar.
+    @State private var single = false
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
@@ -19,7 +21,7 @@ struct NeedsYouScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if sizeClass == .regular {
-                NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures)
+                NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures, single: $single)
             } else {
                 NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures)
             }
@@ -32,15 +34,18 @@ struct NeedsYouScreen: View {
             // On a wide iPad the trailing corner shares the status bar's space.
             if sizeClass == .regular {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                        Text("Needs you").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
+                    // The board's head: "Needs you" over "2 waiting".
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Needs you").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                         if !items.isEmpty {
-                            Text("\(items.count) waiting").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                            Text("\(items.count) waiting").font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary)
                         }
                     }
                     .fixedSize()
+                    .opacity(single ? 0 : 1)
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityHidden(single)
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton(showsScope: true) }
@@ -63,14 +68,22 @@ private struct NeedsYouCards: View {
     let items: [FleetAttention]
     let answering: Set<String>
     let failures: [String: String]
+    /// The board's big title above the lead, where the bar doesn't carry it.
+    var showsTitle = false
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                Text(NeedsYouScreen.waiting(items.count))
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                if showsTitle {
+                    Text("Needs you").font(.sh(.display)).foregroundStyle(Color.sh.textPrimary)
+                        .padding(.horizontal, SH.Space.xs)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                Text("Questions and blocked threads from every host show here.")
+                    .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                     .padding(.horizontal, SH.Space.xs)
+                    .accessibilityLabel(NeedsYouScreen.waiting(items.count))
                 ForEach(items) { item in
                     AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
                 }
@@ -89,6 +102,7 @@ private struct NeedsYouSplit: View {
     let items: [FleetAttention]
     let answering: Set<String>
     let failures: [String: String]
+    @Binding var single: Bool
     @State private var chosen: String?
 
     var body: some View {
@@ -113,7 +127,9 @@ private struct NeedsYouSplit: View {
                 .id(current.id)
         } single: {
             // Too narrow for both (iPhone Duo): the phone's cards, answered in place.
-            NeedsYouCards(items: items, answering: answering, failures: failures)
+            NeedsYouCards(items: items, answering: answering, failures: failures, showsTitle: true)
+                .onAppear { single = true }
+                .onDisappear { single = false }
         }
     }
 }
@@ -131,15 +147,16 @@ private struct NeedsYouDetail: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                        Text(item.title).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                        // "Needs you · 2m": how long it has waited.
+                    // "Dock review pane" over "Needs you · 13m": how long it has waited.
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(item.title).font(.shSans(MobileLayout.detailTitleSize, .semibold)).foregroundStyle(sh.textPrimary)
                         if let since = item.since.map(Date.init(milliseconds:)) {
                             TimelineView(SHElapsedSchedule(start: since)) { context in
-                                SHStatusPill(.attention, label: "\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))")
+                                Text("\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))")
+                                    .font(.sh(.caption)).foregroundStyle(AgentState.attention.textColor)
                             }
                         } else {
-                            SHStatusPill(.attention)
+                            Text(AgentState.attention.label).font(.sh(.caption)).foregroundStyle(AgentState.attention.textColor)
                         }
                     }
                     Text(item.question).shText(.body).foregroundStyle(sh.textPrimary)
@@ -160,7 +177,9 @@ private struct NeedsYouDetail: View {
                             .shText(.caption).foregroundStyle(sh.textTertiary)
                     }
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        SHSectionHeader("Where it came from")
+                        Text("Where it came from").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                            .padding(.horizontal, SH.Space.xs)
+                            .accessibilityAddTraits(.isHeader)
                         SHListCard {
                             SHListRow(item.thread, subtitle: item.kind, subtitleMono: false,
                                       clock: item.since.map { .ago(Date(milliseconds: $0)) }, leading: item.leading,

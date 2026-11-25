@@ -6,8 +6,8 @@ import SwiftUI
 
 /// The lists' own measures.
 public enum SHListMetrics {
-    /// A one-line row (the boards' 48pt, over the touch minimum).
-    public static let rowHeight: CGFloat = 48
+    /// A one-line row (the boards' 52pt rows).
+    public static let rowHeight: CGFloat = 52
     /// A one-line row in the iPad sidebar (iPadThread: 44pt, the touch minimum).
     public static let compactRowHeight: CGFloat = SH.Height.touch
     /// The iPad sidebar's New thread badge: its glyph in a `bgSelected` circle.
@@ -15,16 +15,25 @@ public enum SHListMetrics {
     /// A title over a status line: the boards' 52pt in thread and search lists (Home, Search,
     /// More). Choice lists (56), review files (58) and automations (64) have their own rows.
     public static let twoLineRowHeight: CGFloat = 52
-    /// A card of rows (the boards' 12pt corners).
-    public static let cardRadius: CGFloat = SH.Radius.l
+    /// A card of rows (the boards' 16pt corners).
+    public static let cardRadius: CGFloat = SH.Radius.xxl
+    /// A row's side padding and the start of the rule between rows (the boards' 16pt).
+    public static let rowInset: CGFloat = SH.Space.xl
+    /// A row's top and bottom padding (the boards' 10pt).
+    public static let rowPadding: CGFloat = 10
+    /// The rule's start under a row with a leading icon (the boards' 56pt).
+    public static let iconInset: CGFloat = 56
+    /// A row's value and chevron.
+    public static let chevronSize: CGFloat = 14
     /// The leading column (dot or symbol), so titles line up whatever leads them.
     public static let leadingWidth: CGFloat = 20
     /// The status dot in a row.
     public static let dot: CGFloat = 7
     /// A Needs you card's glowing dot for a thread (MobileInbox).
     public static let attentionDot: CGFloat = 8
-    /// A list head's title: the phone boards' 13pt, between the ramp's caption and ui.
-    public static let headSize: CGFloat = 13
+    /// A list head's title (the phone boards' 15/600) and the iPad sidebar's (13/600).
+    public static let headSize: CGFloat = 15
+    public static let sidebarHeadSize: CGFloat = 13
     /// A symbol in a row's leading column.
     public static let symbol: CGFloat = 15
     /// How far a host's address may shrink to stay on one line before it truncates.
@@ -41,11 +50,11 @@ public enum SHRowClock: Equatable, Sendable {
     case ago(Date)
 }
 
-/// A list section's head (13/600): "Needs you  4" in lantern, "Recents" in secondary, with an
-/// optional trailing count (mono, tertiary) or action.
+/// A list section's head (15/600): "Needs you  4" in lantern, "Recents" in the primary ink, with an
+/// optional trailing count (15/400, tertiary) or action.
 public struct SHListHeader<Trailing: View>: View {
-    /// A list's head (the phone boards': 13/600 in `textSecondary`), or the iPad sidebar's
-    /// quieter one (iPadThread: 13/500, a plain head in `textTertiary`).
+    /// A list's head (the phone boards': 15/600 in `textPrimary`), or the iPad sidebar's
+    /// quieter one (iPadSidebar: 13/600 in `textTertiary`).
     public enum Style: Sendable {
         case list, sidebar
     }
@@ -66,8 +75,8 @@ public struct SHListHeader<Trailing: View>: View {
         let sidebar = style == .sidebar
         HStack(spacing: SH.Space.m) {
             Text(title)
-                .font(.shSans(SHListMetrics.headSize, sidebar ? .medium : .semibold))
-                .foregroundStyle(attention ? Color.sh.lanternText : sidebar ? Color.sh.textTertiary : Color.sh.textSecondary)
+                .font(.shSans(sidebar ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, .semibold))
+                .foregroundStyle(attention ? Color.sh.lanternText : sidebar ? Color.sh.textTertiary : Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: SH.Space.xs)
             trailing()
@@ -80,7 +89,7 @@ extension SHListHeader where Trailing == Text? {
     public init(_ title: String, attention: Bool = false, count: Int? = nil, style: Style = .list) {
         self.init(title, attention: attention, style: style) {
             count.map {
-                Text("\($0)").font(.sh(.mono))
+                Text("\($0)").font(.shSans(style == .sidebar ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, .regular))
                     .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
             }
         }
@@ -131,14 +140,17 @@ public struct SHListRow: View, Equatable {
         case alert(String)
         /// The host it lives on.
         case host(String)
-        /// A quiet word in mono (the iPad sidebar's "failed", "done").
+        /// A quiet word (the iPad sidebar's "failed", "done").
         case meta(String)
+        /// A word and a clock, in tertiary or a state's color ("Studio · 13m", "Running, 2m"): `joiner` sits between.
+        case stamp(String?, SHRowClock?, AgentState? = nil, joiner: String = " · ")
     }
 
     let title: String
     let subtitle: String?
     let subtitleMono: Bool
     let subtitleTone: AgentState?
+    let subtitleLines: Int
     let clock: SHRowClock?
     let leading: Leading
     let trailing: Trailing
@@ -153,12 +165,13 @@ public struct SHListRow: View, Equatable {
     /// moves the content in while the row (and its selection) keeps the full width (the iPad
     /// sidebar's More sub-rows).
     public init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = true, subtitleTone: AgentState? = nil,
-                clock: SHRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
+                subtitleLines: Int = 1, clock: SHRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
                 selected: Bool = false, dimmed: Bool = false, compact: Bool = false, indent: CGFloat = 0) {
         self.title = title
         self.subtitle = subtitle
         self.subtitleMono = subtitleMono
         self.subtitleTone = subtitleTone
+        self.subtitleLines = subtitleLines
         self.clock = clock
         self.leading = leading
         self.trailing = trailing
@@ -171,15 +184,17 @@ public struct SHListRow: View, Equatable {
 
     public nonisolated static func == (a: SHListRow, b: SHListRow) -> Bool {
         a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone
-            && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
+            && a.subtitleLines == b.subtitleLines && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
             && a.selected == b.selected && a.dimmed == b.dimmed && a.compact == b.compact && a.indent == b.indent
     }
 
     public var body: some View {
         let sh = Color.sh
         HStack(spacing: SH.Space.l) {
-            leadingView
-                .frame(width: SHListMetrics.leadingWidth)
+            if leading != .none {
+                leadingView
+                    .frame(width: SHListMetrics.leadingWidth)
+            }
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 // At accessibility sizes a line may wrap once rather than lose most of its words.
                 Text(title)
@@ -189,8 +204,9 @@ public struct SHListRow: View, Equatable {
                 if subtitle != nil || clock != nil {
                     statusLine
                         .font(subtitleMono ? .sh(.mono) : .sh(.caption))
-                        .foregroundStyle(subtitleTone?.textColor ?? sh.textTertiary)
-                        .lineLimit(typeSize.isAccessibilitySize ? SHListMetrics.accessibilityStatusLines : 1)
+                        .foregroundStyle(subtitleTone?.textColor ?? (subtitleMono ? sh.textTertiary : sh.textSecondary))
+                        .lineLimit(typeSize.isAccessibilitySize ? max(subtitleLines, SHListMetrics.accessibilityStatusLines) : subtitleLines)
+                        .fixedSize(horizontal: false, vertical: subtitleLines > 1)
                 }
                 // At accessibility sizes the accessory goes under the title, which keeps its width.
                 if typeSize.isAccessibilitySize { trailingView }
@@ -199,14 +215,14 @@ public struct SHListRow: View, Equatable {
             if !typeSize.isAccessibilitySize { trailingView }
             if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.sh(.caption, weight: .semibold))
+                    .font(.shSans(SHListMetrics.chevronSize, .medium))
                     .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.leading, SH.Space.l + indent)
-        .padding(.trailing, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
+        .padding(.leading, (compact ? SH.Space.l : SHListMetrics.rowInset) + indent)
+        .padding(.trailing, compact ? SH.Space.l : SHListMetrics.rowInset)
+        .padding(.vertical, SHListMetrics.rowPadding)
         .frame(maxWidth: .infinity,
                minHeight: subtitle != nil || clock != nil ? SHListMetrics.twoLineRowHeight
                    : compact ? SHListMetrics.compactRowHeight : SHListMetrics.rowHeight,
@@ -255,15 +271,52 @@ public struct SHListRow: View, Equatable {
         case .value(let text):
             Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
         case .reason(let text):
-            Text(text).font(.sh(.micro, weight: .regular)).foregroundStyle(Color.sh.lanternText).lineLimit(1).fixedSize()
+            Text(text).font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.lanternText).lineLimit(1).fixedSize()
         case .alert(let text):
-            Text(text).font(.sh(.micro, weight: .regular)).foregroundStyle(Color.sh.failed).lineLimit(1).fixedSize()
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.failed).lineLimit(1).fixedSize()
         case .host(let name):
-            SHHostBadge(name)
+            Text(name).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                .accessibilityLabel("on \(name)")
         case .meta(let text):
-            Text(text).font(.sh(.micro, weight: .regular)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).fixedSize()
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).fixedSize()
+        case .stamp(let word, let clock, let tone, let joiner):
+            SHRowStamp(word: word, clock: clock, tone: tone, joiner: joiner)
         }
     }
+}
+
+/// A row's value: a word and a clock that counts up while something runs ("Running, 2m") or how
+/// long ago it moved ("Studio · 13m"), in 13pt tertiary, or in a state's color.
+struct SHRowStamp: View {
+    let word: String?
+    let clock: SHRowClock?
+    let tone: AgentState?
+    let joiner: String
+
+    var body: some View {
+        stamp
+            .font(tone == .attention ? .sh(.caption, weight: .medium) : .sh(.caption))
+            .foregroundStyle(tone?.textColor ?? Color.sh.textTertiary)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    @ViewBuilder private var stamp: some View {
+        switch clock {
+        case .none:
+            Text(word ?? "")
+        case .elapsed(let since)?:
+            TimelineView(SHElapsedSchedule(start: since)) { context in
+                Text(joined(SHDuration.text(context.date.timeIntervalSince(since))))
+            }
+        case .ago(let at)?:
+            TimelineView(SHElapsedSchedule(start: at)) { context in
+                Text(joined(SHDuration.text(context.date.timeIntervalSince(at))))
+            }
+        }
+    }
+
+    private func joined(_ time: String) -> String { word.map { $0 + joiner + time } ?? time }
 }
 
 /// A list row's leading column: a status dot, a symbol, or the New thread badge.
@@ -319,9 +372,9 @@ public struct SHCaptionBand: View {
     }
 }
 
-/// A row of the iPad overview's Running now and Finished cards (iPadOverview): the state in a
-/// 16pt column, the title (14/500, `.ui`) with its time trailing in mono, and a line under it: what
-/// it does now in mono, or how it ended.
+/// A row of the iPad overview's Running now and Finished lists (iPadOverview): the title (15/500)
+/// with its time trailing (13, tertiary), and a line under it in secondary: what it does now
+/// (code in mono) or how it ended, in a state's color when it failed. A rule above each.
 public struct SHOverviewRow: View, Equatable {
     public enum Time: Equatable, Sendable {
         case none
@@ -334,15 +387,18 @@ public struct SHOverviewRow: View, Equatable {
     let title: String
     let detail: String
     let detailMono: Bool
+    let detailTone: AgentState?
     let leading: SHListRow.Leading
     let time: Time
     let dimmed: Bool
 
-    public init(_ title: String, detail: String, detailMono: Bool = true, leading: SHListRow.Leading, time: Time = .none,
-                dimmed: Bool = false) {
+    /// `leading` is kept for callers that name it; the boards draw none.
+    public init(_ title: String, detail: String, detailMono: Bool = true, detailTone: AgentState? = nil,
+                leading: SHListRow.Leading = .none, time: Time = .none, dimmed: Bool = false) {
         self.title = title
         self.detail = detail
         self.detailMono = detailMono
+        self.detailTone = detailTone
         self.leading = leading
         self.time = time
         self.dimmed = dimmed
@@ -350,21 +406,16 @@ public struct SHOverviewRow: View, Equatable {
 
     public var body: some View {
         let sh = Color.sh
-        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-            SHListLeading(leading: leading)
-                .frame(width: SHOverviewMetrics.leadingWidth)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + SHOverviewMetrics.leadingBaselineOffset }
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                    Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    timeView.font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary).monospacedDigit()
-                        .lineLimit(1).fixedSize()
-                }
-                Text(detail).font(detailMono ? .sh(.mono) : .sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Text(title).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                timeView.font(.sh(.caption)).foregroundStyle(sh.textTertiary).monospacedDigit()
+                    .lineLimit(1).fixedSize()
             }
+            Text(detail).font(detailMono ? .sh(.mono) : .sh(.caption))
+                .foregroundStyle(detailTone?.textColor ?? sh.textSecondary).lineLimit(1)
         }
-        .padding(.horizontal, SH.Space.l)
         .padding(.vertical, SH.Space.m)
         .frame(maxWidth: .infinity, minHeight: SHListMetrics.twoLineRowHeight, alignment: .leading)
         .opacity(dimmed ? SHListMetrics.dimmedOpacity : 1)
@@ -394,21 +445,26 @@ public enum SHOverviewMetrics {
 
 /// A card of rows with a 1px rule between them (the boards' 12pt list cards).
 public struct SHListCard<Content: View>: View {
+    let inset: CGFloat
     @ViewBuilder let content: () -> Content
 
-    public init(@ViewBuilder content: @escaping () -> Content) { self.content = content }
+    /// `inset` is where the rule between rows starts: 16, or 56 under rows with a leading icon.
+    public init(inset: CGFloat = SHListMetrics.rowInset, @ViewBuilder content: @escaping () -> Content) {
+        self.inset = inset
+        self.content = content
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
             Group(subviews: content()) { subviews in
                 ForEach(subviews) { subview in
-                    if subview.id != subviews.first?.id { SHHairline() }
+                    if subview.id != subviews.first?.id { SHHairline().padding(.leading, inset) }
                     subview
                 }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
-        .shCard(radius: SHListMetrics.cardRadius)
+        .shCard(radius: SHListMetrics.cardRadius, lift: true)
     }
 }
 
@@ -453,7 +509,7 @@ public struct SHListCardSegment<Content: View>: View {
         let shape = UnevenRoundedRectangle(topLeadingRadius: first ? radius : 0, bottomLeadingRadius: last ? radius : 0,
                                            bottomTrailingRadius: last ? radius : 0, topTrailingRadius: first ? radius : 0)
         VStack(spacing: 0) {
-            if !first { SHHairline() }
+            if !first { SHHairline().padding(.leading, SHListMetrics.rowInset) }
             content()
         }
         .background(Color.sh.bgRaised, in: shape)
@@ -470,15 +526,14 @@ public struct SHListCardSegment<Content: View>: View {
     }
 }
 
-/// A Needs you card (MobileInbox, iPadOverview): where it comes from and when, the thread, the
-/// question, and the answers that fit in place. Its origin is a glyph in `lanternText` (a branch
-/// for a subagent, a bolt for an automation run), or, for a thread (`symbol` nil), the glowing
-/// 8pt lantern dot.
+/// A Needs you card in the phone and iPad boards. The phone's (MobileInbox, `.card`): the thread
+/// and when, where it came from, the question in 500, its message, and the answers as pills. The
+/// iPad overview's (`.overview`): where it came from and when, the question's title in 600, its
+/// text, and the answers (the first in ink). A flat item of the iPad inbox's list (`.item`): the
+/// thread and when, the question, where it came from; `bgSelected` while chosen.
 public struct SHAttentionCard<Actions: View>: View {
-    /// A card (MobileInbox, iPadOverview), or a flat item of the iPad inbox's list (iPadInbox:
-    /// no line, `bgSelected` while chosen).
     public enum Style: Sendable {
-        case card, item
+        case card, overview, item
     }
 
     let symbol: String?
@@ -490,10 +545,14 @@ public struct SHAttentionCard<Actions: View>: View {
     let host: String?
     let selected: Bool
     let style: Style
+    let link: (title: String, action: () -> Void)?
     @ViewBuilder let actions: () -> Actions
 
+    /// `link` is the phone card's own line under its answers ("Open thread"). `symbol` and `host` are kept for callers that name them; the boards draw neither: the host
+    /// is part of `origin` ("A thread on Studio"), and the kind is its words.
     public init(symbol: String?, origin: String, title: String, question: String, message: String? = nil, since: Date? = nil,
-                host: String? = nil, selected: Bool = false, style: Style = .card, @ViewBuilder actions: @escaping () -> Actions) {
+                host: String? = nil, selected: Bool = false, style: Style = .card, link: (title: String, action: () -> Void)? = nil,
+                @ViewBuilder actions: @escaping () -> Actions) {
         self.symbol = symbol
         self.origin = origin
         self.title = title
@@ -503,81 +562,104 @@ public struct SHAttentionCard<Actions: View>: View {
         self.host = host
         self.selected = selected
         self.style = style
+        self.link = link
         self.actions = actions
     }
 
     public var body: some View {
         let sh = Color.sh
-        let card = VStack(alignment: .leading, spacing: SH.Space.s) {
-            // The kind, host and time share a line when they fit; otherwise the host and time drop under.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: SH.Space.s) {
-                    originLine
-                    Spacer(minLength: SH.Space.xs)
-                    stamp
-                }
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    originLine
-                    stamp
-                }
-            }
-            Text(title)
-                .font(.sh(.ui, weight: .semibold))
-                .foregroundStyle(sh.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(question).shText(.caption).foregroundStyle(sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let message {
-                    Text(message).shText(.caption).foregroundStyle(sh.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if style == .card {
-                SHWrapStack(spacing: SH.Space.m, lineSpacing: SH.Space.xs) { actions() }
-                    .padding(.top, SH.Space.xxs)
-            }
-        }
-        .padding(SH.Space.l)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        Group {
+        let shape = RoundedRectangle(cornerRadius: SHListMetrics.cardRadius)
+        let hasActions = style != .item
+        VStack(alignment: .leading, spacing: 0) {
             switch style {
-            case .card:
-                card.shCard(radius: SHListMetrics.cardRadius, fill: selected ? sh.bgSelected : nil, line: selected ? sh.lineStrong : nil)
-            case .item:
-                card.background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            case .card: phone
+            case .overview: overview
+            case .item: item
+            }
+            if hasActions {
+                SHWrapStack(spacing: SH.Space.m, lineSpacing: SH.Space.m) { actions() }
+                    .padding(.top, SH.Space.l)
+                if let link {
+                    Button(link.title, action: link.action)
+                        .buttonStyle(.plain)
+                        .font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                        .padding(.top, SH.Space.l)
+                }
             }
         }
+        .padding(.horizontal, SHListMetrics.rowInset)
+        .padding(.vertical, style == .item ? SH.Space.l : 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(style == .item && selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .modifier(AttentionSurface(card: style != .item, shape: shape))
         .accessibilityElement(children: .contain)
     }
 
-    private var originLine: some View {
-        HStack(spacing: SH.Space.s) {
-            Group {
-                if let symbol {
-                    Image(systemName: symbol)
-                        .font(.sh(.caption, weight: .semibold))
-                        .foregroundStyle(Color.sh.lanternText)
-                } else {
-                    SHStatusDot(.attention, size: SHListMetrics.attentionDot)
-                }
-            }
-            .accessibilityHidden(true)
-            Text(origin).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
+    /// MobileInbox: title and time, where it came from, the question, its message.
+    @ViewBuilder private var phone: some View {
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            stamp
+        }
+        Text(origin).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            .padding(.top, SH.Space.xxs).fixedSize(horizontal: false, vertical: true)
+        Text(question).shText(.body).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+            .padding(.top, SH.Space.m + SH.Space.xxs).fixedSize(horizontal: false, vertical: true)
+        if let message {
+            Text(message).shText(.caption).foregroundStyle(Color.sh.textSecondary)
+                .padding(.top, SH.Space.xxs).fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var stamp: some View {
-        HStack(spacing: SH.Space.s) {
-            if let host { SHHostBadge(host) }
-            if let since {
-                TimelineView(SHElapsedSchedule(start: since)) { context in
-                    Text(SHDuration.text(context.date.timeIntervalSince(since)))
-                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).monospacedDigit()
-                        .lineLimit(1).fixedSize()
-                }
+    /// iPadOverview: where it came from and when, the question's title, its text.
+    @ViewBuilder private var overview: some View {
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(origin).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            stamp
+        }
+        Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+            .padding(.top, SH.Space.xs).fixedSize(horizontal: false, vertical: true)
+        if !question.isEmpty {
+            Text(question).shText(.body).foregroundStyle(Color.sh.textPrimary)
+                .padding(.top, SH.Space.xxs).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// iPadInbox's list: title and time, the question, where it came from.
+    @ViewBuilder private var item: some View {
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(title).font(.sh(.ui, weight: selected ? .semibold : .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            stamp
+        }
+        Text(question).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(2)
+            .padding(.top, SH.Space.xxs)
+        Text(origin).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+            .padding(.top, SH.Space.xxs)
+    }
+
+    @ViewBuilder private var stamp: some View {
+        if let since {
+            TimelineView(SHElapsedSchedule(start: since)) { context in
+                Text(SHDuration.text(context.date.timeIntervalSince(since)))
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).monospacedDigit()
+                    .lineLimit(1).fixedSize()
             }
         }
+    }
+}
+
+/// A card's raised fill, line and lift, or nothing for a flat item.
+private struct AttentionSurface: ViewModifier {
+    let card: Bool
+    let shape: RoundedRectangle
+
+    func body(content: Content) -> some View {
+        content
+            .background { if card { Color.clear.shLift(shape) } }
+            .overlay { if card { Color.clear.shBorder(.sh.lineSubtle, radius: SHListMetrics.cardRadius) } }
     }
 }
 

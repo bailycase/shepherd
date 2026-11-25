@@ -29,11 +29,29 @@ public final class ThemeStore {
     /// Settings ▸ Appearance ▸ Density; multiplies row heights (`SH.Height.row…`).
     public var density: CGFloat = 1
 
+    #if os(iOS)
+    /// Bumped when the preferred Dynamic Type size changes, so a one-off font (`Font.shSans`)
+    /// that read it is made again; the ramp is rebuilt with it.
+    public private(set) var contentSizeRevision = 0
+    @ObservationIgnored private var contentSizeObserver: (any NSObjectProtocol)?
+    #endif
+
     public init(theme: ThemeDefinition = .shepherdDesign) {
         SHFonts.register()
         self.theme = theme
         palette = SHPalette(theme)
         typeRamp = SHTypeRamp(scale: 1)
+        #if os(iOS)
+        contentSizeObserver = NotificationCenter.default.addObserver(
+            forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.typeRamp = SHTypeRamp(scale: self.textScale)
+                self.contentSizeRevision += 1
+            }
+        }
+        #endif
     }
 
     public func select(_ theme: ThemeDefinition) {

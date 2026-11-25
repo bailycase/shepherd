@@ -222,7 +222,7 @@ public struct SHPaletteScope<Value: Hashable>: View {
 }
 
 /// A results group label ("Commands"): 12pt medium in tertiary, 30pt tall with the words at its foot. The
-/// phone and iPad palettes keep their 10pt mono caps.
+/// phone and iPad palettes set it 13pt medium in secondary (MobileSearch, iPadPalette).
 public struct SHPaletteSectionHeader: View {
     let title: String
 
@@ -240,12 +240,10 @@ public struct SHPaletteSectionHeader: View {
             .accessibilityAddTraits(.isHeader)
         #else
         Text(title)
-            .font(.shMono(10, .medium))
-            .textCase(.uppercase)
-            .tracking(0.6)
-            .foregroundStyle(.sh.textTertiary)
+            .font(.sh(.caption, weight: .medium))
+            .foregroundStyle(.sh.textSecondary)
             .lineLimit(1)
-            .padding(.horizontal, SH.Space.m)
+            .padding(.horizontal, SH.Space.xl)
             .frame(maxWidth: .infinity, minHeight: SHPaletteMetrics.sectionHeight, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
         #endif

@@ -352,9 +352,13 @@ final class MobileSearchStore {
     private static func entry(_ row: SearchResultRow) -> SearchEntry {
         let ref = AgentRef(host: row.target.host, agent: row.target.agent)
         let snippet = row.kind == .conversation ? row.detail.map(\.text).joined() : nil
+        // A thread's host reads inside its detail ("Needs you · Shepherd · Studio"); a conversation's at the right.
+        let thread = row.kind == .thread
         return SearchEntry(id: row.id, action: .open(ref),
-                           leading: row.kind == .thread ? .status(AgentState(row.status)) : .symbol("text.bubble"),
-                           title: row.title.map(Self.run), detail: row.detail.map(Self.run), host: row.hostName,
+                           leading: thread ? .status(AgentState(row.status)) : .none,
+                           title: row.title.map(Self.run),
+                           detail: row.detail.map(Self.run) + (thread ? [SHHighlightRun(" · " + row.hostName)] : []),
+                           host: thread ? nil : row.hostName,
                            dimmed: !row.online, spoken: row.spokenText, thread: ref, snippet: snippet)
     }
 

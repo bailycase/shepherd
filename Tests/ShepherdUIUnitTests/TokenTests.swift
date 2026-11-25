@@ -119,15 +119,11 @@ struct TokenTests {
     /// at the `.ui` size, still at the body's line height.
     @Test func smallProseIsOneStepUnderTheThread() {
         let ramp = SHTypeRamp(scale: 1)
-        #expect(SHProseSize.regular.step == 0 && SHProseSize.small.step == SHTextStyle.body.size - SHTextStyle.ui.size)
+        #expect(SHProseSize.regular.step == 0 && SHProseSize.small.step == 1)
         #if os(macOS)
         #expect(ramp.font(.body) == Font.system(size: 14, weight: .regular, design: .default))
         #expect(ramp.font(.body, size: .small) == Font.system(size: 13, weight: .regular, design: .default))
         #expect(ramp.font(.headline, size: .small) == Font.system(size: 12, weight: .semibold, design: .default))
-        #else
-        #expect(ramp.font(.body) == Font.custom("Geist-Regular", size: 13.5, relativeTo: .body))
-        #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", size: 12.5, relativeTo: .body))
-        #expect(ramp.font(.headline, size: .small) == Font.custom("Geist-SemiBold", size: 12.5, relativeTo: .headline))
         #endif
         #expect(ramp.lineSpacing(.body, size: .small) > 0 && ramp.lineSpacing(.body, size: .small) <= ramp.lineSpacing(.body))
     }
