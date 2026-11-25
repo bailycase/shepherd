@@ -68,7 +68,8 @@ struct PadDesignScreen: View {
                 if wide {
                     PadDesignChatPane(canvas: canvas, agent: agent, hostName: hosts.host(ref.host)?.name)
                         .shCard(radius: MobileLayout.padDesignPaneRadius, line: Color.sh.lineSubtle, lift: true)
-                        .padding(MobileLayout.padDesignPaneInset)
+                        .padding(EdgeInsets(top: MobileLayout.padDesignPaneTop, leading: MobileLayout.padDesignPaneInset,
+                                            bottom: MobileLayout.padDesignPaneInset, trailing: MobileLayout.padDesignPaneInset))
                         .paneWidth(fold == nil ? MobileLayout.padDesignChatWidth + 2 * MobileLayout.padDesignPaneInset : nil)
                 }
             }
@@ -287,6 +288,8 @@ private struct PadDesignHeader: View {
         }
         .padding(.horizontal, MobileLayout.padDesignHeaderInset)
         .frame(height: MobileLayout.padDesignHeaderHeight)
+        // Wide, the glass pills clear the status bar (iPadDesign draws the bar 26pt down).
+        .padding(.top, wide ? SH.Space.l : 0)
         .background {
             if !wide { sh.bgWindow.ignoresSafeArea(edges: .top) }
         }

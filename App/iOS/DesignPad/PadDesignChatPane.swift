@@ -228,7 +228,7 @@ private struct PadDesignCommentRow: View, Equatable {
                         .frame(minHeight: SH.Height.touch, alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, -SH.Space.m)
+                .padding(.vertical, -SH.Space.xs)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

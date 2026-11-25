@@ -774,6 +774,9 @@ struct PadDesignThumbnail: View {
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fill)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            // Not drawn yet: the tile keeps its height.
+            Color.clear
         }
     }
 }
