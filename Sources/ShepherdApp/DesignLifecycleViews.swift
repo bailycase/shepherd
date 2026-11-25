@@ -238,7 +238,7 @@ struct DesignToastLayer: View {
                             actionTitle: toast.actionTitle,
                             action: { vm.performDesignToast(toast) }, dismiss: { vm.designToast = nil })
                     .padding(.horizontal, SH.Space.xl)
-                    .padding(.bottom, SHDesignMetrics.toastBottom)
+                    .padding(.bottom, SHDesignsHomeMetrics.toastBottom)
                     .id(toast.id)
                     .shTransition(.sheet, edge: .bottom)
             }

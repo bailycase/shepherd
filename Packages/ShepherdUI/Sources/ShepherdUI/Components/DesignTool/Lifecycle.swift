@@ -82,6 +82,8 @@ public enum SHDesignSheetMetrics {
     public static let messageLineSpacing: CGFloat = 3
     public static let noteLineSpacing: CGFloat = 2
     public static let checkbox: CGFloat = 14
+    public static let checkGlyph: CGFloat = 9
+    public static let linkTextSize: CGFloat = 13
     public static let checkboxSpacing: CGFloat = 10
     /// The footer's buttons: a pill 26pt tall, 11pt in, in 12 medium.
     public static let pillHeight: CGFloat = 26
@@ -266,7 +268,7 @@ public struct SHDesignSheetCheckStyle: ToggleStyle {
                 box.fill(configuration.isOn ? Color.sh.textPrimary : .clear)
                     .overlay {
                         Image(systemName: "checkmark")
-                            .font(.shSans(9, .bold))
+                            .font(.shSans(SHDesignSheetMetrics.checkGlyph, .bold))
                             .foregroundStyle(Color.sh.bgRaised)
                             .opacity(configuration.isOn ? 1 : 0)
                     }
@@ -329,7 +331,7 @@ private struct SHSheetButton: View {
         let active = enabled && (hovering || configuration.isPressed)
         let shape = Capsule()
         configuration.label
-            .font(pill ? .shSans(SHDesignSheetMetrics.pillTextSize, .medium) : .shSans(13, kind == .quiet ? .regular : .medium))
+            .font(pill ? .shSans(SHDesignSheetMetrics.pillTextSize, .medium) : .shSans(SHDesignSheetMetrics.linkTextSize, kind == .quiet ? .regular : .medium))
             .lineLimit(1)
             .foregroundStyle(foreground(sh, active: active))
             .padding(.horizontal, pill ? SHDesignSheetMetrics.pillPadding : 0)
@@ -404,7 +406,7 @@ public struct SHUndoToast: View {
         .padding(.leading, SHDesignMetrics.toastPaddingLeading)
         .padding(.trailing, SH.Space.m)
         .frame(minHeight: SH.Height.controlL + SH.Space.m, alignment: .leading)
-        .frame(maxWidth: SHDesignMetrics.toastWidth)
+        .frame(maxWidth: SHDesignsHomeMetrics.toastWidth)
         .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isStaticText)
@@ -430,7 +432,7 @@ public struct SHDesignsDropTarget: View {
                     .font(.shSans(SHDesignMetrics.dropTileGlyph - 2))
                     .foregroundStyle(Color.sh.textSecondary)
                 Text("Drop to import as a new design")
-                    .font(.shSans(15, .semibold))
+                    .font(.shSans(SHDesignSheetMetrics.titleSize, .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
                     .padding(.top, SH.Space.xs)
                 Text("A Claude Design project, as a ZIP or a folder")
@@ -479,7 +481,7 @@ public struct SHImportingCard: View {
                 .overlay(alignment: .bottom) { SHHairline() }
             VStack(alignment: .leading, spacing: 0) {
                 Text("Importing \(title)…")
-                    .font(.sh(.headline))
+                    .font(.sh(.body, weight: .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                     .shShimmer(active: true)

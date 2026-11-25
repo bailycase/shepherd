@@ -16,7 +16,7 @@ public enum SHDesignCardBoard: Equatable, Sendable {
 /// A design on the Designs page (SHDesignCard; NavDesigns): a radius-14 card on the `lift` shadow.
 /// Its top is a 156pt thumbnail on `bgHover` with a hairline under it, the design's first board
 /// centered in it in a radius-5 frame on the `lift` (200×125 for a desktop board, 60×128 for a
-/// phone). Under it: the name in `headline`; the system, boards and comments in `caption`
+/// phone). Under it: the name in `body` semibold; the system, boards and comments in `caption`
 /// `textSecondary`; "edited 2h ago" in `caption` `textTertiary`. The selected card wears a 1.5pt
 /// `textPrimary` ring. With a menu (DesignCardMenu), a right-click anywhere on the card opens it,
 /// and ••• shows at the card's bottom-trailing corner on hover.
@@ -90,7 +90,7 @@ public struct SHDesignCard<Thumbnail: View, MenuItems: View>: View {
                 .overlay(alignment: .bottom) { SHHairline() }
                 VStack(alignment: .leading, spacing: 0) {
                     Text(name)
-                        .font(.sh(.headline))
+                        .font(.sh(.body, weight: .semibold))
                         .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -152,7 +152,7 @@ extension SHDesignCard where MenuItems == EmptyView {
 
 /// A design system on the Designs page (NavDesigns): a 62pt radius-14 card on the `lift` shadow,
 /// 14pt in at the front and 12 at the back, 12pt between its parts: up to four of the system's
-/// colors as 14pt swatches, its name in `headline` over its
+/// colors as 14pt swatches, its name in `body` semibold over its
 /// source in `caption` `textTertiary`, and how many designs use it trailing in `caption`
 /// `textTertiary` ("3 designs"). With a menu (SystemCardMenu), a right-click opens it and ••• joins
 /// the count on hover. A system coming with an import is a dashed outline until its design's
@@ -204,7 +204,7 @@ public struct SHDesignSystemCard<MenuItems: View>: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(name)
-                    .font(.sh(.headline))
+                    .font(.sh(.body, weight: .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                 if let source {
@@ -308,7 +308,7 @@ public struct SHDesignSystemChip: View {
 
 /// A design system or starting point on New design (DZStart): 12×14 padding, radius 12, a
 /// hairline on the `lift`, 12pt between its glyph and its lines. A 14pt glyph in `textSecondary`;
-/// a title in `headline`; a line in `ui` `textSecondary`; a note in `caption` `textTertiary`.
+/// a title in `headline` and a line in `ui`, both `textSecondary`; a note in `caption` `textTertiary`.
 /// The chosen card wears a 1.5pt `textPrimary` ring; a card that opens a menu ends in up and down
 /// chevrons. Hover tints it.
 public struct SHDesignStartCard: View {
@@ -341,7 +341,7 @@ public struct SHDesignStartCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(.sh(.headline))
-                    .foregroundStyle(Color.sh.textPrimary)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(1)
                 Text(line)
                     .font(.sh(.ui))
@@ -359,7 +359,7 @@ public struct SHDesignStartCard: View {
         }
         .overlay(alignment: .trailing) {
             if menu {
-                Image(systemName: "chevron.up.chevron.down")
+                SHGlyph.popupChevrons.image
                     .font(.shSans(M.startChevron, .medium))
                     .foregroundStyle(Color.sh.textTertiary)
                     .accessibilityHidden(true)

@@ -16,6 +16,9 @@ public enum SHDesignsHomeMetrics {
     /// Between cards, across and down.
     public static let gap: CGFloat = SH.Space.xl
     public static let sectionLinkGap: CGFloat = 5
+    /// The toast: up to 620pt wide, 30pt over the window's bottom edge.
+    public static let toastWidth: CGFloat = 620
+    public static let toastBottom: CGFloat = 30
     /// The drop target's veil over the page: `bgWindow` at 70%.
     public static let dropVeil: Double = 0.7
 
@@ -24,6 +27,7 @@ public enum SHDesignsHomeMetrics {
     public static let filterHeight: CGFloat = SH.Height.controlL
     public static let filterPadding: CGFloat = SH.Space.l
     public static let filterGlyph: CGFloat = 12
+    public static let clearGlyph: CGFloat = 9
     /// Between the filter and the capsule.
     public static let barGap: CGFloat = SH.Space.m
     /// A capsule button: 28pt, 10pt in, 6pt between its glyph and words, in 12.5.
@@ -147,7 +151,7 @@ public struct SHDesignsFilterField: View {
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark")
-                        .font(.shSans(9, .semibold))
+                        .font(.shSans(SHDesignsHomeMetrics.clearGlyph, .semibold))
                         .foregroundStyle(sh.textTertiary)
                         .frame(width: SH.Space.xl, height: SH.Space.xl)
                         .contentShape(Rectangle())

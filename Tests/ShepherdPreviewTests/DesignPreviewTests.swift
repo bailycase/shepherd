@@ -755,7 +755,7 @@ struct DesignPreviewTests {
             vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil || $0.boardCount == 0 }
         }) {
             DesignsDestination(vm: vm)
-                .overlay { if state == "drop" { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
+                .overlay { if state == "drop" { SHDesignsDropTarget().padding(.top, SHToolbarMetrics.height) } }
         }
     }
 
@@ -809,8 +809,10 @@ private struct CardWithMenu: View {
                              selected: true, action: {}) {
                     DesignThumbnailSlot(image: vm.designRendering.thumbnails.image(id))
                 }
-                .overlay(alignment: .topTrailing) {
-                    SHDesignMoreButton { EmptyView() }.padding(SHDesignMetrics.cardMoreInset)
+                .overlay(alignment: .bottomTrailing) {
+                    SHDesignMoreButton { EmptyView() }
+                        .padding(.trailing, SHDesignsHomeMetrics.moreInsetTrailing)
+                        .padding(.bottom, SHDesignsHomeMetrics.moreInsetBottom)
                 }
                 .frame(width: 278)
                 DesignMenuLookalike(menu: card.menu)

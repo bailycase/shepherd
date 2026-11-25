@@ -129,21 +129,21 @@ struct NewDesignPage: View {
             .frame(minHeight: AppLayout.newDesignFieldMinHeight, alignment: .topLeading)
             .accessibilityLabel("What do you want to design?")
         } controls: {
-            Button { picking = true } label: { Image(systemName: "paperclip") }
-                .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
+            Button { picking = true } label: { Image(systemName: "plus").font(.system(size: SHComposerMetrics.sendGlyph + 2)) }
+                .buttonStyle(.shIcon(size: SHComposerMetrics.actionSize, round: true))
                 .disabled(draft.attachments.isFull)
                 .help("Attach a screenshot or file")
                 .accessibilityLabel("Attach a screenshot or file")
-            if draft.host == nil {
-            Button { menu = menu == .settings ? nil : .settings } label: {
-                SHModelSettingsLabel(model: NewThreadRules.shortModel(draft.model),
-                                     thinking: draft.thinkingLevels().isEmpty ? nil : draft.thinking.clamped(to: draft.thinkingLevels()).title)
-            }
-            .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
-            .background { ComposerMenuRegion(dismissal: dismissal) }
-            .help(draft.model.isEmpty ? "Model settings: the default" : "Model settings: \(draft.model)")
-            }
             Spacer(minLength: SH.Space.m)
+            if draft.host == nil {
+                Button { menu = menu == .settings ? nil : .settings } label: {
+                    SHModelSettingsLabel(model: NewThreadRules.shortModel(draft.model),
+                                         thinking: draft.thinkingLevels().isEmpty ? nil : draft.thinking.clamped(to: draft.thinkingLevels()).title)
+                }
+                .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
+                .background { ComposerMenuRegion(dismissal: dismissal) }
+                .help(draft.model.isEmpty ? "Model settings: the default" : "Model settings: \(draft.model)")
+            }
             if draft.starting {
                 SHBusyLabel("Starting…")
                     .frame(height: SHComposerMetrics.actionSize)
