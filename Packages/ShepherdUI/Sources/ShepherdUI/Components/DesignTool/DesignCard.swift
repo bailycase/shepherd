@@ -13,20 +13,18 @@ public enum SHDesignCardBoard: Equatable, Sendable {
     }
 }
 
-/// A design on the Designs page (SHDesignCard; NavDesigns): a radius-10 card with a hairline and
-/// the hover fill. Its top is a 172pt thumbnail on `bgBase` with the canvas's dots every 16pt
-/// and a hairline under it, the design's first board centered in it in its board frame (256×160
-/// for a desktop board, 74×160 for a phone). Under it, 5pt apart: the name in 13.5 semibold; the
-/// system in mono `textSecondary` then "· 4 boards" in 11.5 `textTertiary`; "edited 2h ago" in 11
-/// `textTertiary`. The selected card wears a 2pt `textPrimary` ring. With a menu
-/// (DesignCardMenu), a right-click anywhere on the card opens it, and ••• shows over the
-/// thumbnail's top-trailing corner on hover.
+/// A design on the Designs page (SHDesignCard; NavDesigns): a radius-14 card on the `lift` shadow.
+/// Its top is a 156pt thumbnail on `bgHover` with a hairline under it, the design's first board
+/// centered in it in a radius-5 frame on the `lift` (200×125 for a desktop board, 60×128 for a
+/// phone). Under it: the name in `headline`; the system, boards and comments in `caption`
+/// `textSecondary`; "edited 2h ago" in `caption` `textTertiary`. The selected card wears a 1.5pt
+/// `textPrimary` ring. With a menu (DesignCardMenu), a right-click anywhere on the card opens it,
+/// and ••• shows at the card's bottom-trailing corner on hover.
 public struct SHDesignCard<Thumbnail: View, MenuItems: View>: View {
     public typealias Board = SHDesignCardBoard
 
     let name: String
-    let system: String?
-    let detail: String
+    let meta: String
     let edited: String
     let board: Board
     let selected: Bool
@@ -38,8 +36,7 @@ public struct SHDesignCard<Thumbnail: View, MenuItems: View>: View {
     public init(name: String, system: String?, detail: String, edited: String, board: Board, selected: Bool = false,
                 action: @escaping () -> Void, @ViewBuilder thumbnail: () -> Thumbnail, @ViewBuilder menu: () -> MenuItems) {
         self.name = name
-        self.system = system
-        self.detail = detail
+        self.meta = [system, detail].compactMap { $0 }.joined(separator: " · ")
         self.edited = edited
         self.board = board
         self.selected = selected
@@ -53,10 +50,11 @@ public struct SHDesignCard<Thumbnail: View, MenuItems: View>: View {
         Group {
             if let menu {
                 card
-                    .overlay(alignment: .topTrailing) {
+                    .overlay(alignment: .bottomTrailing) {
                         if hovering {
                             SHDesignMoreButton(label: "More for \(name)") { menu }
-                                .padding(SHDesignMetrics.cardMoreInset)
+                                .padding(.trailing, SHDesignsHomeMetrics.moreInsetTrailing)
+                                .padding(.bottom, SHDesignsHomeMetrics.moreInsetBottom)
                                 .shTransition(.content)
                         }
                     }
@@ -71,70 +69,69 @@ public struct SHDesignCard<Thumbnail: View, MenuItems: View>: View {
 
     private var card: some View {
         let _ = SHRenderProbe.tick("design.card")
-        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.cardRadius)
+        let M = SHDesignsHomeMetrics.self
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.xl)
+        let top = UnevenRoundedRectangle(topLeadingRadius: SH.Radius.xl, topTrailingRadius: SH.Radius.xl)
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
-                    SHDotGrid(spacing: SHDesignMetrics.cardGridSpacing)
                     if let size = boardSize {
-                        SHBoardSurface(size: size, selected: false) { thumbnail }
+                        let frame = RoundedRectangle(cornerRadius: M.boardRadius)
+                        thumbnail
+                            .frame(width: size.width, height: size.height, alignment: .top)
+                            .clipShape(frame)
+                            .background { Color.clear.shLift(frame) }
+                            .shBorder(Color.sh.lineSubtle, in: frame)
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: SHDesignMetrics.cardThumbnailHeight)
-                .background(Color.sh.bgBase)
-                .clipped()
+                .frame(height: M.thumbnailHeight)
+                .background(Color.sh.bgHover, in: top)
                 .overlay(alignment: .bottom) { SHHairline() }
-                VStack(alignment: .leading, spacing: SHDesignMetrics.cardLineSpacing) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(name)
-                        .font(.shSans(SHDesignMetrics.cardNameSize, .semibold))
+                        .font(.sh(.headline))
                         .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    meta
+                    Text(meta)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, M.cardMetaTop)
                     Text(edited)
-                        .font(.shSans(SHDesignMetrics.cardEditedSize))
+                        .font(.sh(.caption))
                         .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
+                        .padding(.top, M.cardEditedTop)
                 }
-                .padding(.vertical, SHDesignMetrics.cardPaddingVertical)
-                .padding(.horizontal, SHDesignMetrics.cardPaddingHorizontal)
+                .padding(.top, M.cardPaddingTop)
+                .padding(.bottom, M.cardPaddingBottom)
+                .padding(.horizontal, M.cardPaddingHorizontal)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(hovering ? Color.sh.bgHover : .clear, in: shape)
-            .clipShape(shape)
-            .shBorder(Color.sh.lineSubtle, radius: SHDesignMetrics.cardRadius)
+            .background { Color.clear.shLift(shape) }
+            .shBorder(Color.sh.lineSubtle, in: shape)
             .overlay {
                 if selected {
-                    shape.strokeBorder(Color.sh.textPrimary, lineWidth: SHDesignMetrics.cardRingWidth)
+                    shape.inset(by: -M.startRing / 2).stroke(Color.sh.textPrimary, lineWidth: M.startRing)
                 }
             }
             .contentShape(shape)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([name, system, detail, edited].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([name, meta, edited].joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
     private var boardSize: CGSize? {
         switch board {
-        case .desktop: SHDesignMetrics.cardDesktopBoard
-        case .phone: SHDesignMetrics.cardPhoneBoard
+        case .desktop: SHDesignsHomeMetrics.desktopBoard
+        case .phone: SHDesignsHomeMetrics.phoneBoard
         case .none: nil
         }
-    }
-
-    private var meta: some View {
-        let detailText = Text(system == nil ? detail : " · \(detail)")
-            .font(.shSans(SHDesignMetrics.cardMetaSize))
-            .foregroundStyle(Color.sh.textTertiary)
-        let line: Text = if let system {
-            Text("\(Text(system).font(.shMono(SHDesignMetrics.cardMetaSize)).foregroundStyle(Color.sh.textSecondary))\(detailText)")
-        } else {
-            detailText
-        }
-        return line.lineLimit(1).truncationMode(.tail)
     }
 }
 
@@ -143,8 +140,7 @@ extension SHDesignCard where MenuItems == EmptyView {
     public init(name: String, system: String?, detail: String, edited: String, board: Board, selected: Bool = false,
                 action: @escaping () -> Void, @ViewBuilder thumbnail: () -> Thumbnail) {
         self.name = name
-        self.system = system
-        self.detail = detail
+        self.meta = [system, detail].compactMap { $0 }.joined(separator: " · ")
         self.edited = edited
         self.board = board
         self.selected = selected
@@ -154,30 +150,29 @@ extension SHDesignCard where MenuItems == EmptyView {
     }
 }
 
-/// A design system on the Designs page (NavDesigns): a radius-10 card with a hairline and the
-/// hover fill, 12×14 padding, 12pt between its parts: up to four of the system's colors as 14pt
-/// swatches, its name in mono 12.5 semibold (a built-in's "Built-in" tag after it) over its source
-/// in 11.5 `textTertiary`, and how many designs use it trailing in 11 `textTertiary` ("3
-/// designs"). With a menu (SystemCardMenu), a right-click opens it and ••• takes the count's place
-/// on hover. A system coming with an import is dashed until its design's boards are in.
+/// A design system on the Designs page (NavDesigns): a 62pt radius-14 card on the `lift` shadow,
+/// 14pt in at the front and 12 at the back, 12pt between its parts: up to four of the system's
+/// colors as 14pt swatches, its name in `headline` over its
+/// source in `caption` `textTertiary`, and how many designs use it trailing in `caption`
+/// `textTertiary` ("3 designs"). With a menu (SystemCardMenu), a right-click opens it and ••• joins
+/// the count on hover. A system coming with an import is a dashed outline until its design's
+/// boards are in.
 public struct SHDesignSystemCard<MenuItems: View>: View {
     let name: String
     let source: String?
     let count: String
     let colors: [Color]
-    let tag: String?
     let dashed: Bool
     let action: (() -> Void)?
     let menu: MenuItems?
     @State private var hovering = false
 
-    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], tag: String? = nil, dashed: Bool = false,
+    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], dashed: Bool = false,
                 action: (() -> Void)? = nil, @ViewBuilder menu: () -> MenuItems) {
         self.name = name
         self.source = source
         self.count = count
         self.colors = colors
-        self.tag = tag
         self.dashed = dashed
         self.action = action
         self.menu = menu()
@@ -193,74 +188,67 @@ public struct SHDesignSystemCard<MenuItems: View>: View {
 
     private var card: some View {
         let _ = SHRenderProbe.tick("design.systemCard")
-        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.cardRadius)
-        return HStack(spacing: SHDesignMetrics.systemCardSpacing) {
+        let M = SHDesignsHomeMetrics.self
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.xl)
+        return HStack(spacing: M.systemSpacing) {
             if !colors.isEmpty {
-                HStack(spacing: SHDesignMetrics.swatchSpacing) {
+                HStack(spacing: M.swatchSpacing) {
                     ForEach(Array(colors.prefix(4).enumerated()), id: \.offset) { _, color in
                         RoundedRectangle(cornerRadius: SH.Radius.xs)
                             .fill(color)
-                            .frame(width: SHDesignMetrics.swatchSize, height: SHDesignMetrics.swatchSize)
+                            .frame(width: M.swatch, height: M.swatch)
                             .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xs)
                     }
                 }
                 .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(spacing: SH.Space.s) {
-                    Text(name)
-                        .font(.shMono(SHDesignMetrics.systemNameSize, .semibold))
-                        .foregroundStyle(Color.sh.textPrimary)
-                        .lineLimit(1)
-                    if let tag { SHDesignTagBadge(tag) }
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(name)
+                    .font(.sh(.headline))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .lineLimit(1)
                 if let source {
                     Text(source)
-                        .font(.shSans(SHDesignMetrics.systemSourceSize))
+                        .font(.sh(.caption))
                         .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
             Spacer(minLength: SH.Space.m)
-            ZStack(alignment: .trailing) {
-                Text(count)
-                    .font(.shSans(SHDesignMetrics.systemCountSize))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .opacity(hovering && menu != nil ? 0 : 1)
-                if hovering, let menu {
-                    SHDesignMoreButton(label: "More for \(name)") { menu }
-                        .shTransition(.content)
-                }
+            Text(count)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
+                .lineLimit(1)
+                .fixedSize()
+            if hovering, let menu {
+                SHDesignMoreButton(label: "More for \(name)") { menu }
+                    .shTransition(.content)
             }
-            .frame(minHeight: SHDesignMetrics.cardMoreSize)
         }
-        .padding(.vertical, SHDesignMetrics.cardPaddingVertical)
-        .padding(.horizontal, SHDesignMetrics.cardPaddingHorizontal)
-        .background(hovering && action != nil ? Color.sh.bgHover : .clear, in: shape)
-        .shBorder(dashed ? .clear : Color.sh.lineSubtle, radius: SHDesignMetrics.cardRadius)
-        .overlay { if dashed { shape.strokeBorder(Color.sh.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
+        .padding(.leading, M.systemPaddingLeading)
+        .padding(.trailing, M.systemPaddingTrailing)
+        .frame(height: M.systemHeight)
+        .background { Color.clear.shLift(shape, fill: dashed ? .clear : nil) }
+        .shBorder(dashed ? Color.sh.textTertiary : Color.sh.lineSubtle, in: shape, dash: dashed ? [4, 3] : [])
         .contentShape(shape)
         .onTapGesture { action?() }
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([name, tag, source, count].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([name, source, count].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(action == nil ? [] : .isButton)
     }
 }
 
 extension SHDesignSystemCard where MenuItems == EmptyView {
     /// A card without a menu.
-    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], tag: String? = nil, dashed: Bool = false,
+    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], dashed: Bool = false,
                 action: (() -> Void)? = nil) {
         self.name = name
         self.source = source
         self.count = count
         self.colors = colors
-        self.tag = tag
         self.dashed = dashed
         self.action = action
         self.menu = nil
@@ -318,54 +306,77 @@ public struct SHDesignSystemChip: View {
     }
 }
 
-/// A design system or starting point on New design (DZStart): 12×14 padding, radius 8, a
-/// hairline, 6pt between its lines, the hover fill. A 13pt glyph and a title in mono 12
-/// semibold; a line in 12.5 `textPrimary`; a note in 11 `textTertiary`. The chosen card is
-/// `lanternTint` with a `lanternText` border and glyph.
+/// A design system or starting point on New design (DZStart): 12×14 padding, radius 12, a
+/// hairline on the `lift`, 12pt between its glyph and its lines. A 14pt glyph in `textSecondary`;
+/// a title in `headline`; a line in `ui` `textSecondary`; a note in `caption` `textTertiary`.
+/// The chosen card wears a 1.5pt `textPrimary` ring; a card that opens a menu ends in up and down
+/// chevrons. Hover tints it.
 public struct SHDesignStartCard: View {
     let symbol: String
     let title: String
     let line: String
     let note: String
     let chosen: Bool
+    let menu: Bool
     @State private var hovering = false
 
-    public init(symbol: String, title: String, line: String, note: String, chosen: Bool) {
+    public init(symbol: String, title: String, line: String, note: String, chosen: Bool, menu: Bool = false) {
         self.symbol = symbol
         self.title = title
         self.line = line
         self.note = note
         self.chosen = chosen
+        self.menu = menu
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(spacing: SH.Space.s) {
-                Image(systemName: symbol)
-                    .font(.shSans(SHDesignMetrics.startGlyph))
-                    .foregroundStyle(chosen ? Color.sh.lanternText : Color.sh.textSecondary)
-                    .accessibilityHidden(true)
+        let M = SHDesignsHomeMetrics.self
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        HStack(alignment: .top, spacing: M.startSpacing) {
+            Image(systemName: symbol)
+                .font(.shSans(M.startGlyph))
+                .foregroundStyle(Color.sh.textSecondary)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(.shMono(SHDesignMetrics.startTitleSize, .semibold))
+                    .font(.sh(.headline))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
+                Text(line)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .lineLimit(1)
+                    .padding(.top, 1)
+                Text(note)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, SH.Space.xxs)
             }
-            Text(line)
-                .font(.shSans(SHDesignMetrics.startLineSize))
-                .foregroundStyle(Color.sh.textPrimary)
-                .lineLimit(1)
-            Text(note)
-                .font(.shSans(SHDesignMetrics.startNoteSize))
-                .foregroundStyle(Color.sh.textTertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SHDesignMetrics.cardPaddingHorizontal)
+        .overlay(alignment: .trailing) {
+            if menu {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.shSans(M.startChevron, .medium))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.top, M.startPaddingTop)
+        .padding(.bottom, M.startPaddingBottom)
+        .padding(.horizontal, M.startPaddingHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(chosen ? Color.sh.lanternTint : hovering ? Color.sh.bgHover : .clear, in: shape)
-        .shBorder(chosen ? Color.sh.lanternText : Color.sh.lineSubtle, radius: SH.Radius.m)
+        .background(hovering ? Color.sh.bgHover : .clear, in: shape)
+        .background { Color.clear.shLift(shape) }
+        .shBorder(Color.sh.lineSubtle, in: shape)
+        .overlay {
+            if chosen {
+                shape.inset(by: -M.startRing / 2).stroke(Color.sh.textPrimary, lineWidth: M.startRing)
+            }
+        }
         .contentShape(shape)
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)

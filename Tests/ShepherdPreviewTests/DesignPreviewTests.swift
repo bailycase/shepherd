@@ -722,7 +722,7 @@ struct DesignPreviewTests {
                                 reason: "Events explorer is exporting with it right now; try again when that’s done.")
         try await Preview.render("system-delete-failed", size: CGSize(width: 700, height: 120)) {
             SHUndoToast(tone: .failed, message: Text("\(toast.words.before)\(Text(toast.name).fontWeight(.semibold))\(toast.words.after)"),
-                        actionTitle: toast.actionTitle, actionSymbol: toast.actionSymbol, action: {}, dismiss: {})
+                        actionTitle: toast.actionTitle, action: {}, dismiss: {})
                 .frame(width: 620)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.sh.bgBase)

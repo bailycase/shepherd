@@ -117,7 +117,7 @@ struct DesignLifecycleFlowTests {
         let design = try #require(vm.shownDesign)
         #expect(design.importedFrom?.file == "checkout-funnel.zip" && design.systemNamespace == "checkout-ds")
         try await eventuallyOnMain("its system in the catalog") { vm.designSystems.summary("checkout-ds") != nil }
-        #expect(vm.designsPage.systems.first { $0.name == "Checkout DS" }?.source == "came with Checkout funnel")
+        #expect(vm.designsPage.systems.first { $0.name == "Checkout DS" }?.source == "Comes with Checkout funnel")
         // Its agent's first message has it read the design and change nothing.
         let agent = try #require(vm.selectedAgent)
         let server = app.server

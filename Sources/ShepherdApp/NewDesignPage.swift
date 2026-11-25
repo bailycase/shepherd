@@ -35,10 +35,9 @@ struct NewDesignPage: View {
     var body: some View {
         let _ = SHRenderProbe.tick("newDesign.page")
         VStack(spacing: 0) {
-            SHDesignHeader("New design", style: .page, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
-                           sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar),
-                           designs: { vm.openDestination(.designs) })
-            VStack(spacing: AppLayout.newDesignGap) {
+            SHDesignsBar("New design", leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
+                         sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar))
+            VStack(spacing: 0) {
                 VStack(spacing: AppLayout.newDesignSubtitleSpacing) {
                     Text("What do you want to design?")
                         .font(.shSans(AppLayout.newThreadHeadingSize, .semibold))
@@ -48,7 +47,8 @@ struct NewDesignPage: View {
                         .accessibilityAddTraits(.isHeader)
                     Text("Describe the page or flow. The design agent draws it as HTML boards in your design system, "
                          + "and you refine it on the canvas.")
-                        .font(.sh(.body))
+                        .font(.sh(.ui))
+                        .lineSpacing(SH.Space.xs)
                         .foregroundStyle(Color.sh.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: AppLayout.newDesignSubtitleWidth)
@@ -63,13 +63,15 @@ struct NewDesignPage: View {
                     }
                 }
                 .frame(maxWidth: AppLayout.newDesignComposerWidth)
+                .padding(.top, AppLayout.newDesignComposerGap)
                 .zIndex(1)
                 startingPoints
                     .frame(maxWidth: AppLayout.newDesignComposerWidth)
+                    .padding(.top, AppLayout.newDesignCardsTop)
             }
-            .padding(.horizontal, AppLayout.newThreadSidePadding)
-            .padding(.bottom, AppLayout.newDesignBottomExtra)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, SHDesignsHomeMetrics.inset)
+            .padding(.top, AppLayout.newDesignTop)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .contentShape(Rectangle())
             .onTapGesture { if menu != nil { menu = nil } }
         }
@@ -220,7 +222,10 @@ struct NewDesignPage: View {
     private var startingPoints: some View {
         let gap = AppLayout.newDesignCardsGap
         return VStack(alignment: .leading, spacing: AppLayout.newDesignCardsLabelGap) {
-            Text("Design system & starting point").shSectionLabel()
+            Text("Design system & starting point")
+                .font(.sh(.headline))
+                .foregroundStyle(Color.sh.textPrimary)
+                .padding(.leading, SH.Space.xxs)
                 .accessibilityAddTraits(.isHeader)
             Grid(horizontalSpacing: gap, verticalSpacing: gap) {
                 GridRow {
@@ -268,17 +273,17 @@ struct NewDesignPage: View {
         .help(imagesHelp ?? "Start from a web page: Shepherd captures it and adds it to the brief")
         .popover(isPresented: $capturingPage, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: SH.Space.m) {
-                Text("Capture a page").font(.sh(.body, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                Text("Capture a page").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                 TextField("Address", text: $pageAddress, prompt: Text("https://staging.acme.dev"))
                     .textFieldStyle(.sh(mono: true))
                     .onSubmit(capturePage)
                     .accessibilityLabel("Page address")
-                HStack {
+                HStack(spacing: SHDesignSheetMetrics.footerSpacing) {
                     Spacer()
                     Button("Cancel") { capturingPage = false }
-                        .buttonStyle(.sh(.ghost, size: .s))
+                        .buttonStyle(.shSheet(.quiet))
                     Button("Capture", action: capturePage)
-                        .buttonStyle(.sh(.primary, size: .s))
+                        .buttonStyle(.shSheet(.pill))
                         .disabled(PageCapture.address(pageAddress) == nil)
                 }
             }
@@ -316,9 +321,9 @@ struct NewDesignPage: View {
     /// systems, model and level; the brief alone goes).
     private var hostCard: some View {
         let host = draft.host.flatMap(vm.newDesignHost)
-        let card = SHDesignStartCard(symbol: host == nil ? "laptopcomputer" : "server.rack", title: host?.config.name ?? "This Mac",
+        let card = SHDesignStartCard(symbol: host == nil ? "desktopcomputer" : "server.rack", title: host?.config.name ?? "This Mac",
                                      line: "made on", note: host == nil ? "or on a connected host" : "drawn in its systems, on its model",
-                                     chosen: host != nil)
+                                     chosen: host != nil, menu: true)
         return Menu {
             Section("Make it on") {
                 Button("This Mac") { draft.choose(host: nil) }
@@ -340,7 +345,8 @@ struct NewDesignPage: View {
     @ViewBuilder private var systemCard: some View {
         let systems = draft.systems(vm)
         let words = NewDesignState.card(system: draft.chosenSystem(in: systems), spaces: vm.state.spaces)
-        let card = SHDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true)
+        let card = SHDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true,
+                                     menu: systems.count > 1)
         if systems.count > 1 {
             Menu {
                 Section("Design systems") {
