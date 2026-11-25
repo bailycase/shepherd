@@ -113,7 +113,7 @@ private struct OverviewColumns: View {
             } else {
                 ForEach(model.needsYou) { item in
                     // Tapping the card outside its answers opens its thread, as its Open does.
-                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
+                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id], overview: true)
                         .contentShape(.rect)
                         .onTapGesture { navigator.open(projects.route(item)) }
                 }

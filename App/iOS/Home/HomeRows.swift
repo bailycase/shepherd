@@ -151,6 +151,8 @@ struct AttentionCard: View {
     var selected = false
     /// A card chosen in the iPad inbox answers in its detail, not here.
     var answers = true
+    /// The iPad overview's card (iPadOverview); the phone's, also shown on the Duo, is MobileInbox's.
+    var overview = false
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @Environment(MobileProjects.self) private var projects
@@ -159,8 +161,7 @@ struct AttentionCard: View {
         // The phone's card (MobileInbox) is the thread, where it came from ("A thread on Studio"), the
         // question and its message; the iPad overview's (iPadOverview) is what asks, the question's
         // title and its text, and its list's items (iPadInbox) the thread, the question, where from.
-        let pad = navigator.layout == .pad
-        let overview = pad && answers
+        let overview = self.overview && answers
         let origin = item.hostName.isEmpty ? item.originLabel : item.symbol == nil ? "\(item.originLabel) on \(item.hostName)" : "\(item.originLabel) · \(item.hostName)"
         SHAttentionCard(symbol: item.symbol, origin: overview ? item.overviewOrigin : origin, title: overview ? item.question : item.title,
                         question: overview ? (item.message ?? "") : item.question, message: overview ? nil : answers ? item.message : nil,
