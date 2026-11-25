@@ -47,7 +47,6 @@ enum DesignRuleAllowlist {
         .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/AgentAuthParts.swift", 2, tint),
         .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/SheetParts.swift", 2, tint),
         // Shared glyphs named as raw symbols.
-        .init(.rawGlyphName, "App/iOS/Automations/AutomationsScreen.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Review/DiffScreen.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Search/AgentActionSheets.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Settings/InstructionsScreens.swift", 1, document),
@@ -60,7 +59,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/Automations.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
-        .init(.rawGlyphName, "App/iOS/Settings/HostSettingsScreens.swift", 1, chevrons),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/TouchDiff.swift", 1, chevrons),
         // Symbols that follow state where no animation reaches them. Each file says why; a disclosure
         // chevron that does animate is an SHTurningChevron, and any other pair that animates fades.

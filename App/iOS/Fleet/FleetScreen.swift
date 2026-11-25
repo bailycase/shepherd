@@ -349,7 +349,7 @@ private struct FleetWeightMenu: View {
                 Text("Send work").font(.shSans(MobileLayout.fleetFactSize)).foregroundStyle(sh.textSecondary)
                 Spacer(minLength: SH.Space.m)
                 Text(card.weight.title).font(.sh(.ui)).foregroundStyle(sh.textPrimary)
-                Image(systemName: "chevron.up.chevron.down")
+                Image(systemName: SHGlyph.popupChevrons.symbolName)
                     .font(.shSans(MobileLayout.settingsChevronSize, .medium)).foregroundStyle(sh.textTertiary)
             }
             .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)

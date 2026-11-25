@@ -609,7 +609,7 @@ struct SettingsMenuLabel: View {
                 .foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Image(systemName: "chevron.up.chevron.down")
+            Image(systemName: SHGlyph.popupChevrons.symbolName)
                 .font(.shSans(MobileLayout.settingsChevronSize, .medium))
                 .foregroundStyle(Color.sh.textTertiary)
         }
