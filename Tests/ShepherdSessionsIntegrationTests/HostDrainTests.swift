@@ -35,6 +35,27 @@ struct HostDrainTests {
         try await eventually("the drained host to exit") { exited.current }
     }
 
+    /// A drained host exits once its agents are done; the build that replaces it still shows each
+    /// unseen completion as Done.
+    @Test func anUnseenDoneSurvivesTheHostsRestart() async throws {
+        let (h, state) = try await Self.host(.idle)
+        let agentID = state.agents[0].id
+        let client = try ExtensionClient(path: h.socketPath)
+        for status in [AgentStatus.working, .done] {
+            try client.send(.setAgentStatus(agentID: agentID, status: status))
+            try await eventually("the agent to read \(status)") { h.server.state.agents.first?.status == status }
+        }
+        client.closeConnection()
+        let completedAt = try #require(h.server.state.agents.first?.completedAt)
+        h.stop(keepFiles: true)
+
+        let next = try ScratchServer(dir: h.dir)
+        defer { next.stop() }
+        let agent = try #require(next.server.state.agents.first)
+        #expect(agent.status == .done)
+        #expect(agent.completedAt == completedAt && agent.completionSeen == false)
+    }
+
     @Test func aDrainExitsAtItsCapWithAnAgentStillWorking() async throws {
         let (h, _) = try await Self.host(.working)
         defer { h.stop() }

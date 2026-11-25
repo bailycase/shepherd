@@ -2477,7 +2477,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func startOnQueue(missingDesigns: Set<DesignID> = []) throws {
-        let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
+        // No turn outlives the host that ran it; a finished one stays done (the sidebar's Done).
+        let stale = store.state.agents.filter { $0.status == .working || $0.status == .blocked }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
         let deadReviews = store.state.tabs.contains { tab in
             tab.layout.leaves.contains { $0.isReview == true }
@@ -2666,6 +2667,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        // Statuses and completions are kept live only (`updateLive`): write them for the next host.
+        if isStarted { try? store.update { _ in } }
         // A stopped host holds no links and watches no files: its fleet ends with it.
         fleet?.stop()
         fleet = nil

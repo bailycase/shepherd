@@ -59,8 +59,8 @@ struct TurnOutcomeTests {
         #expect(agent.current == .done)
     }
 
-    /// The failure outlives the status: a relaunch resets every row to idle, and the persisted
-    /// failure is how it can still say the thread failed. The next good turn clears it.
+    /// The failure outlives the relaunch along with its done, and is how the thread still says it
+    /// failed. The next good turn clears it.
     @Test func aFailedTurnIsRememberedAcrossARelaunchUntilATurnEndsWell() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -80,7 +80,7 @@ struct TurnOutcomeTests {
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
         let restored = restarted.server.state.agents.first { $0.id == agent.id }
-        #expect(restored?.status == .idle && restored?.lastFailure == "529 overloaded")
+        #expect(restored?.status == .done && restored?.lastFailure == "529 overloaded")
 
         let status = try ExtensionClient(path: restarted.socketPath)
         defer { status.closeConnection() }
