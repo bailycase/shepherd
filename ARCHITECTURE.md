@@ -22,11 +22,11 @@ app holds connections to paired Macs, so a Project the host owns places work on 
 app (`projectExecutors`, `AppRelayJob.projectPlacement`) while it runs, and says to open it
 otherwise. Who starts the host:
 
-- **The background service** (Shepherd Nightly, while Login Items allows it): launchd runs it
+- **The background service** (installed Shepherd and Shepherd Nightly, while Login Items allows it): launchd runs it
   (`Contents/Library/LaunchAgents/<bundle id>.host.plist`, registered by `BackgroundService`).
   Quitting the app leaves agents running; the host drains and restarts on its own when an update
   replaces the bundle (`HostDrain`).
-- **The app's own child** (Shepherd, Dev, the service off, a failed registration): `HostSupervisor`
+- **The app's own child** (Dev, Prod, the service off, a failed registration): `HostSupervisor`
   runs `Shepherd --host --supervised`, restarts it after a crash with backoff (shown after three
   failed starts in a row, with Try Again or Quit), and stops it when the app quits (SIGTERM, then
   SIGKILL), so agents end with the app as they always have. The child also stops when its stdin
