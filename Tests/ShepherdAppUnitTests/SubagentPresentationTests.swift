@@ -157,6 +157,34 @@ struct SubagentPresentationTests {
         #expect(SubagentPresentation.goalNote(run) == nil)
     }
 
+    /// GXSubagents' "Worker, running for 37m": the lead words, then the run's time (live while it runs, its length once it ended).
+    @Test func theCardSubtitleSaysWhoAndHowLong() {
+        var run = Self.run()
+        var subtitle = SubagentPresentation.inspectorSubtitle(run)
+        #expect(subtitle.lead == "Worker, running for " && subtitle.since != nil && subtitle.until == nil && subtitle.hot == false)
+        run.startedAt = nil
+        #expect(SubagentPresentation.inspectorSubtitle(run).lead == "Worker, running", "no start, no time")
+        run = Self.run(state: "complete", endedAt: Self.t0 + 240_000)
+        subtitle = SubagentPresentation.inspectorSubtitle(run)
+        #expect(subtitle.lead == "Worker, done in " && subtitle.until?.timeIntervalSince(subtitle.since!) == 240)
+        run.endedAt = nil
+        subtitle = SubagentPresentation.inspectorSubtitle(run)
+        #expect(subtitle.lead == "Worker, done" && subtitle.since == nil, "a finished run never counts up")
+        run = Self.run(state: "failed", endedAt: Self.t0 + 60_000)
+        #expect(SubagentPresentation.inspectorSubtitle(run).lead == "Worker, failed after ")
+    }
+
+    @Test func aRunWaitingOnItsParentSaysSoInHotWords() {
+        var run = Self.run()
+        run.needsAttention = true
+        let subtitle = SubagentPresentation.inspectorSubtitle(run)
+        #expect(subtitle.lead == "Worker, waiting on parent" && subtitle.hot && subtitle.since == nil)
+        run.needsAttention = false
+        run.paused = true
+        #expect(SubagentPresentation.inspectorSubtitle(run).lead == "Worker, paused")
+        #expect(SubagentPresentation.inspectorSubtitle(Self.run(label: "plain", role: nil)).lead == "Subagent, running for ")
+    }
+
     @Test(arguments: [(AppLayout.inspectorMaxFiles + 1, "1 more file"), (AppLayout.inspectorMaxFiles + 3, "3 more files")])
     func filesPastTheListAreCounted(count: Int, text: String) {
         #expect(SubagentPresentation.moreFiles(count) == text)

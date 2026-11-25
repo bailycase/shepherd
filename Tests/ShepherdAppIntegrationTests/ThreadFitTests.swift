@@ -122,12 +122,12 @@ struct OpenedActivityFitTests {
     }
 }
 
-/// A subagent's transcript in the inspector, which draws the thread's turns in the side pane's
-/// narrowest column (the pane's minimum less the inspector's padding): the same rows, the same fit.
+/// A subagent's transcript in the inspector, which draws the thread's turns in its card's body (the card's 404pt less the
+/// body's side padding): the same rows, the same fit.
 @Suite("A subagent's transcript fits the inspector", .serialized, .mainActorExclusive)
 @MainActor
 struct InspectorFitTests {
-    nonisolated static let column: CGFloat = AppLayout.paneMinWidth - 2 * AppLayout.inspectorPadding
+    nonisolated static let column: CGFloat = AppLayout.inspectorCardWidth - AppLayout.inspectorBodyPadding.leading - AppLayout.inspectorBodyPadding.trailing
 
     @Test(arguments: LongThreads.rows)
     func aTranscriptsTurnsFitTheInspectorsColumn(_ row: LongThreads.Row) async throws {

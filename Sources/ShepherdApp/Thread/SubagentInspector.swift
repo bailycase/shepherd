@@ -118,7 +118,7 @@ private struct SubagentRunInspector: View {
             // Steer field (the user speaking over its parent) rather than the finished run's read-only bar.
             if let run, SubagentPresentation.isFinished(run) { finishedBar(run).shTransition(.content) } else { composer(run).shTransition(.content) }
         }
-        .background(Color.sh.bgWindow)
+        // The card's own fill shows (`RightPaneSplit`): painting the window's here would sink the inspector into the thread.
         // The run's own milestones (paused, needing you, finishing with its result and actions)
         // and a notice under the footer reshape the column; the transcript's growth does not.
         .shAnimation(.disclosure, value: Phase(run: run, notice: forkError ?? store.notice))
@@ -186,37 +186,37 @@ private struct SubagentRunInspector: View {
 
     private func header(_ run: ChildRun?) -> some View {
         let position = siblings.firstIndex { $0.runID == runID }
-        let (meta, accent) = run.map { SubagentPresentation.inspectorMeta($0) } ?? ("no longer listed", nil)
         let role = Self.role(run)
-        return SHInspectorHeader(role, position: position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil },
-                                 state: run.map(SubagentPresentation.state) ?? .idle, meta: meta, accent: accent,
-                                 minHeight: AppLayout.headerHeight) {
+        let subtitle = run.map { SubagentPresentation.inspectorSubtitle($0) }
+        let detail = run.map { run in
+            let (meta, accent) = SubagentPresentation.inspectorMeta(run)
+            return [meta + (accent.map { meta.isEmpty ? $0 : " · \($0)" } ?? ""), SubagentPresentation.goalNote(run),
+                    position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil }]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        return SHInspectorHeader(role, state: run.map(SubagentPresentation.state) ?? .idle, meta: subtitle?.lead ?? "No longer listed",
+                                 since: subtitle?.since, until: subtitle?.until, hot: subtitle?.hot ?? false, detail: detail) {
             if let run, !SubagentPresentation.isFinished(run) {
-                if nativeRunPhase(run) != .asked {
-                    Button(run.paused == true ? "Continue" : "Pause") {
-                        Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
-                    }
-                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .regular)))
-                    .padding(.horizontal, SH.Space.xs).padding(.vertical, SH.Space.xs)
-                    .disabled(!canAct)
-                    .help("Pause before the next model request; current tools finish normally")
-                }
+                // The board's Stop is a word in ink beside ⋯ and ×; Pause and the sibling steps are in ⋯.
                 Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
-                    // The board's Pause and Stop are words in ink, side by side; Stop stays a plain word.
-                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .regular)))
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .medium)))
                     .disabled(!canAct)
                     .accessibilityLabel("Stop \(role)")
                     .padding(.horizontal, SH.Space.xs).padding(.vertical, SH.Space.xs)
             }
-            if let select, let position, siblings.count > 1 {
-                Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
-                    .buttonStyle(.shIcon).disabled(position == 0)
-                    .accessibilityLabel("Previous subagent")
-                Button { select(siblings[position + 1]) } label: { Image(systemName: "chevron.right") }
-                    .buttonStyle(.shIcon).disabled(position == siblings.count - 1)
-                    .accessibilityLabel("Next subagent")
-            }
             SHOptionsMenu("Inspector options") {
+                if let run, !SubagentPresentation.isFinished(run), nativeRunPhase(run) != .asked {
+                    Button(run.paused == true ? "Continue" : "Pause") {
+                        Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
+                    }
+                    .disabled(!canAct)
+                    .help("Pause before the next model request; current tools finish normally")
+                }
+                if let select, let position, siblings.count > 1 {
+                    Button("Previous Subagent") { select(siblings[position - 1]) }.disabled(position == 0)
+                    Button("Next Subagent") { select(siblings[position + 1]) }.disabled(position == siblings.count - 1)
+                    Divider()
+                }
                 if let run, run.isTerminal {
                     Button("Copy Transcript") { copyTranscript() }
                     if let file = run.sessionFile {
@@ -293,7 +293,9 @@ private struct SubagentRunInspector: View {
                             .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                     let turns = transcript.turns
-                    ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
+                    // The goal is the card's title: the first message, the task itself, shows once.
+                    let skip = run.map { Self.isTask(turns.first, $0, earlier: transcript.earlierCount) } == true ? 1 : 0
+                    ForEach(Array(turns.enumerated().dropFirst(skip)), id: \.element.id) { index, turn in
                         Group {
                             if turn.isUser {
                                 // The first user message is the task; later ones are the parent's
@@ -318,7 +320,7 @@ private struct SubagentRunInspector: View {
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .scrollTargetLayout()
-                .padding(AppLayout.inspectorPadding)
+                .padding(AppLayout.inspectorBodyPadding)
                 .environment(\.shProseSize, .small)
             }
             .defaultScrollAnchor(terminal ? .top : .bottom, for: .initialOffset)
@@ -342,11 +344,20 @@ private struct SubagentRunInspector: View {
         }
     }
 
-    /// "n earlier turns · Show all" · "Following live" (live runs only); a finished run's whole
+    /// Whether `turn`, the transcript's first, is the run's task, which the card's title already says.
+    private static func isTask(_ turn: NativeTurn?, _ run: ChildRun, earlier: Int) -> Bool {
+        guard earlier == 0, let turn, turn.isUser, turn.messages.count == 1, let message = turn.messages.first else { return false }
+        let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines) == role(run)
+    }
+
+    /// "n earlier turns · Show all" · "Reading earlier output" (live runs, off the tail); a finished run's whole
     /// transcript says where it is read instead: "turn 4 of 11" · "Scroll for the rest".
     private func footerLine(_ run: ChildRun?) -> some View {
         let position = run?.isTerminal == true && transcript.earlierCount == 0
             ? SubagentPresentation.position(turns: transcript.turns, top: topTurn, total: run?.turns) : nil
+        // Following the tail is the rest state and says nothing (the board draws no line); the footer shows only what is to read.
+        let says = position != nil || transcript.earlierCount > 0 || (run?.isTerminal != true && !transcript.following)
         return HStack(spacing: SH.Space.s) {
             if let position {
                 Text(position).font(.sh(.caption)).shContentTransition(.numeric())
@@ -361,12 +372,14 @@ private struct SubagentRunInspector: View {
             }
             if position == nil {
                 Spacer()
-                if run?.isTerminal != true { Text(transcript.following ? "Following live" : "Reading earlier output") }
+                if run?.isTerminal != true, !transcript.following { Text("Reading earlier output") }
             }
         }
         .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-        .padding(.horizontal, AppLayout.inspectorPadding)
-        .frame(minHeight: AppLayout.inspectorFooterHeight)
+        .padding(.horizontal, AppLayout.inspectorBodyPadding.leading)
+        .frame(minHeight: says ? AppLayout.inspectorFooterHeight : 0)
+        .opacity(says ? 1 : 0)
+        .frame(height: says ? nil : 0)
         .shAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
                                                   following: transcript.following, position: position,
                                                   moreBelow: position != nil && moreBelow))
@@ -468,13 +481,13 @@ private struct SubagentRunInspector: View {
         #endif
     }
 
-    /// The boards' `.isteer`: its words on a hairline box (radius 12) with the Steer word under them, on the right.
+    /// The boards' `.gsv-steer`: a hairline box (radius 12) holding the field and, at its right, a send circle. Who it goes
+    /// to is the field's accessibility label; the box says only "Steer this subagent".
     private func steerBox(role: String, words: NativeRunSteerWords) -> some View {
         let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
-        let prompt = words == .steer ? "Steer this subagent. It reads this before its next turn."
-            : "\(words.label(role)) — it was waiting on its parent"
-        return VStack(alignment: .leading, spacing: AppLayout.steerBoxGap) {
+        let prompt = words == .steer ? "Steer this subagent" : "\(words.label(role)) — it was waiting on its parent"
+        return HStack(alignment: .center, spacing: AppLayout.steerGap) {
             TextField(words.label(role), text: $draft, prompt: Text(prompt).foregroundStyle(sh.textTertiary), axis: .vertical)
                 .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.sh(.ui, weight: .regular)).autocorrectionDisabled()
                 .foregroundStyle(sh.textPrimary).tint(sh.lantern)
@@ -485,23 +498,14 @@ private struct SubagentRunInspector: View {
                     return .handled
                 }
                 .accessibilityLabel(words.label(role))
-            HStack(spacing: SH.Space.s) {
-                // Who it goes to is still said, quietly: the run, not the parent.
-                Text("to: \(role) · not the parent").font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                Spacer(minLength: SH.Space.s)
-                Button(words.verb) { send() }
-                    .buttonStyle(.shLink(color: canSend ? sh.textPrimary : sh.textSecondary, font: .sh(.ui, weight: .regular)))
-                    .padding(.vertical, SH.Space.xs)
-                    .disabled(!canSend)
-                    .help(words.help ?? "")
-            }
+            SHInspectorSendButton(words.verb, help: words.help ?? "", enabled: canSend, action: send)
         }
-        .padding(AppLayout.steerBoxPadding)
+        .padding(AppLayout.steerPadding)
         .shBorder(composing ? sh.textTertiary : sh.lineSubtle, in: shape)
         .shAnimation(.hover, value: composing)
         .contentShape(Rectangle())
         .onTapGesture { composing = true }
-        .padding(AppLayout.steerBoxMargin)
+        .padding(AppLayout.steerMargin)
     }
 
     private var canSend: Bool { canAct && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
