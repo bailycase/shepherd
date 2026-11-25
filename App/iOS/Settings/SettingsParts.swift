@@ -604,6 +604,7 @@ struct PadBarPrimary: View {
                 Text(title)
             }
         }
+        .foregroundStyle(Color.sh.textOnPrimary)
         .buttonStyle(.glassProminent)
         .tint(Color.sh.primary)
         .disabled(disabled)

@@ -69,7 +69,7 @@ extension MobileLayout {
     static let settingsNoteCodeSize: CGFloat = 12
     static let settingsNoteLineHeight: CGFloat = 1.38
     /// A menu's value before it truncates.
-    static let settingsMenuMaxWidth: CGFloat = 200
+    static let settingsMenuMaxWidth: CGFloat = 150
 
     // MARK: Instructions
 

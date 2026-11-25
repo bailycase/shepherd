@@ -100,6 +100,7 @@ struct AutomationsMenu: View {
             }
         }
         .labelStyle(.iconOnly)
+        .tint(Color.sh.textPrimary)
     }
 }
 

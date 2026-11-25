@@ -107,7 +107,7 @@ struct AutomationDetailContent: View {
     private func header(_ row: AutomationListRow, store: AutomationsStore) -> some View {
         PadColumnBar(title: row.name, subtitle: [row.when, row.hostTag ?? row.place].joined(separator: " · "),
                      inset: MobileLayout.settingsPadPageInset) {
-            menu(row, store: store).buttonStyle(.glass)
+            menu(row, store: store).buttonStyle(.glass).tint(Color.sh.textPrimary)
         }
     }
 
@@ -122,6 +122,7 @@ struct AutomationDetailContent: View {
         } label: {
             Image(systemName: "ellipsis")
                 .shTouchTarget(height: SH.Height.controlS, width: SH.Height.controlS)
+                .tint(Color.sh.textPrimary)
         }
         .accessibilityLabel("More for \(row.name)")
         .confirmationDialog("Delete \(row.name)?", isPresented: confirming(.delete, store: store), titleVisibility: .visible) {

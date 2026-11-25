@@ -28,7 +28,7 @@ struct SkillsScreen: View {
         let store = SettingsStore.of(hosts)
         let model = store.skills
         let skillsHosts = store.skillsHosts
-        SettingsPageScaffold("Skills", subtitle: "Global: the whole fleet", lead: "Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.", store: store) {
+        SettingsPageScaffold("Skills", lead: "Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.", store: store) {
             PadBarPrimary(title: "Add from repo", systemImage: "plus") { navigator.open(.settings(.skillsRepo(nil))) }
         } content: {
                 SettingsSearchCapsule(placeholder: "Search skills.sh", text: $query, focus: $searchFocused)
