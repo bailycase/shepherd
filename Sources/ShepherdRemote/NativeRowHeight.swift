@@ -42,7 +42,7 @@ public enum NativeRowHeight {
         case .activity(_, let bursts): bursts.count * line
         case .subagents(_, let lines): lines.count * line
         case .note(_, let text), .goalRecord(_, let text): textHeight(text)
-        case .steer(_, let text, _, _): textHeight(text)
+        case .steer(_, let text, _, _, _): textHeight(text)
         case .thinking, .hook, .error, .retrying, .compaction, .question: line
         case .images: 0
         }

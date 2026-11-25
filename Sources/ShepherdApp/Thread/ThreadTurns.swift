@@ -347,9 +347,9 @@ struct AgentTurn: View, Equatable {
             TurnErrorItem(error: error, folded: folded, retry: final ? retry : nil)
         case .retrying(_, let line):
             RetryLineItem(line: line)
-        case .steer(_, let text, let sentAt, let images):
+        case .steer(_, let text, let sentAt, let images, let refs):
             // Where pi read it, inside the turn it steered.
-            SteeredBubble(text: text, images: images, time: sentAt.map { nativeClockText($0) }, hover: hover)
+            SteeredBubble(text: text, images: images, refs: refs, time: sentAt.map { nativeClockText($0) }, hover: hover)
         case .compaction(let row):
             CompactionItem(row: row)
         case .question(let row):
@@ -447,12 +447,16 @@ struct TurnSubagents: Equatable {
 private struct SteeredBubble: View {
     let text: String
     let images: Int
+    /// The images, when the host names every one: thumbnails in the bubble, as a sent message draws them. Otherwise `images` chips.
+    let refs: [NativeImageRef]
     let time: String?
     let hover: MessageHover
 
     var body: some View {
-        SHUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: time, revealed: hover.hovering,
-                     origin: .steered)
+        SHUserBubble(text, attachments: refs.isEmpty ? Array(repeating: "Image", count: images) : [], timestamp: time, revealed: hover.hovering,
+                     origin: .steered) {
+            if !refs.isEmpty { SentImages(refs: refs, names: refs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you") }
+        }
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }

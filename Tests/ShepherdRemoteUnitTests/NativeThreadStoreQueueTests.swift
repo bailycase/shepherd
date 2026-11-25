@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
@@ -9,7 +11,7 @@ import ShepherdProtocol
 @MainActor
 struct NativeThreadStoreQueueTests {
     typealias F = Fixture
-    static let actions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue"]
+    static let actions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "images", "subagents", "queue"]
     let hi = F.assistant("hi", id: "a")
 
     static func item(_ text: String, _ n: Int, state: NativeQueuedMessage.State = .queued) -> NativeQueuedMessage {
@@ -251,6 +253,87 @@ struct NativeThreadStoreQueueTests {
             store.releaseQueueUndoImages([op])
         }
         #expect(store.queuedImages(op).isEmpty, "completed sends and expired Undo must not remain until 65 more image sends")
+    }
+
+    /// A real PNG of `width` × `height` pixels.
+    private static func png(width: Int, height: Int) throws -> Data {
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
+
+    /// A message the user queued with a picture is drawn as that picture while pi has not saved it: the host's pending row for the delivery,
+    /// then pi's live message, both of which only count their images. The thread names them from the bytes this client sent, so the
+    /// bubble gets thumbnails, not "Image" chips, and the viewer's fetch is answered here, never by the host.
+    @Test(arguments: ["pending", "live"])
+    func aQueuedMessagesPictureIsDrawnWhileTheHostOnlyCountsIt(_ stage: String) async throws {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.acceptAll()
+        let data = try Self.png(width: 40, height: 30)
+        store.draft = "look"
+        await store.send(images: [NativeImage(mimeType: "image/png", data: data, name: "checkout.png")])
+        guard case .send(_, _, let op, _, _, _, _, _, _) = try #require(host.actions.first) else {
+            Issue.record("expected a send")
+            return
+        }
+        var row = F.user("look", id: stage == "pending" ? "pending:\(op.uuidString)" : "live-user")
+        row.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]"))
+        row.status = stage == "pending" ? "pending" : nil
+        row.origin = .queue(parts: [NativeQueuePart(id: op, text: "look", sentAt: 1, images: 1)])
+        row.operationID = op
+        host.snapshot = snapshot(revision: 2, provisional: [row])
+        await store.refresh()
+        let bubble = try #require(store.turns.last { $0.isUser }?.bubbles.first)
+        let ref = try #require(bubble.imageRefs.first)
+        #expect(bubble.images == 1 && bubble.imageRefs.count == 1)
+        #expect(ref.width == 40 && ref.height == 30 && ref.mimeType == "image/png" && ref.byteCount == data.count)
+        #expect(store.images.cached(ref.id) == data)
+        guard case .image(let drawn) = await store.images.image(ref) else { Issue.record("the picture was not drawn from the held bytes"); return }
+        #expect(drawn == data)
+    }
+
+    /// A host that does not serve pictures keeps the chips: the thread draws none for it.
+    @Test func aHostThatDoesNotServePicturesKeepsTheChips() async throws {
+        let (store, host, task) = await started(actions: Self.actions.filter { $0 != "images" })
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "look"
+        await store.send(images: [NativeImage(mimeType: "image/png", data: try Self.png(width: 8, height: 8), name: "a.png")])
+        guard case .send(_, _, let op, _, _, _, _, _, _) = try #require(host.actions.first) else { return }
+        var row = F.user("look", id: "live")
+        row.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: ""))
+        row.operationID = op
+        host.snapshot = snapshot(revision: 2, provisional: [row], actions: Self.actions.filter { $0 != "images" })
+        await store.refresh()
+        let bubble = try #require(store.turns.last { $0.isUser }?.bubbles.first)
+        #expect(bubble.images == 1 && bubble.imageRefs.isEmpty)
+    }
+
+    /// Counts that do not add up, or a row another client sent, keep the chips: no guessing which picture is which.
+    @Test func aRowWhoseImagesThisClientDidNotSendKeepsItsChips() async throws {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "look"
+        await store.send(images: [NativeImage(mimeType: "image/png", data: try Self.png(width: 8, height: 8), name: "a.png")])
+        guard case .send(_, _, let op, _, _, _, _, _, _) = try #require(host.actions.first) else { return }
+        var theirs = F.user("theirs", id: "pending:\(UUID().uuidString)")
+        theirs.status = "pending"
+        theirs.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: ""))
+        var twoOfOne = F.user("two", id: "live")
+        twoOfOne.blocks += [NativeThreadBlock(kind: .unsupportedImage, text: ""), NativeThreadBlock(kind: .unsupportedImage, text: "")]
+        twoOfOne.operationID = op
+        host.snapshot = snapshot(revision: 2, provisional: [theirs, twoOfOne])
+        await store.refresh()
+        let bubbles = store.turns.filter(\.isUser).flatMap(\.bubbles)
+        #expect(bubbles.count >= 2 && bubbles.allSatisfy { $0.imageRefs.isEmpty && $0.images > 0 })
     }
 
     @Test func pendingBatchRetainsImagesThroughRefusalAndReleasesEveryConfirmedPart() async throws {

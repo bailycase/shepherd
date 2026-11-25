@@ -143,7 +143,7 @@ struct ThreadImageThumb: View {
     }
 }
 
-/// The thumbnails of a sent message, above its bubble (ThreadImagesSent): in a row, trailing, wrapping.
+/// The thumbnails of a sent message, above its bubble (ThreadImagesSent): one per row, down a column at the bubble's trailing side.
 struct SentImages: View {
     let refs: [NativeImageRef]
     let names: [String]
@@ -151,7 +151,7 @@ struct SentImages: View {
     @Environment(\.viewImages) private var view
 
     var body: some View {
-        HStack(spacing: SH.Space.m) {
+        VStack(alignment: .trailing, spacing: SH.Space.m) {
             ForEach(Array(refs.enumerated()), id: \.element.id) { index, ref in
                 ThreadImageThumb(ref: ref, name: names.indices.contains(index) ? names[index] : "Image \(index + 1)",
                                  size: SHThreadImageMetrics.box(width: ref.width, height: ref.height,
@@ -170,13 +170,13 @@ struct SentImages: View {
     }
 }
 
-/// Images the agent made or a tool returned, where they happened (ThreadImagesReceived).
+/// Images the agent made or a tool returned, where they happened (ThreadImagesReceived): one per row, down a column.
 struct ReceivedImages: View {
     let refs: [NativeImageRef]
     @Environment(\.viewImages) private var view
 
     var body: some View {
-        SHFlowLayout(spacing: SHThreadImageMetrics.receivedGap, lineSpacing: SHThreadImageMetrics.receivedGap) {
+        VStack(alignment: .leading, spacing: SHThreadImageMetrics.receivedGap) {
             ForEach(Array(refs.enumerated()), id: \.element.id) { index, ref in
                 ThreadImageThumb(ref: ref, name: "Image \(index + 1)",
                                  size: SHThreadImageMetrics.box(width: ref.width, height: ref.height,
