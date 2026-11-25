@@ -553,7 +553,7 @@ enum SidebarDerivation {
         // A sent thread under the thread that sent it, in whichever group that is (FleetSubthreads). `activity` and the digits read the rows
         // as derived, so they never see a thread twice.
         var grouped = [lists.needsYou, lists.working, lists.done, lists.pinned, lists.recents]
-        SidebarSent.arrange(&grouped, by: sent)
+        SidebarSent.arrange(&grouped, by: sent, working: 1)
         (lists.needsYou, lists.working, lists.done, lists.pinned, lists.recents) = (grouped[0], grouped[1], grouped[2], grouped[3], grouped[4])
         lists.supervisionQueues = supervisionQueues(source, lists: lists, seen: seen)
         return lists

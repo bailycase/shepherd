@@ -89,6 +89,29 @@ struct FleetNestingTests {
         #expect(built.working[1].fold == nil, "one or two don't fold")
     }
 
+    @Test func anIdleSenderJoinsWorkingWithItsWorkingThreadAndLeavesWhenItFinishes() {
+        // The sender is idle, so on its own it sits in Recents; the thread it sent is working.
+        let (sender, children, records) = self.sender(sending: [.running], status: .idle)
+        let built = lists(source(local: [sender], hosts: [host(children)], records: records))
+        #expect(built.working.map(\.title) == ["Speed up checkout CI", "Task 1"], "the pair sits together under Working")
+        #expect(built.working.map(\.fleetNested) == [false, true])
+        #expect(!built.recents.contains { $0.id == .local(sender.id) } && !built.done.contains { $0.id == .local(sender.id) },
+                "the sender is shown once")
+        // Once the sent thread is done, nothing is working: the sender is back where its own state puts it.
+        let (_, finished, doneRecords) = self.sender(sending: [.done], status: .idle)
+        let after = lists(source(local: [sender], hosts: [host(finished)], records: doneRecords))
+        #expect(!after.working.contains { $0.id == .local(sender.id) })
+    }
+
+    @Test func aPinnedSenderKeepsItsPlaceWithItsWorkingThread() {
+        let (sender, children, records) = self.sender(sending: [.running], status: .idle)
+        var pins = SidebarPins()
+        pins.pin(.local(sender.id))
+        let built = SidebarDerivation.lists(source(local: [sender], hosts: [host(children)], records: records), pins: pins)
+        #expect(built.pinned.first?.id == .local(sender.id), "a pinned sender stays pinned")
+        #expect(!built.working.contains { $0.id == .local(sender.id) })
+    }
+
     @Test func noRowSpeaksOfSendingOrDispatching() {
         let (sender, children, records) = self.sender(sending: [.running, .running, .delivering, .done])
         let waiting = [record(.placing, parent: sender.id, title: "Rebuild search index", target: nil, host: nil, at: 11),
