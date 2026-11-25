@@ -28,7 +28,9 @@ struct SkillsScreen: View {
         let store = SettingsStore.of(hosts)
         let model = store.skills
         let skillsHosts = store.skillsHosts
-        SettingsPageScaffold("Skills", lead: "Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.", store: store) {
+        SettingsPageScaffold("Skills", subtitle: "Global: the whole fleet", lead: "Global: the whole fleet gets the same skills. Tap one for how it’s used and its files.", store: store) {
+            PadBarPrimary(title: "Add from repo", systemImage: "plus") { navigator.open(.settings(.skillsRepo(nil))) }
+        } content: {
                 SettingsSearchCapsule(placeholder: "Search skills.sh", text: $query, focus: $searchFocused)
                 if let problem = model.recordsProblem(in: skillsHosts) {
                     SHBanner(.failed, title: problem)
@@ -59,10 +61,12 @@ struct SkillsScreen: View {
             ToolbarItem(placement: .primaryAction) {
                 // Title and glyph: the system shows the glyph, and needs both to move the item to a
                 // side bar or into the overflow menu.
-                Button("Add from repo", systemImage: "plus") { navigator.open(.settings(.skillsRepo(nil))) }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.glassProminent)
-                    .tint(Color.sh.primary)
+                if !inColumn {
+                    Button("Add from repo", systemImage: "plus") { navigator.open(.settings(.skillsRepo(nil))) }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.sh.primary)
+                }
             }
         }
         .task(id: term) { await search() }

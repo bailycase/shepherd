@@ -20,13 +20,7 @@ struct SpacesOrganizeScreen: View {
         let spaces = mobile.map { SpaceLifecyclePresentation.spaces(in: $0.state) } ?? []
         let dialogs = SpaceDialogBindings.make(dialogs: store.spaceDialogs, spaces: spaces, shown: { store.settingsHost?.id },
                                                send: { send($0, to: $1, store: store) })
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("Rename, hide, reorder or remove the spaces in the order \(host?.name ?? "the host") keeps them. A change shows on its Mac too.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+        SettingsPageScaffold("Organize spaces", lead: "Rename, hide, reorder or remove the spaces in the order \(host?.name ?? "the host") keeps them. A change shows on its Mac too.", store: nil) {
                 if let host, let mobile {
                     if !host.serves(RemoteProtocol.spaceLifecycleCapability) {
                         SettingsFootnote(host.isConnected
@@ -49,16 +43,7 @@ struct SpacesOrganizeScreen: View {
                 } else {
                     SettingsFootnote("Add a host in Settings ▸ Fleet to organize its spaces.")
                 }
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
-        .background(Color.sh.bgWindow)
-        .navigationTitle("Organize spaces")
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .alert("Rename \(dialogs.renamed?.name ?? "space")", isPresented: dialogs.isRenaming) {
             TextField("Name", text: dialogs.name)
             Button("Rename", action: dialogs.rename)

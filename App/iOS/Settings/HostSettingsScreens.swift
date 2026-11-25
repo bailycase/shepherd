@@ -397,41 +397,66 @@ private struct SlashCommandsSection: View {
 
 // MARK: The page
 
-/// A Settings page of stacked sections (MobileSettingsGeneral, MobileExperiments, MobileHooks): the page's
-/// title large over its lead, pulling it reads every host again, and beside the iPad's list it keeps the
-/// title inline and starts a step lower. Host pages put their bodies in it, so one page can hold sections
-/// of several host models (Models, Tools).
-struct SettingsPageScaffold<Content: View>: View {
+/// A Settings page of stacked sections (MobileSettingsGeneral, MobileExperiments, MobileHooks): on the phone its
+/// 28pt title over its lead; beside the iPad's list a bar with its title, subtitle and actions. Pulling it reads
+/// every host again. Host pages put their bodies in it, so one page can hold sections of several host models
+/// (Models, Tools).
+struct SettingsPageScaffold<Content: View, Actions: View>: View {
     let title: String
+    let subtitle: String?
     let lead: String?
     let store: SettingsStore?
+    @ViewBuilder let actions: () -> Actions
     @ViewBuilder let content: () -> Content
     @Environment(\.settingsColumn) private var inColumn
 
-    init(_ title: String, lead: String? = nil, store: SettingsStore? = nil, @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String, subtitle: String? = nil, lead: String? = nil, store: SettingsStore? = nil,
+         @ViewBuilder actions: @escaping () -> Actions, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
+        self.subtitle = subtitle
         self.lead = lead
         self.store = store
+        self.actions = actions
         self.content = content
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
-                if let lead { SettingsLead(lead) }
-                content()
+        VStack(spacing: 0) {
+            if inColumn { PadColumnBar(title: title, subtitle: subtitle, inset: MobileLayout.settingsPadPageInset, actions: actions) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                    if !inColumn { SettingsHeading(title) }
+                    if let lead { SettingsLead(lead).padding(.top, inColumn ? 0 : -MobileLayout.settingsLeadPull) }
+                    content()
+                }
+                .padding(.horizontal, inColumn ? MobileLayout.settingsPadPageInset : MobileLayout.gutter)
+                .padding(.bottom, MobileLayout.sectionSpacing)
+                .frame(maxWidth: MobileLayout.homeMaxWidth)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
+            .modifier(SettingsRefresh(action: store.map { store in { await store.refresh() } }))
         }
-        .refreshable { await store?.refresh() }
         .background(Color.sh.bgWindow)
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .task { if !inColumn { await store?.watch() } }
+    }
+}
+
+/// Pull to read again, where a page has something to read.
+private struct SettingsRefresh: ViewModifier {
+    let action: (() async -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action { content.refreshable { await action() } } else { content }
+    }
+}
+
+extension SettingsPageScaffold where Actions == EmptyView {
+    init(_ title: String, subtitle: String? = nil, lead: String? = nil, store: SettingsStore? = nil,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.init(title, subtitle: subtitle, lead: lead, store: store, actions: { EmptyView() }, content: content)
     }
 }
 

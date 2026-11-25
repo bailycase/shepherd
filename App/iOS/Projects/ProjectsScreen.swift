@@ -26,7 +26,8 @@ struct ProjectsScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
+                    VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                        if sizeClass != .regular { SettingsHeading("Projects") }
                         ForEach(Self.groups(rows), id: \.home) { group in
                             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                                 SettingsCaption(group.owner, count: group.rows.count)
@@ -58,13 +59,15 @@ struct ProjectsScreen: View {
         .task { await projects.refresh() }
         .background(Color.sh.bgWindow)
         .navigationTitle("Projects")
-        .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: sizeClass == .regular ? nil : .title)
         .toolbar {
             if creatable {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New project", systemImage: "plus") { navigator.present(.projects(.create(host: nil))) }
+                        .labelStyle(.iconOnly)
                         .buttonStyle(.glassProminent)
-                        .tint(Color.sh.lantern)
+                        .tint(Color.sh.primary)
                 }
             }
         }

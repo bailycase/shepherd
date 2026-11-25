@@ -28,49 +28,54 @@ struct AutomationsScreen: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .modifier(AutomationsPhoneBar(store: store))
             } else if sizeClass == .regular, let selection = store.selection {
                 AutomationsSplit(store: store, model: model, current: selection)
             } else {
-                ScrollView {
-                    AutomationsList(store: store, model: model, chosen: nil) { key in AutomationsHooks.open(key, navigator: navigator) }
-                        .padding(.horizontal, MobileLayout.gutter)
-                        .padding(.bottom, MobileLayout.sectionSpacing)
-                }
-                .refreshable { await store.refresh() }
+                AutomationsPhoneList(store: store, model: model)
             }
         }
         .background(Color.sh.bgWindow)
         .task { await store.watch() }
         .navigationTitle("Automations")
-        .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
-        .toolbar(removing: sizeClass == .regular ? .title : nil)
-        .toolbar {
-            // iPadAutomations: "Automations" leads the bar, over the list.
-            if sizeClass == .regular {
-                ToolbarItem(placement: .topBarLeading) {
-                    Text("Automations").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
-                        .fixedSize()
-                        .accessibilityAddTraits(.isHeader)
-                }
-                .sharedBackgroundVisibility(.hidden)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
+    }
+}
+
+/// The phone's list (MobileAutomations): the 28pt title over Running now and All.
+private struct AutomationsPhoneList: View {
+    let store: AutomationsStore
+    let model: AutomationsModel
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                SettingsHeading("Automations")
+                AutomationsList(store: store, model: model, chosen: nil) { key in AutomationsHooks.open(key, navigator: navigator) }
             }
-            // Pause all triggers: per host that has triggered automations and takes the change.
-            let paused = store.pauseAllHosts
-            if !paused.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu("Pause all triggers", systemImage: "ellipsis") {
-                        ForEach(paused, id: \.id) { host in
-                            Toggle(paused.count > 1 ? "Pause all triggers on \(host.name)" : "Pause all triggers",
-                                   isOn: Binding(get: { store.isAllPaused(host.id) }, set: { store.setAllPaused(host: host.id, $0) }))
-                                .disabled(!host.enabled)
-                        }
-                    }
-                    .labelStyle(.iconOnly)
-                }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.bottom, MobileLayout.sectionSpacing)
+        }
+        .refreshable { await store.refresh() }
+        .modifier(AutomationsPhoneBar(store: store))
+    }
+}
+
+/// The phone's bar: the ··· menu (Pause all triggers, per host that has triggered automations and takes the
+/// change) and New automation as the ink circle (MobileAutomations).
+private struct AutomationsPhoneBar: ViewModifier {
+    let store: AutomationsStore
+    @Environment(MobileNavigator.self) private var navigator
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            if !store.pauseAllHosts.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) { AutomationsMenu(store: store) }
             }
             if !store.editableHosts.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    // New automation is the ink circle (MobileAutomations).
                     Button("New automation", systemImage: "plus") { AutomationsHooks.create(navigator: navigator) }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.glassProminent)
@@ -78,6 +83,23 @@ struct AutomationsScreen: View {
                 }
             }
         }
+    }
+}
+
+/// ··· : Pause all triggers on each host that takes it.
+struct AutomationsMenu: View {
+    let store: AutomationsStore
+
+    var body: some View {
+        let paused = store.pauseAllHosts
+        Menu("Pause all triggers", systemImage: "ellipsis") {
+            ForEach(paused, id: \.id) { host in
+                Toggle(paused.count > 1 ? "Pause all triggers on \(host.name)" : "Pause all triggers",
+                       isOn: Binding(get: { store.isAllPaused(host.id) }, set: { store.setAllPaused(host: host.id, $0) }))
+                    .disabled(!host.enabled)
+            }
+        }
+        .labelStyle(.iconOnly)
     }
 }
 
@@ -146,7 +168,7 @@ private struct AutomationsList: View {
     }
 }
 
-/// iPad: the list beside the chosen automation's detail.
+/// iPad: the list beside the chosen automation's detail, each under its own bar (iPadAutomations).
 private struct AutomationsSplit: View {
     let store: AutomationsStore
     let model: AutomationsModel
@@ -155,27 +177,40 @@ private struct AutomationsSplit: View {
 
     var body: some View {
         PadListDetail(listWidth: MobileLayout.automationsListWidth) {
-            ScrollView {
-                AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }
-                    .padding(SH.Space.m)
+            VStack(spacing: 0) {
+                PadColumnBar(title: "Automations", subtitle: "\(model.live.count) running · \(model.rows.count) in all") {
+                    HStack(spacing: SH.Space.m) {
+                        if !store.pauseAllHosts.isEmpty { AutomationsMenu(store: store).buttonStyle(.glass) }
+                        if !store.editableHosts.isEmpty {
+                            PadBarPrimary(title: "New automation", systemImage: "plus") { AutomationsHooks.create(navigator: navigator) }
+                        }
+                    }
+                }
+                ScrollView {
+                    AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }
+                        .padding(SH.Space.m)
+                }
+                .refreshable { await store.refresh() }
             }
-            .refreshable { await store.refresh() }
         } detail: {
             AutomationDetailContent(key: current, pad: true)
         } single: {
-            // Too narrow for both (iPhone Duo): the list, each row pushing its detail.
+            // Too narrow for both (iPhone Duo): the phone's list, each row pushing its detail.
             ScrollView {
-                AutomationsList(store: store, model: model, chosen: nil) { key in
-                    navigator.open(.automations(.detail(host: key.host, automation: key.automation)))
+                VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                    SettingsHeading("Automations")
+                    AutomationsList(store: store, model: model, chosen: nil) { key in
+                        navigator.open(.automations(.detail(host: key.host, automation: key.automation)))
+                    }
                 }
                 .padding(.horizontal, MobileLayout.gutter)
                 .padding(.bottom, MobileLayout.sectionSpacing)
             }
             .refreshable { await store.refresh() }
+            .modifier(AutomationsPhoneBar(store: store))
         }
     }
 }
-
 
 /// The hosts that get a Pause all triggers switch: those with a triggered automation.
 enum AutomationsPauseAll {

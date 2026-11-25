@@ -17,7 +17,8 @@ struct SettingsScreen: View {
             } else {
                 SettingsList(store: store)
                     .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.large)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(removing: .title)
             }
         }
         .task { await store.watch() }
@@ -63,8 +64,11 @@ private struct SettingsList: View {
         @Bindable var selection = navigator.settingsSelection
         let query = selection.searchQuery
         let hits = SettingsSearch.hits(for: query, showsHooks: store.showsHooks)
+        VStack(spacing: 0) {
+        if pad { PadColumnBar("Settings", inset: MobileLayout.settingsPadBarInset) }
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
+                if !pad { SettingsHeading("Settings") }
                 SettingsSearchCapsule(placeholder: "Search settings", text: $selection.searchQuery, focus: $searching)
                 if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     SettingsSearchResults(hits: hits, pad: pad, selection: selection) { page, row in
@@ -103,13 +107,13 @@ private struct SettingsList: View {
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, pad ? MobileLayout.settingsColumnTop : 0)
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
         .refreshable { await store.refresh() }
+        }
         .background(Color.sh.bgWindow)
     }
 }

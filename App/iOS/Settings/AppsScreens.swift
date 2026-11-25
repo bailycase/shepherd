@@ -18,13 +18,7 @@ struct AppsScreen: View {
     var body: some View {
         let store = SettingsStore.of(hosts)
         let apps = store.apps
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                Text("Things you run while you work, such as a dev server or Storybook, and what each is doing on its Mac. Add and edit them in Settings ▸ Apps on the Mac.")
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, SH.Space.xs)
+        SettingsPageScaffold(SettingsPage.apps.title, lead: "Things you run while you work, such as a dev server or Storybook, and what each is doing on its Mac. Add and edit them in Settings ▸ Apps on the Mac.", store: nil) {
                 if store.hosts.isEmpty {
                     SettingsFootnote("Add a Mac in Settings ▸ Fleet to see its apps.")
                 }
@@ -33,17 +27,8 @@ struct AppsScreen: View {
                         navigator.open(.settings(.app(host: host.id, id: row.id)))
                     }
                 }
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
         .refreshable { await store.loadApps() }
-        .background(Color.sh.bgWindow)
-        .navigationTitle(SettingsPage.apps.title)
-        .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .task(id: store.appsInput) { await store.watchApps() }
     }
 }

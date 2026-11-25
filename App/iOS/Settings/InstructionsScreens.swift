@@ -27,7 +27,8 @@ struct InstructionsScreen: View {
         }
         .background(Color.sh.bgWindow)
         .navigationTitle("Instructions")
-        .navigationBarTitleDisplayMode(sizeClass == .regular || inColumn ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .task { if !inColumn { await store.watch() } }
     }
 }
@@ -44,7 +45,8 @@ private struct InstructionsPhonePage: View {
         let hosts = store.hosts
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
-                SettingsLead(InstructionsCopy.explanation)
+                SettingsHeading("Instructions")
+                SettingsLead(InstructionsCopy.explanation).padding(.top, -MobileLayout.settingsLeadPull)
                 if let problem = model.historyProblem(in: hosts) {
                     SHBanner(.failed, title: problem)
                 } else if let problem = model.problem {
@@ -256,14 +258,11 @@ private struct InstructionsPadPage: View {
         let model = store.instructions
         let hosts = store.hosts
         let snapshot = model.edited(in: hosts).flatMap { model.files(of: $0).snapshot }
-        VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
-            HStack(alignment: .center, spacing: SH.Space.l) {
-                Text(InstructionsCopy.padNote)
-                    .shText(.caption)
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            PadColumnBar(title: "Instructions", subtitle: InstructionsCopy.padNote, inset: MobileLayout.settingsPadPageInset) {
                 actions(model, hosts: hosts, historyAvailable: snapshot != nil && snapshot?.historyProblem == nil)
             }
+        VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
             if let problem = snapshot?.historyProblem {
                 SHBanner(.failed, title: problem)
             } else if let problem = model.problem {
@@ -286,27 +285,24 @@ private struct InstructionsPadPage: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, MobileLayout.instructionsPadSides)
-        .padding(.vertical, MobileLayout.instructionsPadSpacing)
+        .padding(.horizontal, MobileLayout.settingsPadPageInset)
+        .padding(.bottom, MobileLayout.instructionsPadSpacing)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
         .shAnimation(.content, value: focus.editing)
     }
 
-    /// History and Save.
+    /// History and Save, as the bar's glass.
     private func actions(_ model: ClientInstructions, hosts: [SettingsHost], historyAvailable: Bool) -> some View {
         HStack(spacing: SH.Space.m) {
-            Button("History") { showsHistory = true }
-                .buttonStyle(.settingsPill)
-                .disabled(!historyAvailable)
+            PadBarButton(title: "History", disabled: !historyAvailable) { showsHistory = true }
                 .popover(isPresented: $showsHistory, arrowEdge: .top) {
                     InstructionsHistoryList(entries: model.history(file, in: hosts)) { entry in
                         showsHistory = false
                         Task { await model.restore(entry, in: hosts) }
                     }
                 }
-            Button("Save") { Task { await model.save(file, in: hosts) } }
-                .buttonStyle(.settingsPrimary)
-                .disabled(!model.isEdited(file) || model.busy)
+            PadBarPrimary(title: "Save to all hosts", disabled: !model.isEdited(file) || model.busy) { Task { await model.save(file, in: hosts) } }
         }
         .fixedSize()
     }

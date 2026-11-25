@@ -51,6 +51,14 @@ extension MobileLayout {
     /// The segmented pill: 36pt with 3pt around its segments.
     static let settingsSegmentHeight: CGFloat = 36
     static let settingsSegmentInset: CGFloat = 3
+    /// The page title's tracking (-.02em), and the iPad bar: 52pt, its title 18pt, 24pt in on the list and 32 on a page.
+    static let settingsHeadingTracking: CGFloat = 0.02
+    /// The lead sits 10pt under the title (the boards' -10pt margin over the section gap).
+    static let settingsLeadPull: CGFloat = SH.Space.l - SH.Space.xxs
+    static let settingsPadBarHeight: CGFloat = 52
+    static let settingsPadBarTitleSize: CGFloat = 18
+    static let settingsPadBarInset: CGFloat = SH.Space.xl + SH.Space.m
+    static let settingsPadPageInset: CGFloat = SH.Space.xxxl
     /// Between a page's groups.
     static let settingsSectionSpacing: CGFloat = SH.Space.xl + SH.Space.xs
 

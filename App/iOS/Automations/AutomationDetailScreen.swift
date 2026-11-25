@@ -42,9 +42,10 @@ struct AutomationDetailContent: View {
     private func content(_ detail: AutomationDetail, store: AutomationsStore) -> some View {
         let row = detail.row
         let busy = store.busy.contains(key)
-        return ScrollView {
+        return VStack(spacing: 0) {
+            if pad { header(row, store: store) }
+            ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                if pad { header(row, on: store.isOn(row), store: store) }
                 if let failure = store.failure, !pad {
                     SHBanner(.failed, title: failure.message) {
                         Button("OK") { store.failure = nil }.buttonStyle(.settingsPill)
@@ -83,8 +84,9 @@ struct AutomationDetailContent: View {
             .padding(MobileLayout.gutter)
             .frame(maxWidth: pad ? MobileLayout.automationDetailMaxWidth : .infinity, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: pad ? .leading : .center)
+            }
+            .refreshable { await store.refresh() }
         }
-        .refreshable { await store.refresh() }
         .safeAreaInset(edge: .bottom) { actions(row, trigger: detail.trigger, busy: busy, store: store) }
         .toolbar {
             if !pad {
@@ -101,18 +103,11 @@ struct AutomationDetailContent: View {
                        set: { if $0 { store.confirming = asked } else if store.confirming == asked { store.confirming = nil } })
     }
 
-    /// iPad: the name, its On or Off, and the ••• menu (iPadAutomations' detail header).
-    private func header(_ row: AutomationListRow, on: Bool, store: AutomationsStore) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-            Text(row.name).shText(.title).foregroundStyle(Color.sh.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            if let state = store.details[key]?.trigger?.state, on {
-                SHStatusPill(AgentState(state.tone), label: state.word)
-            } else {
-                SHStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
-            }
-            Spacer(minLength: SH.Space.s)
-            menu(row, store: store)
+    /// iPad: the name over when it runs and where, and the ••• menu (iPadAutomations' detail bar).
+    private func header(_ row: AutomationListRow, store: AutomationsStore) -> some View {
+        PadColumnBar(title: row.name, subtitle: [row.when, row.hostTag ?? row.place].joined(separator: " · "),
+                     inset: MobileLayout.settingsPadPageInset) {
+            menu(row, store: store).buttonStyle(.glass)
         }
     }
 

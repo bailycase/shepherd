@@ -27,7 +27,7 @@ struct ExperimentsScreen: View {
         SettingsPageScaffold("Experiments", lead: "Still being tried out. Each is off until you turn it on.", store: store) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     if serving || model.unavailable.isEmpty {
-                        SuggestedInstructionsCard(isOn: on, enabled: serving) { turnOn in
+                        SuggestedInstructionsCard(isOn: on, enabled: serving, waiting: on || !waiting.isEmpty ? waiting.count : nil) { turnOn in
                             model.post(settingsHosts) { $0.enabled = turnOn }
                         }
                     }
@@ -74,29 +74,6 @@ struct ExperimentsScreen: View {
                         }
                     }
                 }
-                if on || !waiting.isEmpty {
-                    VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        SettingsCaption("Waiting for you") {
-                            if waiting.count > 1 {
-                                Button("Add all") { Task { await model.addAll(settingsHosts) } }
-                                    .buttonStyle(.settingsLinkCompact)
-                                    .disabled(model.busy)
-                            }
-                        }
-                        if waiting.isEmpty {
-                            SettingsFootnote("Nothing is waiting. When an agent learns something the hard way, its line shows up here.")
-                        } else {
-                            SettingsCard {
-                                ForEach(waiting) { item in
-                                    Button { navigator.open(.settings(.suggestion(item.id))) } label: {
-                                        WaitingRow(item: item, showsHost: model.hosts(settingsHosts).count > 1)
-                                    }
-                                    .buttonStyle(.shRow(radius: 0))
-                                }
-                            }
-                        }
-                    }
-                }
                 if on {
                     Button("Open Instructions") { store.open(.instructions, inColumn: inColumn, navigator: navigator) }
                         .buttonStyle(.settingsLink(.dim))
@@ -108,10 +85,13 @@ struct ExperimentsScreen: View {
     }
 }
 
-/// Suggested instructions' card (MobileExperiments): the name over what it does, and its switch.
+/// Suggested instructions' card (MobileExperiments): the name over what it does with its switch, and the "Waiting for
+/// you" row, its count in lantern, which opens the lines.
 private struct SuggestedInstructionsCard: View {
     let isOn: Bool
     let enabled: Bool
+    /// How many lines wait; nil while the experiment is off and none do.
+    let waiting: Int?
     let toggle: (Bool) -> Void
 
     var body: some View {
@@ -119,7 +99,48 @@ private struct SuggestedInstructionsCard: View {
             ExperimentRow(title: "Suggested instructions", isOn: isOn, label: "Suggested instructions", enabled: enabled,
                           text: "Agents draft a line for your AGENTS.md when they learn something the hard way. Nothing is written until you add it.",
                           toggle: toggle)
+            if let waiting {
+                NavigationLink {
+                    SuggestionsWaitingScreen()
+                } label: {
+                    SettingsRow("Waiting for you", trailing: waiting > 0 ? .reason("\(waiting)") : .none)
+                }
+                .buttonStyle(.shRow(radius: 0))
+            }
         }
+    }
+}
+
+/// The lines waiting (the "Waiting for you" row's page): each opens its suggestion; Add all takes them all.
+struct SuggestionsWaitingScreen: View {
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let store = SettingsStore.of(hosts)
+        let model = store.suggestions
+        let settingsHosts = store.hosts
+        let waiting = model.waiting(settingsHosts)
+        SettingsPageScaffold("Waiting for you", store: store) {
+            if waiting.isEmpty {
+                SettingsFootnote("Nothing is waiting. When an agent learns something the hard way, its line shows up here.")
+            } else {
+                SettingsCard {
+                    ForEach(waiting) { item in
+                        Button { navigator.open(.settings(.suggestion(item.id))) } label: {
+                            WaitingRow(item: item, showsHost: model.hosts(settingsHosts).count > 1)
+                        }
+                        .buttonStyle(.shRow(radius: 0))
+                    }
+                }
+                if waiting.count > 1 {
+                    Button("Add all") { Task { await model.addAll(settingsHosts) } }
+                        .buttonStyle(.settingsPill(.dark))
+                        .disabled(model.busy)
+                }
+            }
+        }
+        .shAnimation(.list, value: waiting.map(\.id))
     }
 }
 

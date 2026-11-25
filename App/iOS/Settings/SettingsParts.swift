@@ -507,3 +507,105 @@ struct SettingsSegments<Value: Hashable>: View {
         .accessibilityLabel(label)
     }
 }
+
+// MARK: Titles
+
+/// A page's title on the phone and iPhone Duo (the boards' `gt-h1`): 28pt bold, tracked, in the content
+/// under the bar, so it scrolls away with the page; the native bar keeps only its buttons.
+struct SettingsHeading: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.sh(.display, weight: .bold))
+            .tracking(-SHTextStyle.display.size * MobileLayout.settingsHeadingTracking)
+            .foregroundStyle(Color.sh.textPrimary)
+            .padding(.horizontal, SH.Space.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A column's bar on the iPad (the boards' `gpad-bar`): the title 18/600 over a 12pt subtitle on the left,
+/// the page's actions as glass on the right.
+struct PadColumnBar<Actions: View>: View {
+    let title: String
+    let subtitle: String?
+    /// The detail's bar sits further in than the list's.
+    var inset = MobileLayout.settingsPadBarInset
+    @ViewBuilder let actions: () -> Actions
+
+    var body: some View {
+        HStack(spacing: SH.Space.m + SH.Space.xxs) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(.shSans(MobileLayout.settingsPadBarTitleSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.shSans(SHTextStyle.caption.size))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: SH.Space.m)
+            actions()
+        }
+        .buttonBorderShape(.capsule)
+        .padding(.leading, inset)
+        .padding(.trailing, SH.Space.xl)
+        .frame(minHeight: MobileLayout.settingsPadBarHeight)
+    }
+}
+
+extension PadColumnBar where Actions == EmptyView {
+    init(_ title: String, subtitle: String? = nil, inset: CGFloat = MobileLayout.settingsPadBarInset) {
+        self.init(title: title, subtitle: subtitle, inset: inset) { EmptyView() }
+    }
+}
+
+/// A bar button on the iPad as glass: a word, or its glyph alone.
+struct PadBarButton: View {
+    let title: String
+    var systemImage: String?
+    var disabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            if let systemImage {
+                Label(title, systemImage: systemImage).labelStyle(.iconOnly)
+            } else {
+                Text(title)
+            }
+        }
+        .buttonStyle(.glass)
+        .tint(Color.sh.textPrimary)
+        .disabled(disabled)
+    }
+}
+
+/// The bar's main action on the iPad: ink glass.
+struct PadBarPrimary: View {
+    let title: String
+    var systemImage: String?
+    var disabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            if let systemImage {
+                Label(title, systemImage: systemImage).labelStyle(.iconOnly)
+            } else {
+                Text(title)
+            }
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.sh.primary)
+        .disabled(disabled)
+    }
+}

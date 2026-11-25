@@ -21,14 +21,21 @@ struct HooksScreen: View {
         let state = host.map { _ in model.state }
         @Bindable var selection = navigator.settingsSelection
         @Bindable var editing = store
-        SettingsPageScaffold(SettingsPage.hooks.title, lead: inColumn ? nil : "Commands that run at set points in a thread, on the host where the agent runs. Every hook runs unless you turn it off.", store: nil) {
+        let count = state?.page.map { page in page.groups.reduce(0) { total, group in total + group.rows.count } }
+        SettingsPageScaffold(SettingsPage.hooks.title,
+                             subtitle: count.flatMap { count in host.map { "\(count) on \($0.name)" } },
+                             lead: "Commands that run at set points in a thread, on the host where the agent runs. Every hook runs unless you turn it off.",
+                             store: nil) {
+            PadBarPrimary(title: "Add hook", systemImage: "plus", disabled: state?.page == nil) {
+                if let page = state?.page { store.hookEditor = ClientHookEditor(adding: page.snapshot) }
+            }
+        } content: {
             if inColumn {
                 HStack(spacing: SH.Space.l) {
                     HookSegments(selection: $selection.hooksSources, options: [(false, "Hooks"), (true, "Sources")], label: "Show", pad: true)
                         .fixedSize()
                     Spacer(minLength: 0)
                 }
-                SettingsLead("Commands that run at set points in a thread, on the host where the agent runs. Every hook runs unless you turn it off.")
             }
             if let problem = state?.page?.snapshot.settingsProblem {
                 SHBanner(.failed, title: problem)
@@ -49,17 +56,17 @@ struct HooksScreen: View {
             if !inColumn {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Sources") { navigator.open(.settings(.hookSources)) }
-                    .tint(Color.sh.textPrimary)
+                        .tint(Color.sh.textPrimary)
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Add hook", systemImage: "plus") {
-                    if let page = state?.page { store.hookEditor = ClientHookEditor(adding: page.snapshot) }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add hook", systemImage: "plus") {
+                        if let page = state?.page { store.hookEditor = ClientHookEditor(adding: page.snapshot) }
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.sh.primary)
+                    .disabled(state?.page == nil)
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.glassProminent)
-                .tint(Color.sh.primary)
-                .disabled(state?.page == nil)
             }
         }
         .sheet(item: $editing.hookEditor) { editor in

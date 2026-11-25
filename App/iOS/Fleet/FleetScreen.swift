@@ -34,9 +34,8 @@ struct FleetScreen: View {
     nonisolated(unsafe) static var preview: Preview?
 
     private var wide: Bool { measuredWide ?? (sizeClass == .regular && !inColumn) }
-    /// The title is drawn in the content, not the bar's: the iPad's, and iPhone Duo open or half open, whose bar the system
-    /// moves to the side (iPadFleet, DuoOpenFleet, DuoBookFleet).
-    private var contentTitle: Bool { sizeClass == .regular && !inColumn }
+    /// The iPad draws the board's bar over the page; the phone and iPhone Duo the 28pt title in it.
+    private var padBar: Bool { sizeClass == .regular && navigator.hingeClosed == nil }
 
     var body: some View {
         let store = SettingsStore.of(hosts)
@@ -46,9 +45,19 @@ struct FleetScreen: View {
         // Whether any Mac serves the fleet's view (Fleet switched off on the Mac while this is open).
         let serves = store.showsFleet
         let actions = FleetRowActions(forget: { forgetting = $0 }, retry: { hosts.retry($0) })
+        VStack(spacing: 0) {
+        if padBar {
+            PadColumnBar(title: "Fleet", subtitle: page.cards.isEmpty ? page.summary : page.nextGoesTo.map { "Next goes to \($0)" } ?? page.summary,
+                         inset: MobileLayout.settingsPadPageInset) {
+                PadBarButton(title: "Add a Mac", action: addMac)
+            }
+        }
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.settingsSectionSpacing) {
-                if contentTitle { FleetHeader(page: page, add: wide ? addMac : nil) } else if !page.cards.isEmpty { FleetSubtitle(page: page) }
+                if !padBar {
+                    SettingsHeading("Fleet")
+                    if !page.cards.isEmpty { FleetSubtitle(page: page).padding(.top, -MobileLayout.settingsLeadPull) }
+                }
                 if let problem = fleet.problem {
                     SHBanner(.failed, title: problem) { Button("OK") { fleet.dismissProblem() }.buttonStyle(.settingsPill) }
                 }
@@ -84,9 +93,10 @@ struct FleetScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, wide ? MobileLayout.fleetPadInset : MobileLayout.gutter)
+            .padding(.horizontal, wide ? MobileLayout.settingsPadPageInset : MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
         }
         .background(Color.sh.bgWindow)
         .onGeometryChange(for: Bool.self) { $0.size.width >= MobileLayout.fleetCardsMinWidth && !inColumn } action: { measuredWide = $0 }
@@ -113,10 +123,10 @@ struct FleetScreen: View {
             forgetting = row
         }
         .navigationTitle("Fleet")
-        .navigationBarTitleDisplayMode(contentTitle || inColumn ? .inline : .large)
-        .toolbar(removing: contentTitle ? .title : nil)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .toolbar {
-            if !wide {
+            if !padBar {
                 ToolbarItem(placement: .topBarTrailing) {
                     // The board's plus is the ink circle.
                     Button("Add a Mac", systemImage: "plus", action: addMac)
@@ -348,28 +358,5 @@ private struct FleetWeightMenu: View {
         .overlay(alignment: .top) { SHHairline() }
         .accessibilityLabel(card.weightLabel)
         .accessibilityValue(card.weight.title)
-    }
-}
-
-/// The header drawn in the content: "Fleet", where the next work goes, and on a wide detail Add a Mac (iPadFleet).
-private struct FleetHeader: View {
-    let page: FleetPage
-    let add: (() -> Void)?
-
-    var body: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Fleet").font(.sh(.display, weight: .bold)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                if !page.cards.isEmpty { FleetSubtitle(page: page) }
-            }
-            Spacer(minLength: SH.Space.xl)
-            if let add {
-                Button(action: add) {
-                    Label("Add a Mac", systemImage: "plus").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.running)
-                        .frame(minHeight: SH.Height.touch)
-                }
-                .buttonStyle(.plain)
-            }
-        }
     }
 }
