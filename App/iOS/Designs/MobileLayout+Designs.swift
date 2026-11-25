@@ -4,11 +4,15 @@ import ShepherdUI
 /// The designs track's own measures (MobileDesigns, MobileDesignBoard). Shepherd Design's phone
 /// parts carry their own (`SHPhoneDesignMetrics`).
 enum MobileDesignLayout {
-    /// The Designs screen's sides (the board's 14pt) and its sections 20pt apart.
-    static let gutter: CGFloat = 14
+    /// The Designs screen's sides (the board's 16pt) and its sections 20pt apart.
+    static let gutter: CGFloat = SH.Space.xl
     static let sectionSpacing: CGFloat = 20
+    /// The Designs list's own title (28 bold).
+    static let titleSize: CGFloat = 28
     /// A board on its screen sits this far under the navigation, and keeps as much above the toolbar.
     static let boardTop: CGFloat = 18
+    /// The room a board keeps at the bottom for the floating toolbar (60pt and its margins).
+    static let boardBottom: CGFloat = 80
     /// The comment card's sides and the room it keeps above the toolbar.
     static let cardInset: CGFloat = SH.Space.l
     /// The Boards sheet's tiles: a board's label and size under its image.

@@ -37,6 +37,25 @@ extension MobileLayout {
     static let padDesignTweakFieldWidth: CGFloat = 140
     /// The Designs list's cards: at least this wide, in as many columns as fit.
     static let padDesignCardMinWidth: CGFloat = 260
+
+    /// The wide header's glass pills (iPadDesign): 42pt tall, "‹ Designs" in 17 medium, the name in
+    /// 18 semibold over 12pt secondary, a three-swatch mark of the design system.
+    static let padDesignPill: CGFloat = 42
+    static let padDesignPillInset: CGFloat = SH.Space.l
+    static let padDesignBackGlyph: CGFloat = 19
+    static let padDesignBackText: CGFloat = 17
+    static let padDesignTitle: CGFloat = 18
+    static let padDesignSubtitle: CGFloat = 12
+    static let padDesignSwatch = CGSize(width: 6, height: 10)
+    /// The chat pane is a card at radius 20 on the lift, 8pt in from the screen's edge (iPadDesign).
+    static let padDesignPaneRadius: CGFloat = 20
+    static let padDesignPaneInset: CGFloat = SH.Space.m
+    /// A comment's words and its Resolve in the Comments tab.
+    static let padDesignCommentText: CGFloat = 15
+    static let padDesignCommentAction: CGFloat = 14
+    /// The card starts below the status bar (iPadDesign: 30pt down).
+    static let padDesignPaneTop: CGFloat = 30
+    static let padDesignScribbleHint = "Handwriting in the chat box works too: Scribble turns it into text."
 }
 
 extension EnvironmentValues {
@@ -44,4 +63,5 @@ extension EnvironmentValues {
     /// compact size, without "/" and with the model's short name, and its transcript sits 16pt in
     /// (`ThreadComposer`, `ThreadTranscript`).
     @Entry var composerDesignChat = false
+
 }

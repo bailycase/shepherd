@@ -39,7 +39,8 @@ struct PadDesignScreen: View {
             let fold = wide ? proxy.verticalFold : nil
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    PadDesignHeader(title: name, wide: wide, system: wide ? canvas.systemName(design) : nil,
+                    PadDesignHeader(title: name, wide: wide,
+                                    subtitle: wide ? Self.subtitle(canvas: canvas, design: design) : nil,
                                     swatches: canvas.systemSwatches,
                                     back: back,
                                     chat: wide ? nil : { showingChat = true },
@@ -66,7 +67,10 @@ struct PadDesignScreen: View {
                 .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
                 if wide {
                     PadDesignChatPane(canvas: canvas, agent: agent, hostName: hosts.host(ref.host)?.name)
-                        .paneWidth(fold == nil ? MobileLayout.padDesignChatWidth : nil)
+                        .shCard(radius: MobileLayout.padDesignPaneRadius, line: Color.sh.lineSubtle, lift: true)
+                        .padding(EdgeInsets(top: MobileLayout.padDesignPaneTop, leading: MobileLayout.padDesignPaneInset,
+                                            bottom: MobileLayout.padDesignPaneInset, trailing: MobileLayout.padDesignPaneInset))
+                        .paneWidth(fold == nil ? MobileLayout.padDesignChatWidth + 2 * MobileLayout.padDesignPaneInset : nil)
                 }
             }
         }
@@ -122,6 +126,16 @@ struct PadDesignScreen: View {
         }
     }
 
+    /// "acme-web · 4 boards · Page 1": the design's system, its boards and, with several, its page.
+    private static func subtitle(canvas: PadDesignCanvas, design: Design?) -> String {
+        var parts: [String] = []
+        if let system = canvas.systemName(design) { parts.append(system) }
+        if let snapshot = canvas.snapshot { parts.append(RemoteDesignPresentation.boardsText(snapshot.index.boards.count)) }
+        let pages = canvas.pageList
+        if pages.count > 1, let name = pages.first(where: { $0.id == canvas.page })?.name { parts.append(name) }
+        return parts.joined(separator: " · ")
+    }
+
     /// "‹ Designs": back to the list under the design, or to it when the design opened on its own
     /// (a new window).
     private func back() {
@@ -145,14 +159,16 @@ struct PadDesignScreen: View {
     }
 }
 
-/// The header over the canvas. Wide (iPadDesign): "‹ Designs" in the link blue, the name, then
-/// the system's chip and Export, on the canvas's dots. Narrow (iPadSplitView): the chevron, the
-/// name in 17, the chat button and Export, on the window's color over a hairline. A canvas with
-/// pages puts the Mac's page popup before Export.
+/// The header over the canvas. Wide (iPadDesign): a glass "‹ Designs" pill, the name in 18
+/// semibold over "acme-web · 4 boards · Page 1" in 12, and a glass pill of the page popup and
+/// Export, on the canvas's dots. Narrow (iPadSplitView): the chevron, the name in 17, the chat
+/// button and Export, on the window's color over a hairline. A canvas with pages puts the Mac's
+/// page popup before Export.
 private struct PadDesignHeader: View {
     let title: String
     let wide: Bool
-    let system: String?
+    /// The design system, the boards and the page, under the name; wide only.
+    let subtitle: String?
     let swatches: [DesignSystemPresentation.Swatch]
     let back: () -> Void
     let chat: (() -> Void)?
@@ -167,29 +183,46 @@ private struct PadDesignHeader: View {
         let sh = Color.sh
         HStack(spacing: SH.Space.m) {
             Button(action: back) {
-                HStack(spacing: SH.Space.xs) {
+                HStack(spacing: SH.Space.xxs) {
                     Image(systemName: "chevron.left")
-                        .font(.shSans(MobileLayout.padDesignHeaderText, .semibold))
-                    if wide { Text("Designs").font(.shSans(MobileLayout.padDesignHeaderText)) }
+                        .font(.shSans(wide ? MobileLayout.padDesignBackGlyph : MobileLayout.padDesignHeaderText, .semibold))
+                    if wide { Text("Designs").font(.shSans(MobileLayout.padDesignBackText, .medium)) }
                 }
-                .foregroundStyle(sh.running)
-                .frame(minHeight: SH.Height.touch)
+                .foregroundStyle(sh.textPrimary)
+                .padding(.leading, wide ? SH.Space.m : 0)
+                .padding(.trailing, wide ? MobileLayout.padDesignPillInset : 0)
+                .frame(minHeight: wide ? MobileLayout.padDesignPill : SH.Height.touch)
                 .contentShape(Rectangle().inset(by: -SH.Space.m))
             }
             .buttonStyle(.plain)
+            .glassEffect(wide ? .regular : .identity, in: Capsule())
             // Back and Export keep their size; the title, the chip and the page's name give way.
             .fixedSize()
             .accessibilityLabel("Designs")
-            Text(title)
-                .font(wide ? .sh(.title) : .sh(.headline))
-                .foregroundStyle(sh.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: SH.Space.m)
-            if let system {
-                SHDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) })
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(wide ? .shSans(MobileLayout.padDesignTitle, .semibold) : .sh(.headline))
+                    .foregroundStyle(sh.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle, !subtitle.isEmpty {
+                    HStack(spacing: SH.Space.xs) {
+                        if !swatches.isEmpty {
+                            HStack(spacing: SH.Space.xxs) {
+                                ForEach(Array(swatches.prefix(3).enumerated()), id: \.offset) { _, swatch in
+                                    RoundedRectangle(cornerRadius: SH.Radius.xs / 2)
+                                        .fill(Color(light: swatch.light, dark: swatch.dark))
+                                        .frame(width: MobileLayout.padDesignSwatch.width, height: MobileLayout.padDesignSwatch.height)
+                                }
+                            }
+                            .accessibilityHidden(true)
+                        }
+                        Text(subtitle).font(.shSans(MobileLayout.padDesignSubtitle)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                    }
+                }
             }
+            Spacer(minLength: SH.Space.m)
             if let chat {
                 Button(action: chat) {
                     Image(systemName: "text.bubble")
@@ -202,50 +235,61 @@ private struct PadDesignHeader: View {
                 .shTouchTarget(height: MobileLayout.padDesignHeaderButton, width: MobileLayout.padDesignHeaderButton)
                 .accessibilityLabel("Chat")
             }
-            if pages.count > 1 {
-                let name = pages.first { $0.id == page }?.name ?? "Pages"
-                // The Mac's page popup, at most a set width so a long name truncates; in a window
-                // too narrow for it beside the title, the page glyph alone (its name in the menu).
-                Menu {
-                    ForEach(pages, id: \.id) { item in
-                        Button {
-                            showPage(item.id)
-                        } label: {
-                            if item.id == page { Label(item.name, systemImage: "checkmark") } else { Text(item.name) }
+            HStack(spacing: SH.Space.xs) {
+                if pages.count > 1 {
+                    let name = pages.first { $0.id == page }?.name ?? "Pages"
+                    // The Mac's page popup, at most a set width so a long name truncates; in a window
+                    // too narrow for it beside the title, the page glyph alone (its name in the menu).
+                    Menu {
+                        ForEach(pages, id: \.id) { item in
+                            Button {
+                                showPage(item.id)
+                            } label: {
+                                if item.id == page { Label(item.name, systemImage: "checkmark") } else { Text(item.name) }
+                            }
+                        }
+                    } label: {
+                        if pageMenuWidth == nil || wide {
+                            Image(systemName: "rectangle.stack")
+                                .font(.sh(.headline, weight: .regular))
+                                .foregroundStyle(sh.textSecondary)
+                                .frame(width: MobileLayout.padDesignHeaderButton, height: MobileLayout.padDesignHeaderButton)
+                                .contentShape(Rectangle())
+                        } else {
+                            // As wide as the name, up to the cap; past it the name truncates.
+                            ViewThatFits(in: .horizontal) {
+                                SHPopupLabel(name).fixedSize()
+                                SHPopupLabel(name)
+                            }
                         }
                     }
-                } label: {
-                    if pageMenuWidth == nil {
-                        Image(systemName: "rectangle.stack")
-                            .font(.sh(.headline, weight: .regular))
-                            .foregroundStyle(sh.textSecondary)
-                            .frame(width: MobileLayout.padDesignHeaderButton, height: MobileLayout.padDesignHeaderButton)
-                            .contentShape(Rectangle())
-                    } else {
-                        // As wide as the name, up to the cap; past it the name truncates.
-                        ViewThatFits(in: .horizontal) {
-                            SHPopupLabel(name).fixedSize()
-                            SHPopupLabel(name)
-                        }
-                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .frame(maxWidth: wide ? nil : pageMenuWidth)
+                    .shTouchTarget(height: pageMenuWidth == nil || wide ? MobileLayout.padDesignHeaderButton : SH.Height.controlM)
+                    .accessibilityLabel("Page")
+                    .accessibilityValue(name)
+                    // The page's name before the design's: the title truncates first.
+                    .layoutPriority(1)
                 }
-                .menuStyle(.button)
+                Button { export?() } label: {
+                    Text("Export").font(.shSans(MobileLayout.padDesignBackText, .medium))
+                        .foregroundStyle(export == nil ? sh.textTertiary : sh.textPrimary)
+                        .padding(.horizontal, MobileLayout.padDesignPillInset)
+                        .frame(minHeight: MobileLayout.padDesignPill)
+                        .contentShape(Capsule())
+                }
                 .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .frame(maxWidth: pageMenuWidth)
-                .shTouchTarget(height: pageMenuWidth == nil ? MobileLayout.padDesignHeaderButton : SH.Height.controlM)
-                .accessibilityLabel("Page")
-                .accessibilityValue(name)
-                // The page's name before the design's: the title truncates first.
-                .layoutPriority(1)
-            }
-            Button("Export") { export?() }
-                .buttonStyle(.sh(.secondary, size: .l))
-                .fixedSize()
                 .disabled(export == nil)
+            }
+            .glassEffect(wide ? .regular : .identity, in: Capsule())
+            .fixedSize()
         }
         .padding(.horizontal, MobileLayout.padDesignHeaderInset)
         .frame(height: MobileLayout.padDesignHeaderHeight)
+        // Wide, the glass pills clear the status bar (iPadDesign draws the bar 26pt down).
+        .padding(.top, wide ? SH.Space.l : 0)
         .background {
             if !wide { sh.bgWindow.ignoresSafeArea(edges: .top) }
         }

@@ -12,9 +12,13 @@ extension MobileLayout {
     static let browserAddressHeight: CGFloat = 40
     /// Reload's and the menu's width in it, as tall as a touch target.
     static let browserBarButton: CGFloat = 36
-    /// Nothing open: the globe's circle and the glyph in it.
+    /// Nothing open: the globe (iPadPaneBrowser draws it bare), its title in 22 semibold, and the
+    /// dev servers' words in 15.
     static let browserEmptyCircle: CGFloat = 44
-    static let browserEmptyGlyph: CGFloat = 20
+    static let browserEmptyGlyph: CGFloat = 36
+    static let browserEmptyTitle: CGFloat = 22
+    static let browserServerText: CGFloat = 15
+    static let browserServerDetail: CGFloat = 13
     /// The line under the page: its top and bottom padding.
     static let browserFootTop: CGFloat = 10
     static let browserFootBottom: CGFloat = 14
@@ -281,8 +285,7 @@ private struct BrowserPageView: View {
         .padding(.leading, regular ? SH.Space.m : SH.Space.l)
         .padding(.trailing, SH.Space.xs)
         .frame(height: regular ? SH.Height.touch : MobileLayout.browserAddressHeight)
-        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+        .background(sh.bgSelected, in: Capsule())
     }
 
     private func reloadButton(served: Bool) -> some View {
@@ -433,10 +436,9 @@ private struct BrowserMessage<Actions: View>: View {
                     .font(.system(size: MobileLayout.browserEmptyGlyph))
                     .foregroundStyle(sh.textSecondary)
                     .frame(width: MobileLayout.browserEmptyCircle, height: MobileLayout.browserEmptyCircle)
-                    .background(sh.bgSelected, in: Circle())
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.sh(.headline))
+                    .font(.shSans(MobileLayout.browserEmptyTitle, .semibold))
                     .foregroundStyle(sh.textPrimary)
                     .multilineTextAlignment(.center)
                 Text(message)
@@ -493,38 +495,47 @@ private struct BrowserNothingOpen: View {
         default: "None of them is running on \(page.hostName). Start one, or open a port."
         }
         BrowserMessage(title: "No page open", message: message) {
-            VStack(spacing: SH.Space.m) {
-                ForEach(servers ?? []) { server in
-                    HStack(spacing: SH.Space.m) {
-                        Image(systemName: "terminal")
-                            .font(.sh(.caption))
-                            .foregroundStyle(sh.textSecondary)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                            Text(server.command).font(.sh(.code)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                            Text(server.detail).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                                .lineLimit(1).truncationMode(.middle)
+            VStack(spacing: SH.Space.l) {
+                // The host's dev servers in a card, a hairline between them (iPadPaneBrowser).
+                if let servers, !servers.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(servers) { server in
+                            HStack(spacing: SH.Space.l) {
+                                Image(systemName: "terminal")
+                                    .font(.sh(.caption))
+                                    .foregroundStyle(sh.textSecondary)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                    Text(server.command).font(.shMono(MobileLayout.browserServerText)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                                    Text(server.detail).font(.shSans(MobileLayout.browserServerDetail)).foregroundStyle(sh.textSecondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Button {
+                                    Task { await page.start(server) }
+                                } label: {
+                                    Text("Start on \(page.hostName)").font(.shSans(MobileLayout.browserServerText, .medium))
+                                        .foregroundStyle(sh.textPrimary).lineLimit(1)
+                                        .frame(minHeight: SH.Height.touch).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .fixedSize()
+                                .accessibilityLabel("Start \(server.command) on \(page.hostName)")
+                            }
+                            .padding(.horizontal, SH.Space.xl)
+                            .padding(.vertical, SH.Space.xs)
+                            .overlay(alignment: .top) { SHHairline().padding(.leading, SH.Space.xl).opacity(server.id == servers.first?.id ? 0 : 1) }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        Button {
-                            Task { await page.start(server) }
-                        } label: {
-                            Label("Start on \(page.hostName)", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.sh(.secondary, size: .m))
-                        .fixedSize()
-                        .frame(minHeight: SH.Height.touch)
-                        .accessibilityLabel("Start \(server.command) on \(page.hostName)")
                     }
-                    .padding(.horizontal, SH.Space.l)
-                    .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+                    .shCard(radius: SH.Radius.xxl, line: sh.lineSubtle)
                 }
                 Button(action: openAddress) {
-                    Label("Open a port or URL", systemImage: "character.cursor.ibeam")
+                    Text("Open a port or URL").font(.shSans(MobileLayout.browserServerText, .medium))
+                        .foregroundStyle(sh.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.sh(.ghost, size: .m))
+                .buttonStyle(.plain)
             }
             .padding(.top, SH.Space.m)
         }

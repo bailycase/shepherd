@@ -22,7 +22,8 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
         let detail = (shepherd?["detail"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
             .flatMap { try? JSONDecoder().decode(SHPushDetail.self, from: $0) }
         let preview = SHPushPreview(title: content.title, subtitle: content.subtitle, body: content.body,
-                                    date: notification.date, detail: detail)
+                                    date: notification.date, detail: detail,
+                                    attention: content.categoryIdentifier == "needsAnswer")
         if let actions = PushButtons.actions(kind: content.categoryIdentifier, options: detail?.options) {
             extensionContext?.notificationActions = actions
         }

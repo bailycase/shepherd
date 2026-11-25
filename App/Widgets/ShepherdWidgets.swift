@@ -126,10 +126,10 @@ struct FollowActivityWidget: Widget {
 }
 
 extension View {
-    /// The Lock Screen card's padding and fill (GlanceWatch: `bgRaised`, 12 × 16).
+    /// The Lock Screen card's padding and fill (MobileLiveLock: `bgRaised`, 14 × 16).
     func glanceCard() -> some View {
-        padding(.vertical, SH.Space.l)
-            .padding(.horizontal, SH.Space.xl)
+        padding(.vertical, SHGlanceMetrics.cardPaddingVertical)
+            .padding(.horizontal, SHGlanceMetrics.cardPaddingHorizontal)
             .activityBackgroundTint(Color.sh.bgRaised)
             .activitySystemActionForegroundColor(Color.sh.textPrimary)
     }

@@ -4,10 +4,9 @@ import SwiftUI
 // canvas, and in the chat the design agent's comments proposed from it.
 
 /// The markup palette (iPadDesign), floating 28pt over the canvas's bottom middle while there is
-/// ink: four 44pt tools (the pen, the marker, the eraser, Comment; the current one on
-/// `bgSelected`), a divider, the three inks (22pt, the current one ringed in its own color 2pt
-/// out), a divider, and Done in the link blue. A raised capsule with the popover's line and
-/// shadow.
+/// ink: four 44pt tools (the pen, the marker, the eraser, Comment; the current one a `primary`
+/// circle), a divider, the three inks (22pt, the current one ringed in its own color 2pt out), a
+/// divider, and Done in `textPrimary`. A glass capsule.
 public struct SHMarkupPalette: View {
     public enum Tool: String, CaseIterable, Sendable {
         case pen, marker, eraser, comment
@@ -61,9 +60,9 @@ public struct SHMarkupPalette: View {
         HStack(spacing: M.markupSpacing) {
             ForEach(Tool.allCases, id: \.self) { item in
                 Button { tool = item } label: {
-                    SHMarkupToolGlyph(tool: item)
+                    SHMarkupToolGlyph(tool: item, selected: tool == item)
                         .frame(width: SH.Height.touch, height: SH.Height.touch)
-                        .background(tool == item ? Color.sh.bgSelected : .clear, in: Circle())
+                        .background(tool == item ? Color.sh.primary : .clear, in: Circle())
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -93,7 +92,7 @@ public struct SHMarkupPalette: View {
             Button(action: done) {
                 Text("Done")
                     .font(.shSans(M.markupDoneSize, .semibold))
-                    .foregroundStyle(Color.sh.running)
+                    .foregroundStyle(Color.sh.textPrimary)
                     .padding(.horizontal, SH.Space.xs)
                     .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
@@ -105,7 +104,8 @@ public struct SHMarkupPalette: View {
         }
         .padding(.vertical, M.markupPaddingVertical)
         .padding(.horizontal, M.markupPaddingHorizontal)
-        .shPopover(radius: (SH.Height.touch + 2 * M.markupPaddingVertical) / 2)
+        // The boards' glass capsule, the chosen tool on `primary` ink.
+        .glassEffect(.regular, in: Capsule())
     }
 
     private var divider: some View {
@@ -119,6 +119,7 @@ public struct SHMarkupPalette: View {
 /// eraser, and Comment's bubble, 20 × 26 in `textSecondary`.
 struct SHMarkupToolGlyph: View {
     let tool: SHMarkupPalette.Tool
+    var selected = false
 
     var body: some View {
         let M = SHDesignMetrics.self
@@ -127,14 +128,14 @@ struct SHMarkupToolGlyph: View {
             case .comment:
                 Image(systemName: "text.bubble")
                     .font(.shSans(M.markupGlyphWidth))
-                    .foregroundStyle(Color.sh.textSecondary)
+                    .foregroundStyle(selected ? Color.sh.textOnPrimary : Color.sh.textSecondary)
             default:
                 Canvas { context, size in
                     let scale = CGAffineTransform(scaleX: size.width / 20, y: size.height / 26)
                     let line = StrokeStyle(lineWidth: M.markupGlyphLine, lineCap: .round, lineJoin: .round)
                     let body = Self.body(tool).applying(scale)
-                    context.fill(body, with: .color(Color.sh.bgBase))
-                    context.stroke(body, with: .color(Color.sh.textSecondary), style: line)
+                    context.fill(body, with: .color(selected ? Color.sh.primary : Color.sh.bgBase))
+                    context.stroke(body, with: .color(selected ? Color.sh.textOnPrimary : Color.sh.textSecondary), style: line)
                     switch tool {
                     case .pen:
                         let tip = Path { $0.move(to: CGPoint(x: 8, y: 5.5)); $0.addLine(to: CGPoint(x: 12, y: 5.5)) }
@@ -143,7 +144,7 @@ struct SHMarkupToolGlyph: View {
                         context.fill(Path(CGRect(x: 7, y: 3, width: 6, height: 4)).applying(scale), with: .color(Color.sh.running))
                     case .eraser:
                         let band = Path { $0.move(to: CGPoint(x: 5, y: 10)); $0.addLine(to: CGPoint(x: 15, y: 10)) }
-                        context.stroke(band.applying(scale), with: .color(Color.sh.textSecondary), style: line)
+                        context.stroke(band.applying(scale), with: .color(selected ? Color.sh.textOnPrimary : Color.sh.textSecondary), style: line)
                     case .comment:
                         break
                     }

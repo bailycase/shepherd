@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The iPad and iPhone Duo side pane's head (DuoOpenSidePane, DuoSidePaneTabs): one row of tabs, level with the thread's title, then the
-/// pane's ⋯ trailing. The open tab shows its glyph, its label and its count (Changes' files) on `bgSelected`, semibold; the others
+/// pane's ⋯ trailing, on the pane's own fill. The open tab shows its glyph, its label and its count (Changes' files) in a `bgSelected` capsule; the others
 /// are their glyph alone in `textSecondary`, as the Mac's strip drops labels in a narrow pane (`SHSidePaneTabs`). A tab whose work runs
 /// (Terminal, Subagents) carries a dot in its state's color. The pane closes from the thread's side-pane button.
 public struct SHPadPaneTab: Identifiable, Equatable, Sendable {
@@ -26,10 +26,10 @@ public enum SHPadPaneMetrics {
     public static let headHeight: CGFloat = 52
     public static let leading: CGFloat = SH.Space.l
     public static let trailing: CGFloat = SH.Space.m + SH.Space.xxs
-    /// A tab's pill: 36pt at radius 8 inside its 44pt target, its glyph 15pt.
-    public static let tabHeight: CGFloat = 36
-    public static let tabGlyph: CGFloat = 15
-    public static let tabFont: CGFloat = 13.5
+    /// A tab's capsule: 40pt inside its 44pt target, its glyph 17pt and its label 15 (iPadPaneFiles).
+    public static let tabHeight: CGFloat = 40
+    public static let tabGlyph: CGFloat = 17
+    public static let tabFont: CGFloat = 15
     /// The status dot, its center on the glyph's top trailing corner.
     public static let dot: CGFloat = 6
 }
@@ -77,7 +77,7 @@ public struct SHPadPaneHead<Options: View>: View {
                     .fixedSize()
                     .padding(.horizontal, SH.Space.m)
                     .frame(minWidth: SH.Height.touch, minHeight: SHPadPaneMetrics.tabHeight)
-                    .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .background(selected ? sh.bgSelected : .clear, in: Capsule())
                     .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }
@@ -92,7 +92,6 @@ public struct SHPadPaneHead<Options: View>: View {
         .padding(.leading, SHPadPaneMetrics.leading)
         .padding(.trailing, SHPadPaneMetrics.trailing)
         .frame(minHeight: SHPadPaneMetrics.headHeight)
-        .background(sh.bgWindow)
         .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side pane tabs")
