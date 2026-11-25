@@ -49,6 +49,7 @@ struct HooksScreen: View {
             if !inColumn {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Sources") { navigator.open(.settings(.hookSources)) }
+                    .tint(Color.sh.textPrimary)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -149,7 +150,7 @@ private struct HookRow: View {
                         VStack(alignment: .leading, spacing: SH.Space.xxs) {
                             Text(row.command).font(.shMono(MobileLayout.settingsNoteSize + 1)).foregroundStyle(sh.textPrimary)
                                 .multilineTextAlignment(.leading)
-                            (Text(row.matcher).font(.shMono(MobileLayout.settingsNoteCodeSize)) + Text(" · " + row.source))
+                            Text("\(Text(row.matcher).font(.shMono(MobileLayout.settingsNoteCodeSize))) · \(row.source)")
                                 .font(.shSans(MobileLayout.settingsCaptionSize))
                                 .foregroundStyle(sh.textSecondary)
                                 .multilineTextAlignment(.leading)
