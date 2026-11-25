@@ -205,7 +205,7 @@ struct DesignLifecycleFlowTests {
             return vm.designSystemDeleteRequest != nil
         }
         let request = try #require(vm.designSystemDeleteRequest)
-        #expect(request.words.lines.first?.lead == "Used by 1 design; they keep their copy.")
+        #expect(request.words.lines.first?.lead == "Used by 1 design; they keep their copy:")
         vm.confirmDesignSystemDelete(request)
 
         try await eventuallyOnMain("the system gone") { vm.designSystems.summary("acme-web") == nil }
