@@ -9,7 +9,10 @@ a native thread: its transcript, tool calls, questions, and subagents, with a co
 follow-ups. The sidebar is where you supervise. Its status dots show who is working, who needs
 you, and who is done.
 
-> Screenshot coming soon.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme-dark.webp">
+  <img alt="Shepherd on the Mac: the sidebar groups agents by who needs you, who is working and who is done; the open thread shows an agent's reply, its edited files and its branch." src="docs/images/readme-light.webp">
+</picture>
 
 ## Philosophy
 
