@@ -19,7 +19,7 @@ public struct HostDesignRef: Hashable, Codable, Sendable {
 }
 
 /// A design's tile on the Designs screen (MobileDesigns): its first board for the thumbnail, its
-/// name, and "acme-web · 4 boards · 2m" (its system), or "drawing · 2 boards" while its agent
+/// name, and "acme-web · 4 boards · 2m" (its system), or "Drawing · 2 boards" while its agent
 /// works.
 public struct RemoteDesignTile: Identifiable, Equatable, Sendable {
     public var ref: HostDesignRef
@@ -125,9 +125,9 @@ public struct RemoteDesignsModel: Equatable, Sendable {
 
 /// The words and measures the phone's design screens use.
 public enum RemoteDesignPresentation {
-    /// A tile's line: "acme-web · 4 boards · 2m"; "drawing · 2 boards" while its agent works.
+    /// A tile's line: "acme-web · 4 boards · 2m"; "Drawing · 2 boards" while its agent works.
     public static func tileDetail(system: String?, boards: Int, drawing: Bool, edited: Double, now: Date) -> String {
-        if drawing { return "drawing · " + boardsText(boards) }
+        if drawing { return "Drawing · " + boardsText(boards) }
         return [system, boardsText(boards), age(edited, now: now)].compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -146,7 +146,7 @@ public enum RemoteDesignPresentation {
         [system, boardsText(boards)].compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// How long ago, as a tile says it: "now", "2m", "3h", "yesterday", "Mon", "Sep 12". `edited`
+    /// How long ago, as a tile says it: "now", "2m", "3h", "Yesterday", "Mon", "Sep 12". `edited`
     /// is milliseconds since 1970.
     public static func age(_ edited: Double, now: Date, calendar: Calendar = .current) -> String {
         let seconds = now.timeIntervalSince1970 - edited / 1000
@@ -155,7 +155,7 @@ public enum RemoteDesignPresentation {
         let date = Date(timeIntervalSince1970: edited / 1000)
         if calendar.isDate(date, inSameDayAs: now) { return "\(Int(seconds / 3_600))h" }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
-        if days == 1 { return "yesterday" }
+        if days == 1 { return "Yesterday" }
         let format: Date.FormatString = days > 1 && days < 7
             ? "\(weekday: .abbreviated)" : "\(month: .abbreviated) \(day: .defaultDigits)"
         return date.formatted(.verbatim(format, locale: Locale(identifier: "en_US_POSIX"),

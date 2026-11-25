@@ -161,14 +161,14 @@ extension InstructionsEditorMetrics {
 }
 
 extension InstructionsTextView {
-    /// The Files editor's marks: `changed` lines tinted with a `lantern` bar, `agent` lines with a `running` bar.
+    /// The Files editor's marks: `changed` lines tinted with a `lantern` bar, `agent` lines with a `done` (green) bar.
     func decorate(changed: Set<Int>, agent: Set<Int>, styles: InstructionsEditorStyles) {
         let layout = layoutManager as? InstructionsLayoutManager
         layout?.agentLines = agent
         layout?.markX = metrics.gutterWidth + MobileLayout.fileCodeMarkGap
         layout?.markWidth = MobileLayout.fileMarkWidth
         layout?.mark = UIColor(Color.sh.lantern)
-        layout?.agentMark = UIColor(Color.sh.running)
+        layout?.agentMark = UIColor(Color.sh.done)
         decorate(changed: changed, styles: styles)
     }
 }

@@ -5,8 +5,8 @@ import SwiftUI
 public enum SHTerminalMetrics {
     #if os(iOS)
     public static let panelHeight: CGFloat = 340
-    public static let tabBarHeight: CGFloat = 46
-    public static let tabHeight: CGFloat = 32
+    public static let tabBarHeight: CGFloat = 52
+    public static let tabHeight: CGFloat = 36
     /// The tab bar's icon buttons are drawn this size and hit at 44.
     public static let buttonSize: CGFloat = 34
     public static let contentPadding = EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
@@ -74,6 +74,10 @@ public struct SHTerminalTab: Equatable, Identifiable, Sendable {
         case unseen
         /// Its process exited; its output stays until the host closes it.
         case exited(failed: Bool)
+
+        public var isExited: Bool {
+            if case .exited = self { true } else { false }
+        }
     }
 
     public let id: String
@@ -308,17 +312,17 @@ public struct SHTerminalTabView: View {
         return HStack(spacing: 0) {
             Button(action: select) {
                 HStack(spacing: SH.Space.s) {
-                    glyph
+                    // The selected tab (iPadTerminal) and one that exited carry the terminal glyph.
+                    if isSelected || tab.activity.isExited { glyph }
                     Text(tab.title)
-                        .font(.sh(.mono))
+                        .font(.shSans(15, isSelected ? .medium : .regular))
                         .shShimmer(active: tab.activity == .running || tab.activity == .starting)
                         .foregroundStyle(isSelected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     // The selected tab names its host (TerminalTab · states); the rest share it.
                     if isSelected, let host = tab.host {
-                        Label(host, systemImage: "desktopcomputer")
-                            .labelStyle(SHTerminalHostLabelStyle())
-                            .font(.sh(.micro, weight: .regular))
+                        Text(host)
+                            .font(.shSans(15))
                             .foregroundStyle(sh.textTertiary)
                             .lineLimit(1)
                     }
@@ -326,8 +330,8 @@ public struct SHTerminalTabView: View {
                         Circle().fill(sh.running).frame(width: 6, height: 6)
                     }
                 }
-                .padding(.leading, SH.Space.m)
-                .padding(.trailing, isSelected && close != nil ? SH.Space.xs : SH.Space.m)
+                .padding(.leading, SH.Space.l)
+                .padding(.trailing, isSelected && close != nil ? SH.Space.xs : SH.Space.l)
                 .frame(minHeight: SHTerminalMetrics.tabHeight)
                 .contentShape(Rectangle())
             }
@@ -353,7 +357,7 @@ public struct SHTerminalTabView: View {
             }
         }
         .background(isSelected ? sh.bgSelected : hovering ? sh.bgHover : .clear,
-                    in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                    in: Capsule())
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .fixedSize()

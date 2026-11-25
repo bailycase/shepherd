@@ -60,8 +60,8 @@ struct GlancePreviewTests {
     /// The Lock Screen's card around a Live Activity's content.
     func card<V: View>(@ViewBuilder _ content: () -> V) -> some View {
         content()
-            .padding(.vertical, SH.Space.l)
-            .padding(.horizontal, SH.Space.xl)
+            .padding(.vertical, SHGlanceMetrics.cardPaddingVertical)
+            .padding(.horizontal, SHGlanceMetrics.cardPaddingHorizontal)
             .frame(width: 361, alignment: .leading)
             .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }

@@ -12,7 +12,12 @@ extension MobileLayout {
 extension MobileLayout {
     /// The pane splits into tree and editor from this width; narrower, a file opens in place of the tree.
     static let filesSplitMinWidth: CGFloat = 520
-    static let filesTreeColumn: CGFloat = 210
+    static let filesTreeColumn: CGFloat = 240
+    /// The tree's names and glyphs, the path bar's mono and its Revert and Save, the footer's line.
+    static let filesTreeText: CGFloat = 15
+    static let filesPathText: CGFloat = 14
+    static let filesPathAction: CGFloat = 15
+    static let filesFooterText: CGFloat = 14
     /// A level of the split tree, and the chevron's column a file's icon lines up past.
     static let filesTreeLevel: CGFloat = 14
     static let filesChevron: CGFloat = 9
@@ -36,4 +41,10 @@ extension MobileLayout {
     static let unwrappedLineWidth: CGFloat = 20_000
     /// Syntax colors come back after this pause in typing.
     static let fileRestyleDelay: Duration = .milliseconds(250)
+}
+
+// The side pane as a card (iPadPaneFiles, iPadPaneBrowser, iPadTerminal).
+extension MobileLayout {
+    static let sidePaneRadius: CGFloat = 20
+    static let sidePaneInset: CGFloat = SH.Space.m
 }

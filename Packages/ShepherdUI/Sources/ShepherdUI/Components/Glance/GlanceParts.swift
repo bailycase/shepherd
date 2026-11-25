@@ -24,10 +24,20 @@ public enum SHGlanceMetrics {
     public static let mark: CGFloat = 15
     /// A row's state dot.
     public static let dot: CGFloat = 7
-    /// A card button: a 34pt capsule (38 in the island).
-    public static let button: CGFloat = 34
-    public static let islandButton: CGFloat = 38
-    public static let buttonText: CGFloat = 13.5
+    /// A card button: a 40pt capsule (MobileLiveLock, MobileIsland), its word in 14 medium.
+    public static let button: CGFloat = 40
+    public static let islandButton: CGFloat = 40
+    public static let buttonText: CGFloat = 14
+    /// A Live Activity card's own type (MobileLiveLock): its title in 15 semibold, its time and
+    /// meta in 13, its lines in 14, padded 14 × 16.
+    public static let cardTitle: CGFloat = 15
+    public static let cardMeta: CGFloat = 13
+    public static let cardLine: CGFloat = 14
+    public static let cardPaddingVertical: CGFloat = 14
+    public static let cardPaddingHorizontal: CGFloat = 16
+    /// What sits between a card's header, its lines and its buttons.
+    public static let cardLineGap: CGFloat = 6
+    public static let cardButtonGap: CGFloat = 12
     /// The island's compact count or time, and the minimal dot.
     public static let compactText: CGFloat = 12.5
     public static let minimalDot: CGFloat = 9
@@ -137,9 +147,9 @@ public struct SHGlanceElapsed: View {
             .overlay(alignment: .trailing) {
                 Text(timerInterval: since...max(since, Date()).addingTimeInterval(12 * 3600), countsDown: false)
                     .multilineTextAlignment(.trailing)
-                    .foregroundStyle(color ?? Color.sh.running)
+                    .foregroundStyle(color ?? Color.sh.textSecondary)
             }
-            .font(.shMono(size, .semibold))
+            .font(.shSans(size))
             .monospacedDigit()
             .lineLimit(1)
             .fixedSize()
@@ -299,9 +309,9 @@ public struct SHGlanceGroupHead: View {
     }
 }
 
-/// A card button's face: a 34pt capsule sharing the row (38 in the island); Reply… keeps its
-/// own width so the answers get the rest. The recommended
-/// answer is the one primary, lantern on `textOnLantern`; Stop's word is `failed`.
+/// A card button's face: a 40pt capsule sharing the row; Reply… keeps its own width so the
+/// answers get the rest. The recommended answer is the one primary, `primary` ink on
+/// `textOnPrimary` (the island's `islandText` on black); the rest sit on `bgSelected`.
 public struct SHGlanceButtonLabel: View {
     let action: SHGlanceAction
     let island: Bool
@@ -316,15 +326,15 @@ public struct SHGlanceButtonLabel: View {
         let height = island ? SHGlanceMetrics.islandButton : SHGlanceMetrics.button
         let fits = action == .reply
         Text(action.title)
-            .font(.shSans(SHGlanceMetrics.buttonText, .semibold))
+            .font(.shSans(SHGlanceMetrics.buttonText, .medium))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .fixedSize(horizontal: fits, vertical: false)
-            .foregroundStyle(action.isPrimary ? sh.textOnLantern : action == .stop ? sh.failed : island ? sh.islandText : sh.textPrimary)
+            .foregroundStyle(action.isPrimary ? sh.textOnPrimary : island ? sh.islandText : sh.textPrimary)
             .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: fits ? nil : .infinity)
             .frame(height: height)
-            .background(action.isPrimary ? sh.lantern : island ? sh.islandFill : sh.bgSelected, in: Capsule())
+            .background(action.isPrimary ? sh.primary : island ? sh.islandFill : sh.bgSelected, in: Capsule())
     }
 }
 

@@ -16,9 +16,9 @@ public enum SHDesignMetrics {
     public static let paneTabTextSize: CGFloat = 12.5
     public static let paneTabCountSize: CGFloat = 10
     public static let paneTabUnderline: CGFloat = 2
-    /// The iPad pane's tabs (iPadDesign): 44pt tall in 15, sharing the pane's width.
-    public static let touchPaneTabHeight: CGFloat = SH.Height.touch
-    public static let touchPaneTabTextSize: CGFloat = 15
+    /// The iPad pane's tabs (iPadDesign): a 36pt segmented capsule, its words in 13.
+    public static let touchPaneTabHeight: CGFloat = 36
+    public static let touchPaneTabTextSize: CGFloat = 13
 
     // The canvas
     /// The canvas's dots: 1px, every 22pt.
@@ -85,6 +85,12 @@ public enum SHDesignMetrics {
     public static let pinShadowRadius: CGFloat = SH.Space.s
     public static let pinShadowY: CGFloat = SH.Space.xs
     public static let cardPinSize: CGFloat = 18
+    /// The phone and iPad boards' ink pin: the phone canvas's 24pt circle, a card's 22pt one, the
+    /// iPad canvas's teardrop (`pinSize`, a 2pt point, 13 semibold).
+    public static let touchPinSize: CGFloat = 24
+    public static let touchCardPinSize: CGFloat = 22
+    public static let touchPinPoint: CGFloat = 2
+    public static let touchPinText: CGFloat = 13
     public static let cardPinPoint: CGFloat = 3
     public static let cardPinTextSize: CGFloat = 10
     /// Every comment line is 1px.

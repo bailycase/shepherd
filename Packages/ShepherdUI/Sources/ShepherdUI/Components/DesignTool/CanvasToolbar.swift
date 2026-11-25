@@ -34,7 +34,12 @@ public struct SHCanvasToolbar: View {
         }
         .padding(SHDesignMetrics.toolbarPadding)
         .frame(height: SHDesignMetrics.toolbarHeight)
+        #if os(iOS)
+        // The iPad boards' glass capsule (iPadDesign's tools).
+        .glassEffect(.regular, in: Capsule())
+        #else
         .shPopover(radius: SHDesignMetrics.toolbarRadius)
+        #endif
     }
 }
 

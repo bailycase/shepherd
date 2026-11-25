@@ -7,22 +7,27 @@ import SwiftUI
 /// The phone's own measures, as MobileDesigns and MobileDesignBoard draw them.
 public enum SHPhoneDesignMetrics {
     // A design's tile (MobileDesigns)
-    /// The thumbnail: 110pt tall, radius 10, a 1px `lineSubtle` line.
-    public static let tileHeight: CGFloat = 110
-    public static let tileRadius: CGFloat = 10
-    /// Between the thumbnail, the name and the line under it.
-    public static let tileSpacing: CGFloat = SH.Space.s
-    public static let tileNameSize: CGFloat = 14
-    public static let tileDetailSize: CGFloat = 12
-    /// The grid: 14pt between rows, 12pt between columns.
-    public static let gridRowSpacing: CGFloat = 14
+    /// The tile is a card at radius 16: the thumbnail 112pt tall on a `bgHover` wash, flush to its
+    /// top, and under it the name in 15 semibold over the line in 13 `textSecondary`, 10 above
+    /// and 12 below, 12 at the sides.
+    public static let tileHeight: CGFloat = 112
+    public static let tileRadius: CGFloat = SH.Radius.xxl
+    public static let tileNameSize: CGFloat = 15
+    public static let tileDetailSize: CGFloat = 13
+    public static let tileFooterTop: CGFloat = 10
+    public static let tileFooterSides: CGFloat = 12
+    public static let tileFooterBottom: CGFloat = 12
+    /// The grid: 12pt between rows and columns, a tile at least this wide (two on a phone, three
+    /// on one side of an open Duo).
+    public static let gridRowSpacing: CGFloat = SH.Space.l
     public static let gridColumnSpacing: CGFloat = SH.Space.l
+    public static let gridColumnMinimum: CGFloat = 160
 
     // A design system's row
-    /// At least 52pt, 8×14 padding, 12pt between its parts.
+    /// At least 52pt, 10×16 padding, 12pt between its parts.
     public static let systemRowHeight: CGFloat = 52
-    public static let systemRowPaddingVertical: CGFloat = SH.Space.m
-    public static let systemRowPaddingHorizontal: CGFloat = 14
+    public static let systemRowPaddingVertical: CGFloat = 10
+    public static let systemRowPaddingHorizontal: CGFloat = SH.Space.xl
     public static let systemRowSpacing: CGFloat = SH.Space.l
     /// Three 7×14 swatches (radius 2), 2pt apart, in a 20pt column.
     public static let swatchWidth: CGFloat = 7
@@ -31,12 +36,12 @@ public enum SHPhoneDesignMetrics {
     public static let swatchSpacing: CGFloat = SH.Space.xxs
     public static let swatchColumn: CGFloat = 20
     public static let systemNameSize: CGFloat = 15
-    public static let systemSourceSize: CGFloat = 12.5
+    public static let systemSourceSize: CGFloat = 13
 
     // A board (MobileDesignBoard)
-    /// The page dots under the board's name: 6pt, 5pt apart.
-    public static let dotSize: CGFloat = 6
-    public static let dotSpacing: CGFloat = 5
+    /// The page dots under the board's name: 5pt, 4pt apart.
+    public static let dotSize: CGFloat = 5
+    public static let dotSpacing: CGFloat = SH.Space.xs
     public static let boardTitleSize: CGFloat = 16
     /// The comment card over the board: 12×14 padding, 8pt between its parts, radius 14, a
     /// header in 12, the comment in 14/1.45, the agent's progress in 12.5, shimmering.
@@ -48,19 +53,27 @@ public enum SHPhoneDesignMetrics {
     public static let cardTextSize: CGFloat = 14
     public static let cardLineHeight: CGFloat = 1.45
     public static let cardStatusSize: CGFloat = 12.5
-    /// The toolbar: a 20pt glyph over an 11pt label, 4pt apart, 10×14 padding.
-    public static let toolGlyph: CGFloat = 20
-    /// The symbol drawn in that 20pt box.
-    public static let toolSymbolSize: CGFloat = 17
-    public static let toolLabelSize: CGFloat = 11
-    public static let toolSpacing: CGFloat = SH.Space.xs
-    public static let toolbarPaddingVertical: CGFloat = 10
-    public static let toolbarPaddingHorizontal: CGFloat = 14
+    /// The toolbar floats as a 60pt glass capsule 16pt in from the sides: each tool a 52pt capsule
+    /// with a 22pt glyph over a 12pt medium label, 2pt apart, the chosen one on `bgSelected`.
+    public static let toolGlyph: CGFloat = 22
+    /// The symbol drawn in that 22pt box.
+    public static let toolSymbolSize: CGFloat = 19
+    public static let toolLabelSize: CGFloat = 12
+    public static let toolSpacing: CGFloat = SH.Space.xxs
+    public static let toolHeight: CGFloat = 52
+    public static let toolbarHeight: CGFloat = 60
+    public static let toolbarInset: CGFloat = SH.Space.xs
+    /// The comment card's radius and padding (12×16), and the pin in its head.
+    public static let threadRadius: CGFloat = 20
+    public static let threadPaddingVertical: CGFloat = SH.Space.l
+    public static let threadPaddingHorizontal: CGFloat = SH.Space.xl
+    public static let threadPin: CGFloat = 22
+    public static let replyHeight: CGFloat = 36
 }
 
-/// A design on the phone's Designs screen (MobileDesigns): its first board in a 110pt thumbnail
-/// (radius 10, a 1px `lineSubtle` line, on the board's own background), its name in 14
-/// semibold, and "acme-web · 4 boards · 2m" in 12 `textTertiary`.
+/// A design on the Designs screen (MobileDesigns, DuoOpenDesigns): a card at radius 16 with its
+/// first board in a 112pt thumbnail on a `bgHover` wash flush to the top, its name in 15
+/// semibold, and "acme-web · 4 boards · 2m" in 13 `textSecondary`.
 public struct SHDesignTile<Thumbnail: View>: View {
     let name: String
     let detail: String
@@ -79,26 +92,31 @@ public struct SHDesignTile<Thumbnail: View>: View {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("design.tile")
-        let shape = RoundedRectangle(cornerRadius: SHPhoneDesignMetrics.tileRadius)
         Button(action: action) {
-            VStack(alignment: .leading, spacing: SHPhoneDesignMetrics.tileSpacing) {
+            VStack(alignment: .leading, spacing: 0) {
                 thumbnail
                     .frame(maxWidth: .infinity)
                     .frame(height: SHPhoneDesignMetrics.tileHeight)
-                    .background(Color.sh.bgBase)
-                    .clipShape(shape)
-                    .shBorder(Color.sh.lineSubtle, radius: SHPhoneDesignMetrics.tileRadius)
-                Text(name)
-                    .font(.shSans(SHPhoneDesignMetrics.tileNameSize, .semibold))
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text([detail, host].compactMap { $0 }.joined(separator: " · "))
-                    .font(.shSans(SHPhoneDesignMetrics.tileDetailSize))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .background(Color.sh.bgHover)
+                    .clipped()
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text(name)
+                        .font(.shSans(SHPhoneDesignMetrics.tileNameSize, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text([detail, host].compactMap { $0 }.joined(separator: " · "))
+                        .font(.shSans(SHPhoneDesignMetrics.tileDetailSize))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .padding(.top, SHPhoneDesignMetrics.tileFooterTop)
+                .padding(.horizontal, SHPhoneDesignMetrics.tileFooterSides)
+                .padding(.bottom, SHPhoneDesignMetrics.tileFooterBottom)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .shCard(radius: SHPhoneDesignMetrics.tileRadius, line: Color.sh.lineSubtle, lift: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -142,13 +160,13 @@ public struct SHDesignSystemRow: View, Equatable {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(name)
-                    .font(.shSans(SHPhoneDesignMetrics.systemNameSize, .bold))
+                    .font(.shSans(SHPhoneDesignMetrics.systemNameSize, .medium))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 if let source {
                     Text(source)
                         .font(.shSans(SHPhoneDesignMetrics.systemSourceSize))
-                        .foregroundStyle(sh.textTertiary)
+                        .foregroundStyle(sh.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -183,7 +201,7 @@ public struct SHBoardDots: View, Equatable {
         HStack(spacing: SHPhoneDesignMetrics.dotSpacing) {
             ForEach(0..<max(count, 0), id: \.self) { index in
                 Circle()
-                    .fill(index == current ? Color.sh.textPrimary : Color.sh.lineStrong)
+                    .fill(index == current ? Color.sh.textPrimary : Color.sh.textTertiary.opacity(0.5))
                     .frame(width: SHPhoneDesignMetrics.dotSize, height: SHPhoneDesignMetrics.dotSize)
             }
         }
@@ -261,8 +279,9 @@ public struct SHPhoneCommentCard: View, Equatable {
     }
 }
 
-/// The board's toolbar on the phone (MobileDesignBoard): its tools spread evenly on `bgWindow`
-/// under a hairline, each a 20pt glyph over an 11pt label; the active one `running`.
+/// The board's toolbar on the phone (MobileDesignBoard): a floating glass capsule, each tool a
+/// 22pt glyph in `textSecondary` over its 12pt label in `textPrimary`; the active one on
+/// `bgSelected`.
 public struct SHBoardToolbar: View {
     public struct Tool: Identifiable, Equatable, Sendable {
         public var id: String
@@ -296,14 +315,17 @@ public struct SHBoardToolbar: View {
                     VStack(spacing: SHPhoneDesignMetrics.toolSpacing) {
                         Image(systemName: tool.symbol)
                             .font(.shSans(SHPhoneDesignMetrics.toolSymbolSize))
+                            .foregroundStyle(Color.sh.textSecondary)
                             .frame(width: SHPhoneDesignMetrics.toolGlyph, height: SHPhoneDesignMetrics.toolGlyph)
                         Text(tool.title)
-                            .font(.shSans(SHPhoneDesignMetrics.toolLabelSize))
+                            .font(.shSans(SHPhoneDesignMetrics.toolLabelSize, .medium))
+                            .foregroundStyle(Color.sh.textPrimary)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(on ? Color.sh.running : Color.sh.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, minHeight: SHPhoneDesignMetrics.toolHeight)
+                    .background(on ? Color.sh.bgSelected : .clear, in: Capsule())
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .disabled(disabled.contains(tool.id))
@@ -311,10 +333,105 @@ public struct SHBoardToolbar: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(.vertical, SHPhoneDesignMetrics.toolbarPaddingVertical)
-        .padding(.horizontal, SHPhoneDesignMetrics.toolbarPaddingHorizontal)
-        .frame(maxWidth: .infinity)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { SHHairline() }
+        .padding(SHPhoneDesignMetrics.toolbarInset)
+        .frame(height: SHPhoneDesignMetrics.toolbarHeight)
+        .glassEffect(.regular, in: Capsule())
+    }
+}
+
+/// A comment on the phone's board (MobileDesignBoard), the card over the toolbar: a 20pt card
+/// with the pin in 22pt `primary`, the author in 14 semibold and the age in `textTertiary`,
+/// Resolve trailing in `textPrimary`, the comment in 15, each answer under a hairline, and the
+/// reply as a filled capsule.
+public struct SHPhoneCommentThread: View {
+    let number: Int
+    let author: String
+    let age: String
+    let note: String?
+    let text: String
+    let entries: [SHCommentEntry]
+    @Binding var reply: String
+    let onResolve: (() -> Void)?
+    let onReply: (() -> Void)?
+    @FocusState private var replyFocused: Bool
+
+    public init(number: Int, author: String, age: String, note: String? = nil, text: String, entries: [SHCommentEntry] = [],
+                reply: Binding<String>, onResolve: (() -> Void)? = nil, onReply: (() -> Void)? = nil) {
+        self.number = number
+        self.author = author
+        self.age = age
+        self.note = note
+        self.text = text
+        self.entries = entries
+        _reply = reply
+        self.onResolve = onResolve
+        self.onReply = onReply
+    }
+
+    public var body: some View {
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SHPhoneDesignMetrics.threadRadius)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.m) {
+                SHCommentPin(number, size: .card)
+                Text(author).font(.shSans(14, .semibold)).foregroundStyle(sh.textPrimary)
+                Text([age, note].compactMap { $0 }.joined(separator: " · "))
+                    .font(.shSans(14))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                if let onResolve {
+                    Button(action: onResolve) {
+                        Text("Resolve").font(.shSans(14, .medium)).foregroundStyle(sh.textPrimary)
+                            .frame(minHeight: SH.Height.touch).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            phoneText(text)
+            ForEach(entries) { entry in
+                VStack(alignment: .leading, spacing: SHDesignMetrics.entrySpacing) {
+                    (Text(entry.author).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
+                        + Text(" · \(entry.age)").foregroundStyle(sh.textTertiary))
+                        .font(.shSans(SHPhoneDesignMetrics.cardMetaSize))
+                    phoneText(entry.text)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, SHDesignMetrics.entryGap)
+                .overlay(alignment: .top) { SHHairline() }
+            }
+            if let onReply {
+                TextField("Reply…", text: $reply, prompt: Text("Reply…").foregroundStyle(sh.textTertiary), axis: .vertical)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .font(.shSans(15))
+                    .foregroundStyle(sh.textPrimary)
+                    .focused($replyFocused)
+                    .submitLabel(.send)
+                    .onSubmit(onReply)
+                    .padding(.horizontal, SH.Space.l)
+                    .padding(.vertical, SH.Space.s)
+                    .frame(minHeight: SHPhoneDesignMetrics.replyHeight)
+                    .background(sh.bgSelected, in: Capsule())
+                    .contentShape(Capsule())
+                    .onTapGesture { replyFocused = true }
+                    .padding(.top, SH.Space.xs)
+            }
+        }
+        .padding(.vertical, SHPhoneDesignMetrics.threadPaddingVertical)
+        .padding(.horizontal, SHPhoneDesignMetrics.threadPaddingHorizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: SHPhoneDesignMetrics.threadRadius, line: sh.lineSubtle, lift: true)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Comment by \(author)")
+    }
+
+    private func phoneText(_ text: String) -> some View {
+        Text(text)
+            .shText(size: 15, lineHeight: 1.4)
+            .foregroundStyle(Color.sh.textPrimary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

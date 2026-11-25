@@ -89,7 +89,7 @@ public struct SHGlanceHeader: View {
         others.items = glance.items.filter { $0.state != .needsYou }
         others.omitted[.needsYou] = nil
         let rest = others.summary
-        let font = Font.shSans(SHGlanceMetrics.title, .semibold)
+        let font = Font.shSans(SHGlanceMetrics.cardTitle, .semibold)
         guard need > 0 else { return Text(rest).font(font).foregroundStyle(Color.sh.textPrimary) }
         let head = Text("\(need) need\(need == 1 ? "s" : "") you").font(font).foregroundStyle(Color.sh.lanternText)
         guard rest != "Nothing running" else { return head }
@@ -128,30 +128,31 @@ struct SHGlanceLead: View {
             HStack(spacing: SH.Space.m) {
                 SHGlanceMark(item.state, stale: stale && item.state == .running, dotForQuestion: true)
                 Text(item.title)
-                    .font(.shSans(SHGlanceMetrics.lead, .semibold))
+                    .font(.shSans(SHGlanceMetrics.cardTitle, .semibold))
                     .foregroundStyle(stale ? Color.sh.textSecondary : Color.sh.textPrimary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 SHGlanceLeadTime(item: item, stale: stale, now: now)
             }
             if let line = SHGlanceLead.line(item, stale: stale) {
-                line.lineLimit(2).padding(.leading, SHGlanceMetrics.mark + SH.Space.m)
+                line.lineLimit(2).padding(.top, SH.Space.xxs)
             }
         }
     }
 
     /// What it asks, runs, or ended with.
     static func line(_ item: SHGlance.Item, stale: Bool) -> Text? {
-        let body = Font.shSans(SHGlanceMetrics.body)
+        let body = Font.shSans(SHGlanceMetrics.cardLine)
         switch item.state {
         case .needsYou:
             return item.question.map { Text($0).font(body).foregroundStyle(Color.sh.textSecondary) }
         case .running:
-            let verb = Text(stale ? "Was running" : "Running").font(body).foregroundStyle(stale ? Color.sh.textTertiary : Color.sh.textPrimary)
+            let verb = Text(stale ? "Was running" : "Running").font(.shSans(SHGlanceMetrics.cardLine, .medium))
+                .foregroundStyle(stale ? Color.sh.textTertiary : Color.sh.textPrimary)
             guard let command = item.command else {
                 return item.subagents.map { _ in verb } ?? (stale ? Text("Status unknown").font(body).foregroundStyle(Color.sh.textTertiary) : nil)
             }
-            return Text("\(verb)  \(Text(command).font(.shMono(SHGlanceMetrics.mono)).foregroundStyle(Color.sh.textTertiary))")
+            return Text("\(verb) \(Text(command).font(.shMono(SHGlanceMetrics.mono)).foregroundStyle(Color.sh.textTertiary))")
         case .done, .failed:
             return item.result.map { Text($0).font(body).foregroundStyle(Color.sh.textSecondary) }
         }
@@ -166,11 +167,11 @@ struct SHGlanceLeadTime: View {
 
     var body: some View {
         if item.state == .running, !stale, let since = item.since {
-            SHGlanceElapsed(since: since, size: SHGlanceMetrics.lead)
+            SHGlanceElapsed(since: since, size: SHGlanceMetrics.cardMeta)
         } else {
             Text([item.hostName, item.since.map { SHGlanceAgo.text($0, now: now) }].compactMap { $0 }.joined(separator: " · "))
-                .font(.shMono(SHGlanceMetrics.mono))
-                .foregroundStyle(Color.sh.textTertiary)
+                .font(.shSans(SHGlanceMetrics.cardMeta))
+                .foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
         }
@@ -195,11 +196,11 @@ public struct SHGlanceFollowCard<Buttons: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
+        VStack(alignment: .leading, spacing: SHGlanceMetrics.cardLineGap) {
             HStack(spacing: SH.Space.m) {
                 SHGlanceMark(item.state, stale: stale, dotForQuestion: true)
                 Text(item.title)
-                    .font(.shSans(SHGlanceMetrics.title, .semibold))
+                    .font(.shSans(SHGlanceMetrics.cardTitle, .semibold))
                     .foregroundStyle(stale ? Color.sh.textSecondary : Color.sh.textPrimary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -207,7 +208,7 @@ public struct SHGlanceFollowCard<Buttons: View>: View {
             }
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 if stale {
-                    SHGlanceHeader.staleLine(glance).font(.shSans(SHGlanceMetrics.body)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                    SHGlanceHeader.staleLine(glance).font(.shSans(SHGlanceMetrics.cardLine)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                 }
                 if let line = SHGlanceLead.line(item, stale: stale) { line.lineLimit(2) }
                 if !stale, item.state == .running {
@@ -219,51 +220,49 @@ public struct SHGlanceFollowCard<Buttons: View>: View {
                 }
                 if !stale { meta }
             }
-            .padding(.leading, SHGlanceMetrics.mark + SH.Space.m)
             buttons(item).padding(.top, SH.Space.xs)
         }
     }
 
     @ViewBuilder private var trailing: some View {
-        let mono = Font.shMono(SHGlanceMetrics.mono)
+        let font = Font.shSans(SHGlanceMetrics.cardMeta)
         if stale {
-            Text("as of \(glance.updated.formatted(date: .omitted, time: .shortened))").font(mono).foregroundStyle(Color.sh.textTertiary).fixedSize()
+            Text("as of \(glance.updated.formatted(date: .omitted, time: .shortened))").font(font).foregroundStyle(Color.sh.textSecondary).fixedSize()
         } else {
             switch item.state {
             case .running:
-                HStack(spacing: SH.Space.s) {
-                    Text(item.hostName).font(mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
-                    if let since = item.since { SHGlanceElapsed(since: since, size: SHGlanceMetrics.lead) }
-                }.fixedSize()
+                if let since = item.since { SHGlanceElapsed(since: since, size: SHGlanceMetrics.cardMeta) }
             case .needsYou:
-                Text("waiting \(item.since.map { SHGlanceAgo.text($0, now: now) } ?? "")").font(mono).foregroundStyle(Color.sh.lanternText).fixedSize()
+                Text("waiting \(item.since.map { SHGlanceAgo.text($0, now: now) } ?? "")").font(.shSans(SHGlanceMetrics.cardMeta, .medium))
+                    .foregroundStyle(Color.sh.lanternText).fixedSize()
             case .done:
-                Text("Done · \(item.since.map { SHGlanceAgo.text($0, now: now) } ?? "")").font(mono).foregroundStyle(Color.sh.done).fixedSize()
+                Text("Done · \(item.since.map { SHGlanceAgo.text($0, now: now) } ?? "")").font(font).foregroundStyle(Color.sh.done).fixedSize()
             case .failed:
-                Text("Failed · \(item.since.map { SHGlanceAgo.text($0, now: now) } ?? "")").font(mono).foregroundStyle(Color.sh.failed).fixedSize()
+                Text("Failed · \(item.since.map { SHGlanceAgo.text($0, now: now) } ?? "")").font(font).foregroundStyle(Color.sh.failed).fixedSize()
             }
         }
     }
 
-    /// Its changes, what waits in its queue, and where it runs.
+    /// "Edited 3 files +67 −48 · Studio": its changes, what waits in its queue, and where it runs.
     private var meta: some View {
-        HStack(spacing: SH.Space.s) {
+        let font = Font.shSans(SHGlanceMetrics.cardLine)
+        return HStack(spacing: SH.Space.xs) {
             if let changes = item.changes, changes.files > 0 {
-                if item.state == .done || item.state == .failed {
-                    Text("Edited \(changes.files) file\(changes.files == 1 ? "" : "s")").font(.shSans(SHGlanceMetrics.row)).foregroundStyle(Color.sh.textSecondary)
-                }
+                Text("Edited \(changes.files) file\(changes.files == 1 ? "" : "s")").font(font).foregroundStyle(Color.sh.textSecondary)
                 SHGlanceDiff(changes)
             }
-            Text(metaLine).font(.shMono(SHGlanceMetrics.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+            if !metaLine.isEmpty {
+                Text(metaLine).font(font).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+            }
         }
     }
 
     private var metaLine: String {
         var parts: [String] = []
         if item.queued > 0 { parts.append("\(item.queued) queued") }
-        if item.state != .running { parts.append(item.hostName) }
+        parts.append(item.hostName)
         let line = parts.joined(separator: " · ")
-        return item.changes.map { $0.files > 0 } == true && !line.isEmpty ? "· \(line)" : line
+        return item.changes.map { $0.files > 0 } == true ? "· \(line)" : line
     }
 }
 
@@ -314,7 +313,7 @@ public struct SHGlanceIslandTrailing: View {
                     .font(.shMono(SHGlanceMetrics.mono)).foregroundStyle(Color.sh.islandSecondary)
             } else if let follow {
                 switch follow.state {
-                case .running: follow.since.map { SHGlanceElapsed(since: $0, size: SHGlanceMetrics.compactText) }
+                case .running: follow.since.map { SHGlanceElapsed(since: $0, size: SHGlanceMetrics.compactText, color: Color.sh.islandSecondary) }
                 case .done: Text("Done").font(font).foregroundStyle(Color.sh.done)
                 case .failed: Text("Failed").font(font).foregroundStyle(Color.sh.failed)
                 case .needsYou: Text("Needs you").font(font).foregroundStyle(Color.sh.lantern)
@@ -391,7 +390,7 @@ public struct SHGlanceIslandBody<Buttons: View>: View {
     public var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.xs) {
-            Text(item.title).font(.shSans(SHGlanceMetrics.title + 1, .semibold)).foregroundStyle(sh.islandText).lineLimit(1)
+            Text(item.title).font(.shSans(SHGlanceMetrics.cardTitle, .semibold)).foregroundStyle(sh.islandText).lineLimit(1)
             Group {
                 if stale {
                     SHGlanceHeader.staleLine(glance)
@@ -403,7 +402,7 @@ public struct SHGlanceIslandBody<Buttons: View>: View {
                     }
                 }
             }
-            .font(.shSans(SHGlanceMetrics.body))
+            .font(.shSans(SHGlanceMetrics.cardLine))
             .foregroundStyle(sh.islandSecondary)
             .lineLimit(2)
             if !stale {

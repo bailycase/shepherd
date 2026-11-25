@@ -156,34 +156,59 @@ public struct SHDesignPaneTabs: View {
     }
 
     public var body: some View {
-        let touch = size == .touch
-        HStack(spacing: touch ? 0 : SHDesignMetrics.paneTabSpacing) {
+        if size == .touch { segmented } else { underlined }
+    }
+
+    /// iPadDesign: the tabs as a segmented capsule on `bgSelected`, 36pt tall with 3pt around its
+    /// tabs, the current one a `bgRaised` capsule on the lift in `textPrimary`, the rest
+    /// `textSecondary`, all in 13 medium, a count in regular `textTertiary` ("Comments 2").
+    private var segmented: some View {
+        HStack(spacing: SH.Space.xxs) {
+            ForEach(tabs) { tab in
+                let current = tab.id == selection
+                Button { select(tab.id) } label: {
+                    HStack(spacing: SH.Space.xs + 1) {
+                        Text(tab.title).font(.shSans(SHDesignMetrics.touchPaneTabTextSize, .medium))
+                        if let count = tab.count {
+                            Text("\(count)").font(.shSans(SHDesignMetrics.touchPaneTabTextSize)).foregroundStyle(Color.sh.textTertiary)
+                        }
+                    }
+                    .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background {
+                        if current { Capsule().fill(Color.sh.bgRaised).shadow(color: .sh.liftFar, radius: SH.Space.xs, y: SH.Space.xxs) }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(current ? .isSelected : [])
+            }
+        }
+        .padding(SH.Space.xxs + 1)
+        .frame(height: SHDesignMetrics.touchPaneTabHeight)
+        .background(Color.sh.bgSelected, in: Capsule())
+        .padding(SH.Space.l)
+    }
+
+    private var underlined: some View {
+        HStack(spacing: SHDesignMetrics.paneTabSpacing) {
             ForEach(tabs) { tab in
                 let current = tab.id == selection
                 Button { select(tab.id) } label: {
                     HStack(spacing: SH.Space.xs) {
-                        if touch {
-                            Text(tab.count.map { "\(tab.title) \($0)" } ?? tab.title)
-                                .font(.shSans(SHDesignMetrics.touchPaneTabTextSize, .regular))
-                                .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
-                        } else {
-                            Text(tab.title)
-                                .font(.shSans(SHDesignMetrics.paneTabTextSize, current ? .semibold : .regular))
-                                .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
-                            if let count = tab.count {
-                                Text("\(count)")
-                                    .font(.shMono(SHDesignMetrics.paneTabCountSize))
-                                    .foregroundStyle(Color.sh.textTertiary)
-                            }
+                        Text(tab.title)
+                            .font(.shSans(SHDesignMetrics.paneTabTextSize, current ? .semibold : .regular))
+                            .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
+                        if let count = tab.count {
+                            Text("\(count)")
+                                .font(.shMono(SHDesignMetrics.paneTabCountSize))
+                                .foregroundStyle(Color.sh.textTertiary)
                         }
                     }
-                    // iPadDesign: the touch tabs share the pane's width under a lantern line.
-                    .frame(maxWidth: touch ? .infinity : nil)
-                    .frame(height: touch ? SHDesignMetrics.touchPaneTabHeight : nil)
-                    .frame(maxHeight: touch ? nil : .infinity)
+                    .frame(maxHeight: .infinity)
                     .overlay(alignment: .bottom) {
                         if current {
-                            Rectangle().fill(touch ? Color.sh.lantern : Color.sh.textPrimary).frame(height: SHDesignMetrics.paneTabUnderline)
+                            Rectangle().fill(Color.sh.textPrimary).frame(height: SHDesignMetrics.paneTabUnderline)
                         }
                     }
                     .contentShape(Rectangle())
@@ -191,11 +216,11 @@ public struct SHDesignPaneTabs: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(current ? .isSelected : [])
             }
-            if !touch { Spacer(minLength: 0) }
+            Spacer(minLength: 0)
         }
-        .padding(.leading, touch ? 0 : SHDesignMetrics.paneTabsLeading)
-        .padding(.trailing, touch ? 0 : SH.Space.l)
-        .frame(height: touch ? nil : SHDesignMetrics.paneTabsHeight, alignment: .bottom)
+        .padding(.leading, SHDesignMetrics.paneTabsLeading)
+        .padding(.trailing, SH.Space.l)
+        .frame(height: SHDesignMetrics.paneTabsHeight, alignment: .bottom)
         .overlay(alignment: .bottom) { SHHairline() }
     }
 }

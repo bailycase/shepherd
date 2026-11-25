@@ -30,8 +30,8 @@ struct DesignsScreen: View {
                 if !model.tiles.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                         SHListHeader("Recent", count: nil)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: SHPhoneDesignMetrics.gridColumnSpacing,
-                                                                     alignment: .top), count: 2),
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: SHPhoneDesignMetrics.gridColumnMinimum),
+                                                      spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top)],
                                   spacing: SHPhoneDesignMetrics.gridRowSpacing) {
                             ForEach(model.tiles) { tile in
                                 DesignTileView(tile: tile, source: designs.source(tile.ref)) {
@@ -65,11 +65,10 @@ struct DesignsScreen: View {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            // New design is the lantern circle (MobileDesigns).
+            // New design is the ink circle (MobileDesigns).
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New design", systemImage: "plus") { DesignsHooks.create(navigator: navigator) }
                     .buttonStyle(.glassProminent)
-                    .tint(Color.sh.lantern)
                     .disabled(designs.serving.isEmpty)
             }
         }
@@ -101,21 +100,27 @@ struct DesignTileView: View, Equatable {
     }
 }
 
-/// The hosts' design systems as a list card, each opening its page.
+/// The hosts' design systems as a card at radius 16 on the board's lift, each opening its page,
+/// a hairline between them from the text's left edge.
 struct DesignSystemsCard: View {
     let rows: [RemoteDesignSystemRow]
     let swatches: [String: [String]]
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        SHListCard {
+        let first = rows.first?.id
+        VStack(spacing: 0) {
             ForEach(rows) { row in
                 Button { navigator.open(.designs(.system(host: row.host, namespace: row.namespace))) } label: {
                     SHDesignSystemRow(name: row.name, source: [row.source, row.hostTag].compactMap { $0 }.joined(separator: " · "),
                                       colors: (swatches[row.id] ?? []).map { Color(light: $0, dark: $0) })
                 }
                 .buttonStyle(.shRow(radius: 0))
+                .overlay(alignment: .top) {
+                    SHHairline().padding(.leading, SH.Space.xl).opacity(row.id == first ? 0 : 1)
+                }
             }
         }
+        .shCard(radius: SHPhoneDesignMetrics.tileRadius, line: Color.sh.lineSubtle, lift: true)
     }
 }

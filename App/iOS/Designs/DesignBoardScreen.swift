@@ -493,39 +493,46 @@ private struct DesignBoardContent: View {
     @State private var confirmingDuplicate = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
+            // The phone's canvas is the window under a `bgHover` wash, no dots (MobileDesignBoard).
+            Color.sh.bgWindow.overlay(Color.sh.bgHover).ignoresSafeArea()
             DesignBoardCanvas(model: model)
                 // The keyboard never refits the board: the comment being written rises over it.
                 .ignoresSafeArea(.keyboard)
-                .overlay(alignment: .bottom) { cardLayer }
-            if model.playing {
-                // Play's own bar: the board takes every touch until Done.
-                HStack {
-                    Text("Playing \(model.label)").shText(.caption).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-                    Spacer(minLength: SH.Space.m)
-                    Button("Done") { model.play(false) }.buttonStyle(.sh(.secondary))
-                }
-                .padding(.horizontal, MobileLayout.gutter)
-                .padding(.vertical, SH.Space.m)
-                .background(Color.sh.bgWindow)
-            } else {
-            SHBoardToolbar(tools: DesignBoardTools.all,
-                           active: model.commenting ? DesignBoardTools.comment : model.tweaking ? DesignBoardTools.tweak : nil,
-                           disabled: Set(model.designs.agent(model.ref) == nil ? [DesignBoardTools.ask] : [])
-                               .union(model.current == nil ? [DesignBoardTools.comment, DesignBoardTools.tweak, DesignBoardTools.export] : [])) { id in
-                switch id {
-                case DesignBoardTools.comment:
-                    model.commenting.toggle()
-                    if !model.commenting { model.cancelDraft() }
-                case DesignBoardTools.tweak:
-                    model.tweaking.toggle()
-                case DesignBoardTools.ask: ask()
-                case DesignBoardTools.boards:
-                    navigator.present(.designs(.boards(model.ref, current: model.current?.rawValue ?? "")))
-                default: exporting = true
+            // The comment card and the toolbar float over the board (MobileDesignBoard).
+            VStack(spacing: SH.Space.l) {
+                cardLayer
+                if model.playing {
+                    // Play's own bar: the board takes every touch until Done.
+                    HStack {
+                        Text("Playing \(model.label)").shText(.caption).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                        Spacer(minLength: SH.Space.m)
+                        Button("Done") { model.play(false) }.buttonStyle(.sh(.secondary))
+                    }
+                    .padding(.horizontal, SH.Space.xl)
+                    .padding(.vertical, SH.Space.m)
+                    .glassEffect(.regular, in: Capsule())
+                } else {
+                    SHBoardToolbar(tools: DesignBoardTools.all,
+                                   active: model.commenting ? DesignBoardTools.comment : model.tweaking ? DesignBoardTools.tweak : nil,
+                                   disabled: Set(model.designs.agent(model.ref) == nil ? [DesignBoardTools.ask] : [])
+                                       .union(model.current == nil ? [DesignBoardTools.comment, DesignBoardTools.tweak, DesignBoardTools.export] : [])) { id in
+                        switch id {
+                        case DesignBoardTools.comment:
+                            model.commenting.toggle()
+                            if !model.commenting { model.cancelDraft() }
+                        case DesignBoardTools.tweak:
+                            model.tweaking.toggle()
+                        case DesignBoardTools.ask: ask()
+                        case DesignBoardTools.boards:
+                            navigator.present(.designs(.boards(model.ref, current: model.current?.rawValue ?? "")))
+                        default: exporting = true
+                        }
+                    }
                 }
             }
-            }
+            .padding(.horizontal, MobileDesignLayout.cardInset + SH.Space.xs)
+            .padding(.bottom, SH.Space.m)
         }
         .sheet(isPresented: Binding(get: { model.tweaking && model.tweak != nil }, set: { if !$0 { model.tweaking = false } })) {
             if let tweak = model.tweak {
@@ -642,7 +649,8 @@ private struct DesignBoardContent: View {
             if let draft = model.draft {
                 DesignCommentDraftCard(model: model, target: draft.name ?? draft.label ?? draft.noun)
             } else if let id = model.selected, let comment = model.pins.first(where: { $0.id == id }) {
-                SHCommentThread(
+                SHPhoneCommentThread(
+                    number: comment.number,
                     author: comment.author == .agent ? "Design agent" : "You",
                     age: shCommentAge(since: comment.createdAt, now: .now),
                     note: comment.detached ? "element changed" : nil, text: comment.text,
@@ -651,13 +659,10 @@ private struct DesignBoardContent: View {
                                        age: shCommentAge(since: reply.createdAt, now: .now), text: reply.text)
                     }, reply: $model.replyText,
                     onResolve: { Task { await model.updateComment(resolve: true) } },
-                    onReply: { Task { await model.updateComment(resolve: false) } },
-                    onClose: { model.selected = nil })
+                    onReply: { Task { await model.updateComment(resolve: false) } })
                     .disabled(model.sending)
             }
         }
-        .padding(.horizontal, MobileDesignLayout.cardInset)
-        .padding(.bottom, MobileDesignLayout.cardInset)
     }
 }
 
@@ -686,10 +691,9 @@ private struct DesignBoardCanvas: View {
     var body: some View {
         GeometryReader { proxy in
             let space = CGSize(width: proxy.size.width - 2 * MobileLayout.gutter,
-                               height: proxy.size.height - 2 * MobileDesignLayout.boardTop)
+                               height: proxy.size.height - MobileDesignLayout.boardTop - MobileDesignLayout.boardBottom)
             ZStack(alignment: .top) {
-                SHDotGrid(spacing: SHDesignMetrics.gridSpacing)
-                    .background(Color.sh.bgBase)
+                Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { model.selected = nil }
                 if let live = model.live, let board = model.board {
@@ -753,10 +757,10 @@ private struct DesignBoardCanvas: View {
                 // Playing, the board is the design as it runs: no pins over it.
                 ForEach(model.playing ? [] : model.pins) { comment in
                     if let rect = model.pinRects[comment.id] {
-                        Button { model.selected = comment.id } label: { SHCommentPin(comment.number) }
+                        Button { model.selected = comment.id } label: { SHCommentPin(comment.number, size: .round) }
                             .buttonStyle(.plain)
-                            .frame(width: SHDesignMetrics.pinSize, height: SHDesignMetrics.pinSize)
-                            .offset(x: rect.maxX * scale - SHDesignMetrics.pinSize / 2, y: rect.minY * scale - SHDesignMetrics.pinSize / 2)
+                            .frame(width: SHDesignMetrics.touchPinSize, height: SHDesignMetrics.touchPinSize)
+                            .offset(x: rect.maxX * scale - SHDesignMetrics.touchPinSize / 2, y: rect.minY * scale - SHDesignMetrics.touchPinSize / 2)
                             .accessibilityLabel("Comment \(comment.number) on \(RemoteDesignPresentation.target(comment))")
                     }
                 }

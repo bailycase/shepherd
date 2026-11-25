@@ -44,7 +44,7 @@ struct RemoteDesignPresentationTests {
 
     @Test(arguments: [
         (10.0, "now"), (120, "2m"), (3_599, "59m"), (3 * 3_600, "3h"),
-        (13 * 3_600, "yesterday"), (3 * 86_400, "Fri"), (30 * 86_400, "Aug 23"),
+        (13 * 3_600, "Yesterday"), (3 * 86_400, "Fri"), (30 * 86_400, "Aug 23"),
     ] as [(Double, String)])
     func anAgeIsShort(_ secondsAgo: Double, _ text: String) {
         #expect(RemoteDesignPresentation.age(Self.ms(secondsAgo), now: Self.now, calendar: Self.utc) == text)
@@ -76,7 +76,7 @@ struct RemoteDesignPresentationTests {
         #expect(RemoteDesignPresentation.tileDetail(system: nil, boards: 1, drawing: false, edited: edited, now: Self.now)
             .hasPrefix("1 board · "))
         #expect(RemoteDesignPresentation.tileDetail(system: "acme-web", boards: 2, drawing: true, edited: edited, now: Self.now)
-            == "drawing · 2 boards")
+            == "Drawing · 2 boards")
         #expect(RemoteDesignPresentation.recentsDetail(boards: 4) == "design · 4 boards")
         #expect(RemoteDesignPresentation.recentsDetail(boards: nil) == "design")
         #expect(RemoteDesignPresentation.searchDetail(system: "acme-web", boards: 4) == "acme-web · 4 boards")
@@ -123,7 +123,7 @@ struct RemoteDesignPresentationTests {
                                            state: ShepherdState(spaces: [Self.space], agents: [working], designs: [drawn, build]))
         let model = RemoteDesignsModel(hosts: [host], now: Self.now)
         #expect(model.tiles.map(\.name) == ["Onboarding flow"])
-        #expect(model.tiles.first?.detail == "drawing · 2 boards")
+        #expect(model.tiles.first?.detail == "Drawing · 2 boards")
         #expect(model.tiles.first?.drawing == true)
         #expect(model.tiles.first?.hostTag == nil)
         #expect(model.systemsSummary == nil)

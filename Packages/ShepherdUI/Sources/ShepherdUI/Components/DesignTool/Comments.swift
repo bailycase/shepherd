@@ -11,6 +11,8 @@ public struct SHCommentPin: View {
     public enum Size: Sendable {
         case canvas
         case card
+        /// The phone board's pin: a plain circle on iOS, the canvas's pin elsewhere.
+        case round
     }
 
     let number: Int
@@ -22,22 +24,46 @@ public struct SHCommentPin: View {
     }
 
     public var body: some View {
-        let side = size == .canvas ? SHDesignMetrics.pinSize : SHDesignMetrics.cardPinSize
-        let point = size == .canvas ? SHDesignMetrics.pinPoint : SHDesignMetrics.cardPinPoint
+        #if os(iOS)
+        // The boards' ink pin: the iPad canvas's 26pt teardrop (a 2pt point), the phone board's
+        // 24pt circle and a card's 22pt one, the number in 12 or 13 semibold, on the lift.
+        let side: CGFloat = switch size {
+        case .canvas: SHDesignMetrics.pinSize
+        case .round: SHDesignMetrics.touchPinSize
+        case .card: SHDesignMetrics.touchCardPinSize
+        }
+        let point = size == .canvas ? SHDesignMetrics.touchPinPoint : side / 2
         let shape = UnevenRoundedRectangle(topLeadingRadius: side / 2, bottomLeadingRadius: point,
                                            bottomTrailingRadius: side / 2, topTrailingRadius: side / 2)
         Text("\(number)")
-            .font(.shMono(size == .canvas ? SHDesignMetrics.pinTextSize : SHDesignMetrics.cardPinTextSize, .bold))
+            .font(.shSans(size == .canvas ? SHDesignMetrics.touchPinText : SHDesignMetrics.pinTextSize, .semibold))
+            .foregroundStyle(Color.sh.textOnPrimary)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .frame(width: side, height: side)
+            .background(Color.sh.primary, in: shape)
+            .shadow(color: size == .card ? .clear : Color.sh.liftFar, radius: SH.Space.s, y: SH.Space.xs)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Comment \(number)")
+        #else
+        let side = size == .card ? SHDesignMetrics.cardPinSize : SHDesignMetrics.pinSize
+        let point = size == .card ? SHDesignMetrics.cardPinPoint : SHDesignMetrics.pinPoint
+        let shape = UnevenRoundedRectangle(topLeadingRadius: side / 2, bottomLeadingRadius: point,
+                                           bottomTrailingRadius: side / 2, topTrailingRadius: side / 2)
+        Text("\(number)")
+            .font(.shMono(size != .card ? SHDesignMetrics.pinTextSize : SHDesignMetrics.cardPinTextSize, .bold))
             .foregroundStyle(Color.sh.textOnLantern)
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .frame(width: side, height: side)
             .background(Color.sh.lantern, in: shape)
-            .shadow(color: size == .canvas ? Color.sh.knobShadow : .clear,
+            .shadow(color: size != .card ? Color.sh.knobShadow : .clear,
                     radius: SHDesignMetrics.pinShadowRadius, y: SHDesignMetrics.pinShadowY)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Comment \(number)")
+        #endif
     }
 }
 

@@ -32,8 +32,9 @@ struct ThreadWithSidePane: View {
                         .opacity(alone ? 0 : 1)
                         .accessibilityHidden(alone)
                     if open {
-                        if !alone { SHHairline(.vertical, color: Color.sh.lineStrong) }
-                        ThreadSidePane(ref: ref)
+                        // Half open, the pane is the screen's flat second half; otherwise a card.
+                        if !alone, fold != nil { SHHairline(.vertical, color: Color.sh.lineStrong) }
+                        ThreadSidePane(ref: ref, floating: fold == nil)
                             .paneWidth(fold != nil || alone ? nil : dock.width)
                             .shTransition(.pane, edge: .trailing)
                     }
@@ -71,6 +72,9 @@ private extension PadSplitLayout.PaneDock {
 /// Files (`ThreadFilesPane`, files.v1) and Browser (`ThreadBrowserPane`, browser.tunnel.v1) are their own views.
 struct ThreadSidePane: View {
     let ref: AgentRef
+    /// A card on the lift, 8pt in from its edges (iPadPaneFiles); false is the flat half of a Duo
+    /// (DuoOpenSidePane).
+    var floating = false
     @Environment(MobileNavigator.self) private var navigator
     @Environment(ThreadStores.self) private var threads
 
@@ -96,9 +100,25 @@ struct ThreadSidePane: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.sh.bgWindow)
+        .background(floating ? Color.sh.bgRaised : Color.sh.bgWindow)
+        .modifier(SidePaneCard(floating: floating))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side pane")
+    }
+}
+
+/// The pane as a card at radius 20 on the lift with 8pt around it, or as it is.
+private struct SidePaneCard: ViewModifier {
+    let floating: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if floating {
+            content
+                .shCard(radius: MobileLayout.sidePaneRadius, fill: Color.sh.bgRaised, line: Color.sh.lineSubtle, lift: true)
+                .padding(MobileLayout.sidePaneInset)
+        } else {
+            content
+        }
     }
 }
 

@@ -28,7 +28,6 @@ struct PadDesignChatPane: View {
             SHDesignPaneTabs(Self.tabs(open: canvas.openComments.count), selection: tab.rawValue, size: .touch) { id in
                 canvas.paneTab = PadDesignPaneTab(rawValue: id) ?? .chat
             }
-            .frame(height: MobileLayout.padDesignHeaderHeight, alignment: .bottom)
             ZStack {
                 Group {
                     if let agent {
@@ -44,19 +43,19 @@ struct PadDesignChatPane: View {
                 .allowsHitTesting(chat)
                 .accessibilityHidden(!chat)
                 if tab == .comments {
-                    PadDesignCommentsList(cards: canvas.cards()) { canvas.openThread($0.uuidString) }
-                        .background(Color.sh.bgWindow)
+                    PadDesignCommentsList(cards: canvas.cards(), open: { canvas.openThread($0.uuidString) },
+                                          resolve: { canvas.resolve($0) })
+                        .background(Color.sh.bgRaised)
                 }
                 if tab == .tweak {
                     PadDesignTweakPane(model: canvas.tweak, target: canvas.tweakTarget) { canvas.paneTab = .chat }
-                        .background(Color.sh.bgWindow)
+                        .background(Color.sh.bgRaised)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .background(Color.sh.bgWindow.ignoresSafeArea())
-        .overlay(alignment: .leading) { SHHairline(.vertical).ignoresSafeArea() }
+        .background(Color.sh.bgRaised)
     }
 }
 
@@ -112,14 +111,21 @@ private struct PadDesignChat: View {
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store))
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
-                    ThreadComposer(ref: ref)
-                        .overlay(alignment: .top) { SHHairline() }
+                    VStack(spacing: SH.Space.xs) {
+                        ThreadComposer(ref: ref)
+                        Text(MobileLayout.padDesignScribbleHint)
+                            .font(.shSans(MobileLayout.padDesignSubtitle))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, MobileLayout.padDesignCommentsPadding)
+                            .padding(.bottom, SH.Space.s)
+                    }
                 }
             }
             .environment(\.composerDesignChat, true)
             .shComposerSize(.compact)
             .environment(\.shProseSize, .small)
-            .background(Color.sh.bgWindow)
+            .background(Color.sh.bgRaised)
             .designAgentThread(ref)
     }
 
@@ -174,31 +180,64 @@ extension View {
     }
 }
 
-/// The Comments tab: the open comments' cards, oldest first, one lazy row each. A card opens its
-/// thread on the canvas.
+/// The Comments tab (iPadDesign): the open comments, oldest first, one lazy row each under a
+/// hairline: the ink pin, "Checkout · Total · 2m" in 12 `textTertiary`, the comment in 15, and
+/// Edit-less actions in `textSecondary`: Resolve. A row opens its thread on the canvas.
 private struct PadDesignCommentsList: View {
     let cards: [PadDesignCommentCard]
     let open: (UUID) -> Void
+    let resolve: (UUID) -> Task<Void, Never>?
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: MobileLayout.padDesignCommentsSpacing) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(cards) { card in
-                    Button { open(card.id) } label: {
-                        SHCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text)
-                            .equatable()
-                    }
-                    .buttonStyle(.plain)
+                    PadDesignCommentRow(card: card, open: open, resolve: resolve)
+                        .equatable()
                 }
                 if cards.isEmpty {
                     // Not drawn on any board: the least that is honest.
                     Text("No open comments. Pick Comment on the canvas, then tap an element.")
                         .font(.sh(.caption))
                         .foregroundStyle(Color.sh.textTertiary)
+                        .padding(MobileLayout.padDesignCommentsPadding)
                 }
             }
-            .padding(MobileLayout.padDesignCommentsPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// One open comment in the Comments tab.
+private struct PadDesignCommentRow: View, Equatable {
+    let card: PadDesignCommentCard
+    let open: (UUID) -> Void
+    let resolve: (UUID) -> Task<Void, Never>?
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.card == b.card }
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l) {
+            SHCommentPin(card.number)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text("\(card.target) · \(card.meta)").font(.shSans(MobileLayout.padDesignSubtitle)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                Text(card.text).font(.shSans(15)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
+                Button { _ = resolve(card.id) } label: {
+                    Text("Resolve").font(.shSans(14)).foregroundStyle(sh.textSecondary)
+                        .frame(minHeight: SH.Height.touch, alignment: .leading).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, -SH.Space.m)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, SH.Space.l)
+        .padding(.horizontal, SH.Space.xl)
+        .contentShape(Rectangle())
+        .onTapGesture { open(card.id) }
+        .overlay(alignment: .top) { SHHairline() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }

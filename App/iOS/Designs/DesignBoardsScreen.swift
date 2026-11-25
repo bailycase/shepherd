@@ -208,8 +208,8 @@ struct DesignBoardGrid: View {
 
     var body: some View {
         let canvas = index.snapshot.index
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top),
-                                 count: 2),
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: SHPhoneDesignMetrics.gridColumnMinimum),
+                                     spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top)],
                   spacing: SHPhoneDesignMetrics.gridRowSpacing) {
             ForEach(RemoteDesignPresentation.boards(canvas, page: page), id: \.self) { path in
                 if let board = canvas.boards[path] {
@@ -227,9 +227,7 @@ struct DesignBoardGrid: View {
                     .overlay {
                         if path == current {
                             RoundedRectangle(cornerRadius: SHPhoneDesignMetrics.tileRadius)
-                                .strokeBorder(Color.sh.running, lineWidth: SHDesignMetrics.ringWidth)
-                                .frame(height: SHPhoneDesignMetrics.tileHeight)
-                                .frame(maxHeight: .infinity, alignment: .top)
+                                .strokeBorder(Color.sh.primary, lineWidth: SHDesignMetrics.ringWidth)
                                 .allowsHitTesting(false)
                         }
                     }

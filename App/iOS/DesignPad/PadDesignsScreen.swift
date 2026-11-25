@@ -4,51 +4,68 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// The Designs list on iPad, which the sidebar's Designs row opens: every serving host's designs
-/// as the Mac's Designs page draws them (SHDesignCard, NavDesigns), most recently active first,
-/// each card naming its host when there are several. No iPad board draws this page; it is the
-/// least that reaches a design. Only hosts that offer `designs.v1` have designs here.
+/// The Designs list on iPad (DuoOpenDesigns, DuoClosedDesigns), which the sidebar's Designs row
+/// opens: every serving host's designs as cards in the phone's grid (SHDesignTile), most recently
+/// active first, each naming its host when there are several, then the hosts' design systems.
+/// Only hosts that offer `designs.v1` have designs here.
 struct PadDesignsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let designs = PadDesigns.of(hosts)
+        let systems = MobileDesigns.of(hosts)
         let thumbnails = PadDesignThumbnails.shared
         let now = Date()
         let tagsHosts = Set(designs.rows.map(\.ref.host)).count > 1
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: MobileLayout.padDesignCardMinWidth), spacing: SHDesignMetrics.cardGridSpacing)],
-                      alignment: .leading, spacing: SHDesignMetrics.cardGridSpacing) {
-                ForEach(designs.rows) { row in
-                    let first = designs.library(row.ref.host).listing?.designs.first { $0.id == row.ref.design }?.firstBoard
-                    SHDesignCard(name: row.name, system: row.system,
-                                 detail: tagsHosts ? "\(row.boards) · \(row.hostName)" : row.boards,
-                                 edited: "edited \(SuggestionsPresentation.when(row.lastActive / 1000, now: now))",
-                                 board: SHDesignCardBoard(size: first.map { CGSize(width: $0.width, height: $0.height) }),
-                                 action: { PadDesignHooks.open(row.ref, navigator: navigator) }) {
-                        PadDesignThumbnail(image: thumbnails.image(row.ref), version: thumbnails.versions[row.ref] ?? 0)
-                    }
-                    .task(id: first?.sha256) {
-                        guard let first else { return }
-                        thumbnails.update(row.ref, path: first.path, size: CGSize(width: first.width, height: first.height),
-                                          sha: first.sha256, source: designs.library(row.ref.host).source(row.ref.design))
+            VStack(alignment: .leading, spacing: MobileDesignLayout.sectionSpacing) {
+                if !designs.rows.isEmpty {
+                    VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                        SHListHeader("Recent", count: nil)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: SHPhoneDesignMetrics.gridColumnMinimum),
+                                                     spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top)],
+                                  spacing: SHPhoneDesignMetrics.gridRowSpacing) {
+                            ForEach(designs.rows) { row in
+                                let first = designs.library(row.ref.host).listing?.designs.first { $0.id == row.ref.design }?.firstBoard
+                                let drawing = row.agentID.flatMap { hosts.host(row.ref.host)?.agent($0) }?.status == .working
+                                SHDesignTile(name: row.name,
+                                             detail: drawing ? "Drawing · \(row.boards)"
+                                                 : [row.system, row.boards, RemoteDesignPresentation.age(row.lastActive, now: now)]
+                                                     .compactMap { $0 }.joined(separator: " · "),
+                                             host: tagsHosts ? row.hostName : nil,
+                                             action: { PadDesignHooks.open(row.ref, navigator: navigator) }) {
+                                    PadDesignThumbnail(image: thumbnails.image(row.ref), version: thumbnails.versions[row.ref] ?? 0)
+                                }
+                                .task(id: first?.sha256) {
+                                    guard let first else { return }
+                                    thumbnails.update(row.ref, path: first.path, size: CGSize(width: first.width, height: first.height),
+                                                      sha: first.sha256, source: designs.library(row.ref.host).source(row.ref.design))
+                                }
+                            }
+                        }
                     }
                 }
+                if !systems.model.systems.isEmpty {
+                    VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                        SHListHeader("Design systems", count: nil)
+                        DesignSystemsCard(rows: systems.model.systems, swatches: systems.swatches)
+                    }
+                }
+                if designs.rows.isEmpty {
+                    // Not drawn on any board: the least that is honest.
+                    Text(designs.available ? "No designs yet. Start one on the Mac." : "No host serves designs. Turn on Settings ▸ Experiments ▸ Design tool on a Mac.")
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
+                }
             }
-            .padding(MobileLayout.padThreadGutter)
-            if designs.rows.isEmpty {
-                // Not drawn on any board: the least that is honest.
-                Text(designs.available ? "No designs yet. Start one on the Mac." : "No host serves designs. Turn on Settings ▸ Experiments ▸ Design tool on a Mac.")
-                    .font(.sh(.caption))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .padding(.horizontal, MobileLayout.padThreadGutter)
-            }
+            .padding(.horizontal, MobileDesignLayout.gutter + SH.Space.xs)
+            .padding(.bottom, MobileLayout.padThreadGutter)
         }
         .background(Color.sh.bgWindow)
         .navigationTitle("Designs")
         .toolbar(.hidden, for: .tabBar)
-        .refreshable { await designs.refresh() }
-        .task { await designs.refresh() }
+        .refreshable { await designs.refresh(); await systems.refresh() }
+        .task { await designs.refresh(); await systems.refresh() }
     }
 }

@@ -22,21 +22,29 @@ struct ThreadFilesSplit: View {
     let editable: Bool
     /// The file the agent is editing now, relative to the thread's folder.
     let agentPath: String?
-    @State private var filtering = false
     @FocusState private var filterFocus: Bool
     /// A tab with unsaved edits the person asked to close: confirmed first.
     @State private var closing: String?
 
     var body: some View {
-        HStack(spacing: 0) {
-            tree
-                .frame(width: MobileLayout.filesTreeColumn)
-                .background(Color.sh.bgBase)
-            SHHairline(.vertical)
-            editor
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                tree
+                    .frame(width: MobileLayout.filesTreeColumn)
+                SHHairline(.vertical)
+                editor
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            Text("The thread’s worktree on \(place.host). Tap a file to edit it here.")
+                .font(.shSans(MobileLayout.filesFooterText))
+                .foregroundStyle(Color.sh.textTertiary)
+                .lineLimit(2)
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.vertical, SH.Space.l)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) { SHHairline() }
         }
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .confirmationDialog("Close \((closing.map { ($0 as NSString).lastPathComponent }) ?? "") without saving?",
                             isPresented: Binding(get: { closing != nil }, set: { if !$0 { closing = nil } }),
                             titleVisibility: .visible, presenting: closing) { path in
@@ -50,46 +58,9 @@ struct ThreadFilesSplit: View {
     // MARK: Tree
 
     private var tree: some View {
-        let sh = Color.sh
-        return VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(spacing: SH.Space.s) {
-                    Text(place.space)
-                        .font(.sh(.mono, weight: .semibold))
-                        .foregroundStyle(sh.textPrimary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button {
-                        filtering.toggle()
-                        filterFocus = filtering
-                        if !filtering { model.filter = "" }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .buttonStyle(.shIcon(size: SH.Height.controlL))
-                    .accessibilityLabel(filtering ? "Hide filter" : "Go to file")
-                }
-                HStack(spacing: SH.Space.s) {
-                    if let branch = place.branch {
-                        Image(systemName: SHGlyph.gitBranch.symbolName)
-                        Text(branch).font(.sh(.mono)).lineLimit(1).truncationMode(.middle)
-                        Text("·")
-                    }
-                    Image(systemName: "desktopcomputer")
-                    Text(place.host).lineLimit(1)
-                }
-                .font(.sh(.micro))
-                .foregroundStyle(sh.textTertiary)
-                .accessibilityElement(children: .combine)
-            }
-            .padding(.leading, SH.Space.l)
-            .padding(.trailing, SH.Space.m)
-            .padding(.vertical, SH.Space.m)
-            .overlay(alignment: .bottom) { SHHairline() }
-            if filtering {
-                SHTouchSearchField("Filter files", text: $model.filter, focus: $filterFocus)
-                    .padding(SH.Space.s)
-            }
+        VStack(spacing: 0) {
+            SHTouchSearchField("Filter files", text: $model.filter, focus: $filterFocus)
+                .padding(SH.Space.m)
             treeRows
                 .frame(maxHeight: .infinity)
         }
@@ -98,12 +69,11 @@ struct ThreadFilesSplit: View {
     @ViewBuilder private var treeRows: some View {
         switch model.phase {
         case .loading:
-            ThreadFilesMessage(text: "Loading files…").background(Color.sh.bgBase)
+            ThreadFilesMessage(text: "Loading files…")
         case .failed(let message):
             SHFileNotice(.failed(message)) { Task { await model.loadIfNeeded() } }
         case .loaded where model.rows.isEmpty:
             ThreadFilesMessage(text: model.filter.isEmpty ? "This folder is empty." : "No files match in the open folders.")
-                .background(Color.sh.bgBase)
         case .loaded:
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -158,7 +128,6 @@ struct ThreadFilesSplit: View {
         }
         .frame(height: MobileLayout.filesTabHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.sh.bgBase)
         .overlay(alignment: .bottom) { SHHairline() }
     }
 }
@@ -189,10 +158,10 @@ struct ThreadFilePadRow: View, Equatable {
                 .font(.sh(.micro, weight: .semibold))
                 .frame(width: MobileLayout.filesChevron)
                 Image(systemName: icon)
-                    .font(.sh(.caption))
+                    .font(.shSans(MobileLayout.filesTreeText))
                     .opacity(row.kind == .note ? 0 : 1)
                 Text(row.name)
-                    .font(row.kind == .note ? .sh(.micro) : .sh(.caption, weight: selected ? .semibold : .regular))
+                    .font(row.kind == .note ? .sh(.micro) : .shSans(MobileLayout.filesTreeText, selected ? .medium : .regular))
                     .shShimmer(active: agentWorking || row.kind == .folder(expanded: true, loading: true))
                     .foregroundStyle(row.kind == .note ? sh.textTertiary : sh.textPrimary)
                     .lineLimit(1)
@@ -203,7 +172,7 @@ struct ThreadFilePadRow: View, Equatable {
             .padding(.leading, SH.Space.m + CGFloat(row.depth) * MobileLayout.filesTreeLevel)
             .padding(.trailing, SH.Space.m)
             .frame(minHeight: SH.Height.controlL)
-            .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.xl))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -260,11 +229,8 @@ struct ThreadFileTab: View {
         }
         .padding(.horizontal, SH.Space.l)
         .frame(height: MobileLayout.filesTabHeight)
-        .background(active ? sh.bgWindow : sh.bgBase)
-        .overlay(alignment: .top) {
-            if active { sh.lantern.frame(height: MobileLayout.filesActiveTabRule) }
-        }
-        .overlay(alignment: .trailing) { SHHairline(.vertical) }
+        .background(active ? sh.bgSelected : .clear, in: Capsule())
+        .padding(.horizontal, SH.Space.xxs)
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Close", systemImage: "xmark", action: close)
@@ -285,25 +251,34 @@ struct ThreadFileEditor: View {
         let edit = model.edits[path]
         VStack(spacing: 0) {
             HStack(spacing: SH.Space.m) {
-                Text(path.split(separator: "/").joined(separator: " › "))
-                    .font(.sh(.mono))
+                // "src/components/" in `textTertiary`, then the file in `textPrimary` (iPadPaneFiles).
+                (Text(((path as NSString).deletingLastPathComponent.isEmpty ? "" : (path as NSString).deletingLastPathComponent + "/"))
                     .foregroundStyle(sh.textTertiary)
+                    + Text((path as NSString).lastPathComponent).foregroundStyle(sh.textPrimary))
+                    .font(.shMono(MobileLayout.filesPathText))
                     .lineLimit(1)
                     .truncationMode(.head)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if editable, let edit {
-                    Button("Revert") { model.revert() }
-                        .buttonStyle(.sh(.ghost, size: .s))
-                        .disabled(!edit.isDirty)
-                    Button { Task { await model.save() } } label: { SHButtonTitle("Save", chord: "⌘S") }
-                        .buttonStyle(.sh(.secondary, size: .s))
-                        .keyboardShortcut(MobileShortcut.saveFile.shortcut)
-                        .disabled(!edit.isDirty || edit.conflict != nil || model.saving)
-                        .accessibilityLabel("Save")
+                    Button { model.revert() } label: {
+                        Text("Revert").font(.shSans(MobileLayout.filesPathAction)).foregroundStyle(sh.textSecondary)
+                            .frame(minHeight: SH.Height.touch).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!edit.isDirty)
+                    .opacity(edit.isDirty ? 1 : SHListMetrics.dimmedOpacity)
+                    Button { Task { await model.save() } } label: {
+                        Text("Save").font(.shSans(MobileLayout.filesPathAction, .medium)).foregroundStyle(sh.textPrimary)
+                            .frame(minHeight: SH.Height.touch).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(MobileShortcut.saveFile.shortcut)
+                    .disabled(!edit.isDirty || edit.conflict != nil || model.saving)
+                    .opacity(!edit.isDirty || edit.conflict != nil || model.saving ? SHListMetrics.dimmedOpacity : 1)
+                    .accessibilityLabel("Save")
                 }
             }
-            .padding(.leading, SH.Space.l)
-            .padding(.trailing, SH.Space.m)
+            .padding(.horizontal, SH.Space.xl)
             .frame(height: MobileLayout.filesPathBarHeight)
             .overlay(alignment: .bottom) { SHHairline() }
             if editable, let conflict = edit?.conflict {
@@ -328,7 +303,7 @@ struct ThreadFileEditor: View {
                 }
             }
         }
-        .background(sh.bgWindow)
+        .background(sh.bgRaised)
     }
 
     private func statusBar(_ edit: FileEdit) -> some View {
@@ -340,7 +315,7 @@ struct ThreadFileEditor: View {
         return ViewThatFits(in: .horizontal) {
             HStack(spacing: SH.Space.l) {
                 legend("yours, unsaved", Color.sh.lantern)
-                legend("changed by the agent", Color.sh.running)
+                legend("changed by the agent", Color.sh.done)
                 Spacer(minLength: 0)
                 status
             }

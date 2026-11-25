@@ -19,7 +19,7 @@ public enum SHPushPreviewMetrics {
     public static let crook: CGFloat = 16
     public static let title: CGFloat = 15
     public static let heading: CGFloat = 15
-    public static let body: CGFloat = 13.5
+    public static let body: CGFloat = 15
     public static let meta: CGFloat = 11.5
 }
 
@@ -30,8 +30,11 @@ public struct SHPushPreview: View {
     let message: String?
     let date: Date
     let detail: SHPushDetail?
+    /// The push asks something of the person: its kind line is `lanternText` (NotifPhoneBanner).
+    let attention: Bool
 
-    public init(title: String, subtitle: String?, body: String?, date: Date, detail: SHPushDetail?) {
+    public init(title: String, subtitle: String?, body: String?, date: Date, detail: SHPushDetail?, attention: Bool = false) {
+        self.attention = attention
         self.title = title
         self.subtitle = subtitle.flatMap { $0.isEmpty ? nil : $0 }
         self.message = body.flatMap { $0.isEmpty ? nil : $0 }
@@ -64,7 +67,8 @@ public struct SHPushPreview: View {
 
     @ViewBuilder private var plain: some View {
         if let subtitle {
-            Text(subtitle).font(.shSans(SHPushPreviewMetrics.heading, .semibold)).foregroundStyle(Color.sh.textPrimary)
+            Text(subtitle).font(.shSans(SHPushPreviewMetrics.heading, .medium))
+                .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textSecondary)
         }
         if let message {
             Text(message).font(.shSans(SHPushPreviewMetrics.body)).foregroundStyle(Color.sh.textPrimary)
