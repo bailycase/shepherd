@@ -21,6 +21,9 @@ import Testing
 @MainActor
 struct ThreadMotionTests {
     static let size = CGSize(width: 900, height: 800)
+    /// The column's edges: its widest (`AppLayout.threadMaxWidth`) centred, never nearer the sides than the gutter.
+    static var columnLeft: CGFloat { max(AppLayout.threadGutter(width: size.width), (size.width - AppLayout.threadMaxWidth) / 2) }
+    static var columnRight: CGFloat { size.width - columnLeft }
 
     // MARK: Turns
 
@@ -31,7 +34,7 @@ struct ThreadMotionTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         // Through the right edge of the right-aligned bubble, above the composer.
-        let column = CGRect(x: Self.size.width - AppLayout.threadGutter(width: Self.size.width) - 12, y: 0, width: 1, height: 560)
+        let column = CGRect(x: Self.columnRight - 12, y: 0, width: 1, height: 560)
 
         let recording = await MotionProbe.record(thread.window, region: column) {
             thread.serve(Fixtures.snapshot(Fixtures.history(2) + [Fixtures.user("u2", "A brand new question")], revision: 2))
@@ -40,7 +43,9 @@ struct ThreadMotionTests {
         #expect(!recording.inBetween.isEmpty, "the bubble fades in over frames")
         // A fade never draws past where the bubble rests; rising from below, it does.
         let rest = try #require(recording.settled.lastRow(differingFrom: recording.before, by: Self.visible))
-        let bottoms = recording.inBetween.compactMap { $0.lastRow(differingFrom: recording.before, by: Self.visible) }
+        // Any difference counts: the bubble's fill sits a few percent off the thread's, so while it rises through its
+        // first, faint frames the rows it reaches fall under `visible`.
+        let bottoms = recording.inBetween.compactMap { $0.lastRow(differingFrom: recording.before) }
         if reduceMotion {
             #expect(bottoms.allSatisfy { $0 <= rest + 1 }, "it fades where it rests: \(bottoms), resting at \(rest)")
         } else {
@@ -62,7 +67,7 @@ struct ThreadMotionTests {
         try await eventuallyOnMain("the echo") { thread.store.pending.first?.status == (queued ? "queued" : "pending") }
         try await thread.settle()
         // Through the bubble's fill, right of its text.
-        let column = CGRect(x: Self.size.width - AppLayout.threadGutter(width: Self.size.width) - 12, y: 0, width: 1, height: 560)
+        let column = CGRect(x: Self.columnRight - 12, y: 0, width: 1, height: 560)
 
         let recording = await MotionProbe.record(thread.window, region: column) {
             thread.serve(Fixtures.snapshot(Fixtures.history(2) + [Fixtures.user("u2", text)], revision: 2))
@@ -428,8 +433,8 @@ struct ThreadMotionTests {
         let thread = MotionThread(Fixtures.snapshot([]), reduceMotion: reduceMotion)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        // Through the model names, above the card.
-        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 60, y: 300, width: 1, height: 380)
+        // Through the model names, above the card: the picker opens over the chip at the card's trailing end.
+        let column = CGRect(x: Self.columnRight - AppLayout.modelMenuTrailing - SHComposerMetrics.modelPickerWidth + 60, y: 300, width: 1, height: 380)
 
         let opening = await MotionProbe.record(thread.window, region: column) { thread.commands.send(.modelPicker, to: "motion") }
         #expect(opening.settled.firstRow(differingFrom: opening.before) != nil, "the picker opened")
@@ -446,7 +451,7 @@ struct ThreadMotionTests {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 60, y: 300, width: 1, height: 380)
+        let column = CGRect(x: Self.columnLeft + 60, y: 300, width: 1, height: 380)
 
         let opening = await MotionProbe.record(thread.window, region: column) { thread.store.draft = "/" }
         #expect(opening.settled.firstRow(differingFrom: opening.before) != nil, "the menu opened")
@@ -464,7 +469,7 @@ struct ThreadMotionTests {
         try await thread.waitUntilReady()
         thread.store.draft = "/"
         try await thread.settle()
-        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 60, y: 300, width: 1, height: 380)
+        let column = CGRect(x: Self.columnLeft + 60, y: 300, width: 1, height: 380)
 
         // Three commands match "/", one matches "/rev": the menu shrinks to one row.
         let recording = await MotionProbe.record(thread.window, region: column) { thread.store.draft = "/rev" }
@@ -476,14 +481,15 @@ struct ThreadMotionTests {
     /// A question takes the composer's place: the dock fades in over frames where the card sat.
     /// Both rest on one line, `AppLayout.composerBottom` above the thread's foot, and fill with the
     /// same `bgRaised`, so a picture of the change differs from the card's only where the dock draws
-    /// something else: down to its own last content, a `SHQuestionDockMetrics.padding` above the line.
+    /// something else: down to its own last content, a `SHQuestionBoardMetrics.padding` above the line.
     /// While the two cross-fade their fills together fall a hair short of opaque, and the picture
-    /// differs from the card's down to the line itself, never past it.
+    /// differs from the card's down to the line itself, never past it. The cards' edge is a subtle
+    /// line over a soft lift shadow, so only a difference a reader would see (`visible`) counts.
     @Test(.timingSensitive) func aQuestionDockFadesInWhereTheCardSat() async throws {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 40, y: 300, width: 1, height: Self.size.height - 300)
+        let column = CGRect(x: Self.columnLeft + 40, y: 300, width: 1, height: Self.size.height - 300)
         let dialog = NativeThreadDialog(id: "d1", kind: .confirm, title: "Deploy to production?", message: "This pushes main to the fleet.")
 
         let recording = await MotionProbe.record(thread.window, region: column) {
@@ -494,14 +500,18 @@ struct ThreadMotionTests {
         #expect(!recording.inBetween.isEmpty, "it fades in over frames")
         // The last row the card and the dock draw: their bottom line.
         let line = Int(Self.size.height - AppLayout.composerBottom - column.minY) - 1
-        let bottoms = recording.frames.compactMap { $0.lastRow(differingFrom: recording.before) }
+        let bottoms = recording.frames.compactMap { $0.lastRow(differingFrom: recording.before, by: Self.visible) }
         #expect(bottoms.allSatisfy { $0 <= line }, "nothing drew below the line the card sat on: \(bottoms), the line at \(line)")
-        let bottom = try #require(recording.settled.lastRow(differingFrom: recording.before))
-        let content = line - Int(SHQuestionDockMetrics.padding.bottom)
+        let bottom = try #require(recording.settled.lastRow(differingFrom: recording.before, by: Self.visible))
+        let content = line - Int(SHQuestionBoardMetrics.padding.bottom)
         #expect(abs(bottom - content) <= 1, "the dock's content ends a padding above the card's line: it ends at \(bottom), the line at \(line)")
-        // The dock's line is the card's: the same row, with the thread's background under it.
-        #expect(abs(recording.settled.lightness(x: 0, y: line) - recording.before.lightness(x: 0, y: line)) < 0.005, "the dock's line sits on the card's")
-        #expect(abs(recording.settled.lightness(x: 0, y: line) - recording.settled.lightness(x: 0, y: line + 1)) > 0.05, "the dock ends on it")
+        // The dock's line is the card's: the same row, the darkest of the rows around it.
+        func edge(_ frame: MotionRecording.Frame) -> Int {
+            ((line - 2)...(line + 2)).min { frame.lightness(x: 0, y: $0) < frame.lightness(x: 0, y: $1) }!
+        }
+        #expect(edge(recording.settled) == edge(recording.before), "the dock's line sits on the card's")
+        #expect(edge(recording.settled) == line, "the card's line is its last row")
+        #expect(recording.settled.lightness(x: 0, y: line - 1) - recording.settled.lightness(x: 0, y: line) > 0.05, "the dock ends on it")
     }
 
     /// Send and Stop are one button: when a turn starts, the glyph and the fill blend in place
@@ -511,7 +521,8 @@ struct ThreadMotionTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         let center = Self.size.height - AppLayout.composerBottom - SH.Space.s - SHComposerMetrics.actionSize / 2
-        let strip = CGRect(x: Self.size.width - 120, y: center, width: 120, height: 1)
+        // From just before the circle to the card's trailing edge, clear of the model chip.
+        let strip = CGRect(x: Self.columnRight - 44, y: center, width: 44, height: 1)
 
         let recording = await MotionProbe.record(thread.window, region: strip, timeout: 1.5) {
             thread.serve(Fixtures.snapshot(Fixtures.history(2), running: true, revision: 2))
@@ -529,7 +540,7 @@ struct ThreadMotionTests {
         let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 40, y: 400, width: 1, height: Self.size.height - 400)
+        let column = CGRect(x: Self.columnLeft + 40, y: 400, width: 1, height: Self.size.height - 400)
 
         let recording = await MotionProbe.record(thread.window, region: column) {
             thread.store.draft = (1...4).map { "line \($0)" }.joined(separator: "\n")
