@@ -7,8 +7,8 @@ import ShepherdRemote
 // The parts the phone's and the iPad's review share: the summary card, a comment card, the
 // section heads, a file's diff with its comments, and the states before a diff arrives.
 
-/// The review's summary (MobileChanges board): "3 files", the diff stat, the worktree branch,
-/// and the viewed progress.
+/// The review's summary (MobileChanges board): "3 files" over the diff stat, the worktree branch
+/// and the viewed progress under it, then where the branch stands against its base.
 struct ReviewSummaryCard: View {
     let totals: ReviewTotals
     let branch: String?
@@ -20,52 +20,29 @@ struct ReviewSummaryCard: View {
         let sh = Color.sh
         // At accessibility sizes the branch gets two lines.
         let large = typeSize.isAccessibilitySize
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            // MobileChanges: the count and stat, the branch under them, then how much is viewed.
-            HStack(spacing: SH.Space.m) {
-                Text(totals.filesText).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                SHDiffStat(added: totals.added, removed: totals.removed, font: .sh(.micro, weight: .regular))
-            }
-            if let branch {
-                Text(branch)
-                    .font(.sh(.mono))
-                    .foregroundStyle(sh.textSecondary)
-                    .lineLimit(large ? 2 : 1)
-                    .truncationMode(.middle)
-                    .accessibilityLabel("Branch \(branch)")
-            }
-            Text(totals.viewedText).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                .accessibilityLabel("Viewed")
-                .accessibilityValue(totals.viewedText)
-            if let status, status.store.status?.pull != nil || (status.store.status?.behind ?? 0) > 0 || status.store.status?.conflict != nil {
-                VStack(spacing: 0) {
-                    SHHairline()
-                    BranchStatusRows(ref: status.ref, store: status.store, host: status.host)
+        VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    Text(totals.filesText)
+                        .font(.shSans(MobileLayout.touchTitleFont, .bold))
+                        .foregroundStyle(sh.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    SHDiffStat(added: totals.added, removed: totals.removed, font: .shSans(MobileLayout.touchBodyFont))
                 }
-                .padding(.horizontal, -MobileLayout.gutter + SH.Space.l + SH.Space.xxs)
+                (branch.map { Text($0).font(.shMono(MobileLayout.touchDetailFont - 1)) + Text(" \u{00B7} ") } ?? Text(""))
+                    .foregroundStyle(sh.textSecondary)
+                    + Text(totals.viewedText).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textSecondary)
+            }
+            .font(.shSans(MobileLayout.touchDetailFont))
+            .lineLimit(large ? 3 : 2)
+            .padding(.horizontal, SH.Space.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            if let status, status.store.status?.pull != nil || (status.store.status?.behind ?? 0) > 0 || status.store.status?.conflict != nil {
+                BranchStatusRows(ref: status.ref, store: status.store, host: status.host)
+                    .shCard(radius: MobileLayout.touchCardRadius, lift: true)
             }
         }
-        .padding(SH.Space.l + SH.Space.xxs)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: MobileLayout.cardRadius)
-    }
-}
-
-/// A section's head above a card: "Files" with a note on the right.
-struct ReviewSectionHead: View {
-    let title: String
-    let note: String?
-
-    var body: some View {
-        HStack {
-            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
-            Spacer(minLength: SH.Space.s)
-            if let note { Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
-        }
-        .padding(.horizontal, SH.Space.xs)
-        .padding(.top, SH.Space.xs)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -83,40 +60,84 @@ func reviewCommentAge(_ date: Date, now: Date = Date()) -> String {
     return nativeClockText(date.timeIntervalSince1970 * 1000)
 }
 
-/// A line comment as a card: in the changes list with its file, under its line without.
+/// A line comment as a card: in the changes list with its file (MobileChanges, Edit and Delete
+/// under the text), under its line without (MobileDiff's "You line 33 · Not sent"; on iPad
+/// `showsActions` puts Delete · Edit at its edge, on the phone the card is tapped to edit).
 struct ReviewCommentCard: View {
     let comment: ReviewComment
     let showsFile: Bool
+    var showsActions = false
     let onEdit: (() -> Void)?
     let onDelete: (() -> Void)?
 
     var body: some View {
-        // In the changes list the file names the line; under its line, when it was written does.
-        let meta = showsFile ? "\(reviewPathParts(comment.filePath).name) · line \(comment.lineNumber)"
-            : "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))"
+        let sh = Color.sh
         if showsFile {
-            // MobileChanges: the file and line, the text, then Edit and Delete under it.
-            let sh = Color.sh
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                Text(meta).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                Text(comment.text).font(.sh(.body)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: SH.Space.m) {
-                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.shLink(color: sh.textSecondary, font: .sh(.body))) }
-                    if let onDelete { Button("Delete", action: onDelete).buttonStyle(.shLink(color: sh.failed, font: .sh(.body))) }
+            // The file and line, the text, then Edit and Delete under it.
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                (Text(reviewPathParts(comment.filePath).name).font(.shMono(MobileLayout.touchDetailFont - 1))
+                    + Text(" \u{00B7} line \(comment.lineNumber)").font(.shSans(MobileLayout.touchDetailFont)))
+                    .foregroundStyle(sh.textSecondary)
+                    .lineLimit(1)
+                Text(comment.text)
+                    .font(.shSans(MobileLayout.touchBodyFont))
+                    .lineSpacing(SH.Space.xxs + SH.Space.xxs)
+                    .foregroundStyle(sh.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: SH.Space.xl + SH.Space.xs) {
+                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.shLink(color: sh.textSecondary, font: .shSans(MobileLayout.touchDetailFont + 1))) }
+                    if let onDelete { Button("Delete", action: onDelete).buttonStyle(.shLink(color: sh.failed, font: .shSans(MobileLayout.touchDetailFont + 1))) }
                 }
+                .padding(.top, SH.Space.s)
             }
-            .padding(.horizontal, SH.Space.l + SH.Space.xxs)
-            .padding(.vertical, SH.Space.m)
+            .reviewCardPadding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .shCard(radius: MobileLayout.cardRadius)
+            .shCard(radius: MobileLayout.touchCardRadius, lift: true)
             .accessibilityElement(children: .combine)
             .accessibilityActions {
                 if let onEdit { Button("Edit", action: onEdit) }
                 if let onDelete { Button("Delete", action: onDelete) }
             }
         } else {
-        SHInlineComment(initial: ReviewAuthor.initial, author: ReviewAuthor.name, meta: meta, text: comment.text,
-                        onEdit: onEdit, onDelete: onDelete)
+            let place = "line \(comment.lineNumber)"
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                HStack(spacing: SH.Space.m) {
+                    Text(ReviewAuthor.name).font(.shSans(MobileLayout.touchDetailFont - 1, .semibold)).foregroundStyle(sh.textPrimary)
+                    Text(showsActions ? "\(place) \u{00B7} \(reviewCommentAge(comment.createdAt))" : place)
+                        .font(.shSans(MobileLayout.touchDetailFont - 1)).foregroundStyle(sh.textTertiary)
+                    Spacer(minLength: SH.Space.m)
+                    if showsActions {
+                        HStack(spacing: SH.Space.xs) {
+                            if let onDelete { Button("Delete", action: onDelete) }
+                            if onDelete != nil, onEdit != nil { Text("\u{00B7}") }
+                            if let onEdit { Button("Edit", action: onEdit) }
+                        }
+                        .font(.shSans(MobileLayout.touchDetailFont - 1))
+                        .buttonStyle(.shLink(color: sh.textTertiary, font: .shSans(MobileLayout.touchDetailFont - 1)))
+                        .foregroundStyle(sh.textTertiary)
+                    } else {
+                        Text("Not sent").font(.shSans(MobileLayout.touchDetailFont - 1)).foregroundStyle(sh.textTertiary)
+                    }
+                }
+                Text(comment.text)
+                    .font(.shSans(MobileLayout.touchBodyFont - 1))
+                    .lineSpacing(SH.Space.xxs)
+                    .foregroundStyle(sh.textPrimary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.m + SH.Space.xxs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shCard(radius: SH.Radius.l, lift: true)
+            .contentShape(Rectangle())
+            .onTapGesture { if !showsActions { onEdit?() } }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(ReviewAuthor.name), \(place), \(comment.text)")
+            .accessibilityActions {
+                if let onEdit { Button("Edit", action: onEdit) }
+                if let onDelete { Button("Delete", action: onDelete) }
+            }
         }
     }
 }
@@ -199,12 +220,10 @@ struct ReviewGapRow: View {
     var body: some View {
         let sh = Color.sh
         let label = Text(action == nil ? nativeCount(count, "unchanged line") : "Show \(nativeCount(count, "unchanged line"))")
-            .font(.sh(.caption))
+            .font(.shSans(SHTouchDiffMetrics.foldSize))
             .foregroundStyle(sh.textTertiary)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-            .background(sh.bgSunken)
-            .overlay(alignment: .top) { SHHairline() }
+            .frame(maxWidth: .infinity, minHeight: SHTouchDiffMetrics.foldHeight)
             .contentShape(Rectangle())
         if let action {
             Button(action: action) { label }
@@ -272,10 +291,10 @@ struct ReviewUnifiedRowView: View {
             SHCommentEditor(text: store.draftBinding, isFocused: editorFocused, onSave: { store.saveDraft() }, onCancel: { store.clearSelection() })
                 .padding(EdgeInsets(top: SH.Space.s, leading: leading, bottom: SH.Space.m, trailing: SH.Space.l))
         } else if let comment {
-            ReviewCommentCard(comment: comment, showsFile: false,
+            ReviewCommentCard(comment: comment, showsFile: false, showsActions: inlineEditor,
                               onEdit: { store.select(fileID: fileID, lineID: line.key) },
                               onDelete: { store.deleteComment(fileID: fileID, lineID: line.key) })
-                .padding(EdgeInsets(top: SH.Space.s, leading: leading, bottom: SH.Space.m, trailing: SH.Space.l))
+                .padding(EdgeInsets(top: SH.Space.s, leading: leading, bottom: SH.Space.m, trailing: SH.Space.xl))
         }
     }
 }
@@ -344,7 +363,7 @@ struct ReviewSplitRowView: View {
                 if selected {
                     SHCommentEditor(text: store.draftBinding, isFocused: editorFocused, onSave: { store.saveDraft() }, onCancel: { store.clearSelection() })
                 } else if let comment {
-                    ReviewCommentCard(comment: comment, showsFile: false,
+                    ReviewCommentCard(comment: comment, showsFile: false, showsActions: true,
                                       onEdit: { store.select(fileID: fileID, lineID: line.key) },
                                       onDelete: { store.deleteComment(fileID: fileID, lineID: line.key) })
                 }

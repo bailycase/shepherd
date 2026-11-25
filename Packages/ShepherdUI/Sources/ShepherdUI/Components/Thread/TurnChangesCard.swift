@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The "Edited N files" card that ends a turn on touch (ChangesStates › ChangesCard;
-/// MobileThread, iPadReview): a 36pt icon tile, the title over its stat, Undo and Review, then
+/// MobileThread, iPadReview): the title over its stat, Undo (in `textSecondary`) and Review (in `textPrimary`) as words, then
 /// the first files as plain paths (the folder dimmed, "new" before a created file's stat) and "Show
 /// N more", which lists the next files (`SHChangesMore`). Once undone it is one dashed line, "Undid the agent’s edits to 5 files", with Redo.
 /// At the accessibility sizes the head stacks and paths take two lines, so nothing clips.
@@ -84,9 +84,9 @@ public struct SHTurnChangesCard: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity)
-        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
-        .shBorder(sh.lineSubtle, radius: SH.Radius.l)
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.xxl))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.xxl)
+        .shLift(RoundedRectangle(cornerRadius: SH.Radius.xxl))
         .accessibilityElement(children: .contain)
     }
 
@@ -122,42 +122,36 @@ public struct SHTurnChangesCard: View, Equatable {
 
     private var summary: some View {
         let sh = Color.sh
-        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
-            Image(systemName: "plus.forwardslash.minus")
-                .font(.sh(.ui))
-                .foregroundStyle(sh.textSecondary)
-                .frame(width: SHTurnChangesCard.tile, height: SHTurnChangesCard.tile)
-                .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                SHDiffStat(added: added, removed: removed, font: .sh(.mono))
-            }
-            .accessibilityElement(children: .combine)
+        return VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            Text(title).font(.sh(.title)).foregroundStyle(sh.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            SHDiffStat(added: added, removed: removed, font: .sh(.caption))
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var actions: some View {
-        HStack(spacing: SH.Space.xs) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.xs) {
             if let onUndo {
                 Button(action: onUndo) {
-                    HStack(spacing: SH.Space.xs + 1) {
-                        Text("Undo")
-                        Image(systemName: "arrow.uturn.backward").imageScale(.small)
-                    }
+                    Text("Undo").font(.sh(.title, weight: .regular)).foregroundStyle(sh.textSecondary)
+                        .padding(.horizontal, SH.Space.m)
+                        .shTouchTarget(height: SH.Height.controlM)
                 }
-                .buttonStyle(.sh(.ghost, size: .l))
+                .buttonStyle(.plain)
                 .disabled(busy)
                 .accessibilityLabel("Undo the agent\u{2019}s edits")
                 .accessibilityHint("Puts back the files this turn changed, in the working tree")
             }
             if let onReview {
-                Button("Review", action: onReview)
-                    .buttonStyle(.sh(.secondary, size: .m))
-                    .shTouchTarget(height: SH.Height.controlM)
-                    .accessibilityLabel("Review \(title)")
+                Button(action: onReview) {
+                    Text("Review").font(.sh(.title, weight: .medium)).foregroundStyle(sh.textPrimary)
+                        .padding(.horizontal, SH.Space.m)
+                        .shTouchTarget(height: SH.Height.controlM)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Review \(title)")
             }
         }
         .fixedSize()
@@ -175,7 +169,7 @@ public struct SHTurnChangesCard: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: SH.Space.m) {
                 if file.isNew { Text("new").font(.sh(.caption)).foregroundStyle(sh.textTertiary) }
-                SHDiffStat(added: file.added, removed: file.removed, font: .sh(.mono))
+                SHDiffStat(added: file.added, removed: file.removed, font: .sh(.caption))
             }
             .fixedSize()
         }
@@ -248,10 +242,8 @@ public struct SHTurnChangesCard: View, Equatable {
         .accessibilityElement(children: .combine)
     }
 
-    /// The icon tile.
-    public static let tile: CGFloat = 36
     /// A file row.
-    public static let rowHeight: CGFloat = 40
+    public static let rowHeight: CGFloat = 42
 }
 
 #Preview("Turn changes card") {

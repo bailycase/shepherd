@@ -72,7 +72,7 @@ struct NewThreadRulesTests {
 
     @Test func hostRowsSayWhatEachHostIsDoingAndOnlyConnectedOnesCanBeChosen() {
         let rows = NewThreadRows.hosts([Self.studio, Self.build, Self.laptop], selected: Self.studioID)
-        #expect(rows.map(\.detail) == ["connected · 2 threads running", "connected · 1 thread", "unreachable"])
+        #expect(rows.map(\.detail) == ["Connected · 2 threads running", "Connected · 1 thread", "Unreachable"])
         #expect(rows.map(\.selectable) == [true, true, false])
         #expect(rows.map(\.offersRetry) == [false, false, true])
         #expect(rows.map(\.selected) == [true, false, false])

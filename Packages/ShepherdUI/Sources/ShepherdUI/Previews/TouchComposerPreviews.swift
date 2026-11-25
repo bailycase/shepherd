@@ -5,7 +5,6 @@ import SwiftUI
         SHTouchQueueCard(count: 3) {
             VStack(spacing: 0) {
                 SHTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, back: {})
-                SHTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, wide: true, back: {})
                     .overlay(alignment: .top) { SHHairline() }
                 SHTouchQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1), steer: {}).overlay(alignment: .top) { SHHairline() }
                 SHTouchQueueRow("Then open a draft PR.", images: 2, kind: .queued(number: 2), held: true).overlay(alignment: .top) { SHHairline() }
@@ -69,7 +68,7 @@ import SwiftUI
 #Preview("Question") {
     SHPreviewBoth {
         VStack(spacing: SH.Space.xl) {
-            SHQuestionCard(docked: false, count: 2, question: "How should I handle Orbit's uncommitted edits?", hide: {}) {
+            SHQuestionCard(count: 2, question: "How should I handle Orbit's uncommitted edits?", hide: {}) {
                 SHQuestionDetails("Orbit is 50 commits behind and has 11 uncommitted files.\n\nNothing on Orbit is overwritten.")
                 VStack(spacing: SH.Space.xxs) {
                     SHQuestionRadioRow(SHQuestionDockOption(number: 1, title: "Compare, keep what's unique, then go through GitHub",
@@ -85,7 +84,7 @@ import SwiftUI
                     Button("Answer") {}.buttonStyle(.sh(.primary, size: .l))
                 }
             }
-            SHQuestionCard(docked: true, question: "Rename the new tokens, or replace the old ones everywhere?", hide: {}) {
+            SHQuestionCard(question: "Rename the new tokens, or replace the old ones everywhere?", hide: {}) {
                 VStack(spacing: SH.Space.xxs) {
                     SHQuestionRadioRow(SHQuestionDockOption(number: 1, title: "Replace everywhere"), picked: true, showsNumber: false) {}
                     SHQuestionRadioRow(SHQuestionDockOption(number: 2, title: "Rename new ones"), picked: false, showsNumber: false) {}

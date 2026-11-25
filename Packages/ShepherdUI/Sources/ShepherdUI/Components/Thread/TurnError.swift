@@ -4,11 +4,10 @@ import SwiftUI
 /// share.
 public enum SHTurnErrorMetrics {
     #if os(iOS)
-    public static let radius: CGFloat = 12
-    public static let horizontalPadding: CGFloat = 14
+    public static let radius: CGFloat = SH.Radius.xxl
+    public static let horizontalPadding: CGFloat = 16
     public static let titleSize: CGFloat = 15
     public static let messageSize: CGFloat = 14
-    public static let copyButton: CGFloat = 32
     public static let foldedHeight: CGFloat = 36
     public static let foldedSize: CGFloat = 13.5
     public static let bodySize: CGFloat = 11
@@ -17,22 +16,15 @@ public enum SHTurnErrorMetrics {
     public static let horizontalPadding: CGFloat = 16
     public static let titleSize: CGFloat = 14
     public static let messageSize: CGFloat = 13
-    public static let copyButton: CGFloat = 26
     public static let foldedHeight: CGFloat = 26
     public static let foldedSize: CGFloat = 12.5
     public static let bodySize: CGFloat = 11.5
     #endif
     public static let verticalPadding: CGFloat = 14
-    /// The glyph's tile: 28pt at radius 8, on `failedTint`.
-    public static let tile: CGFloat = 28
-    public static let tileGlyph: CGFloat = 14
-    public static let tileGap: CGFloat = 12
     public static let lineGap: CGFloat = 5
     public static let titleGap: CGFloat = 10
     /// A link's size in the message, and its arrow's.
     public static let linkSize: CGFloat = 12.5
-    public static let linkGlyph: CGFloat = 11
-    public static let factsTop: CGFloat = 2
     public static let actionsTop: CGFloat = 6
     public static let actionGap: CGFloat = 6
     public static let detailsSize: CGFloat = 12.5
@@ -46,10 +38,14 @@ public enum SHTurnErrorMetrics {
     public static let factSize: CGFloat = 12
     /// The folded line and the retry line: a 13pt glyph, 8pt gaps.
     public static let lineGlyph: CGFloat = 13
+    /// Touch (the boards' `.gt-err`): the glyph 16pt before the title, the rest 26pt in under it; its actions 20pt apart.
+    public static let touchGlyph: CGFloat = 16
+    public static let touchIndent: CGFloat = 26
+    public static let touchActionGap: CGFloat = 20
 }
 
 /// A request to the model that failed (TurnErrors › The error card): the kind's glyph on a
-/// `failedTint` tile, a plain title, the provider's words cleaned (keys cut, links), the status
+/// plain glyph before a plain title, the provider's words cleaned (keys cut, links), the status
 /// and type as chips beside the model and provider, then Retry, Copy and Details, which opens
 /// in place on everything the provider sent back. Folded (an earlier error the next turn
 /// repeated, or one pi retried past), it is one line that opens the card.
@@ -191,18 +187,17 @@ public struct SHTurnError: View {
         let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: SHTurnErrorMetrics.radius)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: SHTurnErrorMetrics.tileGap) {
-                tile
-                VStack(alignment: .leading, spacing: SHTurnErrorMetrics.lineGap) {
-                    titleRow
-                    message
-                    facts.padding(.top, SHTurnErrorMetrics.factsTop)
-                    actions.padding(.top, SHTurnErrorMetrics.actionsTop)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: SHTurnErrorMetrics.lineGap) {
+                titleRow
+                message.padding(.leading, SHTurnErrorMetrics.touchIndent)
+                facts.padding(.leading, SHTurnErrorMetrics.touchIndent)
+                actions
+                    .padding(.leading, SHTurnErrorMetrics.touchIndent)
+                    .padding(.top, SHTurnErrorMetrics.actionsTop)
             }
             .padding(.vertical, SHTurnErrorMetrics.verticalPadding)
             .padding(.horizontal, SHTurnErrorMetrics.horizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if detailsOpen {
                 SHHairline()
                 details
@@ -210,33 +205,25 @@ public struct SHTurnError: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(sh.bgRaised, in: shape)
         .clipShape(shape)
-        .shBorder(sh.lineStrong, radius: SHTurnErrorMetrics.radius)
+        .shBorder(sh.lineSubtle, radius: SHTurnErrorMetrics.radius)
+        .shLift(shape)
         .shAnimation(.content, value: detailsOpen)
         .accessibilityElement(children: .contain)
     }
 
-    private var tile: some View {
-        Image(systemName: content.glyph)
-            .font(.system(size: SHTurnErrorMetrics.tileGlyph - 1, weight: .medium))
-            .foregroundStyle(Color.sh.failed)
-            .frame(width: SHTurnErrorMetrics.tile, height: SHTurnErrorMetrics.tile)
-            .background(Color.sh.failedTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .accessibilityHidden(true)
-    }
-
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: SHTurnErrorMetrics.titleGap) {
+        HStack(alignment: .top, spacing: SHTurnErrorMetrics.titleGap) {
+            Image(systemName: content.glyph)
+                .font(.system(size: SHTurnErrorMetrics.touchGlyph - 2, weight: .regular))
+                .foregroundStyle(Color.sh.failed)
+                .frame(width: SHTurnErrorMetrics.touchGlyph, height: SHTurnErrorMetrics.touchGlyph)
+                .padding(.top, SH.Space.xxs)
+                .accessibilityHidden(true)
             Text(content.title).font(.shSans(SHTurnErrorMetrics.titleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
-            #if !os(iOS)
-            Spacer(minLength: 0)
-            if let time = content.time {
-                Text(time).font(.shMono(11)).foregroundStyle(Color.sh.textTertiary).fixedSize()
-            }
-            #endif
         }
     }
 
@@ -251,10 +238,11 @@ public struct SHTurnError: View {
             case .code(let value):
                 text = Text("\(text)\(Text(verbatim: value).font(.shMono(SHTurnErrorMetrics.messageSize - 0.5)).foregroundStyle(sh.textPrimary))")
             case .link(let display, let url):
+                // The boards' `.em a`: ink and underlined, no arrow.
                 var link = AttributedString(display)
                 link.link = URL(string: url)
-                let arrow = Text(Image(systemName: "arrow.up.right.square")).font(.system(size: SHTurnErrorMetrics.linkGlyph - 1))
-                text = Text("\(text)\(Text(link).font(.shSans(SHTurnErrorMetrics.linkSize)).foregroundStyle(sh.running)) \(arrow.foregroundStyle(sh.running))")
+                link.underlineStyle = .single
+                text = Text("\(text)\(Text(link).font(.shSans(SHTurnErrorMetrics.linkSize)).foregroundStyle(sh.textPrimary))")
             }
         }
         return text
@@ -266,46 +254,32 @@ public struct SHTurnError: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// "401" "authentication_error" gpt-5 · OpenAI · Tried 3 times over 31m.
+    /// "401 · authentication_error" in mono, then "gpt-6-astra · OpenAI · 3:04 PM · Tried 3 times over 31m" in sans (the boards' `.eg`).
     private var facts: some View {
         let sh = Color.sh
-        #if os(iOS)
-        let source = [content.source, content.time].compactMap { $0 }.joined(separator: " · ")
-        #else
-        let source = content.source ?? ""
-        #endif
-        return SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.xs) {
-            ForEach(Array(content.chips.enumerated()), id: \.offset) { _, chip in
-                SHTag(chip, mono: true)
-            }
-            if !source.isEmpty {
-                Text(source).font(.shSans(12)).foregroundStyle(sh.textTertiary).lineLimit(1)
-            }
-            if let tries = content.tries {
-                Text((source.isEmpty ? "" : "· ") + tries).font(.shSans(12)).foregroundStyle(sh.textTertiary).lineLimit(1)
-            }
-        }
+        let rest = [content.source, content.time, content.tries].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        let chips = Text(verbatim: content.chips.joined(separator: " \u{00B7} ")).font(.shMono(SHTurnErrorMetrics.factSize))
+        let line = if content.chips.isEmpty { Text(verbatim: rest) } else if rest.isEmpty { chips } else { Text("\(chips) \u{00B7} \(Text(verbatim: rest))") }
+        return line
+            .font(.shSans(SHTurnErrorMetrics.factSize))
+            .foregroundStyle(sh.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// Retry in ink, Copy in `textSecondary`, Details at the end (the boards' `.ea`): words, not chips.
     private var actions: some View {
-        HStack(spacing: SHTurnErrorMetrics.actionGap) {
+        let sh = Color.sh
+        let size = SHTurnErrorMetrics.messageSize
+        return HStack(spacing: SHTurnErrorMetrics.touchActionGap) {
             if let retry {
-                Button(action: retry) { Label("Retry", systemImage: "arrow.clockwise") }
-                    #if os(iOS)
-                    .buttonStyle(.sh(.secondary, size: .l))
-                    #else
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    #endif
+                Button(action: retry) { Text("Retry").font(.shSans(size, .medium)).foregroundStyle(sh.textPrimary).touchRow() }
+                    .buttonStyle(.plain)
                     .shHelp("Retry this turn")
                     .shTransition(.content)
             }
             if let signIn {
-                Button(action: signIn) { Label("Sign in again", systemImage: "person.badge.key") }
-                    #if os(iOS)
-                    .buttonStyle(.sh(.secondary, size: .l))
-                    #else
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    #endif
+                Button(action: signIn) { Text("Sign in again").font(.shSans(size, .medium)).foregroundStyle(sh.textPrimary).touchRow() }
+                    .buttonStyle(.plain)
                     .shHelp("The provider's sign-in no longer works: sign in to it again")
                     .shTransition(.content)
             }
@@ -314,23 +288,24 @@ public struct SHTurnError: View {
                 copied = true
                 copies += 1
                 Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-            } label: { SHCopyGlyph(copied: copied, copies: copies) }
-                .buttonStyle(.shIcon(size: SHTurnErrorMetrics.copyButton))
-                .shHelp("Copy the error")
-                .accessibilityLabel(copied ? "Copied" : "Copy error")
+            } label: {
+                Text(copied ? "Copied" : "Copy").font(.shSans(size)).foregroundStyle(sh.textSecondary).touchRow()
+            }
+            .buttonStyle(.plain)
+            .shHelp("Copy the error")
+            .accessibilityLabel(copied ? "Copied" : "Copy error")
             Spacer(minLength: 0)
             Button {
                 toggleDetails()
             } label: {
-                HStack(spacing: 5) {
-                    Text("Details").font(.shSans(SHTurnErrorMetrics.detailsSize)).foregroundStyle(Color.sh.textSecondary)
+                HStack(spacing: SH.Space.xs) {
+                    Text("Details").font(.shSans(size)).foregroundStyle(sh.textSecondary)
                     SHTurningChevron(isOpen: detailsOpen)
                         .font(.system(size: SHThreadMetrics.chevron - 1, weight: .semibold))
-                        .foregroundStyle(Color.sh.textTertiary)
+                        .foregroundStyle(sh.textSecondary)
                         .frame(width: SHThreadMetrics.chevron)
                 }
-                .frame(minHeight: SHTurnErrorMetrics.copyButton)
-                .contentShape(Rectangle())
+                .touchRow()
             }
             .buttonStyle(.plain)
             .shHelp("Everything the provider sent back")
@@ -467,6 +442,19 @@ public struct SHRetryLine: View {
         Text(value).font(.sh(.ui, weight: .regular)).fixedSize(horizontal: false, vertical: true).shShimmer(active: true)
         #else
         Text(value).font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.tail).shShimmer(active: true)
+        #endif
+    }
+}
+
+private extension View {
+    /// A word-button's touch target: 44pt tall across, without taking the card's room (the rows are the boards' 20pt).
+    func touchRow() -> some View {
+        #if os(iOS)
+        padding(.vertical, (SH.Height.touch - SHTurnErrorMetrics.touchGlyph - SH.Space.xs) / 2)
+            .contentShape(Rectangle())
+            .padding(.vertical, -(SH.Height.touch - SHTurnErrorMetrics.touchGlyph - SH.Space.xs) / 2)
+        #else
+        self
         #endif
     }
 }

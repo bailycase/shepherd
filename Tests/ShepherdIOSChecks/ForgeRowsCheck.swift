@@ -33,7 +33,7 @@ struct ForgeRowsCheck {
         check(model.sections.map(\.id) == ForgeSectionID.all(for: .pullRequest), "every section in order")
         check(model.sections.first { $0.id == .teamReview }?.loaded == false, "team review waits to be opened")
         let refunds = model.sections[0].rows[0]
-        check(refunds.byline == "#31 · avery · 2h" && refunds.word == "Changes" && refunds.tone == .failed, "a pull request row: \(refunds)")
+        check(refunds.byline == "#31 · avery · 2h" && refunds.word == "Changes requested" && refunds.tone == .attention, "a pull request row: \(refunds)")
         let agentRow = model.sections.first { $0.id == .openedByAgents }!.rows[0]
         check(agentRow.byline == "#26 · build-01 · 20m" && agentRow.word == "Draft", "an agent's pull request names its host: \(agentRow.byline)")
 

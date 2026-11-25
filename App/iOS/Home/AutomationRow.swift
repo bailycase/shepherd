@@ -10,22 +10,9 @@ struct AutomationRow: View, Equatable {
     var selected = false
 
     var body: some View {
-        SHListRow(row.name, subtitle: "\(row.stateWord) · \(row.place)", subtitleTone: tone,
-                  leading: row.run == nil ? .symbol("bolt") : .state(state),
-                  chevron: row.run != nil, selected: selected, dimmed: row.offline || !row.enabled)
+        // iPadSidebar: the run's name and its state in a word.
+        SHListRow(row.name, trailing: .meta(row.stateWord.sentenceCased), chevron: false, selected: selected,
+                  dimmed: row.offline || !row.enabled, compact: true)
             .accessibilityHint(row.run == nil ? "" : "Opens its run")
-    }
-
-    private var state: AgentState {
-        guard let status = row.runStatus else { return .idle }
-        return status == .idle ? .done : AgentState(status)
-    }
-
-    private var tone: AgentState? {
-        switch row.runStatus {
-        case .blocked: .attention
-        case .working: .running
-        default: nil
-        }
     }
 }

@@ -25,6 +25,18 @@ struct ReviewComponentTests {
         #expect(kind.sign == sign)
     }
 
+    @Test(arguments: [
+        ("Tests/ShepherdAppTests/", SHFileStatus.added, "Tests/ShepherdAppTests/ \u{00B7} new" as String?),
+        ("App/iOS/", .modified, "App/iOS/"),
+        ("", .added, "new"),
+        ("ledger/", .deleted, "ledger/ \u{00B7} deleted"),
+        ("", .modified, nil),
+    ])
+    func fileRowsNameTheDirectoryThenHowTheFileChanged(directory: String, status: SHFileStatus, detail: String?) {
+        let item = SHReviewFileRow.Item(name: "FleetView.swift", directory: directory, status: status, added: 9, removed: 7)
+        #expect(item.detail == detail)
+    }
+
     @Test func everyStatusHasItsOwnLetter() {
         #expect(SHFileStatus.allCases.map(\.letter) == ["M", "A", "D", "R"])
     }

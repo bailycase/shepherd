@@ -141,7 +141,7 @@ struct ThreadScreen: View {
                 if !inlineTitle {
                     ToolbarItem(placement: .principal) {
                         // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
-                        title.frame(maxWidth: titleMaxWidth, alignment: .leading)
+                        title.frame(maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
                     }
                 }
                 // Keep Next clear of the status bar in the wide iPad toolbar.
@@ -150,8 +150,9 @@ struct ThreadScreen: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
-                        if sizeClass != .regular || inlineTitle {
-                            NextNeedingYouButton(compact: sizeClass != .regular)
+                        // A phone's bar holds only Back, the title and •••; Next waits in the menu (`NextThreadItem`).
+                        if inlineTitle {
+                            NextNeedingYouButton()
                         }
                         if arranged {
                             // What sits above the composer in the laptop pose (DuoLaptop's capsule).
@@ -164,12 +165,18 @@ struct ThreadScreen: View {
                                 withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
                             }
                         }
+                        // Where the bars run down the side (iPhone Duo closed) a waiting question has taken the composer's Stop; the rail
+                        // keeps one (DuoClosedQuestion). A phone's menu has Stop agent.
+                        if verticalBars, sizeClass != .regular, !store.dialogs.isEmpty {
+                            Button("Stop agent", systemImage: "stop.fill") { Task { await store.abort() } }
+                                .tint(Color.sh.textPrimary)
+                                .disabled(key.session == nil || !store.supports("abort"))
+                        }
                         if !arranged, let quick = apps.apps {
                             ThreadAppsMenu(apps: quick, problem: apps.problem) { item in
                                 Task { await apps.act(on: item, client: host?.connectedClient, space: agent?.spaceID, agent: ref.agent) }
                             }
                         }
-                        ThreadStopButton(store: store, enabled: key.session != nil)
                     }
                 }
                 // The system's ••• menu, so it overflows with the bar's items where the bar runs
@@ -654,10 +661,9 @@ struct ThreadTranscript: View {
     }
 }
 
-/// The title and status line (MobileThread, MobileQueue, MobileQuestion, iPadThread boards). On a
-/// phone, the name over "● Idle": the branch is behind the ••• menu's Branch (GitPhoneD).
-/// On iPad, the name, the branch chip (`SHBranchChip`: the files changed, and the host when there
-/// are several) and any goal, on one line; no status pill, the sidebar's dot says the state.
+/// The title and its status line (MobileThread, MobileQueue, MobileQuestion, iPadThread, DuoClosedThread boards): the name in 16/600, over
+/// the state in words ("Idle", "Needs you" in `lantern`, "Failed" in `failed`), a dot, and the branch in mono. Centered on a phone, the
+/// thread's column leading on iPad, where the host follows the branch when there are several.
 struct ThreadTitle: View {
     struct Status: Equatable {
         var state: AgentState
@@ -684,19 +690,22 @@ struct ThreadTitle: View {
     let status: Status
     var branch: AgentBranchLabel?
     var parent: Parent?
-    /// iPad: the one-line title without the phone's status line.
+    /// iPad: the title leads its column rather than centering.
     var wide = false
     var goalTime: String? = nil
     var goalStore: NativeThreadStore? = nil
 
     var body: some View {
-        Group {
-            if wide {
-                // No pill: VoiceOver still hears the state.
-                row.accessibilityValue(status.label)
-            } else {
-                compact
+        VStack(alignment: wide ? .leading : .center, spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.m) {
+                // A thread another thread started names it: a link where it opens (a phone has no room, so it sits in the status line).
+                if wide, let parent {
+                    parentName(parent).font(.sh(.title, weight: .regular)).layoutPriority(-1)
+                    Text("/").font(.sh(.title, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                }
+                Text(name).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             }
+            statusLine
         }
         .accessibilityElement(children: .combine)
         .accessibilityActions {
@@ -714,44 +723,31 @@ struct ThreadTitle: View {
         }
     }
 
-    private var compact: some View {
-        VStack(spacing: SH.Space.xxs) {
-            Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-            HStack(spacing: SH.Space.s) {
-                SHStatusDot(status.state)
-                Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
-                // The phone's title has no room for a breadcrumb: the parent leads with the sidebar's sub-thread mark instead.
-                if let parent {
-                    Text("· ↳").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-                    parentName(parent).layoutPriority(-1)
-                }
-                ThreadGoalHeader(store: goalStore, time: goalTime)
+    /// "Running · pi/shepherd-extensions": only the words that ask for you are colored; the dot is the board's, not a status dot.
+    private var statusLine: some View {
+        let asks = status.state == .attention || status.state == .failed
+        return HStack(spacing: SH.Space.xs) {
+            Text(status.label)
+                .fontWeight(asks ? .medium : .regular)
+                .foregroundStyle(asks ? status.state.textColor : Color.sh.textSecondary)
+                .fixedSize()
+            // The phone's title has no room for a breadcrumb: the parent leads with the sidebar's sub-thread mark instead.
+            if !wide, let parent {
+                Text("· ↳").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                parentName(parent).layoutPriority(-1)
             }
-            .font(.sh(.caption))
-            .lineLimit(1)
-        }
-    }
-
-    private var row: some View {
-        HStack(spacing: SH.Space.m) {
-            if let parent {
-                parentName(parent).font(.sh(.headline, weight: .regular)).layoutPriority(-1)
-                Text("/").font(.sh(.headline, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-            }
-            Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            if wide { ThreadGoalHeader(store: goalStore, time: goalTime) }
             if let branch {
-                // Narrow (a half-open thread beside its pane), the host goes first, then the whole chip,
-                // rather than the branch shrinking to a letter.
-                let kind: SHBranchChip.Kind = branch.kind == .worktree ? .worktree : .checkout
-                ViewThatFits(in: .horizontal) {
-                    SHBranchChip(kind: kind, branch: branch.branch, changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
-                    SHBranchChip(kind: kind, branch: branch.branch, changedFiles: branch.changedFiles, showsChevron: false)
-                    Color.clear.frame(width: 0, height: 0)
+                Text("·").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                Text(branch.branch).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                    .lineLimit(1).truncationMode(.tail)
+                if wide, let host = branch.host {
+                    Text("· \(host)").foregroundStyle(Color.sh.textTertiary).lineLimit(1).layoutPriority(-1)
                 }
-                .layoutPriority(-1)
             }
-            ThreadGoalHeader(store: goalStore, time: goalTime)
         }
+        .font(.sh(.caption))
+        .lineLimit(1)
     }
 }
 
@@ -763,9 +759,11 @@ private struct ThreadGoalHeader: View {
     var body: some View {
         if let store {
             if let goal = store.goal, goal.isActive {
+                Text("·").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                 SHGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart)
             }
         } else if let time {
+            Text("·").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
             SHGoalHeaderPill(time: time)
         }
     }
@@ -807,23 +805,6 @@ private struct ThreadSidePaneButton: View {
     }
 }
 
-/// Stop while the agent waits on a question, and on regular width while it runs too (DuoOpenThread's ◎; a phone keeps it in the
-/// ••• menu and the composer's corner). A question takes the composer's place, and with it the composer's Stop, so this is then
-/// the one way to refuse it.
-private struct ThreadStopButton: View {
-    let store: NativeThreadStore
-    let enabled: Bool
-    @Environment(\.horizontalSizeClass) private var sizeClass
-
-    var body: some View {
-        if !store.dialogs.isEmpty || store.running && sizeClass == .regular {
-            Button("Stop agent", systemImage: "stop.circle") { Task { await store.abort() } }
-                .tint(Color.sh.failed)
-                .disabled(!enabled || !store.supports("abort"))
-        }
-    }
-}
-
 /// The laptop pose's capsule (DuoLaptop): the transcript or the terminal above the composer.
 private struct ThreadArrangedPicker: View {
     let showsTerminal: Bool
@@ -836,6 +817,24 @@ private struct ThreadArrangedPicker: View {
         Button("Terminal", systemImage: "apple.terminal") { choose(true) }
             .tint(showsTerminal ? Color.sh.lantern : nil)
             .accessibilityAddTraits(showsTerminal ? .isSelected : [])
+    }
+}
+
+/// Next thread (n), first in a phone's menu: the bar keeps Back, the title and ••• alone (MobileThread). Not drawn on regular width,
+/// where the bar has room for the Next button itself.
+private struct NextThreadItem: View {
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        let current = navigator.selectedThread.map { FleetRef(host: $0.host, agent: $0.agent) }
+        let count = sizeClass == .regular ? 0 : HomeFeed.of(hosts).supervisionQueues.needingYouCount(excluding: current)
+        if count > 0 {
+            Section {
+                Button("Next thread (\(count))", systemImage: SHGlyph.nextThread.symbolName) { navigator.openNextNeedingYou(hosts: hosts) }
+            }
+        }
     }
 }
 
@@ -852,6 +851,7 @@ private struct ThreadOptionsItems: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
+        NextThreadItem()
         if let branch {
             Section {
                 Button(action: openBranch) {

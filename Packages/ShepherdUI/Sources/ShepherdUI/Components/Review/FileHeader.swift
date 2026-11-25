@@ -27,6 +27,16 @@ public enum SHFileStatus: Sendable, Hashable, CaseIterable {
         }
     }
 
+    /// What the touch lists add after the directory ("Tests/ · new"); nothing for a modified file.
+    public var note: String? {
+        switch self {
+        case .modified: nil
+        case .added: "new"
+        case .deleted: "deleted"
+        case .renamed: "renamed"
+        }
+    }
+
     @MainActor public var color: Color {
         let sh = Color.sh
         return switch self {

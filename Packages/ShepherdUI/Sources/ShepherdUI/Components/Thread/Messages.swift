@@ -398,13 +398,9 @@ struct SHCopyGlyph: View {
 // MARK: Thinking
 
 extension View {
-    /// A thinking row's words: the boards' `.meta` on the Mac (`ui`, upright), italic 12 on the iPhone and iPad.
+    /// A thinking row's words: the boards' `.meta` (`ui`, upright) on every platform.
     @MainActor func shThinkingTitle() -> some View {
-        #if os(macOS)
-        font(.sh(.ui))
-        #else
-        font(.shSans(12)).italic()
-        #endif
+        font(.sh(.ui, weight: .regular))
     }
 }
 
@@ -467,20 +463,11 @@ public struct SHThinking: View {
         SHThinking(since: since, blocks: blocks, isExpanded: isExpanded)
     }
 
-    /// Expanded thinking's text: Geist 12.5 (italic where it is drawn) at 1.55, headings
-    /// semibold.
-    /// The Mac's (GXExpanded): the `ui` size upright in `textSecondary` on 20pt lines.
-    #if os(macOS)
+    /// Expanded thinking's text (GXExpanded): the `ui` size upright in `textSecondary` on 20pt lines, headings semibold.
     @MainActor static var font: Font { .sh(.ui, weight: .regular) }
     @MainActor static var headingFont: Font { .sh(.ui, weight: .semibold) }
     @MainActor static var lineSpacing: CGFloat { SH.Space.xs }
     static let italic = false
-    #else
-    @MainActor static var font: Font { .shSans(12.5) }
-    @MainActor static var headingFont: Font { .shSans(12.5, .semibold) }
-    @MainActor static var lineSpacing: CGFloat { SHTextStyle.caption.lineSpacing + 2 }
-    static let italic = true
-    #endif
 
     /// What the row is: only a disclosure has something to open, so only it wears a chevron
     /// and takes a press.
@@ -731,12 +718,13 @@ public struct SHTurnFooter: View {
             VStack(alignment: .leading, spacing: SH.Space.xs) {
                 Text(meta).monospacedDigit().fixedSize(horizontal: false, vertical: true)
                 if let link, let onLink {
-                    Button(link, action: onLink).buttonStyle(.shLink(font: .sh(.micro)))
+                    Button(link, action: onLink).buttonStyle(.shLink(font: .sh(.caption)))
                         .focused($focus, equals: .link)
                         .frame(minHeight: SH.Height.touch)
                 }
             }
-            .font(.sh(.micro))
+            // Touch sets the time and counts in the thread's sans (the boards' `.gt-tf`).
+            .font(.sh(.caption))
             .foregroundStyle(Color.sh.textTertiary)
             .padding(.leading, SH.Space.xs)
             #else

@@ -5,34 +5,46 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The paperclip: a menu of the places images come from, Photos and Files. Up to the images a
-/// message still has room for are taken, resized for the send as they arrive (`ComposerState.attach`).
-/// Pasting into the field and dropping on the composer reach the same place (`ComposerImageInput`).
+/// The + beside the field (the boards' `.gt-att`): a menu of Photos and Files, where images come from, and Commands, which puts a
+/// slash in an empty field. Up to the images a message still has room for are taken, resized for the send as they arrive
+/// (`ComposerState.attach`). Pasting into the field and dropping on the composer reach the same place (`ComposerImageInput`).
 struct AttachButton: View {
     let state: ComposerState
     let enabled: Bool
-    /// Drawn as the phone's round button beside the capsule, or as a chip in the iPad's row.
+    /// Drawn as the paperclip chip in the iPad's card (Projects), or as the pill's +.
     var chip = false
+    /// The host takes images: Photos and Files are offered.
+    var offersImages = true
+    /// Opens the command list; nil where the thread has no commands.
+    var commands: (() -> Void)?
     @State private var items: [PhotosPickerItem] = []
     @State private var choosingPhotos = false
     @State private var choosingFiles = false
 
     var body: some View {
+        let canAttach = offersImages && enabled && state.room > 0 && state.pendingImports == 0
         Menu {
-            Button("Photos", systemImage: "photo.on.rectangle") { choosingPhotos = true }
-            Button("Files", systemImage: "folder") { choosingFiles = true }
+            if offersImages {
+                Button("Photos", systemImage: "photo.on.rectangle") { choosingPhotos = true }
+                    .disabled(!canAttach)
+                Button("Files", systemImage: "folder") { choosingFiles = true }
+                    .disabled(!canAttach)
+            }
+            if let commands {
+                Button("Commands", systemImage: "slash.circle", action: commands)
+            }
         } label: {
-            Image(systemName: "paperclip")
-                .font(.sh(chip ? .ui : .headline, weight: .medium))
+            Image(systemName: chip ? "paperclip" : "plus")
+                .font(chip ? .sh(.ui, weight: .medium) : .system(size: SHTouchComposerMetrics.plusGlyph, weight: .light))
                 .foregroundStyle(Color.sh.textSecondary)
-                .frame(width: chip ? SHComposerMetrics.chipHeight : SH.Height.touch,
-                       height: chip ? SHComposerMetrics.chipHeight : SH.Height.touch)
+                .frame(width: chip ? SHComposerMetrics.chipHeight : SHTouchComposerMetrics.attachSize,
+                       height: chip ? SHComposerMetrics.chipHeight : SHTouchComposerMetrics.attachSize)
                 .contentShape(Rectangle())
-                .shTouchTarget(height: chip ? SHComposerMetrics.chipHeight : SH.Height.touch,
-                               width: chip ? SHComposerMetrics.chipHeight : SH.Height.touch)
+                .shTouchTarget(height: chip ? SHComposerMetrics.chipHeight : SHTouchComposerMetrics.attachSize,
+                               width: chip ? SHComposerMetrics.chipHeight : SHTouchComposerMetrics.attachSize)
         }
-        .disabled(!enabled || state.room == 0 || state.pendingImports > 0)
-        .accessibilityLabel("Attach images")
+        .disabled(!canAttach && commands == nil)
+        .accessibilityLabel(commands == nil ? "Attach images" : "Attach and commands")
         .photosPicker(isPresented: $choosingPhotos, selection: $items, maxSelectionCount: max(1, state.room), matching: .images, photoLibrary: .shared())
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result, !urls.isEmpty else { return }
@@ -70,14 +82,13 @@ struct AttachButton: View {
     }
 }
 
-// The chips take their button style from the row: the Mac's composer chip in the iPad's card,
-// a ghost button on the phone, whose chips grow with Dynamic Type.
-
-/// The model chip: the current model in mono with a chevron; it opens the picker sheet when the
-/// agent can change model, and is plain text otherwise. `short` draws the model's short name
-/// (a design's chat, iPadDesign: "opus").
+/// The model chip (the boards' `.md`): the current model in 13pt `textSecondary`, then the thinking level where the pill has room
+/// for it (iPad, iPhone Duo open), then a chevron. It opens the picker sheet when the agent can change model, and is plain text
+/// otherwise. `short` draws the model's short name (a design's chat, iPadDesign: "opus").
 struct ModelChip: View {
     let model: String?
+    /// The thinking level's title, drawn after the name.
+    var thinking: String?
     let canChange: Bool
     var short = false
     let open: () -> Void
@@ -85,103 +96,71 @@ struct ModelChip: View {
     var body: some View {
         let title = model.map(short ? NativeModelChoices.compactName : NativeModelChoices.shortName) ?? "Model"
         Button(action: open) {
-            HStack(spacing: SH.Space.s) {
-                Text(title).font(.sh(.mono)).lineLimit(1).truncationMode(.middle)
+            HStack(spacing: SH.Space.xs) {
+                Text(title).lineLimit(1).truncationMode(.middle)
+                if let thinking { Text(thinking).foregroundStyle(Color.sh.textTertiary).lineLimit(1) }
                 if canChange { SHChipChevron() }
             }
+            .font(.shSans(SHTouchComposerMetrics.chipSize))
+            .foregroundStyle(Color.sh.textSecondary)
+            .padding(.horizontal, SH.Space.xs)
+            .frame(minHeight: SHTouchComposerMetrics.attachSize)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .disabled(!canChange)
-        .accessibilityLabel("Model, \(model ?? title)")
-        .accessibilityHint(canChange ? "Choose the agent's model" : "")
+        .accessibilityLabel("Model, \(model ?? title)" + (thinking.map { ", thinking \($0)" } ?? ""))
+        .accessibilityHint(canChange ? "Choose the agent's model, thinking level and speed" : "")
     }
 }
 
-/// The thinking chip: a menu of the levels pi offers the thread's model, checked at the current
-/// level. At the compact size (a design's chat) it shows the level without "Thinking".
-struct ThinkingChip: View {
-    let level: String?
-    let levels: [NativeThinkingLevel]
-    let enabled: Bool
-    let choose: (String) -> Void
-    @Environment(\.shComposerSize) private var size
+/// The thinking levels pi offers the thread's model and the speed tiers the host offers, as the model picker's first sections: each
+/// a checked list, the level or tier set as it is tapped.
+struct ModelSettingsSections: View {
+    let store: NativeThreadStore
+    let state: ComposerState
+    let live: Bool
 
     var body: some View {
-        let title = level.map(NativeThinkingLevel.title) ?? "Default"
-        Menu {
-            Picker("Thinking", selection: Binding(get: { level ?? "" }, set: choose)) {
-                ForEach(levels) { option in
-                    Text(option.note.map { "\(option.title) · \($0)" } ?? option.title).tag(option.id)
+        if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
+                                       listing: state.models, levels: store.thinkingLevels) {
+            let level = store.thinking
+            Section("Thinking") {
+                Picker("Thinking", selection: Binding(get: { level ?? "" }, set: { choice in Task { await store.setThinking(choice) } })) {
+                    ForEach(store.thinkingLevels) { option in
+                        Text(option.note.map { "\(option.title) · \($0)" } ?? option.title).tag(option.id)
+                    }
                 }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            HStack(spacing: SH.Space.s) {
-                Image(systemName: "lightbulb")
-                if size.showsChipWords() { Text("Thinking") }
-                Text(title).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary)
-                SHChipChevron()
+                .pickerStyle(.inline)
+                .labelsHidden()
+                .disabled(!live)
             }
         }
-        .disabled(!enabled)
-        .accessibilityLabel("Thinking, \(title)")
-    }
-}
-
-/// The speed chip: a menu of the tiers the host offers the thread's model (Standard, Fast), each
-/// with what it does, checked at the current one; the bolt fills in `lantern` for a raised tier.
-/// At the compact size (a design's chat) it shows the value without "Speed".
-struct SpeedChip: View {
-    let tier: ServiceTier
-    let tiers: [ServiceTier]
-    let enabled: Bool
-    let choose: (ServiceTier) -> Void
-    @Environment(\.shComposerSize) private var size
-
-    var body: some View {
-        Menu {
-            Picker("Speed", selection: Binding(get: { tier }, set: choose)) {
-                ForEach(tiers, id: \.self) { option in
-                    Text("\(option.title) · \(option.summary)").tag(option)
+        if store.offersServiceTier {
+            Section("Speed") {
+                Picker("Speed", selection: Binding(get: { store.serviceTier }, set: { tier in Task { await store.setServiceTier(tier) } })) {
+                    ForEach(store.serviceTiers, id: \.self) { option in
+                        Text("\(option.title) · \(option.summary)").tag(option)
+                    }
                 }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            HStack(spacing: SH.Space.s) {
-                Image(systemName: tier == .standard ? "bolt" : "bolt.fill")
-                    .foregroundStyle(tier == .standard ? Color.sh.textSecondary : Color.sh.lantern)
-                if size.showsChipWords() { Text("Speed") }
-                Text(tier.title).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary)
-                SHChipChevron()
+                .pickerStyle(.inline)
+                .labelsHidden()
+                .disabled(!live)
             }
         }
-        .disabled(!enabled)
-        .accessibilityLabel("Speed: \(tier.title)")
-    }
-}
-
-/// "/ commands": puts a slash in an empty field, which opens the command list.
-struct CommandsChip: View {
-    let open: () -> Void
-
-    var body: some View {
-        Button(action: open) {
-            HStack(spacing: SH.Space.s) {
-                Text("/").font(.sh(.mono))
-                Text("commands")
-            }
-        }
-        .accessibilityLabel("Slash commands")
     }
 }
 
 /// The model picker (from the model chip): the host's catalog in one section per provider,
 /// searchable, with a check on the current model and each model's thinking levels under its name.
-struct ModelPickerSheet: View {
+struct ModelPickerSheet<Settings: View>: View {
     let host: MobileHost?
     let current: String?
     /// The levels pi reports for the current model (the snapshot's), read as the sheet loads.
     let currentLevels: () -> [String]?
     let choose: (String) -> Void
+    /// The thread's thinking level and speed, above the models.
+    @ViewBuilder let settings: Settings
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var models: [String]?
@@ -201,6 +180,8 @@ struct ModelPickerSheet: View {
                     SHEmptyState(Text("No models"), message: query.isEmpty ? "\(host?.name ?? "The host") lists no models." : "Nothing matches \u{201C}\(query)\u{201D}.")
                 } else {
                     List {
+                        // While searching, only the models.
+                        if query.isEmpty { settings }
                         ForEach(sections) { section in
                             Section(section.title) {
                                 ForEach(section.models) { model in

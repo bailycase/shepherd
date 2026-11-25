@@ -64,7 +64,7 @@ struct PadCommitPopover: View {
                     SHBanner(.failed, title: "Can't commit from here", message: message)
                 case .form:
                     CommitNotices(store: store)
-                    CommitMessageCard(store: store, fill: Color.sh.bgWindow)
+                    CommitMessageCard(store: store, fill: Color.sh.bgSunken)
                     PadCommitChecks(store: store)
                         .disabled(store.info?.blocked != nil)
                 case .operation:
@@ -73,6 +73,7 @@ struct PadCommitPopover: View {
                 footer(store)
             }
             .padding(SH.Space.xl)
+            .padding(.bottom, SH.Space.xs)
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(width: MobileLayout.commitPopoverWidth)
@@ -90,10 +91,10 @@ struct PadCommitPopover: View {
                 Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            HStack(spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.xl) {
                 if store.stage == .form {
                     Button("Ask agent", action: askAgent)
-                        .buttonStyle(.sh(.ghost, size: .l))
+                        .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .shSans(MobileLayout.touchBodyFont)))
                         .accessibilityLabel("Ask agent to commit")
                         .accessibilityHint("Sends the agent a turn asking it to commit these changes instead")
                 }
@@ -101,20 +102,23 @@ struct PadCommitPopover: View {
                 switch store.stage {
                 case .operation:
                     if store.operation?.finished == true {
-                        Button("Done", action: close).buttonStyle(.sh(.primary, size: .l))
+                        Button("Done", action: close).buttonStyle(.reviewCompactPill)
                     } else {
-                        Button("Close", action: close).buttonStyle(.sh(.secondary, size: .l))
+                        Button("Close", action: close)
+                            .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .shSans(MobileLayout.touchBodyFont)))
                             .accessibilityHint("The commit continues on the host")
                     }
                 default:
-                    Button("Cancel", action: close).buttonStyle(.sh(.secondary, size: .l))
+                    Button("Cancel", action: close)
+                        .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .shSans(MobileLayout.touchBodyFont)))
                     if store.stage == .form {
                         Button(store.actionTitle) { Task { await store.commit() } }
-                            .buttonStyle(.sh(.primary, size: .l))
+                            .buttonStyle(.reviewCompactPill)
                             .disabled(!store.canCommit)
                     }
                 }
             }
+            .frame(minHeight: MobileLayout.touchCompactHeight)
         }
     }
 
@@ -131,17 +135,17 @@ struct PadCommitPopover: View {
     }
 }
 
-/// "Commit 5 files" and, in mono `textTertiary`, "to agent/refund-events".
+/// "Commit 5 files" over, in mono, "to agent/refund-events".
 private struct PadCommitTitle: View {
     let store: ReviewCommitStore
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             Text(commitTitle(store))
                 .font(.sh(.headline))
                 .foregroundStyle(Color.sh.textPrimary)
             if store.outcome == nil, let branch = store.info?.branch {
-                Text("to \(branch)").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                Text("to \(branch)").font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary).lineLimit(1).truncationMode(.middle)
             }
         }
         .accessibilityElement(children: .combine)
@@ -149,30 +153,22 @@ private struct PadCommitTitle: View {
     }
 }
 
-/// Push to origin and Open a pull request, as the board's checkboxes, each over what it does.
+/// Push to origin and Open a pull request, as the board's switches, each over what it does.
 private struct PadCommitChecks: View {
     @Bindable var store: ReviewCommitStore
 
     var body: some View {
         if let info = store.info {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                check("Push to \(info.pushRemote ?? "origin")", detail: reviewCommitPushDetail(info),
-                      isOn: Binding(get: { store.push || store.pullRequest }, set: { store.push = $0 }))
+            VStack(spacing: 0) {
+                CommitOptionRow(title: "Push to \(info.pushRemote ?? "origin")", detail: reviewCommitPushDetail(info), monoDetail: true,
+                                isOn: Binding(get: { store.push || store.pullRequest }, set: { store.push = $0 }))
                     .disabled(store.pullRequest || !reviewCommitCanPush(info))
-                check("Open a pull request", detail: reviewCommitPullRequestDetail(info, title: store.title), isOn: $store.pullRequest)
+                SHHairline()
+                CommitOptionRow(title: "Open a pull request", detail: reviewCommitPullRequestDetail(info, title: store.title),
+                                isOn: $store.pullRequest)
                     .disabled(!reviewCommitCanOpenPullRequest(info))
             }
+            .padding(.horizontal, -MobileLayout.gutter)
         }
-    }
-
-    private func check(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-                Text(detail).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .toggleStyle(.shCheckbox)
-        .frame(minHeight: SH.Height.touch, alignment: .leading)
     }
 }

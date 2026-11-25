@@ -14,9 +14,6 @@ public enum SHQuestionDockMetrics {
     public static let edge: CGFloat = 3
     /// 14pt above and below, 16pt at the sides (inside the edge); 12pt between the parts.
     public static let padding = EdgeInsets(top: 14, leading: SH.Space.xl + edge, bottom: 14, trailing: SH.Space.xl)
-    /// The eyebrow: 11 semibold, uppercase, tracked 6%, 4pt over the question.
-    public static let eyebrowSize: CGFloat = 11
-    public static let eyebrowTracking: CGFloat = 0.06
     /// The question, 15 semibold (`title`) at 1.35.
     public static let questionLineSpacing: CGFloat = 1.5
     /// Details: its toggle in 12, the chevron 5pt before it; open, 13 at 1.5, paragraphs 8pt
@@ -219,12 +216,8 @@ struct SHQuestionCardFill: View {
         let board = RoundedRectangle(cornerRadius: SH.Radius.xl)
         Color.clear.shLift(board).shBorder(sh.lineSubtle, in: board).allowsHitTesting(false)
         #else
-        let shape = RoundedRectangle(cornerRadius: SHQuestionDockMetrics.radius)
-        shape.fill(sh.bgRaised)
-            .shBorder(sh.lineStrong, in: shape)
-            .overlay(alignment: .leading) { sh.lantern.frame(width: SHQuestionDockMetrics.edge) }
-            .clipShape(shape)
-            .allowsHitTesting(false)
+        let shape = RoundedRectangle(cornerRadius: SHTouchQuestionMetrics.cardRadius)
+        Color.clear.shLift(shape).shBorder(sh.lineSubtle, in: shape).allowsHitTesting(false)
         #endif
     }
 }
@@ -481,26 +474,8 @@ public struct SHQuestionDock: View {
 
 // MARK: Shared parts (the Mac's dock and the touch card)
 
-/// "AGENT IS ASKING · 1 OF N": 11 semibold, uppercase and tracked, in `lanternText`.
-public struct SHQuestionEyebrow: View {
-    let count: Int
-
-    public init(count: Int = 1) { self.count = count }
-
-    public var body: some View {
-        let M = SHQuestionDockMetrics.self
-        Text(count > 1 ? "\(SHQuestionHead.title) · 1 of \(count)" : SHQuestionHead.title)
-            .font(.shSans(M.eyebrowSize, .semibold))
-            .tracking(M.eyebrowSize * M.eyebrowTracking)
-            .textCase(.uppercase)
-            .foregroundStyle(Color.sh.lanternText)
-            .lineLimit(1)
-            .accessibilityLabel(count > 1 ? "\(SHQuestionHead.title), 1 of \(count)" : SHQuestionHead.title)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// The eyebrow over the question (15 semibold, inline code and emphasis as in prose).
+/// The question's heading (15 semibold, inline code and emphasis as in prose). On touch it is the board's: the attention dot, then the
+/// question ("1 of N" after it when several wait); VoiceOver hears the eyebrow ("Agent is asking").
 public struct SHQuestionHeading: View {
     let count: Int
     let question: String
@@ -511,17 +486,20 @@ public struct SHQuestionHeading: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
-            SHQuestionEyebrow(count: count)
-            Text(SHProseInline.attributed(question))
+        let M = SHTouchQuestionMetrics.self
+        HStack(alignment: .top, spacing: M.headSpacing) {
+            SHStatusDot(.attention, size: M.dot).padding(.top, M.dotTop)
+            let asked = Text(SHProseInline.attributed(question)).foregroundStyle(Color.sh.textPrimary)
+            let more = Text(count > 1 ? "\u{2002}1 of \(count)" : "").font(.sh(.caption, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+            Text("\(asked)\(more)")
                 .font(.sh(.title))
                 .lineSpacing(SHQuestionDockMetrics.questionLineSpacing)
-                .foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel((count > 1 ? "\(SHQuestionHead.title), 1 of \(count): " : "\(SHQuestionHead.title): ") + question)
                 .accessibilityAddTraits(.isHeader)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .shAnimation(.content, value: count)
     }
 }
@@ -593,15 +571,14 @@ public struct SHQuestionDetails: View {
     }
 }
 
-/// A radio: a 16pt circle in `lineStrong`; picked, a `lantern` ring around an 8pt `lantern` dot.
+/// A radio (touch): a 20pt circle in `textTertiary`; picked, the ink fill as a 6pt ring round the card's own color (the boards' `.rd`).
 struct SHQuestionRadio: View {
     let picked: Bool
 
     var body: some View {
         let sh = Color.sh
-        let M = SHQuestionDockMetrics.self
-        Circle().strokeBorder(picked ? sh.primary : sh.lineStrong, lineWidth: M.radioLine)
-            .overlay { if picked { Circle().fill(sh.primary).frame(width: M.radioDot, height: M.radioDot) } }
+        let M = SHTouchQuestionMetrics.self
+        Circle().strokeBorder(picked ? sh.primary : sh.textTertiary, lineWidth: picked ? M.radioPickedRing : M.radioLine)
             .frame(width: M.radio, height: M.radio)
             .accessibilityHidden(true)
     }
@@ -630,13 +607,15 @@ public struct SHQuestionRadioRow: View {
         #if os(macOS)
         macRow
         #else
+        let T = SHTouchQuestionMetrics.self
+        let shape = RoundedRectangle(cornerRadius: T.rowRadius)
         Button(action: pick) {
-            HStack(alignment: .top, spacing: M.rowSpacing) {
-                SHQuestionRadio(picked: picked)
+            HStack(alignment: .top, spacing: T.rowSpacing) {
+                SHQuestionRadio(picked: picked).padding(.top, SH.Space.xxs)
                 VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     title.fixedSize(horizontal: false, vertical: true)
                     if let detail = option.detail {
-                        Text(detail).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                        Text(detail).font(.shSans(T.detailSize)).foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -646,12 +625,12 @@ public struct SHQuestionRadioRow: View {
                     Text("\(option.number)").font(.shMono(M.numberSize)).monospacedDigit().foregroundStyle(sh.textTertiary)
                 }
             }
-            .padding(M.rowPadding)
+            .padding(T.rowPadding)
             #if os(iOS)
             .frame(minHeight: SH.Height.touch)
             #endif
-            .background(hovering ? sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SHQuestionDockMetrics.controlRadius))
-            .contentShape(RoundedRectangle(cornerRadius: SHQuestionDockMetrics.controlRadius))
+            .background(picked ? sh.bgSelected : hovering ? sh.bgHover : .clear, in: shape)
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -714,8 +693,8 @@ public struct SHQuestionRadioRow: View {
         let sh = Color.sh
         let title = Text(option.title).foregroundStyle(sh.textPrimary)
         guard option.recommended else { return title.font(.sh(.body)) }
-        let tag = Text("Recommended").font(.shSans(SHQuestionDockMetrics.recommendedSize, .medium)).foregroundStyle(sh.lanternText)
-        return Text("\(title)  \(tag)").font(.sh(.body))
+        let tag = Text("Recommended").font(.shSans(SHQuestionDockMetrics.recommendedSize)).foregroundStyle(sh.textTertiary)
+        return Text("\(title)\u{2002}\(tag)").font(.sh(.body))
     }
 }
 
@@ -765,8 +744,8 @@ public struct SHQuestionTextRow: View {
         .shAnimation(.hover, value: hovering)
         .onTapGesture { focus.wrappedValue = .text }
         #else
-        HStack(alignment: .top, spacing: M.rowSpacing) {
-            SHQuestionRadio(picked: typed)
+        HStack(alignment: .top, spacing: SHTouchQuestionMetrics.rowSpacing) {
+            SHQuestionRadio(picked: typed).padding(.top, SH.Space.xxs)
             TextField(text: $text, prompt: Text(Self.placeholder).foregroundStyle(sh.textTertiary), axis: .vertical) {
                 Text(Self.placeholder)
             }
@@ -784,12 +763,12 @@ public struct SHQuestionTextRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(M.rowPadding)
+        .padding(SHTouchQuestionMetrics.rowPadding)
         #if os(iOS)
         .frame(minHeight: SH.Height.touch)
         #endif
-        .background(hovering ? sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SHQuestionDockMetrics.controlRadius))
-        .contentShape(RoundedRectangle(cornerRadius: SHQuestionDockMetrics.controlRadius))
+        .background(typed ? sh.bgSelected : hovering ? sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SHTouchQuestionMetrics.rowRadius))
+        .contentShape(RoundedRectangle(cornerRadius: SHTouchQuestionMetrics.rowRadius))
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .onTapGesture { focus.wrappedValue = .text }

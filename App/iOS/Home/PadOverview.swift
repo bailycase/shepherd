@@ -73,10 +73,11 @@ struct PadOverview: View {
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                    Text("Overview").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
+                // The board's head: "Overview" over its summary.
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                     if !model.hosts.isEmpty {
-                        Text(model.summary).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                        Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                     }
                 }
                 .fixedSize()
@@ -87,6 +88,8 @@ struct PadOverview: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
                 Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.sh.primary)
                     .accessibilityIdentifier("overview-toolbar-new-thread")
                     .disabled(model.hosts.isEmpty)
                 StopAllWorkingMenu()
@@ -110,7 +113,7 @@ private struct OverviewColumns: View {
             } else {
                 ForEach(model.needsYou) { item in
                     // Tapping the card outside its answers opens its thread, as its Open does.
-                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
+                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id], overview: true)
                         .contentShape(.rect)
                         .onTapGesture { navigator.open(projects.route(item)) }
                 }
@@ -120,22 +123,21 @@ private struct OverviewColumns: View {
             if model.running.isEmpty && model.automationsRunning.isEmpty {
                 quiet("Nothing is running.")
             }
-            // One card per kind, each under its caption band.
+            // One list per kind under its quiet head, a rule above each row.
             if !model.running.isEmpty {
-                SHListCard {
-                    SHCaptionBand("Threads · \(model.running.count)")
-                    ForEach(model.running) { row in runningButton(row) }
-                }
+                head("Threads", count: model.running.count)
+                ForEach(model.running) { row in VStack(spacing: 0) { SHHairline(); runningButton(row) } }
             }
             if !model.automationsRunning.isEmpty {
-                SHListCard {
-                    SHCaptionBand("Automations · \(model.automationsRunning.count)")
-                    ForEach(model.automationsRunning) { row in
+                head("Automations", count: model.automationsRunning.count)
+                ForEach(model.automationsRunning) { row in
+                    VStack(spacing: 0) {
                         if let run = row.run {
-                            // The board's row: the bolt in its run's state, what it does and where.
+                            SHHairline()
+                            // The board's row: the run's name, then what it does and where.
                             Button { navigator.open(.thread(run.agentRef)) } label: {
-                                SHOverviewRow(row.name, detail: [row.stateWord, row.place, row.hostTag].compactMap { $0 }.joined(separator: " · "),
-                                              leading: .symbol(SHGlyph.automation.symbolName, row.runStatus == .blocked ? .attention : .running))
+                                SHOverviewRow(row.name, detail: [row.stateWord.sentenceCased, row.place, row.hostTag].compactMap { $0 }.joined(separator: " · "),
+                                              detailMono: false)
                                     .equatable()
                             }
                             .buttonStyle(.shRow(radius: 0))
@@ -148,12 +150,12 @@ private struct OverviewColumns: View {
             if model.finished.isEmpty {
                 quiet("Nothing has finished yet.")
             } else {
-                // One card, a band per day, each row with the time it finished.
+                // A list a day, each row with the time it finished.
                 TimelineView(.everyMinute) { context in
-                    SHListCard {
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(FleetFinishedDay.days(model.finished, now: context.date)) { day in
-                            SHCaptionBand(day.title)
-                            ForEach(day.rows) { row in finishedButton(row, now: context.date) }
+                            head(day.title, count: nil)
+                            ForEach(day.rows) { row in VStack(spacing: 0) { SHHairline(); finishedButton(row, now: context.date) } }
                         }
                     }
                 }
@@ -165,7 +167,7 @@ private struct OverviewColumns: View {
     private func runningButton(_ row: FleetThreadRow) -> some View {
         let time: SHOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
         return Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.now, leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
+            SHOverviewRow(row.title, detail: row.now, time: time, dimmed: row.offline)
                 .equatable()
         }
         .buttonStyle(.shRow(radius: 0))
@@ -176,8 +178,8 @@ private struct OverviewColumns: View {
     /// and when it finished.
     private func finishedButton(_ row: FleetThreadRow, now: Date) -> some View {
         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            SHOverviewRow(row.title, detail: row.failed ? "failed · \(row.hostName)" : row.detail, detailMono: false,
-                          leading: row.failed ? .symbol("xmark", .failed) : .symbol("checkmark", .done),
+            SHOverviewRow(row.title, detail: row.failed ? "Failed · \(row.hostName)" : row.detail, detailMono: false,
+                          detailTone: row.failed ? .failed : nil,
                           time: row.lastMoved.map { .text(FleetFinishedDay.stamp($0, now: now)) } ?? .none, dimmed: row.offline)
                 .equatable()
         }
@@ -187,20 +189,24 @@ private struct OverviewColumns: View {
 
     /// A column under its head; Needs you's is `lanternText` (iPadOverview).
     private func column(_ title: String, count: Int, @ViewBuilder content: () -> some View) -> some View {
-        let tint = title == "Needs you" && count > 0 ? Color.sh.lanternText : Color.sh.textTertiary
-        return VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            HStack(spacing: SH.Space.s) {
-                Text(title).font(.sh(.micro)).textCase(.uppercase).tracking(SHTextStyle.micro.size * 0.06)
-                    .foregroundStyle(tint).lineLimit(1)
-                Spacer(minLength: SH.Space.xs)
-                Text("\(count)").font(.sh(.micro)).foregroundStyle(tint)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            .padding(.horizontal, SH.Space.xs)
+        VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+            SHListHeader(title, attention: title == "Needs you" && count > 0, count: count)
+                .accessibilityElement(children: .combine)
             content()
         }
         .frame(minWidth: MobileLayout.overviewColumnMinWidth, maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// A list's quiet head ("Threads  3", "Today"): 13/500 in secondary.
+    private func head(_ title: String, count: Int?) -> some View {
+        HStack(spacing: SH.Space.s) {
+            Text(title).font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.textSecondary)
+            if let count { Text("\(count)").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+        }
+        .padding(.horizontal, SH.Space.xs)
+        .padding(.top, SH.Space.s)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func quiet(_ text: String) -> some View {

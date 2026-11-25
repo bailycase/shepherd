@@ -40,7 +40,7 @@ struct ForgeFilterBar: View {
                 Spacer(minLength: 0)
                 if store.browsing {
                     Button("Clear") { store.clearFilters() }
-                        .font(.sh(.ui, weight: .medium))
+                        .font(.shSans(MobileLayout.touchBodyFont))
                         .foregroundStyle(Color.sh.textSecondary)
                         .frame(minHeight: SH.Height.touch)
                         .accessibilityHint("Back to what's waiting on you")
@@ -51,14 +51,15 @@ struct ForgeFilterBar: View {
                     HStack(spacing: SH.Space.s) {
                         ForEach(chips, id: \.title) { chip in
                             Button(action: chip.remove) {
-                                HStack(spacing: SH.Space.xs) {
-                                    Text(chip.title).font(.sh(.caption, weight: .medium)).lineLimit(1)
-                                    Image(systemName: "xmark").font(.sh(.micro, weight: .semibold))
+                                HStack(spacing: SH.Space.s) {
+                                    Text(chip.title).font(.shSans(MobileLayout.touchDetailFont + 1, .medium)).lineLimit(1)
+                                    Image(systemName: "xmark").font(.shSans(MobileLayout.touchDetailFont - 2, .semibold))
                                 }
-                                .foregroundStyle(Color.sh.textSecondary)
-                                .padding(.horizontal, SH.Space.m)
-                                .padding(.vertical, SH.Space.xs)
-                                .background(Color.sh.bgSelected, in: Capsule())
+                                .foregroundStyle(Color.sh.textPrimary)
+                                .padding(.horizontal, SH.Space.l)
+                                .frame(minHeight: MobileLayout.touchPillHeight - SH.Space.s)
+                                .shBorder(Color.sh.lineStrong, in: Capsule())
+                                .contentShape(Capsule())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Remove \(chip.title)")
@@ -124,16 +125,14 @@ struct ForgeFilterBar: View {
     }
 
     private func pill(_ title: String, symbol: String) -> some View {
-        HStack(spacing: SH.Space.xs) {
-            Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-            Image(systemName: symbol).font(.sh(.micro, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+        HStack(spacing: SH.Space.s) {
+            Text(title).font(.shSans(MobileLayout.touchBodyFont, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Image(systemName: symbol).font(.shSans(MobileLayout.touchDetailFont - 1, .semibold)).foregroundStyle(Color.sh.textSecondary)
         }
-        .padding(.horizontal, SH.Space.l)
-        .frame(minHeight: SH.Height.controlL)
-        .background(Color.sh.bgRaised, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.sh.lineStrong))
-        .frame(minHeight: SH.Height.touch)
-        .contentShape(Rectangle())
+        .padding(.horizontal, SH.Space.xl)
+        .frame(minHeight: MobileLayout.touchPillHeight + SH.Space.s)
+        .background(Color.sh.bgSelected, in: Capsule())
+        .contentShape(Capsule())
     }
 
     /// A filter field; setting it browses Everything.
@@ -215,16 +214,17 @@ struct ForgeNewIssueSheet: View {
                     Spacer()
                     SHGlyph.popupChevrons.image.font(.sh(.micro, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
                 }
-                .padding(.horizontal, SH.Space.l)
+                .padding(.horizontal, MobileLayout.gutter)
                 .frame(minHeight: SH.Height.touch)
-                .shCard(radius: MobileLayout.cardRadius, line: Color.sh.lineStrong)
+                .shCard(radius: MobileLayout.touchCardRadius, lift: true)
             }
             .accessibilityLabel("Repository")
-            TextField("Title", text: $title)
-                .font(.sh(.body))
-                .padding(.horizontal, SH.Space.l)
+            TextField("Title", text: $title, prompt: Text("Title").foregroundStyle(Color.sh.textTertiary))
+                .font(.shSans(MobileLayout.touchBodyFont))
+                .tint(Color.sh.textPrimary)
+                .padding(.horizontal, MobileLayout.gutter)
                 .frame(minHeight: SH.Height.touch)
-                .shCard(radius: MobileLayout.cardRadius, line: Color.sh.lineStrong)
+                .shCard(radius: MobileLayout.touchCardRadius, lift: true)
                 .focused($focused)
             ForgeTextBox(text: $text, prompt: "Describe it", focused: $focused)
         }

@@ -159,7 +159,7 @@ private struct PaletteRow: View, Equatable {
     var body: some View {
         Button { activate(entry) } label: {
             SHSearchResultRow(leading: entry.leading, title: entry.title, detail: entry.detail, tag: entry.host,
-                              shortcut: selected ? "↩" : nil, selected: selected, dimmed: entry.dimmed,
+                              selected: selected, dimmed: entry.dimmed,
                               minHeight: SHSearchMetrics.compactRowHeight)
         }
         .buttonStyle(.plain)
@@ -188,19 +188,15 @@ private struct PalettePreviewPane: View {
         VStack(alignment: .leading, spacing: SH.Space.l) {
             if let entry {
                 if let thread = state.thread {
-                    HStack(spacing: SH.Space.m) {
-                        SHStateGlyph(thread.state)
-                        Text(thread.title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
-                    }
-                    HStack(spacing: SH.Space.m) {
-                        SHStatusPill(thread.state)
-                        Text(thread.meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
-                    }
+                    Text("Latest in this thread").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    Text(thread.title).font(.shSans(MobileLayout.detailTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
+                    // "Needs you · Studio · Shepherd": the state's word in its color, the rest in secondary.
+                    (Text(thread.state.label).foregroundStyle(thread.state.textColor)
+                        + Text(" · " + thread.meta).foregroundStyle(Color.sh.textSecondary))
+                        .font(.sh(.caption)).lineLimit(1)
                     PaletteExcerpt(lines: state.lines, loading: state.loading, note: state.note)
                 } else {
-                    Label { Text(entry.title.map(\.text).joined()).font(.sh(.title)) } icon: {
-                        if case .symbol(let name) = entry.leading { Image(systemName: name) }
-                    }
+                    Text(entry.title.map(\.text).joined()).font(.shSans(MobileLayout.detailTitleSize, .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
                 }
                 if let caption = Self.caption(entry) {

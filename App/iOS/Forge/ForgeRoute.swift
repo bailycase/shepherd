@@ -58,7 +58,9 @@ extension MobileLayout {
     static let forgeDetailMaxWidth: CGFloat = 640
     /// The review and comment sheets' text box before it grows.
     static let forgeEditorMinHeight: CGFloat = 120
-    /// An item's title (the boards' 22pt semibold).
+    /// The list's title on the phone (the boards' 28pt).
+    static let forgeListTitle: CGFloat = 28
+    /// An item's title (the boards' 22pt).
     static let forgeItemTitle: CGFloat = 22
     /// A review or merge sheet's share of the screen, the page showing above it.
     static let forgeSheetFraction: CGFloat = 0.68

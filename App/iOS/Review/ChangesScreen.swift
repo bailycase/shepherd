@@ -37,21 +37,16 @@ struct ChangesScreen: View {
                     }
                     ReviewLoadState(store: store) { store.refresh() }
                     if !store.entries.isEmpty {
-                        ReviewSectionHead(title: "Files", note: "tap to read the diff")
-                        VStack(spacing: 0) {
-                            ForEach(store.summaries) { summary in
-                                Button { navigator.open(.review(.diff(ref, path: summary.path))) } label: {
-                                    SHReviewFileRow(SHReviewFileRow.Item(summary), selected: summary.id == highlighted).equatable()
-                                }
-                                .buttonStyle(.plain)
-                                .id(summary.id)
-                                if summary.id != store.summaries.last?.id { SHHairline() }
+                        ReviewSectionHead(title: "Files", note: "Tap a line in a diff to comment on it", shortNote: "Tap a line to comment")
+                        ReviewLazyCard(store.summaries) { summary in
+                            Button { navigator.open(.review(.diff(ref, path: summary.path))) } label: {
+                                SHReviewFileRow(SHReviewFileRow.Item(summary), selected: summary.id == highlighted).equatable()
                             }
+                            .buttonStyle(.plain)
+                            .id(summary.id)
                         }
-                        .shCard(radius: MobileLayout.cardRadius)
                         if !store.comments.isEmpty {
-                            ReviewSectionHead(title: "Your comments", note: "\(store.comments.count)")
-                                .padding(.top, SH.Space.s)
+                            ReviewSectionHead(title: "Your comments", count: "\(store.comments.count)")
                             ForEach(store.comments) { comment in
                                 ReviewCommentCard(comment: comment, showsFile: true,
                                                   onEdit: { open(comment, store: store) },
@@ -60,13 +55,15 @@ struct ChangesScreen: View {
                         }
                     }
                 }
-                .padding(MobileLayout.gutter - SH.Space.xxs)
+                .padding(.horizontal, MobileLayout.gutter)
+                .padding(.top, SH.Space.xs)
+                .padding(.bottom, SH.Space.xl)
             }
             .onChange(of: store.summaries.count, initial: true) { _, _ in
                 if let highlighted { proxy.scrollTo(highlighted, anchor: .center) }
             }
         }
-        .background(Color.sh.bgBase)
+        .background(Color.sh.bgWindow)
         .task(id: host?.session) { await BranchStatusStore.of(ref).load(host) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ReviewActionBar(store: store, commitDirectly: CommitHooks.available(host: host)
@@ -116,7 +113,6 @@ struct ReviewActionBar: View {
     /// Called with whether the host took the review.
     let finished: (Bool) -> Void
     @Environment(MobileHosts.self) private var hosts
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(spacing: SH.Space.m) {
@@ -124,36 +120,27 @@ struct ReviewActionBar: View {
                 SHBanner(.failed, title: "Couldn't send the review", message: error) {
                     Button("Dismiss") { store.actionError = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
+                .padding(.horizontal, MobileLayout.gutter)
             }
-            // Side by side, or stacked where an accessibility text size would cut the labels.
-            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: SH.Space.m)) : AnyLayout(HStackLayout(spacing: SH.Space.m))
-            layout {
-                Button(store.sendTitle) {
+            ReviewGlassBar {
+                ReviewGlassBarItem(title: store.sendTitle) {
                     Task { finished(await store.sendComments(hosts: hosts)) }
                 }
-                .buttonStyle(.shReviewBar(.secondary))
                 .disabled(!store.canSend)
                 .accessibilityHint(store.comments.isEmpty ? "Tap a line in a diff to comment on it" : "Sends your comments as the agent's next message")
                 if let commitDirectly {
-                    Button("Commit\u{2026}", action: commitDirectly)
-                        .buttonStyle(.shReviewBar(.primary))
+                    ReviewGlassBarItem(title: "Commit\u{2026}", emphasis: .main, action: commitDirectly)
                         .disabled(!store.canCommit)
                         .accessibilityHint("Choose the files and message, then commit on the host")
                 } else {
-                    Button("Commit") {
+                    ReviewGlassBarItem(title: "Commit", emphasis: .main) {
                         Task { finished(await store.commit(hosts: hosts)) }
                     }
-                    .buttonStyle(.shReviewBar(.primary))
                     .disabled(!store.canCommit)
                     .accessibilityHint("Asks the agent to commit these changes")
                 }
             }
         }
-        .padding(.horizontal, MobileLayout.gutter - SH.Space.xxs)
-        .padding(.top, SH.Space.l)
-        .padding(.bottom, SH.Space.s)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { SHHairline() }
     }
 }
 

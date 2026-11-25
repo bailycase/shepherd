@@ -15,7 +15,7 @@ public enum SHSearchMetrics {
     /// The palette's search row.
     public static let largeFieldHeight: CGFloat = 56
     /// The trailing chevron of a row that opens something.
-    public static let chevronSize: CGFloat = 12
+    public static let chevronSize: CGFloat = 14
     /// The status dot in the icon column.
     public static let statusDot: CGFloat = 8
     /// How far the clear button's touch target reaches past its glyph on each side.
@@ -37,7 +37,7 @@ public struct SHHighlightRun: Hashable, Sendable {
     }
 }
 
-/// Text with the query's matches in the lantern's text color at semibold (the boards'
+/// Text with the query's matches in primary ink at semibold on `bgSelected` (the boards'
 /// highlight), the rest in `color`. One line unless `lines` says more, tail-truncated.
 public struct SHHighlightedText: View, Equatable {
     let runs: [SHHighlightRun]
@@ -45,7 +45,7 @@ public struct SHHighlightedText: View, Equatable {
     let color: SHHighlightColor
     let lines: Int
 
-    public enum SHHighlightColor: Hashable, Sendable { case primary, secondary, tertiary }
+    public enum SHHighlightColor: Hashable, Sendable { case primary, secondary, tertiary, attention }
 
     public init(_ runs: [SHHighlightRun], style: SHTextStyle, color: SHHighlightColor = .primary, lines: Int = 1) {
         self.runs = runs
@@ -60,12 +60,14 @@ public struct SHHighlightedText: View, Equatable {
         case .primary: sh.textPrimary
         case .secondary: sh.textSecondary
         case .tertiary: sh.textTertiary
+        case .attention: sh.lanternText
         }
         var text = AttributedString()
         for run in runs {
             var part = AttributedString(run.text)
             if run.highlighted {
-                part.foregroundColor = sh.lanternText
+                part.foregroundColor = sh.textPrimary
+                part.backgroundColor = sh.bgSelected
                 part.font = .sh(style, weight: .semibold)
             }
             text.append(part)
@@ -78,14 +80,16 @@ public struct SHHighlightedText: View, Equatable {
     }
 }
 
-/// One search result: a leading glyph (a status dot for a thread, an icon for a conversation or
-/// an action), the title over a detail line, both with the query highlighted, the host as a
-/// tag, and a chevron when it opens a screen. `selected` is the palette's keyboard highlight
-/// (running tint). The caller makes it a button; the row draws only.
+/// One search result: the title over a detail line, both with the query highlighted (a thread that
+/// needs you says so in lantern), the host at the right, and a chevron when it opens a screen. An
+/// action's icon leads it on the phone. `selected` is the palette's keyboard highlight
+/// (`bgSelected`). The caller makes it a button; the row draws only.
 public struct SHSearchResultRow: View, Equatable {
     public enum Leading: Hashable, Sendable {
+        /// A thread: nothing is drawn, but a state that needs you colors the detail.
         case status(AgentState)
         case symbol(String)
+        case none
     }
 
     let leading: Leading
@@ -122,43 +126,41 @@ public struct SHSearchResultRow: View, Equatable {
     public var body: some View {
         let _ = SHRenderProbe.tick("search.row")
         let sh = Color.sh
+        // The palette's rows (48pt) draw no icon.
+        let icon: String? = if case .symbol(let name) = leading, minHeight >= SHSearchMetrics.rowHeight { name } else { nil }
+        let attention: Bool = if case .status(.attention) = leading { true } else { false }
         HStack(spacing: SH.Space.l) {
-            Group {
-                switch leading {
-                case .status(let state):
-                    SHStatusDot(state, size: SHSearchMetrics.statusDot)
-                case .symbol(let name):
-                    Image(systemName: name)
-                        .font(.system(size: SHSearchMetrics.iconSize, weight: .regular))
-                        .foregroundStyle(selected ? sh.running : sh.textSecondary)
-                }
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: SHSearchMetrics.iconSize, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: SHSearchMetrics.iconColumn)
+                    .accessibilityHidden(true)
             }
-            .frame(width: SHSearchMetrics.iconColumn)
-            .accessibilityHidden(true)
             // At accessibility sizes the text wraps and the tag moves under it, so the title
             // keeps the row's width.
             let large = typeSize.isAccessibilitySize
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 SHHighlightedText(title, style: .ui, lines: large ? 3 : 1)
                 if !detail.isEmpty {
-                    SHHighlightedText(detail, style: .caption, color: .tertiary, lines: large ? 3 : 1)
+                    SHHighlightedText(detail, style: .caption, color: attention ? .attention : .secondary, lines: large ? 3 : 1)
                 }
-                if large, let tag { SHTag(tag, mono: true) }
+                if large, let tag { Text(tag).font(.sh(.caption)).foregroundStyle(sh.textTertiary) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if !large, let tag { SHTag(tag, mono: true) }
+            if !large, let tag { Text(tag).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1) }
             if let shortcut { SHKeycap(shortcut) }
             if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: SHSearchMetrics.chevronSize, weight: .semibold))
+                    .font(.system(size: SHSearchMetrics.chevronSize, weight: .medium))
                     .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SHListMetrics.rowPadding)
         .frame(maxWidth: .infinity, minHeight: max(minHeight, SH.Height.touch), alignment: .leading)
-        .background(selected ? sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.l))
         .opacity(dimmed ? SHSearchResultRow.dimmedOpacity : 1)
         .contentShape(Rectangle())
     }
@@ -197,7 +199,7 @@ public struct SHTouchSearchField: View {
                 .textFieldStyle(.plain)
                 .font(large ? .sh(.headline, weight: .regular) : .sh(.body))
                 .foregroundStyle(sh.textPrimary)
-                .tint(sh.lantern)
+                .tint(sh.primary)
                 .focused(focus)
                 .submitLabel(.search)
                 .autocorrectionDisabled()
@@ -223,9 +225,9 @@ public struct SHTouchSearchField: View {
             row.padding(.horizontal, SH.Space.xl)
                 .frame(minHeight: SHSearchMetrics.largeFieldHeight)
         } else {
-            row.padding(.horizontal, SH.Space.l)
+            row.padding(.horizontal, SH.Space.xl)
                 .frame(minHeight: SHSearchMetrics.fieldHeight)
-                .background(sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+                .background(sh.bgSelected, in: Capsule())
         }
     }
 }

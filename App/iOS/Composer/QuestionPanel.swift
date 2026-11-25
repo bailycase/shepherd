@@ -3,18 +3,16 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// pi's question in the composer's place (QuestionDockRadio, with the MobileQuestion and
-/// iPadQuestion geometry), so a blocked agent is always answerable. It follows the question dock's
+/// pi's question in the composer's place (QuestionDockRadio, with the MobileQuestion, iPadQuestion and
+/// DuoClosedQuestion geometry), so a blocked agent is always answerable. It follows the question dock's
 /// rules (`NativeQuestionPrompt`, as the Mac's dock does):
 /// the question with its details folded, radio rows to pick, then Answer, or Skip to answer
-/// nothing; a yes or a no that answers on a tap; an open question's field. Hiding (the grabber,
-/// or iPad's Hide the question) folds it without answering.
+/// nothing; a yes or a no that answers on a tap; an open question's field. Hiding (the chevron
+/// in its head) folds it without answering.
 struct QuestionPanel: View {
     let prompt: NativeQuestionPrompt
     let count: Int
     let enabled: Bool
-    /// On a phone the panel docks to the bottom edge; on iPad it is a card in the column.
-    let docked: Bool
     let hide: (() -> Void)?
     let answer: (NativeQuestionAnswer) -> Void
     @Environment(\.composerMaxHeight) private var maxHeight
@@ -22,12 +20,11 @@ struct QuestionPanel: View {
     @State private var picks: NativeQuestionPicks
     @FocusState private var field: SHQuestionDockField?
 
-    init(prompt: NativeQuestionPrompt, count: Int = 1, enabled: Bool, docked: Bool = false, hide: (() -> Void)? = nil,
+    init(prompt: NativeQuestionPrompt, count: Int = 1, enabled: Bool, hide: (() -> Void)? = nil,
          answer: @escaping (NativeQuestionAnswer) -> Void) {
         self.prompt = prompt
         self.count = count
         self.enabled = enabled
-        self.docked = docked
         self.hide = hide
         self.answer = answer
         _picks = State(initialValue: NativeQuestionPicks(prompt))
@@ -35,11 +32,11 @@ struct QuestionPanel: View {
 
     var body: some View {
         let sh = Color.sh
-        SHQuestionCard(docked: docked, count: count, question: prompt.question, hide: hide) {
+        SHQuestionCard(count: count, question: prompt.question, hide: hide) {
             // The details and answers scroll inside a panel too tall for the screen (long
             // details, a large text size); Answer stays in reach under them.
-            VStack(alignment: .leading, spacing: SH.Space.l) {
-                if let details = prompt.details { SHQuestionDetails(details, maxHeight: nil) }
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                if let details = prompt.details { SHQuestionDetails(details, maxHeight: nil).padding(.horizontal, SHTouchQuestionMetrics.headInset) }
                 if let message = prompt.message {
                     Text(message).font(.sh(.code)).foregroundStyle(sh.textPrimary).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -47,10 +44,11 @@ struct QuestionPanel: View {
                         .padding(SH.Space.l)
                         .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                         .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+                        .padding(.horizontal, SHTouchQuestionMetrics.headInset)
                 }
                 choices.disabled(!enabled || prompt.blocked != nil)
                 if let notice = prompt.blocked ?? (prompt.mayTimeOut ? QuestionPanel.timeoutNotice : nil) {
-                    Text(notice).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    Text(notice).font(.sh(.caption)).foregroundStyle(sh.textTertiary).padding(.horizontal, SHTouchQuestionMetrics.headInset)
                 }
             }
             .fittedScroll(maxHeight: maxHeight * MobileLayout.questionScrollShare)
@@ -86,7 +84,6 @@ struct QuestionPanel: View {
                     }), focus: $field, number: nil)
                 }
             }
-            .padding(.horizontal, -SH.Space.m)
         case .yesNo:
             VStack(spacing: SH.Space.s) {
                 // Side by side, each answering on a tap; stacked at accessibility sizes.
@@ -103,8 +100,9 @@ struct QuestionPanel: View {
                     }
                 }
             }
+            .padding(.horizontal, SHTouchQuestionMetrics.headInset)
         case .open:
-            answerField
+            answerField.padding(.horizontal, SHTouchQuestionMetrics.headInset)
         }
     }
 
@@ -119,24 +117,23 @@ struct QuestionPanel: View {
             .accessibilityLabel(prompt.multiline ? "Editor answer" : "Answer")
     }
 
-    /// Skip and Answer (lit once there is an answer): docked, Answer is the phone's 48pt bar
-    /// button with Skip before it; trailing on iPad's card.
+    /// Skip and Answer (the ink pill, lit once there is an answer), trailing under the rows.
     @ViewBuilder private var buttons: some View {
         let ready = enabled && prompt.answer(picks) != nil
         let canSkip = enabled && prompt.blocked == nil
-        HStack(spacing: SH.Space.m) {
-            if !docked { Spacer(minLength: 0) }
+        HStack(spacing: SHTouchQuestionMetrics.footerSpacing) {
+            Spacer(minLength: 0)
             Button("Skip") { skip() }
-                .buttonStyle(.sh(.ghost, size: .l))
-                .frame(minHeight: SH.Height.touch)
+                .buttonStyle(.plain)
+                .font(.sh(.ui))
+                .foregroundStyle(Color.sh.textSecondary)
+                .shTouchTarget(height: SHTouchQuestionMetrics.pillHeight)
                 .disabled(!canSkip)
                 .accessibilityHint("The agent is told you didn't answer")
-            if docked {
-                Button("Answer") { send() }.buttonStyle(.shReviewBar(.primary)).disabled(!ready)
-            } else {
-                Button("Answer") { send() }.buttonStyle(.sh(.primary, size: .l)).disabled(!ready)
-            }
+            Button("Answer") { send() }.buttonStyle(.shTouchPill(.primary)).disabled(!ready)
         }
+        .padding(.top, SHTouchQuestionMetrics.footerTop)
+        .padding(.horizontal, SHTouchQuestionMetrics.headInset)
     }
 
     private func send() {

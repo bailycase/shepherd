@@ -1,49 +1,54 @@
 import SwiftUI
 
-// A question from pi or an extension in the composer's place, for touch (QuestionDockRadio, with
-// the MobileQuestion and iPadQuestion geometry): "AGENT IS ASKING" in lantern over the question,
-// its details folded, then the asker's answers as radio rows you choose and confirm with Answer
-// (or Skip). Shepherd has no permission model: the rows are the answers the asker offered, never
-// an approval it did not.
+// A question from pi or an extension in the composer's place, for touch (the Mobile, iPad and Duo
+// question boards): a raised card with the attention dot and the question, its details folded, then
+// the asker's answers as radio rows you choose and confirm with Answer (or Skip). Shepherd has no
+// permission model: the rows are the answers the asker offered, never an approval it did not.
 
 public enum SHTouchQuestionMetrics {
     /// An option's number, in a rounded square (a yes or a no).
     public static let numberSize: CGFloat = 24
     /// A yes or a no card's minimum height.
     public static let optionHeight: CGFloat = 56
-    /// How far a docked panel's fill and line run past its bottom, under the home indicator and
-    /// off the screen.
-    public static let dockOverhang: CGFloat = 64
-    /// The docked panel's top corners (MobileQuestion).
-    public static let dockRadius: CGFloat = 18
-    /// Hide the question and Show the question on iPad's card: a 40pt circle, an 18pt chevron.
+    /// The card (the boards' `.gt-dcard`): radius 20, 14pt over its head, 8pt at the sides, 10pt under its footer.
+    public static let cardRadius: CGFloat = 20
+    public static let cardPadding = EdgeInsets(top: 14, leading: SH.Space.m, bottom: 10, trailing: SH.Space.m)
+    /// The head: the 8pt dot 7pt down, 10pt before the question, which sits 8pt in from the card's padding.
+    public static let dot: CGFloat = 8
+    public static let dotTop: CGFloat = 7
+    public static let headSpacing: CGFloat = 10
+    public static let headInset: CGFloat = SH.Space.m
+    /// An answer row (`.gt-op`): 10pt over and under, 8pt at the sides, 12pt after its radio, radius 12.
+    public static let rowPadding = EdgeInsets(top: 10, leading: SH.Space.m, bottom: 10, trailing: SH.Space.m)
+    public static let rowSpacing: CGFloat = SH.Space.l
+    public static let rowRadius: CGFloat = SH.Radius.l
+    public static let detailSize: CGFloat = 13
+    /// The radio: 20pt with a 1.5pt line; picked, a 6pt ring.
+    public static let radio: CGFloat = 20
+    public static let radioLine: CGFloat = 1.5
+    public static let radioPickedRing: CGFloat = 6
+    /// Skip and Answer, 16pt apart, 8pt under the rows.
+    public static let footerSpacing: CGFloat = SH.Space.xl
+    public static let footerTop: CGFloat = SH.Space.m
+    /// Hide the question and Show the question: a 40pt circle, an 18pt chevron.
     public static let hideButton: CGFloat = 40
     public static let hideGlyph: CGFloat = 18
-    /// The folded card's glyph.
-    public static let hiddenGlyph: CGFloat = 14
-    /// The docked panel's grabber (MobileQuestion): a 36×5 capsule, hit across a 44pt row.
-    public static let grabber = CGSize(width: 36, height: 5)
-    /// How far down a drag on the grabber must go to hide the question.
-    public static let grabberDragToHide: CGFloat = 24
+    /// A pill button (Answer, a subagent's suggested reply): 36pt, 14pt at its sides.
+    public static let pillHeight: CGFloat = 36
+    public static let pillPadding: CGFloat = 14
     /// A yes or a no, side by side.
     public static let yesNoHeight: CGFloat = 48
 }
 
-/// The panel: on a phone it is docked to the bottom edge with its top corners rounded, a lantern
-/// line along them and a grabber (MobileQuestion); on iPad the question card (`bgRaised`, a
-/// `lineStrong` line, a lantern edge on the leading side). The head is the eyebrow ("· 1 of N"
-/// when several questions wait) over `question`. `hide` folds the question and never answers
-/// it: on iPad a 40pt circle trailing the head (Hide the question), docked a tap on the grabber
-/// or a drag down from it.
+/// The card: the head is the attention dot over the question (`SHQuestionHeading`), with Hide the question at its trailing end
+/// when `hide` is given, a button that folds the question and never answers it. `count` says "1 of N" when several wait.
 public struct SHQuestionCard<Content: View>: View {
-    let docked: Bool
     let count: Int
     let question: String
     let hide: (() -> Void)?
     let content: Content
 
-    public init(docked: Bool, count: Int = 1, question: String, hide: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
-        self.docked = docked
+    public init(count: Int = 1, question: String, hide: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.count = count
         self.question = question
         self.hide = hide
@@ -51,57 +56,23 @@ public struct SHQuestionCard<Content: View>: View {
     }
 
     public var body: some View {
-        let M = SHQuestionDockMetrics.self
+        let M = SHTouchQuestionMetrics.self
         VStack(alignment: .leading, spacing: SH.Space.l) {
-            if docked {
-                SHQuestionGrabber(hide: hide)
-                    // The grabber's row sits in the panel's top padding, 8pt under its edge.
-                    .padding(.top, -SH.Space.xs)
-                    .padding(.bottom, -SH.Space.xs)
-            }
             HStack(alignment: .top, spacing: SH.Space.s) {
                 SHQuestionHeading(count: count, question: question)
-                if !docked, let hide {
+                if let hide {
                     SHQuestionCardToggle(hidden: false, action: hide)
-                        // The circle (a 44pt touch target on iOS) overhangs the head rather than
-                        // making it taller.
+                        // The circle (a 44pt touch target on iOS) overhangs the head rather than making it taller.
                         .frame(height: SHQuestionHeadMetrics.height)
                 }
             }
+            .padding(.horizontal, M.headInset)
             content
         }
-        .padding(.leading, docked ? SH.Space.xl : M.padding.leading)
-        .padding(.trailing, docked ? SH.Space.xl : M.padding.trailing)
-        .padding(.top, docked ? SH.Space.m : M.padding.top)
-        .padding(.bottom, docked ? SH.Space.m : M.padding.bottom)
+        .padding(M.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { SHTouchQuestionCardChrome(docked: docked) }
+        .background { SHQuestionCardFill() }
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// The docked panel's grabber: a 36×5 capsule in `lineStrong`. With somewhere to go (`hide`),
-/// a tap or a drag down folds the question; without, it only draws.
-private struct SHQuestionGrabber: View {
-    let hide: (() -> Void)?
-
-    var body: some View {
-        let capsule = Capsule().fill(Color.sh.lineStrong)
-            .frame(width: SHTouchQuestionMetrics.grabber.width, height: SHTouchQuestionMetrics.grabber.height)
-        if let hide {
-            Button(action: hide) {
-                capsule
-                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch - SH.Space.l)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .simultaneousGesture(DragGesture(minimumDistance: SH.Space.m).onEnded { value in
-                if value.translation.height > SHTouchQuestionMetrics.grabberDragToHide { hide() }
-            })
-            .accessibilityLabel("Hide the question")
-        } else {
-            capsule.frame(maxWidth: .infinity).accessibilityHidden(true)
-        }
     }
 }
 
@@ -121,7 +92,7 @@ public struct SHQuestionCardHiddenLine: View {
     public var body: some View {
         let sh = Color.sh
         HStack(spacing: SH.Space.l) {
-            SHQuestionAskerGlyph(size: SHTouchQuestionMetrics.hiddenGlyph)
+            SHStatusDot(.attention, size: SHTouchQuestionMetrics.dot)
                 .accessibilityHidden(true)
             Text(question).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
@@ -132,11 +103,11 @@ public struct SHQuestionCardHiddenLine: View {
                 .accessibilityLabel("Answer the question")
             SHQuestionCardToggle(hidden: true, action: show)
         }
-        .padding(.leading, SH.Space.xl + SHQuestionDockMetrics.edge)
+        .padding(.leading, SH.Space.xl)
         .padding(.trailing, SH.Space.xs)
         .padding(.vertical, SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { SHTouchQuestionCardChrome(docked: false) }
+        .background { SHQuestionCardFill() }
         .accessibilityElement(children: .contain)
     }
 }
@@ -155,31 +126,6 @@ private struct SHQuestionCardToggle: View {
         .buttonStyle(.shIcon(size: SHTouchQuestionMetrics.hideButton))
         .help(label)
         .accessibilityLabel(label)
-    }
-}
-
-/// The card's fill and line: iPad's is the question card (`SHQuestionCardFill`). Docked, the panel runs on under the home indicator: its
-/// line runs only along the top and around its corners, and the thread's content is shadowed
-/// under its edge (MobileQuestion).
-private struct SHTouchQuestionCardChrome: View {
-    let docked: Bool
-
-    var body: some View {
-        let sh = Color.sh
-        if docked {
-            let radius = SHTouchQuestionMetrics.dockRadius
-            let shape = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(topLeading: radius, topTrailing: radius))
-            shape.fill(sh.bgRaised)
-                .shFloatShadow()
-                .overlay {
-                    shape.strokeBorder(sh.lantern, lineWidth: SHThreadMetrics.ruleWidth)
-                        .mask(alignment: .top) { Rectangle().frame(height: radius) }
-                }
-                .padding(.bottom, -SHTouchQuestionMetrics.dockOverhang)
-                .allowsHitTesting(false)
-        } else {
-            SHQuestionCardFill()
-        }
     }
 }
 
@@ -268,5 +214,45 @@ public struct SHQuestionNumber: View {
             .background(filled ? sh.lantern : Color.clear, in: shape)
             .shBorder(filled ? sh.lantern : sh.lineStrong, in: shape)
             .accessibilityHidden(true)
+    }
+}
+
+/// A pill button on touch (the boards' `.gt-btn`): 36pt tall, 14pt at its sides, 14 medium. `.primary` is the ink fill (Answer);
+/// `.secondary` is `bgSelected` (a suggested reply). It dims with its press and while disabled.
+public struct SHTouchPillStyle: ButtonStyle {
+    public enum Kind: Sendable { case primary, secondary }
+
+    let kind: Kind
+
+    public init(_ kind: Kind) { self.kind = kind }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        SHTouchPill(configuration: configuration, kind: kind)
+    }
+}
+
+extension ButtonStyle where Self == SHTouchPillStyle {
+    public static func shTouchPill(_ kind: SHTouchPillStyle.Kind) -> SHTouchPillStyle { SHTouchPillStyle(kind) }
+}
+
+private struct SHTouchPill: View {
+    let configuration: ButtonStyleConfiguration
+    let kind: SHTouchPillStyle.Kind
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        let sh = Color.sh
+        let primary = kind == .primary
+        let M = SHTouchQuestionMetrics.self
+        configuration.label
+            .font(.sh(.ui))
+            .lineLimit(1)
+            .foregroundStyle(primary ? (enabled ? sh.textOnPrimary : sh.textTertiary) : sh.textPrimary)
+            .padding(.horizontal, M.pillPadding)
+            .frame(minHeight: M.pillHeight)
+            .background(primary ? (enabled ? sh.primary : sh.bgSelected) : sh.bgSelected, in: Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .contentShape(Capsule())
+            .shTouchTarget(height: M.pillHeight)
     }
 }

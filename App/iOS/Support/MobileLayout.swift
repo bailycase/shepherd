@@ -41,14 +41,14 @@ enum MobileLayout {
     /// The narrowest detail an iPad list keeps beside it (`PadListDetail`); narrower, the screen
     /// shows the list alone, its rows pushing their detail.
     static let splitDetailMinWidth: CGFloat = 280
-    /// A list row: the boards' 48pt, never under the touch minimum.
-    static let rowHeight: CGFloat = 48
+    /// A list row: the boards' 52pt, never under the touch minimum.
+    static let rowHeight: CGFloat = SHListMetrics.rowHeight
     /// A two-line row (a title over a status line).
     static let twoLineRowHeight: CGFloat = 56
     /// The status dot in rows and headers.
     static let statusDot: CGFloat = 8
-    /// A card's corner (the boards' 12pt).
-    static let cardRadius: CGFloat = SH.Radius.l
+    /// A card's corner (the boards' 16pt).
+    static let cardRadius: CGFloat = SHListMetrics.cardRadius
 }
 
 // MARK: Pairing (Add a Mac)
