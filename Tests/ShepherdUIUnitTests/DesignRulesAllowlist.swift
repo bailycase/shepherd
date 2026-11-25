@@ -61,14 +61,12 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
         .init(.rawGlyphName, "App/iOS/Settings/HostSettingsScreens.swift", 1, chevrons),
-        .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/TouchDiff.swift", 1, chevrons),
         // Symbols that follow state where no animation reaches them. Each file says why; a disclosure
         // chevron that does animate is an SHTurningChevron, and any other pair that animates fades.
         .init(.symbolRenameUnderAnimation, "App/Widgets/ShepherdWidgets.swift", 1, "A widget draws one snapshot per timeline entry, so a symbol is never renamed on screen."),
         .init(.symbolRenameUnderAnimation, "App/iOS/Composer/ComposerControls.swift", 1, unanimated("the chosen speed; nothing in the composer's chips animates it")),
         .init(.symbolRenameUnderAnimation, "App/iOS/Files/ThreadFilesSplit.swift", 1, unanimated("a folder's open state; nothing in the files tree or its store animates it")),
         .init(.symbolRenameUnderAnimation, "App/iOS/Forge/ForgeDiffScreen.swift", 1, menu),
-        .init(.symbolRenameUnderAnimation, "App/iOS/Forge/ForgeListScreen.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "App/iOS/Home/ThreadRowMenu.swift", 2, menu),
         .init(.symbolRenameUnderAnimation, "App/iOS/Projects/ProjectFilesScreen.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "App/iOS/Projects/ProjectScreen.swift", 1, menu),

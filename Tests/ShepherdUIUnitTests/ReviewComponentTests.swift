@@ -26,7 +26,7 @@ struct ReviewComponentTests {
     }
 
     @Test(arguments: [
-        ("Tests/ShepherdAppTests/", SHFileStatus.added, "Tests/ShepherdAppTests/ \u{00B7} new"),
+        ("Tests/ShepherdAppTests/", SHFileStatus.added, "Tests/ShepherdAppTests/ \u{00B7} new" as String?),
         ("App/iOS/", .modified, "App/iOS/"),
         ("", .added, "new"),
         ("ledger/", .deleted, "ledger/ \u{00B7} deleted"),
