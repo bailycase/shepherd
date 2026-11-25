@@ -35,7 +35,7 @@ struct DesignsDestination: View {
             visibility: { vm.designThumbnailVisibility($0, visible: $1) }),
             thumbnail: { thumbnails.image($0) }, chrome: chrome)
             // Over the page under its header (ImportDrop).
-            .overlay { if dropTargeted { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
+            .overlay { if dropTargeted { SHDesignsDropTarget().padding(.top, SHToolbarMetrics.height) } }
             .onDrop(of: DesignsDropDelegate.types, delegate: DesignsDropDelegate(targeted: $dropTargeted) { vm.importDesignProject($0) })
             .task(id: vm.designThumbnailSignature) {
                 await vm.loadDesignThumbnails()
@@ -68,10 +68,10 @@ struct DesignsPageActions {
     var visibility: (DesignTarget, Bool) -> Void = { _, _ in }
 }
 
-/// The Designs page (NavDesigns): the header ("Designs", "Filter designs", New design), then the
-/// recent designs as cards in rows of four, and the design systems in rows of three (swatches,
-/// name, source, how many designs use it) ending in "Build one from a repo". A system card opens
-/// its page.
+/// The Designs page (NavDesigns): the bar ("Designs", the filter pill, and a capsule of Open from
+/// Git and New design), then Recent designs as cards in rows of four, and Design systems, with
+/// "Build one from a repo" at the section's right, in rows of three (swatches, name, source, how
+/// many designs use it). A system card opens its page.
 struct DesignsPage: View {
     let model: DesignsPageModel
     let filter: String
@@ -81,54 +81,64 @@ struct DesignsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "Designs", chrome: chrome) {
-                SHPageFilterField("Filter designs", text: Binding(get: { filter }, set: actions.setFilter))
-                Button("Open from Git", action: actions.openGit)
-                    .buttonStyle(.sh(.secondary))
-                Button("New design", systemImage: "plus", action: actions.create)
-                    .buttonStyle(.sh(.primary))
+            SHDesignsBar("Designs", leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
+                         sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar)) {
+                SHDesignsFilterField("Filter designs", text: Binding(get: { filter }, set: actions.setFilter))
+                SHToolbarCapsule {
+                    Button("Open from Git", action: actions.openGit)
+                        .buttonStyle(.shBar)
+                    SHBarDivider()
+                    Button("New design", systemImage: "plus", action: actions.create)
+                        .buttonStyle(.shBar)
+                }
             }
             ScrollView(.vertical) {
-                // One lazy stack, one view per element: a section's label, a row of cards, the
-                // systems' grid. Only the rows on screen are built.
-                LazyVStack(alignment: .leading, spacing: SHPageMetrics.columnGap) {
+                // One lazy stack, one view per element: a section's label, a row of cards. Only
+                // the rows on screen are built.
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Self.items(model)) { item in
                         VStack(alignment: .leading, spacing: 0) {
                             switch item {
                             case .label(let title, let first), .hostLabel(_, let title, let first):
-                                Text(title)
-                                    .font(.sh(.caption, weight: .medium))
-                                    .foregroundStyle(Color.sh.textTertiary)
-                                    .accessibilityAddTraits(.isHeader)
-                                    .padding(.top, first ? 0 : AppLayout.designsSectionSpacing - SHPageMetrics.columnGap)
-                                    .padding(.bottom, SH.Space.l - SHPageMetrics.columnGap)
-                            case .cards(let row):
+                                SHDesignsSection(title)
+                                    .padding(.top, first ? SHDesignsHomeMetrics.sectionTop : SHDesignsHomeMetrics.sectionGap)
+                                    .padding(.bottom, SHDesignsHomeMetrics.sectionBottom)
+                            case .systemsLabel(let host, let projects, let first):
+                                DesignSystemsLabel(projects: projects, build: { space in
+                                    if let host { actions.buildRemote(host, space) } else { actions.build(space) }
+                                })
+                                    .equatable()
+                                    .padding(.top, first ? SHDesignsHomeMetrics.sectionTop : SHDesignsHomeMetrics.sectionGap)
+                                    .padding(.bottom, SHDesignsHomeMetrics.sectionBottom)
+                            case .cards(let row, let first):
                                 DesignCardRow(slots: row, open: actions.open, thumbnail: thumbnail,
                                               menu: { actions.designMenu($0, .local($1)) },
                                               visibility: { actions.visibility(.local($0), $1) })
                                     .equatable()
-                            case .hostSystems(let host, let row, let tile, let projects):
-                                DesignSystemCardRow(systems: row, tile: tile, projects: projects, open: actions.openSystem,
-                                                    build: { actions.buildRemote(host, $0) }, menu: actions.systemMenu)
+                                    .padding(.top, first ? 0 : SHDesignsHomeMetrics.gap)
+                            case .hostSystems(let row, let first):
+                                DesignSystemCardRow(systems: row, open: actions.openSystem, menu: actions.systemMenu)
                                     .equatable()
-                            case .hostCards(let host, let row):
+                                    .padding(.top, first ? 0 : SHDesignsHomeMetrics.gap)
+                            case .hostCards(let host, let row, let first):
                                 DesignCardRow(slots: row.map(DesignsPageModel.Slot.design),
                                               open: { actions.openRemote(RemoteDesignRef(hostID: host, designID: $0)) },
                                               thumbnail: { actions.remoteThumbnail(host, $0) },
                                               menu: { actions.designMenu($0, .remote(RemoteDesignRef(hostID: host, designID: $1))) },
                                               visibility: { actions.visibility(.remote(RemoteDesignRef(hostID: host, designID: $0)), $1) })
                                     .equatable()
-                            case .systems(let row, let tile, let first):
-                                DesignSystemCardRow(systems: row, tile: tile, projects: model.projects,
-                                                    open: actions.openSystem, build: actions.build, menu: actions.systemMenu)
+                                    .padding(.top, first ? 0 : SHDesignsHomeMetrics.gap)
+                            case .systems(let row, let first):
+                                DesignSystemCardRow(systems: row, open: actions.openSystem, menu: actions.systemMenu)
                                     .equatable()
-                                    .padding(.top, first ? 0 : SHPageMetrics.columnGap)
+                                    .padding(.top, first ? 0 : SHDesignsHomeMetrics.gap)
                             }
                         }
                     }
                 }
-                .padding(.vertical, SHPageMetrics.bodyVertical)
-                .padding(.horizontal, SHPageMetrics.sideInset)
+                .padding(.top, SHDesignsHomeMetrics.top)
+                .padding(.bottom, SHDesignsHomeMetrics.bottom)
+                .padding(.horizontal, SHDesignsHomeMetrics.inset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
@@ -139,26 +149,29 @@ struct DesignsPage: View {
     /// The page's elements, in order.
     enum Item: Identifiable {
         case label(String, first: Bool)
-        case cards([DesignsPageModel.Slot])
+        /// A row of cards, and whether it is the section's first.
+        case cards([DesignsPageModel.Slot], first: Bool)
         /// A host's name over its designs.
         case hostLabel(UUID, String, first: Bool)
         /// A row of a host's cards.
-        case hostCards(UUID, [DesignsPageModel.Card])
-        /// A row of a host's design systems, the last ending in its "Build one from a repo" where
-        /// the host builds for other devices.
-        case hostSystems(UUID, [DesignsPageModel.System], tile: Bool, projects: [DesignsPageModel.Project])
-        /// A row of system cards, whether the build tile ends it, and whether it is the first.
-        case systems([DesignsPageModel.System], tile: Bool, first: Bool)
+        case hostCards(UUID, [DesignsPageModel.Card], first: Bool)
+        /// "Design systems" with "Build one from a repo" at its right: this Mac's (`host` nil), or a
+        /// host's, where the host builds for other devices (`projects` is then its spaces).
+        case systemsLabel(host: UUID?, projects: [DesignsPageModel.Project]?, first: Bool)
+        /// A row of a host's design systems (and builds still reading).
+        case hostSystems([DesignsPageModel.System], first: Bool)
+        /// A row of system cards.
+        case systems([DesignsPageModel.System], first: Bool)
 
         var id: String {
             switch self {
             case .label(let title, _): "label.\(title)"
             case .hostLabel(let host, _, _): "label.host.\(host.uuidString)"
-            case .cards(let row): "row.\(row.first?.id ?? "")"
-            case .hostCards(let host, let row): "host.\(host.uuidString).\(row.first?.id.rawValue ?? "")"
-            case .hostSystems(let host, let row, let tile, _):
-                "host.systems.\(host.uuidString).\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
-            case .systems(let row, let tile, _): "systems.\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
+            case .cards(let row, _): "row.\(row.first?.id ?? "")"
+            case .hostCards(let host, let row, _): "host.\(host.uuidString).\(row.first?.id.rawValue ?? "")"
+            case .systemsLabel(let host, _, _): "label.systems.\(host?.uuidString ?? "")"
+            case .hostSystems(let row, _): "host.systems.\(row.first.map { "\($0.id)" } ?? "")"
+            case .systems(let row, _): "systems.\(row.first.map { "\($0.id)" } ?? "")"
             }
         }
     }
@@ -167,82 +180,88 @@ struct DesignsPage: View {
         var items: [Item] = []
         if !model.cards.isEmpty || model.importing != nil {
             items.append(.label("Recent designs", first: true))
-            items += model.rows.map(Item.cards)
+            items += model.rows.enumerated().map { Item.cards($1, first: $0 == 0) }
         }
         // Each host's designs under its name (not drawn: NavDesigns shows This Mac's alone).
         for host in model.hosts {
             items.append(.hostLabel(host.id, host.name, first: items.isEmpty))
-            items += host.rows.map { .hostCards(host.id, $0) }
-            items += host.systemRows.map { .hostSystems(host.id, $0.systems, tile: $0.tile, projects: host.projects ?? []) }
+            items += host.rows.enumerated().map { .hostCards(host.id, $1, first: $0 == 0) }
+            if !host.systems.isEmpty || host.projects != nil {
+                items.append(.systemsLabel(host: host.id, projects: host.projects, first: false))
+                items += host.systemRows.enumerated().map { .hostSystems($1, first: $0 == 0) }
+            }
         }
-        items.append(.label("Design systems", first: items.isEmpty))
-        items += model.systemRows.enumerated().map { index, row in .systems(row.systems, tile: row.tile, first: index == 0) }
+        items.append(.systemsLabel(host: nil, projects: model.projects, first: items.isEmpty))
+        items += model.systemRows.enumerated().map { .systems($1, first: $0 == 0) }
         return items
     }
 }
 
-/// A row of up to three design system cards, the last row ending in "Build one from a repo",
-/// redrawn only when one of its cards changes.
-struct DesignSystemCardRow: View, Equatable {
-    let systems: [DesignsPageModel.System]
-    let tile: Bool
-    let projects: [DesignsPageModel.Project]
-    let open: (DesignSystemTarget) -> Void
+/// "Design systems" and, at its right, "Build one from a repo": the one project at once, a menu of
+/// them with more, and nothing to read without one. A host that doesn't build for other devices
+/// (`projects` nil) draws none.
+struct DesignSystemsLabel: View, Equatable {
+    let projects: [DesignsPageModel.Project]?
     let build: (SpaceID) -> Void
-    var menu: (DesignMenuAction, DesignSystemTarget) -> Void = { _, _ in }
 
-    nonisolated static func == (a: Self, b: Self) -> Bool {
-        a.systems == b.systems && a.tile == b.tile && (!a.tile || a.projects == b.projects)
-    }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.projects == b.projects }
 
     var body: some View {
-        HStack(alignment: .top, spacing: SHPageMetrics.columnGap) {
+        SHDesignsSection("Design systems") { link }
+    }
+
+    @ViewBuilder private var link: some View {
+        if let projects {
+            if projects.count == 1, let project = projects.first {
+                Button { build(project.id) } label: { SHDesignsSectionLink("Build one from a repo") }
+                    .buttonStyle(.plain)
+                    .help("Build a design system from \(project.name)")
+            } else if projects.isEmpty {
+                SHDesignsSectionLink("Build one from a repo", enabled: false)
+                    .help("Add a space to build a design system from it")
+            } else {
+                Menu {
+                    ForEach(projects) { project in
+                        Button(project.name) { build(project.id) }
+                    }
+                } label: { SHDesignsSectionLink("Build one from a repo") }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .help("Build a design system from a space")
+            }
+        }
+    }
+}
+
+/// A row of up to three design system cards, redrawn only when one of its cards changes.
+struct DesignSystemCardRow: View, Equatable {
+    let systems: [DesignsPageModel.System]
+    let open: (DesignSystemTarget) -> Void
+    var menu: (DesignMenuAction, DesignSystemTarget) -> Void = { _, _ in }
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.systems == b.systems }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SHDesignsHomeMetrics.gap) {
             ForEach(systems) { system in
                 let colors = system.swatches.map { Color(light: $0.light, dark: $0.dark) }
                 Group {
                     if let items = system.menu {
-                        SHDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
+                        SHDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors,
                                            action: { open(system.id) }) {
                             DesignMenuItems(menu: items) { menu($0, system.id) }
                         }
                     } else {
-                        SHDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
+                        SHDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors,
                                            dashed: system.dashed)
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
-            if tile {
-                buildTile
-                    .frame(maxWidth: .infinity)
-            }
-            ForEach(0..<max(0, DesignsPageModel.systemColumns - systems.count - (tile ? 1 : 0)), id: \.self) { _ in
+            ForEach(0..<max(0, DesignsPageModel.systemColumns - systems.count), id: \.self) { _ in
                 Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
             }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// "Build one from a repo": the one project at once, a menu of them with more, and nothing
-    /// to read without one.
-    @ViewBuilder private var buildTile: some View {
-        if projects.count == 1, let project = projects.first {
-            Button { build(project.id) } label: { SHDesignSystemBuildTile() }
-                .buttonStyle(.plain)
-                .help("Build a design system from \(project.name)")
-        } else if projects.isEmpty {
-            SHDesignSystemBuildTile(enabled: false)
-                .help("Add a space to build a design system from it")
-        } else {
-            Menu {
-                ForEach(projects) { project in
-                    Button(project.name) { build(project.id) }
-                }
-            } label: { SHDesignSystemBuildTile() }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .help("Build a design system from a space")
         }
     }
 }
@@ -259,7 +278,7 @@ struct DesignCardRow: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool { a.slots == b.slots }
 
     var body: some View {
-        HStack(alignment: .top, spacing: SHPageMetrics.columnGap) {
+        HStack(alignment: .top, spacing: SHDesignsHomeMetrics.gap) {
             ForEach(slots) { slot in
                 Group {
                     switch slot {

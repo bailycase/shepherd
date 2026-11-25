@@ -4,10 +4,8 @@ import ShepherdUI
 /// The Design tool's screens (NavDesigns, DZStart, DZCanvas). The canvas's, the cards' and the
 /// header's own measures are `SHDesignMetrics`.
 extension AppLayout {
-    // The Designs page
-    /// Between the page's sections.
-    static let designsSectionSpacing: CGFloat = 26
-    /// A card's thumbnail is kept this many pixels wide (its board draws at most 256pt).
+    // The Designs page: its measures are `SHDesignsHomeMetrics`
+    /// A card's thumbnail is kept this many pixels wide (its board draws at most 200pt).
     static let designThumbnailPixelWidth: CGFloat = 512
 
     // Design references (DesignRefStates)
@@ -23,20 +21,21 @@ extension AppLayout {
     /// A board an element's picture is cut from is kept at most this many pixels wide.
     static let referenceCropSourcePixels: CGFloat = 1280
 
-    // New design
-    /// Between the page's parts, and under the headline.
-    static let newDesignGap: CGFloat = 26
-    static let newDesignSubtitleSpacing: CGFloat = SH.Space.l
-    static let newDesignSubtitleWidth: CGFloat = 560
-    static let newDesignComposerWidth: CGFloat = 720
+    // New design (DZStart): the column starts 96pt under the bar
+    static let newDesignTop: CGFloat = 96
+    /// The headline over its line, the line (a 520pt column) under it, and the composer 28pt on.
+    static let newDesignSubtitleSpacing: CGFloat = SH.Space.m
+    static let newDesignSubtitleWidth: CGFloat = 520
+    static let newDesignComposerGap: CGFloat = 28
+    static let newDesignComposerWidth: CGFloat = 860
     static let newDesignFieldMinHeight: CGFloat = 72
-    /// The column sits a little above center: this much more room below it than above.
-    static let newDesignBottomExtra: CGFloat = 60
-    /// The starting points: 10pt under their label, 10pt apart, three to a row.
+    /// The starting points: 26pt under the composer, their label 10pt over them, 10pt apart, three
+    /// to a row.
+    static let newDesignCardsTop: CGFloat = 26
     static let newDesignCardsLabelGap: CGFloat = 10
     static let newDesignCardsGap: CGFloat = 10
     /// Capture a page's address popover.
-    static let newDesignCapturePopoverWidth: CGFloat = 320
+    static let newDesignCapturePopoverWidth: CGFloat = 340
 
     // A design system's page (DZSystem); the section list and the swatches are `SHDesignMetrics`
     /// The content's padding, and between its sections.
