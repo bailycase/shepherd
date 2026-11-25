@@ -59,7 +59,7 @@ struct GoalComponentTests {
         #expect(SHGoalSize.desktop.hitTarget == 24)
         #expect(SHGoalSize.touch.cardHeight == 92)
         #expect(SHGoalSize.touch.headerHeight == 40)
-        #expect(SHGoalSize.touch.radius == 12)
+        #expect(SHGoalSize.touch.radius == 20)
         #expect(SHGoalSize.touch.pillHeight == 24)
         #expect(SHGoalSize.touch.textLines == 2)
         #expect(SHGoalSize.touch.actionSize == 34)
