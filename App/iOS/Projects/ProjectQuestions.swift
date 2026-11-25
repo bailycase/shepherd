@@ -26,7 +26,7 @@ struct ProjectTaskQuestion: View {
             if let dialog = store.dialogs.first, let session = store.session {
                 let prompt = NativeQuestionPrompt(dialog: dialog)
                 QuestionPanel(prompt: prompt, count: store.dialogs.count,
-                              enabled: projects.canRun(ref) && store.supports("answer"), docked: false) { answer in
+                              enabled: projects.canRun(ref) && store.supports("answer")) { answer in
                     guard let reply = prompt.dialogAnswer(answer) else { return }
                     let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
                                                             operationID: UUID(), dialogID: dialog.id, answer: reply)

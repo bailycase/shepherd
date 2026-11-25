@@ -3,12 +3,10 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
-/// New thread (DuoClosedNewThread, iPadNewThread boards). On iPhone: Cancel, Send, the worktree
-/// switch and Attach in the toolbar (so iPhone Duo's closed display puts them in its column), the
-/// prompt down to one row of chips, the repo and "model · thinking" (and the host while there's
-/// more than one); the repo chip, and a long press on the worktree switch, open Where it runs
-/// (MobileWorkspace). On iPad: the prompt, the chips under it each with its own popover, Attach,
-/// where the thread works, and Start.
+/// New thread (MobileNewThread, DuoClosedNewThread, iPadNewThread boards): Cancel, the title and Send in the bar, then one raised
+/// card holding the prompt and, under it, one row: Attach, "repo on host" and the model with its thinking level. Under the card,
+/// "New worktree on shepherd · Where it runs… changes the repo, host and branch." opens Where it runs (MobileWorkspace). On iPhone
+/// the repo, host and worktree choices are that sheet; on iPad the repo, host and model each open a popover from the row.
 struct NewThreadScreen: View {
     let preferredHost: UUID?
     @Environment(MobileHosts.self) private var hosts
@@ -31,20 +29,25 @@ struct NewThreadScreen: View {
             if navigator.layout == .phone {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { navigator.dismissPresented() } label: { Label("Cancel", systemImage: "xmark") }
+                        .tint(Color.sh.textPrimary)
                 }
-                if let model { NewThreadPhoneToolbar(model: model) }
             } else {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { navigator.dismissPresented() }
+                        .tint(Color.sh.textPrimary)
                 }
             }
-            if navigator.layout == .pad, let model {
+            if let model {
+                // The ink circle (the boards' `.gt-gl.pri`): a symbol with a title, so iPhone Duo's closed display stacks it in its column.
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") { model.start() }
-                        .fontWeight(.semibold)
-                        .disabled(model.blocker != nil)
-                        .accessibilityLabel("Start thread")
+                    Button { model.start() } label: { Label("Send", systemImage: "arrow.up") }
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.sh.primary)
+                        .disabled(navigator.layout == .pad ? model.blocker != nil : !model.canSend)
+                        .accessibilityLabel(model.starting ? "Starting thread" : navigator.layout == .pad ? "Start thread" : "Send")
+                        .accessibilityHint(model.blocker?.message ?? "")
                 }
+                .visibilityPriority(.high)
             }
         }
         .onAppear {
@@ -65,38 +68,17 @@ private struct NewThreadForm: View {
     @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
 
     var body: some View {
-        Group {
-            if pad {
-                // iPad board: the chips sit under the prompt, so their popovers open below them.
-                ScrollView {
-                    VStack(alignment: .leading, spacing: SH.Space.xl) {
-                        promptField.lineLimit(MobileLayout.newThreadPadPromptLines...)
-                        controls
-                    }
-                    .padding(.horizontal, MobileLayout.gutter)
-                    .padding(.vertical, SH.Space.xl)
-                }
-            } else {
-                // The prompt takes every point down to the chip row; a tap anywhere on it types.
-                ScrollView {
-                    promptField
-                        .padding(.horizontal, MobileLayout.gutter)
-                        .padding(.top, SH.Space.xl)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .contentShape(Rectangle())
-                .simultaneousGesture(TapGesture().onEnded { promptFocused = true })
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    VStack(spacing: 0) {
-                        SHHairline()
-                        phoneControls
-                            .padding(.horizontal, MobileLayout.gutter)
-                            .padding(.vertical, SH.Space.l)
-                    }
-                    .background(Color.sh.bgWindow)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                card
+                footnote
+                status
             }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.top, SH.Space.m)
+            .padding(.bottom, SH.Space.xl)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Color.sh.bgWindow)
         .onAppear { promptFocused = true }
         // A picker needs the room the keyboard takes, most of all an iPad popover.
@@ -137,132 +119,125 @@ private struct NewThreadForm: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: SH.Space.l) {
+    /// The raised card (the boards' `.gt-field`): images waiting to go, the prompt (a tap anywhere above the row types), the row.
+    private var card: some View {
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.xxl)
+        return VStack(alignment: .leading, spacing: 0) {
             if !model.attachments.isEmpty { NewThreadAttachmentStrip(model: model) }
-            chips
-            HStack(spacing: SH.Space.s) {
-                NewThreadAttachButton(model: model)
-                    .padding(.leading, -SH.Space.l)
-                worktreeSummary
-                Spacer(minLength: SH.Space.s)
-            }
-            status
+            promptField
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .onTapGesture { promptFocused = true }
+            row.padding(.top, SH.Space.l)
         }
+        .padding(EdgeInsets(top: SH.Space.xl, leading: SH.Space.xl, bottom: SH.Space.m, trailing: SH.Space.xl))
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.newThreadCardHeight, alignment: .topLeading)
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xxl)
+        .shLift(shape)
     }
 
-    /// The phone's one row under the prompt: images waiting to go, the chips, and what stops
-    /// Send or that it's starting.
-    private var phoneControls: some View {
-        VStack(alignment: .leading, spacing: SH.Space.l) {
-            if !model.attachments.isEmpty { NewThreadAttachmentStrip(model: model) }
-            // Every chip in one row that never scrolls: the host's chip goes first when there's no
-            // room (Where it runs still shows it), then the names truncate.
-            ViewThatFits(in: .horizontal) {
-                phoneChips(host: true)
-                phoneChips(host: false)
-            }
-            // "claude-…· Medium" keeps both ends of a name that doesn't fit.
-            .truncationMode(.middle)
-            .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
-            .disabled(model.starting)
-            status
+    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first.
+    private var row: some View {
+        HStack(spacing: SH.Space.s) {
+            NewThreadAttachButton(model: model)
+            workplace
+            Spacer(minLength: SH.Space.s)
+            modelChip
         }
+        .padding(.horizontal, -SH.Space.m)
+        .frame(minHeight: SH.Height.touch)
+        .disabled(model.starting)
+        .buttonStyle(.plain)
     }
 
-    private func phoneChips(host: Bool) -> some View {
-        HStack(spacing: SHSelectorChipMetrics.spacing) {
-            chip(model.repoName ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
-            // With one host there's nothing to choose (DuoClosedNewThread).
-            if host && model.hostRows.count > 1 {
-                chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
-            }
-            modelAndThinkingChip
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// "claude-opus · Medium": opens the sheet that chooses both.
-    private var modelAndThinkingChip: some View {
-        let shortModel = NewThreadRules.shortModel(model.defaults.model)
-        let label = model.offersThinking ? "\(shortModel) · \(model.thinking.title)" : shortModel
-        return Button { model.panel = .model } label: {
-            SHSelectorChip(label, systemImage: "sparkle", active: model.panel == .model,
-                           accessibilityName: model.offersThinking ? "Model and thinking" : "Model")
-        }
-    }
-
-    private var chips: some View {
+    /// "shepherd on Studio ⌄". On iPhone one button opens Where it runs; on iPad the repo and the host each open a popover.
+    @ViewBuilder private var workplace: some View {
         let repo = model.repoName ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
-        return SHFlowLayout(spacing: SHSelectorChipMetrics.spacing) {
-            chip(repo, systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: pad ? .repo : .workspace, active: pad ? .repo : .workspace)
-                .popover(isPresented: pad ? panel(.repo) : .constant(false), arrowEdge: .top) {
-                    popover("Repo") {
-                        NavigationStack {
-                            ScrollView { NewThreadRepoList(model: model, carded: false) }
-                                .background(Color.sh.bgRaised)
-                                .navigationTitle("Repo")
-                                .navigationBarTitleDisplayMode(.inline)
-                                .navigationDestination(item: $model.folders) { NewThreadFolderScreen(model: model, browser: $0) }
-                        }
-                        .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
-                    }
+        HStack(spacing: SH.Space.xs) {
+            Button { open(pad ? .repo : .workspace) } label: {
+                HStack(spacing: SH.Space.s) {
+                    Image(systemName: SHGlyph.repository.symbolName).font(.sh(.ui, weight: .regular)).accessibilityHidden(true)
+                    Text(repo).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
                 }
-            chip(host, systemImage: "desktopcomputer", name: "Host", panel: pad ? .host : .workspace, active: pad ? .host : nil)
-                .popover(isPresented: pad ? panel(.host) : .constant(false), arrowEdge: .top) {
-                    popover("Run on") {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Run on")
-                                .font(.sh(.ui))
-                                .foregroundStyle(Color.sh.textPrimary)
-                                .padding(.horizontal, SH.Space.xl)
-                                .frame(minHeight: MobileLayout.rowHeight)
-                                .accessibilityAddTraits(.isHeader)
-                            SHHairline()
-                            // Every host where there's room (iPadNewThread); with less, they scroll under the header.
-                            ScrollView { NewThreadHostList(model: model, carded: false) }
-                                .scrollBounceBehavior(.basedOnSize)
-                        }
-                    }
-                }
-            chip(NewThreadRules.shortModel(model.defaults.model), systemImage: "sparkle", name: "Model", panel: .model, active: .model)
-                .popover(isPresented: pad ? panel(.model) : .constant(false), arrowEdge: .top) {
-                    popover("Model") {
-                        NewThreadModelPicker(model: model) { model.panel = nil }
-                            .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
-                    }
-                }
-            if model.offersThinking {
-                thinkingChip
-                    .shTransition(.content)
+                .frame(minHeight: SH.Height.touch)
+                .contentShape(Rectangle())
             }
+            .accessibilityLabel("Repo, \(repo)")
+            .popover(isPresented: pad ? panel(.repo) : .constant(false), arrowEdge: .top) { repoPopover }
+            Button { open(pad ? .host : .workspace) } label: {
+                HStack(spacing: SH.Space.xs) {
+                    Text("on \(host)").lineLimit(1).truncationMode(.tail)
+                    SHChipChevron()
+                }
+                .frame(minHeight: SH.Height.touch)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Host, \(host)")
+            .popover(isPresented: pad ? panel(.host) : .constant(false), arrowEdge: .top) { hostPopover }
         }
-        .shAnimation(.content, value: model.offersThinking)
-        .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
-        .disabled(model.starting)
+        .font(.sh(.ui, weight: .regular))
+        .foregroundStyle(Color.sh.textSecondary)
+        .padding(.horizontal, SH.Space.m)
     }
 
-    private func chip(_ label: String, systemImage: String, name: String, panel: NewThreadModel.Panel, active: NewThreadModel.Panel?) -> some View {
-        Button {
-            model.workspaceAnchor = nil
-            model.panel = panel
-        } label: {
-            SHSelectorChip(label, systemImage: systemImage, active: active != nil && model.panel == active, accessibilityName: name)
+    /// "claude-opus ⌄", with the thinking level after it on iPad: opens the sheet (popover on iPad) that chooses both.
+    private var modelChip: some View {
+        let short = NewThreadRules.shortModel(model.defaults.model)
+        return Button { open(.model) } label: {
+            HStack(spacing: SH.Space.xs) {
+                Text(short).lineLimit(1).truncationMode(.middle)
+                if pad, model.offersThinking { Text(model.thinking.title).foregroundStyle(Color.sh.textTertiary).lineLimit(1) }
+                SHChipChevron()
+            }
+            .font(.shSans(SHTouchComposerMetrics.chipSize))
+            .foregroundStyle(Color.sh.textSecondary)
+            .padding(.horizontal, SH.Space.m)
+            .frame(minHeight: SH.Height.touch)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(model.offersThinking ? "Model and thinking" : "Model")
+        .popover(isPresented: pad ? panel(.model) : .constant(false), arrowEdge: .top) {
+            popover("Model") {
+                NewThreadModelPicker(model: model, thinking: true) { model.panel = nil }
+                    .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
+            }
         }
     }
 
-    private var thinkingChip: some View {
-        Menu {
-            Picker("Thinking", selection: Binding(get: { model.thinking }, set: { model.setThinking($0) })) {
-                ForEach(model.thinkingLevels, id: \.self) { level in
-                    Text(level.title).tag(level)
-                }
+    private func open(_ panel: NewThreadModel.Panel) {
+        model.workspaceAnchor = nil
+        model.panel = panel
+    }
+
+    private var repoPopover: some View {
+        popover("Repo") {
+            NavigationStack {
+                ScrollView { NewThreadRepoList(model: model, carded: false) }
+                    .background(Color.sh.bgRaised)
+                    .navigationTitle("Repo")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .navigationDestination(item: $model.folders) { NewThreadFolderScreen(model: model, browser: $0) }
             }
-        } label: {
-            SHSelectorChip(model.thinking.title, systemImage: "lightbulb", mono: false, accessibilityName: "Thinking")
+            .frame(idealHeight: MobileLayout.newThreadPopoverHeight)
         }
-        .menuStyle(.button)
+    }
+
+    private var hostPopover: some View {
+        popover("Run on") {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Run on")
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .padding(.horizontal, SH.Space.xl)
+                    .frame(minHeight: MobileLayout.rowHeight)
+                    .accessibilityAddTraits(.isHeader)
+                SHHairline()
+                // Every host where there's room (iPadNewThread); with less, they scroll under the header.
+                ScrollView { NewThreadHostList(model: model, carded: false) }
+                    .scrollBounceBehavior(.basedOnSize)
+            }
+        }
     }
 
     private func popover<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -277,24 +252,20 @@ private struct NewThreadForm: View {
             .accessibilityLabel(title)
     }
 
-    /// "New worktree on shepherd": opens the worktree's settings.
-    private var worktreeSummary: some View {
+    /// "New worktree on shepherd · Where it runs… changes the repo, host and branch." (the boards' `.gt-foot`): opens the worktree's settings.
+    private var footnote: some View {
         let text = NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree, noSpace: model.noSpace)
         return Button {
             model.workspaceAnchor = .worktree
             model.panel = pad ? .worktree : .workspace
         } label: {
-            HStack(spacing: SH.Space.s) {
-                Image(systemName: SHGlyph.gitBranch.symbolName)
-                    .font(.sh(.caption))
-                    .accessibilityHidden(true)
-                Text(text)
-                    .font(.sh(.code))
-                    .lineLimit(2)
-            }
-            .foregroundStyle(Color.sh.textTertiary)
-            .frame(minHeight: SH.Height.touch)
-            .contentShape(Rectangle())
+            Text("\(text) \u{00B7} Where it runs\u{2026} changes the repo, host and branch.")
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(Color.sh.textTertiary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SH.Space.xs)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(text)
@@ -350,47 +321,5 @@ private struct NewThreadForm: View {
         Binding(get: { model.panel == panel }, set: { shown in
             if shown { model.panel = panel } else if model.panel == panel { model.panel = nil }
         })
-    }
-}
-
-
-/// The phone's New thread toolbar after Cancel (DuoClosedNewThread): Send, prominent and lit
-/// once there's a prompt; the worktree switch, lantern while on, whose long press opens Where it
-/// runs; and Attach. Each is a symbol with a title, so iPhone Duo's closed display stacks them
-/// in its column and VoiceOver and overflow read the title.
-private struct NewThreadPhoneToolbar: ToolbarContent {
-    let model: NewThreadModel
-
-    var body: some ToolbarContent {
-        ToolbarItem(placement: .confirmationAction) {
-            Button { model.start() } label: { Label("Send", systemImage: "arrow.up") }
-                .buttonStyle(.glassProminent)
-                .tint(Color.sh.lantern)
-                .disabled(!model.canSend)
-                .accessibilityLabel(model.starting ? "Starting thread" : "Send")
-                .accessibilityHint(model.blocker?.message ?? "")
-        }
-        .visibilityPriority(.high)
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            // With the keyboard up the closed Duo's column has room for Cancel and Send only, and
-            // these two go to its overflow menu, where the switch is the menu's first item.
-            Menu {
-                Toggle("New worktree", isOn: Binding(get: { model.worktreeWanted }, set: { model.setWorktree($0) }))
-                    .disabled(model.host?.supportsWorktrees != true || model.noSpace)
-                Button("Where it runs…", systemImage: "slider.horizontal.3") {
-                    model.workspaceAnchor = .worktree
-                    model.panel = .workspace
-                }
-            } label: {
-                Label("New worktree", systemImage: SHGlyph.gitBranch.symbolName)
-            } primaryAction: {
-                model.setWorktree(!model.worktreeWanted)
-            }
-            .tint(model.usesWorktree ? Color.sh.lantern : Color.sh.textSecondary)
-            .disabled(model.starting)
-            .accessibilityValue(model.usesWorktree ? "On" : "Off")
-            .accessibilityHint(NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree, noSpace: model.noSpace))
-            NewThreadAttachButton(model: model, inToolbar: true)
-        }
     }
 }

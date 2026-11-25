@@ -38,7 +38,7 @@ struct QueueSection: View {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),
-                                     running: running, enabled: enabled, wide: sizeClass == .regular, actions: actions)
+                                     running: running, enabled: enabled, actions: actions)
                     }
                 }
                 .fittedScroll(maxHeight: min(rowsMaxHeight, composerMaxHeight * MobileLayout.queueShare))
@@ -141,12 +141,11 @@ private struct QueueRowView: View, Equatable {
     let steerLabel: String
     let running: Bool
     let enabled: Bool
-    let wide: Bool
     let actions: QueueRowActions
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.row == rhs.row && lhs.first == rhs.first && lhs.steerLabel == rhs.steerLabel && lhs.running == rhs.running
-            && lhs.enabled == rhs.enabled && lhs.wide == rhs.wide
+            && lhs.enabled == rhs.enabled
             && (lhs.actions.subagent == nil) == (rhs.actions.subagent == nil)
     }
 
@@ -160,11 +159,11 @@ private struct QueueRowView: View, Equatable {
         let id = row.message
         // Touch has no hover, so the next message to go wears Steer now as a button while pi works.
         let steersNow = running && enabled && kind == .queued(number: 1)
-        SHTouchQueueRow(row.text, images: row.images.count, kind: kind, held: row.held, wide: wide,
+        SHTouchQueueRow(row.text, images: row.images.count, kind: kind, held: row.held,
                         steer: id.flatMap { id in steersNow ? { actions.steer(id) } : nil }, steerLabel: steerLabel,
                         back: id.flatMap { id in enabled ? { actions.back(id) } : nil },
                         undo: row.message == nil && enabled ? { actions.undo(row.id) } : nil)
-            .overlay(alignment: .top) { if !first { SHHairline() } }
+            .overlay(alignment: .top) { if !first { SHHairline().padding(.leading, SHTouchQueueMetrics.ruleInset) } }
             .modifier(QueuedRowActions(row: row, steerLabel: steerLabel, enabled: enabled, actions: actions))
     }
 }
@@ -185,12 +184,12 @@ private struct QueuedRowActions: ViewModifier {
                 }
                 .contextMenu {
                     Button(steerLabel, systemImage: "arrow.turn.down.right") { actions.steer(id) }
-                    if let subagent = actions.subagent {
-                        Button("Run in subagent", systemImage: SHGlyph.gitBranch.symbolName) { subagent(id) }
-                    }
                     Button("Edit", systemImage: "pencil") { actions.edit(id) }
                     if row.canMoveToTop {
                         Button("Move to top", systemImage: "arrow.up.to.line") { actions.moveToTop(id) }
+                    }
+                    if let subagent = actions.subagent {
+                        Button("Run in subagent", systemImage: SHGlyph.gitBranch.symbolName) { subagent(id) }
                     }
                     Divider()
                     Button("Delete", systemImage: "trash", role: .destructive) { actions.delete(id) }

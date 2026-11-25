@@ -54,30 +54,24 @@ enum NewThreadImages {
     }
 }
 
-/// Attach: the photo picker, up to the images one send takes. Disabled on a host that cannot
+/// Attach, the + at the card's leading end: the photo picker, up to the images one send takes. Disabled on a host that cannot
 /// take images, saying why.
 struct NewThreadAttachButton: View {
     let model: NewThreadModel
-    /// The phone's toolbar item: a symbol with a title, which the bar draws itself.
-    var inToolbar = false
     @State private var picked: [PhotosPickerItem] = []
 
     var body: some View {
         let supported = model.host?.supportsImages ?? true
         let room = NativeImage.maxPerSend - model.attachments.count
         // The picker's label builds outside the main actor: resolve the tokens here.
-        let font = Font.sh(.ui)
+        let font = Font.system(size: SHTouchComposerMetrics.plusGlyph, weight: .light)
         let color = Color.sh.textSecondary
         PhotosPicker(selection: $picked, maxSelectionCount: max(room, 1), matching: .images) {
-            if inToolbar {
-                Label("Attach", systemImage: "paperclip")
-            } else {
-                Image(systemName: "paperclip")
-                    .font(font)
-                    .foregroundStyle(color)
-                    .frame(width: SH.Height.touch, height: SH.Height.touch)
-                    .contentShape(Rectangle())
-            }
+            Image(systemName: "plus")
+                .font(font)
+                .foregroundStyle(color)
+                .frame(width: SH.Height.touch, height: SH.Height.touch)
+                .contentShape(Rectangle())
         }
         .disabled(!supported || room <= 0 || model.pendingImports > 0 || model.starting)
         .accessibilityLabel("Attach images")

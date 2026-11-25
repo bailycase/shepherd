@@ -4,8 +4,11 @@ import ShepherdCore
 import ShepherdRemote
 
 extension MobileLayout {
-    /// New thread's prompt (the boards' 18pt).
-    static let newThreadPromptSize: CGFloat = 18
+    /// New thread's prompt (the boards' 15pt) and its card's least height.
+    static let newThreadPromptSize: CGFloat = 15
+    static let newThreadCardHeight: CGFloat = 250
+    /// A Where it runs row's least height (the boards' 52).
+    static let choiceRowHeight: CGFloat = 52
     /// An attached image's thumbnail.
     static let newThreadThumbnail: CGFloat = 56
     /// The iPad's repo, host, worktree and model popovers.
@@ -14,8 +17,6 @@ extension MobileLayout {
     /// The repo, worktree and model popovers' ideal height (the host popover's is its rows'). With less
     /// room under their anchor they get shorter and scroll under their header.
     static let newThreadPopoverHeight: CGFloat = 460
-    /// The iPad's prompt keeps room for this many lines before the chips.
-    static let newThreadPadPromptLines = 6
 }
 
 /// Where it runs (MobileWorkspace board): the repo, the host and the New worktree switch, in
@@ -44,9 +45,15 @@ struct NewThreadWhereItRuns: View {
             .navigationTitle("Where it runs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // A symbol, so iPhone Duo's closed display puts it in its column with the sheet's bars.
+                // Symbols, so iPhone Duo's closed display puts them in its column with the sheet's bars.
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { model.panel = nil } label: { Label("Close", systemImage: "xmark") }
+                        .tint(Color.sh.textPrimary)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button { model.panel = nil } label: { Label("Done", systemImage: "checkmark") }
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.sh.primary)
                 }
             }
             .newThreadPages(model)
@@ -80,11 +87,7 @@ private struct NewThreadRepoSummary: View {
     var body: some View {
         let path = model.noSpace ? "Own scratch folder" : model.space.map { NewThreadRules.abbreviatedPath($0.path) }
         NavigationLink(value: NewThreadModel.Panel.repo) {
-            SHChoiceRow(model.repoName ?? "Choose repo", detail: path ?? model.host.map { "a repo on \($0.name)" }) {
-                SHGlyph.repository.image
-                    .font(.sh(.ui))
-                    .foregroundStyle(Color.sh.textSecondary)
-            } trailing: {
+            NewThreadChoiceRow(model.repoName ?? "Choose repo", detail: path ?? model.host.map { "a repo on \($0.name)" }) {
                 NewThreadDisclosure()
             }
         }
@@ -203,6 +206,59 @@ struct NewThreadBranchPicker: View {
     }
 }
 
+/// A choice in Where it runs (the boards' rows): the name in `ui` over a 13pt detail, at least 52pt tall, the chosen one on
+/// `bgSelected`; `trailing` takes a disclosure chevron or an inline action (Retry). A host that cannot be chosen is dimmed.
+struct NewThreadChoiceRow<Trailing: View>: View {
+    let title: String
+    var detail: String?
+    var note: String?
+    var selected = false
+    var dimmed = false
+    @ViewBuilder let trailing: () -> Trailing
+
+    init(_ title: String, detail: String? = nil, note: String? = nil, selected: Bool = false, dimmed: Bool = false,
+         @ViewBuilder trailing: @escaping () -> Trailing) {
+        self.title = title
+        self.detail = detail
+        self.note = note
+        self.selected = selected
+        self.dimmed = dimmed
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.ui)).foregroundStyle(dimmed ? sh.textTertiary : sh.textPrimary)
+                    .lineLimit(1).truncationMode(.middle)
+                if let detail {
+                    Text(detail).font(.shSans(SHTouchQueueMetrics.headerSize)).foregroundStyle(dimmed ? sh.textTertiary : sh.textSecondary)
+                        .lineLimit(2)
+                }
+                if let note {
+                    Text(note).font(.sh(.caption)).foregroundStyle(sh.lanternText).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: SH.Space.m)
+            trailing()
+        }
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.choiceRowHeight, alignment: .leading)
+        .background(selected ? sh.bgSelected : .clear)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension NewThreadChoiceRow where Trailing == EmptyView {
+    init(_ title: String, detail: String? = nil, note: String? = nil, selected: Bool = false, dimmed: Bool = false) {
+        self.init(title, detail: detail, note: note, selected: selected, dimmed: dimmed, trailing: { EmptyView() })
+    }
+}
+
 /// A titled block of Where it runs.
 struct NewThreadSection<Content: View>: View {
     let title: String
@@ -261,11 +317,7 @@ struct NewThreadRepoList: View {
                     model.choose(repo: row.id)
                     chosen()
                 } label: {
-                    SHChoiceRow(row.name, detail: row.detail, selected: row.selected) {
-                        SHGlyph.repository.image
-                            .font(.sh(.ui))
-                            .foregroundStyle(Color.sh.textSecondary)
-                    }
+                    NewThreadChoiceRow(row.name, detail: row.detail, selected: row.selected)
                 }
                 .buttonStyle(.shRow(selected: false, radius: 0))
                 .accessibilityHint(row.selected ? "" : "Runs the thread in \(row.name)")
@@ -279,11 +331,7 @@ struct NewThreadRepoList: View {
                     .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight, alignment: .leading)
             }
             Button { model.browseFolders() } label: {
-                SHChoiceRow("Add repo…", detail: model.host.map { "a folder on \($0.name)" }, mono: false) {
-                    Image(systemName: "plus")
-                        .font(.sh(.ui))
-                        .foregroundStyle(Color.sh.running)
-                }
+                NewThreadChoiceRow("Add repo…", detail: model.host.map { "a folder on \($0.name)" })
             }
             .buttonStyle(.shRow(selected: false, radius: 0))
             .disabled(!connected)
@@ -311,25 +359,15 @@ struct NewThreadHostList: View {
     }
 
     private func label(_ row: NewThreadHostRow) -> some View {
-        SHChoiceRow(row.name, detail: row.detail, note: row.limitation, selected: row.selected, dimmed: !row.selectable) {
-            SHStatusDot(row.status.agentState, size: SHChoiceRowMetrics.statusDot)
-        } trailing: {
+        NewThreadChoiceRow(row.name, detail: row.detail, note: row.limitation, selected: row.selected, dimmed: !row.selectable) {
             if row.offersRetry {
                 Button("Retry") { model.retry(host: row.id) }
-                    .buttonStyle(.shLink)
+                    .buttonStyle(.plain)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .shTouchTarget(height: SH.Height.controlS)
                     .accessibilityLabel("Retry \(row.name)")
             }
-        }
-    }
-}
-
-extension NewThreadHostRow.Status {
-    var agentState: AgentState {
-        switch self {
-        case .connected: .done
-        case .connecting: .running
-        case .offline: .failed
         }
     }
 }

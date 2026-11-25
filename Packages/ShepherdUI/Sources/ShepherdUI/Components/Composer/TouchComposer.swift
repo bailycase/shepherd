@@ -1,15 +1,24 @@
 import SwiftUI
 
-// The composer's touch parts (MobileThread, MobileQueue, iPadPortrait boards): the phone's
-// capsule field with its action inside, and the slash-command list that opens above the
-// composer while a draft is "/…". The iPad keeps the Mac's card (`SHComposer`) with its row of
-// chips.
+// The composer's touch parts (MobileThread, MobileQueue, iPadThread, DuoClosedThread boards): the
+// one-line pill with its action inside, on every touch screen, and the slash-command list that
+// opens above the composer while a draft is "/…".
 
 public enum SHTouchComposerMetrics {
-    /// The capsule's minimum height, and the round attach button beside it.
-    public static let capsuleHeight: CGFloat = SH.Height.touch
-    /// The action's circle inside the capsule.
-    public static let actionSize: CGFloat = SH.Height.controlL
+    /// The pill's minimum height (the boards' `.gt-cmp`: 52, a full-radius capsule).
+    public static let capsuleHeight: CGFloat = 52
+    /// The attach button's circle at the pill's leading end.
+    public static let attachSize: CGFloat = 42
+    /// The + glyph in it.
+    public static let plusGlyph: CGFloat = 22
+    /// The action's circle inside the pill (`SHComposerMetrics.actionSize`).
+    public static let actionSize: CGFloat = SHComposerMetrics.actionSize
+    /// The pill's padding: 4 before the attach button, 6 after the action; 6 between its parts.
+    public static let leadingPadding: CGFloat = SH.Space.xs
+    public static let trailingPadding: CGFloat = SH.Space.s
+    public static let gap: CGFloat = SH.Space.s
+    /// The model chip's text (the boards' 13).
+    public static let chipSize: CGFloat = 13
     /// A command row's minimum height.
     public static let commandRowHeight: CGFloat = SH.Height.touch
     /// Command rows the list shows before it scrolls.
@@ -18,43 +27,70 @@ public enum SHTouchComposerMetrics {
     public static let commandNameWidth: CGFloat = 180
 }
 
-/// The phone's field (MobileThread, MobileSteer boards): one glass capsule (the system material)
-/// with the paperclip at its leading edge, the field growing to a few lines, and the context
-/// ring and action (Send or Stop) at its trailing end. Chips sit above it, in the app.
-public struct SHCapsuleComposer<Leading: View, Field: View, Action: View>: View {
+/// The thread's field on every touch screen (MobileThread, MobileQueue, iPadThread, DuoClosedThread boards): one pill, the
+/// attach button at its leading edge, the words growing to a few lines, the model chip, then the
+/// context ring and action (Send or Stop). A flat `bgRaised` capsule on the `lift` shadow with a
+/// hairline, never live glass. Everything else the composer offers (commands, thinking level, speed)
+/// opens from the attach button and the model chip.
+public struct SHCapsuleComposer<Leading: View, Field: View, Trailing: View, Action: View>: View {
     let leading: Leading?
     let field: Field
+    let trailing: Trailing
     let action: Action
 
-    public init(@ViewBuilder leading: () -> Leading, @ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
+    public init(@ViewBuilder leading: () -> Leading, @ViewBuilder field: () -> Field, @ViewBuilder trailing: () -> Trailing,
+                @ViewBuilder action: () -> Action) {
         self.leading = leading()
         self.field = field()
+        self.trailing = trailing()
         self.action = action()
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: SHTouchComposerMetrics.capsuleHeight / 2)
-        HStack(alignment: .bottom, spacing: 0) {
+        let M = SHTouchComposerMetrics.self
+        let shape = RoundedRectangle(cornerRadius: M.capsuleHeight / 2)
+        HStack(alignment: .bottom, spacing: M.gap) {
             if let leading {
-                leading.frame(minHeight: SHTouchComposerMetrics.capsuleHeight)
+                leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
             }
             field
-                .padding(.vertical, SH.Space.m)
-                .padding(.leading, leading == nil ? SH.Space.xl : 0)
-                .frame(minHeight: SHTouchComposerMetrics.capsuleHeight, alignment: .leading)
+                .padding(.vertical, (M.capsuleHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
+                .padding(.leading, leading == nil ? SH.Space.xl - M.leadingPadding : 0)
+                .frame(minHeight: M.capsuleHeight, alignment: .leading)
+            trailing
+                .frame(minHeight: M.capsuleHeight)
             action
-                .frame(minHeight: SHTouchComposerMetrics.capsuleHeight)
+                .frame(minHeight: M.capsuleHeight)
         }
-        .padding(.horizontal, SH.Space.xxs)
-        .glassEffect(.regular, in: shape)
+        .padding(.leading, M.leadingPadding)
+        .padding(.trailing, M.trailingPadding)
+        .background(Color.sh.bgRaised, in: shape)
+        .shBorder(Color.sh.lineSubtle, radius: M.capsuleHeight / 2)
+        .shLift(shape)
+    }
+}
+
+extension SHCapsuleComposer where Trailing == EmptyView {
+    public init(@ViewBuilder leading: () -> Leading, @ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
+        self.init(leading: leading, field: field, trailing: { EmptyView() }, action: action)
+    }
+}
+
+extension SHCapsuleComposer where Leading == EmptyView, Trailing == EmptyView {
+    /// A capsule with no attach button (the host takes no images and offers no commands).
+    public init(@ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
+        self.leading = nil
+        self.field = field()
+        self.trailing = EmptyView()
+        self.action = action()
     }
 }
 
 extension SHCapsuleComposer where Leading == EmptyView {
-    /// A capsule with no paperclip (the host takes no images).
-    public init(@ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
+    public init(@ViewBuilder field: () -> Field, @ViewBuilder trailing: () -> Trailing, @ViewBuilder action: () -> Action) {
         self.leading = nil
         self.field = field()
+        self.trailing = trailing()
         self.action = action()
     }
 }

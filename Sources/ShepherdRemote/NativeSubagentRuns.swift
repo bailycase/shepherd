@@ -409,17 +409,17 @@ public struct NativeRunSteerWords: Equatable, Sendable {
     private let toward: String
     private let reach: String
 
-    public static let steer = NativeRunSteerWords(verb: "Steer", help: nil, toward: "Steer", reach: "lands before its next turn")
+    public static let steer = NativeRunSteerWords(verb: "Steer", help: nil, toward: "Steer", reach: "It lands before its next turn.")
     public static let reply = NativeRunSteerWords(
         verb: "Reply", help: "Answer this subagent yourself. It was waiting on its parent.", toward: "Reply to",
-        reach: "it was waiting on its parent")
+        reach: "It was waiting on its parent.")
 
     /// "Steer worker", or "Reply to worker".
     public func label(_ name: String) -> String { "\(toward) \(name)" }
 
-    /// The touch field's mono caption, where there is no tooltip: "to: worker · not the parent · lands
-    /// before its next turn", or "… · it was waiting on its parent".
-    public func caption(_ name: String) -> String { "to: \(name) · not the parent · \(reach)" }
+    /// The touch field's caption, where there is no tooltip: "Goes to worker, not the parent. It lands
+    /// before its next turn.", or "… It was waiting on its parent."
+    public func caption(_ name: String) -> String { "Goes to \(name), not the parent. \(reach)" }
 }
 
 public func nativeRunSteerWords(_ run: ChildRun) -> NativeRunSteerWords {

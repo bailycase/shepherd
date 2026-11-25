@@ -24,6 +24,11 @@ public enum SHGoalState: CaseIterable, Equatable, Sendable {
         self == .needsYou || time.isEmpty ? label : "\(label) · \(time)"
     }
 
+    /// Touch says it in a line (the boards' "Working, 6m 40s"), with no pill round it.
+    func spokenText(time: String) -> String {
+        self == .needsYou || time.isEmpty ? label : "\(label), \(time)"
+    }
+
     private var agentState: AgentState {
         switch self {
         case .working, .checking: .running
@@ -75,7 +80,7 @@ public enum SHGoalMetrics {
     public static let desktopHeaderHeight: CGFloat = 32
     public static let touchHeaderHeight: CGFloat = 40
     public static let desktopRadius: CGFloat = 10
-    public static let touchRadius: CGFloat = SH.Radius.l
+    public static let touchRadius: CGFloat = SHTouchQueueMetrics.cardRadius
     public static let desktopPillHeight: CGFloat = 20
     public static let touchPillHeight: CGFloat = 24
     public static let desktopActionSize: CGFloat = SH.Height.controlS
@@ -179,10 +184,12 @@ public struct SHGoalCard: View {
                 }
             }
             .padding(.horizontal, SHGoalMetrics.textInset)
+            #if !os(iOS)
             .overlay(alignment: .top) { SHHairline() }
+            #endif
         }
-        .background(framed ? Color.sh.bgRaised : .clear, in: RoundedRectangle(cornerRadius: size.radius))
-        .shBorder(framed ? Color.sh.lineStrong : .clear, radius: size.radius)
+        .shBorder(framed ? Color.sh.lineSubtle : .clear, radius: size.radius)
+        .shLift(RoundedRectangle(cornerRadius: size.radius), fill: framed ? Color.sh.bgRaised : .clear)
         .contentShape(RoundedRectangle(cornerRadius: size.radius))
         .contextMenu {
             if size == .touch {
@@ -246,7 +253,11 @@ private struct SHGoalCardHeader: View {
     private var heading: some View {
         HStack(spacing: SH.Space.m) {
             SHGoalGlyph().foregroundStyle(Color.sh.textSecondary)
+            #if os(iOS)
+            Text("Goal").font(.shSans(size.labelFont, .semibold)).foregroundStyle(Color.sh.textPrimary)
+            #else
             Text("Goal").font(.shSans(size.labelFont, .semibold)).foregroundStyle(Color.sh.textSecondary)
+            #endif
             SHGoalPill(state: state, time: time, size: size, clockStart: clockStart)
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -312,7 +323,24 @@ public struct SHGoalPill: View {
         }
     }
 
-    private func pill(time: String) -> some View {
+    @ViewBuilder private func pill(time: String) -> some View {
+        #if os(iOS)
+        // The boards' `.gh`: the state and its clock as words, "Working, 6m 40s", no pill.
+        Text(state.offersPause ? SHGoalState.checking.spokenText(time: time) : state.spokenText(time: time))
+            .hidden()
+            .overlay(alignment: .leading) { Text(state.spokenText(time: time)).shShimmer(active: state == .checking) }
+            .font(.shSans(size.labelFont)).monospacedDigit()
+            .foregroundStyle(Color.sh.textSecondary)
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(state.pillText(time: time))
+        #else
+        macPill(time: time)
+        #endif
+    }
+
+    private func macPill(time: String) -> some View {
         HStack(spacing: SH.Space.s) {
             SHGoalStatusMark(state: state)
                 .frame(width: state.offersPause ? SHGoalMetrics.statusGlyph : nil)
@@ -353,7 +381,18 @@ public struct SHGoalHeaderPill: View {
         }
     }
 
-    private func pill(time: String) -> some View {
+    @ViewBuilder private func pill(time: String) -> some View {
+        #if os(iOS)
+        // "Goal, 6m 40s" in the status line (iPadThread), no pill.
+        Text(time.isEmpty ? "Goal" : "Goal, \(time)").font(.sh(.caption)).monospacedDigit()
+            .foregroundStyle(Color.sh.textSecondary).fixedSize()
+            .accessibilityElement(children: .combine)
+        #else
+        macPill(time: time)
+        #endif
+    }
+
+    private func macPill(time: String) -> some View {
         HStack(spacing: SH.Space.s) {
             SHGoalGlyph()
             Text(time.isEmpty ? "Goal" : "Goal · \(time)").font(.shMono(SHGoalMetrics.desktopPillFont)).monospacedDigit()

@@ -62,15 +62,15 @@ public struct SHSubagentTrayMetrics: Sendable {
         showsDiff: true, cardRadius: SH.Radius.m)
     #endif
     public static let pad = SHSubagentTrayMetrics(
-        headerHeight: 40, headerLeading: 14, headerTrailing: SH.Space.xs, headerGlyph: 13, titleSize: 13,
-        headerButton: 34, rowHeight: SH.Height.touch, rowSpacing: 10, rowLeading: 14, rowTrailing: SH.Space.xs,
-        stateSlot: 14, nameWidth: 80, nameSize: 13, textSize: 13.5, subjectSize: 12.5, trailingSlot: 34,
-        showsDiff: true, cardRadius: SH.Radius.l)
+        headerHeight: SHTouchQueueMetrics.headerHeight, headerLeading: SH.Space.xl, headerTrailing: SH.Space.xxs, headerGlyph: 13, titleSize: 13,
+        headerButton: 36, rowHeight: SH.Height.touch, rowSpacing: SH.Space.l, rowLeading: SH.Space.xl, rowTrailing: SH.Space.xl,
+        stateSlot: 14, nameWidth: 80, nameSize: 14, textSize: 15, subjectSize: 13, trailingSlot: 34,
+        showsDiff: true, cardRadius: SHTouchQueueMetrics.cardRadius)
     public static let phone = SHSubagentTrayMetrics(
-        headerHeight: 38, headerLeading: 14, headerTrailing: SH.Space.xs, headerGlyph: 13, titleSize: 13,
-        headerButton: 34, rowHeight: SH.Height.touch, rowSpacing: 10, rowLeading: 14, rowTrailing: SH.Space.xs,
-        stateSlot: 14, nameWidth: 68, nameSize: 13.5, textSize: 14, subjectSize: 13, trailingSlot: 34,
-        showsDiff: false, cardRadius: SH.Radius.l)
+        headerHeight: SHTouchQueueMetrics.headerHeight, headerLeading: SH.Space.xl, headerTrailing: SH.Space.xxs, headerGlyph: 13, titleSize: 13,
+        headerButton: 36, rowHeight: SH.Height.touch, rowSpacing: SH.Space.l, rowLeading: SH.Space.xl, rowTrailing: SH.Space.xl,
+        stateSlot: 14, nameWidth: 68, nameSize: 14, textSize: 15, subjectSize: 13, trailingSlot: 34,
+        showsDiff: false, cardRadius: SHTouchQueueMetrics.cardRadius)
 
     /// The state cells in the header.
     public static let cellSize: CGFloat = 6
@@ -260,21 +260,18 @@ public struct SHSubagentTrayHeader: View {
         .padding(.trailing, m.headerTrailing)
         .frame(height: m.headerHeight)
         #else
+        // The boards' `.gt-qh`: the glyph, "Subagents" and the count; folded, the tally says what runs and what waits.
         HStack(spacing: SH.Space.m) {
             HStack(spacing: SH.Space.m) {
-                SHBranchGlyph(.idle, size: m.headerGlyph, color: sh.textTertiary)
-                Text(summary.title).font(.shSans(m.titleSize, .semibold)).foregroundStyle(sh.textSecondary)
+                SHBranchGlyph(.idle, size: m.headerGlyph, color: sh.textSecondary)
+                Text("Subagents").font(.shSans(m.titleSize, .medium)).foregroundStyle(sh.textSecondary)
                     .lineLimit(1).fixedSize()
+                Text("\(summary.cells.count)").font(.shSans(m.titleSize)).foregroundStyle(sh.textTertiary).monospacedDigit()
                     .shContentTransition(.numeric())
-                HStack(spacing: SHSubagentTrayMetrics.cellSpacing) {
-                    ForEach(Array(summary.cells.enumerated()), id: \.offset) { _, state in
-                        RoundedRectangle(cornerRadius: SHSubagentTrayMetrics.cellRadius)
-                            .fill(state.isHollow ? sh.lineStrong : state.color)
-                            .frame(width: SHSubagentTrayMetrics.cellSize, height: SHSubagentTrayMetrics.cellSize)
-                    }
+                if collapsed {
+                    tally.lineLimit(1).truncationMode(.tail)
+                        .shTransition(.content)
                 }
-                .fixedSize()
-                tally.lineLimit(1).truncationMode(.tail)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(summary.accessibilityLabel)
@@ -304,7 +301,7 @@ public struct SHSubagentTrayHeader: View {
             let color: Color = part.state?.color ?? sh.textTertiary
             text = text + Text(part.text).foregroundColor(color)
         }
-        return text.font(.shMono(11)).monospacedDigit()
+        return text.font(.sh(.caption)).monospacedDigit()
     }
 }
 
@@ -338,42 +335,39 @@ public struct SHSubagentTrayRow: View {
         #if os(macOS)
         macRow(m)
         #else
+        // The boards' tray row: the steer glyph, the name in mono over what it is doing, and its state in words at the end.
         HStack(spacing: m.rowSpacing) {
-            stateMark(m)
-            if let role = run.role {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text(run.name).font(.shMono(m.nameSize, .semibold)).foregroundStyle(sh.textPrimary)
-                        .lineLimit(1).truncationMode(.tail)
-                        .help(run.name)
-                    HStack(spacing: SH.Space.s) {
-                        Text(role).font(.shMono(m.subjectSize)).foregroundStyle(sh.textTertiary)
-                            .lineLimit(1)
-                        line(m)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, SH.Space.xs)
-            } else {
-                Text(run.name).font(.shMono(m.nameSize, .semibold)).foregroundStyle(sh.textPrimary)
+            Image(systemName: "arrow.turn.down.right")
+                .font(.system(size: SHTouchQueueMetrics.steerGlyph, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
+                .frame(width: SHTouchQueueMetrics.numberWidth)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(run.name).font(.shMono(m.nameSize, .medium)).foregroundStyle(sh.textPrimary)
                     .lineLimit(1).truncationMode(.tail)
-                    .frame(width: m.nameWidth, alignment: .leading)
-                line(m).frame(maxWidth: .infinity, alignment: .leading)
+                    .help(run.name)
+                HStack(spacing: SH.Space.s) {
+                    if let role = run.role {
+                        Text(role).font(.shMono(m.subjectSize)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                    }
+                    line(m)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, SH.Space.xs)
             HStack(spacing: SH.Space.m) {
                 if m.showsDiff, let added = run.added, let removed = run.removed {
-                    SHDiffStat(added: added, removed: removed, font: .shMono(11))
+                    SHDiffStat(added: added, removed: removed, font: .sh(.caption))
                 }
-                if let since = run.since {
-                    SHElapsedText(since: since, until: run.until).font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize()
-                }
+                SHSubagentStateWord(run: run)
             }
-            trailing(m)
+            if size == .pointer { trailing(m) }
         }
         .padding(.leading, m.rowLeading)
         .padding(.trailing, m.rowTrailing)
         .frame(minHeight: m.rowHeight)
         .background { background(sh) }
-        .overlay(alignment: .top) { SHHairline() }
+        .overlay(alignment: .top) { SHHairline().padding(.leading, m.rowLeading + SHTouchQueueMetrics.numberWidth) }
         .contentShape(Rectangle())
         .onTapGesture(perform: actions.open)
         .onHover { inside in if hovering != inside { hovering = inside } }
@@ -436,10 +430,6 @@ public struct SHSubagentTrayRow: View {
 
     private var stateWord: some View { SHSubagentStateWord(run: run) }
     #endif
-
-    @ViewBuilder private func stateMark(_ m: SHSubagentTrayMetrics) -> some View {
-        SHSubagentStateMark(run.state, slot: m.stateSlot)
-    }
 
     @ViewBuilder private func line(_ m: SHSubagentTrayMetrics) -> some View {
         let sh = Color.sh
@@ -542,15 +532,27 @@ struct SHSubagentStateMark: View {
     }
 }
 
-#if os(macOS)
 /// A run's state as the redesign says it, in words: "Running, 37m", "Asks you" (a run that asked its parent), "Done, 4m",
-/// the time after it once it has one. The tray's rows and the Subagents tab's rows both end with it.
+/// the time after it once it has one. The tray's rows and the Subagents tab's rows both end with it. On touch a run that asked
+/// its parent says "Answer" in the attention color (MobileSteer): the row opens its question.
 struct SHSubagentStateWord: View {
     let run: SHSubagentTrayRun
 
     var body: some View {
         let sh = Color.sh
         let asked = { if case .asked = run.line { true } else { false } }()
+        #if os(iOS)
+        if asked {
+            Text("Answer").font(.sh(.caption, weight: .medium)).foregroundStyle(AgentState.attention.textColor).lineLimit(1).fixedSize()
+        } else {
+            word(sh, asked: false)
+        }
+        #else
+        word(sh, asked: asked)
+        #endif
+    }
+
+    private func word(_ sh: SHPalette, asked: Bool) -> some View {
         let word: String = switch run.state {
         case .running: "Running"
         case .attention: "Asks you"
@@ -561,7 +563,7 @@ struct SHSubagentStateWord: View {
         case .idle: "Idle"
         }
         let loud = asked || run.state == .attention
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             Text(word)
             if let since = run.since {
                 Text(", ")
@@ -573,7 +575,6 @@ struct SHSubagentStateWord: View {
         .lineLimit(1).fixedSize()
     }
 }
-#endif
 
 /// "Show 4 more" under the first rows of a long tray, "Show fewer" once open.
 public struct SHSubagentTrayMoreRow: View {
@@ -656,8 +657,8 @@ public struct SHDockStack<Tray: View, Queue: View>: View {
         .background { Color.clear.shLift(RoundedRectangle(cornerRadius: radius)) }
         .shBorder(sh.lineSubtle, radius: radius)
         #else
-        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
-        .shBorder(sh.lineStrong, radius: radius)
+        .background { Color.clear.shLift(RoundedRectangle(cornerRadius: radius)) }
+        .shBorder(sh.lineSubtle, radius: radius)
         #endif
     }
 }

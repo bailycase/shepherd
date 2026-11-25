@@ -8,12 +8,12 @@ import ShepherdRemote
 /// subagents and Up next in one card (`SubagentTraySection`, the host's queue), the
 /// slash-command list while the draft is "/…", and the field.
 ///
-/// - **iPhone** (MobileThread, MobileQueue boards): the paperclip beside a capsule field with
-///   Send inside it. The commands, model, thinking and speed chips remain visible above.
-/// - **iPad** (iPadThread, iPadQueue, iPadPortrait boards): the Mac's card, the field over one
-///   row of the paperclip, "/ commands", the model and thinking chips, and Send.
-/// - **A design's chat on iPad** (iPadDesign): the same card at the compact size, with no "/"
-///   (typing / still opens the commands), the model's short name and the thinking level alone.
+/// - **Every size** (the Mobile, iPad and Duo thread boards): one pill, the + beside the field, the
+///   model chip (and its thinking level where there is room), the context ring and Send. The + opens
+///   Photos, Files and Commands; the model chip opens the model picker, which also holds the thinking
+///   level and the speed. On iPhone Duo's narrow column the chip steps aside while a draft is typed.
+/// - **A design's chat on iPad** (iPadDesign): the same pill with no "/" (typing / still opens the
+///   commands), the model's short name and no thinking level.
 ///
 /// Send queues the message while pi works (it goes when the turn ends); hold it for the other way
 /// (`NativeSendChoice`): steer now, which stops pi and sends at once. Stop is Send's corner while
@@ -38,6 +38,8 @@ struct ThreadComposer: View {
     @Environment(\.shThreadLinks) private var threadLinks
     /// Something is being dragged over the composer.
     @State private var dropTargeted = false
+    /// The pill is narrower than `MobileLayout.narrowPillWidth`.
+    @State private var narrow = false
 
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
 
@@ -84,9 +86,6 @@ struct ThreadComposer: View {
                     state.saveDraft(store)
                 }
             }
-            if store.running, store.hasDraft || !state.attachments.isEmpty {
-                banner("Hold Send to steer now · ⌘↩ Steer now")
-            }
             if let error = state.attachmentError {
                 banner(error, failed: true)
             }
@@ -127,7 +126,7 @@ struct ThreadComposer: View {
                     .id(key + ":hidden")
                     .shTransition(.content)
                 } else {
-                    QuestionPanel(prompt: prompt, count: store.dialogs.count, enabled: live && store.supports("answer"), docked: !wide,
+                    QuestionPanel(prompt: prompt, count: store.dialogs.count, enabled: live && store.supports("answer"),
                                   hide: { withSHAnimation(.disclosure) { state.questionHiding.hide(key) } }) { answer in
                         guard let reply = prompt.dialogAnswer(answer) else { return }
                         Task {
@@ -136,9 +135,6 @@ struct ThreadComposer: View {
                         }
                     }
                     .id(key)
-                    // Docked on a phone, the panel runs to the screen's edges.
-                    .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
-                    .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
                     .shTransition(.content)
                 }
             } else {
@@ -162,11 +158,14 @@ struct ThreadComposer: View {
                     }
                     .shTransition(.content)
                 }
-                if wide || designChat {
-                    card(store: store, state: state, host: host, live: live)
-                } else {
-                    phone(store: store, state: state, host: host, live: live)
+                if store.running, store.hasDraft || !state.attachments.isEmpty {
+                    // Under the queue, over the pill (the boards' `.gt-qhint`).
+                    Text(wide ? "Hold Send to steer now · ⌘↩ Steer now" : "Hold Send to steer now")
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
                 }
+                pill(store: store, state: state, host: host, live: live, wide: wide)
             }
         }
         .padding(.horizontal, designChat ? MobileLayout.padDesignComposerInset : wide ? MobileLayout.padThreadGutter : MobileLayout.gutter)
@@ -219,8 +218,10 @@ struct ThreadComposer: View {
             ContextDetailsSheet(store: store, live: live) { id in presentation.find(id) }
         }
         .sheet(isPresented: Binding(get: { presentation.choosingModel }, set: { presentation.choosingModel = $0 }).whenActive(detailActive)) {
-            ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
+            ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }, choose: { model in
                 Task { await store.setModel(model) }
+            }) {
+                ModelSettingsSections(store: store, state: state, live: live)
             }
         }
     }
@@ -231,42 +232,7 @@ struct ThreadComposer: View {
         var thinking: Bool
     }
 
-    // MARK: Phone
-
-    @ViewBuilder private func phone(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
-        if hasChips(store, state: state) {
-            ScrollView(.horizontal) {
-                HStack(spacing: SH.Space.xxs) { chips(store: store, state: state, live: live) }
-                    .buttonStyle(.sh(.ghost, size: .m))
-            }
-            .scrollIndicators(.hidden)
-            .shTransition(.content)
-        }
-        if !store.attachedReferences.isEmpty || !store.attachedElements.isEmpty {
-            ScrollView(.horizontal) {
-                HStack(spacing: SH.Space.s) {
-                    referenceChips(store)
-                    elementChips(store)
-                }
-            }
-            .scrollIndicators(.hidden)
-        }
-        if !state.attachments.isEmpty {
-            attachments(state)
-        }
-        let capsuleField = field(store: store, state: state, live: live, placeholder: store.running ? "Queue a follow-up…" : "Follow up…")
-        let capsuleAction = HStack(spacing: 0) {
-            contextMeter(store: store, state: state)
-            sendButton(store: store, state: state, live: live)
-        }
-        if acceptsImages(store) {
-            SHCapsuleComposer { AttachButton(state: state, enabled: live) } field: { capsuleField } action: { capsuleAction }
-        } else {
-            SHCapsuleComposer { capsuleField } action: { capsuleAction }
-        }
-    }
-
-    // MARK: iPad
+    // MARK: Pill
 
     /// A tap on the Can't start banner's button: asks the agent's host to start pi again (the store keeps the progress and any refusal).
     private func restartAgent(_ action: NativeStartAction) {
@@ -282,41 +248,58 @@ struct ThreadComposer: View {
 
     private func restartOffered(_ host: MobileHost?) -> Bool { host.map { NativeStartRestart.isOffered(by: $0.capabilities) } ?? false }
 
-    private func card(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
-        SHComposer(isFocused: focused || dropTargeted) {
-            referenceChips(store)
-            elementChips(store)
-            if !state.attachments.isEmpty { attachmentChips(state) }
-        } field: {
-            // A command draft shows in mono while its list is open (iPadPortrait).
-            field(store: store, state: state, live: live, placeholder: designChat ? MobileLayout.padDesignComposerPlaceholder : store.running ? "Queue a follow-up…"
-                  : store.commands.isEmpty ? "Follow up…"
-                  : store.commands.contains(where: { $0.source == "skill" }) ? "Follow up, / for commands, $ for skills…"
-                  : "Follow up, or / for commands…", command: state.matches != nil)
-        } controls: {
-            // Where the row outgrows the card (a narrow column, as beside iPhone Duo's fold, or
-            // the accessibility sizes) it scrolls rather than truncating every chip, and Send
-            // stays put.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
-                ScrollView(.horizontal) {
-                    HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
+    /// The one-line pill (the boards' `.gt-cmp`), on every size; its attachments wait in a row above.
+    @ViewBuilder private func pill(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool, wide: Bool) -> some View {
+        if !store.attachedReferences.isEmpty || !store.attachedElements.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: SH.Space.s) {
+                    referenceChips(store)
+                    elementChips(store)
                 }
-                .scrollIndicators(.hidden)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, SH.Space.m)
-            // The ring and Send keep their place whatever the chips do.
-            HStack(spacing: 0) {
-                contextMeter(store: store, state: state)
-                sendButton(store: store, state: state, live: live)
+            .scrollIndicators(.hidden)
+        }
+        if !state.attachments.isEmpty {
+            attachments(state)
+        }
+        let placeholder = designChat ? MobileLayout.padDesignComposerPlaceholder
+            : store.running ? "Queue a follow-up…"
+            : !wide || store.commands.isEmpty ? "Follow up…"
+            : store.commands.contains(where: { $0.source == "skill" }) ? "Follow up, / for commands, $ for skills…"
+            : "Follow up, or / for commands…"
+        let offersCommands = !store.commands.isEmpty && !designChat
+        let offersImages = acceptsImages(store)
+        // A narrow column (iPhone Duo's, beside its rail) gives a typed draft the chip's room.
+        let showsModel = !(narrow && store.hasDraft)
+        // A command draft shows in mono while its list is open (iPadPortrait).
+        let fieldView = field(store: store, state: state, live: live, placeholder: placeholder, command: state.matches != nil)
+        let trailingView = HStack(spacing: 0) {
+            if showsModel, store.model != nil || store.supportedActions.contains("setModel") {
+                ModelChip(model: store.model, thinking: wide && !designChat ? store.thinking.map(NativeThinkingLevel.title) : nil,
+                          canChange: live && store.supportedActions.contains("setModel"), short: designChat) {
+                    presentation.choosingModel = true
+                }
+            }
+            contextMeter(store: store, state: state)
+        }
+        let actionView = sendButton(store: store, state: state, live: live)
+        Group {
+            if offersImages || offersCommands {
+                SHCapsuleComposer {
+                    AttachButton(state: state, enabled: live, offersImages: offersImages, commands: offersCommands ? {
+                        if store.draft.isEmpty { store.draft = "/" }
+                        focused = true
+                    } : nil)
+                } field: { fieldView } trailing: { trailingView } action: { actionView }
+            } else {
+                SHCapsuleComposer { fieldView } trailing: { trailingView } action: { actionView }
             }
         }
-    }
-
-    @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
-        if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
-        chips(store: store, state: state, live: live).buttonStyle(.shComposerChip())
+        .onGeometryChange(for: Bool.self) { $0.size.width < MobileLayout.narrowPillWidth } action: { narrow = $0 }
+        .overlay {
+            Capsule().strokeBorder(Color.sh.textTertiary, lineWidth: 1).opacity(dropTargeted ? 1 : 0)
+                .allowsHitTesting(false)
+        }
     }
 
     // MARK: Parts
@@ -327,33 +310,6 @@ struct ThreadComposer: View {
         let paste: (([NSItemProvider]) -> Void)? = live && acceptsImages(store) ? { providers in state.attach(providers: providers) } : nil
         return ComposerTextView(text: $bindable.draft, placeholder: placeholder, focused: $focused, style: command ? .code : style,
                                 label: "Message to agent", pasteImages: paste)
-    }
-
-    @ViewBuilder private func chips(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
-        if !store.commands.isEmpty, !designChat {
-            CommandsChip {
-                if store.draft.isEmpty { store.draft = "/" }
-                focused = true
-            }
-        }
-        if store.model != nil || store.supportedActions.contains("setModel") {
-            ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel"), short: designChat) {
-                presentation.choosingModel = true
-            }
-        }
-        if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
-                                       listing: state.models, levels: store.thinkingLevels) {
-            ThinkingChip(level: store.thinking, levels: store.thinkingLevels, enabled: live) { level in Task { await store.setThinking(level) } }
-        }
-        if store.offersServiceTier {
-            SpeedChip(tier: store.serviceTier, tiers: store.serviceTiers, enabled: live) { tier in Task { await store.setServiceTier(tier) } }
-        }
-    }
-
-    private func hasChips(_ store: NativeThreadStore, state: ComposerState) -> Bool {
-        !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel") || store.offersServiceTier
-            || NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
-                                           listing: state.models, levels: store.thinkingLevels)
     }
 
     /// The context ring (no ring from a host that reports no context). Its own equatable view:
