@@ -8,6 +8,8 @@ import ShepherdRemote
 struct NeedsYouScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The list and detail don't fit side by side (iPhone Duo): the cards carry the board's big title instead of the bar.
+    @State private var single = false
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
@@ -19,7 +21,7 @@ struct NeedsYouScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if sizeClass == .regular {
-                NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures)
+                NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures, single: $single)
             } else {
                 NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures)
             }
@@ -40,8 +42,10 @@ struct NeedsYouScreen: View {
                         }
                     }
                     .fixedSize()
+                    .opacity(single ? 0 : 1)
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityHidden(single)
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton(showsScope: true) }
@@ -64,11 +68,18 @@ private struct NeedsYouCards: View {
     let items: [FleetAttention]
     let answering: Set<String>
     let failures: [String: String]
+    /// The board's big title above the lead, where the bar doesn't carry it.
+    var showsTitle = false
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                if showsTitle {
+                    Text("Needs you").font(.sh(.display)).foregroundStyle(Color.sh.textPrimary)
+                        .padding(.horizontal, SH.Space.xs)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 Text("Questions and blocked threads from every host show here.")
                     .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                     .padding(.horizontal, SH.Space.xs)
@@ -91,6 +102,7 @@ private struct NeedsYouSplit: View {
     let items: [FleetAttention]
     let answering: Set<String>
     let failures: [String: String]
+    @Binding var single: Bool
     @State private var chosen: String?
 
     var body: some View {
@@ -115,7 +127,9 @@ private struct NeedsYouSplit: View {
                 .id(current.id)
         } single: {
             // Too narrow for both (iPhone Duo): the phone's cards, answered in place.
-            NeedsYouCards(items: items, answering: answering, failures: failures)
+            NeedsYouCards(items: items, answering: answering, failures: failures, showsTitle: true)
+                .onAppear { single = true }
+                .onDisappear { single = false }
         }
     }
 }
