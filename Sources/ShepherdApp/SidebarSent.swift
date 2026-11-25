@@ -105,7 +105,9 @@ enum SidebarSent {
     /// Places every thread another thread started among `lists` (the rows of one or more groups, in order): under the thread that started it while it
     /// works or asks, and in its own group, as the thread it is, once it is finished or when that thread isn't among the rows. One that asks you stays
     /// in Needs you as well. Activity only: the Spaces tree keeps every thread in its own space.
-    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo]) {
+    /// `working` is the index of the Working list: a sender whose sent thread is working moves there with it from Done or Recents,
+    /// so the two always sit together and live work is always under Working. A sender that is pinned or asks you stays where it is.
+    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo], working: Int? = nil) {
         guard !infos.isEmpty else { return }
         let present = Set(lists.flatMap { $0.map(\.id) })
         // The top of each chain of threads that started one another that this Mac can see.
@@ -126,6 +128,7 @@ enum SidebarSent {
             guard let info = infos[row.id], nests(row), let top = root(of: row.id) else { continue }
             children[top, default: []].append((row, info.at))
         }
+        var moved: [SidebarListRow] = []
         for list in lists.indices {
             var out: [SidebarListRow] = []
             for var row in lists[list] {
@@ -134,12 +137,17 @@ enum SidebarSent {
                 if infos[id] != nil, nests(row), row.section != .needsYou { continue }
                 if let kids = children[id]?.sorted(by: { $0.at < $1.at }) {
                     if kids.count > foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
-                    out.append(row)
-                    out += kids.map {
+                    let tree = [row] + kids.map {
                         var nested = $0.row
                         nested.fleetNested = true
                         nested.sentRoot = id
                         return nested
+                    }
+                    if let working, list != working, !row.pinned, row.section != .needsYou,
+                       kids.contains(where: { $0.row.section == .working }) {
+                        moved += tree
+                    } else {
+                        out += tree
                     }
                     continue
                 }
@@ -147,5 +155,6 @@ enum SidebarSent {
             }
             lists[list] = out
         }
+        if let working, !moved.isEmpty { lists[working] += moved }
     }
 }
