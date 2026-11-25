@@ -83,6 +83,8 @@ public enum SHDesignSheetMetrics {
     public static let noteLineSpacing: CGFloat = 2
     public static let checkbox: CGFloat = 14
     public static let checkGlyph: CGFloat = 9
+    public static let toastGlyph: CGFloat = 13
+    public static let closeGlyph: CGFloat = 10
     public static let linkTextSize: CGFloat = 13
     public static let checkboxSpacing: CGFloat = 10
     /// The footer's buttons: a pill 26pt tall, 11pt in, in 12 medium.
@@ -380,20 +382,19 @@ public struct SHUndoToast: View {
     public var body: some View {
         HStack(spacing: SH.Space.l) {
             Image(systemName: tone == .done ? "arrow.uturn.backward" : "exclamationmark.triangle")
-                .font(.shSans(SHDesignMetrics.toastGlyph - 1))
+                .font(.shSans(SHDesignSheetMetrics.toastGlyph))
                 .foregroundStyle(tone == .done ? Color.sh.textSecondary : Color.sh.failed)
                 .accessibilityHidden(true)
             message
                 .font(.sh(.ui))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineSpacing(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             Button(actionTitle, action: action)
                 .buttonStyle(.shSheet(.link))
             Button(action: dismiss) {
                 Image(systemName: "xmark")
-                    .font(.shSans(SH.Space.l, .medium))
+                    .font(.shSans(SHDesignSheetMetrics.closeGlyph, .medium))
                     .foregroundStyle(Color.sh.textTertiary)
                     .frame(width: SH.Height.controlS, height: SH.Height.controlS)
                     .contentShape(Rectangle())
