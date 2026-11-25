@@ -353,7 +353,7 @@ struct SHImplementThreadRow: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.thread == b.thread && a.selected == b.selected }
 
     /// "dashboard-web", or "analytics-ingest on demo-mac" on another host.
-    private var place: String? {
+    static func place(_ thread: SHImplementThread) -> String? {
         switch (thread.project, thread.host) {
         case (let project?, let host?): "\(project) on \(host)"
         case (let project?, nil): project
@@ -374,7 +374,7 @@ struct SHImplementThreadRow: View, Equatable {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if let place {
+                if let place = Self.place(thread) {
                     Text(place).font(.shSans(M.rowMetaSize)).foregroundStyle(sh.textTertiary).lineLimit(1).layoutPriority(1)
                 }
                 Text(thread.age ?? "")

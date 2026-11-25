@@ -122,13 +122,13 @@ public struct SHDesignGitChip: View, Equatable {
         self.hint = hint
         self.isOpen = isOpen
         self.action = action
-        if let range = label.range(of: " · ") {
-            branch = String(label[..<range.lowerBound])
-            state = String(label[range.upperBound...])
-        } else {
-            branch = nil
-            state = label
-        }
+        (branch, state) = Self.split(label)
+    }
+
+    /// "main · 3 changes" as "main" and "3 changes"; a label with no branch ("Share with Git") has only its state.
+    static func split(_ label: String) -> (branch: String?, state: String) {
+        guard let range = label.range(of: " · ") else { return (nil, label) }
+        return (String(label[..<range.lowerBound]), String(label[range.upperBound...]))
     }
 
     public nonisolated static func == (a: Self, b: Self) -> Bool {
