@@ -220,12 +220,10 @@ struct ReviewGapRow: View {
     var body: some View {
         let sh = Color.sh
         let label = Text(action == nil ? nativeCount(count, "unchanged line") : "Show \(nativeCount(count, "unchanged line"))")
-            .font(.sh(.caption))
+            .font(.shSans(SHTouchDiffMetrics.foldSize))
             .foregroundStyle(sh.textTertiary)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-            .background(sh.bgSunken)
-            .overlay(alignment: .top) { SHHairline() }
+            .frame(maxWidth: .infinity, minHeight: SHTouchDiffMetrics.foldHeight)
             .contentShape(Rectangle())
         if let action {
             Button(action: action) { label }
