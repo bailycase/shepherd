@@ -11,6 +11,8 @@ struct FleetPairSheet: View {
     var model: FleetSettingsModel
     /// A Mac this app was a client of (`RemoteHostStore.notInFleet`), picked already with its saved address as its route.
     var candidate: FoundMac?
+    /// The other ways in (a pairing link, SSH) show even while Macs are found nearby: the page's Add over SSH….
+    var showsOtherWays = false
     /// Called once it is added, before the sheet closes.
     var onAdded: () -> Void = {}
     let dismiss: () -> Void
@@ -18,10 +20,11 @@ struct FleetPairSheet: View {
     @State private var picked: String?
     @State private var code: String
 
-    init(model: FleetSettingsModel, candidate: FoundMac? = nil, code: String = "", onAdded: @escaping () -> Void = {},
+    init(model: FleetSettingsModel, candidate: FoundMac? = nil, code: String = "", showsOtherWays: Bool = false, onAdded: @escaping () -> Void = {},
          dismiss: @escaping () -> Void) {
         self.model = model
         self.candidate = candidate
+        self.showsOtherWays = showsOtherWays
         self.onAdded = onAdded
         self.dismiss = dismiss
         _code = State(initialValue: code)
@@ -37,7 +40,7 @@ struct FleetPairSheet: View {
     private var ready: Bool { (mac != nil || target != nil || findsByCode) && code.count == FleetProtocol.codeLength && model.pairing != .working }
     private var theirName: String { target?.name ?? mac?.name ?? "the other Mac" }
     /// Nothing is found nearby, or the person is using one of the other ways.
-    private var offersOtherWays: Bool { (model.found.isEmpty && candidate == nil) || target != nil || !model.linkText.isEmpty || !model.sshTarget.isEmpty }
+    private var offersOtherWays: Bool { showsOtherWays || (model.found.isEmpty && candidate == nil) || target != nil || !model.linkText.isEmpty || !model.sshTarget.isEmpty }
 
     var body: some View {
         SHDialog("Add a Mac to your fleet",

@@ -13,6 +13,8 @@ final class FleetPageModel {
     /// The dispatches this Mac sent, as cards: kept apart from `page`, which moves with every sample, so a thread that draws them is
     /// redrawn only when a dispatch changes.
     private(set) var dispatchCards: [FleetDispatchCard] = []
+    /// The Macs tab's list and details in the boards' words, derived with `page`.
+    private(set) var layout = FleetMacsLayout()
     /// The sidebar's Fleet corner, nil while Fleet shows no Mac.
     private(set) var corner: FleetCorner?
     /// What the sidebar reads of the dispatches this Mac sent: kept apart from `page` for the same reason as `dispatchCards`.
@@ -90,7 +92,10 @@ final class FleetPageModel {
                                               batteryCountsHalf: batteryCountsHalf(), autoDispatch: autoDispatch(snapshot.peers.count),
                                               threadCap: threadCap(), checkIgnored: checkIgnored,
                                               checkFixing: snapshot.hostID.map { [$0: localFixing] } ?? [:])
-        if next != page { page = next }
+        if next != page {
+            page = next
+            layout = FleetMacsLayout.make(next)
+        }
         let corner = FleetCorner.make(next)
         if corner != self.corner { self.corner = corner }
         if next.dispatchCards != dispatchCards { dispatchCards = next.dispatchCards }
