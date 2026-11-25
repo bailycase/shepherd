@@ -96,8 +96,8 @@ public enum SHReferenceMetrics {
     /// The note opens this far after its pin.
     public static let noteGap: CGFloat = 14
     // The toasts (.gdz-toast)
-    /// The words wrap at this width, so the toast hugs them up to its 620pt (.gdz-toast).
-    public static let toastMessageWidth: CGFloat = 500
+    /// A toast hugs its words up to this width, then they wrap (.gdz-toast).
+    public static let toastMaxWidth: CGFloat = 620
     public static let toastMinHeight: CGFloat = 40
     public static let toastSpacing: CGFloat = 12
     public static let toastPadding: CGFloat = 8
@@ -764,34 +764,53 @@ public struct SHReferenceToast: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHReferenceMetrics.self
-        HStack(spacing: M.toastSpacing) {
-            if kind == .copied {
-                Image(systemName: "link")
-                    .font(.system(size: M.toastGlyph, weight: .medium))
-                    .foregroundStyle(sh.textSecondary)
-                    .accessibilityHidden(true)
+        SHWidthCap(width: M.toastMaxWidth) {
+            HStack(spacing: M.toastSpacing) {
+                if kind == .copied {
+                    Image(systemName: "link")
+                        .font(.system(size: M.toastGlyph, weight: .medium))
+                        .foregroundStyle(sh.textSecondary)
+                        .accessibilityHidden(true)
+                }
+                message
+                    .font(.shSans(M.toastTextSize))
+                    .foregroundStyle(sh.textPrimary)
+                    .lineSpacing(SH.Space.xxs)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let action, let actionTitle {
+                    Button(actionTitle, action: action)
+                        .buttonStyle(.shLink(color: sh.textPrimary, font: .shSans(M.linkSize, .medium)))
+                        .padding(.leading, SH.Space.xs)
+                }
+                Button(action: dismiss) { Image(systemName: "xmark") }
+                    .buttonStyle(.shIcon(size: M.toastClose))
+                    .help("Dismiss")
+                    .accessibilityLabel("Dismiss")
             }
-            message
-                .font(.shSans(M.toastTextSize))
-                .foregroundStyle(sh.textPrimary)
-                .lineSpacing(SH.Space.xxs)
-                .frame(maxWidth: M.toastMessageWidth, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            if let action, let actionTitle {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.shLink(color: sh.textPrimary, font: .shSans(M.linkSize, .medium)))
-                    .padding(.leading, SH.Space.xs)
-            }
-            Button(action: dismiss) { Image(systemName: "xmark") }
-                .buttonStyle(.shIcon(size: M.toastClose))
-                .help("Dismiss")
-                .accessibilityLabel("Dismiss")
+            .padding(M.toastPadding)
+            .padding(.leading, M.toastPaddingLeading - M.toastPadding)
+            .frame(minHeight: M.toastMinHeight)
         }
-        .padding(M.toastPadding)
-        .padding(.leading, M.toastPaddingLeading - M.toastPadding)
-        .frame(minHeight: M.toastMinHeight)
         .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// Offers its one child at most `width` and takes the size the child answers with: a view that
+/// hugs its words up to a limit, then wraps them (a `frame(maxWidth:)` would grow to the limit).
+struct SHWidthCap: Layout {
+    let width: CGFloat
+
+    private func offer(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: min(proposal.width ?? width, width), height: proposal.height)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(offer(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }

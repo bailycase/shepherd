@@ -24,8 +24,6 @@ public enum SHMentionMetrics {
     public static let popoverRadius: CGFloat = SH.Radius.xl
     /// The ⏎ keycap.
     public static let keycap: CGFloat = 18
-    /// The matched words' wash: `lantern` at this strength.
-    public static let matchOpacity: Double = 0.22
     public static let offlineOpacity: Double = 0.55
     public static let backSize: CGFloat = 22
     public static let emptyPadding: CGFloat = 22
@@ -400,7 +398,7 @@ struct SHMentionRowView: View, Equatable {
                     .frame(width: R.rowThumbnail.width, height: R.rowThumbnail.height)
                     .accessibilityHidden(true)
             } else if row.kind == .file {
-                Image(systemName: "doc.text")
+                Image(systemName: SHGlyph.document.symbolName)
                     .font(.system(size: M.titleSize))
                     .foregroundStyle(sh.textTertiary)
                     .frame(width: R.rowThumbnail.width, height: R.rowThumbnail.height)
@@ -473,7 +471,7 @@ struct SHMentionRowView: View, Equatable {
         for range in matchRanges(title, words: words) {
             guard let lower = AttributedString.Index(range.lowerBound, within: text),
                   let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
-            text[lower..<upper].backgroundColor = Color.sh.lantern.opacity(SHMentionMetrics.matchOpacity)
+            text[lower..<upper].backgroundColor = Color.sh.lanternTint
             text[lower..<upper].foregroundColor = Color.sh.textPrimary
         }
         return text
