@@ -109,6 +109,8 @@ extension AppLayout {
     /// Extra breathing room between the transcript tail and the floating composer.
     static let composerTranscriptGap: CGFloat = SH.Space.xxl
     static let composerFade: CGFloat = 48
+    /// How far in from the composer card's trailing edge the model picker and its settings open (GXModel).
+    static let modelMenuTrailing: CGFloat = 40
     /// A menu opens this far above the card, and keeps this far from the thread's top edge.
     static let menuGap: CGFloat = 8
     static let menuMargin: CGFloat = 8

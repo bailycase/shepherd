@@ -200,8 +200,6 @@ public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Con
             // arriving), what it holds is revealed by its edge rather than drawn outside it.
             .clipShape(below)
         }
-        // The line and the ring fade with focus; keyed on focus alone, so they never lag the card as it grows.
-        // Inside the lift, so the ring is drawn over the card's shadow rather than under it.
         .modifier(SHComposerFocus(isFocused: isFocused))
         .shLift(shape)
     }
@@ -247,24 +245,21 @@ public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Con
     }
 }
 
-/// The card's line and ring. On the Mac they are layers that Core Animation fades (a SwiftUI
-/// animation would lay the visible layout out again on every frame it lasts); elsewhere shapes
-/// that take the hover motion.
+/// The card's edge. On the Mac the boards' `.cmp`: one 1pt `lineStrong` line, the same focused or not, and no ring.
+/// Elsewhere the line darkens and a `bgSelected` ring comes round the card while it holds the keyboard.
 private struct SHComposerFocus: ViewModifier {
     let isFocused: Bool
-    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
+        let sh = Color.sh
         #if canImport(AppKit)
         content
-            .overlay { SHComposerFocusLayer(part: .line, focused: isFocused, colorScheme: colorScheme).allowsHitTesting(false) }
-            .background {
-                SHComposerFocusLayer(part: .ring, focused: isFocused, colorScheme: colorScheme)
-                    .padding(-SHComposerMetrics.focusRing)
+            .overlay {
+                RoundedRectangle(cornerRadius: SHComposerMetrics.radius)
+                    .strokeBorder(sh.lineStrong, lineWidth: 1)
                     .allowsHitTesting(false)
             }
         #else
-        let sh = Color.sh
         content
             .overlay {
                 Color.clear

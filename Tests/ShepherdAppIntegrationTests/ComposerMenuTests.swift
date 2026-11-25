@@ -54,6 +54,11 @@ struct ComposerMenuTests {
             }
         }
 
+        /// Where it starts: the slash menu at the card's leading edge, the model's menus over the model chip.
+        @MainActor func leading(in thread: ComposerThread) -> CGFloat {
+            self == .slash ? thread.columnLeading : thread.modelMenuLeading(width: width)
+        }
+
         @MainActor func open(in thread: ComposerThread) {
             switch self {
             case .slash: thread.openSlashMenu()
@@ -98,17 +103,18 @@ struct ComposerMenuTests {
         #expect(thread.composerInset == inset, "the composer's height and the thread's inset hold")
         #expect(thread.threadOffset == offset, "the thread stays where it was scrolled")
         let after = FrameTimer.capture(thread.window, whole)
-        // The card's focus ring (3pt outside it) lights with an open menu: compare the thread above it.
+        // Compare the thread above the card.
         let band = Int(thread.cardTop - SHComposerMetrics.focusRing - 1)
         let changed = try #require(Pixels.bounds(differing: before, after, rows: 0..<band), "the menu opened")
         let width = min(menu.width, size.width - 2 * thread.columnLeading)
         let height = menu.height(thinkingRows: 1, modelRows: thread.settingsModelRows)
-        let allowed = CGRect(x: thread.columnLeading - Self.shadow, y: thread.cardTop - AppLayout.menuGap - height - Self.shadow,
+        let leading = menu.leading(in: thread)
+        let allowed = CGRect(x: leading - Self.shadow, y: thread.cardTop - AppLayout.menuGap - height - Self.shadow,
                              width: width + 2 * Self.shadow, height: height + AppLayout.menuGap + Self.shadow)
         #expect(allowed.contains(changed), "only the menu drew over the thread: \(changed) is outside \(allowed)")
-        // Left-aligned with the card, its bottom 8pt above it.
+        // The slash menu left-aligned with the card, the model's menus over the model chip; the bottom 8pt above the card.
         let solid = try #require(Self.menu(before, after, rows: 0..<band))
-        #expect(abs(solid.minX - thread.columnLeading) <= 2, "starts at the card's leading edge: \(solid)")
+        #expect(abs(solid.minX - leading) <= 2, "starts at \(leading): \(solid)")
         #expect(abs(solid.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "ends 8pt above the card: \(solid)")
     }
 
@@ -306,7 +312,8 @@ struct ComposerMenuTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         let threadScroll = try #require(thread.threadScroll)
-        let inPicker = CGPoint(x: thread.columnLeading + SHComposerMetrics.modelPickerWidth / 2, y: thread.cardTop - AppLayout.menuGap - 60)
+        let inPicker = CGPoint(x: Menu.models.leading(in: thread) + SHComposerMetrics.modelPickerWidth / 2,
+                               y: thread.cardTop - AppLayout.menuGap - 60)
         let underneath = try #require(thread.hit(inPicker))
         #expect(underneath.isDescendant(of: threadScroll), "the thread is under the pointer before the menu opens")
 
@@ -388,7 +395,7 @@ struct ComposerMenuTests {
         // AppKit draws the search field's placeholder a point higher or lower depending on when
         // its field editor takes over, so the picker's comparison leaves that one row out.
         let pickerTop = thread.cardTop - AppLayout.menuGap - Menu.models.height
-        let searchField = CGRect(x: thread.columnLeading, y: pickerTop, width: Menu.models.width,
+        let searchField = CGRect(x: Menu.models.leading(in: thread), y: pickerTop, width: Menu.models.width,
                                  height: SHComposerMetrics.modelSearchHeight)
         let models = try await after { Menu.models.open(in: thread) }
         _ = try await after { Menu.models.open(in: thread) }
@@ -443,7 +450,7 @@ struct ComposerMenuTests {
         #expect(open != closed)
         let dismissal = try #require(thread.menuDismissal)
 
-        dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 40, y: thread.cardTop - AppLayout.menuGap - 20)))
+        dismissal.handle(thread.click(at: CGPoint(x: menu.leading(in: thread) + 40, y: thread.cardTop - AppLayout.menuGap - 20)))
         // The field is the slash menu's own (it is typing there) but outside a chip's menu.
         if menu == .slash { dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 40, y: thread.cardTop + 20))) }
         try await thread.settle()
