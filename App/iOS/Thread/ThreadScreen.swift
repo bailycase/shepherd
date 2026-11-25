@@ -165,6 +165,13 @@ struct ThreadScreen: View {
                                 withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
                             }
                         }
+                        // Where the bars run down the side (iPhone Duo closed) a waiting question has taken the composer's Stop; the rail
+                        // keeps one (DuoClosedQuestion). A phone's menu has Stop agent.
+                        if verticalBars, sizeClass != .regular, !store.dialogs.isEmpty {
+                            Button("Stop agent", systemImage: "stop.fill") { Task { await store.abort() } }
+                                .tint(Color.sh.textPrimary)
+                                .disabled(key.session == nil || !store.supports("abort"))
+                        }
                         if !arranged, let quick = apps.apps {
                             ThreadAppsMenu(apps: quick, problem: apps.problem) { item in
                                 Task { await apps.act(on: item, client: host?.connectedClient, space: agent?.spaceID, agent: ref.agent) }
