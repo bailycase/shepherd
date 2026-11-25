@@ -141,7 +141,7 @@ struct ThreadScreen: View {
                 if !inlineTitle {
                     ToolbarItem(placement: .principal) {
                         // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
-                        title.frame(maxWidth: titleMaxWidth, alignment: .leading)
+                        title.frame(maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
                     }
                 }
                 // Keep Next clear of the status bar in the wide iPad toolbar.
