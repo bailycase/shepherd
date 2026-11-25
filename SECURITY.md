@@ -81,7 +81,7 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   - upload files (up to 32 MiB each, into a private `0700` directory)
   - review diffs and revert files
   - create and delete worktrees
-- **Revoking:** Settings ▸ Fleet ▸ Devices ▸ Revoke ends that device's connections on every Mac of
+- **Revoking:** Settings ▸ Fleet ▸ Phones and tablets ▸ Revoke ends that device's connections on every Mac of
   the fleet and refuses its token from then on. A device pairs again with a new code.
 - **Bind errors** appear in Settings ▸ Remote rather than being ignored.
 
