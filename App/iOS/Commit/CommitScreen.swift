@@ -26,30 +26,30 @@ struct CommitScreen: View {
                     SHBanner(.failed, title: "Can't commit from here", message: message)
                 case .form:
                     CommitNotices(store: store)
-                    ReviewSectionHead(title: "Message", note: nil)
+                    ReviewSectionHead(title: "Message")
                     CommitMessageCard(store: store)
                     ReviewSectionHead(title: "Files", note: store.selectionText)
-                        .padding(.top, SH.Space.xs)
                     CommitFileList(store: store)
-                        .shCard(radius: MobileLayout.cardRadius)
-                    VStack(spacing: 0) { CommitOptions(store: store) }
-                        .shCard(radius: MobileLayout.cardRadius)
+                    CommitOptions(store: store)
                         .padding(.top, SH.Space.xs)
                 case .operation:
                     CommitProgress(store: store)
                 }
             }
             .disabled(store.info?.blocked != nil && store.stage == .form)
-            .padding(MobileLayout.gutter)
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.bottom, MobileLayout.gutter)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color.sh.bgBase)
+        .background(Color.sh.bgWindow)
         .safeAreaInset(edge: .bottom, spacing: 0) { actions(store) }
         .navigationTitle(commitTitle(store))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(store.stage == .operation ? "Close" : "Cancel") { close(store) }
+                Button(store.stage == .operation ? "Close" : "Cancel", systemImage: "xmark") { close(store) }
+                    .labelStyle(.iconOnly)
+                    .tint(Color.sh.textPrimary)
             }
         }
         .task { await store.begin() }
@@ -69,16 +69,16 @@ struct CommitScreen: View {
                     Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
                 Button(store.actionTitle) { Task { await store.commit() } }
-                    .buttonStyle(.shReviewBar(.primary))
+                    .buttonStyle(.reviewPrimaryPill)
                     .disabled(!store.canCommit)
                 Button("Ask agent to commit") { askAgent() }
-                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui)))
-                    .shTouchTarget(height: SH.Height.controlS)
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .shSans(MobileLayout.touchBodyFont, .medium)))
+                    .frame(minHeight: SH.Height.touch)
                     .accessibilityHint("Sends the agent a turn asking it to commit these changes instead")
             case .operation:
                 if store.operation?.finished == true {
                     Button("Done") { close(store) }
-                        .buttonStyle(.shReviewBar(.primary))
+                        .buttonStyle(.reviewPrimaryPill)
                 } else {
                     Text("The commit continues on the host if you close this.")
                         .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
@@ -88,9 +88,8 @@ struct CommitScreen: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, MobileLayout.gutter)
         .padding(.top, SH.Space.l)
-        .padding(.bottom, SH.Space.s)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { SHHairline() }
+        .padding(.bottom, SH.Space.xs)
+        .background(LinearGradient(colors: [Color.sh.bgWindow.opacity(0), Color.sh.bgWindow], startPoint: .top, endPoint: .init(x: 0.5, y: 0.2)))
     }
 
     /// Closing a finished commit (or one whose outcome never came back) reloads the changes, so

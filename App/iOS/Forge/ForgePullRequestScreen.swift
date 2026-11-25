@@ -59,10 +59,10 @@ struct ForgePullRequestContent: View {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     if let model {
                         head(model)
-                        ForgeSegmented(selection: tab, options: [
+                        ReviewSegmented(selection: tab, options: [
                             .init(value: .summary, title: "Summary"),
-                            .init(value: .changes, title: "Changes", count: model.detail.changedFiles),
-                            .init(value: .checks, title: "Checks", dot: model.checksTone),
+                            .init(value: .changes, title: "Changes", note: "\(model.detail.changedFiles)"),
+                            .init(value: .checks, title: "Checks", note: Self.checksNote(model)),
                         ])
                         if let failure = store.failure {
                             SHBanner(.failed, title: failure) {
@@ -70,7 +70,7 @@ struct ForgePullRequestContent: View {
                             }
                         }
                         switch tab.wrappedValue {
-                        case .summary: summary(model)
+                        case .summary: summary(model, tab: tab)
                         case .changes: ForgeChangesTab(key: key, openFile: openFile)
                         case .checks: ForgeChecksTab(key: key, model: model) { check, log in fix(check, log: log, model: model, store: store) }
                         }
@@ -137,86 +137,141 @@ struct ForgePullRequestContent: View {
 
     private func head(_ model: ForgePullRequestModel) -> some View {
         let sh = Color.sh
-        return VStack(alignment: .leading, spacing: SH.Space.m) {
-            HStack(spacing: SH.Space.m) {
-                ForgeTag(text: model.badge, tone: model.badgeTone)
-                Text(model.byline).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
-            }
-            Text(model.detail.summary.title)
-                .font(.shSans(MobileLayout.forgeItemTitle, .semibold))
+        let summary = model.detail.summary
+        // "Open · baily · 2h ago", then "agent/refund-events into main" (beside it on iPad).
+        let branches = Text(summary.headRef).font(.shMono(MobileLayout.touchDetailFont - 1))
+            + Text(" into ").font(.shSans(MobileLayout.touchDetailFont))
+            + Text(summary.baseRef).font(.shMono(MobileLayout.touchDetailFont - 1))
+        return VStack(alignment: .leading, spacing: SH.Space.xs) {
+            Text(summary.title)
+                .font(.shSans(MobileLayout.forgeItemTitle, .bold))
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
-            Text("\(model.detail.summary.headRef) \u{2192} \(model.detail.summary.baseRef)")
-                .font(.sh(.mono))
-                .foregroundStyle(sh.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .accessibilityLabel("\(model.detail.summary.headRef) into \(model.detail.summary.baseRef)")
+            if layout.isPad {
+                (Text("\(model.badge) \u{00B7} \(model.byline) \u{00B7} ").font(.shSans(MobileLayout.touchDetailFont)) + branches)
+                    .foregroundStyle(sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
+            } else {
+                Text("\(model.badge) \u{00B7} \(model.byline)")
+                    .font(.shSans(MobileLayout.touchDetailFont))
+                    .foregroundStyle(sh.textSecondary)
+                branches
+                    .foregroundStyle(sh.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .accessibilityLabel("\(summary.headRef) into \(summary.baseRef)")
+            }
             let labels = model.detail.labels ?? []
             if !labels.isEmpty {
-                SHWrapStack { ForEach(labels, id: \.name) { ForgeTag(text: $0.name, tone: ForgeRows.tone(hex: $0.color)) } }
+                SHWrapStack { ForEach(labels, id: \.name) { ForgeTag(text: $0.name) } }
+                    .padding(.top, SH.Space.xs)
             }
             if let assignees = model.detail.assignees, !assignees.isEmpty {
-                Text("Assigned to \(assignees.joined(separator: ", "))").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                Text("Assigned to \(assignees.joined(separator: ", "))")
+                    .font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textSecondary)
             }
         }
-        .padding(.top, SH.Space.s)
+        .padding(.horizontal, SH.Space.xs)
     }
 
-    @ViewBuilder private func summary(_ model: ForgePullRequestModel) -> some View {
-        if let note = model.note {
-            ForgeNoteCard(note: note, failed: model.detail.state == .closed)
-        } else if !model.status.isEmpty {
-            SHListCard {
+    /// "1 failed", "running", or how many ran: what follows Checks in the switch.
+    private static func checksNote(_ model: ForgePullRequestModel) -> String? {
+        if !model.failing.isEmpty { return "\(model.failing.count) failed" }
+        if model.checksTone == .running { return "running" }
+        return model.checks.isEmpty ? nil : "\(model.checks.count)"
+    }
+
+    @ViewBuilder private func summary(_ model: ForgePullRequestModel, tab: Binding<ForgeTab>) -> some View {
+        let sh = Color.sh
+        if let note = model.note, model.detail.state == .closed {
+            ForgeNoteCard(note: note)
+        }
+        if let note = model.note, model.detail.state != .closed {
+            Text("\(note.title). \(note.body)")
+                .font(.shSans(MobileLayout.touchDetailFont))
+                .foregroundStyle(sh.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, SH.Space.xs)
+        }
+        if model.detail.state != .closed, !model.status.isEmpty {
+            ReviewCard {
                 ForEach(model.status) { line in
-                    HStack(spacing: SH.Space.l) {
-                        Image(systemName: line.glyph).font(.sh(.ui, weight: .medium)).foregroundStyle(line.tone.color)
-                            .frame(width: SHListMetrics.leadingWidth)
+                    let failing = line.id == "checks" ? model.failing.first : nil
+                    let row = HStack(spacing: SH.Space.l) {
+                        Image(systemName: Self.glyph(line.glyph))
+                            .font(.shSans(MobileLayout.touchBodyFont + 3))
+                            .foregroundStyle(sh.textSecondary)
+                            .frame(width: MobileLayout.touchGlyphColumn)
                             .accessibilityHidden(true)
-                        Text(line.text).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            Text(line.text).font(.shSans(MobileLayout.touchBodyFont, .medium)).foregroundStyle(sh.textPrimary).lineLimit(2)
+                            if let failing {
+                                Text("\(failing.name) failed").font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.failed).lineLimit(1)
+                            }
+                        }
                         Spacer(minLength: SH.Space.m)
-                        if let trailing = line.trailing {
-                            Text(trailing).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                        if line.id == "checks" {
+                            Image(systemName: "chevron.right")
+                                .font(.shSans(MobileLayout.touchDetailFont, .medium))
+                                .foregroundStyle(sh.textTertiary)
+                                .accessibilityHidden(true)
+                        } else if let trailing = line.trailing {
+                            Text(trailing).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary).lineLimit(1)
                         }
                     }
-                    .padding(.horizontal, SH.Space.l)
-                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
-                    .accessibilityElement(children: .combine)
+                    .padding(.horizontal, MobileLayout.gutter)
+                    .padding(.vertical, SH.Space.m + SH.Space.xxs)
+                    .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
+                    .contentShape(Rectangle())
+                    if line.id == "checks" {
+                        Button { tab.wrappedValue = .checks } label: { row }
+                            .buttonStyle(.plain)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityHint("Shows the checks")
+                    } else {
+                        row.accessibilityElement(children: .combine)
+                    }
                 }
             }
         }
         if model.body.isEmpty {
-            Text("No description.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+            Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary).padding(.horizontal, SH.Space.xs)
         } else {
-            ProseView(prose: model.body).equatable()
+            ProseView(prose: model.body).equatable().padding(.horizontal, SH.Space.xs)
         }
         if !model.activity.isEmpty {
-            ForgeSectionHead(title: "Activity")
+            ReviewSectionHead(title: "Activity")
             ForgeActivityList(items: model.activity)
+        }
+    }
+
+    /// The status line's glyph, in the boards' outlined set.
+    private static func glyph(_ name: String) -> String {
+        switch name {
+        case ForgeRows.changesGlyph: "bubble.left"
+        case ForgeRows.failedGlyph: SHGlyph.failedStep.symbolName
+        case ForgeRows.passedGlyph: SHGlyph.resolved.symbolName
+        default: name
         }
     }
 
     @ViewBuilder private func bar(_ store: ForgeStore, _ model: ForgePullRequestModel?) -> some View {
         let busy = store.busy.contains(key) || handing
-        HStack(spacing: SH.Space.m) {
-            Button("Ask agent") { asking = true }
-                .buttonStyle(.shReviewBar(.secondary))
-            Button("Review\u{2026}") { store.sheet = ForgeSheet(key: key, kind: .review) }
-                .buttonStyle(.shReviewBar(.secondary))
-                .disabled(model.map { $0.detail.state != .open && $0.detail.state != .draft } ?? true)
+        ReviewGlassBar(horizontalInset: layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter) {
+            ReviewGlassBarItem(title: "Ask agent") { asking = true }
+            // A merged or closed pull request takes no review.
+            if model.map({ $0.detail.state == .open || $0.detail.state == .draft }) ?? true {
+                ReviewGlassBarItem(title: "Review\u{2026}") { store.sheet = ForgeSheet(key: key, kind: .review) }
+                    .disabled(model == nil)
+            }
             if let primary = model?.primary {
-                Button(primary.label) { if let model { act(primary, model: model, store: store) } }
-                    .buttonStyle(.shReviewBar(.primary))
+                ReviewGlassBarItem(title: primary.label, emphasis: .main) { if let model { act(primary, model: model, store: store) } }
             }
         }
         .disabled(model == nil || busy)
-        .padding(.horizontal, layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter)
-        .padding(.top, SH.Space.l)
-        .padding(.bottom, SH.Space.s)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { SHHairline() }
     }
 
     @ViewBuilder private func menu(_ store: ForgeStore, _ model: ForgePullRequestModel?) -> some View {
@@ -290,20 +345,32 @@ struct ForgePullRequestContent: View {
     }
 }
 
-/// The card under a draft, merged or closed pull request's title (MobilePRStates).
+/// The card under a closed pull request's title (MobilePRStates' "Closed without merging"): the
+/// glyph, the words, and what stays.
 struct ForgeNoteCard: View {
     let note: ForgeNote
-    let failed: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
-            Text(note.title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
-            Text(note.body).shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
+        let sh = Color.sh
+        ReviewCard {
+            HStack(spacing: SH.Space.l) {
+                Image(systemName: SHGlyph.failedStep.symbolName)
+                    .font(.shSans(MobileLayout.touchBodyFont + 3))
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: MobileLayout.touchGlyphColumn)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text(note.title).font(.shSans(MobileLayout.touchBodyFont, .medium)).foregroundStyle(sh.textPrimary)
+                    Text(note.body).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.vertical, SH.Space.m + SH.Space.xxs)
+            .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
+            .accessibilityElement(children: .combine)
         }
-        .padding(SH.Space.l)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: MobileLayout.cardRadius, fill: failed ? Color.sh.failedTint : nil, line: failed ? .clear : nil)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -312,20 +379,16 @@ struct ForgeFetching: View {
     let number: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-            RoundedRectangle(cornerRadius: MobileLayout.cardRadius).fill(Color.sh.bgRaised)
-                .frame(height: MobileLayout.rowHeight * 1.5)
-            SHLoadingRows().frame(height: MobileLayout.rowHeight * 2)
-            Text("Fetching #\(number) from GitHub\u{2026}")
-                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                .frame(maxWidth: .infinity)
-        }
-        .padding(.top, SH.Space.l)
-        .accessibilityElement(children: .combine)
+        Text("Fetching #\(number) from GitHub\u{2026}")
+            .font(.shSans(MobileLayout.touchDetailFont))
+            .foregroundStyle(Color.sh.textTertiary)
+            .shShimmer(active: true)
+            .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight * 4)
+            .accessibilityLabel("Fetching #\(number) from GitHub")
     }
 }
 
-/// Changes (MobilePRChanges): "5 files +200 −8" over "2 of 5 viewed · 3 comments", then each file.
+/// Changes (MobilePRChanges): "5 files +15 −2" over "0 of 5 viewed · 1 comment", then each file.
 private struct ForgeChangesTab: View {
     let key: ForgeItemKey
     let openFile: (String) -> Void
@@ -336,35 +399,37 @@ private struct ForgeChangesTab: View {
         let load = store.files[key]
         Group {
             if let model = load?.value {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    HStack(spacing: SH.Space.m) {
-                        Text(model.totals.filesText).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
-                        SHDiffStat(added: model.totals.added, removed: model.totals.removed, font: .sh(.micro, weight: .regular))
-                    }
-                    Text(model.note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    Text(model.totals.filesText).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
+                    SHDiffStat(added: model.totals.added, removed: model.totals.removed, font: .shSans(MobileLayout.touchBodyFont))
+                    Spacer(minLength: SH.Space.m)
+                    Text(model.note)
+                        .font(.shSans(MobileLayout.touchDetailFont))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                .padding(SH.Space.l + SH.Space.xxs)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .shCard(radius: MobileLayout.cardRadius)
+                .padding(.horizontal, SH.Space.xs)
                 .accessibilityElement(children: .combine)
-                SHLazyListCard(model.summaries) { summary in
+                ReviewLazyCard(model.summaries) { summary in
                     Button { openFile(summary.path) } label: {
-                        SHReviewFileRow(SHReviewFileRow.Item(summary), showsViewed: false, showsChevron: false).equatable()
+                        SHReviewFileRow(SHReviewFileRow.Item(summary)).equatable()
                     }
-                    .buttonStyle(.shRow(radius: 0))
+                    .buttonStyle(.plain)
                 }
             } else if let error = load?.error {
                 ForgeErrorState(error: error) { Task { await store.loadFiles(key) } }
             } else {
-                SHLoadingRows().frame(height: MobileLayout.rowHeight * 2)
+                SHBusyLabel("Loading the files\u{2026}")
+                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
             }
         }
         .task(id: key) { if store.files[key]?.value == nil { await store.loadFiles(key) } }
     }
 }
 
-/// Checks (MobilePRChecks): each check with its dot and time, then each failing job's log tail
-/// with Fix with agent.
+/// Checks (MobilePRChecks): the failed ones, each a card with its log tail and Fix with agent,
+/// then the rest by how they ended.
 private struct ForgeChecksTab: View {
     let key: ForgeItemKey
     let model: ForgePullRequestModel
@@ -375,58 +440,88 @@ private struct ForgeChecksTab: View {
         let store = ForgeStore.of(hosts)
         if model.checks.isEmpty {
             Text("No checks run on this pull request.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                .padding(.horizontal, SH.Space.xs)
         } else {
-            SHListCard {
-                ForEach(model.checks) { row in
+            if !model.failing.isEmpty {
+                ReviewSectionHead(title: "Failed", count: "\(model.failing.count)")
+                ForEach(model.failing) { row in failed(row, store: store) }
+            }
+            group("Running", model.checks.filter { $0.check.state == .running })
+            group("Passed", model.checks.filter { $0.check.state == .passed })
+            group("Skipped", model.checks.filter { $0.check.state == .skipped })
+        }
+    }
+
+    @ViewBuilder private func group(_ title: String, _ rows: [ForgeCheckRow]) -> some View {
+        if !rows.isEmpty {
+            ReviewSectionHead(title: title, count: "\(rows.count)")
+            ReviewCard {
+                ForEach(rows) { row in
                     HStack(spacing: SH.Space.l) {
-                        Circle().fill(row.tone.color).frame(width: MobileLayout.statusDot, height: MobileLayout.statusDot)
-                        Text(row.name).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                        Text(row.name).font(.shSans(MobileLayout.touchBodyFont, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                         Spacer(minLength: SH.Space.m)
                         if let duration = row.duration {
-                            Text(duration).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                            Text(duration).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(Color.sh.textTertiary)
                         }
                     }
-                    .padding(.horizontal, SH.Space.l)
-                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch + SH.Space.s, alignment: .leading)
+                    .padding(.horizontal, MobileLayout.gutter)
+                    .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(row.name), \(row.check.state.rawValue)\(row.duration.map { ", \($0)" } ?? "")")
                 }
             }
-            ForEach(model.failing) { row in
-                let log = row.check.jobID.flatMap { store.logs[ForgeStore.logKey(host: key.host, repo: key.ref.repo, jobID: $0)] }
-                VStack(spacing: 0) {
-                    Group {
-                        if let text = log?.value {
-                            Text(text.isEmpty ? "The log has no failure lines." : text)
-                        } else if let error = log?.error {
-                            Text(error.message)
-                        } else if row.check.jobID == nil {
-                            Text("\(row.name) failed. Its log isn't on GitHub Actions.")
-                        } else {
-                            Text("Reading the log\u{2026}")
-                        }
-                    }
-                    .font(.sh(.mono))
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .lineLimit(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(SH.Space.l)
-                    .textSelection(.enabled)
-                    SHHairline()
-                    Button { fix(row.check, log?.value) } label: {
-                        Text("Fix with agent").font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.running)
-                            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.shRow(radius: 0))
-                    .accessibilityHint("Hands \(row.name) and its log to an agent")
-                }
-                .clipShape(RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
-                .shCard(radius: MobileLayout.cardRadius)
-                .task(id: row.check.jobID) {
-                    if let job = row.check.jobID { await store.loadLog(host: key.host, repo: key.ref.repo, jobID: job) }
+        }
+    }
+
+    private func failed(_ row: ForgeCheckRow, store: ForgeStore) -> some View {
+        let sh = Color.sh
+        let log = row.check.jobID.flatMap { store.logs[ForgeStore.logKey(host: key.host, repo: key.ref.repo, jobID: $0)] }
+        return VStack(alignment: .leading, spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.l) {
+                Text(row.name).font(.shSans(MobileLayout.touchBodyFont, .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                if let duration = row.duration {
+                    Text(duration).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary)
                 }
             }
+            Group {
+                if let text = log?.value {
+                    Text(text.isEmpty ? "The log has no failure lines." : text)
+                } else if let error = log?.error {
+                    Text(error.message)
+                } else if row.check.jobID == nil {
+                    Text("\(row.name) failed. Its log isn't on GitHub Actions.")
+                } else {
+                    Text("Reading the log\u{2026}").shShimmer(active: true)
+                }
+            }
+            .font(.shMono(MobileLayout.touchDetailFont - 1))
+            .foregroundStyle(sh.textSecondary)
+            .lineLimit(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.m + SH.Space.xxs)
+            .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+            .textSelection(.enabled)
+            HStack(spacing: SH.Space.xl + SH.Space.xs) {
+                Button("Fix with agent") { fix(row.check, log?.value) }
+                    .buttonStyle(.shLink(color: sh.textPrimary, font: .shSans(MobileLayout.touchBodyFont, .medium)))
+                    .accessibilityHint("Hands \(row.name) and its log to an agent")
+                if let link = row.check.detailsURL.flatMap(URL.init(string:)) {
+                    Link("Open on GitHub", destination: link)
+                        .font(.shSans(MobileLayout.touchBodyFont))
+                        .foregroundStyle(sh.textSecondary)
+                }
+            }
+            .frame(minHeight: SH.Height.touch - SH.Space.m)
+        }
+        .padding(.horizontal, MobileLayout.gutter)
+        .padding(.top, SH.Space.l + SH.Space.xxs)
+        .padding(.bottom, SH.Space.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: MobileLayout.touchCardRadius, lift: true)
+        .task(id: row.check.jobID) {
+            if let job = row.check.jobID { await store.loadLog(host: key.host, repo: key.ref.repo, jobID: job) }
         }
     }
 }

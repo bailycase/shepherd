@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// A changed file in a review's file list (MobileChanges, iPadReviewSplit boards), 58pt: the
-/// viewed mark (a done check, or an empty ring), the status letter, the filename in semibold mono
-/// over its directory, the comment count, the diff stat, and a chevron where the row opens the
-/// file's diff. Equal on its values.
+/// A changed file in a review's file list (MobileChanges, MobilePRChanges boards), 52pt: the
+/// filename in mono over its directory (and "new" for an added file), the comment count, the diff
+/// stat, "Viewed", and a chevron where the row opens the file's diff. Equal on its values.
 public struct SHReviewFileRow: View, Equatable {
     public struct Item: Equatable, Sendable {
         public let name: String
@@ -45,8 +44,8 @@ public struct SHReviewFileRow: View, Equatable {
         lhs.item == rhs.item && lhs.showsViewed == rhs.showsViewed && lhs.showsChevron == rhs.showsChevron && lhs.selected == rhs.selected
     }
 
-    /// `showsViewed` draws the viewed mark at the row's start (the phone's list); the iPad's
-    /// list marks the selected file instead.
+    /// `showsViewed` says "Viewed" at the row's end (the phone's list); the iPad's list marks the
+    /// selected file instead.
     public init(_ item: Item, showsViewed: Bool = true, showsChevron: Bool = true, selected: Bool = false) {
         self.item = item
         self.showsViewed = showsViewed
@@ -56,25 +55,19 @@ public struct SHReviewFileRow: View, Equatable {
 
     public var body: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
-            if showsViewed {
-                SHViewedMark(viewed: item.viewed)
-            }
-            Text(item.status.letter)
-                .font(.sh(.mono, weight: .bold))
-                .foregroundStyle(item.status.color)
-            // At accessibility sizes the counts move under the name, so the name keeps the width.
-            let stacked = typeSize.isAccessibilitySize
+        // At accessibility sizes the counts move under the name, so the name keeps the width.
+        let stacked = typeSize.isAccessibilitySize
+        HStack(spacing: SH.Space.l) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(item.name)
-                    .font(.sh(.code, weight: .semibold))
+                    .font(.shMono(SHReviewFileRow.nameSize, .medium))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(stacked ? 3 : 1)
-                    .truncationMode(.middle)
-                if !item.directory.isEmpty {
-                    Text(item.directory)
-                        .font(.sh(.micro, weight: .regular))
-                        .foregroundStyle(sh.textTertiary)
+                    .truncationMode(.tail)
+                if let detail = item.detail {
+                    Text(detail)
+                        .font(.shSans(SHReviewFileRow.detailSize))
+                        .foregroundStyle(sh.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
@@ -84,17 +77,16 @@ public struct SHReviewFileRow: View, Equatable {
             if !stacked { counts }
             if showsChevron {
                 Image(systemName: "chevron.right")
-                    .font(.sh(.caption, weight: .semibold))
+                    .font(.shSans(SHReviewFileRow.detailSize, .medium))
                     .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SH.Space.m + SH.Space.xxs)
         .frame(minHeight: SHReviewFileRow.height)
-        .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .background(selected ? sh.bgSelected : .clear)
         .contentShape(Rectangle())
-        .opacity(item.viewed && !showsViewed ? 0.6 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.accessibilityText)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -105,15 +97,28 @@ public struct SHReviewFileRow: View, Equatable {
             if item.comments > 0 {
                 Label("\(item.comments)", systemImage: "text.bubble")
                     .labelStyle(SHCompactLabelStyle())
-                    .font(.sh(.caption))
-                    .foregroundStyle(Color.sh.running)
+                    .font(.shSans(SHReviewFileRow.detailSize))
+                    .foregroundStyle(Color.sh.textSecondary)
             }
-            SHDiffStat(added: item.added, removed: item.removed, font: .sh(.micro, weight: .regular))
+            SHDiffStat(added: item.added, removed: item.removed, font: .shSans(SHReviewFileRow.detailSize))
+            if showsViewed, item.viewed {
+                Text("Viewed").font(.shSans(SHReviewFileRow.detailSize)).foregroundStyle(Color.sh.textTertiary)
+            }
         }
     }
 
-    /// The boards' 58pt file row.
-    public static let height: CGFloat = 58
+    /// The boards' file row: 52pt at least, the name at 14 in mono over the directory at 13.
+    public static let height: CGFloat = 52
+    static let nameSize: CGFloat = 14
+    static let detailSize: CGFloat = 13
+}
+
+extension SHReviewFileRow.Item {
+    /// "Tests/ShepherdAppTests/ · new": the directory, then how the file changed unless it only did.
+    var detail: String? {
+        let parts = [directory.isEmpty ? nil : directory, status.note].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
 }
 
 /// A file's viewed mark: a done check once viewed, an empty ring before.

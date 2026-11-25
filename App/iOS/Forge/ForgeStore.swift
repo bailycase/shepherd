@@ -108,6 +108,8 @@ final class ForgeStore {
     /// the same place.
     var tabs: [ForgeItemKey: ForgeTab] = [:]
     var sheet: ForgeSheet?
+    /// New issue is open: the list's bar (or, on iPad, its head) sets it, the list presents it.
+    var composingIssue = false
     var padFile: String?
     /// An item opened from elsewhere (a pin, a link) on iPad: a list too narrow for its detail
     /// pushes it (`ForgeSplit`), a wide one shows it beside the list.

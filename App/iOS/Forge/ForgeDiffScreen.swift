@@ -38,14 +38,17 @@ struct ForgeDiffScreen: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: SH.Space.xxs) {
-                    Text(parts.name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                    Text(parts.name)
+                        .font(.shMono(MobileLayout.touchBodyFont - 1, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     if let summary {
-                        HStack(spacing: SH.Space.s) {
-                            if !parts.directory.isEmpty { Text(parts.directory).lineLimit(1).truncationMode(.head) }
-                            SHDiffStat(added: summary.added, removed: summary.removed, font: .sh(.micro, weight: .regular))
-                        }
-                        .font(.sh(.micro, weight: .regular))
-                        .foregroundStyle(Color.sh.textTertiary)
+                        Text("\(parts.directory.isEmpty ? "" : "\(parts.directory) \u{00B7} ")+\(summary.added) \u{2212}\(summary.removed)")
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -55,7 +58,7 @@ struct ForgeDiffScreen: View {
                 Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : SHGlyph.resolved.symbolName) {
                     store.toggleViewed(key, path: path)
                 }
-                .tint(viewed ? Color.sh.done : nil)
+                .tint(viewed ? Color.sh.done : Color.sh.textPrimary)
             }
         }
         .task(id: path) {
@@ -180,19 +183,24 @@ private struct ForgeDiffRows: View {
                                 // A comment waiting to be posted, under its line; tapping it edits it.
                                 Button { tap(line) } label: {
                                     VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                                        Text("You · not posted").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                                        Text(note).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
+                                        HStack(spacing: SH.Space.m) {
+                                            Text("You").font(.shSans(MobileLayout.touchDetailFont - 1, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                                            Text("Not posted").font(.shSans(MobileLayout.touchDetailFont - 1)).foregroundStyle(Color.sh.textTertiary)
+                                        }
+                                        Text(note).font(.shSans(MobileLayout.touchBodyFont - 1)).lineSpacing(SH.Space.xxs)
+                                            .foregroundStyle(Color.sh.textPrimary)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, SH.Space.l)
-                                    .padding(.vertical, SH.Space.m)
-                                    .shCard(radius: MobileLayout.cardRadius)
+                                    .padding(.vertical, SH.Space.m + SH.Space.xxs)
+                                    .shCard(radius: SH.Radius.l, lift: true)
                                 }
                                 .buttonStyle(.plain)
-                                .padding(.leading, MobileLayout.gutter + SH.Space.m)
+                                .padding(.leading, SHTouchDiffMetrics.annotationLeading(gutters: 1))
                                 .padding(.trailing, MobileLayout.gutter)
-                                .padding(.vertical, SH.Space.s)
+                                .padding(.top, SH.Space.s)
+                                .padding(.bottom, SH.Space.m)
                                 .accessibilityLabel("Your comment: \(note)")
                                 .accessibilityHint("Edits it")
                             }
@@ -207,7 +215,6 @@ private struct ForgeDiffRows: View {
                 SHBusyLabel("Loading…").padding(MobileLayout.gutter)
             }
         }
-        .padding(.top, SH.Space.xs)
     }
 
     private func tap(_ line: SHDiffLineContent) {
@@ -218,7 +225,7 @@ private struct ForgeDiffRows: View {
 }
 
 /// Under a pull request's diff: the selected line's comment field, else (with drafts waiting)
-/// "2 comments, not posted" with Discard and Post on GitHub.
+/// "2 comments" with Discard and Post on GitHub.
 struct ForgeLineCommentBars: View {
     @Bindable var store: ForgeStore
     let key: ForgeItemKey
@@ -227,12 +234,12 @@ struct ForgeLineCommentBars: View {
 
     var body: some View {
         let drafts = store.drafts[key] ?? []
-        VStack(spacing: 0) {
+        VStack(spacing: SH.Space.m) {
             if let failure = store.failure, !drafts.isEmpty {
                 SHBanner(.failed, title: failure) {
                     Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
                 }
-                .padding(.horizontal, SH.Space.l)
+                .padding(.horizontal, MobileLayout.gutter)
                 .padding(.top, SH.Space.m)
             }
             if let selection = store.lineSelection, selection.key == key, selection.path == path {
@@ -241,19 +248,18 @@ struct ForgeLineCommentBars: View {
                                  onSend: { store.saveLineDraft(); focused = false },
                                  onDelete: { store.deleteLineDraft(); focused = false },
                                  onDone: { store.clearLineSelection(); focused = false })
-                    .padding(.horizontal, SH.Space.l)
-                    .padding(.top, SH.Space.m)
-                    .padding(.bottom, SH.Space.s)
+                    .padding(.horizontal, MobileLayout.gutter)
+                    .padding(.top, MobileLayout.touchBarFade)
+                    .padding(.bottom, SH.Space.xs)
+                    .background(LinearGradient(colors: [Color.sh.bgWindow.opacity(0), Color.sh.bgWindow], startPoint: .top, endPoint: .center))
                     .onAppear { focused = true }
             } else if !drafts.isEmpty {
                 let files = Set(drafts.map(\.path)).count
-                SHReviewSendBar(count: "\(drafts.count) comment\(drafts.count == 1 ? "" : "s")",
-                                detail: files == 1 ? "" : "on \(files) files",
-                                sending: store.posting.contains(key), size: .touch, sendTitle: "Post on GitHub",
-                                onDiscard: { store.discardDrafts(key) }, onSend: { Task { await store.postDrafts(key) } })
+                ReviewCommentsBar(count: "\(drafts.count) comment\(drafts.count == 1 ? "" : "s")",
+                                  detail: files == 1 ? "" : "on \(files) files",
+                                  sending: store.posting.contains(key), sendTitle: "Post on GitHub",
+                                  onDiscard: { store.discardDrafts(key) }, onSend: { Task { await store.postDrafts(key) } })
             }
         }
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { if store.lineSelection?.key == key || !drafts.isEmpty { SHHairline() } }
     }
 }

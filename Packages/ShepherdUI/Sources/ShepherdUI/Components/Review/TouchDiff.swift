@@ -1,11 +1,21 @@
 import SwiftUI
 
-/// The touch diff's columns (MobileDiff, iPadReview, iPadReviewSplit boards): 32pt line-number
-/// gutters, a 14pt sign column, then the code. A touch reader has no hover, so a line is tapped
-/// to select it (a 3pt running bar and tint), and lines wrap rather than truncate.
+/// The touch diff's columns (MobileDiff, iPadReview, iPadReviewSplit boards): 44pt line-number
+/// gutters, a 16pt sign column, then the code at 12pt on a 20pt line. A touch reader has no
+/// hover, so a line is tapped to select it (a 3pt ink bar at its edge), and lines wrap rather
+/// than truncate.
 public enum SHTouchDiffMetrics {
-    public static let numberWidth: CGFloat = 32
-    public static let signWidth: CGFloat = 14
+    public static let numberWidth: CGFloat = 44
+    public static let signWidth: CGFloat = 16
+    /// The code and its numbers, and the line they sit on (the boards' 12 on 20).
+    public static let codeSize: CGFloat = 12
+    public static let lineHeight: CGFloat = 20
+    /// Extra leading that takes a wrapped line's 12pt face to the board's 20pt line.
+    public static let lineSpacing: CGFloat = 4
+    /// A fold's label size (the boards' 13).
+    public static let foldSize: CGFloat = 13
+    /// A fold row: its label on a 20pt line with 6pt above and below.
+    public static let foldHeight: CGFloat = 32
     /// The selected line's bar at its leading edge.
     public static let selectionBar: CGFloat = 3
     /// Where a fold's label and an inline comment start with one gutter, and with two.
@@ -54,26 +64,25 @@ public struct SHTouchDiffLine: View, Equatable {
                 SHTouchDiffNumber(value: line.number)
             }
             Text(line.kind.sign)
-                .font(.sh(.mono))
+                .font(.shMono(SHTouchDiffMetrics.codeSize))
                 .foregroundStyle(line.kind == .added ? sh.done : sh.failed)
                 .frame(width: SHTouchDiffMetrics.signWidth, alignment: .leading)
             Text(line.text)
-                .font(.sh(.code))
+                .font(.shMono(SHTouchDiffMetrics.codeSize))
+                .lineSpacing(SHTouchDiffMetrics.lineSpacing)
                 .foregroundStyle(sh.textPrimary)
                 .lineLimit(wraps ? nil : 1)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: wraps)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, SH.Space.m)
+                .padding(.trailing, SH.Space.l)
         }
-        .padding(.vertical, SH.Space.xxs)
-        .frame(minHeight: SH.Height.rowCompact)
+        .frame(minHeight: SHTouchDiffMetrics.lineHeight)
         .background(background(sh))
         .overlay(alignment: .leading) {
-            if selected {
-                Rectangle().fill(sh.running).frame(width: SHTouchDiffMetrics.selectionBar)
-            } else if commented {
-                Rectangle().fill(sh.lantern).frame(width: SHTouchDiffMetrics.selectionBar)
+            // The selected line, and one with a comment, take the board's ink bar.
+            if selected || commented {
+                Rectangle().fill(sh.textPrimary).frame(width: SHTouchDiffMetrics.selectionBar)
             } else if changeBar, line.kind != .context {
                 Rectangle().fill(line.kind == .added ? sh.done : sh.failed).frame(width: SHTouchDiffMetrics.selectionBar)
             }
@@ -87,13 +96,10 @@ public struct SHTouchDiffLine: View, Equatable {
     }
 
     private func background(_ sh: SHPalette) -> Color {
-        if selected { return sh.runningTint }
-        // A line with a comment waiting (MobileDiff, iPadReview: lantern bar and tint).
-        if commented { return sh.lanternTint }
         switch line.kind {
         case .added: return sh.doneTint
         case .removed: return sh.failedTint
-        case .context: return .clear
+        case .context: return selected ? sh.bgHover : .clear
         }
     }
 }
@@ -102,28 +108,28 @@ public struct SHTouchDiffLine: View, Equatable {
 private struct SHTouchDiffNumber: View {
     let value: Int?
     /// The gutter grows with the text size, so large text keeps four digits whole.
-    @ScaledMetric(relativeTo: .caption2) private var width = SHTouchDiffMetrics.numberWidth
+    @ScaledMetric(relativeTo: .caption) private var width = SHTouchDiffMetrics.numberWidth
 
     var body: some View {
         Text(value.map(String.init) ?? "")
-            .font(.sh(.micro, weight: .regular))
+            .font(.shMono(SHTouchDiffMetrics.codeSize))
             .monospacedDigit()
             .foregroundStyle(.sh.textTertiary)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .padding(.trailing, SH.Space.s)
+            .padding(.trailing, SH.Space.m)
             .frame(width: width, alignment: .trailing)
     }
 }
 
-/// A hunk header across the diff: its header in tertiary mono on the running tint (the phone
+/// A hunk header across the diff: its header in tertiary mono on the hover tint (the phone
 /// board), or on `bgSunken` beside a docked review.
 public struct SHTouchHunkHeader: View {
     let header: String
     let leading: CGFloat
     let tinted: Bool
 
-    public init(_ header: String, leading: CGFloat = SH.Space.l, tinted: Bool = true) {
+    public init(_ header: String, leading: CGFloat = SH.Space.xl, tinted: Bool = true) {
         self.header = header
         self.leading = leading
         self.tinted = tinted
@@ -131,21 +137,21 @@ public struct SHTouchHunkHeader: View {
 
     public var body: some View {
         Text(header)
-            .font(.sh(.micro, weight: .regular))
+            .font(.shMono(SHTouchDiffMetrics.codeSize))
             .foregroundStyle(.sh.textTertiary)
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.leading, leading)
-            .padding(.trailing, SH.Space.l)
-            .padding(.vertical, SH.Space.s)
+            .padding(.trailing, SH.Space.xl)
+            .padding(.vertical, SH.Space.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tinted ? Color.sh.runningTint : Color.sh.bgSunken)
+            .background(tinted ? Color.sh.bgHover : Color.sh.bgSunken)
             .accessibilityLabel("Hunk \(header)")
     }
 }
 
-/// A run of folded lines, as tall as a touch target: "+ 13 more removed lines · 18–32". Tapping
-/// it shows them.
+/// A run of folded lines, set like MobileDiff's "Show 18 unchanged lines": its label centred in
+/// tertiary, "+ 13 more removed lines · 18–32". Tapping it shows them.
 public struct SHTouchFoldRow: View {
     let count: Int
     let kind: SHDiffLineKind
@@ -168,23 +174,14 @@ public struct SHTouchFoldRow: View {
     }
 
     public var body: some View {
-        let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: SH.Space.m) {
-                Image(systemName: "chevron.up.chevron.down")
-                    .imageScale(.small)
-                    .accessibilityHidden(true)
-                Text(Self.label(count: count, kind: kind, range: range))
-                    .lineLimit(1)
-            }
-            .font(.sh(.micro, weight: .regular))
-            .foregroundStyle(sh.textSecondary)
-            .padding(.leading, leading)
-            .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
-            .background(sh.bgSunken)
-            .overlay(alignment: .top) { SHHairline() }
-            .overlay(alignment: .bottom) { SHHairline() }
-            .contentShape(Rectangle())
+            Text(Self.label(count: count, kind: kind, range: range))
+                .font(.shSans(SHTouchDiffMetrics.foldSize))
+                .foregroundStyle(.sh.textTertiary)
+                .lineLimit(1)
+                .padding(.horizontal, SH.Space.xl)
+                .frame(maxWidth: .infinity, minHeight: SHTouchDiffMetrics.foldHeight)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityHint("Shows the folded lines")

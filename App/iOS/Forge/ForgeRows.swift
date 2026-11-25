@@ -207,9 +207,15 @@ enum ForgeRows {
         let state = PullRequestRowState(pull)
         // An agent's pull request names the host whose thread opened it (MobileIPList's "build-01").
         let author = section == .openedByAgents && pull.thread != nil ? hostName : pull.author
+        // The boards' words: changes requested is the one a row asks you about, in attention; a closed pull request is quiet.
+        let (word, tone): (String, ForgeTone) = switch state {
+        case .changesRequested: ("Changes requested", .attention)
+        case .closed: (state.label, .idle)
+        default: (state.label, state.tone)
+        }
         return ForgeRow(key: ForgeItemKey(host: host, ref: pull.ref), title: pull.title,
                         byline: ForgePresentation.numberedByline(number: pull.ref.number, author: author, updatedAt: pull.updatedAt, now: now),
-                        word: state.label, tone: state.tone)
+                        word: word, tone: tone)
     }
 
     static func issueRow(_ issue: IssueSummary, host: UUID, now: Date) -> ForgeRow {

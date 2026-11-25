@@ -102,7 +102,6 @@ private struct PaneCompareRow: View {
         HStack(spacing: SH.Space.m) {
             if let compare = store.compare {
                 HStack(spacing: SH.Space.s) {
-                    Text(compare.head).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
                     Text("vs").foregroundStyle(sh.textTertiary).fixedSize()
                     if compare.basePicks {
                         Button { store.pickingBase = true } label: {
@@ -126,13 +125,13 @@ private struct PaneCompareRow: View {
                 Text(store.filesArePR ? "Pull request" : "Working tree").foregroundStyle(sh.textPrimary).lineLimit(1)
             }
             if store.loaded {
-                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .sh(.mono)).fixedSize()
+                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .shSans(MobileLayout.touchBodyFont)).fixedSize()
             }
             Spacer(minLength: SH.Space.s)
             PadCommitButton(store: store)
         }
-        .font(.sh(.mono))
-        .padding(.horizontal, SH.Space.l)
+        .font(.shMono(MobileLayout.touchBodyFont - 1))
+        .padding(.horizontal, SH.Space.xl)
         .frame(minHeight: MobileLayout.reviewToolbarHeight)
         .overlay(alignment: .bottom) { SHHairline() }
         // The base picker opens here, from the base and from the ⋯'s Compare against….
@@ -183,14 +182,14 @@ private struct PaneFileSwitcher: View {
             }
             Spacer(minLength: SH.Space.s)
             if let current {
-                SHDiffStat(added: current.added, removed: current.removed, font: .sh(.mono)).fixedSize()
+                SHDiffStat(added: current.added, removed: current.removed, font: .shSans(MobileLayout.touchBodyFont)).fixedSize()
             }
             Button { step(1, from: index) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.shIcon(size: SH.Height.touch))
                 .disabled((index ?? count) >= count - 1)
                 .accessibilityLabel("Next file")
         }
-        .font(.sh(.mono))
+        .font(.shMono(MobileLayout.touchBodyFont - 1))
         .padding(.horizontal, SH.Space.s)
         .frame(minHeight: SH.Height.touch)
         .overlay(alignment: .bottom) { SHHairline() }
@@ -209,91 +208,48 @@ private struct PaneFileSwitcher: View {
     }
 }
 
-/// The toolbar (iPadReview, iPadReviewSplit): the scope pill, the whole scope's stat, then
-/// Commit… and Diff options, which holds Refresh, Collapse all and the diff style.
-private struct PadChangesToolbar: View {
-    let store: ReviewStore
-    let compact: Bool
-
-    var body: some View {
-        HStack(spacing: SH.Space.m) {
-            PadScopePill(store: store)
-            if store.loaded {
-                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .sh(.mono)).fixedSize()
-            }
-            Spacer(minLength: SH.Space.s)
-            PadCommitButton(store: store)
-            PadDiffOptions(store: store, compact: compact)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.shIcon(size: SH.Height.touch))
-        }
-        .padding(.horizontal, SH.Space.l)
-        .frame(height: MobileLayout.reviewToolbarHeight)
-        .overlay(alignment: .bottom) { SHHairline() }
-    }
-}
-
-/// "Branch ⌄": the scope, opening the scope menu.
-private struct PadScopePill: View {
-    let store: ReviewStore
-
-    var body: some View {
-        let sh = Color.sh
-        ChangesScopeMenu(store: store, pickBase: { store.pickingBase = true }) {
-            HStack(spacing: SH.Space.s) {
-                Text(label).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(sh.textSecondary)
-            }
-            .padding(.horizontal, SH.Space.l)
-            .frame(minHeight: SH.Height.touch)
-            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-            .shBorder(sh.lineStrong, radius: SH.Radius.s)
-            .fixedSize()
-            .accessibilityLabel("Compare: \(store.scopeTitle)")
-        }
-        // The base picker opens here from the menu's Compare against… and the compare row's base.
-        .popover(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
-            ChangesBasePicker(store: store) { store.pickingBase = false }
-                .frame(width: MobileLayout.reviewBasePickerSize.width, height: MobileLayout.reviewBasePickerSize.height)
-        }
-    }
-
-    private var label: String {
-        if store.usesChanges { return store.scope?.label ?? "Changes" }
-        return store.filesArePR ? "Pull request" : "Working tree"
-    }
-}
-
 /// Commit…: the commit popover where the host commits from review, else a turn asking the
 /// agent to commit.
 private struct PadCommitButton: View {
     let store: ReviewStore
+    /// In the navigation bar, whose capsule styles the button; in a pane's compare row, a text link.
+    var inBar = false
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         if CommitHooks.available(host: hosts.host(store.ref.host)) {
-            Button { CommitHooks.open(thread: store.ref, navigator: navigator, sizeClass: .regular) } label: {
-                Text("Commit\u{2026}")
-            }
-            .buttonStyle(.sh(.secondary, size: .l))
-            .fixedSize()
-            .disabled(!store.canCommit)
-            .accessibilityHint("Choose the message and push options, then commit on the host")
-            .commitPopover(ref: store.ref)
+            Button("Commit\u{2026}") { CommitHooks.open(thread: store.ref, navigator: navigator, sizeClass: .regular) }
+                .buttonStyle(CommitLinkStyle(inBar: inBar))
+                .disabled(!store.canCommit)
+                .accessibilityHint("Choose the message and push options, then commit on the host")
+                .commitPopover(ref: store.ref)
         } else {
-            Button {
+            Button("Commit\u{2026}") {
                 Task {
                     if await store.commit(hosts: hosts) { navigator.finishQueuedReview(store.ref, hosts: hosts) }
                 }
-            } label: {
-                Text("Commit\u{2026}")
             }
-            .buttonStyle(.sh(.secondary, size: .l))
-            .fixedSize()
+            .buttonStyle(CommitLinkStyle(inBar: inBar))
             .disabled(!store.canCommit)
             .accessibilityHint("Asks the agent to commit these changes")
         }
+    }
+}
+
+/// Commit…'s look: plain ink words, in the compare row and the bar's capsule alike.
+private struct CommitLinkStyle: ButtonStyle {
+    let inBar: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.shSans(MobileLayout.touchBodyFont, .medium))
+            .foregroundStyle(Color.sh.textPrimary)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .padding(.horizontal, inBar ? SH.Space.xs : 0)
+            .frame(minHeight: SH.Height.touch)
+            .fixedSize()
+            .contentShape(Rectangle())
     }
 }
 
@@ -312,6 +268,9 @@ private struct PadDiffOptions: View {
 
     var body: some View {
         Menu {
+            ChangesScopeMenu(store: store, pickBase: { store.pickingBase = true }) {
+                Label("Compare: \(store.scopeTitle)", systemImage: SHGlyph.gitBranch.symbolName)
+            }
             PadDiffOptionItems(store: store, compact: compact)
         } label: {
             Label("Diff options", systemImage: "ellipsis")
@@ -364,46 +323,6 @@ struct PadDiffOptionItems: View {
 
     private func copy(command: Bool) {
         Task { await store.copyPatch(command: command) }
-    }
-}
-
-/// The compare row (iPadReview): head vs base (Branch's base opens the base picker), and how many
-/// files are viewed trailing.
-private struct PadCompareRow: View {
-    let store: ReviewStore
-
-    var body: some View {
-        if let compare = store.compare {
-            let sh = Color.sh
-            HStack(spacing: SH.Space.m) {
-                Text(compare.head).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
-                Text("vs").foregroundStyle(sh.textTertiary)
-                if compare.basePicks {
-                    Button { store.pickingBase = true } label: {
-                        HStack(spacing: SH.Space.xs) {
-                            Text(compare.base).lineLimit(1)
-                            Image(systemName: "chevron.down").imageScale(.small)
-                        }
-                        .foregroundStyle(sh.textPrimary)
-                        .shTouchTarget(height: MobileLayout.reviewCompareHeight)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Base \(compare.base)")
-                    .accessibilityHint("Compares against another branch")
-                } else {
-                    Text(compare.base).foregroundStyle(sh.textPrimary).lineLimit(1)
-                }
-                Spacer(minLength: SH.Space.s)
-                if store.loaded {
-                    Text(store.totals.viewedText).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
-                }
-            }
-            .font(.sh(.mono))
-            .padding(.horizontal, SH.Space.l)
-            .frame(height: MobileLayout.reviewCompareHeight)
-            .overlay(alignment: .bottom) { SHHairline() }
-            .accessibilityElement(children: .contain)
-        }
     }
 }
 
@@ -491,9 +410,9 @@ private struct PadFileHead: View {
         let status = SHFileStatus(ReviewFileStatus(entry.status))
         HStack(spacing: SH.Space.m) {
             Button { withSHAnimation(.disclosure) { store.toggleCollapsed(entry.id) } } label: {
-                Text("\(name) · +\(entry.added) \u{2212}\(entry.removed)")
-                    .font(.sh(.mono))
-                    .foregroundStyle(sh.textPrimary)
+                (Text(name).font(.shMono(MobileLayout.touchBodyFont - 1, .medium)).foregroundStyle(sh.textPrimary)
+                    + Text("  +\(entry.added)").font(.shSans(MobileLayout.touchBodyFont)).foregroundStyle(sh.done)
+                    + Text(" \u{2212}\(entry.removed)").font(.shSans(MobileLayout.touchBodyFont)).foregroundStyle(sh.failed))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -505,14 +424,14 @@ private struct PadFileHead: View {
             .accessibilityHint(collapsed ? "Shows the file's changes" : "Hides the file's changes")
             Toggle("Viewed", isOn: Binding(get: { viewed }, set: { _ in store.toggleViewed(entry.id) }))
                 .toggleStyle(.shCheckbox)
-                .font(.sh(.caption))
+                .font(.shSans(MobileLayout.touchDetailFont))
                 .foregroundStyle(sh.textSecondary)
                 .fixedSize()
                 .shTouchTarget(height: SH.Height.touch)
         }
         .padding(.horizontal, SH.Space.m + SH.Space.xxs)
         .frame(height: SH.Height.touch)
-        .background(sh.bgRaised)
+        .background(sh.bgWindow)
         .overlay(alignment: .bottom) { SHHairline() }
     }
 }
@@ -548,13 +467,13 @@ private struct PadSendBar: View {
             }
             if !store.comments.isEmpty {
                 let sh = Color.sh
-                HStack(spacing: SH.Space.m) {
+                HStack(spacing: SH.Space.xl) {
                     Text(padPendingText(store.comments))
-                        .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                        .font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button("Discard") { store.discardComments() }
-                        .buttonStyle(.sh(.ghost, size: .l))
+                        .buttonStyle(.shLink(color: sh.textSecondary, font: .shSans(MobileLayout.touchBodyFont)))
                         .disabled(store.submitting)
                         .accessibilityHint("Deletes the comments you haven't sent")
                     Button {
@@ -566,11 +485,11 @@ private struct PadSendBar: View {
                             Text(store.sendTitle).shShimmer(active: store.submitting)
                         }
                     }
-                    .buttonStyle(.sh(.primary, size: .l))
+                    .buttonStyle(.reviewCompactPill)
                     .disabled(!store.canSend)
                     .accessibilityHint("Sends your comments as the agent's next message")
                 }
-                .padding(.horizontal, SH.Space.l)
+                .padding(.horizontal, SH.Space.xl)
                 .padding(.vertical, SH.Space.m)
                 .frame(minHeight: MobileLayout.reviewSendBarHeight)
                 .background(sh.bgWindow)
@@ -589,8 +508,9 @@ func padPendingText(_ comments: [ReviewComment]) -> String {
 
 // MARK: Full screen
 
-/// The full-screen review (iPadReviewSplit): "‹ Thread" and "Review" in the bar with Close; the
-/// toolbar and compare row as docked; then the file list beside the stacked files, and the send bar.
+/// The full-screen review (iPadReviewSplit): "‹ Thread" and "Review" over "agent/refund-events vs
+/// origin/main · 2 of 5 viewed" in the bar, with Commit…, Close and the diff options (and what to
+/// compare) at its end; then the file list beside the stacked files, and the send bar.
 private struct PadFullReview: View {
     let store: ReviewStore
     let close: () -> Void
@@ -598,8 +518,6 @@ private struct PadFullReview: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PadChangesToolbar(store: store, compact: false)
-            PadCompareRow(store: store)
             // Half open (iPhone Duo), the file list ends at the fold and the files start after it.
             GeometryReader { proxy in
                 let fold = proxy.verticalFold
@@ -623,31 +541,58 @@ private struct PadFullReview: View {
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden()
-        .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                HStack(spacing: SH.Space.m) {
-                    Button { withSHAnimation(.disclosure) { store.padLayout = .docked } } label: {
-                        HStack(spacing: SH.Space.xs) {
-                            Image(systemName: "chevron.left").font(.sh(.ui, weight: .semibold))
-                            Text("Thread")
-                        }
+                Button { withSHAnimation(.disclosure) { store.padLayout = .docked } } label: {
+                    HStack(spacing: SH.Space.xs) {
+                        Image(systemName: "chevron.left").font(.sh(.ui, weight: .semibold))
+                        Text("Thread")
                     }
-                    .accessibilityLabel("Back to the thread")
-                    Text("Review").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
-                        .accessibilityAddTraits(.isHeader)
                 }
-                .fixedSize()
+                .tint(Color.sh.textPrimary)
+                .accessibilityLabel("Back to the thread")
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Close review", systemImage: "xmark", action: close)
+            ToolbarItem(placement: .principal) {
+                PadReviewTitle(store: store)
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                PadCommitButton(store: store, inBar: true)
+                Button("Close review", systemImage: "arrow.down.right.and.arrow.up.left", action: close)
+                    .tint(Color.sh.textPrimary)
+                PadDiffOptions(store: store, compact: false)
+                    .tint(Color.sh.textPrimary)
             }
         }
     }
 }
 
-/// The full-screen review's file list (iPadReviewSplit): a row per file, its name over its stat;
-/// the one shown is filled, viewed files dim.
+/// "Review" over where the review stands: "agent/refund-events vs origin/main · 2 of 5 viewed".
+/// It holds the base picker, which opens from the options' Compare against….
+private struct PadReviewTitle: View {
+    let store: ReviewStore
+
+    var body: some View {
+        let sh = Color.sh
+        VStack(spacing: SH.Space.xxs) {
+            Text("Review").font(.sh(.title)).foregroundStyle(sh.textPrimary)
+            Text(subtitle).font(.sh(.caption)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .popover(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
+            ChangesBasePicker(store: store) { store.pickingBase = false }
+                .frame(width: MobileLayout.reviewBasePickerSize.width, height: MobileLayout.reviewBasePickerSize.height)
+        }
+    }
+
+    private var subtitle: String {
+        let place = store.compare.map { "\($0.head) vs \($0.base)" } ?? (store.filesArePR ? "Pull request" : "Working tree")
+        return store.loaded ? "\(place) \u{00B7} \(store.totals.viewedText)" : place
+    }
+}
+
+/// The full-screen review's file list (iPadReviewSplit): a row per file, its name over its place
+/// and stat, "Viewed" at its edge; the one shown is filled.
 private struct PadFileList: View {
     let store: ReviewStore
     let select: (String) -> Void
@@ -659,17 +604,23 @@ private struct PadFileList: View {
                 ForEach(store.summaries) { summary in
                     let selected = summary.id == store.currentFile
                     Button { select(summary.id) } label: {
-                        VStack(alignment: .leading, spacing: SH.Space.xs) {
-                            Text(summary.name).font(.sh(.code)).foregroundStyle(sh.textPrimary)
-                                .lineLimit(1).truncationMode(.middle)
-                            Text("+\(summary.added) \u{2212}\(summary.removed)").font(.sh(.micro, weight: .regular))
-                                .foregroundStyle(sh.textTertiary)
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            HStack(spacing: SH.Space.m) {
+                                Text(summary.name).font(.shMono(MobileLayout.touchBodyFont - 1, .medium)).foregroundStyle(sh.textPrimary)
+                                    .lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength: SH.Space.s)
+                                if summary.viewed {
+                                    Text("Viewed").font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary)
+                                }
+                            }
+                            Text("\(summary.directory.isEmpty ? "root" : summary.directory) \u{00B7} +\(summary.added)\(summary.removed > 0 ? " \u{2212}\(summary.removed)" : "")")
+                                .font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary)
+                                .lineLimit(1).truncationMode(.head)
                         }
-                        .padding(SH.Space.l)
+                        .padding(.horizontal, SH.Space.l)
+                        .padding(.vertical, SH.Space.m + SH.Space.xxs)
                         .frame(maxWidth: .infinity, minHeight: MobileLayout.reviewFileRowHeight, alignment: .leading)
-                        .opacity(summary.viewed && !selected ? MobileLayout.reviewViewedOpacity : 1)
-                        .background(selected ? sh.bgSelected : .clear)
-                        .overlay(alignment: .bottom) { SHHairline() }
+                        .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.touchCardRadius))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -677,6 +628,7 @@ private struct PadFileList: View {
                     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
                 }
             }
+            .padding(SH.Space.m)
         }
     }
 }

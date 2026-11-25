@@ -111,8 +111,8 @@ struct ChangesScopeMenu<Label: View>: View {
     }
 }
 
-/// The phone's title (MobileChanges): "Changes" over the scope, "⑂ Branch · vs main ⌄" in
-/// `running`, which opens the scope menu.
+/// The phone's title (MobileChanges): "Changes" over the scope, "Working tree vs HEAD" in
+/// secondary, which opens the scope menu (a small chevron says so).
 struct ChangesTitle: View {
     let store: ReviewStore
     let pickBase: () -> Void
@@ -120,27 +120,16 @@ struct ChangesTitle: View {
     var body: some View {
         ChangesScopeMenu(store: store, pickBase: pickBase) {
             VStack(spacing: SH.Space.xxs) {
-                Text("Changes").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text("Changes").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                 HStack(spacing: SH.Space.xs) {
-                    Image(systemName: store.usesChanges ? scopeSymbol : SHGlyph.gitBranch.symbolName).imageScale(.small)
                     Text(store.scopeTitle).lineLimit(1).truncationMode(.middle)
-                    Image(systemName: "chevron.down").imageScale(.small)
+                    Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(Color.sh.textTertiary)
                 }
-                .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(Color.sh.running)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textSecondary)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Changes, \(store.scopeTitle)")
-        }
-    }
-
-    private var scopeSymbol: String {
-        switch store.scope?.kind {
-        case .lastTurn?: "clock.arrow.circlepath"
-        case .commits?: "point.3.connected.trianglepath.dotted"
-        case .pullRequest?: "arrow.triangle.pull"
-        case .uncommitted?, .unstaged?, .staged?: "pencil"
-        default: SHGlyph.gitBranch.symbolName
         }
     }
 }
