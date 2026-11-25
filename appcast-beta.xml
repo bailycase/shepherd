@@ -4,7 +4,7 @@
         <title>Shepherd</title>
         <item>
             <title>0.2.1</title>
-            <pubDate>Tue, 24 Nov 2026 19:50:51 +0000</pubDate>
+            <pubDate>Wed, 25 Nov 2026 01:13:27 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>894</sparkle:version>
@@ -18,7 +18,7 @@
         </item>
         <item>
             <title>0.1.0-beta.6</title>
-            <pubDate>Tue, 24 Nov 2026 19:50:52 +0000</pubDate>
+            <pubDate>Wed, 25 Nov 2026 01:13:48 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>35</sparkle:version>
@@ -32,7 +32,7 @@
         </item>
         <item>
             <title>0.1.0-beta.5</title>
-            <pubDate>Tue, 24 Nov 2026 19:50:52 +0000</pubDate>
+            <pubDate>Wed, 25 Nov 2026 01:13:49 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>33</sparkle:version>
@@ -43,7 +43,7 @@
         </item>
         <item>
             <title>0.1.0-beta.4</title>
-            <pubDate>Tue, 24 Nov 2026 19:50:53 +0000</pubDate>
+            <pubDate>Wed, 25 Nov 2026 01:13:51 +0000</pubDate>
             <link>https://github.com/shepherd-app/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>31</sparkle:version>
