@@ -1,8 +1,18 @@
 import SwiftUI
 
+/// The Mac inspector card's measures (GXSubagents' `.gsv-*`).
+public enum SHInspectorMetrics {
+    /// The title wraps up to this many lines, then truncates.
+    public static let titleMaxLines = 3
+    /// The Steer circle and its arrow (`.gsv-send`).
+    public static let sendSize: CGFloat = 24
+    public static let sendGlyph: CGFloat = 12
+}
+
 /// The subagent inspector's header (Agents board): the branch glyph in the run's state, its
 /// name with "· 3 of 3", a mono meta line ending in a state-colored accent ("done 11:02"), and
-/// the caller's controls on the trailing side.
+/// the caller's controls on the trailing side. On the Mac (`.gsv-hd`) it is the card's head: the title wraps, under it
+/// "Worker, running for 37m" (`meta`, then the time from `since`), `detail` in its tooltip, the controls to its right.
 public struct SHInspectorHeader<Trailing: View>: View {
     let title: String
     let position: String?
@@ -10,11 +20,21 @@ public struct SHInspectorHeader<Trailing: View>: View {
     let meta: String
     let accent: String?
     let minHeight: CGFloat
+    let since: Date?
+    let until: Date?
+    let hot: Bool
+    let detail: String?
     @ViewBuilder let trailing: () -> Trailing
 
-    /// `minHeight` lets the pane line its header up with the thread's.
+    /// `minHeight` lets the pane line its header up with the thread's. `since` and `until` end the Mac's subtitle with the
+    /// run's time (live from `since`); `hot` says it in `lanternText` (a run that asked its parent).
     public init(_ title: String, position: String? = nil, state: AgentState, meta: String, accent: String? = nil,
-                minHeight: CGFloat = 44, @ViewBuilder trailing: @escaping () -> Trailing) {
+                minHeight: CGFloat = 44, since: Date? = nil, until: Date? = nil, hot: Bool = false, detail: String? = nil,
+                @ViewBuilder trailing: @escaping () -> Trailing) {
+        self.since = since
+        self.until = until
+        self.hot = hot
+        self.detail = detail
         self.title = title
         self.position = position
         self.state = state
@@ -27,24 +47,30 @@ public struct SHInspectorHeader<Trailing: View>: View {
     public var body: some View {
         let sh = Color.sh
         #if os(macOS)
-        // The boards' `.iph`: the title in `ui` semibold over its facts in `caption`, no glyph; its actions on the right.
-        HStack(alignment: .top, spacing: SH.Space.m) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
+        // The boards' `.gsv-hd`: the title in `title` (it wraps) over "Worker, running for 37m" in `caption`, no glyph; its
+        // controls on the right, 2pt apart.
+        HStack(alignment: .top, spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.title)).foregroundStyle(sh.textPrimary)
+                    .lineLimit(SHInspectorMetrics.titleMaxLines).truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("\(Text(meta))\(Text(accentText).foregroundStyle(state.textColor))\(Text(position.map { " · \($0)" } ?? ""))")
-                    .font(.sh(.caption))
-                    .foregroundStyle(sh.textTertiary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .help(meta + accentText)
+                HStack(spacing: 0) {
+                    Text(meta)
+                    if let since { SHElapsedText(since: since, until: until) }
+                    Text(accentText)
+                }
+                .font(hot ? .sh(.caption, weight: .medium) : .sh(.caption))
+                .foregroundStyle(hot ? sh.lanternText : sh.textTertiary)
+                .lineLimit(1)
+                .help(detail ?? meta + accentText)
             }
             .accessibilityElement(children: .combine)
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: SH.Space.xs) { trailing() }
+            HStack(spacing: SH.Space.xxs) { trailing() }
         }
-        .padding(EdgeInsets(top: SH.Space.l, leading: 14, bottom: 10, trailing: SH.Space.m))
-        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .top)
+        .padding(EdgeInsets(top: SH.Space.l, leading: SH.Space.xl, bottom: 0, trailing: SH.Space.l))
+        .frame(maxWidth: .infinity, alignment: .top)
         #else
         HStack(spacing: SH.Space.m) {
             SHBranchGlyph(state, size: 13)
@@ -100,6 +126,30 @@ public struct SHRunBrief<Files: View>: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The Mac's goal is the card's title (`.gsv-title`); what is left is a finished or asking run's result, under the head.
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            if let result {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHBriefLabel(text: resultLabel, color: resultState.textColor)
+                    SHInlineText(text: result, codeSize: 11.5).equatable()
+                        .font(.sh(.ui, weight: .regular)).lineSpacing(SH.Space.xs)
+                        .foregroundStyle(sh.textPrimary)
+                        .lineLimit(8)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    files()
+                }
+                .padding(.top, SH.Space.l)
+                .padding(.bottom, SH.Space.l)
+                .overlay(alignment: .bottom) { SHHairline() }
+                .shTransition(.disclosure)
+            }
+        }
+        .shAnimation(.disclosure, value: result != nil)
+        .padding(.horizontal, SH.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #else
         VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(alignment: .firstTextBaseline) {
                 SHBriefLabel(text: "Goal")
@@ -131,14 +181,6 @@ public struct SHRunBrief<Files: View>: View {
             }
         }
         .shAnimation(.disclosure, value: result != nil)
-        #if os(macOS)
-        // The boards' `.igoal`: 14pt in, 8pt over and 10pt under, a hairline beneath, on the pane's own fill.
-        .padding(.top, SH.Space.m)
-        .padding(.bottom, 10)
-        .overlay(alignment: .bottom) { SHHairline() }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        #else
         .padding(.vertical, 10)
         .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,3 +233,37 @@ extension SHRunActions where Trailing == EmptyView {
         self.init(actions: actions) { EmptyView() }
     }
 }
+
+#if os(macOS)
+/// The Steer field's send (the boards' `.gsv-send`): an arrow in a 24pt circle, on the ink fill once there is something to send and
+/// on `bgSelected` with a dim arrow before.
+public struct SHInspectorSendButton: View {
+    let label: String
+    let help: String
+    let enabled: Bool
+    let action: () -> Void
+
+    public init(_ label: String, help: String = "", enabled: Bool, action: @escaping () -> Void) {
+        self.label = label
+        self.help = help
+        self.enabled = enabled
+        self.action = action
+    }
+
+    public var body: some View {
+        let sh = Color.sh
+        Button(action: action) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: SHInspectorMetrics.sendGlyph, weight: .semibold))
+                .foregroundStyle(enabled ? sh.textOnPrimary : sh.textTertiary)
+                .frame(width: SHInspectorMetrics.sendSize, height: SHInspectorMetrics.sendSize)
+                .background(enabled ? sh.primary : sh.bgSelected, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(help)
+        .accessibilityLabel(label)
+    }
+}
+#endif
