@@ -258,8 +258,11 @@ struct ComposerTextField: NSViewRepresentable {
                   appliedStyle == nil || (window != nil && !isHiddenOrHasHiddenAncestor) else { return }
             font = SHFonts.platform(mono: false, weight: .regular, size: style.size * style.scale)
             textColor = NSColor(style.text)
+            // One line: a placeholder wider than the room beside the controls is cut, never wrapped, so the card keeps its height.
+            let oneLine = NSMutableParagraphStyle()
+            oneLine.lineBreakMode = .byTruncatingTail
             placeholderAttributedString = NSAttributedString(string: style.placeholder, attributes: [
-                .font: font!, .foregroundColor: NSColor(style.placeholderColor)
+                .font: font!, .foregroundColor: NSColor(style.placeholderColor), .paragraphStyle: oneLine
             ])
             editor.insertionPointColor = NSColor(style.caret)
             let paragraph = NSMutableParagraphStyle()

@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- The Shepherd Design crook (SHCrook) in lantern, as the Mark board draws it: a 24pt glyph box at
-     40/72 of the tile, centred. -->
+<!-- The crook alone (AppIconCrook board, GlassAppIcon frame "full"): the 24pt SHCrook glyph at
+     translate(149.5 187) scale(25) on the board's 824pt macOS tile, scaled to the 1024 canvas edge to edge.
+     Its colour comes from the layer's fill in icon.json, per appearance. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <g transform="translate(227.556 227.556) scale(23.7037)">
-    <path
-      d="M9 22V9.5a5 5 0 0 1 10 0v.5a2.5 2.5 0 0 1-5 0"
-      fill="none"
-      stroke="#F2A93B"
-      stroke-width="2.2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
+  <g transform="translate(512 512) scale(1.242718) translate(-512 -512)">
+    <g transform="translate(149.5 187) scale(25)">
+      <!-- SHCrook's stroke (M9 22V9.5a5 5 0 0 1 10 0v.5a2.5 2.5 0 0 1-5 0, width 2.2, round caps) as its filled
+           outline, so the legacy .icns renderer, which fills a layer's paths, draws the same crook. -->
+      <path d="M7.9 22V9.5A6.1 6.1 0 0 1 20.1 9.5V10A3.6 3.6 0 0 1 12.9 10A1.1 1.1 0 0 1 15.1 10A1.4 1.4 0 0 0 17.9 10V9.5A3.9 3.9 0 0 0 10.1 9.5V22A1.1 1.1 0 0 1 7.9 22Z" fill="#000000"/>
+    </g>
   </g>
 </svg>

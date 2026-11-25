@@ -15,6 +15,9 @@ extension AppLayout {
     static let mainColumnMinWidth: CGFloat = 720
     /// The title-bar strip the window controls sit in, for surfaces without a toolbar.
     static let trafficLightHeight: CGFloat = 38
+    /// The close button's centre from the window's top leading corner (`.lights` in the boards): on the 44pt row
+    /// the sidebar's top bar and the toolbar share, 22pt in from the window's leading edge to its edge.
+    static let windowControlsCenter = CGPoint(x: 28, y: SHSidebarMetrics.panelInset + SHSidebarMetrics.topBarHeight / 2)
     /// How far a toolbar that runs under the window controls starts from the leading edge.
     static let trafficLightInset: CGFloat = 70
 
@@ -64,6 +67,9 @@ extension AppLayout {
 
     // Toolbar
     static let headerHeight: CGFloat = SHToolbarMetrics.height
+    /// The thread toolbar's distance from the window's top (the boards' 8pt window padding), so its row is the docked
+    /// sidebar's top bar's and the window controls' (`windowControlsCenter`).
+    static let toolbarTop: CGFloat = SHSidebarMetrics.panelInset
     static let headerPadding: CGFloat = SHToolbarMetrics.leadingPadding
 
     // Side pane (its tabs, or the subagent inspector over them; PaneStates)

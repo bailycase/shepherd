@@ -7,9 +7,10 @@ public enum SHToolbarMetrics {
     /// The thread toolbar's title sits 28pt in from the column (the boards' `.tbar`), its capsule 4pt from the edge.
     public static let leadingPadding: CGFloat = 28
     public static let trailingPadding: CGFloat = 4
-    /// The trailing controls' capsule (the boards' `.cap`): 32pt tall, padded 4, its buttons 2pt apart.
+    /// The trailing controls' capsule (the boards' `.cap`): 32pt tall, its buttons 2pt apart. Padded 2, not the boards' 4,
+    /// so a round button at either end is concentric with the capsule's.
     public static let capsuleHeight: CGFloat = 32
-    public static let capsulePadding: CGFloat = 4
+    public static let capsulePadding: CGFloat = 2
     public static let capsuleGap: CGFloat = 2
     /// Pane headers sit a little tighter.
     public static let paneLeadingPadding: CGFloat = 12
@@ -20,7 +21,7 @@ public enum SHToolbarMetrics {
 /// one (a link, when it is a sub-thread), the title in `title`, then its space in `textTertiary`
 /// ("Speed up checkout CI  payments-api"), an accessory, and the trailing controls in a raised
 /// capsule (the side-pane button and the options menu). While the sidebar is not docked, Show
-/// sidebar and New thread lead; `leadingInset` clears the window controls. The space gives way
+/// sidebar leads; `leadingInset` clears the window controls. The space gives way
 /// first when the toolbar narrows, then the parent, then the title truncates.
 public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     let title: String
@@ -31,17 +32,14 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
-    let newThread: (() -> Void)?
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let trailing: () -> Trailing
 
     public init(_ title: String, project: String? = nil, titleHelp: String? = nil,
                 parent: String? = nil, openParent: (() -> Void)? = nil,
                 leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
-                newThread: (() -> Void)? = nil,
                 @ViewBuilder accessory: @escaping () -> Accessory,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
-        self.newThread = newThread
         self.title = title
         self.project = project
         self.titleHelp = titleHelp
@@ -58,19 +56,11 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
         let _ = SHRenderProbe.tick("toolbar.thread")
         HStack(spacing: SH.Space.m) {
             if let sidebar {
-                HStack(spacing: SHSidebarMetrics.topBarButtonGap) {
-                    Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                        .buttonStyle(.shIcon)
-                        .shHelp(sidebarLabel)
-                        .accessibilityLabel(sidebarLabel)
-                    if let newThread {
-                        Button(action: newThread) { Image(systemName: "square.and.pencil") }
-                            .buttonStyle(.shIcon)
-                            .shHelp("New thread")
-                            .accessibilityLabel("New thread")
-                    }
-                }
-                .padding(.trailing, SH.Space.l)
+                Button(action: sidebar) { Image(systemName: "sidebar.left") }
+                    .buttonStyle(.shIcon)
+                    .shHelp(sidebarLabel)
+                    .accessibilityLabel(sidebarLabel)
+                    .padding(.trailing, SH.Space.l)
             }
             // The space gives way first: it shows only while everything fits at full length.
             ViewThatFits(in: .horizontal) {
@@ -84,7 +74,7 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
                     .layoutPriority(1)
             }
         }
-        // Past the window controls the boards start the sidebar and New thread buttons 24pt on (GXSidebarHidden).
+        // Past the window controls the boards start Show sidebar 24pt on (GXSidebarHidden).
         .padding(.leading, (sidebar == nil ? SHToolbarMetrics.leadingPadding : SH.Space.xxl) + leadingInset)
         .padding(.trailing, SHToolbarMetrics.trailingPadding)
         .frame(height: SHToolbarMetrics.height)
@@ -157,15 +147,15 @@ public struct SHToggleBadge: View {
 
 extension SHThreadToolbar where Accessory == EmptyView, Trailing == EmptyView {
     /// A toolbar with only a title (no thread on screen).
-    public init(_ title: String, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
-                newThread: (() -> Void)? = nil) {
-        self.init(title, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel, newThread: newThread,
+    public init(_ title: String, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar") {
+        self.init(title, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel,
                   accessory: { EmptyView() }, trailing: { EmptyView() })
     }
 }
 
 /// The toolbar's trailing controls in the boards' `.cap`: a 32pt capsule on `bgRaised` with a 1px
-/// line and the `lift` shadow, its icon buttons 2pt apart. Nothing at all when it holds nothing.
+/// line and the `lift` shadow, its icon buttons 2pt apart and round, so their fills follow its ends.
+/// Nothing at all when it holds nothing.
 public struct SHToolbarCapsule<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -174,6 +164,7 @@ public struct SHToolbarCapsule<Content: View>: View {
     public var body: some View {
         let shape = Capsule()
         HStack(spacing: SHToolbarMetrics.capsuleGap) { content() }
+            .environment(\.shIconButtonsRound, true)
             .padding(.horizontal, SHToolbarMetrics.capsulePadding)
             .frame(height: SHToolbarMetrics.capsuleHeight)
             .shLift(shape)

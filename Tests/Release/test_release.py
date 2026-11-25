@@ -1772,7 +1772,7 @@ class RetireWorkflowTests(unittest.TestCase):
             self.assertFalse(release.plan(ref, "202609250000", asc_key=True, testflight=True)["ios"], ref)
 
     def test_it_runs_on_linux_and_reads_the_repo_without_writing_it(self):
-        self.assertRegex(self.job, r"(?m)^    runs-on: blacksmith-2vcpu-ubuntu-2404$")
+        self.assertRegex(self.job, r"(?m)^    runs-on: ubuntu-24\.04$")
         self.assertRegex(self.job, r"(?m)^    timeout-minutes: 60$")
         permissions = self.block(self.job, "permissions", "    ")
         self.assertEqual(re.findall(r"^      (\S+): (\S+)", permissions, re.M), [("contents", "read")])

@@ -45,7 +45,7 @@ jobs:
   plan:
     name: plan
     if: github.event.action != 'closed'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       swift: ${{ steps.plan.outputs.swift }}
@@ -78,7 +78,7 @@ jobs:
   release-rules:
     name: release rules
     needs: plan
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +89,7 @@ jobs:
   extensions:
     name: extension tests
     needs: plan
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
       max-parallel: 4
       matrix:
         lane: ${{ fromJSON(needs.plan.outputs.lanes) }}
-    runs-on: blacksmith-6vcpu-macos-26
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -194,7 +194,7 @@ jobs:
     name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostics == 'ui' && 'UI diagnostics' || 'CI' }}
     needs: [plan, release-rules, extensions, tests]
     if: ${{ !cancelled() && github.event.action != 'closed' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       RESULTS: ${{ join(needs.*.result, ' ') }}

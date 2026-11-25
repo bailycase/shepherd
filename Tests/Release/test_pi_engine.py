@@ -1007,12 +1007,22 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 settings = {line for line in result.stdout.splitlines() if line.startswith("SWIFT_")}
                 self.assertEqual(settings, batch_settings if channel == "nightly" else set())
 
-    def test_package_checkouts_are_cached_by_the_resolved_versions_before_the_build(self):
-        names = [title for title, _ in self.steps()]
-        cache = self.step("Cache Swift package checkouts")
-        self.assertIn("path: build/SourcePackages", cache)
-        self.assertIn("swiftpm/Package.resolved", cache)
-        self.assertLess(names.index("Cache Swift package checkouts"), names.index("Build ${{ env.APP_NAME }}"))
+    def test_package_cache_misses_resolve_and_save_before_the_build(self):
+        steps = dict(self.steps())
+        names = list(steps)
+        order = ("Restore Swift package checkouts", "Resolve pinned Swift packages",
+                 "Save Swift package checkouts", "Build ${{ env.APP_NAME }}")
+        self.assertEqual([name for name in names if name in order], list(order))
+        restore, resolve, save = (steps[name] for name in order[:3])
+        self.assertIn("uses: actions/cache/restore@", restore)
+        self.assertIn("swiftpm/Package.resolved", restore)
+        self.assertIn("-onlyUsePackageVersionsFromResolvedFile -resolvePackageDependencies", resolve)
+        self.assertIn("uses: actions/cache/save@", save)
+        self.assertIn("key: ${{ steps.spm.outputs.cache-primary-key }}", save)
+        for step in (restore, save):
+            self.assertIn("path: build/SourcePackages", step)
+        for step in (resolve, save):
+            self.assertIn("if: steps.spm.outputs.cache-hit != 'true'", step)
 
     def test_changed_shared_inputs_drop_release_products_but_keep_package_downloads(self):
         body = self.step("Start over when shared build inputs changed")
