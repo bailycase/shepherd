@@ -277,7 +277,8 @@ struct AgentLayoutView: View, Equatable {
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
         RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                       maximized: inspecting == nil && model.sideMaximized, card: true, publishesReserve: model.isVisible) {
+                       maximized: inspecting == nil && model.sideMaximized, card: true, inspector: inspecting != nil,
+                       publishesReserve: model.isVisible) {
             PaneTreeView(vm: vm, model: model)
         } pane: {
             if let thread {
@@ -995,7 +996,8 @@ private struct RemoteAgentLayoutView: View, Equatable {
         let sideTab = model.sideTab
         VStack(spacing: 0) {
             RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
-                           maximized: inspecting == nil && model.sideMaximized, card: true, publishesReserve: model.isVisible) {
+                           maximized: inspecting == nil && model.sideMaximized, card: true, inspector: inspecting != nil,
+                       publishesReserve: model.isVisible) {
                 VStack(spacing: 0) {
                     if let offline = model.offline {
                         FleetOfflineBannerView(banner: offline) { [vm, ref] in vm.remoteHosts.reconnect(id: ref.hostID) }

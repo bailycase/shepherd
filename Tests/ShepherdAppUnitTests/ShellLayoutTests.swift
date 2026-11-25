@@ -130,6 +130,17 @@ struct ShellLayoutTests {
         #expect(state.width == 699)
     }
 
+    /// GXSubagents' card: 404 wide, 24 in from the window's edge and 8 from the thread, whatever width a tab's pane was dragged to; in a column
+    /// too narrow to dock it, it overlays the thread and still fits.
+    @Test func theInspectorCardKeepsItsBoardWidthBesideTheThread() {
+        let edge = AppLayout.inspectorCardEdge
+        #expect(edge == 32 && AppLayout.inspectorCardBottom == 24 && AppLayout.inspectorCardWidth == 404)
+        let docked = ShellLayout.rightPane(containerWidth: 1344, preferredWidth: AppLayout.inspectorCardWidth, edge: edge)
+        #expect(docked.mode == .docked && docked.width == 404 && docked.contentWidth == 1344 - 404 - edge)
+        let narrow = ShellLayout.rightPane(containerWidth: 700, preferredWidth: AppLayout.inspectorCardWidth, edge: edge)
+        #expect(narrow.mode == .overlay && narrow.width + edge <= 700 && narrow.contentWidth == 700)
+    }
+
     @Test(arguments: Array(stride(from: 0.0, through: 2400, by: 37)))
     func thePaneNeverProducesANegativeOrOversizedWidth(column: Double) {
         for preferred in [nil, 0, 200, 600, 5000] as [Double?] {

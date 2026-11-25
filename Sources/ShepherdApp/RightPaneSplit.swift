@@ -96,6 +96,9 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     /// The pane is a card beside the thread, 8pt in from the window's top, bottom and trailing edges and from the thread
     /// (a thread's, GXSidePane); else a full-height column behind a 1pt divider (a Project page's).
     var card = false
+    /// The pane shows a subagent: its card floats beside the thread from just under the toolbar to the bottom, in from the
+    /// window's edge (GXSubagents' `.insp`), the toolbar keeping the column's whole width. Taken only with `card`.
+    var inspector = false
     /// The layout is on screen: only it tells the toolbar how much of the column the card takes.
     var publishesReserve = false
     @ViewBuilder let content: () -> Content
@@ -108,13 +111,19 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     var body: some View {
         GeometryReader { geo in
             let total = geo.size.width
-            let edge = card ? AppLayout.paneCardEdge : AppLayout.dividerWidth
-            let layout = RightPaneDrag.layout(drag, state: state, containerWidth: total, edge: edge)
+            let floating = card && inspector
+            let edge = floating ? AppLayout.inspectorCardEdge : card ? AppLayout.paneCardEdge : AppLayout.dividerWidth
+            // The inspector is a fixed-size card (the board's 404pt); a tab's pane is the width the user dragged it to.
+            let layout = floating ? ShellLayout.rightPane(containerWidth: total, preferredWidth: AppLayout.inspectorCardWidth, edge: edge)
+                : RightPaneDrag.layout(drag, state: state, containerWidth: total, edge: edge)
             let docked = layout.mode == .docked
             let covers = showPane && maximized
             let paneWidth = covers ? total - (card ? AppLayout.paneCardEdge : 0) : layout.width
             let contentWidth = showPane && docked && !covers ? layout.contentWidth : total
-            let reserve = card && showPane && !covers ? layout.width + edge : 0
+            // The toolbar gives way to a tab's card, which runs up beside it; the inspector's card sits under it.
+            let reserve = card && showPane && !covers && !floating ? layout.width + edge : 0
+            let cardTop = floating ? topInset + SHSidePaneMetrics.cardInset : SHSidePaneMetrics.cardInset
+            let cardBottom = floating ? AppLayout.inspectorCardBottom : SHSidePaneMetrics.cardInset
             // The thread stays the first child in both modes, so opening a pane never remounts it.
             ZStack(alignment: .topLeading) {
                 content()
@@ -130,17 +139,19 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                     .animation(nil, value: showPane)
                 if showPane {
                     HStack(spacing: 0) {
-                        if !covers { handle(total: total, width: layout.width, edge: edge) }
+                        if !covers && !floating { handle(total: total, width: layout.width, edge: edge) }
+                        if floating { Color.clear.frame(width: SHSidePaneMetrics.cardGap) }
                         if card {
                             // The card: raised, rounded and lifted (the boards' `.pane`), the toolbar's row inside it.
                             let shape = RoundedRectangle(cornerRadius: SH.Radius.xl)
                             pane()
-                                .frame(width: paneWidth, height: geo.size.height - 2 * SHSidePaneMetrics.cardInset)
+                                .frame(width: paneWidth, height: max(0, geo.size.height - cardTop - cardBottom))
                                 .shCard(lift: true)
                                 .shFloatCardShadow(shape, floating: !docked && !covers)
-                                .padding(.vertical, SHSidePaneMetrics.cardInset)
+                                .padding(.top, cardTop)
+                                .padding(.bottom, cardBottom)
                                 .padding(.leading, covers ? SHSidePaneMetrics.cardGap : 0)
-                                .padding(.trailing, SHSidePaneMetrics.cardInset)
+                                .padding(.trailing, floating ? AppLayout.inspectorCardTrailing : SHSidePaneMetrics.cardInset)
                         } else {
                             pane()
                                 .frame(width: paneWidth, height: geo.size.height)
