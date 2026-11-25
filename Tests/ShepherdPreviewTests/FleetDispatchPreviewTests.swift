@@ -310,7 +310,7 @@ struct FleetDispatchPreviewTests {
         try await Preview.renderMatrix("fleet4d-new-thread-chip", size: CGSize(width: 1280, height: 760)) {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome())
         }
-        try await Preview.renderMatrix("fleet4d-new-thread-popover", size: CGSize(width: 1280, height: 760)) {
+        try await Preview.renderMatrix("fleet4d-new-thread-popover", size: CGSize(width: 1280, height: 1040)) {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome(), whereOpen: true)
         }
         // The Mac Auto picks lacks an MCP server's command: still the pick, and the note says the thread starts without that server.

@@ -189,7 +189,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         let rowCount = runBase + runs.count
         let indexByID = Dictionary(options.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         let single = sections.count == 1
-        SHPopMenu(width: SHPlaceMenuMetrics.width) {
+        SHPopMenu(width: runs.isEmpty ? SHPlaceMenuMetrics.width : SHFleetPlaceMetrics.width) {
             HStack(spacing: SH.Space.m) {
                 Image(systemName: "magnifyingglass").font(.system(size: M.searchGlyph, weight: .medium)).foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
@@ -284,10 +284,9 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                         SHPopMenuHeader("Where it runs")
                         ForEach(Array(runs.enumerated()), id: \.element.id) { offset, run in
                             let index = runBase + offset
-                            SHPopMenuRow(run.title, lead: .check(run.isCurrent), trailing: run.menuWord, enabled: run.isEnabled,
-                                         highlighted: selection == index, index: index, onHighlight: { selection = $0 }) { onRun(run) }
-                                .help(run.detail)
-                                .accessibilityLabel("\(run.title), \(run.roomWord), \(run.detail)" + (run.isCurrent ? ", chosen" : ""))
+                            SHFleetPlaceMenuRow(run, word: run.roomWord, highlighted: selection == index, index: index,
+                                                onHighlight: { selection = $0 }) { onRun(run) }
+                                .equatable()
                         }
                         if let runsNote { SHPopMenuNote(runsNote) }
                     }
@@ -323,13 +322,25 @@ public struct SHPlaceChipLabel: View {
         self.host = host
     }
 
+    /// "Mac mini" as the boards name it after Auto: "mini".
+    private static func shortName(_ name: String) -> String {
+        name.hasPrefix("Mac ") && name.count > 4 ? String(name.dropFirst(4)).lowercased() : name
+    }
+
     public var body: some View {
         #if os(macOS)
         // The boards' `.where`: the folder, the project in medium ink, "on This Mac" in `textSecondary`.
         HStack(spacing: SH.Space.xs + 1) {
             Image(systemName: "folder").font(.system(size: SH.Space.l + 1)).foregroundStyle(.sh.textSecondary)
             Text(project).font(.sh(.ui, weight: .medium)).foregroundStyle(.sh.textPrimary).lineLimit(1)
-            if let host { Text("on \(host)").font(.sh(.ui)).foregroundStyle(.sh.textSecondary).lineLimit(1) }
+            if let host {
+                // "Auto · Mac mini" reads "on Auto", then the Mac Auto picked in the quiet color (FleetNewThread).
+                let place = host.components(separatedBy: " · ")
+                Text("on \(place[0])").font(.sh(.ui)).foregroundStyle(.sh.textSecondary).lineLimit(1)
+                if place.count > 1 {
+                    Text(Self.shortName(place[1])).font(.sh(.ui)).foregroundStyle(.sh.textTertiary).lineLimit(1)
+                }
+            }
             SHChipChevron()
         }
         .accessibilityElement(children: .ignore)

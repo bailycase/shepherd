@@ -491,7 +491,17 @@ struct NewThreadPage: View {
         case .bad: .bad
         default: .quiet
         }
-        return SHFleetPlaceRow(id: option.id, title: option.name, detail: option.detail, room: option.room, roomWord: option.roomWord,
+        // The boards' words: commas between the facts, Auto's pick in the room column, and the room as words ("Most room").
+        let detail = option.pick == .auto ? "The Mac with the most room when you send." : option.detail.replacingOccurrences(of: " · ", with: ", ")
+        let room = switch option.roomWord {
+        case "most": "Most room"
+        case "some": "Some room"
+        case "little": "Little room"
+        case "full": "No room"
+        case "asleep": "Asleep"
+        default: option.roomWord
+        }
+        return SHFleetPlaceRow(id: option.id, title: option.name, detail: detail, room: option.room, roomWord: room,
                                tone: tone, isCurrent: option.chosen, isEnabled: option.selectable)
     }
 

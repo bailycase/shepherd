@@ -96,7 +96,7 @@ extension AppLayout {
     static let fleetFromDash: [CGFloat] = [4, 3]
     static let fleetResultTick: CGFloat = 12
     /// A sent thread as one line in the thread that sent it (FleetDispatch): 36pt tall, its arrow in a 14pt slot.
-    static let fleetCompactRowHeight: CGFloat = 36
+    static let fleetCompactRowHeight: CGFloat = 32
     static let fleetCompactRowGlyph: CGFloat = 14
     /// A card's buttons are 26pt tall.
     static let fleetCardButtonHeight: CGFloat = 26

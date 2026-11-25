@@ -359,7 +359,7 @@ struct FleetMacList: View, Equatable {
                     .font(.sh(.caption, weight: .medium))
                     .foregroundStyle(Color.sh.textTertiary)
                     .padding(.horizontal, AppLayout.fleetRowInset)
-                    .padding(.top, SH.Space.l)
+                    .padding(.top, group.id == groups.first?.id ? 0 : SH.Space.l)
                     .padding(.bottom, SH.Space.xs)
                     .accessibilityAddTraits(.isHeader)
                 }
@@ -395,7 +395,7 @@ struct FleetListRowView: View, Equatable {
                     Text(row.subtitle).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text(row.word).font(.sh(.caption, weight: .regular)).foregroundStyle(row.attention ? sh.lanternText : sh.textSecondary).lineLimit(1)
+                Text(row.word).font(.sh(.caption, weight: .regular)).foregroundStyle(row.attention ? sh.lantern : sh.textSecondary).lineLimit(1)
                     .fixedSize()
             }
             .padding(.horizontal, AppLayout.fleetRowInset)
@@ -490,7 +490,7 @@ struct FleetMacDetailView: View, Equatable {
             FleetFactRow("CPU") { FleetMeterValue(meter: detail.cpu) }
             FleetFactRow("Memory") { FleetMeterValue(meter: detail.memory) }
             FleetFactRow("Power") { Text(detail.power).foregroundStyle(sh.textPrimary) }
-            FleetFactRow("Ready") { Text(detail.ready).foregroundStyle(detail.needsAttention ? sh.lanternText : sh.textPrimary) }
+            FleetFactRow("Ready") { Text(detail.ready).foregroundStyle(detail.needsAttention ? sh.lantern : sh.textPrimary) }
             FleetFactRow("Agents") { Text(detail.agents).foregroundStyle(sh.textPrimary) }
             if let link = detail.link {
                 FleetFactRow("Link") { Text(link).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle) }
@@ -590,7 +590,7 @@ struct FleetDispatchesCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
     }
 }
 

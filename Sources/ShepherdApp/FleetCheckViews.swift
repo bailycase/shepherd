@@ -38,7 +38,7 @@ extension FleetCheckCell {
         let sh = Color.sh
         return switch tone {
         case .ok: sh.textPrimary
-        case .warn: sh.lanternText
+        case .warn: sh.lantern
         case .fixing: sh.running
         case .none, .old: sh.textTertiary
         }
@@ -275,7 +275,7 @@ private struct FleetCheckPanel: View {
         let sh = Color.sh
         return VStack(alignment: .leading, spacing: SH.Space.l) {
             if !detail.pill.isEmpty {
-                Text(detail.pill).font(.sh(.caption, weight: .regular)).foregroundStyle(detail.pillTone == .warn ? sh.lanternText : sh.textTertiary)
+                Text(detail.pill).font(.sh(.caption, weight: .regular)).foregroundStyle(detail.pillTone == .warn ? sh.lantern : sh.textTertiary)
             }
             Text(detail.title).font(.sh(.title)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
             if !detail.body.isEmpty {
