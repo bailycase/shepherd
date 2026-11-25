@@ -24,7 +24,7 @@ struct ForgeListScreen: View {
             if pad {
                 ForgeSplit(store: store, verticalBars: verticalBars)
             } else {
-                ForgeListColumn(store: store, chosen: nil) { ForgeHooks.open($0, store: store, navigator: navigator) }
+                ForgeListColumn(store: store, chosen: nil, controlsInBar: true) { ForgeHooks.open($0, store: store, navigator: navigator) }
             }
         }
         .background(Color.sh.bgWindow)
@@ -39,11 +39,20 @@ struct ForgeListScreen: View {
         // down the side (iPhone Duo) Back and ••• stay the system's.
         .toolbar(pad && !verticalBars ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            if !pad || verticalBars {
+            if verticalBars {
+                // Down the side (DuoClosedIPList) the bar holds Back and •••: the repository, New issue and Refresh are in it.
                 ToolbarOverflowMenu {
+                    ForgeRepoMenuItems(store: store)
+                    ForgeNewIssueButton(store: store, inMenu: true)
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await store.loadRepos(); await store.loadLists() }
                     }
+                }
+            } else if !pad {
+                // The repository and New issue in the bar's own capsule (MobileIPList).
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    ForgeRepoPicker(store: store)
+                    ForgeNewIssueButton(store: store)
                 }
             }
         }
@@ -55,12 +64,13 @@ struct ForgeListColumn: View {
     let store: ForgeStore
     /// The row the iPad shows beside the list.
     let chosen: ForgeItemKey?
+    /// The repository and New issue are the screen's bar's; otherwise the column's head draws them.
+    var controlsInBar = false
     let open: (ForgeItemKey) -> Void
     /// Back, where the column stands alone under a hidden bar (an iPad window too narrow for the
     /// item beside the list).
     var back: (() -> Void)? = nil
     @State private var query = ""
-    @State private var newIssue = false
     @FocusState private var searching: Bool
 
     var body: some View {
@@ -69,51 +79,20 @@ struct ForgeListColumn: View {
             store.clearSearch()
             query = ""
         })
+        @Bindable var store = store
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                HStack(spacing: SH.Space.m) {
-                    if let back {
-                        Button(action: back) {
-                            Image(systemName: "chevron.left")
-                                .font(.sh(.headline))
-                                .foregroundStyle(Color.sh.textPrimary)
-                                .frame(width: SH.Height.touch, height: SH.Height.touch)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Back")
-                    }
-                    Text("Issues & PRs")
-                        .font(.sh(.display))
-                        .foregroundStyle(Color.sh.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: SH.Space.m)
-                    ForgeRepoPicker(store: store)
-                    if store.browseHost != nil {
-                        Button { newIssue = true } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.sh(.headline))
-                                .foregroundStyle(Color.sh.textPrimary)
-                                .frame(width: SH.Height.touch, height: SH.Height.touch)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(store.repos.isEmpty)
-                        .accessibilityLabel("New issue")
-                    }
-                }
-                ForgeSegmented(selection: kind, options: [
-                    .init(value: .issue, title: "Issues", count: store.list(.issue)?.value?.count),
-                    .init(value: .pullRequest, title: "Pull requests", count: store.list(.pullRequest)?.value?.count),
+                head
+                ReviewSegmented(selection: kind, options: [
+                    .init(value: .issue, title: "Issues", note: store.list(.issue)?.value.map { "\($0.count)" }),
+                    .init(value: .pullRequest, title: "Pull requests", note: store.list(.pullRequest)?.value.map { "\($0.count)" }),
                 ])
                 SHTouchSearchField("Search or paste a link", text: $query, focus: $searching) {
                     Task { if let key = await store.submit(query) { query = ""; open(key) } }
                 }
                 .onChange(of: query) { _, text in if text.isEmpty { store.clearSearch() } }
                 if store.canBrowse { ForgeFilterBar(store: store) }
-                ForgeListBody(store: store, chosen: chosen, open: open)
+                ForgeListBody(store: store, chosen: chosen, plain: !controlsInBar, open: open)
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
@@ -124,7 +103,53 @@ struct ForgeListColumn: View {
             await store.loadLists()
             await store.loadBrowse()
         }
-        .sheet(isPresented: $newIssue) { ForgeNewIssueSheet(store: store, opened: open) }
+        .sheet(isPresented: $store.composingIssue) { ForgeNewIssueSheet(store: store, opened: open) }
+    }
+
+    /// The title (MobileIPList's 28pt); on iPad, with Back and the capsule of the repository and New issue.
+    private var head: some View {
+        HStack(spacing: SH.Space.m) {
+            if let back {
+                Button(action: back) {
+                    Image(systemName: "chevron.left")
+                        .font(.sh(.headline))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .frame(width: SH.Height.touch, height: SH.Height.touch)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+            }
+            Text("Issues & PRs")
+                .font(.shSans(controlsInBar ? MobileLayout.forgeListTitle : MobileLayout.touchTitleFont, .bold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: SH.Space.m)
+            if !controlsInBar {
+                HStack(spacing: 0) {
+                    ForgeRepoPicker(store: store)
+                    ForgeNewIssueButton(store: store)
+                }
+                .padding(.horizontal, SH.Space.xs)
+                .glassEffect(.regular, in: Capsule())
+            }
+        }
+        .padding(.horizontal, SH.Space.xs)
+    }
+}
+
+/// New issue: the capsule's second button.
+struct ForgeNewIssueButton: View {
+    let store: ForgeStore
+
+    var body: some View {
+        if store.browseHost != nil {
+            Button("New issue", systemImage: "square.and.pencil") { store.composingIssue = true }
+                .labelStyle(.iconOnly)
+                .disabled(store.repos.isEmpty)
+        }
     }
 }
 
@@ -132,6 +157,8 @@ struct ForgeListColumn: View {
 private struct ForgeListBody: View {
     let store: ForgeStore
     let chosen: ForgeItemKey?
+    /// iPad's list: rows on the page with a rule between them, the chosen one filled, not cards.
+    let plain: Bool
     let open: (ForgeItemKey) -> Void
 
     var body: some View {
@@ -205,7 +232,7 @@ private struct ForgeListBody: View {
 
     @ViewBuilder private func sections(_ model: ForgeListModel, emptyClosed: Bool) -> some View {
         ForEach(model.sections) { section in
-            VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 if section.loaded {
                     if !section.rows.isEmpty || section.id.loadsOnDemand {
                         if section.id.loadsOnDemand {
@@ -219,12 +246,24 @@ private struct ForgeListBody: View {
                         }
                         if section.rows.isEmpty {
                             Text("Nothing here").shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
-                        } else {
-                            SHLazyListCard(section.rows) { row in
-                                Button { open(row.key) } label: {
-                                    ForgeRowView(row: row, selected: row.key == chosen).equatable()
+                        } else if plain {
+                            LazyVStack(spacing: 0) {
+                                ForEach(section.rows) { row in
+                                    VStack(spacing: 0) {
+                                        if row.id != section.rows.first?.id { ReviewRowRule() }
+                                        Button { open(row.key) } label: {
+                                            ForgeRowView(row: row, selected: row.key == chosen, chevron: false).equatable()
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
-                                .buttonStyle(.shRow(radius: 0))
+                            }
+                        } else {
+                            ReviewLazyCard(section.rows) { row in
+                                Button { open(row.key) } label: {
+                                    ForgeRowView(row: row, selected: false).equatable()
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -242,9 +281,9 @@ private struct ForgeListBody: View {
 
     private func header(_ section: ForgeSectionRows, symbol: String?) -> some View {
         HStack(spacing: SH.Space.s) {
-            SHListHeader(section.title, count: section.loaded ? section.rows.count : nil, style: .sidebar)
+            ReviewSectionHead(title: section.title, count: section.loaded ? "\(section.rows.count)" : nil)
             if let symbol {
-                Image(systemName: symbol).font(.sh(.micro, weight: .semibold)).foregroundStyle(Color.sh.textTertiary)
+                Image(systemName: symbol).font(.shSans(MobileLayout.touchDetailFont, .medium)).foregroundStyle(Color.sh.textTertiary)
                     .accessibilityHidden(true)
             }
         }
@@ -254,29 +293,32 @@ private struct ForgeListBody: View {
     }
 }
 
-/// An empty list (MobilePRStates' "List, nothing waiting"): the glyph, the words, Show closed.
+/// An empty list (MobilePRStates' "List, nothing waiting"): the words in a card, Show closed under.
 private struct ForgeNothingWaiting: View {
     let kind: ForgeKind
     let repoName: String
     let showClosed: () -> Void
 
     var body: some View {
-        VStack(spacing: SH.Space.m) {
-            Image(systemName: kind == .pullRequest ? ForgeGlyph.pullRequest : ForgeGlyph.issue)
-                .font(.sh(.display, weight: .regular))
-                .foregroundStyle(Color.sh.textTertiary)
-                .accessibilityHidden(true)
-            Text(ForgePresentation.emptyTitle(kind)).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
-            Text(ForgePresentation.emptyDetail(kind, repoName: repoName))
-                .shText(.caption).foregroundStyle(Color.sh.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Show closed", action: showClosed).buttonStyle(.sh(.secondary))
-                .padding(.top, SH.Space.xs)
+        VStack(spacing: SH.Space.l) {
+            VStack(spacing: SH.Space.s) {
+                Text(ForgePresentation.emptyTitle(kind))
+                    .font(.shSans(MobileLayout.touchBodyFont, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                Text(ForgePresentation.emptyDetail(kind, repoName: repoName))
+                    .font(.shSans(MobileLayout.touchDetailFont + 1)).lineSpacing(SH.Space.xxs).foregroundStyle(Color.sh.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, SH.Space.xl)
+            .padding(.vertical, SH.Space.xxl)
+            .shCard(radius: MobileLayout.touchCardRadius, lift: true)
+            .accessibilityElement(children: .combine)
+            Button("Show closed", action: showClosed)
+                .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .shSans(MobileLayout.touchBodyFont, .medium)))
+                .frame(minHeight: SH.Height.touch)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, SH.Space.xxl)
-        .padding(.horizontal, SH.Space.l)
+        .padding(.top, SH.Space.s)
     }
 }
 
@@ -300,7 +342,7 @@ private struct ForgeSplit: View {
                 }
             } else {
                 PadListDetail(listWidth: MobileLayout.forgeListWidth) {
-                    ForgeListColumn(store: store, chosen: current) { store.choose($0) }
+                    ForgeListColumn(store: store, chosen: current, controlsInBar: verticalBars) { store.choose($0) }
                 } detail: {
                     if let current {
                         ForgeItemContent(key: current, layout: .pad(verticalBars: verticalBars), openFile: { store.padFile = $0 })
@@ -310,7 +352,7 @@ private struct ForgeSplit: View {
                             .frame(maxHeight: .infinity, alignment: .top)
                     }
                 } single: {
-                    ForgeListColumn(store: store, chosen: nil, open: { push($0) },
+                    ForgeListColumn(store: store, chosen: nil, controlsInBar: verticalBars, open: { push($0) },
                                     back: verticalBars ? nil : { navigator.close(.forge(.list)) })
                         .task(id: store.reveal) {
                             guard let key = store.reveal else { return }
@@ -367,9 +409,9 @@ enum ForgeDetailLayout: Equatable {
     }
 }
 
-/// The iPad detail's head (iPadIPReview): Back, "#31" over "payments · Open", and the item's
-/// menu. Where the bars run down the side (iPhone Duo) Back and ••• are the bar's, and the head is
-/// only the centred title (DuoBookPR).
+/// The iPad detail's head (iPadIPReview): Back, "#31" over "payments · Open", and the item's menu
+/// in a glass circle. Where the bars run down the side (iPhone Duo) Back and ••• are the bar's, and
+/// the head is only the centred title (DuoBookPR).
 struct ForgePadHead<Items: View>: View {
     let title: String
     let subtitle: String?
@@ -390,16 +432,17 @@ struct ForgePadHead<Items: View>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back")
             }
-            ForgeTitle(title: title, subtitle: subtitle)
-                .frame(maxWidth: .infinity)
+            ForgeTitle(title: title, subtitle: subtitle, alignment: verticalBars ? .center : .leading)
+                .frame(maxWidth: .infinity, alignment: verticalBars ? .center : .leading)
             if !verticalBars {
                 Menu { menu() } label: {
                     Image(systemName: "ellipsis")
                         .font(.sh(.headline))
                         .foregroundStyle(Color.sh.textPrimary)
                         .frame(width: SH.Height.touch, height: SH.Height.touch)
-                        .contentShape(Rectangle())
+                        .contentShape(Circle())
                 }
+                .glassEffect(.regular, in: Circle())
                 .accessibilityLabel("More")
             }
         }
@@ -413,12 +456,13 @@ struct ForgePadHead<Items: View>: View {
 struct ForgeTitle: View {
     let title: String
     let subtitle: String?
+    var alignment: HorizontalAlignment = .center
 
     var body: some View {
-        VStack(spacing: SH.Space.xxs) {
-            Text(title).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+        VStack(alignment: alignment, spacing: SH.Space.xxs) {
+            Text(title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let subtitle {
-                Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)

@@ -78,43 +78,44 @@ struct ForgeIssueContent: View {
 
     @ViewBuilder private func page(_ model: ForgeIssueModel, store: ForgeStore) -> some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            // Tags wrap where a narrow column can't hold them in one line.
-            SHWrapStack {
-                ForgeTag(text: model.badge, tone: model.badgeTone)
-                ForEach(model.labels) { label in ForgeTag(text: label.name, tone: label.tone) }
-            }
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             Text(model.detail.summary.title)
-                .font(.shSans(MobileLayout.forgeItemTitle, .semibold))
+                .font(.shSans(MobileLayout.forgeItemTitle, .bold))
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .accessibilityAddTraits(.isHeader)
-            Text(model.byline).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+            // "Open · mara opened 1h ago · assigned to you"
+            Text("\(model.badge) \u{00B7} \(model.byline)").font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textSecondary)
             // The byline already says "assigned to you"; name the others.
             let viewer = model.detail.viewer?.lowercased()
             let others = model.detail.summary.assignees.filter { $0.lowercased() != viewer }
             if !others.isEmpty {
                 Text("Assigned to \(((model.detail.summary.assignedToViewer ? ["you"] : []) + others).joined(separator: ", "))")
-                    .font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                    .font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textSecondary)
+            }
+            // Labels wrap where a narrow column can't hold them in one line.
+            if !model.labels.isEmpty {
+                SHWrapStack { ForEach(model.labels) { label in ForgeTag(text: label.name) } }
+                    .padding(.top, SH.Space.s)
             }
         }
-        .padding(.top, SH.Space.s)
+        .padding(.horizontal, SH.Space.xs)
         if let failure = store.failure {
             SHBanner(.failed, title: failure) {
                 Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
             }
         }
         if model.body.isEmpty {
-            Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary)
+            Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary).padding(.horizontal, SH.Space.xs)
         } else {
-            ProseView(prose: model.body).equatable()
+            ProseView(prose: model.body).equatable().padding(.horizontal, SH.Space.xs)
         }
         if model.detail.summary.state == .open {
             handOff(model, store: store)
         }
         if !model.comments.isEmpty {
-            ForgeSectionHead(title: "Comments")
+            ReviewSectionHead(title: "Comments", count: "\(model.comments.count)")
             ForgeActivityList(items: model.comments)
         }
     }
@@ -122,51 +123,48 @@ struct ForgeIssueContent: View {
     /// Hand it to an agent: what Start a thread does, and where it runs.
     @ViewBuilder private func handOff(_ model: ForgeIssueModel, store: ForgeStore) -> some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             if let thread = model.thread {
-                Text("An agent has it").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
+                Text("An agent has it").font(.shSans(MobileLayout.touchBodyFont + 2, .semibold)).foregroundStyle(sh.textPrimary)
                 Text("\(thread.title) works on this issue\(thread.branch.map { " on \($0)" } ?? "").")
-                    .shText(.caption).foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.shSans(MobileLayout.touchBodyFont)).lineSpacing(SH.Space.xxs).foregroundStyle(sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Hand it to an agent").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
+                Text("Hand it to an agent").font(.shSans(MobileLayout.touchBodyFont + 2, .semibold)).foregroundStyle(sh.textPrimary)
                 Text("Starts a thread on a new worktree with this issue as the brief. The PR it opens links back here.")
-                    .shText(.caption).foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.shSans(MobileLayout.touchBodyFont)).lineSpacing(SH.Space.xxs).foregroundStyle(sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 SHWrapStack {
-                    SHTag(store.hostName(key.host), mono: true)
-                    SHTag("new worktree", mono: true)
+                    ForgeTag(text: store.hostName(key.host), mono: true)
+                    ForgeTag(text: "new worktree", mono: true)
                 }
+                .padding(.top, SH.Space.xs)
             }
         }
-        .padding(SH.Space.l)
+        .reviewCardPadding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: MobileLayout.cardRadius)
+        .shCard(radius: MobileLayout.touchCardRadius, lift: true)
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private func bar(_ store: ForgeStore, _ model: ForgeIssueModel?) -> some View {
-        HStack(spacing: SH.Space.m) {
-            Button("Comment") { store.sheet = ForgeSheet(key: key, kind: .comment) }
-                .buttonStyle(.shReviewBar(.secondary))
-                .frame(maxWidth: SH.Height.touch * 3)
+        ReviewGlassBar(horizontalInset: layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter) {
+            ReviewGlassBarItem(title: "Comment") { store.sheet = ForgeSheet(key: key, kind: .comment) }
             if let thread = model?.thread {
-                Button("Open thread") { navigator.open(.thread(AgentRef(host: key.host, agent: thread.agentID))) }
-                    .buttonStyle(.shReviewBar(.primary))
+                ReviewGlassBarItem(title: "Open thread", emphasis: .main) {
+                    navigator.open(.thread(AgentRef(host: key.host, agent: thread.agentID)))
+                }
             } else if model?.detail.summary.state == .open {
-                Button("Start a thread") { if let model { start(model, store: store) } }
-                    .buttonStyle(.shReviewBar(.primary))
+                ReviewGlassBarItem(title: "Start a thread", emphasis: .main) { if let model { start(model, store: store) } }
                     .disabled(handing)
                     .accessibilityHint("Starts a thread on \(store.hostName(key.host)) on a new worktree for this issue")
             } else if model?.detail.summary.state == .closed {
-                Button("Reopen") { Task { await store.change(.setOpen(ref: key.ref, open: true), for: key) } }
-                    .buttonStyle(.shReviewBar(.primary))
+                ReviewGlassBarItem(title: "Reopen", emphasis: .main) {
+                    Task { await store.change(.setOpen(ref: key.ref, open: true), for: key) }
+                }
             }
         }
         .disabled(model == nil || store.busy.contains(key))
-        .padding(.horizontal, layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter)
-        .padding(.top, SH.Space.l)
-        .padding(.bottom, SH.Space.s)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .top) { SHHairline() }
     }
 
     @ViewBuilder private func menu(_ store: ForgeStore, _ model: ForgeIssueModel?) -> some View {

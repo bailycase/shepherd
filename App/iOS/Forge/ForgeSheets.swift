@@ -33,14 +33,13 @@ struct ForgeReviewSheet: View {
         let ready = !sending && (verdict == .approve || !body.isEmpty)
         ForgeSheetFrame(title: "Review #\(key.ref.number)", action: "Submit review", ready: ready, problem: problem, submit: submit) {
             ForgeTextBox(text: $text, prompt: "Leave a comment", focused: $focused)
-            SHListCard {
+            ReviewCard {
                 ForEach(ForgeReviewVerdict.allCases, id: \.self) { option in
                     ForgeChoiceRow(title: ForgePresentation.title(option), subtitle: option == .comment ? "Feedback without a verdict" : nil,
-                                   tone: option == .approve ? .done : option == .requestChanges ? .failed : nil,
                                    selected: verdict == option) { verdict = option }
                 }
             }
-            SHListCard {
+            ReviewCard {
                 ForgeSwitchRow(title: "Also send to the agent",
                                subtitle: model.thread.map { "The thread fixes it on \($0.branch ?? model.detail.summary.headRef)" }
                                    ?? "Starts a thread on \(model.detail.summary.headRef)",
@@ -112,16 +111,16 @@ struct ForgeMergeSheet: View {
                         ready: !sending && (model.blocked == nil || whenReady), problem: problem,
                         fraction: MobileLayout.forgeMergeSheetFraction, submit: submit) {
             if let blocked = model.blocked {
-                SHBanner(.failed, title: ForgePresentation.blockedTitle, message: blocked)
+                ReviewNoticeCard(title: ForgePresentation.blockedTitle.trimmingCharacters(in: CharacterSet(charactersIn: ".")), message: blocked)
             }
-            SHListCard {
+            ReviewCard {
                 ForEach(detail.mergeMethods, id: \.self) { option in
                     ForgeChoiceRow(title: ForgePresentation.title(option),
                                    subtitle: option == .squash ? "One commit on \(detail.summary.baseRef)" : nil,
-                                   tone: nil, selected: method == option) { method = option }
+                                   selected: method == option) { method = option }
                 }
             }
-            SHListCard {
+            ReviewCard {
                 ForgeSwitchRow(title: "Merge when ready", subtitle: "After review and checks pass", isOn: $whenReady)
                 if !detail.deletesBranchOnMerge {
                     ForgeSwitchRow(title: "Delete the branch", subtitle: nil, isOn: $deleteBranch)
@@ -186,7 +185,8 @@ struct ForgeCommentSheet: View {
 
 // MARK: Parts
 
-/// A sheet's frame: Cancel and the title in the bar, the content, then the one primary button.
+/// A sheet's frame: the close button and the title in the bar, the content, then the one primary
+/// button (grey until it can act).
 struct ForgeSheetFrame<Content: View>: View {
     let title: String
     let action: String
@@ -214,16 +214,18 @@ struct ForgeSheetFrame<Content: View>: View {
             .background(Color.sh.bgWindow)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Button(action, action: submit)
-                    .buttonStyle(.shReviewBar(.primary))
+                    .buttonStyle(.reviewPrimaryPill)
                     .disabled(!ready)
                     .padding(.horizontal, MobileLayout.gutter)
-                    .padding(.vertical, SH.Space.m)
-                    .background(Color.sh.bgWindow)
+                    .padding(.top, SH.Space.m)
+                    .padding(.bottom, SH.Space.xs)
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).tint(Color.sh.textPrimary)
+                }
             }
         }
         // Over the page, which shows above it (MobilePRReview, MobilePRMerge).
@@ -233,58 +235,53 @@ struct ForgeSheetFrame<Content: View>: View {
     }
 }
 
-/// The text a review or comment sends, in a raised box that grows with it.
+/// The text a review or comment sends, in a raised card that grows with it.
 struct ForgeTextBox: View {
     @Binding var text: String
     let prompt: String
     var focused: FocusState<Bool>.Binding
 
     var body: some View {
-        TextField(prompt, text: $text, axis: .vertical)
-            .font(.sh(.body))
+        TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(Color.sh.textTertiary), axis: .vertical)
+            .font(.shSans(MobileLayout.touchBodyFont))
             .foregroundStyle(Color.sh.textPrimary)
-            .tint(Color.sh.lantern)
+            .tint(Color.sh.textPrimary)
             .focused(focused)
             .lineLimit(4...)
-            .padding(SH.Space.l)
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.vertical, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: MobileLayout.forgeEditorMinHeight, alignment: .topLeading)
-            .shCard(radius: MobileLayout.cardRadius, line: Color.sh.lineStrong)
+            .shCard(radius: MobileLayout.touchCardRadius, lift: true)
             .onChange(of: text) { _, new in
                 if new.count > ForgeLimits.bodyCharacters { text = String(new.prefix(ForgeLimits.bodyCharacters)) }
             }
     }
 }
 
-/// One of a sheet's choices (Comment, Approve, Squash and merge): its title in its tone, a
-/// subtitle, the lantern check on the chosen one.
+/// One of a sheet's choices (Comment, Approve, Squash and merge): its title over a subtitle; the
+/// chosen one is filled.
 struct ForgeChoiceRow: View {
     let title: String
     let subtitle: String?
-    let tone: ForgeTone?
     let selected: Bool
     let choose: () -> Void
 
     var body: some View {
         Button(action: choose) {
-            HStack(spacing: SH.Space.m) {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text(title).font(.sh(.body)).foregroundStyle(tone?.textColor ?? Color.sh.textPrimary)
-                    if let subtitle {
-                        Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                    }
-                }
-                Spacer(minLength: SH.Space.m)
-                if selected {
-                    Image(systemName: "checkmark").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.lantern)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.shSans(MobileLayout.touchBodyFont, selected ? .semibold : .medium)).foregroundStyle(Color.sh.textPrimary)
+                if let subtitle {
+                    Text(subtitle).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(Color.sh.textSecondary)
                 }
             }
-            .padding(.horizontal, SH.Space.l)
-            .padding(.vertical, SH.Space.m)
-            .frame(maxWidth: .infinity, minHeight: SH.Height.touch + SH.Space.s, alignment: .leading)
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.vertical, SH.Space.m + SH.Space.xxs)
+            .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
+            .background(selected ? Color.sh.bgSelected : .clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.shRow(radius: 0))
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -297,15 +294,16 @@ struct ForgeSwitchRow: View {
     var body: some View {
         Toggle(isOn: $isOn) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
+                Text(title).font(.shSans(MobileLayout.touchBodyFont, .medium)).foregroundStyle(Color.sh.textPrimary)
                 if let subtitle {
-                    Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    Text(subtitle).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(Color.sh.textSecondary)
+                        .lineLimit(1).truncationMode(.middle)
                 }
             }
         }
-        .tint(Color.sh.done)
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(maxWidth: .infinity, minHeight: SH.Height.touch + SH.Space.s, alignment: .leading)
+        .tint(Color.sh.primary)
+        .padding(.horizontal, MobileLayout.gutter)
+        .padding(.vertical, SH.Space.m + SH.Space.xxs)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
     }
 }

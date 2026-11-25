@@ -6,164 +6,130 @@ import ShepherdRemote
 // The pieces every Issues & PRs screen shares: the full-width switch, a row, a tag, the repo
 // picker, and Activity's line and comment cards.
 
-/// The boards' full-width switch (Issues | Pull requests; Summary | Changes | Checks): 44pt, each
-/// segment with an optional count or status dot. Reads as a set of selectable buttons.
-struct ForgeSegmented<Value: Hashable>: View {
-    struct Option: Identifiable {
-        let value: Value
-        let title: String
-        var count: Int? = nil
-        var dot: ForgeTone? = nil
-        var id: Value { value }
-    }
-
-    @Binding var selection: Value
-    let options: [Option]
-
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.xxs) {
-            ForEach(options) { option in
-                let selected = option.value == selection
-                Button { selection = option.value } label: {
-                    HStack(spacing: SH.Space.s) {
-                        Text(option.title)
-                            .font(.sh(.ui, weight: selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
-                            .lineLimit(1)
-                        if let count = option.count {
-                            Text("\(count)").font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
-                        }
-                        if let dot = option.dot {
-                            Circle().fill(dot.color).frame(width: MobileLayout.statusDot, height: MobileLayout.statusDot)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch - 2 * SH.Space.xxs)
-                    .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(accessibility(option))
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-        }
-        .padding(SH.Space.xxs)
-        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-        .shBorder(sh.lineSubtle, radius: SH.Radius.l)
-    }
-
-    private func accessibility(_ option: Option) -> String {
-        var text = option.title
-        if let count = option.count { text += ", \(count)" }
-        if let dot = option.dot { text += ", \(dot.state?.label ?? "merged")" }
-        return text
-    }
-}
-
-/// A list row (MobileIPList): the state dot, the title over "#31 · baily · 2h", the word.
+/// A list row (MobileIPList, MobileIssueList): the title over "#31 · baily · 2h", the state's word
+/// and a chevron. The word is quiet unless the row needs you (changes requested, failed).
+/// `chevron` is the phone's; the iPad's plain list marks the chosen row instead.
 struct ForgeRowView: View, Equatable {
     let row: ForgeRow
     let selected: Bool
+    var chevron = true
 
     var body: some View {
         let sh = Color.sh
-        HStack(alignment: .top, spacing: SH.Space.l) {
-            Circle().fill(row.tone.color)
-                .frame(width: MobileLayout.statusDot, height: MobileLayout.statusDot)
-                .padding(.top, SH.Space.s + SH.Space.xxs)
+        HStack(alignment: .center, spacing: SH.Space.l) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(row.title)
-                    .font(.sh(.body))
+                    .font(.shSans(MobileLayout.touchBodyFont, .medium))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(row.byline)
-                    .font(.sh(.caption))
-                    .foregroundStyle(sh.textTertiary)
+                    .font(.shSans(MobileLayout.touchDetailFont))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(row.word)
-                .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(row.tone.textColor)
+                .font(.shSans(MobileLayout.touchDetailFont, row.tone == .attention ? .medium : .regular))
+                .foregroundStyle(wordColor)
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.top, SH.Space.xxs)
+            if chevron {
+                Image(systemName: "chevron.right")
+                    .font(.shSans(MobileLayout.touchDetailFont, .medium))
+                    .foregroundStyle(sh.textTertiary)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.l)
-        .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
-        .background(selected ? sh.bgSelected : .clear)
+        .padding(.horizontal, MobileLayout.gutter)
+        .padding(.vertical, SH.Space.m + SH.Space.xxs)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
+        .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: chevron ? 0 : MobileLayout.touchCardRadius))
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(row.title), \(row.word)")
         .accessibilityValue(row.byline)
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
+
+    /// Attention in its orange, a failure in red; everything else set back.
+    private var wordColor: Color {
+        switch row.tone {
+        case .attention: Color.sh.lanternText
+        case .failed: Color.sh.failed
+        case .running, .done, .idle, .merged: Color.sh.textTertiary
+        }
+    }
 }
 
-/// A state or label tag ("Open", "Merged", "bug"): the word on its tone's fill.
+/// A label tag ("bug", "ledger"): the word in a capsule on the selected tint.
 struct ForgeTag: View {
     let text: String
-    let tone: ForgeTone
+    var mono = false
 
     var body: some View {
         Text(text)
-            .font(.sh(.caption, weight: .medium))
-            .foregroundStyle(tone.textColor)
+            .font(mono ? .shMono(MobileLayout.touchDetailFont - 1) : .shSans(MobileLayout.touchDetailFont, .medium))
+            .foregroundStyle(Color.sh.textSecondary)
             .lineLimit(1)
-            .padding(.horizontal, SH.Space.m)
-            .padding(.vertical, SH.Space.xxs)
-            .background(tone.tint, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.xs + SH.Space.xxs)
+            .background(Color.sh.bgSelected, in: Capsule())
             .fixedSize()
     }
 }
 
-/// The repository picker ("payments ▾"): the hosts' repositories, under each host's name when
-/// there are several.
+/// The repository picker ("All"): the hosts' repositories, under each host's name when there are
+/// several, and Refresh.
 struct ForgeRepoPicker: View {
     let store: ForgeStore
 
     var body: some View {
         let sh = Color.sh
-        let hostIDs = store.repos.reduce(into: [UUID]()) { if !$0.contains($1.host) { $0.append($1.host) } }
         Menu {
-            if store.browseHost != nil {
-                Button {
-                    store.repoID = ForgeStore.allID
-                    store.clearSearch()
-                } label: {
-                    if store.allRepos { Label("All repositories", systemImage: "checkmark") } else { Text("All repositories") }
-                }
-                Divider()
-            }
-            if hostIDs.count > 1 {
-                ForEach(hostIDs, id: \.self) { host in
-                    Section(store.hostName(host)) { choices(store.repos.filter { $0.host == host }) }
-                }
-            } else {
-                choices(store.repos)
+            ForgeRepoMenuItems(store: store)
+            Divider()
+            Button("Refresh", systemImage: "arrow.clockwise") {
+                Task { await store.loadRepos(); await store.loadLists() }
             }
         } label: {
-            HStack(spacing: SH.Space.xs) {
-                Text(store.allRepos ? "All" : store.repo?.repo.name ?? "Repository")
-                    .font(.sh(.ui, weight: .medium))
-                    .foregroundStyle(sh.textPrimary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.sh(.micro, weight: .semibold))
-                    .foregroundStyle(sh.textSecondary)
-            }
-            .padding(.horizontal, SH.Space.l)
-            .frame(minHeight: SH.Height.controlL + SH.Space.xs)
-            .background(sh.bgRaised, in: Capsule())
-            .overlay(Capsule().strokeBorder(sh.lineStrong))
-            .frame(minHeight: SH.Height.touch)
-            .contentShape(Rectangle())
+            Text(store.allRepos ? "All" : store.repo?.repo.name ?? "Repository")
+                .font(.shSans(MobileLayout.touchBodyFont, .medium))
+                .foregroundStyle(sh.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, SH.Space.m)
+                .frame(minHeight: SH.Height.touch)
+                .contentShape(Rectangle())
         }
+        .menuIndicator(.hidden)
         .disabled(store.repos.isEmpty)
         .accessibilityLabel("Repository")
         .accessibilityValue(store.allRepos ? "All repositories" : store.repo?.repo.nameWithOwner ?? "none")
+    }
+}
+
+/// The repositories to pick: All, then each host's, checked when chosen.
+struct ForgeRepoMenuItems: View {
+    let store: ForgeStore
+
+    var body: some View {
+        let hostIDs = store.repos.reduce(into: [UUID]()) { if !$0.contains($1.host) { $0.append($1.host) } }
+        if store.browseHost != nil {
+            Button {
+                store.repoID = ForgeStore.allID
+                store.clearSearch()
+            } label: {
+                if store.allRepos { Label("All repositories", systemImage: "checkmark") } else { Text("All repositories") }
+            }
+            Divider()
+        }
+        if hostIDs.count > 1 {
+            ForEach(hostIDs, id: \.self) { host in
+                Section(store.hostName(host)) { choices(store.repos.filter { $0.host == host }) }
+            }
+        } else {
+            choices(store.repos)
+        }
     }
 
     private func choices(_ repos: [ForgeRepoChoice]) -> some View {
@@ -182,7 +148,7 @@ struct ForgeRepoPicker: View {
     }
 }
 
-/// Activity's quiet line ("agent pushed 1 commit  12m").
+/// Activity's quiet line ("agent pushed 1 commit  12m"), a row of the activity card.
 struct ForgeActivityLine: View {
     let actor: String
     let text: String
@@ -191,25 +157,21 @@ struct ForgeActivityLine: View {
     var body: some View {
         let sh = Color.sh
         HStack(spacing: SH.Space.m) {
-            Image(systemName: "circle.and.line.horizontal")
-                .font(.sh(.caption))
-                .foregroundStyle(sh.textTertiary)
-                .accessibilityHidden(true)
-            (Text(actor).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
-                + Text(" " + text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary))
+            Text("\(actor) \(text)")
+                .font(.shSans(MobileLayout.touchBodyFont, .medium))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(2)
             Spacer(minLength: SH.Space.m)
-            Text(age).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+            Text(age).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary)
         }
-        .padding(.horizontal, SH.Space.l)
-        .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
-        .shCard(radius: MobileLayout.cardRadius)
+        .padding(.horizontal, MobileLayout.gutter)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.touchRowHeight, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A comment card (MobilePRDetail, MobileIssue): the author's initial and name, its age, the
-/// line it is on, the text. GitHub's text, shown as plain text.
+/// A comment (MobilePRDetail, MobileIssue): the author in semibold, the line it is on, its age,
+/// then the text. GitHub's text, shown as plain text.
 struct ForgeCommentCard: View {
     let author: String
     let location: String?
@@ -225,40 +187,44 @@ struct ForgeCommentCard: View {
 
     var body: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            HStack(spacing: SH.Space.m) {
-                Text(author.prefix(1).uppercased())
-                    .font(.sh(.micro))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: MobileLayout.forgeAvatar, height: MobileLayout.forgeAvatar)
-                    .background(sh.bgSelected, in: Circle())
-                    .accessibilityHidden(true)
-                Text(author).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Text(author).font(.shSans(MobileLayout.touchBodyFont, .semibold)).foregroundStyle(sh.textPrimary)
+                if let location { place(location) }
                 Spacer(minLength: SH.Space.m)
-                Text(age).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-            }
-            if let location {
-                Text(location).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.head)
+                Text(age).font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textTertiary)
             }
             Text(body_)
-                .font(.sh(.body))
+                .font(.shSans(MobileLayout.touchBodyFont))
+                .lineSpacing(SH.Space.xxs + SH.Space.xxs)
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
-        .padding(SH.Space.l)
+        .padding(.horizontal, MobileLayout.gutter)
+        .padding(.vertical, SH.Space.l + SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: MobileLayout.cardRadius)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "ledger/outbox.go · line 103": the path in mono, the rest in words.
+    private func place(_ location: String) -> some View {
+        let parts = location.components(separatedBy: " \u{00B7} ")
+        return (Text(parts[0]).font(.shMono(MobileLayout.touchDetailFont - 1))
+            + Text(parts.dropFirst().isEmpty ? "" : " \u{00B7} " + parts.dropFirst().joined(separator: " \u{00B7} "))
+            .font(.shSans(MobileLayout.touchDetailFont)))
+            .foregroundStyle(Color.sh.textSecondary)
+            .lineLimit(1)
+            .truncationMode(.head)
     }
 }
 
-/// Activity, oldest first.
+/// Activity, oldest first, as one card of rows.
 struct ForgeActivityList: View {
     let items: [ForgeActivityItem]
 
     var body: some View {
-        ForEach(items) { item in
+        ReviewLazyCard(items) { item in
             VStack(spacing: 0) {
                 switch item.kind {
                 case .line(let actor, let text): ForgeActivityLine(actor: actor, text: text, age: item.age)
@@ -266,20 +232,6 @@ struct ForgeActivityList: View {
                 }
             }
         }
-    }
-}
-
-/// A small caps-less section head inside a page ("Activity", "Comments").
-struct ForgeSectionHead: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.sh(.caption))
-            .foregroundStyle(Color.sh.textTertiary)
-            .padding(.horizontal, SH.Space.xs)
-            .padding(.top, SH.Space.xs)
-            .accessibilityAddTraits(.isHeader)
     }
 }
 

@@ -38,7 +38,6 @@ struct DiffScreen: View {
                     }
                 }
             }
-            .padding(.top, SH.Space.xs)
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Color.sh.bgWindow)
@@ -49,11 +48,10 @@ struct DiffScreen: View {
                                  onSend: { store.saveDraft(); commentFocused = false },
                                  onDelete: { store.deleteComment(fileID: selection.fileID, lineID: selection.lineID) },
                                  onDone: { store.clearSelection(); commentFocused = false })
-                    .padding(.horizontal, SH.Space.l)
-                    .padding(.top, SH.Space.m)
-                    .padding(.bottom, SH.Space.s)
-                    .background(Color.sh.bgWindow)
-                    .overlay(alignment: .top) { SHHairline() }
+                    .padding(.horizontal, MobileLayout.gutter)
+                    .padding(.top, MobileLayout.touchBarFade)
+                    .padding(.bottom, SH.Space.xs)
+                    .background(LinearGradient(colors: [Color.sh.bgWindow.opacity(0), Color.sh.bgWindow], startPoint: .top, endPoint: .center))
             }
         }
         .toolbar(.hidden, for: .tabBar)
@@ -69,12 +67,13 @@ struct DiffScreen: View {
                     Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : "checkmark.circle") {
                         store.toggleViewed(entry.id)
                     }
-                    .tint(viewed ? Color.sh.done : nil)
+                    .tint(viewed ? Color.sh.done : Color.sh.textPrimary)
                     if let next = store.entry(after: entry.id) {
                         Button("Next file", systemImage: "chevron.down") {
                             store.clearSelection()
                             shown = next.id
                         }
+                        .tint(Color.sh.textPrimary)
                         .accessibilityHint("Shows \(reviewPathParts(next.path).name)")
                     }
                     if ReviewRevertStore.available(store, host: hosts.host(ref.host)) {
@@ -106,14 +105,17 @@ private struct DiffTitle: View {
 
     var body: some View {
         VStack(spacing: SH.Space.xxs) {
-            Text(summary?.name ?? "Diff").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+            Text(summary?.name ?? "Diff")
+                .font(.shMono(MobileLayout.touchBodyFont - 1, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             if let summary {
-                HStack(spacing: SH.Space.s) {
-                    Text(subtitle(summary)).lineLimit(1).truncationMode(.head)
-                    SHDiffStat(added: summary.added, removed: summary.removed, font: .sh(.micro, weight: .regular))
-                }
-                .font(.sh(.micro, weight: .regular))
-                .foregroundStyle(Color.sh.textTertiary)
+                Text(subtitle(summary))
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
         }
         .accessibilityElement(children: .combine)
@@ -122,6 +124,6 @@ private struct DiffTitle: View {
     private func subtitle(_ summary: ReviewFileSummary) -> String {
         let directory = summary.directory.hasSuffix("/") ? String(summary.directory.dropLast()) : summary.directory
         let place = position.map { "\($0 + 1) of \(count)" }
-        return [directory.isEmpty ? nil : directory, place].compactMap { $0 }.joined(separator: " · ") + " ·"
+        return [directory.isEmpty ? nil : directory, place, "+\(summary.added) \u{2212}\(summary.removed)"].compactMap { $0 }.joined(separator: " \u{00B7} ")
     }
 }
