@@ -62,7 +62,7 @@ struct RootView: View {
             // The toolbar rides over the column's top: a thread's pane card runs up beside it (GXSidePane), so the
             // toolbar ends where the card begins and the workspace starts under it (`workspaceTopInset`).
             let noticed = updater.nightlyMovedNoticePending
-            let toolbar = wide ? 0 : AppLayout.headerHeight
+            let toolbar = wide ? 0 : AppLayout.headerHeight + AppLayout.toolbarTop
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
                     // Once, after an update moved this copy off the retired nightly channel. It
@@ -82,6 +82,9 @@ struct RootView: View {
                         leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                         showSidebar: docked ? nil : { vm.toggleSidebar() }
                     )
+                    // The boards' window padding: the toolbar's row is the sidebar top bar's and the window controls'.
+                    .padding(.top, AppLayout.toolbarTop)
+                    .background(Color.sh.bgWindow)
                     .modifier(PaneReserve(vm: vm))
                     // Over the workspace: the side-pane button's tip hangs below the toolbar.
                     .zIndex(1)
@@ -238,8 +241,10 @@ struct RootView: View {
     }
 }
 
-/// Hides the window's close, minimize and zoom while the maximized side pane's rail draws its
-/// own (ChangesWide), and shows them again after.
+/// Places the window's close, minimize and zoom on the 44pt row the sidebar's top bar and the toolbar share
+/// (GXThread, GXSidebarHidden): the close button's centre `AppLayout.windowControlsCenter` from the window's top
+/// leading corner, the others at AppKit's own spacing. Hides them while the maximized side pane's rail draws its
+/// own (ChangesWide), and shows them again after. In full screen AppKit owns them and they are left alone.
 private struct SystemWindowControls: NSViewRepresentable {
     let hidden: Bool
 
@@ -252,18 +257,53 @@ private struct SystemWindowControls: NSViewRepresentable {
 
     final class Reader: NSView {
         var controlsHidden = false
+        private var observed: [NSObjectProtocol] = []
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            observed.forEach(NotificationCenter.default.removeObserver)
+            observed = []
+            if let window {
+                // AppKit lays the title bar out again on these, putting the buttons back where it keeps them.
+                let names: [Notification.Name] = [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification,
+                                                  NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification,
+                                                  NSWindow.didResignKeyNotification, NSWindow.didChangeBackingPropertiesNotification]
+                observed = names.map { name in
+                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.apply() }
+                    }
+                }
+            }
             apply()
         }
 
+        isolated deinit { observed.forEach(NotificationCenter.default.removeObserver) }
+
         func apply() {
             guard let window else { return }
-            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                if let button = window.standardWindowButton(kind), button.isHidden != controlsHidden {
-                    button.isHidden = controlsHidden
-                }
+            let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
+            for button in buttons where button.isHidden != controlsHidden { button.isHidden = controlsHidden }
+            guard !controlsHidden, !window.styleMask.contains(.fullScreen) else { return }
+            place(buttons, in: window)
+        }
+
+        /// Grows the title bar's container to hold the row, then sets each button's centre on it.
+        private func place(_ buttons: [NSButton], in window: NSWindow) {
+            guard let first = buttons.first, let bar = first.superview, let container = bar.superview else { return }
+            let center = AppLayout.windowControlsCenter
+            let height = 2 * center.y
+            let frame = window.frame
+            let wanted = NSRect(x: 0, y: frame.height - height, width: frame.width, height: height)
+            if container.frame != wanted { container.frame = wanted }
+            if bar.frame != container.bounds { bar.frame = container.bounds }
+            // AppKit's spacing between the buttons, kept as it draws them.
+            let pitch = buttons.count > 1 ? buttons[1].frame.minX - buttons[0].frame.minX : 0
+            for (index, button) in buttons.enumerated() {
+                let size = button.frame.size
+                let y = bar.isFlipped ? center.y - size.height / 2 : bar.bounds.height - center.y - size.height / 2
+                let origin = NSPoint(x: (center.x - first.frame.width / 2 + CGFloat(index) * pitch).rounded(),
+                                     y: y.rounded())
+                if button.frame.origin != origin { button.setFrameOrigin(origin) }
             }
         }
 
@@ -319,8 +359,6 @@ struct WorkspaceHeaderView: View {
     var showSidebar: (() -> Void)?
 
     private var keys: KeybindingsStore { vm.keybindings }
-    /// New thread leads with Show sidebar while the sidebar is not docked (GXSidebarHidden).
-    private var newThread: (() -> Void)? { showSidebar == nil ? nil : { vm.openDestination(.newThread) } }
 
     var body: some View {
         Group {
@@ -328,7 +366,7 @@ struct WorkspaceHeaderView: View {
                let connection = vm.remoteHosts.allConnections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
-                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar, newThread: newThread)
+                    PlainHeader(title: "\(vm.presentedThreadName(.remote(remote), hostName: agent.name)) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: Export draws here from this Mac's synced copy.
                     let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
@@ -390,7 +428,7 @@ struct WorkspaceHeaderView: View {
                     // one agent's chip and pane button into another's.
                     .id(agent.id)
             } else {
-                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar, newThread: newThread)
+                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
             }
         }
         .contentShape(Rectangle())
@@ -416,7 +454,6 @@ struct WorkspaceHeaderView: View {
         let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
-                            newThread: newThread,
                             branch: branch, directory: directory,
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,

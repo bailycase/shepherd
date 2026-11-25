@@ -206,6 +206,13 @@ final class ComposerThread {
         return (size.width - column) / 2
     }
 
+    /// The column's trailing edge: where the card ends.
+    var columnTrailing: CGFloat { size.width - columnLeading }
+
+    /// Where the model picker (`width` wide) or the model's settings start: over the model chip, their trailing
+    /// edge `AppLayout.modelMenuTrailing` in from the card's (GXModel).
+    func modelMenuLeading(width: CGFloat) -> CGFloat { max(columnLeading, columnTrailing - AppLayout.modelMenuTrailing - width) }
+
     /// The field editor of the text field that has focus in the window (the model picker's
     /// search field while it is open).
     var focusedEditor: NSTextView? {

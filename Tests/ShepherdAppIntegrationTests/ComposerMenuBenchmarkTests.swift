@@ -27,7 +27,7 @@ struct ComposerMenuBenchmarkTests {
         try await thread.waitUntilReady()
         print("BENCH catalog \(ModelCatalogFixture.entries.count) models, \(ModelCatalogFixture.commands.count) commands")
         // Where the picker draws, fixed before it opens.
-        let picker = CGRect(x: thread.columnLeading, y: 0, width: 280, height: thread.cardTop)
+        let picker = CGRect(x: ComposerMenuTests.Menu.models.leading(in: thread), y: 0, width: 280, height: thread.cardTop)
         var idle: [Double] = []
         for _ in 0..<10 { idle.append(FrameTimer.time(thread.window, region: picker) {}) }
         print("BENCH idle frame (layout + draw, no change): \(idle.millisecondSummary)")
