@@ -92,7 +92,7 @@ public struct SHDesignCanvas<Slot: View, Popover: View>: View {
         let zoom = viewport.zoom
         let lift = SHDesignMetrics.labelHeight + SHDesignMetrics.labelGap
         ZStack(alignment: .topLeading) {
-            SHDotGrid(spacing: SHDesignMetrics.gridSpacing, phase: viewport.offset)
+            SHDotGrid(spacing: Self.gridSpacing, phase: viewport.offset)
             noteLayer
             ForEach(boards.visible(in: viewport, size: size)) { board in
                 let origin = viewport.screen(board.frame.origin)
@@ -121,6 +121,15 @@ public struct SHDesignCanvas<Slot: View, Popover: View>: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas")
+    }
+
+    /// The dots' spacing: 18pt on the Mac (DZCanvas), 22pt on the iPad.
+    private static var gridSpacing: CGFloat {
+        #if os(macOS)
+        SHDesignChrome.gridSpacing
+        #else
+        SHDesignMetrics.gridSpacing
+        #endif
     }
 
     private struct Ring: Identifiable {

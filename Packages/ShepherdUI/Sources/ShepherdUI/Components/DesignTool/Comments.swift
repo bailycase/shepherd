@@ -1,12 +1,12 @@
 import SwiftUI
 
 // A design's comments (DZCanvas, DZTweak, SHDesignTool): the numbered pin on the canvas, the
-// thread beside it, and the card the chat and the Comments tab show. Pins are lantern, because a
-// pin is something the viewer asked for; selection stays running blue.
+// thread beside it, and the card the chat and the Comments tab show. Pins are ink circles (on the iPad,
+// the same); the iPhone's too.
 
-/// The numbered pin (SHCommentPin): a lantern teardrop, round but for its bottom-leading corner,
-/// which is its point, set on the element's top-trailing corner. On the canvas it is 26pt (a 4pt
-/// point, mono 12 bold) with a small shadow; in a card's header 18pt (a 3pt point, mono 10 bold).
+/// The numbered pin (SHCommentPin), set on the element's top-trailing corner. On the Mac an ink circle: 22pt on the
+/// canvas ringed in the card's fill with a small shadow, 18pt in a card's header, the number in 12 semibold. On the iPad
+/// and iPhone the boards' own: an ink teardrop (26pt) or circle.
 public struct SHCommentPin: View {
     public enum Size: Sendable {
         case canvas
@@ -47,20 +47,23 @@ public struct SHCommentPin: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Comment \(number)")
         #else
-        let side = size == .card ? SHDesignMetrics.cardPinSize : SHDesignMetrics.pinSize
-        let point = size == .card ? SHDesignMetrics.cardPinPoint : SHDesignMetrics.pinPoint
-        let shape = UnevenRoundedRectangle(topLeadingRadius: side / 2, bottomLeadingRadius: point,
-                                           bottomTrailingRadius: side / 2, topTrailingRadius: side / 2)
+        // DZCanvas, DZTweak: an ink circle (22pt on the canvas, ringed 2pt in the card's fill, on the lift; 18pt in a card's
+        // header), the number in 12 semibold, centered in the canvas pin's 26pt frame so its corner stays the element's.
+        let side = size == .card ? SHDesignMetrics.cardPinSize : SHDesignChrome.pinSize
+        let ring = size == .card ? 0 : SHDesignChrome.pinRing
         Text("\(number)")
-            .font(.shMono(size != .card ? SHDesignMetrics.pinTextSize : SHDesignMetrics.cardPinTextSize, .bold))
-            .foregroundStyle(Color.sh.textOnLantern)
+            .font(.shSans(SHDesignMetrics.pinTextSize, .semibold))
+            .foregroundStyle(Color.sh.textOnPrimary)
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .frame(width: side, height: side)
-            .background(Color.sh.lantern, in: shape)
-            .shadow(color: size != .card ? Color.sh.knobShadow : .clear,
-                    radius: SHDesignMetrics.pinShadowRadius, y: SHDesignMetrics.pinShadowY)
+            .background {
+                Circle().fill(Color.sh.primary)
+                    .overlay { Circle().strokeBorder(Color.sh.bgRaised, lineWidth: ring) }
+                    .shadow(color: size == .card ? .clear : Color.sh.liftFar, radius: SH.Space.s, y: SH.Space.xxs)
+            }
+            .frame(width: size == .card ? side : SHDesignMetrics.pinSize, height: size == .card ? side : SHDesignMetrics.pinSize)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Comment \(number)")
         #endif
@@ -114,11 +117,36 @@ public struct SHCommentThread: View {
         self.onClose = onClose
     }
 
+    @MainActor private static var fieldLine: Color {
+        #if os(macOS)
+        Color.sh.lineSubtle
+        #else
+        Color.sh.lineStrong
+        #endif
+    }
+
+    /// The names in the thread: 13 medium on the Mac (DZTweak), 11.5 semibold on the iPad.
+    private static var authorSize: CGFloat {
+        #if os(macOS)
+        SHDesignChrome.toolbarTextSize
+        #else
+        SHDesignMetrics.commentMetaSize
+        #endif
+    }
+
+    private static var authorWeight: Font.Weight {
+        #if os(macOS)
+        .medium
+        #else
+        .semibold
+        #endif
+    }
+
     public var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SHDesignMetrics.threadSpacing) {
             HStack(spacing: SH.Space.m) {
-                Text(author).font(.shSans(SHDesignMetrics.commentMetaSize, .semibold)).foregroundStyle(sh.textPrimary)
+                Text(author).font(.shSans(Self.authorSize, Self.authorWeight)).foregroundStyle(sh.textPrimary)
                 Text([age, note].compactMap { $0 }.joined(separator: " · "))
                     .font(.shSans(SHDesignMetrics.commentMetaSize))
                     .foregroundStyle(sh.textTertiary)
@@ -132,9 +160,10 @@ public struct SHCommentThread: View {
             SHCommentText(text)
             ForEach(entries) { entry in
                 VStack(alignment: .leading, spacing: SHDesignMetrics.entrySpacing) {
-                    (Text(entry.author).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
-                        + Text(" · \(entry.age)").foregroundStyle(sh.textTertiary))
-                        .font(.shSans(SHDesignMetrics.commentMetaSize))
+                    HStack(spacing: SH.Space.m) {
+                        Text(entry.author).font(.shSans(Self.authorSize, Self.authorWeight)).foregroundStyle(sh.textPrimary)
+                        Text(entry.age).font(.shSans(SHDesignMetrics.commentMetaSize)).foregroundStyle(sh.textTertiary)
+                    }
                     SHCommentText(entry.text)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -164,7 +193,7 @@ public struct SHCommentThread: View {
                     .frame(minHeight: SHDesignMetrics.replyFieldHeight)
                     .overlay {
                         RoundedRectangle(cornerRadius: SHDesignMetrics.replyFieldRadius)
-                            .strokeBorder(sh.lineStrong, lineWidth: SHDesignMetrics.lineWidth)
+                            .strokeBorder(Self.fieldLine, lineWidth: SHDesignMetrics.lineWidth)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { replyFocused = true }
@@ -226,7 +255,7 @@ public struct SHCommentCard: View, Equatable {
             if let onOpen {
                 Button(action: onOpen) { card(hidingMeta: showResolve) }
                     .buttonStyle(.plain)
-                    .contentShape(RoundedRectangle(cornerRadius: SHDesignMetrics.commentCardRadius))
+                    .contentShape(RoundedRectangle(cornerRadius: SHCommentCardMetrics.radius))
                     .focused($focused, equals: .open)
                     .accessibilityLabel("Open comment \(number)")
                     .accessibilityValue("\(target), \(meta), \(text)")
@@ -246,8 +275,8 @@ public struct SHCommentCard: View, Equatable {
                     .opacity(showResolve ? 1 : 0)
                     .allowsHitTesting(showResolve)
                     .accessibilityHidden(!showResolve)
-                    .padding(.trailing, SHDesignMetrics.commentCardPaddingHorizontal)
-                    .padding(.top, SHDesignMetrics.commentCardPaddingVertical - (SH.Height.controlS - SHDesignMetrics.cardPinSize) / 2)
+                    .padding(.trailing, SHCommentCardMetrics.paddingHorizontal)
+                    .padding(.top, SHCommentCardMetrics.paddingTop - (SH.Height.controlS - SHDesignMetrics.cardPinSize) / 2)
             }
         }
         .onHover { pointerInside = $0 }
@@ -258,7 +287,7 @@ public struct SHCommentCard: View, Equatable {
         return VStack(alignment: .leading, spacing: SHDesignMetrics.commentCardSpacing) {
             HStack(spacing: SH.Space.m) {
                 SHCommentPin(number, size: .card)
-                (Text("on ") + Text(target).fontWeight(.semibold).foregroundStyle(sh.textPrimary))
+                (Text("on ") + Text(target).font(.shSans(SHCommentCardMetrics.targetSize, SHCommentCardMetrics.targetWeight)).foregroundStyle(sh.textPrimary))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: SH.Space.m)
@@ -270,9 +299,9 @@ public struct SHCommentCard: View, Equatable {
             .foregroundStyle(sh.textTertiary)
             SHCommentText(text)
         }
-        .padding(.top, SHDesignMetrics.commentCardPaddingVertical)
-        .padding(.bottom, continues ? 0 : SHDesignMetrics.commentCardPaddingVertical)
-        .padding(.horizontal, SHDesignMetrics.commentCardPaddingHorizontal)
+        .padding(.top, SHCommentCardMetrics.paddingTop)
+        .padding(.bottom, continues ? 0 : SHCommentCardMetrics.paddingBottom)
+        .padding(.horizontal, SHCommentCardMetrics.paddingHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background { SHCommentCardChrome(edge: continues ? .top : nil) }
         .accessibilityElement(children: .combine)
@@ -287,12 +316,34 @@ extension View {
         padding(.top, SHDesignMetrics.entryGap)
             .overlay(alignment: .top) { SHHairline() }
             .padding(.top, SHDesignMetrics.commentCardSpacing)
-            .padding(.bottom, SHDesignMetrics.commentCardPaddingVertical)
-            .padding(.horizontal, SHDesignMetrics.commentCardPaddingHorizontal)
+            .padding(.bottom, SHCommentCardMetrics.paddingBottom)
+            .padding(.horizontal, SHCommentCardMetrics.paddingHorizontal)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { SHCommentCardChrome(edge: .bottom) }
             .padding(.top, -bridge)
     }
+}
+
+/// A comment card's measures: DZCanvas draws it at radius 12 with 10pt above and 11 below its 12pt sides on the Mac, its
+/// header's name in 13 medium; the iPad keeps the metrics' own.
+private enum SHCommentCardMetrics {
+    #if os(macOS)
+    static let radius: CGFloat = SH.Radius.l
+    static let paddingTop: CGFloat = 10
+    static let paddingBottom: CGFloat = 11
+    static let paddingHorizontal: CGFloat = SH.Space.l
+    static let targetSize: CGFloat = 13
+    static let targetWeight: Font.Weight = .medium
+    @MainActor static var line: Color { Color.sh.lineSubtle }
+    #else
+    static let radius: CGFloat = SHDesignMetrics.commentCardRadius
+    static let paddingTop: CGFloat = SHDesignMetrics.commentCardPaddingVertical
+    static let paddingBottom: CGFloat = SHDesignMetrics.commentCardPaddingVertical
+    static let paddingHorizontal: CGFloat = SHDesignMetrics.commentCardPaddingHorizontal
+    static let targetSize: CGFloat = SHDesignMetrics.commentMetaSize
+    static let targetWeight: Font.Weight = .semibold
+    @MainActor static var line: Color { Color.sh.lineStrong }
+    #endif
 }
 
 /// A comment's words: 13/1.5, selectable.
@@ -320,7 +371,7 @@ struct SHCommentCardChrome: View {
     let edge: VerticalEdge?
 
     var body: some View {
-        let radius = SHDesignMetrics.commentCardRadius
+        let radius = SHCommentCardMetrics.radius
         let line = SHDesignMetrics.lineWidth
         let shape = UnevenRoundedRectangle(topLeadingRadius: edge == .bottom ? 0 : radius,
                                            bottomLeadingRadius: edge == .top ? 0 : radius,
@@ -331,7 +382,7 @@ struct SHCommentCardChrome: View {
                 // Inset by half the line so it draws inside, except across the open edge, where the
                 // other part's line carries on.
                 SHOpenCardOutline(radius: radius, open: edge.map { $0 == .top ? .bottom : .top })
-                    .stroke(Color.sh.lineStrong, lineWidth: line)
+                    .stroke(SHCommentCardMetrics.line, lineWidth: line)
                     .padding(.horizontal, line / 2)
                     .padding(.top, edge == .bottom ? 0 : line / 2)
                     .padding(.bottom, edge == .top ? 0 : line / 2)

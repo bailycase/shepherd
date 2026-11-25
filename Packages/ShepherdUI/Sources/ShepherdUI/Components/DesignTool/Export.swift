@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The Export sheet (DZExport) as the board draws it: a 560pt card at radius 14 on the popover's
-/// fill, line and shadow, with a header ("Export" and a close button), sections under their
-/// labels with a hairline between them, and a footer holding Cancel and the primary action.
-/// Center it over `Color.sh.sheetScrim`.
+/// The Export sheet (DZExport) as the board draws it: a 520pt card at radius 16 on the popover's
+/// fill and shadow, 18×20 padding, "Export" in `title` with a close button, sections under their
+/// 13 semibold labels, and a footer holding Cancel and the primary action.
+/// Center it over `Color.sh.modalScrim`.
 public struct SHExportSheet<Content: View>: View {
     let exportTitle: String
     let canExport: Bool
@@ -21,69 +21,78 @@ public struct SHExportSheet<Content: View>: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        let M = SHDesignChrome.self
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 Text("Export")
                     .font(.sh(.title))
                     .foregroundStyle(Color.sh.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: SH.Space.m)
                 Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.shIcon())
+                    .buttonStyle(.shIcon(size: SH.Height.controlS))
                     .help("Close")
                     .accessibilityLabel("Close")
             }
-            .padding(.vertical, SHDesignMetrics.exportHeaderPaddingVertical)
-            .padding(.horizontal, SHDesignMetrics.exportPaddingHorizontal)
-            .overlay(alignment: .bottom) { SHHairline() }
             content()
             HStack(spacing: SHDesignMetrics.exportFooterSpacing) {
                 Spacer(minLength: 0)
                 Button("Cancel", action: close)
                     .buttonStyle(.sh(.ghost))
                     .keyboardShortcut(.cancelAction)
-                Button(exportTitle, systemImage: "square.and.arrow.up", action: export)
+                Button(exportTitle, action: export)
                     .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canExport)
             }
-            .padding(.vertical, SHDesignMetrics.exportFooterPaddingVertical)
-            .padding(.horizontal, SHDesignMetrics.exportPaddingHorizontal)
-            .overlay(alignment: .top) { SHHairline() }
+            .padding(.top, M.exportFooterTop)
         }
-        .frame(width: SHDesignMetrics.exportWidth)
-        .shPopover(radius: SHDesignMetrics.exportRadius)
+        .padding(.top, M.exportPaddingTop)
+        .padding(.bottom, M.exportPaddingBottom)
+        .padding(.horizontal, M.exportPaddingHorizontal)
+        .frame(width: M.exportWidth)
+        .shPopover(radius: SH.Radius.xxl, line: .sh.lineSubtle)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
     }
 }
 
-/// One section of the Export sheet: its label, then what it holds, with a hairline under it
-/// unless it is the last.
+/// One section of the Export sheet: its 13 semibold label (and a count after it in 12 `textTertiary`), 6pt
+/// above what it holds, 16pt under the section before.
 public struct SHExportSection<Content: View>: View {
     let title: String
-    let divided: Bool
+    let detail: String?
     @ViewBuilder let content: () -> Content
 
-    public init(_ title: String, divided: Bool = true, @ViewBuilder content: @escaping () -> Content) {
+    public init(_ title: String, detail: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
-        self.divided = divided
+        self.detail = detail
         self.content = content
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: SHDesignMetrics.exportLabelGap) {
-            Text(title).shSectionLabel()
-                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: SH.Space.s) {
+                Text(title)
+                    .font(.shSans(SHDesignChrome.toolbarTextSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                if let detail {
+                    Text(detail)
+                        .font(.shSans(SHDesignChrome.paneCountSize))
+                        .foregroundStyle(Color.sh.textTertiary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, SHDesignMetrics.exportSectionPaddingVertical)
-        .padding(.horizontal, SHDesignMetrics.exportPaddingHorizontal)
-        .overlay(alignment: .bottom) { if divided { SHHairline() } }
+        .padding(.top, SHDesignChrome.exportSectionTop)
     }
 }
 
-/// A board's row on the Export sheet: its checkbox, its name, and its size trailing in mono.
+/// A board's row on the Export sheet: its checkbox, its name, and its size trailing in 12 `textTertiary`, a
+/// hairline under it.
 public struct SHExportBoardRow: View, Equatable {
     let title: String
     let size: String
@@ -106,7 +115,7 @@ public struct SHExportBoardRow: View, Equatable {
         HStack(spacing: SHDesignMetrics.exportRowSpacing) {
             Toggle(isOn: Binding(get: { isTicked }, set: { _ in toggle() })) {
                 Text(title)
-                    .font(.shSans(SHDesignMetrics.exportRowTextSize))
+                    .font(.shSans(SHDesignChrome.toolbarTextSize))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -114,16 +123,17 @@ public struct SHExportBoardRow: View, Equatable {
             .toggleStyle(.shCheckbox)
             Spacer(minLength: SH.Space.m)
             Text(size)
-                .font(.shMono(SHDesignMetrics.exportRowSizeTextSize))
+                .font(.shSans(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
         }
-        .frame(height: SHDesignMetrics.exportRowHeight)
+        .frame(height: SHDesignChrome.exportRowHeight)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
-/// A format on the Export sheet: a radio, the format, and what it writes; chosen, a `running`
-/// line on `runningTint`.
+/// A format on the Export sheet: its name in 13 semibold over what it writes in 12 `textSecondary`; chosen, a
+/// 1.5pt ink ring.
 public struct SHExportFormatCard: View {
     let title: String
     let line: String
@@ -138,26 +148,23 @@ public struct SHExportFormatCard: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.exportFormatRadius)
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l - 2)
         Button(action: choose) {
-            VStack(alignment: .leading, spacing: SHDesignMetrics.exportFormatGap) {
-                HStack(spacing: SHDesignMetrics.exportFormatRadioGap) {
-                    SHRadioMark(selected: isChosen)
-                    Text(title)
-                        .font(.shSans(SHDesignMetrics.exportFormatTitleSize, .semibold))
-                        .foregroundStyle(Color.sh.textPrimary)
-                }
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title)
+                    .font(.shSans(SHDesignChrome.toolbarTextSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
                 Text(line)
-                    .shText(size: SHDesignMetrics.exportFormatLineSize, lineHeight: SHDesignMetrics.exportFormatLineHeight)
+                    .shText(size: SHDesignChrome.paneCountSize, lineHeight: SHDesignChrome.exportFormatLine)
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, SHDesignMetrics.exportFormatIndent)
             }
-            .padding(.vertical, SHDesignMetrics.exportFormatPaddingVertical)
+            .padding(.top, SHDesignChrome.exportFormatTop)
+            .padding(.bottom, SHDesignChrome.exportFormatBottom)
             .padding(.horizontal, SHDesignMetrics.exportFormatPaddingHorizontal)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(isChosen ? Color.sh.runningTint : Color.clear, in: shape)
-            .overlay(shape.strokeBorder(isChosen ? Color.sh.running : Color.sh.lineSubtle, lineWidth: 1))
+            .overlay { shape.strokeBorder(isChosen ? Color.clear : Color.sh.lineSubtle, lineWidth: 1) }
+            .overlay { shape.strokeBorder(isChosen ? Color.sh.textPrimary : Color.clear, lineWidth: SHDesignChrome.boardRing) }
             .contentShape(shape)
             .shComponentAnimation(.content, value: isChosen)
         }

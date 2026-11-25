@@ -71,15 +71,25 @@ public struct SHBoardLabel: View {
     }
 
     private func row(_ usage: String?) -> some View {
-        HStack(spacing: SHDesignMetrics.labelSpacing) {
+        #if os(macOS)
+        // DZCanvas: the name in 12 medium `textPrimary`, its size and use in 12 `textTertiary`.
+        let nameFont = Font.shSans(SHDesignChrome.labelTextSize, .medium)
+        let nameColor = Color.sh.textPrimary
+        let sizeFont = Font.shSans(SHDesignChrome.labelTextSize)
+        #else
+        let nameFont = Font.shSans(SHDesignMetrics.labelSize, .semibold)
+        let nameColor = selected ? Color.sh.textPrimary : Color.sh.textSecondary
+        let sizeFont = Font.shMono(SHDesignMetrics.labelSizeTextSize)
+        #endif
+        return HStack(spacing: SHDesignMetrics.labelSpacing) {
             Text(title)
-                .font(.shSans(SHDesignMetrics.labelSize, .semibold))
-                .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
+                .font(nameFont)
+                .foregroundStyle(nameColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
             Text(size)
-                .font(.shMono(SHDesignMetrics.labelSizeTextSize))
+                .font(sizeFont)
                 .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .fixedSize()
@@ -95,7 +105,8 @@ public struct SHBoardLabel: View {
 }
 
 /// The board's page in its frame: clipped to radius 4 with a hairline, casting the popover's
-/// shadow, and ringed while selected. Its fill shows until the slot draws.
+/// shadow, and ringed while selected. Its fill shows until the slot draws. On the Mac (DZCanvas) it is
+/// radius 6 on the cards' `lift`, with a 1.5pt ink ring while selected.
 public struct SHBoardSurface<Slot: View>: View {
     let size: CGSize
     let selected: Bool
@@ -108,6 +119,25 @@ public struct SHBoardSurface<Slot: View>: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        let radius = SHDesignChrome.boardRadius
+        let ring = SHDesignChrome.boardRing
+        let shape = RoundedRectangle(cornerRadius: radius)
+        slot
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .clipShape(shape)
+            // The lift is cast by a fill with a path set at layout, so a zoom that resizes every board draws no offscreen shadow.
+            .shLift(shape)
+            .shBorder(Color.sh.lineSubtle, radius: radius)
+            .overlay {
+                if selected {
+                    RoundedRectangle(cornerRadius: radius + ring)
+                        .inset(by: -ring)
+                        .strokeBorder(Color.sh.textPrimary, lineWidth: ring)
+                        .allowsHitTesting(false)
+                }
+            }
+        #else
         let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.frameRadius)
         slot
             .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -122,5 +152,6 @@ public struct SHBoardSurface<Slot: View>: View {
                         .allowsHitTesting(false)
                 }
             }
+        #endif
     }
 }

@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// A design's screen (DZCanvas): the canvas beside the 420pt chat pane holding its agent's
+/// A design's screen (DZCanvas): the canvas beside the chat card, 420pt wide, holding its agent's
 /// thread. It is the design agent's layout, mounted and hidden like every agent's, so switching
 /// to and from a design is a visibility flip; hidden, its canvas gives up its live views and its
 /// thread stops polling. The header over it is `DesignToolbar`.
@@ -22,7 +22,7 @@ struct DesignLayoutView: View {
                 // The canvas's Git notices (Opened from Git, Pull paused) at its top center.
                 .overlay { DesignGitCanvasLayer(vm: vm, designID: designID, part: .notices) }
             DesignChatPane(vm: vm, screen: vm.designScreen(designID), model: model, thread: thread)
-                .frame(width: AppLayout.designChatWidth)
+                .designChatCard()
         }
         // The Git panel hangs under the toolbar's chip, over the canvas and the chat (GitDesignChanges).
         .overlay { DesignGitCanvasLayer(vm: vm, designID: designID, part: .panel) }
@@ -80,6 +80,8 @@ struct DesignCanvasPane: View {
                 .padding(SH.Space.l)
             }
         }
+        // The stage keeps the window's 8pt under it, as the chat card does.
+        .padding(.bottom, SHDesignChrome.stageInset)
         .background {
             if referencing {
                 DesignCanvasKeys(active: screen.isActive && screen.presented == nil,
@@ -190,6 +192,9 @@ struct DesignChatPane: View {
             SHDesignPaneTabs(Self.tabs(open: open, tweak: screen.tweak != nil), selection: tab.rawValue) { id in
                 screen.paneTab = DesignPaneTab(rawValue: id) ?? .chat
             }
+            .designChatOptions(refresh: { [vm, agentID = thread.agentID] in
+                Task { await vm.threadStores.store(for: agentID).refresh(fresh: true) }
+            })
             ZStack {
                 if let pane = model.tab.layout.leaf(withID: thread.paneID) {
                     let agentID = thread.agentID
@@ -216,7 +221,6 @@ struct DesignChatPane: View {
                 }
                 if tab == .comments {
                     DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
-                        .background(Color.sh.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
                     DesignTweakPane(model: tweak, target: screen.tweakTarget, piece: screen.pieceNote) { [vm] in
@@ -229,8 +233,6 @@ struct DesignChatPane: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in if screen.paneTab == .chat { vm.focusedPaneID = thread.paneID } })
     }
 }
@@ -317,6 +319,7 @@ struct DesignToolbar: View, Equatable {
                     }
                 }
                 .accessibilityLabel("Page")
+                SHDesignCapsuleDivider()
             }
             if let git {
                 SHDesignGitChip(label: git.label, tone: git.tone, hint: git.hint, isOpen: gitOpen, action: pressGit)
@@ -325,21 +328,43 @@ struct DesignToolbar: View, Equatable {
                         let window = proxy.bounds(of: .named("root-layout"))?.width ?? frame.maxX
                         return max(0, (window - frame.maxX).rounded())
                     } action: { placeGit($0) }
+                SHDesignCapsuleDivider()
             }
             if let system {
-                SHDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
+                SHDesignToolbarSystem(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
+                SHDesignCapsuleDivider()
             }
             Button { screen?.togglePresent() } label: { Image(systemName: "play.fill") }
                 .buttonStyle(.shIcon(isOn: screen?.presented != nil))
                 .disabled(screen?.canPresent != true)
                 .help("Present")
                 .accessibilityLabel("Present")
-            Button("Export", systemImage: "square.and.arrow.up") { export?() }
-                .buttonStyle(.sh(.secondary))
+            SHDesignToolbarChip("Export", symbol: "square.and.arrow.up") { export?() }
                 .disabled(export == nil)
             if let menu {
-                SHDesignToolbarMore(label: "More for \(name)") { DesignMenuItems(menu: menu, perform: perform) }
+                SHOptionsMenu("More for \(name)") { DesignMenuItems(menu: menu, perform: perform) }
             }
+        }
+    }
+}
+
+extension View {
+    /// The chat's column (DZCanvas): a lifted card 420pt wide, as the thread's side-pane card is (radius 14, 8pt from the canvas and from
+    /// the window's bottom and trailing edges), its tab strip's row at the top.
+    func designChatCard() -> some View {
+        frame(width: AppLayout.designChatWidth)
+            .shCard(radius: SH.Radius.xl, lift: true)
+            .padding(.leading, SHSidePaneMetrics.cardGap)
+            .padding([.trailing, .bottom], SHSidePaneMetrics.cardInset)
+    }
+}
+
+extension SHDesignPaneTabs {
+    /// The strip's ⋯ at its trailing end: the chat's own action, Refresh Thread.
+    func designChatOptions(refresh: @escaping () -> Void) -> some View {
+        overlay(alignment: .trailing) {
+            SHOptionsMenu("Chat options") { Button("Refresh Thread", action: refresh) }
+                .padding(.trailing, SHDesignChrome.paneTabTrailing)
         }
     }
 }

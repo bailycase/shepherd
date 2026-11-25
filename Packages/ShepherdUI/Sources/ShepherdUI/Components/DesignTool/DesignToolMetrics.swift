@@ -60,8 +60,14 @@ public enum SHDesignMetrics {
     /// Where a fitted canvas puts the boards (DZCanvas): 44pt in, the top row's labels 52pt down
     /// and its frames 76pt down, which leaves the board actions 18pt from the top. `fitTop` is
     /// also the room kept below the boards.
+    #if os(macOS)
+    /// DZCanvas on the Mac: 28pt in, the top row's labels 72pt down and its frames 96pt down.
+    public static let fitLeading: CGFloat = 28
+    public static let fitTop: CGFloat = 72
+    #else
     public static let fitLeading: CGFloat = 44
     public static let fitTop: CGFloat = 52
+    #endif
     public static let fitFrameTop: CGFloat = fitTop + labelHeight + labelGap
     /// The canvas toolbar: 16pt from the bottom-leading corner, a 38pt bar (4pt padding, radius
     /// 12), 30pt circle tools with 15pt glyphs, an 18pt divider with 4pt margins, the zoom in mono 11.
@@ -406,4 +412,105 @@ public enum SHDesignMetrics {
     public static let markupMarkerWidth: CGFloat = 12
     /// The proposals in the chat: cards, buttons and footnote 12pt apart.
     public static let markupProposalsSpacing: CGFloat = SH.Space.l
+}
+
+/// The Mac design screen's chrome, as the redesigned boards draw it (DZCanvas, DZTweak, DZExport,
+/// JumpInContext). Additive: the iPad's design screen keeps `SHDesignMetrics`' own values.
+public enum SHDesignChrome {
+    // The toolbar: the Jump field is 300×32 at the toolbar's middle; the trailing controls sit in
+    // one capsule (`SHToolbarCapsule`) as 28pt chips, a 1px divider 16pt tall between groups.
+    public static let jumpWidth: CGFloat = 300
+    public static let jumpMinWidth: CGFloat = 80
+    public static let jumpHeight: CGFloat = SH.Height.controlL
+    public static let jumpRadius: CGFloat = SH.Radius.xxl
+    public static let jumpGlyph: CGFloat = 14
+    public static let jumpTextSize: CGFloat = 13
+    public static let jumpChordSize: CGFloat = 12
+    public static let jumpPadding: CGFloat = SH.Space.l
+    /// The room the breadcrumb keeps at least either side of the Jump field (the capsule's own width and a gap, if more).
+    public static let jumpClearance: CGFloat = 300
+    public static let toolbarTextSize: CGFloat = 13
+    public static let chipHeight: CGFloat = SH.Height.controlM
+    public static let chipPadding: CGFloat = 9
+    public static let chipGap: CGFloat = SH.Space.s
+    public static let chipGlyph: CGFloat = 14
+    public static let chipSwatch: CGFloat = 9
+    public static let chipSwatchRadius: CGFloat = 2
+    public static let chipSwatchGap: CGFloat = SH.Space.xxs
+    public static let dividerHeight: CGFloat = 16
+    public static let dividerMargin: CGFloat = SH.Space.xxs
+
+    // The canvas: dots every 18pt, boards at radius 6 in a 1.5pt ink ring when selected.
+    public static let gridSpacing: CGFloat = 18
+    public static let boardRadius: CGFloat = 6
+    public static let boardRing: CGFloat = 1.5
+    public static let labelTextSize: CGFloat = 12
+    /// The stage keeps the window's 8pt around it beside the chat card.
+    public static let stageInset: CGFloat = SH.Space.m
+
+    // The board actions and the tool pill: 36pt bars at radius 18 on the card fill, items 28pt.
+    public static let barHeight: CGFloat = 36
+    public static let barRadius: CGFloat = 18
+    public static let barPadding: CGFloat = SH.Space.xs
+    public static let barSpacing: CGFloat = SH.Space.xxs
+    public static let barItemHeight: CGFloat = SH.Height.controlM
+    public static let barItemRadius: CGFloat = SH.Radius.xl
+    public static let barItemPadding: CGFloat = 10
+    public static let barMorePadding: CGFloat = SH.Space.m
+    public static let barItemGap: CGFloat = SH.Space.s
+    public static let barGlyph: CGFloat = 14
+    public static let barTextSize: CGFloat = 13
+    public static let barDividerMargin: CGFloat = SH.Space.xxs
+    /// The bar sits 6pt above its board's label.
+    public static let barGap: CGFloat = SH.Space.s
+    public static let zoomTextSize: CGFloat = 12
+    public static let zoomPaddingLeading: CGFloat = SH.Space.m
+    public static let zoomPaddingTrailing: CGFloat = 10
+
+    // The chat card: the thread's side-pane card (radius 14, lift), its tab strip 44pt.
+    public static let paneTabsHeight: CGFloat = 44
+    public static let paneTabLeading: CGFloat = SH.Space.m
+    public static let paneTabTrailing: CGFloat = SH.Space.s
+    public static let paneTabHeight: CGFloat = SH.Height.controlM
+    public static let paneTabPadding: CGFloat = 10
+    public static let paneTabTextSize: CGFloat = 13
+    public static let paneCountSize: CGFloat = 12
+
+    // Tweak (DZTweak): 34pt rows with a 96pt label column.
+    public static let tweakRowHeight: CGFloat = 34
+    public static let tweakLabelWidth: CGFloat = 96
+    public static let tweakPaneInset: CGFloat = SH.Space.xl
+    public static let segmentHeight: CGFloat = 26
+
+    // The canvas pin (DZTweak): a 22pt ink circle ringed 2pt in the card's fill.
+    public static let pinSize: CGFloat = 22
+    public static let pinRing: CGFloat = 2
+
+    // Export (DZExport): a 520pt sheet padded 18 20 16, sections 16pt apart, 34pt board rows, format cards at radius 10.
+    public static let exportWidth: CGFloat = 520
+    public static let exportPaddingTop: CGFloat = 18
+    public static let exportPaddingBottom: CGFloat = SH.Space.xl
+    public static let exportPaddingHorizontal: CGFloat = 20
+    public static let exportSectionTop: CGFloat = SH.Space.xl
+    public static let exportFooterTop: CGFloat = 18
+    public static let exportRowHeight: CGFloat = 34
+    public static let exportFormatTop: CGFloat = 9
+    public static let exportFormatBottom: CGFloat = 10
+    public static let exportFormatLine: CGFloat = 1.4
+
+    // A design system's page (DZSystem, DesignSystemPage): 44pt swatches, rows 40pt, a 820pt column.
+    public static let systemSwatchHeight: CGFloat = 44
+    public static let systemRowHeight: CGFloat = 40
+    public static let systemColumn: CGFloat = 820
+    public static let systemGap: CGFloat = SH.Space.l - 2
+    public static let systemHeadingSize: CGFloat = 18
+
+    // A selected element (DZTweak): an ink ring 3pt outside it, an ink tag 3pt above the ring and 4pt before it.
+    public static let selectionOutset: CGFloat = 3
+    public static let selectionTagHeight: CGFloat = 20
+    public static let selectionTagPadding: CGFloat = 7
+    public static let selectionTagRadius: CGFloat = 5
+    public static let selectionTagGap: CGFloat = 3
+    public static let selectionTagInset: CGFloat = SH.Space.xs
+    public static let selectionTagTextSize: CGFloat = 12
 }

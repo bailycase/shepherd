@@ -1,90 +1,68 @@
 import SwiftUI
 
-/// Jump to a board (JumpInContext): the toolbar's field over a design, and the card it opens.
-/// Measures as the board draws them.
+/// Jump to a board (JumpInContext): the toolbar's field over a design, and the card it opens: the
+/// command palette's card, with boards for its rows. Measures as the boards draw them.
 public enum SHJumpMetrics {
-    // The toolbar's field: 260 by 30, radius 8, 10pt in, a 14pt glass, the words in 12.5 and the
-    // chord in mono 10.5; a 1px `running` ring while the card is open.
-    public static let fieldWidth: CGFloat = 260
-    public static let fieldMinWidth: CGFloat = 80
-    public static let fieldHeight: CGFloat = 30
-    public static let fieldRadius: CGFloat = SH.Radius.m
-    public static let fieldPadding: CGFloat = 10
-    public static let fieldGlyph: CGFloat = 14
-    public static let fieldTextSize: CGFloat = 12.5
-    public static let fieldChordSize: CGFloat = 10.5
-    /// The board's 14pt glass is a 16-unit icon with a 1.5 stroke; the SF Symbol matches it 2pt
-    /// smaller in its 14pt frame.
-    public static let glyphInset: CGFloat = 2
+    // The toolbar's field: 300 by 32 (`SHDesignChrome`), radius 16, 12pt in, a 14pt glass, the words in 13 and the
+    // chord in 12; a 3pt `bgSelected` ring and a `textTertiary` line while the card is open.
+    public static let fieldWidth: CGFloat = SHDesignChrome.jumpWidth
+    public static let fieldMinWidth: CGFloat = SHDesignChrome.jumpMinWidth
+    public static let fieldHeight: CGFloat = SHDesignChrome.jumpHeight
+    public static let fieldRadius: CGFloat = SHDesignChrome.jumpRadius
+    public static let fieldPadding: CGFloat = SHDesignChrome.jumpPadding
+    public static let fieldGlyph: CGFloat = SHDesignChrome.jumpGlyph
+    public static let fieldTextSize: CGFloat = SHDesignChrome.jumpTextSize
+    public static let fieldChordSize: CGFloat = SHDesignChrome.jumpChordSize
+    public static let fieldRing: CGFloat = SH.Space.xs - 1
 
-    // The card: 620 wide, 15% down the window (150 of the board's 1000) over the sheet's scrim.
-    public static let width: CGFloat = 620
-    public static let topFraction: CGFloat = 0.15
-    /// The search row: 48pt, 14pt in, a 14pt glass 10pt before the field in 14.
-    public static let searchHeight: CGFloat = 48
-    public static let searchPadding: CGFloat = 14
-    public static let searchGlyph: CGFloat = 14
-    public static let searchTextSize: CGFloat = 14
-    /// The scope pills: 24pt, 10pt in, radius 12, 12pt words, 2pt apart.
-    public static let scopeHeight: CGFloat = 24
-    public static let scopePadding: CGFloat = 10
-    public static let scopeTextSize: CGFloat = 12
-    public static let scopeSpacing: CGFloat = 2
-    /// Above and below a pill: its hit area clears the desktop's 24pt minimum.
-    public static let scopeHitSlop: CGFloat = 1
-    /// The list: 4pt above, 8pt at the sides and below.
-    public static let listTop: CGFloat = 4
-    public static let listInset: CGFloat = SH.Space.m
-    /// A section's caps: mono 10.5 tracked 0.06em, 10pt in, 10pt above and 4pt below.
-    public static let sectionTextSize: CGFloat = 10.5
-    public static let sectionTracking: CGFloat = 0.63
-    public static let sectionTop: CGFloat = 10
-    public static let sectionBottom: CGFloat = 4
-    /// A row: 44pt, 10pt in, radius 8, 12pt between its picture and words; the picture 44 by 28 at
-    /// radius 4; the name in 13 (semibold while highlighted), its line in mono 10.5.
-    public static let rowHeight: CGFloat = 44
-    public static let rowPadding: CGFloat = 10
-    public static let rowRadius: CGFloat = SH.Radius.m
-    public static let rowSpacing: CGFloat = 12
+    // The card is the palette's: 680 wide, 112pt down, a 58pt search row, 46pt rows, a 42pt footer.
+    public static let width: CGFloat = SHPaletteMetrics.width
+    public static let top: CGFloat = SHPaletteMetrics.top
+    public static let searchHeight: CGFloat = SHPaletteMetrics.searchHeight
+    /// A row: 46pt, 10pt in, radius 9, 12pt between its picture and words; the picture 44 by 28 at
+    /// radius 5; the name in 14, its line in 12.
+    public static let rowHeight: CGFloat = 46
+    public static let rowPadding: CGFloat = SHPaletteMetrics.rowInset
+    public static let rowRadius: CGFloat = SHPaletteMetrics.rowRadius
+    public static let rowSpacing: CGFloat = SHPaletteMetrics.iconGap
     public static let picture = CGSize(width: 44, height: 28)
-    public static let pictureRadius: CGFloat = SH.Radius.xs
-    public static let titleSize: CGFloat = 13
-    public static let metaSize: CGFloat = 10.5
-    /// The highlighted row's ⏎: mono 10.5 in a 1px `lineStrong` box, radius 4, 1 by 6 padding.
-    public static let returnPaddingH: CGFloat = SH.Space.s
-    public static let returnPaddingV: CGFloat = 1
-    /// The footer: 34pt, 14pt in, hints 14pt apart in 11.5.
-    public static let footerHeight: CGFloat = 34
-    public static let footerSpacing: CGFloat = 14
-    public static let footerTextSize: CGFloat = 11.5
+    public static let pictureRadius: CGFloat = 5
+    public static let titleSize: CGFloat = 14
+    public static let metaSize: CGFloat = 12
+    public static let footerHeight: CGFloat = SHPaletteMetrics.footerHeight
+    public static let footerSpacing: CGFloat = SH.Space.xl
+    public static let footerTextSize: CGFloat = 12
     /// Rows the card shows before its list scrolls.
     public static let maxVisibleRows = 9
+    public static let margin: CGFloat = SHPaletteMetrics.margin
 
-    // The toast after a jump lands (JumpLanded): 36pt high, 14pt in before the words and 8 after
-    // the chord, 10pt apart, radius 10, the words in 12.5 and the chord in mono 10.5 (6pt in),
-    // 24pt above the canvas's bottom.
-    public static let backHeight: CGFloat = 36
+    // The toast after a jump lands (JumpLanded): 40pt high, 14pt in before the words and 8 after
+    // its close, 12pt apart, radius 12, the words in 13 and the chord in 12, 22pt above the
+    // canvas's bottom.
+    public static let backHeight: CGFloat = 40
     public static let backPaddingLeading: CGFloat = 14
     public static let backPaddingTrailing: CGFloat = SH.Space.m
-    public static let backSpacing: CGFloat = 10
-    public static let backRadius: CGFloat = 10
-    public static let backTextSize: CGFloat = 12.5
-    public static let backChordSize: CGFloat = 10.5
-    public static let backChordPadding: CGFloat = SH.Space.s
-    public static let backBottom: CGFloat = SH.Space.xxl
+    public static let backSpacing: CGFloat = SH.Space.l
+    public static let backRadius: CGFloat = SH.Radius.l
+    public static let backTextSize: CGFloat = 13
+    public static let backChordSize: CGFloat = 12
+    public static let backBottom: CGFloat = 22
+    public static let backClose: CGFloat = SH.Height.controlS
 }
 
-/// The toast after a jump lands (JumpLanded): "Jumped to <board>", a running-blue Back, and its
-/// chord. Raised on the popover's line and shadow; it closes by itself, so it has no close.
+/// The toast after a jump lands (JumpLanded): "Jumped to <board>", Back with its chord, and a close.
+/// A raised card on the popover's shadow; it closes by itself too.
 public struct SHJumpBackToast: View {
     let title: String
     let shortcut: String?
     let back: () -> Void
+    let close: (() -> Void)?
 
-    public init(title: String, shortcut: String?, back: @escaping () -> Void) {
+    public init(title: String, shortcut: String?, back: @escaping () -> Void, close: (() -> Void)? = nil) {
         self.title = title
         self.shortcut = shortcut
         self.back = back
+        self.close = close
     }
 
     public var body: some View {
@@ -95,28 +73,37 @@ public struct SHJumpBackToast: View {
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Button("Back", action: back)
-                .buttonStyle(.sh(.ghost, size: .s, tint: Color.sh.running))
-                .shHelp("Back to where you were", shortcut: shortcut)
-            if let shortcut {
-                Text(shortcut)
-                    .font(.shMono(M.backChordSize))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .padding(.trailing, M.backChordPadding)
-                    .accessibilityHidden(true)
+            HStack(spacing: SH.Space.m) {
+                Button("Back", action: back)
+                    .buttonStyle(.plain)
+                    .font(.shSans(M.backTextSize, .medium))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .shHelp("Back to where you were", shortcut: shortcut)
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.shSans(M.backChordSize))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            if let close {
+                Button(action: close) { Image(systemName: "xmark") }
+                    .buttonStyle(.shIcon(size: M.backClose))
+                    .shHelp("Dismiss")
+                    .accessibilityLabel("Dismiss")
             }
         }
         .padding(.leading, M.backPaddingLeading)
-        .padding(.trailing, M.backPaddingTrailing)
+        .padding(.trailing, close == nil ? M.backPaddingLeading : M.backPaddingTrailing)
         .frame(height: M.backHeight)
-        .shPopover(radius: M.backRadius)
+        .shPopover(radius: M.backRadius, line: .sh.lineSubtle)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
     }
 }
 
 /// The toolbar's "Jump to a board…" field over a design: a button that opens the card, with the
-/// chord that does the same. Lit with a `running` ring while the card is open.
+/// chord that does the same. Lit with a ring while the card is open.
 public struct SHJumpField: View {
     let shortcut: String?
     let isOpen: Bool
@@ -135,7 +122,7 @@ public struct SHJumpField: View {
         Button(action: action) {
             HStack(spacing: SH.Space.m) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: M.fieldGlyph - SHJumpMetrics.glyphInset))
+                    .font(.system(size: M.fieldGlyph - 1))
                     .frame(width: M.fieldGlyph, height: M.fieldGlyph)
                 Text("Jump to a board…")
                     .font(.shSans(M.fieldTextSize))
@@ -144,18 +131,17 @@ public struct SHJumpField: View {
                 Spacer(minLength: 0)
                 if let shortcut {
                     Text(shortcut)
-                        .font(.shMono(M.fieldChordSize))
-                        .foregroundStyle(sh.textTertiary)
+                        .font(.shSans(M.fieldChordSize))
                         .fixedSize()
                 }
             }
-            .foregroundStyle(sh.textSecondary)
+            .foregroundStyle(sh.textTertiary)
             .padding(.horizontal, M.fieldPadding)
             .frame(maxWidth: M.fieldWidth, minHeight: M.fieldHeight, maxHeight: M.fieldHeight)
-            .background(sh.bgRaised, in: shape)
-            .shBorder(sh.lineStrong, in: shape)
+            .shLift(shape)
+            .shBorder(isOpen ? sh.textTertiary : sh.lineSubtle, in: shape)
             .overlay {
-                if isOpen { shape.inset(by: -1).strokeBorder(sh.running, lineWidth: 1).allowsHitTesting(false) }
+                if isOpen { shape.inset(by: -M.fieldRing / 2).strokeBorder(sh.bgSelected, lineWidth: M.fieldRing).allowsHitTesting(false) }
             }
             .contentShape(shape)
         }
@@ -166,8 +152,8 @@ public struct SHJumpField: View {
     }
 }
 
-/// The card (JumpInContext): the search row with its scope pills, a rule, the list, a rule, and
-/// the footer's hints. `.shPopover()` chrome at radius 12.
+/// The card (JumpInContext): the palette's: the search row with its scope pills, the list inset
+/// 8pt, and the footer's hints on `bgHover` under a rule.
 public struct SHJumpCard<Search: View, Results: View, Footer: View>: View {
     @ViewBuilder let search: () -> Search
     @ViewBuilder let results: () -> Results
@@ -181,27 +167,30 @@ public struct SHJumpCard<Search: View, Results: View, Footer: View>: View {
     }
 
     public var body: some View {
-        let M = SHJumpMetrics.self
+        let M = SHPaletteMetrics.self
         VStack(spacing: 0) {
             search()
-                .padding(.horizontal, M.searchPadding)
+                .padding(.leading, M.searchLeading)
+                .padding(.trailing, M.searchTrailing)
                 .frame(height: M.searchHeight)
-            SHHairline()
             results()
                 .padding(.top, M.listTop)
-                .padding([.horizontal, .bottom], M.listInset)
-            SHHairline()
+                .padding(.horizontal, M.listSide)
+                .padding(.bottom, M.listBottom)
             footer()
-                .font(.shSans(M.footerTextSize))
+                .font(.shSans(SHJumpMetrics.footerTextSize))
                 .foregroundStyle(Color.sh.textTertiary)
-                .padding(.horizontal, M.searchPadding)
+                .padding(.leading, M.footerLeading)
+                .padding(.trailing, M.rowInset)
                 .frame(maxWidth: .infinity, minHeight: M.footerHeight, alignment: .leading)
+                .background(Color.sh.bgHover)
+                .overlay(alignment: .top) { SHHairline() }
         }
-        .shPopover(radius: SH.Radius.l)
+        .shPopover(radius: SH.Radius.xxl, line: .sh.lineSubtle)
     }
 }
 
-/// The search row's glass and field ("Jump to a board or a design…").
+/// The search row's glass and field ("Jump to a board or a design…"), as the palette's.
 public struct SHJumpSearchField: View {
     let placeholder: String
     @Binding var text: String
@@ -216,18 +205,17 @@ public struct SHJumpSearchField: View {
     }
 
     public var body: some View {
-        let M = SHJumpMetrics.self
-        HStack(spacing: 10) {
+        let M = SHPaletteMetrics.self
+        HStack(spacing: M.searchGap) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: M.searchGlyph - SHJumpMetrics.glyphInset))
-                .foregroundStyle(.sh.textSecondary)
-                .frame(width: M.searchGlyph, height: M.searchGlyph)
+                .font(.system(size: M.searchGlyph, weight: .regular))
+                .foregroundStyle(.sh.textPrimary)
                 .accessibilityHidden(true)
             // The board's placeholder is `textTertiary`; a plain field would draw it in the
             // field's own color.
             TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(Color.sh.textTertiary))
                 .textFieldStyle(.plain)
-                .font(.shSans(M.searchTextSize))
+                .font(.shSans(M.searchFont))
                 .foregroundStyle(.sh.textPrimary)
                 .tint(.sh.lantern)
                 .focused(focus)
@@ -237,8 +225,8 @@ public struct SHJumpSearchField: View {
     }
 }
 
-/// The scope pills ("This design", "All designs"): the chosen one on `bgBubble` with a
-/// `lineStrong` line in `textPrimary` medium, the others clear in `textSecondary`.
+/// The scope pills ("This design", "All designs"): the palette's, the chosen one on `bgSelected` in
+/// `textPrimary` medium, the others clear in `textSecondary`.
 public struct SHJumpScopes<ID: Hashable>: View {
     let options: [(id: ID, title: String)]
     @Binding var selection: ID
@@ -249,35 +237,11 @@ public struct SHJumpScopes<ID: Hashable>: View {
     }
 
     public var body: some View {
-        let M = SHJumpMetrics.self
-        let sh = Color.sh
-        HStack(spacing: M.scopeSpacing) {
-            ForEach(options, id: \.id) { option in
-                let on = option.id == selection
-                Button { selection = option.id } label: {
-                    Text(option.title)
-                        .font(.shSans(M.scopeTextSize, on ? .medium : .regular))
-                        .foregroundStyle(on ? sh.textPrimary : sh.textSecondary)
-                        .padding(.horizontal, M.scopePadding)
-                        .frame(height: M.scopeHeight)
-                        .background(on ? sh.bgBubble : .clear, in: Capsule())
-                        .shBorder(on ? sh.lineStrong : .clear, in: Capsule())
-                        // The pill draws 24pt; its hit area keeps the desktop's 24pt minimum
-                        // with a point to spare, so rounding never takes it under.
-                        .padding(.vertical, SHJumpMetrics.scopeHitSlop)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(SHPlainPressStyle())
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-        .fixedSize()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Scope")
+        SHPaletteScope("Scope", selection: $selection, options: options.map { ($0.id, $0.title) })
     }
 }
 
-/// A section's caps ("RECENT", "OTHER BOARDS 3"): mono 10.5 tracked, `textTertiary`.
+/// A section's label ("Recent", "Other boards 3"): the palette's, 12 medium `textTertiary`, a count after it.
 public struct SHJumpSectionHeader: View {
     let title: String
     let count: Int?
@@ -288,24 +252,22 @@ public struct SHJumpSectionHeader: View {
     }
 
     public var body: some View {
-        let M = SHJumpMetrics.self
         HStack(spacing: SH.Space.s) {
-            Text(title).textCase(.uppercase).tracking(M.sectionTracking)
-            if let count { Text("\(count)") }
+            Text(title).fontWeight(.medium)
+            if let count { Text("\(count)").fontWeight(.regular) }
         }
-        .font(.shMono(M.sectionTextSize))
+        .font(.sh(.caption))
         .foregroundStyle(.sh.textTertiary)
         .lineLimit(1)
-        .padding(.horizontal, M.rowPadding)
-        .padding(.top, M.sectionTop)
-        .padding(.bottom, M.sectionBottom)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SHPaletteMetrics.rowInset)
+        .padding(.bottom, SH.Space.s)
+        .frame(maxWidth: .infinity, minHeight: SHPaletteMetrics.sectionHeight, alignment: .bottomLeading)
         .accessibilityAddTraits(.isHeader)
     }
 }
 
-/// One board or design: its picture, its name over its line in mono, and, trailing, ⏎ while
-/// highlighted or its tag ("this board"). The highlight fills `bgSelected`. A button.
+/// One board or design: its picture, its name over its line, and, trailing, ↵ while highlighted or
+/// its tag ("this board"). The highlight fills `bgSelected`. A button.
 public struct SHJumpRow: View {
     let title: String
     let meta: String
@@ -333,27 +295,28 @@ public struct SHJumpRow: View {
                 SHReferenceThumbnail(picture, size: M.picture, radius: M.pictureRadius)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.shSans(M.titleSize, highlighted ? .semibold : .regular))
+                        .font(.shSans(M.titleSize))
                         .foregroundStyle(sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Text(meta)
-                        .font(.shMono(M.metaSize))
+                        .font(.shSans(M.metaSize))
                         .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if highlighted {
-                    Text("⏎")
-                        .font(.shMono(M.metaSize))
+                    Text("↵")
+                        .font(.sh(.micro, weight: .regular))
                         .foregroundStyle(sh.textSecondary)
-                        .padding(.horizontal, M.returnPaddingH)
-                        .padding(.vertical, M.returnPaddingV)
-                        .shBorder(sh.lineStrong, radius: SH.Radius.xs)
+                        .padding(.horizontal, SHPaletteMetrics.keyPadding)
+                        .frame(minWidth: SHPaletteMetrics.keySize - SH.Space.xxs, minHeight: SHPaletteMetrics.keySize - SH.Space.xxs)
+                        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SHPaletteMetrics.keyRadius))
+                        .shBorder(sh.lineSubtle, radius: SHPaletteMetrics.keyRadius)
                         .accessibilityHidden(true)
                 } else if let tag {
                     Text(tag)
-                        .font(.shMono(M.metaSize))
+                        .font(.shSans(M.metaSize))
                         .foregroundStyle(sh.textTertiary)
                 }
             }
@@ -368,7 +331,7 @@ public struct SHJumpRow: View {
     }
 }
 
-/// A footer hint: its keys in mono, then what they do ("↑↓ move").
+/// A footer hint: its keys, then what they do ("↑↓ move").
 public struct SHJumpHint: View {
     let keys: String
     let label: String
@@ -380,7 +343,7 @@ public struct SHJumpHint: View {
 
     public var body: some View {
         HStack(spacing: SH.Space.xs) {
-            Text(keys).font(.shMono(SHJumpMetrics.footerTextSize))
+            Text(keys)
             Text(label)
         }
         .fixedSize()
