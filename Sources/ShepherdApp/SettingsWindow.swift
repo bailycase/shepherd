@@ -8,7 +8,7 @@ struct SettingsCommandButton: View {
     var vm: ShepherdViewModel?
 
     var body: some View {
-        Button(vm?.showSettings == true ? "Back to App" : "Settings…") { vm?.showSettings.toggle() }
+        Button(vm?.showSettings == true ? "Shepherd hosted timing probe" : "Settings…") { vm?.showSettings.toggle() }
             .keyboardShortcut(",", modifiers: .command)
     }
 }
