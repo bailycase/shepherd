@@ -247,12 +247,8 @@ struct AgentsPreviewTests {
         let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
         fixture.transcripts["native-worker"] = Threads.workerTranscript
         defer { fixture.store.stop() }
-        let panes = RightPaneState()
-        panes.runByAgent[AgentID(rawValue: "a")] = "native-worker"
-        try await Preview.render("thread-subagent-inspector", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
-            RightPaneSplit(state: panes, showPane: true) {
-                fixture.thread(inspected: "native-worker")
-            } pane: {
+        try await Preview.render("thread-subagent-inspector", size: SidePanePreviewTests.column, ready: { fixture.store.ready }) {
+            SidePanePreviewTests.PaneWindow(fixture: fixture, inspected: "native-worker") {
                 SubagentInspector(store: fixture.store, runID: "native-worker", active: true, close: {}, select: { _ in }, fork: { _ in nil })
             }
         }
@@ -265,13 +261,9 @@ struct AgentsPreviewTests {
         let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
         fixture.transcripts["native-reviewer"] = Threads.workerTranscript
         defer { fixture.store.stop() }
-        let panes = RightPaneState()
-        panes.runByAgent[AgentID(rawValue: "a")] = "native-reviewer"
-        try await Preview.renderMatrix("thread-subagent-inspector-asked", size: CGSize(width: 1370, height: 900), scales: [1, 1.3],
+        try await Preview.renderMatrix("thread-subagent-inspector-asked", size: SidePanePreviewTests.column, scales: [1, 1.3],
                                        ready: { fixture.store.ready }) {
-            RightPaneSplit(state: panes, showPane: true) {
-                fixture.thread(inspected: "native-reviewer")
-            } pane: {
+            SidePanePreviewTests.PaneWindow(fixture: fixture, inspected: "native-reviewer") {
                 SubagentInspector(store: fixture.store, runID: "native-reviewer", active: true, close: {}, select: { _ in }, fork: { _ in nil })
             }
         }
@@ -338,12 +330,8 @@ struct AgentsPreviewTests {
         let fixture = ThreadFixture(Threads.subagents(Self.doneRuns, running: false))
         fixture.transcripts["native-tests"] = Threads.testsTranscript
         defer { fixture.store.stop() }
-        let panes = RightPaneState()
-        panes.runByAgent[AgentID(rawValue: "a")] = "native-tests"
-        try await Preview.render("thread-subagent-inspector-finished", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
-            RightPaneSplit(state: panes, showPane: true) {
-                fixture.thread(inspected: "native-tests")
-            } pane: {
+        try await Preview.render("thread-subagent-inspector-finished", size: SidePanePreviewTests.column, ready: { fixture.store.ready }) {
+            SidePanePreviewTests.PaneWindow(fixture: fixture, inspected: "native-tests") {
                 SubagentInspector(store: fixture.store, runID: "native-tests", active: true, close: {}, select: { _ in },
                                   fork: { _ in nil }, review: { _ in })
             }

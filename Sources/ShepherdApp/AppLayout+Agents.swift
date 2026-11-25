@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdUI
 
 /// Subagent surfaces: the tray above the composer and the inspector in the right pane. The
 /// tray's rows and the inspector's parts carry their own dimensions (ShepherdUI, Agents).
@@ -7,17 +8,25 @@ extension AppLayout {
     static let trayExpandedMaxRows = 8
 
     // Inspector
-    static let inspectorPadding: CGFloat = 14
+    /// The inspector is a card beside the thread (GXSubagents' `.insp` in its 420pt column, less the column's 16pt): 404pt wide,
+    /// 24pt in from the window's trailing and bottom edges (the 8pt window padding and the column's 16), 8pt from the thread.
+    static let inspectorCardWidth: CGFloat = 404
+    static let inspectorCardTrailing: CGFloat = SHSidePaneMetrics.cardInset + 16
+    static let inspectorCardBottom: CGFloat = SHSidePaneMetrics.cardInset + 16
+    /// What the card takes beside the thread: its gap before it and its trailing inset.
+    static let inspectorCardEdge: CGFloat = SHSidePaneMetrics.cardGap + inspectorCardTrailing
     static let inspectorTurnSpacing: CGFloat = 16
-    /// "72 earlier turns · Show all" · "Following live".
+    /// "72 earlier turns · Show all" · "Reading earlier output".
     static let inspectorFooterHeight: CGFloat = 28
     static let steerMaxLines = 6
     /// The Subagents board's 10pt inset above the Steer card, and above its field.
     static let steerTopInset: CGFloat = 10
-    /// The redesign's steer box (`.isteer`): 10pt in from the pane and under it, padded 10·10·8·12, its words 6pt over Steer.
-    static let steerBoxMargin = EdgeInsets(top: 0, leading: 10, bottom: 10, trailing: 10)
-    static let steerBoxPadding = EdgeInsets(top: 10, leading: 12, bottom: 8, trailing: 10)
-    static let steerBoxGap: CGFloat = 6
+    /// The card's body (`.gsv-body`): 24pt under its head, 16pt in from its sides and 12pt above the Steer field.
+    static let inspectorBodyPadding = EdgeInsets(top: SH.Space.xxl, leading: SH.Space.xl, bottom: SH.Space.l, trailing: SH.Space.xl)
+    /// The Steer field (`.gsv-steer`): 12pt in from the card and under it, padded 6·6·6·12, its send 8pt from its words.
+    static let steerMargin = SH.Space.l
+    static let steerPadding = EdgeInsets(top: SH.Space.s, leading: SH.Space.l, bottom: SH.Space.s, trailing: SH.Space.s)
+    static let steerGap = SH.Space.m
     /// Touched files listed under a finished run's result before "n more".
     static let inspectorMaxFiles = 5
 }

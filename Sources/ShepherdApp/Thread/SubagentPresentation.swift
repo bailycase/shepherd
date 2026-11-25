@@ -91,6 +91,26 @@ enum SubagentPresentation {
         nativeRunInspectorMeta(run, timeZone: timeZone)
     }
 
+    /// The card's subtitle (GXSubagents' `.gsv-st`): "Worker, running for " and then the run's time, live from `since` or
+    /// `until − since` once it ended. `hot` for a run waiting on its parent's answer. The time follows only a run that is
+    /// running or has ended; a queued, paused or asking one has none to show.
+    static func inspectorSubtitle(_ run: ChildRun) -> (lead: String, since: Date?, until: Date?, hot: Bool) {
+        let role = names(run).role ?? "Subagent"
+        let who = role.prefix(1).uppercased() + role.dropFirst()
+        let start = run.startedAt.map(date)
+        // A finished run's time is its duration; with no end to measure to it has none, rather than one counting up.
+        let ended = run.endedAt.map(date)
+        let span = start != nil && ended != nil
+        switch nativeRunPhase(run) {
+        case .running: return ("\(who), running" + (start == nil ? "" : " for "), start, nil, false)
+        case .queued: return ("\(who), queued", nil, nil, false)
+        case .paused: return ("\(who), paused", nil, nil, false)
+        case .asked: return ("\(who), waiting on parent", nil, nil, true)
+        case .done: return ("\(who), done" + (span ? " in " : ""), span ? start : nil, ended, false)
+        case .failed: return ("\(who), failed" + (span ? " after " : ""), span ? start : nil, ended, false)
+        }
+    }
+
     /// "step 1 / 1 · 62%" beside a live run's goal.
     static func goalNote(_ run: ChildRun) -> String? {
         guard !run.isTerminal else { return nil }
