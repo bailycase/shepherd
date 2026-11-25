@@ -27,6 +27,8 @@ public enum SHTerminalMetrics {
     public static let cardInsets = EdgeInsets()
     public static let cardRadius: CGFloat = 0
     #endif
+    /// A touch tab's words (iPadTerminal).
+    public static let touchTabText: CGFloat = 15
     /// A tab's side padding, and a running tab's dot (GXTerminal's `.ptab` and `.gd`).
     public static let tabPadding: CGFloat = 10
     public static let runningDot: CGFloat = 6
@@ -315,14 +317,14 @@ public struct SHTerminalTabView: View {
                     // The selected tab (iPadTerminal) and one that exited carry the terminal glyph.
                     if isSelected || tab.activity.isExited { glyph }
                     Text(tab.title)
-                        .font(.shSans(15, isSelected ? .medium : .regular))
+                        .font(.shSans(SHTerminalMetrics.touchTabText, isSelected ? .medium : .regular))
                         .shShimmer(active: tab.activity == .running || tab.activity == .starting)
                         .foregroundStyle(isSelected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     // The selected tab names its host (TerminalTab · states); the rest share it.
                     if isSelected, let host = tab.host {
                         Text(host)
-                            .font(.shSans(15))
+                            .font(.shSans(SHTerminalMetrics.touchTabText))
                             .foregroundStyle(sh.textTertiary)
                             .lineLimit(1)
                     }

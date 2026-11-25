@@ -222,9 +222,9 @@ private struct PadDesignCommentRow: View, Equatable {
             SHCommentPin(card.number)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text("\(card.target) · \(card.meta)").font(.shSans(MobileLayout.padDesignSubtitle)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                Text(card.text).font(.shSans(15)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
+                Text(card.text).font(.shSans(MobileLayout.padDesignCommentText)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
                 Button { _ = resolve(card.id) } label: {
-                    Text("Resolve").font(.shSans(14)).foregroundStyle(sh.textSecondary)
+                    Text("Resolve").font(.shSans(MobileLayout.padDesignCommentAction)).foregroundStyle(sh.textSecondary)
                         .frame(minHeight: SH.Height.touch, alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

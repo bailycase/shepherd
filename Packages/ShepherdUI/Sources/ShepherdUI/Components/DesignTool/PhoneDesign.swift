@@ -69,6 +69,10 @@ public enum SHPhoneDesignMetrics {
     public static let threadPaddingHorizontal: CGFloat = SH.Space.xl
     public static let threadPin: CGFloat = 22
     public static let replyHeight: CGFloat = 36
+    /// Its author and Resolve in 14, its comment and reply in 15 at 1.4.
+    public static let threadAuthor: CGFloat = 14
+    public static let threadText: CGFloat = 15
+    public static let threadLineHeight: CGFloat = 1.4
 }
 
 /// A design on the Designs screen (MobileDesigns, DuoOpenDesigns): a card at radius 16 with its
@@ -374,15 +378,15 @@ public struct SHPhoneCommentThread: View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
             HStack(spacing: SH.Space.m) {
                 SHCommentPin(number, size: .card)
-                Text(author).font(.shSans(14, .semibold)).foregroundStyle(sh.textPrimary)
+                Text(author).font(.shSans(SHPhoneDesignMetrics.threadAuthor, .semibold)).foregroundStyle(sh.textPrimary)
                 Text([age, note].compactMap { $0 }.joined(separator: " · "))
-                    .font(.shSans(14))
+                    .font(.shSans(SHPhoneDesignMetrics.threadAuthor))
                     .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                 Spacer(minLength: SH.Space.m)
                 if let onResolve {
                     Button(action: onResolve) {
-                        Text("Resolve").font(.shSans(14, .medium)).foregroundStyle(sh.textPrimary)
+                        Text("Resolve").font(.shSans(SHPhoneDesignMetrics.threadAuthor, .medium)).foregroundStyle(sh.textPrimary)
                             .frame(minHeight: SH.Height.touch).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -404,7 +408,7 @@ public struct SHPhoneCommentThread: View {
                 TextField("Reply…", text: $reply, prompt: Text("Reply…").foregroundStyle(sh.textTertiary), axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
-                    .font(.shSans(15))
+                    .font(.shSans(SHPhoneDesignMetrics.threadText))
                     .foregroundStyle(sh.textPrimary)
                     .focused($replyFocused)
                     .submitLabel(.send)
@@ -428,7 +432,7 @@ public struct SHPhoneCommentThread: View {
 
     private func phoneText(_ text: String) -> some View {
         Text(text)
-            .shText(size: 15, lineHeight: 1.4)
+            .shText(size: SHPhoneDesignMetrics.threadText, lineHeight: SHPhoneDesignMetrics.threadLineHeight)
             .foregroundStyle(Color.sh.textPrimary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)

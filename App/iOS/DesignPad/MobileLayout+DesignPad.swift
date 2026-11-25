@@ -50,6 +50,9 @@ extension MobileLayout {
     /// The chat pane is a card at radius 20 on the lift, 8pt in from the screen's edge (iPadDesign).
     static let padDesignPaneRadius: CGFloat = 20
     static let padDesignPaneInset: CGFloat = SH.Space.m
+    /// A comment's words and its Resolve in the Comments tab.
+    static let padDesignCommentText: CGFloat = 15
+    static let padDesignCommentAction: CGFloat = 14
     /// The card starts below the status bar (iPadDesign: 30pt down).
     static let padDesignPaneTop: CGFloat = 30
     static let padDesignScribbleHint = "Handwriting in the chat box works too: Scribble turns it into text."
