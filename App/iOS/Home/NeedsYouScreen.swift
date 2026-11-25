@@ -48,10 +48,6 @@ struct NeedsYouScreen: View {
                     .accessibilityHidden(single)
                 }
                 .sharedBackgroundVisibility(.hidden)
-                ToolbarItem(placement: .topBarLeading) { NextNeedingYouButton(showsScope: true) }
-                    .sharedBackgroundVisibility(.hidden)
-            } else {
-                ToolbarItem(placement: .topBarTrailing) { NextNeedingYouButton(showsScope: true) }
             }
         }
         .toolbar(removing: sizeClass == .regular ? .title : nil)
