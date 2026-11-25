@@ -48,7 +48,7 @@ struct SpacesScreen: View {
                         }
                         switch phase {
                         case .loading:
-                            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                            SHBusyLabel("Reading the spaces…").frame(maxWidth: .infinity)
                         case .loaded(let spaces):
                             if spaces.isEmpty {
                                 SettingsFootnote("No spaces on \(host.name) yet.")
@@ -139,7 +139,7 @@ struct SpaceScreen: View {
                     } else if host?.supports(.projectsV2) != true {
                         SettingsFootnote("Update Shepherd on the host to edit this space.")
                     } else {
-                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                        SHBusyLabel("Loading…")
                     }
                 }
                 .padding(MobileLayout.gutter)
@@ -226,7 +226,7 @@ private struct SpaceOverview: View {
                     }
                 }
             } else if model.busy {
-                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                SHBusyLabel("Loading…").frame(maxWidth: .infinity)
             }
         }
         .refreshable { if connection?.host?.isConnected == true { await model.load() } }
@@ -331,7 +331,7 @@ private struct SpaceDraftCard: View {
                 Button("Discard edits and reload", role: .destructive) { Task { await model.open(file, discard: true) } }
             } message: { Text("Any unsaved edits in this editor will be lost.") }
         } else if model.busy {
-            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+            SHBusyLabel("Loading…").frame(maxWidth: .infinity)
         }
     }
 }
@@ -381,7 +381,7 @@ private struct SpaceSectionScreen: View {
             } else {
                 SpaceMCP(model: model)
             }
-            if model.busy { ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity) }
+            if model.busy { SHBusyLabel("Loading…").frame(maxWidth: .infinity) }
         }
         .task(id: host?.isConnected == true) { await load() }
         .refreshable { await load() }
@@ -579,7 +579,7 @@ private struct SpaceSkillInstall: View {
                     Button("Preview skills") { Task { await preview() } }
                         .buttonStyle(.sh(.secondary, size: .l))
                         .disabled(host?.isConnected != true || repo.isEmpty || lookingUp || model.busy)
-                    if lookingUp { ProgressView().progressViewStyle(SHSpinnerStyle()) }
+                    if lookingUp { SHBusyLabel("Looking up…") }
                     if let found {
                         SHLazyListCard(found.skills) { skill in
                             Toggle(skill.name, isOn: Binding(get: { picked.contains(skill.path) }, set: { _ in picked.formSymmetricDifference([skill.path]) }))

@@ -132,7 +132,7 @@ private struct InstructionsUnavailable: View {
         if hosts.isEmpty {
             SettingsFootnote("Add a Mac in Settings ▸ Fleet to start.")
         } else if hosts.contains(where: { model.files(of: $0) == .checking }) {
-            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+            SHBusyLabel("Reading the instructions…").frame(maxWidth: .infinity)
         } else if hosts.allSatisfy({ !$0.isConnected }) {
             SettingsFootnote("No Mac is online. The instructions show here once one is back.")
         } else if let reason = hosts.lazy.compactMap({ model.files(of: $0) }).compactMap({ if case .failed(let reason) = $0 { reason } else { nil } }).first {
@@ -201,7 +201,7 @@ struct InstructionsEditorScreen: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if model.busy {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Saving…")
                 } else {
                     Button("Save") { Task { await model.save(file, in: settingsHosts) } }
                         .disabled(!isEdited)

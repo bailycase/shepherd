@@ -156,8 +156,7 @@ private struct PushHostRow: View {
                 }
                 Spacer(minLength: SH.Space.m)
                 if state.registering {
-                    ProgressView()
-                        .controlSize(.small)
+                    SHBusyLabel("Turning on…")
                 } else if state.revokeFailed {
                     Button("Retry") {
                         Task { await push.retryRevoke(host: host) }

@@ -170,10 +170,7 @@ struct ReviewCommitSheet: View {
     private var status: some View {
         switch store.stage {
         case .loading:
-            HStack(spacing: SH.Space.s) {
-                ProgressView().progressViewStyle(.shSpinner)
-                SHDialogStatus("Reading the checkout…")
-            }
+            SHDialogStatus("Reading the checkout…", busy: true)
         case .form:
             if store.error == nil, let problem = store.problem, let info = store.info, info.blocked == nil,
                       !(info.agentWorking && !store.confirmedWhileWorking) {
@@ -182,10 +179,7 @@ struct ReviewCommitSheet: View {
             }
         case .operation:
             if store.outcome == .running || store.outcome == nil {
-                HStack(spacing: SH.Space.s) {
-                    ProgressView().progressViewStyle(.shSpinner)
-                    SHDialogStatus("Working…")
-                }
+                SHDialogStatus("Working…", busy: true)
             }
         case .unavailable:
             EmptyView()

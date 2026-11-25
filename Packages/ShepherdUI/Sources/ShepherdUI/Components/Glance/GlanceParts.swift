@@ -2,7 +2,7 @@ import SwiftUI
 
 // The glance surfaces' shared parts: their measures, the state marks, rows, the subagent line
 // and the buttons. WidgetKit draws each surface once per update and runs no animation or
-// platform view, so every mark here is a plain shape: a spinner is a still arc, the attention
+// platform view, so every mark here is a plain shape: running is a filled dot, the attention
 // dot has no glow, and a running time counts through `Text(timerInterval:)`.
 
 /// The glance boards' measures (GlanceWatch … GlanceControls).
@@ -55,7 +55,7 @@ public struct SHGlanceDot: View {
     }
 }
 
-/// A card's leading mark: a still spinner arc while running, the crook while it needs you, the
+/// A card's leading mark: a filled running dot while running, the crook while it needs you, the
 /// state's symbol otherwise; a clock when the card is stale.
 public struct SHGlanceMark: View {
     let state: SHGlance.State?
@@ -79,10 +79,7 @@ public struct SHGlanceMark: View {
             } else {
                 switch state {
                 case .running:
-                    Circle().trim(from: 0, to: 0.75)
-                        .stroke(Color.sh.running, style: StrokeStyle(lineWidth: size / 9, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .padding(size / 7)
+                    Circle().fill(Color.sh.running).padding(size / 3)
                 case .done, .failed:
                     Image(systemName: state?.agentState.symbolName ?? "")
                         .font(.system(size: size - 3, weight: .semibold))

@@ -136,7 +136,7 @@ struct ReviewLoadState: View {
                 Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
         } else if !store.loaded {
-            ProgressView().progressViewStyle(SHSpinnerStyle())
+            SHBusyLabel("Loading the changes…")
                 .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 .accessibilityLabel("Loading the changes")
         } else if store.entries.isEmpty {
@@ -170,7 +170,7 @@ struct ReviewFileNotice: View {
     var body: some View {
         switch state {
         case .loading:
-            ProgressView().progressViewStyle(SHSpinnerStyle())
+            SHBusyLabel("Loading the file's changes…")
                 .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 .accessibilityLabel("Loading the file's changes")
         case .failed(let message):

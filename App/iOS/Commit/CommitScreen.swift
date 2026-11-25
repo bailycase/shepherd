@@ -19,8 +19,7 @@ struct CommitScreen: View {
                 switch store.stage {
                 case .loading:
                     HStack(spacing: SH.Space.m) {
-                        ProgressView().progressViewStyle(SHSpinnerStyle())
-                        Text("Reading the changes on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                        Text("Reading the changes on the host…").font(.sh(.ui)).shShimmer(active: true)
                     }
                     .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 case .unavailable(let message):

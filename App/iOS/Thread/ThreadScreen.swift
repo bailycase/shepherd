@@ -303,7 +303,7 @@ struct ThreadTranscript: View {
             // iOS 27.1 still draws from every change of the follower (ComposerPresentation.followerChanges).
             let _ = nativeTail ? 0 : presentation.followerChanges
             ScrollView {
-                // The notice and the spinner sit above the lazy stack, not in it: a line joining, changing or leaving the top of a
+                // The notice and the loading line sit above the lazy stack, not in it: a line joining, changing or leaving the top of a
                 // lazy stack made it estimate its height again, and a following view was thrown tens of thousands of points from its
                 // tail for a few frames (the host dropping and coming back).
                 VStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
@@ -329,7 +329,7 @@ struct ThreadTranscript: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
-                        ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
+                        SHBusyLabel("Loading…").frame(maxWidth: .infinity)
                     }
                     LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
                         ForEach(rows) { row in

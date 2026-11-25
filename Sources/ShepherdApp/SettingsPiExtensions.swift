@@ -29,7 +29,7 @@ struct ExtensionsSettingsGroup: View {
                 SettingsRow(title: "Couldn’t add the extension", problem: problem) { EmptyView() }
             }
             if model.busy.contains(YourPiModel.addExtensionRow) {
-                SettingsRow(title: "Adding…") { ProgressView().controlSize(.small) }
+                SettingsActionRow(leading: { SHBusyLabel("Adding…", font: .sh(.ui)) }, actions: { EmptyView() })
             }
             if extensions.isEmpty, !model.busy.contains(YourPiModel.addExtensionRow) {
                 SettingsRow(title: "No extensions", subtitle: "Add a file, folder or Git repository that registers a provider or other tools.") { EmptyView() }

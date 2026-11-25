@@ -140,7 +140,7 @@ struct ComponentGallery: View {
             ProgressView(value: 0.62).progressViewStyle(.shBar).frame(width: AppLayout.galleryBarWidth)
             SHStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: AppLayout.galleryBarWidth)
             HStack(spacing: SH.Space.l) {
-                ProgressView().progressViewStyle(.shSpinner)
+                SHBusyLabel("Loading…")
                 SHSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8])
             }
         }

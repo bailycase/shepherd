@@ -581,7 +581,7 @@ private struct HostSignInPanel: View {
                     .foregroundStyle(Color.sh.textPrimary)
                 switch progress.phase {
                 case .starting:
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Starting…")
                 case .waiting:
                     if let device = progress.deviceCode {
                         Text(device)

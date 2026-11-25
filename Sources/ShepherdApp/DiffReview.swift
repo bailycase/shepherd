@@ -66,7 +66,7 @@ final class ReviewSession: Identifiable {
     private(set) var filesVersion = 0
     /// Whether `files` hold the PR diff (legacy reviews). Follows `isPRMode` only once that side's
     /// files land, so the pane swaps one whole diff for the other rather than the old files for a
-    /// spinner.
+    /// loading line.
     private(set) var filesArePR = false
     /// Lines added and removed across `files`, kept with them so the header never sums.
     private(set) var addedCount = 0

@@ -126,7 +126,7 @@ struct ForgeEmptyPage: View {
                     Button("Try again") { Task { await store.refresh() } }.buttonStyle(.sh(.secondary))
                 }
             } else if !store.loadingKinds.isEmpty || !store.reposLoaded {
-                ProgressView().progressViewStyle(.shSpinner())
+                SHBusyLabel("Loading…", font: .sh(.ui))
             } else {
                 let noun = store.kind == .pullRequest ? "pull requests" : "issues"
                 empty(Text(store.repo == nil ? "No open \(noun) waiting on you" : "No open \(noun) in \(store.repoName)"),

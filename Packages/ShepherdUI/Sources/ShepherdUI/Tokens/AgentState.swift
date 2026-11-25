@@ -30,7 +30,7 @@ public enum AgentState: String, CaseIterable, Hashable, Sendable {
     }
 
     /// The SF Symbol for the state where a glyph stands alone (tool rows, run ledgers). Running
-    /// draws a spinner instead where one fits (`SHStateGlyph`).
+    /// draws a filled dot instead (`SHStateGlyph`).
     public var symbolName: String {
         switch self {
         case .running: "circle.dotted"
@@ -49,7 +49,7 @@ public enum AgentState: String, CaseIterable, Hashable, Sendable {
     /// Whether the state glows (the only animated state).
     public var glows: Bool { self == .attention }
 
-    /// Dots, glyphs, spinners, bars.
+    /// Dots, glyphs, bars.
     @MainActor public var color: Color {
         let sh = Color.sh
         return switch self {

@@ -164,7 +164,7 @@ struct ThreadFilesSplit: View {
 }
 
 /// One line of the split tree (iPadPaneFiles): a folder's chevron and folder, or a file's page past the chevron's
-/// column, its name, and a spinner while the agent edits it.
+/// column, its name, shimmering while the agent edits it.
 struct ThreadFilePadRow: View, Equatable {
     let row: ThreadFilesModel.Row
     let selected: Bool
@@ -193,14 +193,11 @@ struct ThreadFilePadRow: View, Equatable {
                     .opacity(row.kind == .note ? 0 : 1)
                 Text(row.name)
                     .font(row.kind == .note ? .sh(.micro) : .sh(.caption, weight: selected ? .semibold : .regular))
+                    .shShimmer(active: agentWorking || row.kind == .folder(expanded: true, loading: true))
                     .foregroundStyle(row.kind == .note ? sh.textTertiary : sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if agentWorking || row.kind == .folder(expanded: true, loading: true) {
-                    ProgressView().progressViewStyle(.shSpinner)
-                        .accessibilityLabel(agentWorking ? "The agent is editing \(row.name)" : "Loading")
-                }
             }
             .foregroundStyle(sh.textTertiary)
             .padding(.leading, SH.Space.m + CGFloat(row.depth) * MobileLayout.filesTreeLevel)
@@ -227,7 +224,7 @@ struct ThreadFilePadRow: View, Equatable {
     }
 }
 
-/// One open file's tab: its name in mono, then a lantern dot while it has unsaved edits, a spinner while the agent
+/// One open file's tab: its name in mono, then a lantern dot while it has unsaved edits, its name shimmering while the agent
 /// edits it, else its close button. The active tab sits on the editor's background under a lantern rule.
 struct ThreadFileTab: View {
     let name: String
@@ -244,7 +241,7 @@ struct ThreadFileTab: View {
             Button(action: select) {
                 HStack(spacing: SH.Space.m) {
                     Image(systemName: "doc").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
-                    Text(name).font(.sh(.mono)).foregroundStyle(active ? sh.textPrimary : sh.textSecondary).lineLimit(1)
+                    Text(name).font(.sh(.mono)).shShimmer(active: agentWorking).foregroundStyle(active ? sh.textPrimary : sh.textSecondary).lineLimit(1)
                 }
             }
             .buttonStyle(.plain)
@@ -257,9 +254,7 @@ struct ThreadFileTab: View {
                 Button(action: close) { Image(systemName: "xmark").font(.sh(.micro, weight: .semibold)) }
                     .buttonStyle(.shIcon(size: SH.Height.controlS))
                     .accessibilityHidden(true)
-            } else if agentWorking {
-                ProgressView().progressViewStyle(.shSpinner)
-            } else if dirty {
+            } else if dirty && !agentWorking {
                 Circle().fill(sh.lantern).frame(width: MobileLayout.filesDirtyDot, height: MobileLayout.filesDirtyDot)
             }
         }

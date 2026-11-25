@@ -51,7 +51,7 @@ struct DesignBoardsScreen: View {
                         }
                     }
                 } else {
-                    ProgressView().progressViewStyle(.shSpinner)
+                    SHBusyLabel("Loading…")
                         .frame(maxWidth: .infinity)
                         .padding(.top, SH.Space.xxxl)
                 }

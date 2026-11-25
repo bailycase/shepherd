@@ -196,7 +196,7 @@ struct ModelPickerSheet: View {
                 if let failure {
                     SHEmptyState(Text("Models unavailable"), message: failure)
                 } else if models == nil {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Loading models…")
                 } else if sections.isEmpty {
                     SHEmptyState(Text("No models"), message: query.isEmpty ? "\(host?.name ?? "The host") lists no models." : "Nothing matches \u{201C}\(query)\u{201D}.")
                 } else {

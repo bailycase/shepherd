@@ -332,9 +332,9 @@ private struct NewThreadForm: View {
             }
         } else if let blocker = model.blocker, blocker != .starting || !pad {
             HStack(spacing: SH.Space.s) {
-                if blocker.isPending { ProgressView().progressViewStyle(.shSpinner) }
                 Text(blocker.message)
                     .shText(.caption)
+                    .shShimmer(active: blocker.isPending)
                     .foregroundStyle(Color.sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 if case .defaultsFailed = blocker {

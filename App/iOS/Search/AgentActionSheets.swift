@@ -186,8 +186,7 @@ private struct DeleteWorktreeAgentForm: View {
                     LabeledContent("Branch") { Text(info.branch).font(.sh(.mono)).lineLimit(1) }
                 } else if loading && !running {
                     HStack(spacing: SH.Space.m) {
-                        ProgressView().progressViewStyle(SHSpinnerStyle())
-                        Text("Checking the worktree on \(host?.name ?? "the host")…").foregroundStyle(Color.sh.textSecondary)
+                        Text("Checking the worktree on \(host?.name ?? "the host")…").shShimmer(active: true)
                     }
                 }
             }
@@ -217,8 +216,7 @@ private struct DeleteWorktreeAgentForm: View {
             } else if running {
                 Section {
                     HStack(spacing: SH.Space.m) {
-                        ProgressView().progressViewStyle(SHSpinnerStyle())
-                        Text("Deleting on the host. Closing this only stops watching it.").foregroundStyle(Color.sh.textSecondary)
+                        Text("Deleting on the host. Closing this only stops watching it.").shShimmer(active: true)
                     }
                 }
             }
@@ -380,7 +378,7 @@ struct MoveToMacSheet: View {
         Form {
             switch phase {
             case .loading:
-                Section { HStack { ProgressView().progressViewStyle(SHSpinnerStyle()); Text("Reading the fleet…").font(.sh(.ui)) } }
+                Section { Text("Reading the fleet…").font(.sh(.ui)).shShimmer(active: true) }
             case .unavailable(let why):
                 Section { Text(why).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
             case .loaded:

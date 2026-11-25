@@ -288,7 +288,7 @@ extension SHContextDetails {
             if let note = model.note {
                 Self.emphasized(note, model.emphasis).font(.shSans(SHContextMacMetrics.noteFont)).foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .shShimmer()
+                    .shShimmer(active: true)
                     .padding(.top, SHContextMacMetrics.paragraphTop)
             }
             // How far along is unknown: the bar eases toward full while it runs.

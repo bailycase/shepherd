@@ -211,17 +211,11 @@ struct HostNotice: View, Equatable {
 
     var body: some View {
         HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: SH.Space.l) {
-            Group {
-                if card.phase == .connecting {
-                    ProgressView().progressViewStyle(.shSpinner)
-                } else {
-                    SHStatusDot(card.state, size: SHListMetrics.dot)
-                }
-            }
-            .frame(width: SHListMetrics.leadingWidth)
+            SHStatusDot(card.state, size: SHListMetrics.dot)
+                .frame(width: SHListMetrics.leadingWidth)
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(card.name).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
-                Text(card.summary).font(.sh(.caption)).foregroundStyle(card.state.textColor).lineLimit(3)
+                Text(card.summary).font(.sh(.caption)).shShimmer(active: card.phase == .connecting).foregroundStyle(card.state.textColor).lineLimit(3)
                 // At accessibility sizes Retry drops under the name rather than squeezing it.
                 if typeSize.isAccessibilitySize { retry.padding(.top, SH.Space.xs) }
             }

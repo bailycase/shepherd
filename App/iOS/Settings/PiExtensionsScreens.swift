@@ -68,7 +68,7 @@ struct PiExtensionSections: View {
                     Button("Add from Git…") { gitURL = ""; store.addingExtension = true }
                         .buttonStyle(.sh(.secondary))
                         .disabled(busy)
-                    if busy { ProgressView().controlSize(.small) }
+                    if busy { SHBusyLabel("Adding…") }
                 }
                 SettingsFootnote("Extensions run with your account’s access on \(host.name). Providers they add appear in Models ▸ Sign-in; agents load them when they start or on /reload.")
             }

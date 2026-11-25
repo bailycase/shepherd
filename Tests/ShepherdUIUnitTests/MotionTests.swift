@@ -13,14 +13,14 @@ struct MotionTests {
         (Motion.hover, 0.12), (.content, 0.12),
         (.disclosure, 0.18), (.list, 0.18), (.pane, 0.18), (.overlay, 0.18),
         (.sheet, 0.24), (.emphasis, 0.24), (.scroll, 0.24),
-        (.glow, 1.6), (.spin, 1), (.shimmer, 1.8), (.pulse, 1.4),
+        (.glow, 1.6), (.shimmer, 1.8), (.pulse, 1.4),
     ])
     func everyMotionIsAnchoredToABoardDuration(_ motion: Motion, duration: TimeInterval) {
         #expect(motion.duration == duration)
     }
 
-    @Test func onlyTheGlowTheSpinnerTheShimmerAndThePulseLoop() {
-        #expect(Motion.allCases.filter(\.isContinuous) == [.glow, .spin, .shimmer, .pulse])
+    @Test func onlyTheGlowTheShimmerAndThePulseLoop() {
+        #expect(Motion.allCases.filter(\.isContinuous) == [.glow, .shimmer, .pulse])
         #expect(Motion.allCases.filter(\.isContinuous).allSatisfy { $0.spring == nil })
     }
 
@@ -70,7 +70,7 @@ struct MotionTests {
         (Motion.hover, Motion.hover.animation(reduceMotion: false)), (.content, Motion.content.animation(reduceMotion: false)),
         (.disclosure, Motion.crossFade), (.list, Motion.crossFade), (.pane, Motion.crossFade),
         (.overlay, Motion.crossFade), (.sheet, Motion.crossFade),
-        (.emphasis, nil), (.scroll, nil), (.glow, nil), (.spin, nil), (.shimmer, nil), (.pulse, nil),
+        (.emphasis, nil), (.scroll, nil), (.glow, nil), (.shimmer, nil), (.pulse, nil),
     ])
     func reduceMotionKeepsFadesAndDropsMovement(_ motion: Motion, animation: Animation?) {
         #expect(motion.animation(reduceMotion: true) == animation)
@@ -86,7 +86,7 @@ struct MotionTests {
         (.disclosure, nil, .nudge(.top)), (.list, nil, .nudge(.top)), (.list, .bottom, .nudge(.bottom)),
         (.overlay, nil, .grow(.top)), (.overlay, .bottom, .grow(.bottom)),
         (.emphasis, nil, .pop), (.hover, nil, .fade), (.content, .leading, .fade),
-        (.scroll, nil, .identity), (.glow, nil, .identity), (.spin, nil, .identity), (.shimmer, nil, .identity),
+        (.scroll, nil, .identity), (.glow, nil, .identity), (.shimmer, nil, .identity),
         (.pulse, nil, .identity),
     ] as [(Motion, Edge?, Motion.TransitionStyle)])
     func transitionsComeFromTheirEdges(_ motion: Motion, edge: Edge?, style: Motion.TransitionStyle) {
@@ -145,11 +145,6 @@ struct MotionTests {
             let exact = SHPhase.glowOpacity(Date(timeIntervalSinceReferenceDate: fraction * Motion.glow.duration))
             #expect(abs(interpolated - exact) < 0.01)
         }
-    }
-
-    @Test(arguments: [(CGFloat(8), CGFloat(1.5)), (13, 1.885), (48, 6.96)])
-    func theSpinnersStrokeScalesWithItsSize(size: CGFloat, width: CGFloat) {
-        #expect(abs(SHPhase.spinnerLineWidth(size: size) - width) < 1e-6)
     }
 
     @Test func thePulseRisesFromDimToFullAndBack() {

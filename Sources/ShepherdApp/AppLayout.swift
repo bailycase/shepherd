@@ -10,8 +10,6 @@ enum AppLayout {
     // Thread, activity lines, and the composer: AppLayout+Thread.swift
 
     // Review: diff rows are ShepherdUI SHDiff* metrics; runs fold past `reviewCollapseThreshold`.
-    /// "Loading the diff…"'s spinner.
-    static let reviewLoadingSpinner: CGFloat = 12
 
     // Settings and sheets: AppLayout+Settings.swift
 

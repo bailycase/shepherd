@@ -13,7 +13,7 @@ import ImageIO
 /// unavailable message.
 struct FilesTab: View {
     let model: FileTreeModel
-    /// The file the thread's agent is editing now (absolute), for the tab and tree spinners.
+    /// The file the thread's agent is editing now (absolute), for the tab and tree shimmer.
     let agentPath: String?
     @State private var showTree = true
     @State private var treeWidth: CGFloat = AppLayout.Files.treeWidth
@@ -173,8 +173,8 @@ struct FilesTab: View {
 
 // MARK: - File tab
 
-/// One open file: its name, then a dot while it has unsaved edits, a spinner while the
-/// agent edits it, else its close button (shown on hover for the first two too).
+/// One open file: its name, then a dot while it has unsaved edits, "Agent editing" shimmering
+/// while the agent edits it, else its close button (shown on hover for the first two too).
 private struct FileTabView: View {
     let tab: OpenFileTab
     let isActive: Bool
@@ -196,7 +196,7 @@ private struct FileTabView: View {
                         .foregroundStyle(isActive ? Color.sh.textPrimary : Color.sh.textSecondary)
                         .lineLimit(1)
                     if agentWorking {
-                        Text("Agent editing").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                        Text("Agent editing").font(.sh(.caption)).shShimmer(active: true).lineLimit(1)
                     }
                 }
             }
@@ -212,11 +212,7 @@ private struct FileTabView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close \(tab.name)")
-                } else if agentWorking {
-                    ProgressView()
-                        .progressViewStyle(.shSpinner(size: AppLayout.Files.tabCloseSize))
-                        .accessibilityLabel("The agent is editing \(tab.name)")
-                } else {
+                } else if !agentWorking {
                     Circle()
                         .fill(Color.sh.textPrimary)
                         .frame(width: AppLayout.Files.dirtyDotSize, height: AppLayout.Files.dirtyDotSize)
@@ -444,8 +440,7 @@ private struct FileViewerContent: View {
                 ImagePreview(data: data)
             }
         } else if model.selectedLoading {
-            ProgressView()
-                .controlSize(.small)
+            SHBusyLabel("Loading…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -922,8 +917,7 @@ private struct FilesMarkdownPreview: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                ProgressView()
-                    .controlSize(.small)
+                SHBusyLabel("Loading…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -969,7 +963,7 @@ private struct ImagePreview: View {
                     .font(.sh(.caption))
                     .foregroundStyle(Color.sh.textTertiary)
             } else {
-                ProgressView().controlSize(.small)
+                SHBusyLabel("Loading…")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1007,7 +1001,7 @@ private nonisolated func thumbnailImage(data: Data, maxDimension: CGFloat) -> CG
 private struct FileTreeContent: View {
     let model: FileTreeModel
     @Binding var showHidden: Bool
-    /// The file the agent is editing now: its row shows a spinner.
+    /// The file the agent is editing now: its name shimmers.
     let agentPath: String?
     let hideTree: () -> Void
 
@@ -1205,6 +1199,7 @@ private struct FileTreeRow: View, Equatable {
 
                 Text(node.name)
                     .font(.shSans(AppLayout.Files.treeRowFontSize))
+                    .shShimmer(active: node.isLoading || agentWorking)
                     .foregroundStyle(isSelected ? Color.sh.textPrimary : Color.sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -1220,14 +1215,6 @@ private struct FileTreeRow: View, Equatable {
                 if node.error != nil {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(Color.sh.textSecondary)
-                }
-                if node.isLoading {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-                if agentWorking {
-                    ProgressView()
-                        .progressViewStyle(.shSpinner(size: AppLayout.Files.tabCloseSize))
                 }
             }
             .frame(height: AppLayout.Files.treeRowHeight)

@@ -55,8 +55,7 @@ struct PairForm: View {
             Section {
                 if model.found.isEmpty && model.link == nil {
                     HStack(spacing: SH.Space.s) {
-                        ProgressView().controlSize(.small)
-                        Text("Looking for Macs running Shepherd on this network…")
+                        Text("Looking for Macs running Shepherd on this network…").shShimmer(active: true)
                     }
                     .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                 }
@@ -101,8 +100,7 @@ struct PairForm: View {
             Section {
                 Button(action: pair) {
                     HStack {
-                        Text(model.macName.map { "Add \($0)" } ?? "Add Mac")
-                        if model.phase == .working { Spacer(); ProgressView().controlSize(.small) }
+                        Text(model.macName.map { "Add \($0)" } ?? "Add Mac").shShimmer(active: model.phase == .working)
                     }
                 }
                 .disabled(!model.ready)

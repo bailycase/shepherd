@@ -85,7 +85,6 @@ public enum SHGoalMetrics {
     public static let dot: CGFloat = 6
     public static let statusGlyph: CGFloat = 11
     public static let pauseGlyph: CGFloat = 10
-    public static let spinnerStroke: CGFloat = 1.375
     public static let desktopActionGlyph: CGFloat = 14
     public static let touchActionGlyph: CGFloat = 16
     public static let textInset: CGFloat = 14
@@ -319,7 +318,7 @@ public struct SHGoalPill: View {
                 .frame(width: state.offersPause ? SHGoalMetrics.statusGlyph : nil)
             Text(state.offersPause ? SHGoalState.checking.pillText(time: time) : state.pillText(time: time))
                 .hidden()
-                .overlay(alignment: .leading) { Text(state.pillText(time: time)) }
+                .overlay(alignment: .leading) { Text(state.pillText(time: time)).shShimmer(active: state == .checking) }
                 .font(.shMono(size.pillFont)).monospacedDigit()
         }
         .foregroundStyle(state.color)
@@ -386,7 +385,8 @@ private struct SHGoalStatusMark: View {
             case .working:
                 SHLayerGlowDot(color: state.markColor).frame(width: SHGoalMetrics.dot, height: SHGoalMetrics.dot)
             case .checking:
-                SHLayerSpinner(size: SHGoalMetrics.statusGlyph, color: state.markColor, lineWidth: SHGoalMetrics.spinnerStroke)
+                // Nothing spins: the pill's words shimmer instead.
+                Circle().fill(state.markColor).frame(width: SHGoalMetrics.dot, height: SHGoalMetrics.dot)
             case .met:
                 Image(systemName: "checkmark").font(.system(size: SHGoalMetrics.statusGlyph, weight: .semibold))
             case .paused:

@@ -93,6 +93,16 @@ struct DesignRulesTests {
         (".foregroundStyle(Color.sh.textPrimary)", []),
         (".foregroundStyle(.sh.lantern)", []),
         ("Color(light: swatch.light, dark: swatch.dark)", []),
+        // Nothing spins: a ProgressView needs a value, and no spinner style is drawn.
+        ("ProgressView()", [.spinner]),
+        ("ProgressView().progressViewStyle(.shSpinner(size: 10))", [.spinner]),
+        ("ProgressView().progressViewStyle(SHSpinnerStyle())", [.spinner]),
+        ("ProgressView(\"Loading\")", [.spinner]),
+        ("ProgressView { Text(\"Loading\") }", [.spinner]),
+        ("SHLayerSpinner(size: 12, color: color)", [.spinner]),
+        ("ProgressView(value: 0.62).progressViewStyle(.shBar)", []),
+        ("ProgressView(value: min(1, max(0, window.fraction)))", []),
+        ("SHBusyLabel(\"Loading…\")", []),
         // A shared glyph is SHGlyph's.
         ("Image(systemName: \"bolt.fill\")", [.rawGlyphName]),
         (".glyph(\"bolt\", attention: true)", [.rawGlyphName]),

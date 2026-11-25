@@ -57,8 +57,7 @@ struct PadCommitPopover: View {
                 switch store.stage {
                 case .loading:
                     HStack(spacing: SH.Space.m) {
-                        ProgressView().progressViewStyle(SHSpinnerStyle())
-                        Text("Reading the changes on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                        Text("Reading the changes on the host…").font(.sh(.ui)).shShimmer(active: true)
                     }
                     .frame(minHeight: SH.Height.touch)
                 case .unavailable(let message):

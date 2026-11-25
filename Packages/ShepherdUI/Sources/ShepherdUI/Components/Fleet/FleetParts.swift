@@ -117,7 +117,7 @@ public struct SHListRow: View, Equatable {
         case symbol(String, AgentState? = nil)
         /// A symbol in a 20pt `bgSelected` circle (the iPad sidebar's New thread).
         case badge(String)
-        /// A state's 14pt glyph (`SHStateGlyph`: the spinner while running; iPadOverview).
+        /// A state's 14pt glyph (`SHStateGlyph`: a dot while running; iPadOverview).
         case glyph(AgentState)
     }
 

@@ -127,7 +127,7 @@ final class ReviewStore {
     /// The last load was cancelled and no newer one took over.
     private var loadCancelled = false
     /// Nothing loaded, nothing in flight, no error: a cancelled load left the review empty. The
-    /// screen offers Try again rather than a spinner.
+    /// screen offers Try again rather than a loading line.
     var loadIdle: Bool { loadCancelled && !loading && !loaded && loadError == nil }
     private(set) var copyingPatch = false
     var copyNotice: String?

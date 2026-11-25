@@ -195,7 +195,7 @@ struct ChangesBasePicker: View {
                     }
                     .listRowBackground(Color.clear)
                 } else {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Loading the branches…")
                         .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                         .listRowBackground(Color.clear)
                         .accessibilityLabel("Loading the branches")

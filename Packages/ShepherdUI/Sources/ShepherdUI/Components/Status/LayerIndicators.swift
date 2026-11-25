@@ -6,30 +6,12 @@ import AppKit
 import UIKit
 #endif
 
-// The spinner, the attention glow and live text's shimmer run on the render server: a Core
+// The attention glow and live text's shimmer run on the render server: a Core
 // Animation animation on a layer, installed once, so one on screen costs the app no frames (a
 // SwiftUI timeline redrew its window on every display frame, most of a core in a debug build off
-// screen). All keep their clock phase (`SHPhase`), so every spinner turns in step, every dot
+// screen). All keep their clock phase (`SHPhase`), so every dot
 // pulses together, and every live line's highlight moves as one. Under Reduce Motion, or while
 // `shMotionPaused`, the animation is removed and the layer rests as it draws statically.
-
-/// The running spinner's 3/4 arc.
-struct SHLayerSpinner: View {
-    let size: CGFloat
-    let color: Color
-    /// The stroke, else `SHPhase.spinnerLineWidth`; and how much of the circle the arc spans.
-    var lineWidth: CGFloat? = nil
-    var sweep: CGFloat = 0.75
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.shMotionPaused) private var motionPaused
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        SHSpinnerLayerRepresentable(size: size, color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme,
-                                    lineWidth: lineWidth, sweep: sweep)
-            .frame(width: size, height: size)
-    }
-}
 
 /// A status dot that glows (only attention glows).
 struct SHLayerGlowDot: View {
@@ -44,9 +26,6 @@ struct SHLayerGlowDot: View {
 }
 
 extension SHPhase {
-    /// The spinner's stroke: at least 1.5pt, else 14.5% of its size.
-    static func spinnerLineWidth(size: CGFloat) -> CGFloat { max(1.5, size * 0.145) }
-
     /// The glow's opacity through one period as keyframes: `SHPhase.glowOpacity` sampled at
     /// `count` even steps and back to the start, so a linear interpolation between them follows
     /// the cosine to well under a percent.
@@ -83,7 +62,6 @@ extension SHPhase {
 
 /// The layer animations, shared by both platforms' views.
 enum SHLayerMotion {
-    static let spinKey = "sh.spin"
     static let glowKey = "sh.glow"
     static let shimmerKey = "sh.shimmer"
 
@@ -124,21 +102,6 @@ enum SHLayerMotion {
         "position": NSNull(), "frame": NSNull(), "transform": NSNull(), "opacity": NSNull(), "hidden": NSNull(),
     ]
 
-    /// One turn per `SH.Motion.spin.duration`, starting where the clock's phase is now.
-    /// `clockwise` is the sign that turns the layer clockwise on screen: negative in AppKit's
-    /// y-up layers, positive in UIKit's.
-    static func spin(clockwise: Double, now: Date = Date()) -> CABasicAnimation {
-        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-        spin.fromValue = 0
-        spin.toValue = clockwise * 2 * Double.pi
-        spin.duration = SH.Motion.spin.duration
-        spin.repeatCount = .infinity
-        spin.timingFunction = CAMediaTimingFunction(name: .linear)
-        spin.timeOffset = SHPhase.fraction(now, .spin) * SH.Motion.spin.duration
-        spin.isRemovedOnCompletion = false
-        return spin
-    }
-
     /// The glow's pulse, 1 → 0.35 → 1 over `SH.Motion.glow.duration`, in phase with the clock.
     static func glow(now: Date = Date()) -> CAKeyframeAnimation {
         let frames = SHPhase.glowKeyframes()
@@ -164,83 +127,6 @@ enum SHLayerMotion {
 }
 
 #if canImport(AppKit)
-
-/// Draws the spinner's arc in a shape layer that Core Animation turns. AppKit layers are y-up:
-/// the arc runs clockwise on screen from three o'clock to twelve, as `Circle().trim(0, 0.75)`
-/// does in SwiftUI, and turns clockwise.
-final class SHSpinnerLayerView: NSView {
-    let arc = CAShapeLayer()
-    private var size: CGFloat = 0
-    private var sweep: CGFloat = 0.75
-    private var animates = false
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        arc.actions = SHLayerMotion.noActions
-        arc.fillColor = nil
-        arc.lineCap = .round
-        layer?.addSublayer(arc)
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    func update(size: CGFloat, color: CGColor, animates: Bool, lineWidth: CGFloat? = nil, sweep: CGFloat = 0.75) {
-        arc.strokeColor = color
-        let width = lineWidth ?? SHPhase.spinnerLineWidth(size: size)
-        if size != self.size || width != arc.lineWidth || sweep != self.sweep {
-            self.size = size
-            self.sweep = sweep
-            arc.lineWidth = width
-            needsLayout = true
-        }
-        self.animates = animates
-        syncAnimation()
-    }
-
-    override func layout() {
-        super.layout()
-        arc.frame = bounds
-        let inset = arc.lineWidth / 2
-        let radius = max(0, min(bounds.width, bounds.height) / 2 - inset)
-        let path = CGMutablePath()
-        path.addArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: radius, startAngle: 0,
-                    endAngle: -2 * sweep * .pi, clockwise: true)
-        arc.path = path
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        syncAnimation()
-    }
-
-    private func syncAnimation() {
-        SHLayerMotion.sync(arc, key: SHLayerMotion.spinKey, animates: animates && window != nil) {
-            SHLayerMotion.spin(clockwise: -1)
-        }
-    }
-}
-
-struct SHSpinnerLayerRepresentable: NSViewRepresentable {
-    let size: CGFloat
-    let color: Color
-    let animates: Bool
-    /// Read so that an appearance change updates the view, which resolves `color` again.
-    let colorScheme: ColorScheme
-    var lineWidth: CGFloat? = nil
-    var sweep: CGFloat = 0.75
-
-    func makeNSView(context: Context) -> SHSpinnerLayerView { SHSpinnerLayerView() }
-
-    func updateNSView(_ view: SHSpinnerLayerView, context: Context) {
-        view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates,
-                    lineWidth: lineWidth, sweep: sweep)
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: SHSpinnerLayerView, context: Context) -> CGSize? {
-        CGSize(width: size, height: size)
-    }
-}
 
 /// A filled circle whose opacity Core Animation pulses.
 final class SHGlowLayerView: NSView {
@@ -344,80 +230,6 @@ struct SHShimmerLayerRepresentable: NSViewRepresentable {
 }
 
 #elseif canImport(UIKit)
-
-/// UIKit layers are y-down: the same arc and turn with the opposite signs.
-final class SHSpinnerLayerView: UIView {
-    let arc = CAShapeLayer()
-    private var size: CGFloat = 0
-    private var sweep: CGFloat = 0.75
-    private var animates = false
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        arc.actions = SHLayerMotion.noActions
-        arc.fillColor = nil
-        arc.lineCap = .round
-        layer.addSublayer(arc)
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    func update(size: CGFloat, color: CGColor, animates: Bool, lineWidth: CGFloat? = nil, sweep: CGFloat = 0.75) {
-        arc.strokeColor = color
-        let width = lineWidth ?? SHPhase.spinnerLineWidth(size: size)
-        if size != self.size || width != arc.lineWidth || sweep != self.sweep {
-            self.size = size
-            self.sweep = sweep
-            arc.lineWidth = width
-            setNeedsLayout()
-        }
-        self.animates = animates
-        syncAnimation()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        arc.frame = bounds
-        let inset = arc.lineWidth / 2
-        let radius = max(0, min(bounds.width, bounds.height) / 2 - inset)
-        let path = CGMutablePath()
-        path.addArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: radius, startAngle: 0,
-                    endAngle: 2 * sweep * .pi, clockwise: false)
-        arc.path = path
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        syncAnimation()
-    }
-
-    private func syncAnimation() {
-        SHLayerMotion.sync(arc, key: SHLayerMotion.spinKey, animates: animates && window != nil) {
-            SHLayerMotion.spin(clockwise: 1)
-        }
-    }
-}
-
-struct SHSpinnerLayerRepresentable: UIViewRepresentable {
-    let size: CGFloat
-    let color: Color
-    let animates: Bool
-    let colorScheme: ColorScheme
-    var lineWidth: CGFloat? = nil
-    var sweep: CGFloat = 0.75
-
-    func makeUIView(context: Context) -> SHSpinnerLayerView { SHSpinnerLayerView() }
-
-    func updateUIView(_ view: SHSpinnerLayerView, context: Context) {
-        view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates,
-                    lineWidth: lineWidth, sweep: sweep)
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: SHSpinnerLayerView, context: Context) -> CGSize? {
-        CGSize(width: size, height: size)
-    }
-}
 
 final class SHGlowLayerView: UIView {
     let dot = CAShapeLayer()

@@ -25,8 +25,6 @@ public enum SHMentionMetrics {
     public static let emptyTitleSize: CGFloat = 13
     public static let emptyLineSize: CGFloat = 12
     public static let noDesignsSize: CGFloat = 12.5
-    /// The spinner of "Loading designs…", as the model picker's "Loading models…" draws its own.
-    public static let statusSpinner: CGFloat = 12
     /// At most this many rows show; a longer list scrolls.
     public static let maxRows = 8
 }
@@ -113,7 +111,7 @@ public enum SHMentionEmpty: Equatable, Sendable {
     case nothingMatches(query: String, searched: String)
     /// No designs yet: "No designs yet. Start a design and its boards show up here."
     case noDesigns
-    /// The designs are being read: "Loading designs…" with a spinner, until the rows (or one of
+    /// The designs are being read: "Loading designs…" shimmering, until the rows (or one of
     /// the lines below) replace it. It chooses nothing.
     case loading
     /// The read failed or took too long: "Couldn't load designs." and Retry. `reason` is what
@@ -225,8 +223,7 @@ public struct SHMentionPicker: View {
                 // One quiet line that chooses nothing: ↩ over it leaves the message alone.
                 SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
                 statusLine {
-                    ProgressView().progressViewStyle(.shSpinner(size: M.statusSpinner, color: Color.sh.textTertiary))
-                    Text("Loading designs…").font(.shSans(M.noDesignsSize)).foregroundStyle(Color.sh.textSecondary)
+                    SHBusyLabel("Loading designs…", font: .shSans(M.noDesignsSize))
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Loading designs")
@@ -265,7 +262,7 @@ public struct SHMentionPicker: View {
         .accessibilityLabel("Mention")
     }
 
-    /// One line under a header, with its glyph (or spinner) first: the stages that list no rows.
+    /// One line under a header, with its glyph (or shimmering words) first: the stages that list no rows.
     private func statusLine<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         HStack(spacing: SHMentionMetrics.rowSpacing) { content() }
             .padding(.horizontal, SHMentionMetrics.rowPaddingHorizontal)

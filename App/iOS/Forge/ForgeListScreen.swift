@@ -163,8 +163,7 @@ private struct ForgeListBody: View {
                 if store.resultsNext != nil {
                     Button { Task { await store.loadBrowse(more: true) } } label: {
                         HStack(spacing: SH.Space.s) {
-                            Text("Load more")
-                            if store.loadingMore { ProgressView() }
+                            Text("Load more").shShimmer(active: store.loadingMore)
                         }
                         .font(.sh(.ui, weight: .medium))
                         .foregroundStyle(Color.sh.textSecondary)

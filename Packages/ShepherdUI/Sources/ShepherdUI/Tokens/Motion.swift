@@ -7,7 +7,7 @@ import UIKit
 
 extension SH {
     /// Shepherd Design motion. The Foundations board's durations are the anchors (hover 120ms, panes
-    /// 180ms, sheets 240ms, the glow 1.6s, the shimmer 1.8s; the spinner 1s and a placeholder's
+    /// 180ms, sheets 240ms, the glow 1.6s, the shimmer 1.8s; a placeholder's
     /// pulse 1.4s); every one-shot motion runs on a spring at its anchor, so an interrupted change
     /// retargets from where it is instead of restarting. Only attention glows, and live text
     /// shimmers: nothing in the thread spins (LiveText).
@@ -39,9 +39,6 @@ extension SH {
         case scroll
         /// The attention glow: 1.6s ease-in-out, repeating. Attention only.
         case glow
-        /// Work in progress outside the thread (a sheet's step, a host connecting): one turn per
-        /// second, linear.
-        case spin
         /// Live text (the running tool's line, thinking): a highlight moving across the text,
         /// 1.8s linear, repeating.
         case shimmer
@@ -57,14 +54,13 @@ extension SH {
             case .disclosure, .list, .pane, .overlay: 0.18
             case .sheet, .emphasis, .scroll: 0.24
             case .glow: 1.6
-            case .spin: 1
             case .shimmer: 1.8
             case .pulse: 1.4
             }
         }
 
         /// Whether the motion loops (and so stops entirely under Reduce Motion).
-        public var isContinuous: Bool { self == .glow || self == .spin || self == .shimmer || self == .pulse }
+        public var isContinuous: Bool { self == .glow || self == .shimmer || self == .pulse }
 
         /// The spring behind a one-shot motion; nil for the continuous ones. Anything that moves
         /// layout or slides in from an edge is critically damped (`.smooth`, no overshoot, so a
@@ -75,7 +71,7 @@ extension SH {
             case .hover, .content, .disclosure, .list, .pane, .sheet, .scroll: .smooth(duration: duration)
             case .overlay: .snappy(duration: duration)
             case .emphasis: .bouncy(duration: duration)
-            case .glow, .spin, .shimmer, .pulse: nil
+            case .glow, .shimmer, .pulse: nil
             }
         }
 
@@ -83,7 +79,6 @@ extension SH {
         public func animation(reduceMotion: Bool) -> Animation? {
             switch self {
             case .glow: return reduceMotion ? nil : .easeInOut(duration: duration).repeatForever(autoreverses: true)
-            case .spin: return reduceMotion ? nil : .linear(duration: duration).repeatForever(autoreverses: false)
             case .shimmer: return reduceMotion ? nil : .linear(duration: duration).repeatForever(autoreverses: false)
             case .pulse: return reduceMotion ? nil : .easeInOut(duration: duration / 2).repeatForever(autoreverses: true)
             case .hover, .content: return .smooth(duration: duration)
@@ -141,7 +136,7 @@ extension SH {
             let edge = edge ?? defaultEdge
             switch self {
             case .hover, .content: return .fade
-            case .glow, .spin, .shimmer, .pulse, .scroll: return .identity
+            case .glow, .shimmer, .pulse, .scroll: return .identity
             case .emphasis: return reduceMotion ? .fade : .pop
             case .disclosure, .list: return reduceMotion ? .fade : .nudge(edge)
             case .pane: return reduceMotion ? .fade : .slide(edge)
@@ -377,12 +372,12 @@ enum SHPop {
 extension EnvironmentValues {
     /// True under a subtree that stays mounted but is not on screen (an agent layout the
     /// workspace keeps while another one shows, the sidebar while the window cannot be seen):
-    /// the continuous motions (the spinner, the glow, the shimmer, the pulse) stop drawing frames
+    /// the continuous motions (the glow, the shimmer, the pulse) stop drawing frames
     /// there, and elapsed clocks stop ticking. It changes only when visibility flips.
     @Entry public var shMotionPaused: Bool = false
 }
 
-/// Time-driven phase for the continuous motions. The spinner, the glow and the shimmer are Core
+/// Time-driven phase for the continuous motions. The glow and the shimmer are Core
 /// Animation animations started at the clock's phase (`SHLayerMotion`), so every one on screen
 /// moves in step and costs the app nothing per frame; the pulse is a timeline that reads the
 /// phase each frame. Either way Reduce Motion can toggle while one is on screen: the animation is removed

@@ -65,9 +65,8 @@ public struct SHReviewSendBar: View {
                 }
                 Button(action: onSend) {
                     HStack(spacing: SH.Space.s) {
-                        if sending { ProgressView().progressViewStyle(.shSpinner(size: 10)) }
                         // The Mac's main action draws its chord; touch has no ⌘↩ to teach.
-                        if size == .regular { SHButtonTitle(sendTitle, chord: "⌘↩") } else { Text(sendTitle) }
+                        if size == .regular { SHButtonTitle(sendTitle, chord: "⌘↩").shShimmer(active: sending) } else { Text(sendTitle).shShimmer(active: sending) }
                     }
                 }
                 .buttonStyle(.sh(.primary, size: buttons))

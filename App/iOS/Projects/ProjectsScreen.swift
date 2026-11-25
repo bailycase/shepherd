@@ -174,7 +174,7 @@ struct NewProjectScreen: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { navigator.dismissPresented() } }
             ToolbarItem(placement: .confirmationAction) {
-                if saving { ProgressView().progressViewStyle(SHSpinnerStyle()) } else {
+                if saving { SHBusyLabel("Saving…") } else {
                     Button("Create project") { create(owner) }.disabled(!ready)
                 }
             }

@@ -160,6 +160,7 @@ struct ThreadFileRow: View, Equatable {
                 VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     Text(row.name)
                         .font(row.kind == .note ? .sh(.caption) : .sh(.ui, weight: selected ? .semibold : .regular))
+                        .shShimmer(active: row.kind == .folder(expanded: true, loading: true) || row.kind == .folder(expanded: false, loading: true))
                         .foregroundStyle(row.kind == .note ? sh.textTertiary : sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -168,7 +169,6 @@ struct ThreadFileRow: View, Equatable {
                     }
                 }
                 Spacer(minLength: 0)
-                if case .folder(_, true) = row.kind { ProgressView().controlSize(.small) }
             }
             .padding(.leading, SH.Space.m + CGFloat(row.depth) * MobileLayout.fileTreeIndent)
             .padding(.trailing, SH.Space.m)

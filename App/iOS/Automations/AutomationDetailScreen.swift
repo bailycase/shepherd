@@ -149,8 +149,7 @@ struct AutomationDetailContent: View {
         } else if !detail.runsKnown {
             if detail.row.abilities.readOnlyReason == nil {
                 HStack(spacing: SH.Space.s) {
-                    ProgressView().progressViewStyle(.shSpinner)
-                    Text("Reading runs…").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    Text("Reading runs…").shText(.caption).shShimmer(active: true)
                 }
             }
         } else if detail.runs.isEmpty {

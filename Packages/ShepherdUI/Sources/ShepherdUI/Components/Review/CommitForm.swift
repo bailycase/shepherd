@@ -25,7 +25,7 @@ public enum SHCommitFormMetrics {
 }
 
 /// The commit's message as a card: the summary line in semibold over the description, and a note
-/// saying where it came from ("Drafted from the diff · edit anything"), or a spinner while the
+/// saying where it came from ("Drafted from the diff · edit anything"), or shimmering words while the
 /// host drafts it. Once an edited message may mention files since left out, the note says so
 /// instead. Both fields edit in place.
 public struct SHCommitMessageEditor: View {
@@ -73,9 +73,7 @@ public struct SHCommitMessageEditor: View {
                 .foregroundStyle(sh.textSecondary)
                 .accessibilityLabel("Commit description")
             HStack(spacing: SH.Space.s) {
-                if source == .drafting && !mentionsUntickedFiles {
-                    ProgressView().progressViewStyle(.shSpinner).controlSize(.mini)
-                } else {
+                if !(source == .drafting && !mentionsUntickedFiles) {
                     ZStack {
                         Image(systemName: noteSymbol)
                             .font(.sh(.micro))
@@ -86,6 +84,7 @@ public struct SHCommitMessageEditor: View {
                 }
                 Text(note)
                     .font(.sh(.caption))
+                    .shShimmer(active: source == .drafting && !mentionsUntickedFiles)
             }
             .foregroundStyle(sh.textTertiary)
             .shContentTransition(.crossFade)

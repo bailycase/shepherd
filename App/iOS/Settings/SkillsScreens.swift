@@ -169,7 +169,7 @@ private struct InstalledSkills: View {
         } else if !failures.isEmpty, !connected.contains(where: { model.state(of: $0) == .loading }) {
             SettingsFootnote(failures[0], tone: .failed)
         } else {
-            ProgressView().progressViewStyle(SHSpinnerStyle())
+            SHBusyLabel("Reading the skills…")
                 .frame(maxWidth: .infinity)
         }
     }
@@ -492,7 +492,7 @@ struct SkillResultScreen: View {
                 } else if unavailable {
                     SettingsFootnote("The skills directory didn't send this skill's files. It can still be installed.")
                 } else {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Reading the skill…")
                         .frame(maxWidth: .infinity)
                 }
                 VStack(alignment: .leading, spacing: SH.Space.m) {
@@ -599,7 +599,7 @@ struct SkillDetailScreen: View {
                 if let row = model.row(name, in: skillsHosts) {
                     content(row, model: model, hosts: skillsHosts)
                 } else if model.reference(in: skillsHosts) == nil {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Reading the skill…")
                         .frame(maxWidth: .infinity)
                 } else {
                     SettingsFootnote("The fleet has no skill named \(name) now.")
@@ -796,7 +796,7 @@ struct AddSkillsScreen: View {
                     }
                 }
                 if lookingUp {
-                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    SHBusyLabel("Looking up…")
                         .frame(maxWidth: .infinity)
                 } else if let found {
                     picker(found, model: model, hosts: skillsHosts)

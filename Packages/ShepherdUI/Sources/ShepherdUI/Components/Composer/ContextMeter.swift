@@ -7,8 +7,6 @@ public enum SHContextMetrics {
     /// The ring inside it: a trimmed circle from 12 o'clock with round caps.
     public static let ringSize: CGFloat = 18
     public static let ringStroke: CGFloat = 2.2
-    /// How much of the circle the compacting arc spans as it turns.
-    public static let compactingSweep: CGFloat = 0.28
     /// The after-compaction ring's dashes.
     public static let ringDash: CGFloat = 1.55
     /// The details popover: 340pt with the split, 300pt otherwise.
@@ -83,8 +81,8 @@ public struct SHContextRing: View {
                     .stroke(Self.color(tone, sh), style: StrokeStyle(lineWidth: stroke, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             case .compacting:
-                Circle().inset(by: inset).stroke(sh.lineStrong, lineWidth: stroke)
-                SHLayerSpinner(size: size, color: sh.running, lineWidth: stroke, sweep: SHContextMetrics.compactingSweep)
+                // Nothing spins: the details' note shimmers while it works.
+                Circle().inset(by: inset).stroke(sh.running, lineWidth: stroke)
             }
         }
         .frame(width: size, height: size)
@@ -584,7 +582,7 @@ public struct SHContextDetails: View {
             if let note = model.note {
                 Self.emphasized(note, model.emphasis).font(.shSans(12.5)).foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .shShimmer()
+                    .shShimmer(active: true)
                     .padding(.top, 10).padding(.horizontal, SHContextMetrics.side)
             }
             // How far along is unknown: the bar eases toward full while it runs.

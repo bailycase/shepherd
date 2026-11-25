@@ -154,7 +154,7 @@ struct NewThreadFolderScreen: View {
         .scrollContentBackground(.hidden)
         .background(Color.sh.bgWindow)
         .overlay {
-            if browser.loading && browser.dirs.isEmpty { ProgressView().progressViewStyle(.shSpinner) }
+            if browser.loading && browser.dirs.isEmpty { SHBusyLabel("Loading…") }
         }
         .searchable(text: Binding(get: { browser.filter }, set: { browser.setFilter($0) }), prompt: "Filter folders")
         .navigationTitle("Add repo on \(browser.hostName)")

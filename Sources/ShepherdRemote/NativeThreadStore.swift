@@ -293,7 +293,7 @@ public final class NativeThreadStore {
     @ObservationIgnored public private(set) var liveRowID: String?
     /// The file an edit or write in flight touches, as the call names it (relative to the
     /// agent's folder, or absolute); nil when none runs. Set only when it changes, so the Files
-    /// tab's working-file spinner never redraws on a streamed chunk.
+    /// tab's working-file shimmer never redraws on a streamed chunk.
     public private(set) var editingPath: String?
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
@@ -2466,7 +2466,7 @@ public final class NativeThreadStore {
     }
 
     /// At once when the thread can act. Until it is ready (pi starting, or the first pull on its
-    /// way), holds the caller (the composer shows its "Waiting for pi" spinner): false instead
+    /// way), holds the caller (the composer shows its "Waiting for pi" words): false instead
     /// when the thread stops or fails first, or pi never starts. Nothing is dispatched while it
     /// waits.
     private func readyToAct() async -> Bool {
