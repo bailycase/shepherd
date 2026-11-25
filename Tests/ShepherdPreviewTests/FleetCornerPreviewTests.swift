@@ -249,10 +249,10 @@ struct FleetCornerPreviewTests {
         let (workspace, vm) = try await mount(cast, selected: speed.id)
         defer { workspace.stop() }
         let lists = vm.presentedSidebarLists
-        #expect(lists.working.first { $0.title == "Speed up checkout CI" }?.subtitle == nil, "a thread says nothing of what it started")
+        #expect(lists.working.first { $0.title == "Speed up checkout CI" }?.subtitle?.text == "3 sent, 1 back", "a sender says how many it sent and how many are back")
         #expect(lists.working.first { $0.title == "Harden webhook retries" }?.fold != nil)
-        #expect(lists.working.first { $0.title == "Split slow UI tests" }?.subtitle?.text == "waiting for studio to wake")
-        #expect(lists.working.first { $0.title == "Rebuild search index" }?.subtitle?.text == "waiting for a Mac with room")
+        #expect(lists.working.first { $0.title == "Split slow UI tests" }?.subtitle?.text == "studio, goes when it wakes")
+        #expect(lists.working.first { $0.title == "Rebuild search index" }?.subtitle?.text == "Auto, no Mac has room")
         try await Preview.renderMatrix("fleet-corner-sidebar", size: Self.size) { SidebarView(vm: vm).frame(width: Self.size.width, height: Self.size.height) }
         // The same threads under Spaces.
         workspace.settings.sidebarStyle = .projects
@@ -357,9 +357,9 @@ struct FleetCornerPreviewTests {
         defer { workspace.stop() }
         let working = vm.presentedSidebarLists.working
         let lines = working.compactMap { $0.subtitle?.text }
-        #expect(lines.contains("waiting for another thread to finish") && lines.contains("starting") && lines.contains("cloning payments-web on mini"))
+        #expect(lines.contains("waiting for another thread to finish") && lines.contains("starting") && lines.contains("mini, cloning payments-web"))
         #expect(lines.contains("Xcode isn't installed") == false, "a thread that exists reads as the thread it is, not by its record")
-        #expect(!lines.contains { $0.contains("sent") || $0.contains("via ") || $0.contains("delivering") })
+        #expect(!lines.contains { $0.contains("via ") })
         #expect(working.last?.title == "Shard UI tests" && working.last?.fleetNested == true)
         try await Preview.renderMatrix("fleet-subthreads", size: CGSize(width: Self.size.width, height: 1000)) {
             SidebarView(vm: vm).frame(width: Self.size.width, height: 1000)
@@ -382,8 +382,8 @@ struct FleetCornerPreviewTests {
         let lists = vm.presentedSidebarLists
         #expect(lists.working.map(\.title) == ["Speed up checkout CI"])
         #expect(lists.done.map(\.title) == ["test", "Rebuild search index"])
-        #expect(lists.done.map { $0.subtitle?.text } == ["bearcli isn't installed", "a Mac that left · Xcode isn't installed"])
-        #expect(lists.done.map(\.accessory) == [.tag("studio"), .none])
+        #expect(lists.done.map { $0.subtitle?.text } == ["studio, bearcli isn't installed", "a Mac that left, Xcode isn't installed"])
+        #expect(lists.done.map(\.accessory) == [.none, .none])
         #expect(lists.done.allSatisfy { $0.leading == .dot(.failed) && $0.subtitle?.tone == .failed })
         try await Preview.renderMatrix("fleet-failed-sent-row", size: CGSize(width: Self.size.width, height: 460)) {
             SidebarView(vm: vm).frame(width: Self.size.width, height: 460)

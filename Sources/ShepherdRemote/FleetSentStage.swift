@@ -1,8 +1,8 @@
 import Foundation
 import ShepherdCore
 
-// What a thread that has not started on its Mac yet says on its sidebar row, as any thread's second line does: "starting on mini", "waiting for
-// mini to wake", "cloning payments-web on mini", or why it failed. The row is a normal thread's: the Mac is its tag, never part of the words.
+// What a thread that has not started on its Mac yet says on its sidebar row, as any thread's second line does: "mini, starting", "studio, goes when it
+// wakes", "mini, cloning payments-web", or why it failed: the Mac first, then these words.
 // The stage comes from the record the sending Mac keeps.
 
 public struct FleetSentStage: Equatable, Sendable {
@@ -54,8 +54,6 @@ public struct FleetSentStage: Equatable, Sendable {
     /// (`FleetSnapshot.macNames`): a thread sent from New thread names its Mac by id until one is chosen.
     public static func of(_ record: FleetDispatchRecord, viewer: UUID?, macs: [UUID: String] = [:]) -> FleetSentStage {
         let host = tag(FleetDispatchPresentation.hostID(of: record), name: FleetDispatchPresentation.hostName(of: record, macs: macs), viewer: viewer)
-        /// " on mini": where it happens, for a Mac other than this one.
-        let on = host.flatMap { $0 == "This Mac" ? nil : " on \($0)" } ?? ""
         switch record.state {
         case .placing:
             return FleetSentStage(phase: .placing, words: "starting")
@@ -63,9 +61,9 @@ public struct FleetSentStage: Equatable, Sendable {
             if let provider = record.limitProvider {
                 return FleetSentStage(phase: .noRoom, words: "waiting for \(NativeTurnError.providerName(provider))'s limit")
             }
-            return FleetSentStage(phase: .noRoom, words: "waiting for a Mac with room")
+            return FleetSentStage(phase: .noRoom, words: "Auto, no Mac has room")
         case .waitingWake:
-            return FleetSentStage(phase: .waitingWake, host: host, words: "waiting for \(host ?? "its Mac") to wake")
+            return FleetSentStage(phase: .waitingWake, host: host, words: "goes when it wakes")
         case .heldLimit:
             return FleetSentStage(phase: .held, words: "waiting for another thread to finish")
         case .heldRestart:
@@ -73,15 +71,15 @@ public struct FleetSentStage: Equatable, Sendable {
         case .waitingTurn:
             return FleetSentStage(phase: .waitingWake, host: host, words: "moving when its turn ends")
         case .preparing:
-            if let clone = record.clone { return FleetSentStage(phase: .cloning, host: host, words: "cloning \(clone.name)\(on)") }
-            return FleetSentStage(phase: .preparing, host: host, words: "starting\(on)")
+            if let clone = record.clone { return FleetSentStage(phase: .cloning, host: host, words: "cloning \(clone.name)") }
+            return FleetSentStage(phase: .preparing, host: host, words: "starting")
         case .running, .delivering:
             return FleetSentStage(phase: .running, host: host, words: "working")
         case .done, .cancelled:
             return FleetSentStage(phase: .back, host: host, words: "done")
         case .failed:
             let why = failureWords(record)
-            return FleetSentStage(phase: .failed, host: host, words: host == FleetDispatchPresentation.macLeft ? "\(host!) · \(why)" : why)
+            return FleetSentStage(phase: .failed, host: host, words: host == FleetDispatchPresentation.macLeft ? "\(host!), \(why)" : why)
         }
     }
 

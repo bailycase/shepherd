@@ -130,7 +130,7 @@ struct FleetDispatchPreviewTests {
         }
         let source = SidebarSource(local: ShepherdState(), localFleetID: P.here, fleet: SidebarFleet(records: [record], macs: snapshot.macNames))
         let row = try #require(SidebarDerivation.dispatchRows(source, threads: []).first?.row)
-        #expect(row.subtitle?.text == "model request failed")
+        #expect(row.subtitle?.text == "mini, model request failed")
         try await Preview.render("fleet-sidebar-provider-error", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 100)) {
             SHSidebarRow(row.title, leading: row.leading, accessory: row.accessory, subtitle: row.subtitle)
                 .padding(SH.Space.m)

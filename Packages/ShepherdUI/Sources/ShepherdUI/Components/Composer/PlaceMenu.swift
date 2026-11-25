@@ -3,7 +3,7 @@ import SwiftUI
 // The workplace chip's menu (GXNewPayments): where a new thread runs. A search field, then one section per
 // host with its projects as a tree (nested ones fold under their parent; the one host's is headed "Space"),
 // each section ending in "Add folder…"; then New Worktree… and Import Existing Worktree…, the worktree option,
-// and, with another Mac paired, "Where it runs": each Mac, then Auto.
+// and, with another Mac paired, "Where it runs": Auto, then each Mac.
 
 /// A project the menu offers: its name and path, on a host.
 public struct SHPlaceOption: Identifiable, Equatable, Sendable {
@@ -104,7 +104,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
     /// "New Worktree…" and "Import Existing Worktree…" under the projects; nil draws no row.
     let onNewWorktree: (() -> Void)?
     let onImportWorktree: (() -> Void)?
-    /// "Where it runs": the Macs a thread can start on, Auto last; empty draws no section.
+    /// "Where it runs": Auto, then the Macs a thread can start on, most room first; empty draws no section.
     let runs: [SHFleetPlaceRow]
     let runsNote: String?
     let onRun: (SHFleetPlaceRow) -> Void
@@ -133,7 +133,7 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         self.onChooseBase = onChooseBase
         self.onNewWorktree = onNewWorktree
         self.onImportWorktree = onImportWorktree
-        self.runs = runs.filter { $0.id != "auto" } + runs.filter { $0.id == "auto" }
+        self.runs = runs
         self.runsNote = runsNote
         self.onRun = onRun
         self.onClose = onClose

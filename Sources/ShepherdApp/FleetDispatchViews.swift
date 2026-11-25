@@ -238,11 +238,14 @@ struct FleetCompactDispatchRow: View {
         let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
         HStack(spacing: SH.Space.m) {
-            Image(systemName: card.pill == "Done" ? "checkmark" : "arrow.turn.down.right")
-                .font(.sh(.caption, weight: .regular))
-                .foregroundStyle(sh.textSecondary)
-                .frame(width: AppLayout.fleetCompactRowGlyph)
-                .accessibilityHidden(true)
+            ZStack {
+                Image(systemName: "checkmark").opacity(card.pill == "Done" ? 1 : 0)
+                Image(systemName: "arrow.turn.down.right").opacity(card.pill == "Done" ? 0 : 1)
+            }
+            .font(.sh(.caption, weight: .regular))
+            .foregroundStyle(sh.textSecondary)
+            .frame(width: AppLayout.fleetCompactRowGlyph)
+            .accessibilityHidden(true)
             Text(card.title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
             words
             Spacer(minLength: SH.Space.l)

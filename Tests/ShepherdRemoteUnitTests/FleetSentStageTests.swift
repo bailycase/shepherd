@@ -29,14 +29,14 @@ struct FleetSentStageTests {
     @Test func everyStateReadsAsAThreadStartingOrFailing() {
         let cases: [(FleetDispatchRecord, String, FleetSentStage.Mark, FleetSentStage.Mark?)] = [
             (Self.record(.placing, target: nil, host: nil), "starting", .hollow, nil),
-            (Self.record(.waitingRoom, target: nil, host: nil), "waiting for a Mac with room", .hollow, nil),
+            (Self.record(.waitingRoom, target: nil, host: nil), "Auto, no Mac has room", .hollow, nil),
             (Self.record(.waitingRoom, target: nil, host: nil, limit: "anthropic"), "waiting for Anthropic's limit", .hollow, nil),
-            (Self.record(.waitingWake, target: Self.studio, host: "Mac Studio"), "studio | waiting for studio to wake", .hollow, nil),
+            (Self.record(.waitingWake, target: Self.studio, host: "Mac Studio"), "studio | goes when it wakes", .hollow, nil),
             (Self.record(.heldLimit, target: nil, host: nil), "waiting for another thread to finish", .hollow, nil),
             (Self.record(.heldRestart, target: nil, host: nil), "paused by the restart", .hollow, nil),
-            (Self.record(.preparing), "mini | starting on mini", .running, .running),
+            (Self.record(.preparing), "mini | starting", .running, .running),
             (Self.record(.preparing, clone: FleetCloneProgress(name: "payments-web", source: "github.com/acme/payments-web")),
-             "mini | cloning payments-web on mini", .running, .running),
+             "mini | cloning payments-web", .running, .running),
             (Self.record(.preparing, target: Self.here, host: "MacBook Pro"), "starting", .running, .running),
             (Self.record(.running), "mini | working", .running, .running),
             (Self.record(.delivering), "mini | working", .running, .running),
@@ -104,7 +104,7 @@ struct FleetSentStageTests {
         let macs = [Self.here: "MacBook Pro", Self.mini: "Mac mini"]
         #expect(row(Self.mini.uuidString, macs: macs) == "mini | bearcli isn't installed")
         #expect(row(Self.here.uuidString, macs: macs) == "bearcli isn't installed", "This Mac has no tag")
-        #expect(row(Self.studio.uuidString, macs: macs) == "a Mac that left · bearcli isn't installed")
+        #expect(row(Self.studio.uuidString, macs: macs) == "a Mac that left, bearcli isn't installed")
         #expect(!row(Self.studio.uuidString, macs: macs).contains(Self.studio.uuidString))
         // A name an agent typed stands as it is; Auto names no Mac.
         #expect(row("Mac Studio", macs: macs) == "studio | bearcli isn't installed")
@@ -113,6 +113,6 @@ struct FleetSentStageTests {
         // Waiting for a Mac by id reads the same.
         var waiting = Self.record(.waitingWake, target: nil, host: nil)
         waiting.requestedHost = Self.studio.uuidString
-        #expect(Self.row(waiting, macs: [Self.studio: "Mac Studio"]) == "studio | waiting for studio to wake")
+        #expect(Self.row(waiting, macs: [Self.studio: "Mac Studio"]) == "studio | goes when it wakes")
     }
 }
