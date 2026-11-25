@@ -301,34 +301,10 @@ struct DiagramViewerOverlay: View {
     }
 }
 
-/// The composer's images, above its card (ThreadImagesComposer): a chip each with its thumbnail,
-/// name, size and remove, then the failed line while an image cannot go.
-struct ComposerImageStrip: View {
-    let attachments: ComposerAttachments
-    let open: (ImageAttachment) -> Void
-    let remove: (UUID) -> Void
-
-    var body: some View {
-        if !attachments.isEmpty || attachments.error != nil {
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
-                    ForEach(attachments.items) { attachment in
-                        SHAttachmentChip(attachment.name, thumbnail: attachment.thumbnail, detail: attachment.sizeLabel,
-                                         problem: attachment.isOversize, open: { open(attachment) }, remove: { remove(attachment.id) })
-                            .shTransition(.list, edge: .leading)
-                    }
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Images to send")
-                if let error = attachments.error {
-                    Text(error).font(.sh(.caption)).foregroundStyle(AgentState.failed.textColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                        .shTransition(.list, edge: .bottom)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SH.Space.xs)
-        }
+extension ImageAttachment {
+    /// Its chip in the composer's card (GXImagesComposer): the picture, name and size, then remove; red while it cannot go.
+    func chip(open: @escaping () -> Void, remove: @escaping () -> Void) -> some View {
+        SHAttachmentChip(name, thumbnail: thumbnail, detail: sizeLabel, problem: isOversize, open: open, remove: remove)
+            .shTransition(.list, edge: .leading)
     }
 }

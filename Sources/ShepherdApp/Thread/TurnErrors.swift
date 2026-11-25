@@ -57,7 +57,9 @@ extension SHTurnError.Content {
                 case .link(let display, let url): .link(display: display, url: url)
                 }
             },
-            chips: error.chips, source: error.source, tries: error.tries, time: error.time, foldedMeta: error.foldedMeta,
+            // GXError says "gpt-5 on OpenAI" and "401, 5:52 PM".
+            chips: error.chips, source: error.source?.replacingOccurrences(of: " · ", with: " on "), tries: error.tries, time: error.time,
+            foldedMeta: error.foldedMeta.replacingOccurrences(of: " · ", with: ", "),
             facts: error.facts.map { SHTurnError.Fact($0.label, $0.value, mono: $0.mono) },
             body: error.body.map { token in
                 switch token {

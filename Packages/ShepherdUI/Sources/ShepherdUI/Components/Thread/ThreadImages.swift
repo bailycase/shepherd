@@ -13,14 +13,17 @@ public struct SHThreadImage: View {
     let name: String
     let size: CGSize
     let content: Content
+    let radius: CGFloat
     let open: () -> Void
     let retry: (() -> Void)?
 
-    /// `size` is the box in points. `open` opens it full size; `retry` is drawn on a failed one.
-    public init(name: String, size: CGSize, content: Content, open: @escaping () -> Void, retry: (() -> Void)? = nil) {
+    /// `size` is the box in points. `open` opens it full size; `retry` is drawn on a failed one. `radius` is the box's corner.
+    public init(name: String, size: CGSize, content: Content, radius: CGFloat = SH.Radius.m, open: @escaping () -> Void,
+                retry: (() -> Void)? = nil) {
         self.name = name
         self.size = size
         self.content = content
+        self.radius = radius
         self.open = open
         self.retry = retry
     }
@@ -35,11 +38,11 @@ public struct SHThreadImage: View {
 
     public var body: some View {
         let sh = Color.sh
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        let shape = RoundedRectangle(cornerRadius: radius)
         // A failed picture's one control is Retry (the box would open nothing); every other state opens the image.
         Button(action: { if case .failed = content { retry?() } else { open() } }) {
             ZStack {
-                sh.bgSunken
+                SHThreadImageMetrics.field(sh)
                 switch content {
                 case .picture(let image):
                     image.resizable().aspectRatio(contentMode: .fill)
@@ -57,11 +60,11 @@ public struct SHThreadImage: View {
             }
             .frame(width: size.width, height: size.height)
             .clipShape(shape)
-            .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+            .shBorder(sh.lineSubtle, radius: radius)
             .contentShape(shape)
         }
         .buttonStyle(.plain)
-        .shFocusRing(radius: SH.Radius.m)
+        .shFocusRing(radius: radius)
         .help(name)
         .accessibilityLabel(label)
         .disabled({ if case .failed = content { retry == nil } else { false } }())
@@ -84,6 +87,16 @@ public struct SHThreadImageChip: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The board's `.tl`: the glyph, the name in mono, why it is not here, on the line with no box.
+        let label = HStack(spacing: SH.Space.s) {
+            Image(systemName: "photo").imageScale(.small).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+            Text(name).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+            Text(detail).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
+        }
+        .frame(minHeight: SHThreadImageMetrics.lineHeight)
+        .contentShape(Rectangle())
+        #else
         let label = HStack(spacing: SH.Space.s) {
             Image(systemName: "photo").imageScale(.small).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
             Text(name).font(.sh(.mono)).foregroundStyle(open == nil ? sh.textSecondary : sh.textPrimary).lineLimit(1).truncationMode(.middle)
@@ -93,12 +106,27 @@ public struct SHThreadImageChip: View {
         .frame(height: SHThreadMetrics.attachmentHeight)
         .shBorder(sh.lineStrong, radius: SH.Radius.s)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+        #endif
         if let open {
             Button(action: open) { label }.buttonStyle(.plain).shFocusRing(radius: SH.Radius.s)
                 .accessibilityLabel("\(name), \(detail)")
         } else {
             label.accessibilityElement(children: .ignore).accessibilityLabel("\(name), \(detail)")
         }
+    }
+}
+
+/// The count over a message's pictures (the board's `.lbl`): the `photo` glyph and "2 images" in `caption` `textTertiary`.
+public struct SHThreadImageLabel: View {
+    let text: String
+    public init(_ text: String) { self.text = text }
+
+    public var body: some View {
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: "photo").imageScale(.small).accessibilityHidden(true)
+            Text(text)
+        }
+        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
     }
 }
 
@@ -115,11 +143,32 @@ public struct SHThreadImageCaption: View {
 public enum SHThreadImageMetrics {
     /// How much of `bgHover` a loading picture's field takes over `bgSunken`.
     public static let loadingFill: Double = 0.6
-    /// A sent image's longest side beside its bubble, and a received one's width (ThreadImagesSent, ThreadImagesReceived).
+    /// A sent image's longest side beside its bubble, and a received one's width (ThreadImagesSent, ThreadImagesReceived). The
+    /// Mac's boards: sent pictures 168pt tall inside the bubble at radius 10, received tiles 330 × 186 at radius 12.
+    #if os(macOS)
+    public static let sentLongestSide: CGFloat = 168
+    public static let sentWidest: CGFloat = 250
+    public static let sentRadius: CGFloat = 10
+    public static let receivedWidest: CGFloat = 330
+    public static let receivedTallest: CGFloat = 186
+    public static let receivedRadius: CGFloat = SH.Radius.l
+    /// Tiles 10pt apart; a sent picture sits 8pt in from its bubble's top and sides (the bubble pads 9 and 15).
+    public static let receivedGap: CGFloat = 10
+    public static let sentInset = (top: CGFloat(1), side: CGFloat(7))
+    /// A line like a tool row's.
+    static let lineHeight: CGFloat = 20
+    @MainActor static func field(_ sh: SHPalette) -> Color { sh.bgRaised }
+    #else
     public static let sentLongestSide: CGFloat = 180
     public static let sentWidest: CGFloat = 240
+    public static let sentRadius: CGFloat = SH.Radius.m
     public static let receivedWidest: CGFloat = 384
     public static let receivedTallest: CGFloat = 240
+    public static let receivedRadius: CGFloat = SH.Radius.m
+    public static let receivedGap: CGFloat = SH.Space.l
+    public static let sentInset = (top: CGFloat(0), side: CGFloat(0))
+    @MainActor static func field(_ sh: SHPalette) -> Color { sh.bgSunken }
+    #endif
     /// A box for an image of `width` × `height` pixels, fitted inside `widest` × `tallest` and never past its own size.
     public static func box(width: Int?, height: Int?, widest: CGFloat, tallest: CGFloat) -> CGSize {
         guard let width, let height, width > 0, height > 0 else { return CGSize(width: widest, height: tallest) }

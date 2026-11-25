@@ -138,6 +138,7 @@ public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Con
     let leading: Leading
     let field: Field
     let controls: Controls
+    @Environment(\.shComposerNotice) private var notice
 
     /// `joined` says `above` draws something: the card then clips only what is below it, so a row lifted by a drag floats free.
     public init(isFocused: Bool, layout: Layout = .stacked, joined: Bool = false, @ViewBuilder above: () -> Above,
@@ -205,13 +206,24 @@ public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Con
     }
 
     private var chips: some View {
-        Group(subviews: top) { subviews in
-            if !subviews.isEmpty {
-                // Chips wrap to more rows (design references are wide).
-                SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) { subviews }
+        VStack(alignment: .leading, spacing: 0) {
+            Group(subviews: top) { subviews in
+                if !subviews.isEmpty {
+                    // Chips wrap to more rows (design references are wide). The board's `.att`: 8pt apart, 10pt in.
+                    SHFlowLayout(spacing: SH.Space.m, lineSpacing: SH.Space.m) { subviews }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 10)
+                        .padding(.horizontal, 10)
+                }
+            }
+            // Why an attachment cannot go, under the chips in `failed` (the board's `.aerr`).
+            if let notice {
+                Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 10)
-                    .padding(.horizontal, SH.Space.l)
+                    .padding(.top, SH.Space.s).padding(.horizontal, 14)
+                    .shTransition(.list, edge: .bottom)
             }
         }
     }
@@ -243,6 +255,11 @@ public struct SHComposer<Above: View, Top: View, Leading: View, Field: View, Con
         // card as it grows.
         .modifier(SHComposerFocus(isFocused: isFocused))
     }
+}
+
+extension EnvironmentValues {
+    /// A line in `failed` under the Mac card's attachments: why one cannot go (GXImagesComposer).
+    @Entry public var shComposerNotice: String? = nil
 }
 
 /// The card's edge. On the Mac the boards' `.cmp`: one 1pt `lineStrong` line, the same focused or not, and no ring.

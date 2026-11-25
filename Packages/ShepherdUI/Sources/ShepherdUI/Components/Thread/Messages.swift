@@ -469,9 +469,18 @@ public struct SHThinking: View {
 
     /// Expanded thinking's text: Geist 12.5 (italic where it is drawn) at 1.55, headings
     /// semibold.
+    /// The Mac's (GXExpanded): the `ui` size upright in `textSecondary` on 20pt lines.
+    #if os(macOS)
+    @MainActor static var font: Font { .sh(.ui, weight: .regular) }
+    @MainActor static var headingFont: Font { .sh(.ui, weight: .semibold) }
+    @MainActor static var lineSpacing: CGFloat { SH.Space.xs }
+    static let italic = false
+    #else
     @MainActor static var font: Font { .shSans(12.5) }
     @MainActor static var headingFont: Font { .shSans(12.5, .semibold) }
     @MainActor static var lineSpacing: CGFloat { SHTextStyle.caption.lineSpacing + 2 }
+    static let italic = true
+    #endif
 
     /// What the row is: only a disclosure has something to open, so only it wears a chevron
     /// and takes a press.
@@ -518,8 +527,9 @@ public struct SHThinking: View {
                     }
                 }
                 .padding(.vertical, SH.Space.xxs)
-                .padding(.leading, SH.Space.l)
-                .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
+                .padding(.leading, SHThreadMetrics.stepsPadding)
+                .overlay(alignment: .leading) { SHThreadMetrics.stepsRule(sh).frame(width: SHThreadMetrics.stepsRuleWidth) }
+                .padding(.leading, SHThreadMetrics.stepsInset)
                 .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
                 .shProseLinks()
                 .shTransition(.disclosure)

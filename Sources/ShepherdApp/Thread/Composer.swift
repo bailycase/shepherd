@@ -435,8 +435,6 @@ struct Composer: View, Equatable {
                         .shTransition(.list, edge: .bottom)
                 }
             }
-            // The images waiting to send, with what keeps Send held (ThreadImagesComposer).
-            ComposerImageStrip(attachments: input.attachments, open: openAttachment, remove: { input.attachments.remove($0) })
             // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
             if let dock = projectSend?.dock { dock().shTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
@@ -803,7 +801,11 @@ struct Composer: View, Equatable {
                                readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
             }
         } top: {
-            // Design references sit first, above the words (DesignReferenceChip(ref)).
+            // The images waiting to send, first in the card (GXImagesComposer); what keeps Send held is said under them.
+            ForEach(input.attachments.items) { attachment in
+                attachment.chip(open: { openAttachment(attachment) }, remove: { input.attachments.remove(attachment.id) })
+            }
+            // Design references sit next, above the words (DesignReferenceChip(ref)).
             ForEach(store.attachedReferences) { attached in
                 ComposerReferenceChip(attached: attached, references: references) { store.detachReference(attached.id) }
                     .shTransition(.list, edge: .leading)
@@ -827,6 +829,7 @@ struct Composer: View, Equatable {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store,
                              dismissal: dismissal, part: .trailing).equatable()
         }
+        .environment(\.shComposerNotice, input.attachments.error)
         .coordinateSpace(.named(Self.cardSpace))
     }
 

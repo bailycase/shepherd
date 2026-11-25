@@ -318,6 +318,13 @@ public struct SHLookedAtDetails: View {
 }
 
 /// One call behind an activity line.
+/// The lines an edit added and removed.
+public struct SHCallDiff: Equatable, Sendable {
+    public var added: Int
+    public var removed: Int
+    public init(added: Int, removed: Int) { self.added = added; self.removed = removed }
+}
+
 public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     public var id: String
     /// The kind column: "read", "edit", "bash".
@@ -326,6 +333,8 @@ public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     public var detail: String
     public var isPath: Bool
     public var stat: String?
+    /// An edit's lines added and removed, which the Mac draws in their colours in place of `stat`.
+    public var diff: SHCallDiff?
     public var failed: Bool
     /// The call's first output lines, shown while the row is expanded; `moreLines` counts the rest.
     public var output: [String]
@@ -338,14 +347,15 @@ public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     /// "edit, Sources/A.swift, +58 −41"
     public var accessibilityLabel: String
 
-    public init(id: String, label: String, detail: String, isPath: Bool = false, stat: String? = nil, failed: Bool = false,
-                output: [String] = [], moreLines: Int = 0, truncated: Bool = false, isExpanded: Bool = false,
+    public init(id: String, label: String, detail: String, isPath: Bool = false, stat: String? = nil, diff: SHCallDiff? = nil,
+                failed: Bool = false, output: [String] = [], moreLines: Int = 0, truncated: Bool = false, isExpanded: Bool = false,
                 filePath: String? = nil, accessibilityLabel: String? = nil) {
         self.id = id
         self.label = label
         self.detail = detail
         self.isPath = isPath
         self.stat = stat
+        self.diff = diff
         self.failed = failed
         self.output = output
         self.moreLines = moreLines
@@ -380,7 +390,7 @@ public struct SHActivityCalls<Menu: View>: View {
         let longest = min(rows.map(\.label.count).max() ?? 0, SHThreadMetrics.callLabelMaxCharacters)
         let labelWidth = max(SHThreadMetrics.callLabelWidth, (CGFloat(longest) * 11 * 0.6 * ThemeStore.shared.textScale).rounded(.up))
         SHActivityRail {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: SHThreadMetrics.callRowGap) {
                 ForEach(rows) { row in
                     SHActivityCallRowView(row: row, labelWidth: labelWidth, onSelect: onSelect, onShowAll: onShowAll, menu: menu)
                 }
@@ -402,7 +412,7 @@ struct SHActivityRail<Content: View>: View {
     var body: some View {
         content
             .padding(.leading, SHThreadMetrics.railPadding)
-            .overlay(alignment: .leading) { SHHairline(.vertical, color: .sh.lineStrong) }
+            .overlay(alignment: .leading) { SHHairline(.vertical, color: SHThreadMetrics.stepsRule(Color.sh)) }
             .padding(.leading, SHThreadMetrics.railInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
@@ -425,10 +435,36 @@ private struct SHActivityCallRowView<Menu: View>: View {
     @State private var statWidth: CGFloat = 0
     @State private var openInWidth: CGFloat = 0
 
+    #if os(macOS)
+    /// An edit's lines in the diff colours, else its stat in `textTertiary` (`failed` when it did).
+    @ViewBuilder private func statView(_ sh: SHPalette) -> some View {
+        if let diff = row.diff, !row.failed {
+            SHDiffStat(added: diff.added, removed: diff.removed, font: .sh(.ui, weight: .regular), hidesZero: true).fixedSize()
+        } else if let stat = row.stat {
+            Text(stat).font(.sh(.ui, weight: .regular)).foregroundStyle(row.failed ? sh.failed : sh.textTertiary).lineLimit(1).fixedSize()
+        }
+    }
+    #endif
+
     var body: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.xs) {
             Button { onSelect(row.id) } label: {
+                #if os(macOS)
+                // The board's `.tl` (GXExpanded): the verb in words, the path or command in mono, then what came of it.
+                HStack(spacing: SH.Space.s) {
+                    Text(row.label).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
+                    Text(row.detail).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                        .truncationMode(row.isPath ? .head : .tail)
+                        .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
+                    statView(sh)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { statWidth = $0 }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, SH.Space.xs)
+                .frame(minHeight: SHThreadMetrics.callRowHeight)
+                .padding(.vertical, SHThreadMetrics.callRowPress)
+                #else
                 HStack(spacing: 10) {
                     Text(row.label).foregroundStyle(sh.textTertiary).lineLimit(1).frame(width: labelWidth, alignment: .leading)
                     Text(row.detail).foregroundStyle(sh.textSecondary).lineLimit(1)
@@ -443,12 +479,14 @@ private struct SHActivityCallRowView<Menu: View>: View {
                 .font(.shMono(11))
                 .padding(.horizontal, SH.Space.xs)
                 .frame(minHeight: SHThreadMetrics.callRowHeight)
+                #endif
             }
             .buttonStyle(.shRow(radius: SH.Radius.xs))
             .shOpenIn(row.filePath, hovering: hovering, trailing: SH.Space.xs + (row.stat == nil ? 0 : statWidth + 10), width: $openInWidth)
             // After the overlay: the button covers the pointer, and hover tracked beneath it would end, hide it, and loop.
             .onHover { hovering = row.filePath != nil && $0 }
             .padding(.horizontal, -SH.Space.xs)
+            .padding(.vertical, -SHThreadMetrics.callRowPress)
             .contextMenu { menu(row) }
             .help(row.detail)
             .accessibilityLabel(row.accessibilityLabel)
@@ -644,7 +682,33 @@ public struct SHChangesCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var undone: some View {
+    /// The Mac's (GXExpanded): the same raised card as the edited one, "Undid the agent’s edits to 7 files" in
+    /// `textSecondary` and Redo as a word at its end; the iPhone and iPad keep the dashed line.
+    @ViewBuilder private var undone: some View {
+        #if os(macOS)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m + SH.Space.xxs) {
+            Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let onRedo {
+                Button("Redo", action: onRedo)
+                    .buttonStyle(SHCardLinkStyle(dim: false))
+                    .disabled(busy)
+                    .help("Put the agent’s edits back")
+            }
+        }
+        .padding(EdgeInsets(top: SH.Space.l, leading: SHThreadMetrics.changesInset, bottom: SHThreadMetrics.undoneBottom,
+                            trailing: SHThreadMetrics.changesInset))
+        .frame(maxWidth: .infinity)
+        .shLift(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
+        .shBorder(sh.lineSubtle, radius: SHThreadMetrics.changesRadius)
+        .accessibilityElement(children: .contain)
+        #else
+        dashedUndone
+        #endif
+    }
+
+    private var dashedUndone: some View {
         let sh = Color.sh
         return HStack(spacing: 10) {
             Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)

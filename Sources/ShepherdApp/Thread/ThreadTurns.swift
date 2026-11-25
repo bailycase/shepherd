@@ -107,14 +107,14 @@ struct UserTurn: View, Equatable {
                     // No board draws a sent message's page elements as chips (the user's decision,
                     // 2026-09-29): only the composer's chip and the queue row's stand for them.
                     VStack(alignment: .trailing, spacing: SH.Space.s) {
-                        // The images it carries, above its words (ThreadImagesSent), when the host names each of them.
-                        if !bubble.imageRefs.isEmpty {
-                            SentImages(refs: bubble.imageRefs, names: bubble.imageRefs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you")
-                        }
                         SHUserBubble(bubble.text, attachments: bubble.imageRefs.isEmpty ? Array(repeating: "Image", count: bubble.images) : [],
                                      timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
                             if let command = bubble.command { SentCommandLine(command: command) }
                             if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
+                            // The images it carries, in the bubble above its words (GXImagesSent), when the host names each of them.
+                            if !bubble.imageRefs.isEmpty {
+                                SentImages(refs: bubble.imageRefs, names: bubble.imageRefs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you")
+                            }
                         }
                     }
                     .opacity(bubble.pending ? 0.7 : 1)
@@ -332,7 +332,7 @@ struct AgentTurn: View, Equatable {
         case .images(_, let images):
             // What the agent made or a tool returned, where it happened (ThreadImagesReceived): the neutral count, then the pictures.
             VStack(alignment: .leading, spacing: SH.Space.m) {
-                SHActivityLine(kind: .images, label: nativeCount(images.count, "image"), meta: "")
+                SHThreadImageLabel(nativeCount(images.count, "image"))
                 ReceivedImages(refs: images)
             }
             .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)

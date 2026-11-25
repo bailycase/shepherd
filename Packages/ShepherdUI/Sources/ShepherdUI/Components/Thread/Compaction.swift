@@ -2,9 +2,16 @@ import SwiftUI
 
 /// Compaction in the thread (ContextIdeas › In the thread, ContextCompacted).
 public enum SHCompactionMetrics {
-    /// The rules on either side of the line, 12pt from it; its parts 7pt apart.
+    /// The rules on either side of the line, 12pt from it; its parts 7pt apart (the Mac's board,
+    /// GXCompacted: 10pt each, with Hide summary 4pt further out).
+    #if os(macOS)
+    public static let ruleGap: CGFloat = SH.Space.m + SH.Space.xxs
+    public static let partGap: CGFloat = SH.Space.m + SH.Space.xxs
+    static let toggleInset: CGFloat = SH.Space.xs
+    #else
     public static let ruleGap: CGFloat = 12
     public static let partGap: CGFloat = 7
+    #endif
     public static let icon: CGFloat = 12
     public static let chevron: CGFloat = 9
     /// The summary card: 14pt above and below, 16pt at the sides, sections 12pt apart.
@@ -12,8 +19,20 @@ public enum SHCompactionMetrics {
     public static let cardHorizontal: CGFloat = 16
     public static let sectionGap: CGFloat = 12
     public static let copySize: CGFloat = 24
-    /// The divider and the open summary, 14pt apart.
+    /// The divider and the open summary, 14pt apart (12pt on the Mac).
+    #if os(macOS)
+    public static let openGap: CGFloat = SH.Space.l
+    /// The Mac's summary card: a title row, then sections 10pt apart under 14pt sides.
+    static let macCardSide: CGFloat = 14
+    static let macHeaderTop: CGFloat = SH.Space.l
+    static let macHeaderBottom: CGFloat = SH.Space.s
+    static let macBottom: CGFloat = SH.Space.l
+    static let macSectionTop: CGFloat = 10
+    /// The board's 19pt lines under 13pt text.
+    static let macTextSpacing: CGFloat = 3
+    #else
     public static let openGap: CGFloat = 14
+    #endif
     /// Show summary's line, which a touch target pads to 44pt.
     public static let toggleHeight: CGFloat = 16
 }
@@ -85,7 +104,7 @@ public struct SHCompactionDivider: View {
         if !running {
             Image(systemName: warning ? "exclamationmark.triangle" : "arrow.down.right.and.arrow.up.left")
                 .font(.system(size: SHCompactionMetrics.icon - 1, weight: .medium))
-                .foregroundStyle(warning ? sh.lanternText : sh.textTertiary)
+                .foregroundStyle(warning ? sh.lanternText : Self.iconColor(sh))
         }
         Group {
             if running { Text(title).shShimmer() } else { Text(title) }
@@ -94,21 +113,44 @@ public struct SHCompactionDivider: View {
         if let tokens { Text(tokens).font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize() }
     }
 
-    /// "· Show summary", or Hide summary while it is open.
+    private static func iconColor(_ sh: SHPalette) -> Color {
+        #if os(macOS)
+        sh.textSecondary
+        #else
+        sh.textTertiary
+        #endif
+    }
+
+    /// "· Show summary", or Hide summary while it is open. The Mac's is plain words in medium
+    /// (no dot, no chevron).
     @ViewBuilder private func summaryToggle(separated: Bool) -> some View {
         let sh = Color.sh
         if let expanded {
+            #if !os(macOS)
             if separated { Text("·").font(.shSans(12)).foregroundStyle(sh.lineStrong) }
+            #endif
             Button(action: toggle) {
                 HStack(spacing: SH.Space.xs) {
+                    #if os(macOS)
+                    Text(expanded ? "Hide summary" : "Show summary").font(.sh(.caption, weight: .medium)).foregroundStyle(sh.textPrimary)
+                    #else
                     Text(expanded ? "Hide summary" : "Show summary").font(.shSans(12)).foregroundStyle(sh.textPrimary)
                     SHTurningChevron(isOpen: expanded, closed: .down, open: .up)
                         .font(.system(size: SHCompactionMetrics.chevron - 1, weight: .semibold))
                         .foregroundStyle(sh.textTertiary)
+                    #endif
                 }
+                #if os(macOS)
+                // A taller press area than the words, without taller layout (below).
+                .padding(.vertical, SH.Space.xs)
+                #endif
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            #if os(macOS)
+            .padding(.vertical, -SH.Space.xs)
+            .padding(.leading, SHCompactionMetrics.toggleInset)
+            #endif
             .fixedSize()
             // A 44pt target on touch; nothing changes on the Mac.
             .shTouchTarget(height: SHCompactionMetrics.toggleHeight)
@@ -150,9 +192,68 @@ public struct SHCompactionSummary: View {
         self.copy = copy
     }
 
-    public var body: some View {
+    @ViewBuilder public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        standardBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The Mac's card (GXCompacted): raised on the lift, "What the agent kept" and who wrote it,
+    /// then each section's title over its words in `textSecondary`; the files are one line of
+    /// mono names. Copy stays at the title row's end.
+    private var macBody: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SHCompactionMetrics.sectionGap) {
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                Text("What the agent kept").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1).fixedSize()
+                Text("Written by the agent")
+                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                    .help(size.map { "\($0) tokens" } ?? "")
+                Spacer(minLength: SH.Space.m)
+                Button(action: copy) {
+                    Image(systemName: "doc.on.doc").font(.system(size: SHCompactionMetrics.icon))
+                        .frame(width: SHCompactionMetrics.copySize, height: SHCompactionMetrics.copySize)
+                }
+                .buttonStyle(.shIcon(size: SHCompactionMetrics.copySize))
+                .help("Copy summary")
+                .accessibilityLabel("Copy summary")
+            }
+            .padding(.top, SHCompactionMetrics.macHeaderTop).padding(.bottom, SHCompactionMetrics.macHeaderBottom)
+            ForEach(sections) { section in
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    if !section.title.isEmpty {
+                        Text(section.title).font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textPrimary)
+                    }
+                    Group {
+                        if section.files.isEmpty {
+                            Text(section.text).font(.sh(.ui, weight: .regular))
+                        } else {
+                            Text(section.files.joined(separator: ", ")).font(.sh(.caption).monospaced())
+                        }
+                    }
+                    .lineSpacing(SHCompactionMetrics.macTextSpacing)
+                    .foregroundStyle(sh.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                }
+                .padding(.top, SHCompactionMetrics.macSectionTop)
+            }
+        }
+        .padding(.horizontal, SHCompactionMetrics.macCardSide)
+        .padding(.bottom, SHCompactionMetrics.macBottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: SH.Radius.xl, lift: true)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("What the agent kept")
+    }
+    #endif
+
+    private var standardBody: some View {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SHCompactionMetrics.sectionGap) {
             HStack(spacing: SH.Space.m) {
                 Image(systemName: "text.alignleft").font(.system(size: SHCompactionMetrics.icon - 1, weight: .medium))
                     .foregroundStyle(sh.textTertiary)

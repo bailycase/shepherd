@@ -96,7 +96,12 @@ public struct SHContextRing: View {
         switch tone {
         case .calm: sh.textSecondary
         case .warning: sh.lantern
+        // The board's nearly-full ring is the lantern's (GXContextFull): the Mac has no second alarm.
+        #if os(macOS)
+        case .critical: sh.lantern
+        #else
         case .critical: sh.failed
+        #endif
         }
     }
 }
@@ -187,9 +192,11 @@ public struct SHContextDetailsModel: Equatable, Sendable {
         public var value: String
         /// What the part is made of, quietly under it.
         public var children: [Child]
+        /// Said in mono after the label (the Mac: "Instructions, AGENTS.md").
+        public var detail: String?
         public var id: String { label }
-        public init(part: Part, label: String, value: String, children: [Child] = []) {
-            self.part = part; self.label = label; self.value = value; self.children = children
+        public init(part: Part, label: String, value: String, children: [Child] = [], detail: String? = nil) {
+            self.part = part; self.label = label; self.value = value; self.children = children; self.detail = detail
         }
     }
 
@@ -301,9 +308,9 @@ public struct SHContextDetails: View {
     let actions: SHContextDetailsActions
     let presentation: Presentation
     /// Compact now… opens the field for what to keep.
-    @State private var composing = false
-    @State private var keep = ""
-    @FocusState private var keepFocused: Bool
+    @State var composing = false
+    @State var keep = ""
+    @FocusState var keepFocused: Bool
 
     public init(_ model: SHContextDetailsModel, actions: SHContextDetailsActions, presentation: Presentation = .popover) {
         self.model = model
@@ -314,9 +321,17 @@ public struct SHContextDetails: View {
     private var critical: Bool { model.variant == .almostFull }
     private var sheet: Bool { presentation == .sheet }
 
-    public var body: some View {
+    @ViewBuilder public var body: some View {
+        #if os(macOS)
+        if presentation == .popover { macBody } else { standardBody }
+        #else
+        standardBody
+        #endif
+    }
+
+    private var standardBody: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             header
             switch model.variant {
             case .compacting(let started):
@@ -556,7 +571,7 @@ public struct SHContextDetails: View {
         }
     }
 
-    private func compact() {
+    func compact() {
         guard model.compactOffered, actions.compactEnabled else { return }
         actions.compact(keep.trimmingCharacters(in: .whitespacesAndNewlines))
         keep = ""

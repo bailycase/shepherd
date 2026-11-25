@@ -204,6 +204,8 @@ private struct ActivityCallDetails: View {
                 text = arguments
             }
             guard !text.isEmpty else { continue }
+            // GXExpanded lists the calls alone: a call's arguments stay one click away (Show Call, or ⌥-click), a script opens in its line.
+            if !script { continue }
             let id = "\(call.id):input"
             let lines = text.components(separatedBy: "\n")
             inputs[id] = SHActivityCallRow(
@@ -239,10 +241,22 @@ private struct ActivityCallDetails: View {
         seedScripts = false
     }
 
+    /// The row's first word (GXExpanded): "Read", "Edited", "Ran"; any other tool by its own name, capitalised.
+    static func verb(_ label: String) -> String {
+        switch label {
+        case "read": "Read"
+        case "edit": "Edited"
+        case "write": "Wrote"
+        case "bash": "Ran"
+        default: label.prefix(1).uppercased() + label.dropFirst()
+        }
+    }
+
     private func row(_ call: NativeActivityCall) -> SHActivityCallRow {
         let open = expandedCalls.contains(call.id)
         return SHActivityCallRow(
-            id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
+            id: call.id, label: Self.verb(call.label), detail: call.detail, isPath: call.isPath, stat: call.stat,
+            diff: call.kind == .edit && !call.failed ? SHCallDiff(added: call.added, removed: call.removed) : nil, failed: call.failed,
             output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
             truncated: call.truncated, isExpanded: open,
             // An edit's or write's file, or the one a read read: their rows offer Open in (OpenInD).

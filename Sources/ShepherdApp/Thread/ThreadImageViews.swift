@@ -57,7 +57,7 @@ final class ThreadImageLoad {
         }
     }
 
-    /// Twice the largest box a thumbnail is drawn in (384 points), for a 2x display.
+    /// Twice the largest box a thumbnail is drawn in (the widest, 384 points), for a 2x display.
     static let thumbnailPixels: CGFloat = 768
     /// What a fetch the thread stopped says, with a Retry beside it.
     static let interrupted = "The connection was interrupted."
@@ -112,14 +112,16 @@ struct ThreadImageThumb: View {
     let ref: NativeImageRef
     let name: String
     let size: CGSize
+    let radius: CGFloat
     let open: () -> Void
     @Environment(\.threadImages) private var images
     @State private var load: ThreadImageLoad
 
-    init(ref: NativeImageRef, name: String, size: CGSize, open: @escaping () -> Void) {
+    init(ref: NativeImageRef, name: String, size: CGSize, radius: CGFloat, open: @escaping () -> Void) {
         self.ref = ref
         self.name = name
         self.size = size
+        self.radius = radius
         self.open = open
         _load = State(initialValue: ThreadImageLoad(ref))
     }
@@ -129,12 +131,12 @@ struct ThreadImageThumb: View {
         case .unavailable:
             SHThreadImageChip(name: name, detail: "not available")
         case .picture(_, let image):
-            SHThreadImage(name: name, size: size, content: .picture(Image(nsImage: image)), open: open)
+            SHThreadImage(name: name, size: size, content: .picture(Image(nsImage: image)), radius: radius, open: open)
         case .failed:
             // Retry starts the fetch itself: the `.loading` branch's task only runs when that branch first appears.
-            SHThreadImage(name: name, size: size, content: .failed, open: {}, retry: { load.retry(from: images) })
+            SHThreadImage(name: name, size: size, content: .failed, radius: radius, open: {}, retry: { load.retry(from: images) })
         case .loading:
-            SHThreadImage(name: name, size: size, content: .loading, open: open)
+            SHThreadImage(name: name, size: size, content: .loading, radius: radius, open: open)
                 .task { load.load(from: images) }
                 .onDisappear { load.cancel() }
         }
@@ -149,16 +151,20 @@ struct SentImages: View {
     @Environment(\.viewImages) private var view
 
     var body: some View {
-        HStack(spacing: SH.Space.s) {
+        HStack(spacing: SH.Space.m) {
             ForEach(Array(refs.enumerated()), id: \.element.id) { index, ref in
                 ThreadImageThumb(ref: ref, name: names.indices.contains(index) ? names[index] : "Image \(index + 1)",
                                  size: SHThreadImageMetrics.box(width: ref.width, height: ref.height,
                                                                 widest: SHThreadImageMetrics.sentWidest,
-                                                                tallest: SHThreadImageMetrics.sentLongestSide)) {
+                                                                tallest: SHThreadImageMetrics.sentLongestSide),
+                                 radius: SHThreadImageMetrics.sentRadius) {
                     view(ThreadImageSet(refs: refs, names: names, origin: origin), index)
                 }
             }
         }
+        // In the bubble the pictures sit 8pt from its edges, at its trailing side.
+        .padding(.top, -SHThreadImageMetrics.sentInset.top).padding(.horizontal, -SHThreadImageMetrics.sentInset.side)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(refs.count) image\(refs.count == 1 ? "" : "s") you sent")
     }
@@ -170,12 +176,13 @@ struct ReceivedImages: View {
     @Environment(\.viewImages) private var view
 
     var body: some View {
-        SHFlowLayout(spacing: SH.Space.l, lineSpacing: SH.Space.l) {
+        SHFlowLayout(spacing: SHThreadImageMetrics.receivedGap, lineSpacing: SHThreadImageMetrics.receivedGap) {
             ForEach(Array(refs.enumerated()), id: \.element.id) { index, ref in
                 ThreadImageThumb(ref: ref, name: "Image \(index + 1)",
                                  size: SHThreadImageMetrics.box(width: ref.width, height: ref.height,
                                                                 widest: SHThreadImageMetrics.receivedWidest,
-                                                                tallest: SHThreadImageMetrics.receivedTallest)) {
+                                                                tallest: SHThreadImageMetrics.receivedTallest),
+                                 radius: SHThreadImageMetrics.receivedRadius) {
                     view(ThreadImageSet(refs: refs, names: refs.indices.map { "Image \($0 + 1)" }, origin: "From the agent"), index)
                 }
             }
