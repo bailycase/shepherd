@@ -267,7 +267,7 @@ private struct SubagentTurnItem: View {
             TurnErrorItem(error: error, folded: folded)
         case .retrying(_, let line):
             RetryLineItem(line: line)
-        case .steer(_, let text, let sentAt, _):
+        case .steer(_, let text, let sentAt, _, _):
             SHUserBubble(text, timestamp: sentAt.map { nativeClockText($0, meridiem: false) }, note: "from parent", origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case .compaction(let row):

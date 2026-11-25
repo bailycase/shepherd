@@ -45,7 +45,9 @@ Every decision has to pass one test: does this help one person supervise ten wor
 3. **One line per stretch of work.** The tool calls between two pieces of prose are one activity line
    (`docs/design/boards/ToolActivity.png`): live, it says what the running call is doing; finished,
    it is a recap built from the calls' own arguments and results. Every tool has its own words,
-   never "Used <tool>".
+   never "Used <tool>". The turn keeps the order it ran in: thinking you can read, and the pictures
+   a call returned, stand where they happened and end the line before them. Pictures stack in one
+   column, one per row.
 4. **One thing moves at a time.** The live line's spinner and shimmer are the only motion in the thread.
 5. **Nothing in the default view that isn't useful.** No key-hint rows (the question dock's
    footer is the one exception: its 1–N and ↩ hints, QuestionDockRadio), no repeated status text,
