@@ -61,7 +61,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   manual run on `nightly` with the `testflight` input
   (`gh workflow run release.yml --ref nightly -f testflight=true`) uploads it to TestFlight
   internal testing and builds no Mac app. A plain manual run plans like a push. The `testflight`
-  job runs on the `blacksmith-6vcpu-macos-27` runner. It archives unsigned, seals the archive with its push
+  job runs on GitHub's `xcode-27` runner. It archives unsigned, seals the archive with its push
   entitlements using an ad-hoc signature, and cloud-signs a local IPA with the
   `APP_STORE_CONNECT_*` key. It enables Push Notifications on the existing App ID if needed,
   verifies production APNs entitlements in both the distribution signature and provisioning
@@ -195,10 +195,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   prune older completed nightlies from its frozen snapshot; drafts and releases completed during
   publication are never pruned. Failed acquisition, metadata validation, generation or pushing
   prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
-- **Runners are Blacksmith's.** CI and Release run on `blacksmith-2vcpu-ubuntu-2404` and
-  `blacksmith-6vcpu-macos-26` (the TestFlight job on `blacksmith-6vcpu-macos-27`), through the
-  Blacksmith GitHub App on `shepherd-app`. They are ephemeral: every job gets a fresh VM, so
-  nothing persists between jobs except Actions caches and artifacts.
+- **CI and Release use GitHub's standard runners.** These are free for the public Shepherd repo:
+  `ubuntu-24.04`, `macos-26`, and `xcode-27` for TestFlight. Each job gets a fresh VM, so nothing
+  persists between jobs except Actions caches and artifacts.
   - Release's `build` job calls the build-only helper `release-build.yml` (`workflow_call` only)
     for every build-producing plan. It checks out the exact Release source SHA and uses
     the Release run's number, plan, signing identities, entitlements and notarization policy.
@@ -207,8 +206,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     before package provenance is recorded. Nightly compiles Swift in batches at `-O`, so Xcode
     can reuse compiler results for unchanged files. It does not restore the build graph,
     intermediates or assembled app. Tagged releases still use whole-module optimization and
-    compile cold. Swift package checkouts and pi engine downloads are cached, and the Xcode log
-    includes a build timing summary.
+    compile cold. The workflow saves Swift package checkouts before compiling so a slow build
+    can't prevent the next run from restoring them. Pi engine downloads are cached too, and the
+    Xcode log includes a build timing summary.
   - The build uses a temporary signing keychain with a random password, preserves/restores the
     exact existing user keychain search list and removes imported certificate/notary files in
     an `always()` cleanup step, including after failure/cancellation.
