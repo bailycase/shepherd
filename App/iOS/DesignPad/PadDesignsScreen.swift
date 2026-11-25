@@ -20,6 +20,12 @@ struct PadDesignsScreen: View {
         let tagsHosts = Set(designs.rows.map(\.ref.host)).count > 1
         ScrollView {
             VStack(alignment: .leading, spacing: MobileDesignLayout.sectionSpacing) {
+                // The board's own title (DuoOpenDesigns: 28 bold), not the navigation bar's.
+                Text("Designs")
+                    .font(.shSans(MobileDesignLayout.titleSize, .bold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .padding(.horizontal, SH.Space.xs)
+                    .accessibilityAddTraits(.isHeader)
                 if !designs.rows.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                         SHListHeader("Recent", count: nil)
@@ -64,7 +70,20 @@ struct PadDesignsScreen: View {
         }
         .background(Color.sh.bgWindow)
         .navigationTitle("Designs")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .toolbar(.hidden, for: .tabBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("New design", systemImage: "plus") { DesignsHooks.create(navigator: navigator) }
+                    .buttonStyle(.glassProminent)
+                    .disabled(!designs.available)
+            }
+        }
         .refreshable { await designs.refresh(); await systems.refresh() }
         .task { await designs.refresh(); await systems.refresh() }
     }

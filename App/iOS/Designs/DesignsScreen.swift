@@ -17,6 +17,12 @@ struct DesignsScreen: View {
         let model = designs.model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileDesignLayout.sectionSpacing) {
+                // The board's own title (MobileDesigns: 28 bold), not the native large title.
+                Text("Designs")
+                    .font(.shSans(MobileDesignLayout.titleSize, .bold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .padding(.horizontal, SH.Space.xs)
+                    .accessibilityAddTraits(.isHeader)
                 DesignActionBanners()
                 if !model.available {
                     SHEmptyState(Text("No designs here"), message: RemoteHostClient.designsRefusal, showsMark: false)
@@ -60,6 +66,8 @@ struct DesignsScreen: View {
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Designs")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
