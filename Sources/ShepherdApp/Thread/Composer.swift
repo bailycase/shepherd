@@ -709,7 +709,7 @@ struct Composer: View, Equatable {
                     pickModel(model)
                 } close: { menu = nil; composing = true }
                 .equatable()
-                .shTransition(.overlay, anchor: .bottomLeading)
+                .modifier(OverModelChip())
             }
             if menu == .settings {
                 SHModelSettings(models: settingsModels, searchModels: catalog?.settingsSearchModels ?? [],
@@ -726,7 +726,7 @@ struct Composer: View, Equatable {
                                 chooseSpeed: { id in
                                     if let tier = ServiceTier(rawValue: id) { Task { await store.setServiceTier(tier) } }
                                 }, allModels: { openModels() }, close: { menu = nil; composing = true })
-                    .shTransition(.overlay, anchor: .bottomLeading)
+                    .modifier(OverModelChip())
             }
         }
         // Its own height, not the card's, which the overlay proposes.
@@ -783,7 +783,6 @@ struct Composer: View, Equatable {
         guard flip else { composing = value; return }
         var instant = Transaction()
         instant.disablesAnimations = true
-        instant.shFocusFades = value
         withTransaction(instant) { composing = value }
     }
 
@@ -835,8 +834,10 @@ struct Composer: View, Equatable {
         if let projectSend { return projectSend.placeholder }
         if let workerStyle { return workerStyle.placeholder }
         if designChat { return "Describe a change, or click something on the canvas to comment…" }
-        if !hasTurns { return "Describe the task, or / for commands…" }
-        return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
+        // As the iPhone and iPad say it: "$" opens the skills where pi has any.
+        let skills = store.commands.contains { $0.source == "skill" }
+        if !hasTurns { return skills ? "Describe the task, / for commands, $ for skills…" : "Describe the task, or / for commands…" }
+        return commands.isEmpty ? "Follow up…" : skills ? "Follow up, / for commands, $ for skills…" : "Follow up, or / for commands…"
     }
 
     private var field: some View {
@@ -1960,5 +1961,16 @@ struct WidgetRow: View {
         }
         .textSelection(.enabled)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The model picker and the model's settings open over the model chip at the card's trailing end (GXModel's
+/// `.pop`, `right: 40px`), not at its leading edge where the slash and mention menus open.
+private struct OverModelChip: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.trailing, AppLayout.modelMenuTrailing)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .shTransition(.overlay, anchor: .bottomTrailing)
     }
 }

@@ -456,15 +456,9 @@ private struct SubagentRunInspector: View {
                 }
                 .padding(EdgeInsets(top: SH.Space.xs, leading: SH.Space.s, bottom: SH.Space.s, trailing: SH.Space.s))
             }
+            // The boards' `.cmp`: one line, the same focused or not.
             .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(composing ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
-            .background {
-                if composing {
-                    RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing).fill(sh.bgSelected)
-                        .padding(-SHComposerMetrics.focusRing)
-                }
-            }
-            .shAnimation(.hover, value: composing)
+            .shBorder(sh.lineStrong, radius: SH.Radius.m)
             .contentShape(Rectangle())
             .onTapGesture { composing = true }
             .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: SH.Space.l, bottom: SH.Space.l, trailing: SH.Space.l))

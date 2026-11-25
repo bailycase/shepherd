@@ -199,10 +199,16 @@ extension ButtonStyle where Self == SHIconButtonStyle {
     }
 }
 
+extension EnvironmentValues {
+    /// Icon buttons draw round: inside the toolbar's capsule, whose ends they follow (`SHToolbarCapsule`).
+    @Entry var shIconButtonsRound = false
+}
+
 private struct SHIconButton: View {
     let configuration: ButtonStyleConfiguration
     let style: SHIconButtonStyle
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.shIconButtonsRound) private var roundHere
     @State private var hovering = false
 
     var body: some View {
@@ -216,8 +222,9 @@ private struct SHIconButton: View {
         // On is the boards' `.ib.on`: the selection fill with the glyph in ink.
         let foreground: Color = style.tint ?? (style.isOn || active ? sh.textPrimary : sh.textSecondary)
         let fill: Color = style.isOn ? sh.bgSelected : configuration.isPressed && enabled ? sh.bgSelected : active ? style.hoverFill ?? sh.bgHover : .clear
-        // The boards' icon button: a rounded square (radius 7), not a circle.
-        let shape = RoundedRectangle(cornerRadius: style.round ? side / 2 : SH.Radius.s)
+        // The boards' icon button: a rounded square (radius 7), not a circle, but in the toolbar's capsule.
+        let round = style.round || roundHere
+        let shape = RoundedRectangle(cornerRadius: round ? side / 2 : SH.Radius.s)
         configuration.label
             .font(.system(size: 14, weight: .regular))
             .symbolRenderingMode(.monochrome)
@@ -231,7 +238,7 @@ private struct SHIconButton: View {
             .shAnimation(.hover, value: hovering)
             // A pane toggle lights up however its pane opened (a menu, a shortcut, an agent).
             .shComponentAnimation(.hover, value: style.isOn)
-            .shFocusRing(radius: style.round ? side / 2 : SH.Radius.s)
+            .shFocusRing(radius: round ? side / 2 : SH.Radius.s)
     }
 }
 

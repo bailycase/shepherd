@@ -43,7 +43,8 @@ struct ComposerMenuScrollerTests {
         try await thread.waitUntilReady()
         let top = thread.cardTop - AppLayout.menuGap - ComposerMenuTests.Menu.models.height
         let points = stride(from: top + 10, to: thread.cardTop - AppLayout.menuGap, by: 60).flatMap { y in
-            stride(from: thread.columnLeading + 10, to: thread.columnLeading + SHComposerMetrics.modelPickerWidth, by: 90)
+            stride(from: ComposerMenuTests.Menu.models.leading(in: thread) + 10,
+                   to: ComposerMenuTests.Menu.models.leading(in: thread) + SHComposerMetrics.modelPickerWidth, by: 90)
                 .map { CGPoint(x: $0, y: y) }
         }
         SHMenuDiagnostics.listReturns = 0
