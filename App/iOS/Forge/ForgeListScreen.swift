@@ -143,12 +143,15 @@ struct ForgeListColumn: View {
 /// New issue: the capsule's second button.
 struct ForgeNewIssueButton: View {
     let store: ForgeStore
+    /// In a menu it is a titled item; in the bar, its glyph.
+    var inMenu = false
 
     var body: some View {
         if store.browseHost != nil {
-            Button("New issue", systemImage: "square.and.pencil") { store.composingIssue = true }
-                .labelStyle(.iconOnly)
+            let button = Button("New issue", systemImage: "square.and.pencil") { store.composingIssue = true }
+                .tint(Color.sh.textPrimary)
                 .disabled(store.repos.isEmpty)
+            if inMenu { button } else { button.labelStyle(.iconOnly) }
         }
     }
 }
