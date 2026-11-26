@@ -121,13 +121,13 @@ struct AppDialogs: ViewModifier {
                     subtitle: ask.facts.message,
                     actions: [
                         DialogAction("Cancel", kind: .cancel) { vm.fleetPage.moveAsk = nil },
-                        DialogAction("Move when it’s done", kind: .normal) {
-                            vm.fleetPage.moveAsk = nil
-                            vm.moveThread(ask.row, to: ask.target, when: .whenDone)
-                        },
-                        DialogAction("Stop and move", kind: .prominent) {
+                        DialogAction("Move now", kind: .normal) {
                             vm.fleetPage.moveAsk = nil
                             vm.moveThread(ask.row, to: ask.target)
+                        },
+                        DialogAction("Move when it’s done", kind: .prominent) {
+                            vm.fleetPage.moveAsk = nil
+                            vm.moveThread(ask.row, to: ask.target, when: .whenDone)
                         },
                     ]
                 )

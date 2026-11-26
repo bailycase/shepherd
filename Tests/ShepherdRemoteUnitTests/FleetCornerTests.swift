@@ -50,32 +50,33 @@ struct FleetCornerTests {
         let corner = Self.corner(snapshot)
         #expect(corner.rows.map(\.name) == ["This Mac", "mini", "studio"])
         #expect(corner.rows.map(\.id) == ids)
-        #expect(corner.rows.map(\.state) == ["busy · 3", "room", "asleep"])
+        #expect(corner.rows.map(\.state) == ["3 running", "Room", "Asleep"])
         #expect(corner.rows.map(\.dot) == [.awake, .awake, .asleep])
         #expect(corner.rows.map(\.gauge) == [.warn, .active, .tertiary], "amber while busy, blue with room, only the track while asleep")
         #expect(corner.rows[2].load == 0)
-        #expect(corner.headline == "2 of 3 awake")
-        #expect(corner.summary == "3 Macs, room on mini")
+        #expect(corner.headline == "3 Macs")
+        #expect(corner.summary == "2 of 3 Macs awake")
         #expect(corner.more == nil && !corner.alert && !corner.folded)
     }
 
     @Test func allAwakeSaysHowManyMacs() {
         #expect(Self.corner(Self.fleet(count: 3).snapshot).headline == "3 Macs")
+        #expect(Self.corner(Self.fleet(count: 3).snapshot).summary == "3 Macs awake")
         #expect(Self.corner(Self.fleet(count: 1).snapshot).headline == "just this Mac")
         #expect(Self.corner(Self.fleet(count: 1).snapshot).summary == "Just this Mac")
     }
 
     @Test func workWaitingForASleepingMacReadsWaitingNotAsleep() {
         let (snapshot, _) = Self.fleet(count: 3, sleeping: 1, waitingOn: 2)
-        #expect(Self.corner(snapshot).rows.map(\.state) == ["busy · 3", "room", "1 waiting"])
+        #expect(Self.corner(snapshot).rows.map(\.state) == ["3 running", "Room", "1 waiting"])
     }
 
     @Test func aMacThatLacksATool_everyThreadNeedsCannotTakeWorkAndRaisesTheAlert() {
         let (snapshot, _) = Self.fleet(count: 3, lacking: (2, .xcode))
         let corner = Self.corner(snapshot)
-        #expect(corner.rows[2].state == "no Xcode" && corner.rows[2].dot == .blocked && corner.rows[2].load == 0)
+        #expect(corner.rows[2].state == "No Xcode" && corner.rows[2].dot == .blocked && corner.rows[2].load == 0)
         #expect(corner.alert)
-        #expect(Self.corner(Self.fleet(count: 3, lacking: (2, .git)).snapshot).rows[2].state == "no git")
+        #expect(Self.corner(Self.fleet(count: 3, lacking: (2, .git)).snapshot).rows[2].state == "No git")
         // An MCP server's command is no gate: the thread starts without it.
         #expect(!Self.corner(Self.fleet(count: 3, lacking: (2, .binary)).snapshot).alert)
     }
@@ -88,7 +89,7 @@ struct FleetCornerTests {
         let corner = Self.corner(snapshot)
         #expect(corner.folded)
         #expect(corner.rows.map(\.id) == [ids[0], ids[1], ids[2], ids[4]], "\(corner.rows.map(\.name)) \(corner.rows.map(\.state))")
-        #expect(corner.rows.map(\.state) == ["busy · 3", "next", "1 waiting", "no Xcode"])
+        #expect(corner.rows.map(\.state) == ["3 running", "Next", "1 waiting", "No Xcode"])
         #expect(corner.rows[3].name == "build-04")
         #expect(corner.more?.text == "8 more, 1 asleep")
         #expect(corner.headline == "12 Macs" && corner.alert)
@@ -128,10 +129,10 @@ struct FleetCornerTests {
         var card = Self.corner(Self.fleet(count: 3).snapshot).rows.count == 3 ? FleetPagePresentation.make(snapshot: Self.fleet(count: 3).snapshot, weight: { _ in .normal }).cards[1] : nil
         #expect(card != nil)
         card?.working = 2
-        #expect(card.map { FleetCorner.state($0, next: false) } == "room · 2")
-        #expect(card.map { FleetCorner.state($0, next: true) } == "next")
+        #expect(card.map { FleetCorner.state($0, next: false) } == "2 running")
+        #expect(card.map { FleetCorner.state($0, next: true) } == "Next")
         card?.working = 0
-        #expect(card.map { FleetCorner.state($0, next: false) } == "room")
+        #expect(card.map { FleetCorner.state($0, next: false) } == "Room")
     }
 
     @Test func noMacMeansNoCorner() {

@@ -33,14 +33,11 @@ public struct SHFleetPlaceRow: Identifiable, Equatable, Sendable {
 }
 
 public enum SHFleetPlaceMetrics {
-    /// The popover: 360pt wide, its rows a check, the words and a 72pt room column holding a 64 by 4pt gauge.
-    public static let width: CGFloat = 360
+    /// The popover: 430pt wide, its rows a check, the words and a 100pt room column holding a meter 4pt tall (FleetNewThread).
+    public static let width: CGFloat = 430
     static let mark: CGFloat = 16
-    static let roomColumn: CGFloat = 72
-    static let gauge: CGFloat = 64
+    static let roomColumn: CGFloat = 100
     static let gaugeHeight: CGFloat = 4
-    /// The room word under the gauge, in mono (FleetNewThread).
-    static let roomWordFont: CGFloat = 10
 }
 
 /// The popover: "Where it runs", a row each for Auto and every Mac, and a line about which Macs have the repository.
@@ -93,13 +90,8 @@ public struct SHFleetPlaceMenu: View {
                     }
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: SH.Space.xs) {
-                        Capsule().fill(sh.lineSubtle)
-                            .frame(width: SHFleetPlaceMetrics.gauge, height: SHFleetPlaceMetrics.gaugeHeight)
-                            .overlay(alignment: .leading) {
-                                Capsule().fill(color(row.tone))
-                                    .frame(width: SHFleetPlaceMetrics.gauge * max(0, min(1, row.room)), height: SHFleetPlaceMetrics.gaugeHeight)
-                            }
-                        Text(row.roomWord).font(.shMono(SHFleetPlaceMetrics.roomWordFont)).foregroundStyle(color(row.tone)).lineLimit(1)
+                        SHMeter(fraction: row.room, height: SHFleetPlaceMetrics.gaugeHeight)
+                        Text(row.roomWord).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1)
                     }
                     .frame(width: SHFleetPlaceMetrics.roomColumn, alignment: .trailing)
                 }
@@ -127,16 +119,6 @@ public struct SHFleetPlaceMenu: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Where it runs")
     }
-
-    private func color(_ tone: SHFleetPlaceRow.Tone) -> Color {
-        let sh = Color.sh
-        return switch tone {
-        case .good: sh.done
-        case .warn: sh.lantern
-        case .bad: sh.failed
-        case .quiet: sh.textTertiary
-        }
-    }
 }
 
 /// The chip beside the project chip: a Mac glyph and where the thread runs ("Auto · Mac mini"), and a chevron.
@@ -153,5 +135,70 @@ public struct SHFleetPlaceChipLabel: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Where it runs: \(title)")
+    }
+}
+
+/// A row of the place menu's Where it runs section (FleetNewThread): a check, the Mac's name over what it is doing, and its room as a meter over a word.
+/// The pointer or the keyboard highlights it; a disabled Mac reads quiet and takes no click.
+public struct SHFleetPlaceMenuRow: View, Equatable {
+    let row: SHFleetPlaceRow
+    let word: String
+    let highlighted: Bool
+    let index: Int
+    let onHighlight: (Int) -> Void
+    let action: () -> Void
+
+    public init(_ row: SHFleetPlaceRow, word: String, highlighted: Bool, index: Int, onHighlight: @escaping (Int) -> Void, action: @escaping () -> Void) {
+        self.row = row
+        self.word = word
+        self.highlighted = highlighted
+        self.index = index
+        self.onHighlight = onHighlight
+        self.action = action
+    }
+
+    public nonisolated static func == (a: SHFleetPlaceMenuRow, b: SHFleetPlaceMenuRow) -> Bool {
+        a.row == b.row && a.word == b.word && a.highlighted == b.highlighted && a.index == b.index
+    }
+
+    public var body: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "checkmark")
+                .font(.sh(.caption, weight: .semibold))
+                .foregroundStyle(sh.textPrimary)
+                .opacity(row.isCurrent ? 1 : 0)
+                .frame(width: SHFleetPlaceMetrics.mark)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(row.title)
+                    .font(.sh(.ui, weight: .medium))
+                    .foregroundStyle(row.isEnabled ? sh.textPrimary : sh.textTertiary)
+                    .lineLimit(1)
+                Text(row.detail)
+                    .font(.sh(.caption, weight: .regular))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: SH.Space.xs) {
+                SHMeter(fraction: row.room, height: SHFleetPlaceMetrics.gaugeHeight)
+                Text(word).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1)
+            }
+            .frame(width: SHFleetPlaceMetrics.roomColumn, alignment: .trailing)
+        }
+        .padding(.horizontal, SH.Space.m)
+        .padding(.vertical, SH.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(highlighted && row.isEnabled ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+        .onHover { if $0 { onHighlight(index) } }
+        .onTapGesture { if row.isEnabled { action() } }
+        .opacity(row.isEnabled ? 1 : 0.7)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(row.title), \(row.roomWord), \(row.detail)" + (row.isCurrent ? ", chosen" : ""))
+        .accessibilityAddTraits(highlighted ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { if row.isEnabled { action() } }
     }
 }

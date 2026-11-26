@@ -15,6 +15,9 @@ public struct SidebarSentInfo: Equatable {
     public var sender: SidebarRowID?
     /// When it was started, in epoch milliseconds: a thread lists the ones it started in this order.
     public var at: Double
+    /// The second line of a thread another Mac was sent, in the boards' words: "mini, delivering", "mini, sent by Speed up checkout CI".
+    public var line: String? = nil
+    public var tone: FleetSentStage.Mark? = nil
 }
 
 extension AgentState {
@@ -45,7 +48,16 @@ extension SidebarDerivation {
             return SidebarSentInfo(sender: startedByRow(started.agentID, near: host, source), at: started.at)
         }
         guard let from = agent.dispatchedFrom else { return nil }
-        return SidebarSentInfo(sender: fleetSender(of: agent, source), at: from.at)
+        var info = SidebarSentInfo(sender: fleetSender(of: agent, source), at: from.at)
+        if let record = source.fleet.record(from.dispatchID) {
+            let stage = FleetSentStage.of(record, viewer: source.localFleetID, macs: source.fleet.macs)
+            let words = stage.phase == .back ? "sent by \(from.agentTitle.isEmpty ? "a thread" : from.agentTitle)" : record.state == .delivering ? "delivering" : stage.words
+            info.line = [stage.tag, words].compactMap { $0 }.joined(separator: ", ")
+            info.tone = stage.tone
+            // A thread that asks you says whose it is, as the boards' Needs you rows do.
+            if agent.status == .blocked { info.line = "From \(from.agentTitle.isEmpty ? "a thread" : from.agentTitle)"; info.tone = nil }
+        }
+        return info
     }
 
     /// The row of the thread that started one with `agent_spawn`: on the same host, else wherever it is now (either may have moved to another
@@ -74,12 +86,12 @@ extension SidebarDerivation {
             }
             let title = record.title.isEmpty ? "Untitled" : record.title
             let failed = stage.phase == .failed
-            let words = [stage.tag, stage.words].compactMap { $0 }.joined(separator: " · ")
+            let words = [stage.tag, stage.words].compactMap { $0 }.joined(separator: ", ")
             var row = SidebarListRow(id: .dispatch(record.id), title: title, leading: .dot(AgentState(stage.dot)),
-                                     accessory: stage.tag.map { .tag($0) } ?? .none, section: failed ? .done : .working,
+                                     accessory: .none, section: failed ? .done : .working,
                                      help: "\(title) · \(words)", accessibilityLabel: "\(title), \(words)",
                                      worktree: false, automation: nil, automationLive: false)
-            row.subtitle = .init(stage.words, tone: .init(stage.tone))
+            row.subtitle = .init(words, tone: .init(stage.tone))
             // Finished: Done, and nothing marks it read (only Try again or Delete ends it).
             if failed { row.completion = 1 }
             return (row, SidebarSentInfo(sender: sender, at: record.createdAt), record.updatedAt, record.spaceID)
@@ -128,17 +140,43 @@ public enum SidebarSent {
             guard let info = infos[row.id], nests(row), let top = root(of: row.id) else { continue }
             children[top, default: []].append((row, info.at))
         }
+        // What a sender says of the threads it sent: "3 sent, 1 back" (every one that is a thread this Mac can see; back is the finished ones).
+        var sentCount: [SidebarRowID: (sent: Int, back: Int)] = [:]
+        for row in lists.joined() {
+            guard let sender = infos[row.id]?.sender, present.contains(sender) else { continue }
+            var count = sentCount[sender] ?? (0, 0)
+            count.sent += 1
+            if ![.working, .needsYou].contains(row.section), row.id.dispatchID == nil { count.back += 1 }
+            sentCount[sender] = count
+        }
+        /// A sent thread's line replaces the Mac's tag: the Mac is in the words (FleetSidebar).
+        func lined(_ row: SidebarListRow) -> SidebarListRow {
+            guard let line = infos[row.id]?.line, !line.isEmpty, row.subtitle == nil else { return row }
+            var row = row
+            row.subtitle = .init(line, tone: .init(infos[row.id]?.tone))
+            if case .tag = row.accessory { row.accessory = .none }
+            return row
+        }
         var moved: [SidebarListRow] = []
         for list in lists.indices {
             var out: [SidebarListRow] = []
             for var row in lists[list] {
                 let id = row.id
+                if row.subtitle == nil, let count = sentCount[id] {
+                    var words = count.back > 0 ? "\(count.sent) sent, \(count.back) back" : "\(count.sent) sent"
+                    // A sender on another Mac names it first ("mini, 1 sent"), as the boards do, in place of its tag.
+                    if case .tag(let mac) = row.accessory {
+                        words = "\(mac), \(words)"
+                        row.accessory = .none
+                    }
+                    row.subtitle = .init(words)
+                }
                 // Still in its own group only where it waits on you.
                 if infos[id] != nil, nests(row), row.section != .needsYou { continue }
                 if let kids = children[id]?.sorted(by: { $0.at < $1.at }) {
                     if kids.count > foldsAbove { row.fold = SidebarFold(key: foldKey(id)) }
                     let tree = [row] + kids.map {
-                        var nested = $0.row
+                        var nested = lined($0.row)
                         nested.fleetNested = true
                         nested.sentRoot = id
                         return nested
@@ -151,7 +189,7 @@ public enum SidebarSent {
                     }
                     continue
                 }
-                out.append(row)
+                out.append(lined(row))
             }
             lists[list] = out
         }

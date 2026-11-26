@@ -123,7 +123,13 @@ struct FleetCornerView: View, Equatable {
         .padding(.leading, SHSidebarMetrics.footerLeading)
         .padding(.trailing, SHSidebarMetrics.topBarTrailing)
         .frame(height: SHSidebarMetrics.footerHeight)
-        .background(onPage && focusedMac == nil ? Color.sh.bgSelected : .clear)
+        // On the Fleet page the line is a selected pill, inset 6pt at its sides and bottom (the boards' `.foot.on`).
+        .background {
+            RoundedRectangle(cornerRadius: SH.Radius.m)
+                .fill(onPage && focusedMac == nil ? Color.sh.bgSelected : .clear)
+                .padding(.horizontal, SH.Space.s)
+                .padding(.bottom, SH.Space.s)
+        }
     }
 
     // MARK: Parts

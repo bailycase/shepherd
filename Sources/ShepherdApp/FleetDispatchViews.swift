@@ -66,19 +66,15 @@ extension EnvironmentValues {
 
 // MARK: - Pieces
 
-/// The Mac's short name as a tag ("mini"): mono 10 on a 1pt strong line.
+/// Where it runs, as the boards say it beside a title: "on mini" in the quiet color.
 struct FleetHostTag: View {
     let name: String
 
     var body: some View {
-        let sh = Color.sh
-        Text(FleetWherePicker.tagName(name))
-            .font(.shMono(AppLayout.fleetTagFont))
-            .foregroundStyle(sh.textSecondary)
+        Text("on \(FleetWherePicker.tagName(name))")
+            .font(.sh(.ui, weight: .regular))
+            .foregroundStyle(Color.sh.textTertiary)
             .lineLimit(1)
-            .padding(.horizontal, SH.Space.xs)
-            .frame(height: AppLayout.fleetTagHeight)
-            .shBorder(sh.lineStrong, radius: SH.Radius.xs)
             .accessibilityHidden(true)
     }
 }
@@ -90,7 +86,7 @@ private struct FleetCardButton: View {
 
     var body: some View {
         Button(action.title, action: run)
-            .buttonStyle(.sh(.secondary, size: .s))
+            .buttonStyle(.shTextAction(quiet: action == .cancel))
             .accessibilityLabel(action.title)
     }
 }
@@ -120,48 +116,52 @@ struct FleetDispatchCardView: View, Equatable {
         }
     }
 
-    private var pill: some View { FleetDispatchStatePill(text: card.pill, tone: card.tone) }
+    /// The state at the end of the title line: a word, red when it didn't go.
+    private var pill: some View {
+        Text(card.pill).font(.sh(.ui, weight: .regular)).foregroundStyle(card.tone == .bad ? Color.sh.failed : Color.sh.textTertiary).lineLimit(1)
+    }
 
     private func buttons(_ list: [FleetCardAction]) -> some View {
-        HStack(spacing: SH.Space.m) {
+        HStack(spacing: SH.Space.s) {
             ForEach(list, id: \.self) { action in
                 FleetCardButton(action: action) { actions?.card(action, card) }
             }
         }
+        .padding(.horizontal, -SH.Space.s)
     }
 
-    /// FleetDispatch: the tile, the title with the Mac's tag over why it went there, the state and Open and Stop.
+    /// The title line (FleetStates): an arrow, the title, where it went, and the state at the end.
+    private var head: some View {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: AppLayout.fleetCompactRowGlyph)
+                .accessibilityHidden(true)
+            Text(card.title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
+            if let host = card.host { FleetHostTag(name: host) }
+            Spacer(minLength: SH.Space.l)
+            pill
+        }
+    }
+
+    /// FleetDispatch: the title line, why it went there, and Open and Stop.
     private var row: some View {
         let sh = Color.sh
-        return HStack(spacing: SH.Space.l) {
-            RoundedRectangle(cornerRadius: SH.Radius.m)
-                .fill(sh.runningTint)
-                .frame(width: AppLayout.fleetRowTile, height: AppLayout.fleetRowTile)
-                .overlay {
-                    Image(systemName: "arrow.right.to.line")
-                        .font(.sh(.caption, weight: .medium))
-                        .foregroundStyle(sh.running)
-                }
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                HStack(spacing: SH.Space.m) {
-                    Text(card.title).font(.sh(.headline)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                    if let host = card.host { FleetHostTag(name: host) }
-                }
-                Text(card.detail)
-                    .font(.sh(.caption, weight: .regular))
-                    .foregroundStyle(sh.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            pill
-            buttons(card.actions)
+        return VStack(alignment: .leading, spacing: SH.Space.m) {
+            head
+            Text(card.detail)
+                .font(.sh(.ui, weight: .regular))
+                .lineSpacing(AppLayout.fleetProseSpacing)
+                .foregroundStyle(sh.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if !card.actions.isEmpty { buttons(card.actions) }
         }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
+        .padding(AppLayout.fleetMoveCardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.accessibilityLabel)
     }
@@ -171,9 +171,9 @@ struct FleetDispatchCardView: View, Equatable {
         let sh = Color.sh
         return VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(spacing: SH.Space.m) {
-                FleetGauge(fraction: sending.fraction ?? 0, color: sh.running, height: AppLayout.fleetSendBarHeight)
+                SHMeter(fraction: sending.fraction ?? 0, height: AppLayout.fleetMetricBarHeight)
                 Text(sending.progress)
-                    .font(.sh(.mono))
+                    .font(.sh(.caption, weight: .regular))
                     .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
@@ -191,9 +191,9 @@ struct FleetDispatchCardView: View, Equatable {
     private func cloningProgress(_ cloning: FleetCloningCard) -> some View {
         let sh = Color.sh
         return HStack(spacing: SH.Space.m) {
-            FleetGauge(fraction: cloning.fraction ?? 0, color: sh.running, height: AppLayout.fleetSendBarHeight)
+            SHMeter(fraction: cloning.fraction ?? 0, height: AppLayout.fleetMetricBarHeight)
             Text(cloning.progress)
-                .font(.sh(.mono))
+                .font(.sh(.caption, weight: .regular))
                 .foregroundStyle(sh.textTertiary)
                 .lineLimit(1)
                 .fixedSize()
@@ -202,19 +202,14 @@ struct FleetDispatchCardView: View, Equatable {
         .accessibilityLabel(cloning.progress)
     }
 
-    /// FleetStates: the title with the Mac's tag and the state, what it waits for, and what the person can do.
+    /// FleetStates: the title line, what it waits for, how far it is and what the person can do.
     private var state: some View {
         let sh = Color.sh
         return VStack(alignment: .leading, spacing: SH.Space.m) {
-            HStack(spacing: SH.Space.m) {
-                Text(card.title).font(.sh(.headline)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                if let host = card.host { FleetHostTag(name: host) }
-                Spacer(minLength: SH.Space.l)
-                pill
-            }
+            head
             Text(card.detail)
                 .font(.sh(.ui, weight: .regular))
-                .lineSpacing(SHTextStyle.caption.lineSpacing)
+                .lineSpacing(AppLayout.fleetProseSpacing)
                 .foregroundStyle(sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -222,10 +217,9 @@ struct FleetDispatchCardView: View, Equatable {
             if let cloning = card.cloning { cloningProgress(cloning) }
             if !card.actions.isEmpty { buttons(card.actions) }
         }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
+        .padding(AppLayout.fleetMoveCardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.accessibilityLabel)
     }
@@ -243,27 +237,36 @@ struct FleetCompactDispatchRow: View {
 
     var body: some View {
         let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
         HStack(spacing: SH.Space.m) {
-            Image(systemName: "arrow.up.right")
-                .font(.sh(.caption, weight: .regular))
-                .foregroundStyle(sh.textTertiary)
-                .frame(width: AppLayout.fleetCompactRowGlyph)
-                .accessibilityHidden(true)
-            Text(card.title).font(.sh(.body)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
+            ZStack {
+                Image(systemName: "checkmark").opacity(card.pill == "Done" ? 1 : 0)
+                Image(systemName: "arrow.turn.down.right").opacity(card.pill == "Done" ? 0 : 1)
+            }
+            .font(.sh(.caption, weight: .regular))
+            .foregroundStyle(sh.textSecondary)
+            .frame(width: AppLayout.fleetCompactRowGlyph)
+            .accessibilityHidden(true)
+            Text(card.title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
+            words
             Spacer(minLength: SH.Space.l)
             if hovering {
                 ForEach(card.actions.filter { buttonWorthy($0) }, id: \.self) { action in
                     Button(action.title) { actions?.card(action, card) }
-                        .buttonStyle(.sh(.secondary, size: .s))
+                        .buttonStyle(.shTextAction(quiet: action == .cancel))
                 }
             }
-            if let host = card.host { FleetHostTag(name: host) }
-            words
+            Image(systemName: "chevron.right")
+                .font(.sh(.micro, weight: .semibold))
+                .foregroundStyle(sh.textTertiary)
+                .opacity(card.remoteAgentID == nil ? 0 : 1)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, minHeight: AppLayout.fleetCompactRowHeight, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
-        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.l))
+        .background(sh.bgRaised, in: shape)
+        .shBorder(sh.lineStrong, radius: SH.Radius.m)
+        .contentShape(shape)
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .onTapGesture { if card.remoteAgentID != nil { actions?.card(.open, card) } }
@@ -278,6 +281,14 @@ struct FleetCompactDispatchRow: View {
         .modifier(FleetCardAccessibilityActions(card: card, actions: actions))
     }
 
+    /// The line after the title: where it is and how it stands, "On mini, working · 4m", "Back from mini · 2m".
+    private var lead: String {
+        let host = card.host.map(FleetWherePicker.tagName)
+        guard let host else { return compact.words.prefix(1).uppercased() + compact.words.dropFirst() }
+        if card.pill == "Done" { return "Back from \(host)" }
+        return "On \(host), \(compact.words)"
+    }
+
     /// The buttons a row shows on hover: the ones that act on it, not the long ways around.
     private func buttonWorthy(_ action: FleetCardAction) -> Bool {
         switch action {
@@ -287,19 +298,18 @@ struct FleetCompactDispatchRow: View {
     }
 
     @ViewBuilder private var words: some View {
-        let color = compact.tone.textColor
         if compact.timed, card.updatedAt > 0 {
             let since = Date(timeIntervalSince1970: card.updatedAt / 1000)
             TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
-                text("\(compact.words) · \(SHDuration.text(max(0, context.date.timeIntervalSince(since))))", color)
+                text("\(lead) · \(SHDuration.text(max(0, context.date.timeIntervalSince(since))))")
             }
         } else {
-            text(compact.words, color)
+            text(lead)
         }
     }
 
-    private func text(_ string: String, _ color: Color) -> some View {
-        Text(string).font(.sh(.mono)).foregroundStyle(color).lineLimit(1).fixedSize()
+    private func text(_ string: String) -> some View {
+        Text(string).font(.sh(.ui, weight: .regular)).foregroundStyle(compact.tone == .bad ? Color.sh.failed : Color.sh.textTertiary).lineLimit(1)
     }
 }
 
@@ -323,20 +333,24 @@ struct FleetBehindMacCard: View, Equatable {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(spacing: SH.Space.m) {
-                Text(mac.name).font(.sh(.headline)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Image(systemName: "desktopcomputer")
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: AppLayout.fleetCompactRowGlyph)
+                    .accessibilityHidden(true)
+                Text(mac.name).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
                 Spacer(minLength: SH.Space.l)
-                FleetPill(text: mac.pill, dot: sh.lantern, text: sh.lanternText, fill: sh.lanternTint)
+                Text(mac.pill).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.lantern).lineLimit(1)
             }
             Text(mac.detail)
                 .font(.sh(.ui, weight: .regular))
-                .lineSpacing(SHTextStyle.caption.lineSpacing)
+                .lineSpacing(AppLayout.fleetProseSpacing)
                 .foregroundStyle(sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
+        .padding(AppLayout.fleetMoveCardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
         .accessibilityElement(children: .combine)
     }
 }
@@ -360,24 +374,25 @@ struct FleetResultCard: View, Equatable {
 
     var body: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(spacing: SH.Space.m) {
                 Image(systemName: "checkmark")
-                    .font(.sh(.micro, weight: .semibold))
-                    .foregroundStyle(sh.done)
-                    .frame(width: AppLayout.fleetResultTick)
-                    .accessibilityHidden(true)
-                (Text("Result from ") + Text(title).fontWeight(.semibold).foregroundStyle(sh.textPrimary) + Text(" on \(result.host)"))
                     .font(.sh(.caption, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: AppLayout.fleetCompactRowGlyph)
+                    .accessibilityHidden(true)
+                (Text("Result from ") + Text(title).fontWeight(.medium).foregroundStyle(sh.textPrimary) + Text(" on \(FleetWherePicker.tagName(result.host))"))
+                    .font(.sh(.ui, weight: .regular))
                     .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: SH.Space.l)
                 if let time {
-                    Text(time).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
+                    Text(time).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
                 }
             }
             Text(Self.styled(result.text))
-                .font(.sh(.body))
+                .font(.sh(.ui, weight: .regular))
+                .lineSpacing(AppLayout.fleetProseSpacing)
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -389,20 +404,20 @@ struct FleetResultCard: View, Equatable {
                     .textSelection(.enabled)
             }
             if let card, card.remoteAgentID != nil {
-                HStack(spacing: SH.Space.m) {
+                HStack(spacing: SH.Space.s) {
                     Button("Open thread") { actions?.openResult(card) }
-                        .buttonStyle(.sh(.secondary, size: .s))
+                        .buttonStyle(.shTextAction)
                     if result.branch != nil {
                         Button("Review changes") { actions?.reviewResult(card) }
-                            .buttonStyle(.sh(.secondary, size: .s))
+                            .buttonStyle(.shTextAction)
                     }
                 }
+                .padding(.horizontal, -SH.Space.s)
             }
         }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
+        .padding(AppLayout.fleetMoveCardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgSunken, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Result from \(title) on \(result.host)")
     }

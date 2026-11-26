@@ -149,6 +149,37 @@ struct FleetPagePreviewTests {
         }
     }
 
+    /// FleetEmpty: a Mac alone in its fleet, the Macs found on its network, and the other ways in.
+    @Test func aLoneMacInvitesTheOthers() async throws {
+        var alone = Self.snapshot
+        alone.peers = []
+        alone.macs = [alone.macs[0]]
+        let page = Self.page(alone)
+        let found = [FoundMac(id: "mini", name: "Mac mini", version: "0.9.4", address: "192.168.1.52", port: 7434),
+                     FoundMac(id: "studio", name: "Mac Studio", version: "0.9.4", address: "192.168.1.60", port: 7434)]
+        try await Preview.renderMatrix("fleet-invite", size: CGSize(width: 1208, height: 900)) {
+            FleetPageContent(page: page, actions: Self.noActions, found: found).frame(width: 1208, height: 900)
+        }
+        try await Preview.render("fleet-invite-none-found", size: CGSize(width: 1208, height: 600)) {
+            FleetPageContent(page: page, actions: Self.noActions).frame(width: 1208, height: 600)
+        }
+    }
+
+    /// FleetMany and FleetMacAsleep: twelve Macs in groups with a provider limit, build-04 chosen; and the Mac Studio's detail while it sleeps.
+    @Test func manyMacsAndAMacAsleep() async throws {
+        var snapshot = FleetCornerPreviewTests.twelveMacs
+        snapshot.limits = [FleetLimitStatus(provider: "anthropic", seconds: 100, waiting: 3)]
+        let page = Self.page(snapshot)
+        let build04 = try #require(page.cards.first { $0.name == "build-04" }).id
+        try await Preview.renderMatrix("fleet-many", size: CGSize(width: 1208, height: 1000)) {
+            FleetPageContent(page: page, actions: Self.noActions, focusedMac: build04).frame(width: 1208, height: 1000)
+        }
+        let three = Self.page()
+        try await Preview.renderMatrix("fleet-asleep", size: CGSize(width: 1208, height: 600)) {
+            FleetPageContent(page: three, actions: Self.noActions, focusedMac: Self.studio).frame(width: 1208, height: 600)
+        }
+    }
+
     /// FleetA's window: the sidebar with its Fleet row beside the page, through the real view model.
     @Test func fleetInTheWindow() async throws {
         let workspace = try PreviewWorkspace()

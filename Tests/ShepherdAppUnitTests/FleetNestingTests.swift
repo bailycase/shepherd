@@ -82,11 +82,9 @@ struct FleetNestingTests {
         #expect(built.working.map(\.title) == ["Migrate orders", "Speed up checkout CI", "Task 1"])
         let nested = built.working[2]
         #expect(nested.fleetNested && nested.leading == .dot(.running), "the dot a running thread has")
-        #expect(nested.accessory == .tag("mini"), "the Mac that has it")
-        // Its second line is the thread's own, whatever its dispatch record says.
-        let alone = lists(source(local: [], hosts: [host(children)])).working.first
-        #expect(nested.subtitle == alone?.subtitle && nested.accessibilityLabel == alone?.accessibilityLabel)
-        #expect(line(built.working[1]) == line(lists(source(local: [sender])).working.first), "its starter says nothing of what it started")
+        #expect(nested.accessory == SHSidebarRow.Accessory.none, "the Mac is in its second line, not a tag")
+        #expect(line(nested) == "mini, working", "the Mac, then where the thread is")
+        #expect(line(built.working[1]) == "1 sent", "its starter says how many it sent")
         #expect(built.working[1].fold == nil, "one or two don't fold")
     }
 
@@ -120,7 +118,7 @@ struct FleetNestingTests {
                        record(.preparing, parent: nil, title: "Backfill totals", kind: .userThread, at: 15)]
         let built = lists(source(local: [sender], hosts: [host(children)], records: records + waiting), open: [SidebarSent.foldKey(.local(sender.id))])
         let words = built.all.flatMap { [$0.subtitle?.text, $0.accessibilityLabel, $0.help] }.compactMap { $0?.lowercased() }
-        #expect(!words.contains { text in ["sent", "dispatch", "placing", "delivering", "held ·", "sends live"].contains { text.contains($0) } })
+        #expect(!words.contains { text in ["dispatch", "placing", "held ·", "sends live"].contains { text.contains($0) } })
     }
 
     @Test func aThreadThatCameFromAnotherMacIsAsAnyThreadHere() {
@@ -148,13 +146,13 @@ struct FleetNestingTests {
         let built = lists(source(local: [sender], records: records), open: [SidebarSent.foldKey(.local(sender.id))])
         #expect(built.working.map(\.title) == ["Speed up checkout CI", "Rebuild search index", "Lint the monorepo", "Split slow UI tests", "Audit feature flags",
                                               "Port the web client", "Backfill order totals"])
-        #expect(built.working.dropFirst().map { line($0) } == ["starting", "waiting for a Mac with room", "waiting for studio to wake",
-                                                               "waiting for another thread to finish", "cloning payments-web on mini", "starting"])
-        #expect(built.working.dropFirst().map(\.accessory) == [.none, .none, .tag("studio"), .none, .tag("mini"), .none], "the Mac as a tag, none for This Mac")
+        #expect(built.working.dropFirst().map { line($0) } == ["starting", "Auto, no Mac has room", "studio, goes when it wakes",
+                                                               "waiting for another thread to finish", "mini, cloning payments-web", "starting"])
+        #expect(built.working.dropFirst().allSatisfy { $0.accessory == SHSidebarRow.Accessory.none }, "the Mac is in the words, none for This Mac")
         #expect(built.working.dropFirst().map(\.leading) == [.dot(.idle), .dot(.idle), .dot(.idle), .dot(.idle), .dot(.running), .dot(.running)])
         #expect(built.working.dropFirst().allSatisfy { $0.fleetNested }, "a thread another thread started nests under it")
         #expect(built.working.dropFirst().map(\.id) == records.map { .dispatch($0.id) })
-        #expect(line(built.working[0]) == line(lists(source(local: [sender])).working.first), "its starter keeps its own line")
+        #expect(line(built.working[0]) == "6 sent", "its starter says how many it sent")
     }
 
     @Test func aStartingRowBecomesTheRealThreadWhenItStarts() {
@@ -164,7 +162,7 @@ struct FleetNestingTests {
         #expect(before.working.map(\.id) == [.local(sender.id), .dispatch(records[0].id)])
         let after = lists(source(local: [sender], hosts: [host(children)], records: records))
         #expect(after.all.filter { $0.id.dispatchID != nil }.isEmpty)
-        #expect(after.working.map(\.title) == ["Speed up checkout CI", "Task 1"] && after.working[1].accessory == .tag("mini"))
+        #expect(after.working.map(\.title) == ["Speed up checkout CI", "Task 1"] && after.working[1].accessory == SHSidebarRow.Accessory.none && line(after.working[1]) == "mini, starting")
     }
 
     @Test func aUserThreadWaitingForRoomIsANormalStartingRow() {
@@ -172,7 +170,7 @@ struct FleetNestingTests {
         let built = lists(source(local: [], records: [waiting]))
         let row = built.working.first
         #expect(row?.title == "Rebuild search index" && row?.id == .dispatch(waiting.id) && row?.fleetNested == false)
-        #expect(row?.subtitle == .init("waiting for a Mac with room") && row?.leading == .dot(.idle))
+        #expect(row?.subtitle == .init("Auto, no Mac has room") && row?.leading == .dot(.idle))
         #expect(built.activity.isEmpty, "a thread that doesn't exist is no thread to continue")
     }
 
@@ -189,7 +187,7 @@ struct FleetNestingTests {
         let built = lists(source(local: [sender], records: [failed, stale]))
         #expect(built.working.map(\.title) == ["Speed up checkout CI"], "a failure is no work in progress, nor nested under its starter")
         #expect(built.done.map(\.title) == ["Profile cold launch"])
-        #expect(built.done[0].subtitle == .init("xcodebuild exited 65", tone: .failed) && built.done[0].accessory == .tag("studio"))
+        #expect(built.done[0].subtitle == .init("studio, xcodebuild exited 65", tone: .failed) && built.done[0].accessory == SHSidebarRow.Accessory.none)
         #expect(built.done[0].leading == .dot(.failed))
     }
 
@@ -210,11 +208,11 @@ struct FleetNestingTests {
         #expect(built.working.map(\.title) == ["Other"], "it is not work in progress")
         let row = built.done.first
         #expect(built.done.count == 1 && row?.id == .dispatch(failed.id) && row?.title == "test")
-        #expect(row?.leading == .dot(.failed) && row?.accessory == .tag("studio"))
-        #expect(row?.subtitle == .init("bearcli isn't installed", tone: .failed))
+        #expect(row?.leading == .dot(.failed) && row?.accessory == SHSidebarRow.Accessory.none)
+        #expect(row?.subtitle == .init("studio, bearcli isn't installed", tone: .failed))
         // The Mac has left the fleet: never its id.
         let gone = lists(source(local: [], records: [failed], macs: [Self.thisMac: "MacBook Pro"])).done.first
-        #expect(gone?.subtitle == .init("a Mac that left · bearcli isn't installed", tone: .failed))
+        #expect(gone?.subtitle == .init("a Mac that left, bearcli isn't installed", tone: .failed))
         #expect(gone?.accessibilityLabel.contains(Self.studioFleet.uuidString) == false && gone?.help.contains(Self.studioFleet.uuidString) == false)
         // And this one, asked for This Mac: no tag.
         let here = lists(source(local: [], records: [failedUserThread(asking: Self.thisMac)], macs: macs)).done.first
@@ -246,8 +244,9 @@ struct FleetNestingTests {
         #expect(built.working.map(\.title) == ["Speed up checkout CI", "Task 1"])
         let finished = built.done.first
         let alone = lists(source(local: [], hosts: [host(children)])).done.first
-        #expect(finished?.title == "Task 2" && finished?.fleetNested == false && finished?.accessory == .tag("mini"))
-        #expect(finished?.subtitle == alone?.subtitle, "a normal finished row: no \"sent by\", no \"back\"")
+        #expect(finished?.title == "Task 2" && finished?.fleetNested == false && finished?.accessory == SHSidebarRow.Accessory.none)
+        #expect(line(finished)?.hasPrefix("mini, sent by ") == true, "a finished thread says whose it was")
+        #expect(alone != nil)
     }
 
     @Test func aThreadThatAsksYouIsInNeedsYouAndUnderItsStarter() {
@@ -258,9 +257,9 @@ struct FleetNestingTests {
         let built = lists(source(local: [sender], hosts: [host(asking)], records: records))
         let alone = lists(source(local: [], hosts: [host(asking)])).needsYou.first
         let inTree = built.working.last
-        #expect(inTree?.title == "Task 1" && inTree?.fleetNested == true && inTree?.subtitle == alone?.subtitle && inTree?.leading == alone?.leading)
+        #expect(inTree?.title == "Task 1" && inTree?.fleetNested == true && line(inTree)?.hasPrefix("From ") == true && inTree?.leading == alone?.leading)
         let inNeedsYou = built.needsYou.first
-        #expect(inNeedsYou?.title == "Task 1" && inNeedsYou?.subtitle == alone?.subtitle && inNeedsYou?.fleetNested == false)
+        #expect(inNeedsYou?.title == "Task 1" && inNeedsYou?.subtitle == inTree?.subtitle && inNeedsYou?.fleetNested == false)
         // The two rows are one thread, so the list needs a different identity for each.
         let items = built.items(collapsed: [])
         #expect(Set(items.map(\.id)).count == items.count)
@@ -397,7 +396,7 @@ struct FleetNestingTests {
         waiting.spaceID = space.id
         let tree = SidebarDerivation.tree(source(local: [], records: [waiting]), options: SidebarTreeOptions())
         #expect(tree.projects.first?.rows.map(\.title) == ["Rebuild search index"])
-        #expect(tree.projects.first?.rows.first?.subtitle == .init("waiting for a Mac with room"))
+        #expect(tree.projects.first?.rows.first?.subtitle == .init("Auto, no Mac has room"))
     }
 
     // MARK: Rows

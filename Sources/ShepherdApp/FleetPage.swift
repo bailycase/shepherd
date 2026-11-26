@@ -18,6 +18,12 @@ struct FleetPageActions {
     var openCheck: (UUID) -> Void = { _ in }
     /// A Mac card's Update…: the Check tab, on the Shepherd row, where Update Shepherd on that Mac is.
     var openUpdate: (UUID) -> Void = { _ in }
+    /// A row of the list: its Mac's detail shows.
+    var select: (UUID) -> Void = { _ in }
+    /// What a lone Mac offers (FleetEmpty): Add on a Mac found on this network, Add over SSH… and Join with a code….
+    var addFound: (FoundMac) -> Void = { _ in }
+    var addOverSSH: () -> Void = {}
+    var joinWithCode: () -> Void = {}
 }
 
 extension FleetTone {
@@ -48,9 +54,10 @@ extension FleetTone {
     }
 }
 
-/// The page: header, the Auto placement card, a card per Mac and the Dispatches log.
+/// The page: the header, then the Macs tab (the Auto line, a list of Macs beside the chosen one's detail, and the Recent work log) or the Check tab.
 struct FleetPageContent: View {
     let page: FleetPage
+    let layout: FleetMacsLayout
     let actions: FleetPageActions
     var chrome = PageHeaderChrome()
     /// What the buttons on dispatch cards do (FleetStates).
@@ -59,35 +66,36 @@ struct FleetPageContent: View {
     var tab: Binding<FleetPageModel.Tab> = .constant(.macs)
     var check = FleetCheckState()
     var checkActions = FleetCheckActions.none
-    /// The Mac the sidebar's Fleet corner opened the page on: its card is scrolled into view and marked.
+    /// The Mac the sidebar's Fleet corner opened the page on, or the one picked in the list: its detail shows.
     var focusedMac: UUID?
+    /// Macs this one found on its network that aren't in the fleet yet (only what a lone Mac offers).
+    var found: [FoundMac] = []
+
+    init(page: FleetPage, layout: FleetMacsLayout? = nil, actions: FleetPageActions, chrome: PageHeaderChrome = PageHeaderChrome(),
+         cardActions: FleetThreadActions? = nil, tab: Binding<FleetPageModel.Tab> = .constant(.macs), check: FleetCheckState = FleetCheckState(),
+         checkActions: FleetCheckActions = .none, focusedMac: UUID? = nil, found: [FoundMac] = []) {
+        self.page = page
+        self.layout = layout ?? FleetMacsLayout.make(page)
+        self.actions = actions
+        self.chrome = chrome
+        self.cardActions = cardActions
+        self.tab = tab
+        self.check = check
+        self.checkActions = checkActions
+        self.focusedMac = focusedMac
+        self.found = found
+    }
+
+    /// A Mac alone in its fleet has no list to choose from: the page invites the others.
+    private var alone: Bool { page.cards.count <= 1 && page.dispatches.isEmpty && page.attention.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "Fleet", subtitle: tab.wrappedValue == .check ? page.check.summary : page.summary, chrome: chrome) {
-                SHSegmentedPicker("Fleet view", selection: tab, options: [(.macs, "Macs"), (.check, page.check.tabTitle)])
-            } trailing: {
-                switch tab.wrappedValue {
-                case .macs:
-                    Button("Fleet settings", action: actions.openSettings)
-                        .buttonStyle(.sh(.secondary))
-                    Button("Add a Mac", systemImage: "plus", action: actions.addMac)
-                        .buttonStyle(.sh(.primary))
-                case .check:
-                    if let ago = page.check.checkedAgo {
-                        Text(ago).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
-                    }
-                    if page.check.updatable.count > 1 {
-                        Button("Update every Mac") { checkActions.updateAll(page.check.updatable) }
-                            .buttonStyle(.sh(.secondary))
-                    }
-                    Button(check.checking ? "Checking…" : "Check now", action: checkActions.checkNow)
-                        .buttonStyle(.sh(.secondary))
-                        .disabled(check.checking)
-                }
-            }
+            FleetPageHeader(page: page, layout: layout, actions: actions, tab: tab, check: check, checkActions: checkActions, alone: alone, chrome: chrome)
             if tab.wrappedValue == .check {
                 FleetCheckContent(check: page.check, state: check, actions: checkActions)
+            } else if alone {
+                FleetInviteView(found: found, actions: actions)
             } else {
                 macsBody
             }
@@ -95,23 +103,11 @@ struct FleetPageContent: View {
         .background(Color.sh.bgWindow)
     }
 
-    /// The Macs tab: the Auto card, a card per Mac and the Dispatches log.
     private var macsBody: some View {
-        ScrollViewReader { proxy in
-            macsScroll
-                .task(id: focusedMac) {
-                    guard let focusedMac else { return }
-                    withSHAnimation(.scroll) { proxy.scrollTo(focusedMac, anchor: .center) }
-                }
-        }
-    }
-
-    private var macsScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SH.Space.xl) {
-                FleetPlacementCard(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
-                ForEach(page.limits) { strip in
-                    FleetLimitStripView(strip: strip)
+                ForEach(layout.limits) { line in
+                    FleetLimitStripView(line: line)
                 }
                 if !page.attention.isEmpty || !page.behind.isEmpty {
                     VStack(spacing: SH.Space.l) {
@@ -123,93 +119,173 @@ struct FleetPageContent: View {
                         }
                     }
                 }
-                Grid(horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.xl) {
-                    ForEach(rows, id: \.first?.id) { row in
-                        GridRow {
-                            ForEach(row) { card in
-                                FleetMacCardView(card: card, actions: actions, focused: card.id == focusedMac)
-                                    .equatable()
-                                    .id(card.id)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            }
-                            ForEach(0..<(AppLayout.fleetColumns - row.count), id: \.self) { _ in
-                                Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
-                            }
-                        }
+                FleetAutoLine(autoDispatch: page.autoDispatch, nextGoesTo: page.nextGoesTo)
+                HStack(alignment: .top, spacing: AppLayout.fleetBodyGap) {
+                    FleetMacList(groups: layout.groups, selected: layout.detail(focusedMac)?.id, choose: actions.select)
+                        .equatable()
+                        .frame(width: AppLayout.fleetListWidth)
+                    if let detail = layout.detail(focusedMac) {
+                        FleetMacDetailView(detail: detail, actions: actions).equatable()
+                            .frame(maxWidth: .infinity)
                     }
                 }
-                FleetDispatchesCard(rows: page.dispatches)
+                if !page.dispatches.isEmpty { FleetDispatchesCard(rows: page.dispatches) }
             }
-            .padding(.vertical, SH.Space.xxl)
-            .padding(.horizontal, SH.Space.xxxl)
+            .padding(.top, SH.Space.s)
+            .padding(.bottom, SH.Space.xxl)
+            .padding(.trailing, SH.Space.xxl)
+            .padding(.leading, AppLayout.fleetPageLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var rows: [[FleetMacCard]] {
-        stride(from: 0, to: page.cards.count, by: AppLayout.fleetColumns).map {
-            Array(page.cards[$0..<min($0 + AppLayout.fleetColumns, page.cards.count)])
         }
     }
 }
 
-/// "Auto is on": where work would go now. Nothing is sent from here.
-private struct FleetPlacementCard: View {
+/// The page's header (the boards' `.tbar.pgb`): the title, the Macs and Check tabs with what the fleet is doing, and a capsule of words.
+struct FleetPageHeader: View {
+    let page: FleetPage
+    let layout: FleetMacsLayout
+    let actions: FleetPageActions
+    let tab: Binding<FleetPageModel.Tab>
+    let check: FleetCheckState
+    let checkActions: FleetCheckActions
+    let alone: Bool
+    let chrome: PageHeaderChrome
+
+    var body: some View {
+        let checking = tab.wrappedValue == .check
+        HStack(spacing: SH.Space.m) {
+            if let sidebar = chrome.showSidebar {
+                Button(action: sidebar) { Image(systemName: "sidebar.left") }
+                    .buttonStyle(.shIcon)
+                    .shHelp("Show sidebar")
+                    .accessibilityLabel("Show sidebar")
+                    .padding(.trailing, SH.Space.l)
+            }
+            Text("Fleet").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).accessibilityAddTraits(.isHeader)
+            if !alone {
+                SHLiftSegments("Fleet view", selection: tab, segments: [
+                    SHLiftSegment(.macs, "Macs"),
+                    SHLiftSegment(.check, "Check", count: page.check.count > 0 ? "\(page.check.count)" : nil),
+                ])
+                .padding(.leading, SH.Space.s)
+                Text(checking ? layout.checkSummary : layout.summary)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: SH.Space.l)
+            if checking, let ago = page.check.checkedAgo {
+                Text(ago).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).padding(.trailing, SH.Space.s)
+            }
+            SHToolbarCapsule {
+                if checking {
+                    if page.check.updatable.count > 1 {
+                        FleetCapsuleWord("Update every Mac") { checkActions.updateAll(page.check.updatable) }
+                        SHHairline(.vertical).frame(height: AppLayout.fleetCapsuleRule)
+                    }
+                    FleetCapsuleWord(check.checking ? "Checking…" : "Check now", action: checkActions.checkNow)
+                        .disabled(check.checking)
+                } else {
+                    FleetCapsuleWord("Fleet settings", action: actions.openSettings)
+                    SHHairline(.vertical).frame(height: AppLayout.fleetCapsuleRule)
+                    FleetCapsuleWord("Add a Mac", systemImage: "plus", action: actions.addMac)
+                }
+            }
+            .layoutPriority(1)
+        }
+        .padding(.leading, (chrome.showSidebar == nil ? SHToolbarMetrics.leadingPadding : SH.Space.xxl) + chrome.leadingInset)
+        .padding(.trailing, SHToolbarMetrics.trailingPadding)
+        .frame(height: SHToolbarMetrics.height)
+        .frame(maxWidth: .infinity)
+        .background(Color.sh.bgWindow)
+        .contentShape(Rectangle())
+    }
+}
+
+/// A word in the header's capsule (the boards' `.pgb2`): 28pt, an optional glyph before it.
+struct FleetCapsuleWord: View {
+    let title: String
+    var systemImage: String?
+    let action: () -> Void
+    @State private var hovering = false
+
+    init(_ title: String, systemImage: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: SH.Space.s) {
+                if let systemImage { Image(systemName: systemImage).font(.sh(.caption, weight: .medium)).accessibilityHidden(true) }
+                Text(title).font(.sh(.caption, weight: .regular))
+            }
+            .foregroundStyle(Color.sh.textPrimary)
+            .padding(.horizontal, SH.Space.l - SH.Space.xxs)
+            .frame(height: SH.Height.controlM)
+            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
+    }
+}
+
+/// "Auto is on. New threads go to…" and, at the end, where the next one goes (the boards' `.gfl-auto`). Nothing is sent from here.
+private struct FleetAutoLine: View {
     let autoDispatch: Bool
     let nextGoesTo: String?
 
     var body: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.xl) {
-            RoundedRectangle(cornerRadius: SH.Radius.m)
-                .fill(sh.runningTint)
-                .frame(width: AppLayout.fleetTileSize, height: AppLayout.fleetTileSize)
-                .overlay {
-                    Image(systemName: "arrow.right.to.line")
-                        .font(.sh(.ui, weight: .medium))
-                        .foregroundStyle(sh.running)
-                }
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(autoDispatch ? "Auto is on" : "Auto is off").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
-                Text(autoDispatch ? "New threads go to the Mac with the most room that has the thread’s models and tools."
-                     : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto on in Fleet settings.")
-                    .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
-            }
-            Spacer(minLength: SH.Space.xl)
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(autoDispatch ? "Auto is on." : "Auto is off.").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
+            Text(autoDispatch ? "New threads go to the Mac with the most room that has their models and tools."
+                 : "New threads start on This Mac. Pick a Mac in the composer, or turn Auto on in Fleet settings.")
+                .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: SH.Space.m)
             if autoDispatch, let nextGoesTo {
-                Text("Next goes to").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
-                FleetPill(text: nextGoesTo, dot: sh.done, text: sh.done, fill: sh.doneTint)
+                HStack(spacing: SH.Space.xs) {
+                    Text("Next goes to").foregroundStyle(sh.textSecondary)
+                    Text(nextGoesTo).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
+                }
+                .font(.sh(.ui, weight: .regular))
+                .fixedSize()
             }
         }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .padding(.horizontal, SH.Space.xs)
         .accessibilityElement(children: .combine)
     }
 }
 
 /// "Anthropic is limiting your account…": a provider is limiting the fleet's requests, so new threads for it wait on every Mac.
 struct FleetLimitStripView: View {
-    let strip: FleetLimitStrip
+    let line: FleetLimitLine
 
     var body: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.l) {
-            Circle().fill(sh.lantern).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-            Text(strip.text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.lanternText)
+        HStack(alignment: .top, spacing: SH.Space.l) {
+            Image(systemName: "hourglass")
+                .font(.sh(.caption, weight: .regular))
+                .foregroundStyle(sh.textSecondary)
+                .padding(.top, SH.Space.xxs)
+                .accessibilityHidden(true)
+            (Text(line.lead + " ").font(.sh(.ui, weight: .semibold)).foregroundColor(sh.textPrimary)
+                + Text(line.rest).font(.sh(.ui, weight: .regular)).foregroundColor(sh.textSecondary))
+                .lineSpacing(AppLayout.fleetProseSpacing)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let waiting = strip.waiting {
+            if let waiting = line.waiting {
                 Text(waiting).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize()
             }
         }
-        .padding(.vertical, SH.Space.m)
+        .padding(.vertical, SH.Space.l)
         .padding(.horizontal, SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([strip.text, strip.waiting].compactMap { $0 }.joined(separator: ". "))
     }
 }
 
@@ -241,216 +317,6 @@ struct FleetPill: View {
     }
 }
 
-// MARK: Cards
-
-/// One Mac: its head, room, readings, weight and repos.
-struct FleetMacCardView: View, Equatable {
-    let card: FleetMacCard
-    let actions: FleetPageActions
-    var focused = false
-
-    nonisolated static func == (a: FleetMacCardView, b: FleetMacCardView) -> Bool { a.card == b.card && a.focused == b.focused }
-
-    var body: some View {
-        let sh = Color.sh
-        VStack(alignment: .leading, spacing: 0) {
-            head
-            roomBlock
-            readings
-            if let note = card.note {
-                Text(note)
-                    .font(.sh(.ui, weight: .regular))
-                    .lineSpacing(SHTextStyle.caption.lineSpacing)
-                    .foregroundStyle(sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, SH.Space.m)
-                    .padding(.horizontal, SH.Space.l)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .padding(.horizontal, SH.Space.xl)
-                    .padding(.bottom, SH.Space.l)
-            }
-            weights
-            Spacer(minLength: 0)
-            footer
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: focused ? sh.lineStrong : sh.lineSubtle)
-        .opacity(card.status == .asleep ? AppLayout.fleetAsleepOpacity : 1)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(card.name)
-    }
-
-    private var head: some View {
-        let sh = Color.sh
-        return HStack(alignment: .top, spacing: SH.Space.l) {
-            Image(systemName: "desktopcomputer")
-                .font(.sh(.ui, weight: .regular))
-                .foregroundStyle(sh.textSecondary)
-                .frame(width: AppLayout.fleetTileSize, height: AppLayout.fleetTileSize)
-                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(card.name).font(.sh(.title)).foregroundStyle(sh.textPrimary).lineLimit(1)
-                if !card.hardware.isEmpty {
-                    Text(card.hardware).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
-                        .lineLimit(1).truncationMode(.tail)
-                }
-            }
-            Spacer(minLength: SH.Space.s)
-            status
-        }
-        .padding(.top, SH.Space.xl)
-        .padding(.horizontal, SH.Space.xl)
-        .padding(.bottom, SH.Space.l)
-    }
-
-    @ViewBuilder private var status: some View {
-        let sh = Color.sh
-        switch card.status {
-        case .thisMac: FleetPill(text: card.statusText, dot: sh.lantern, text: sh.lanternText, fill: sh.lanternTint)
-        case .connected: FleetPill(text: card.statusText, dot: sh.done, text: sh.done, fill: sh.doneTint)
-        case .connecting: FleetPill(text: card.statusText, dot: sh.running, text: sh.running, fill: sh.runningTint)
-        case .asleep: FleetPill(text: card.statusText, dot: sh.textTertiary, text: sh.textTertiary, fill: sh.bgSelected)
-        }
-    }
-
-    private var roomBlock: some View {
-        let sh = Color.sh
-        return VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Room").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
-                Spacer(minLength: SH.Space.m)
-                Text(card.room.text).font(.sh(.ui, weight: .semibold)).foregroundStyle(card.room.tone.fillColor)
-            }
-            FleetGauge(fraction: card.room.fraction, color: card.room.tone.fillColor, height: AppLayout.fleetRoomBarHeight)
-        }
-        .padding(.horizontal, SH.Space.xl)
-        .padding(.bottom, SH.Space.l)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var readings: some View {
-        let sh = Color.sh
-        return VStack(alignment: .leading, spacing: SH.Space.s) {
-            FleetFact("CPU") { FleetGaugeValue(metric: card.cpu) }
-            FleetFact("Memory") { FleetGaugeValue(metric: card.memory) }
-            FleetFact("Power") { Text(card.power.text).font(.sh(.ui, weight: .regular)).foregroundStyle(card.power.tone.textColor).lineLimit(1) }
-            FleetFact("Ready") {
-                HStack(spacing: SH.Space.s) {
-                    Circle().fill(card.ready.tone.fillColor).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                    Text(card.ready.text).font(.sh(.ui, weight: .regular)).foregroundStyle(card.ready.tone.textColor).lineLimit(1).truncationMode(.tail)
-                }
-            }
-            FleetFact("Agents") { Text(card.agents).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary) }
-            if let reach = card.reach {
-                FleetFact("Link") { Text(reach).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle) }
-            }
-        }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { SHHairline() }
-        .padding(.bottom, card.note == nil ? 0 : SH.Space.xs)
-    }
-
-    private var weights: some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            Text("Send work here").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
-            FleetWeightPicker(selection: card.weight, label: card.weightLabel) { actions.choose($0, card.id) }
-        }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { SHHairline() }
-    }
-
-    private var footer: some View {
-        HStack(alignment: .center, spacing: SH.Space.s) {
-            SHWrapStack(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
-                ForEach(card.repos, id: \.self) { repo in
-                    Text(repo)
-                        .font(.sh(.micro, weight: .regular))
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .lineLimit(1)
-                        .padding(.horizontal, SH.Space.xs)
-                        .frame(height: AppLayout.fleetTagHeight)
-                        .shBorder(Color.sh.lineStrong, radius: SH.Radius.xs)
-                        .fixedSize()
-                }
-                // A repository this Mac is cloning for work sent to it: a chip in the running colors until it is a space here.
-                ForEach(card.cloning, id: \.self) { repo in
-                    Text("\(repo) · cloning")
-                        .font(.sh(.micro, weight: .regular))
-                        .foregroundStyle(Color.sh.running)
-                        .lineLimit(1)
-                        .padding(.horizontal, SH.Space.xs)
-                        .frame(height: AppLayout.fleetTagHeight)
-                        .background(Color.sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-                        .fixedSize()
-                        .accessibilityLabel("Cloning \(repo)")
-                }
-            }
-            Spacer(minLength: 0)
-            if card.canRetry {
-                Button("Retry") { actions.retry(card.id) }
-                    .buttonStyle(.sh(.secondary))
-                    .accessibilityLabel("Retry \(card.name)")
-            }
-            if card.behindBuild != nil {
-                Button("Update…") { actions.openUpdate(card.id) }
-                    .buttonStyle(.sh(.secondary))
-                    .accessibilityLabel("Update Shepherd on \(card.name)")
-            }
-            // A Mac whose only need is its build has Update… alone: Check… would open the same row.
-            if card.needs > (card.behindBuild != nil ? 1 : 0) {
-                Button("Check…") { actions.openCheck(card.id) }
-                    .buttonStyle(.sh(.secondary))
-                    .accessibilityLabel("See what \(card.name) needs")
-            }
-        }
-        .padding(.top, SH.Space.m)
-        .padding(.horizontal, SH.Space.xl)
-        .padding(.bottom, SH.Space.l)
-    }
-}
-
-/// A fact: its label column, then the value.
-private struct FleetFact<Value: View>: View {
-    let label: String
-    let value: Value
-
-    init(_ label: String, @ViewBuilder value: () -> Value) {
-        self.label = label
-        self.value = value()
-    }
-
-    var body: some View {
-        HStack(spacing: SH.Space.l) {
-            Text(label).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
-                .frame(width: AppLayout.fleetFactLabelWidth, alignment: .leading)
-            value.frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(minHeight: SHPageMetrics.factMinHeight - SH.Space.xs)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// CPU or memory: a gauge and its words, or a dash while the Mac isn't answering.
-private struct FleetGaugeValue: View {
-    let metric: FleetMetric?
-
-    var body: some View {
-        HStack(spacing: SH.Space.m) {
-            FleetGauge(fraction: metric?.fraction ?? 0, color: metric?.tone.fillColor ?? Color.sh.textTertiary, height: AppLayout.fleetMetricBarHeight)
-            Text(metric?.text ?? "—")
-                .font(.sh(.mono))
-                .foregroundStyle(Color.sh.textPrimary)
-                .frame(width: AppLayout.fleetFactValueWidth, alignment: .trailing)
-        }
-    }
-}
-
 /// A rounded gauge: `fraction` of the track in `color`.
 struct FleetGauge: View {
     let fraction: Double
@@ -471,37 +337,224 @@ struct FleetGauge: View {
     }
 }
 
-/// Send work here: Prefer, Normal, Less often, Manual only, the four filling the card's width.
+// MARK: The list and the detail
+
+/// The Macs, one row each (the boards' `.gfl-list`), in groups once there are more than a few.
+struct FleetMacList: View, Equatable {
+    let groups: [FleetMacGroup]
+    let selected: UUID?
+    let choose: (UUID) -> Void
+
+    nonisolated static func == (a: FleetMacList, b: FleetMacList) -> Bool { a.groups == b.groups && a.selected == b.selected }
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: SH.Space.xxs) {
+            ForEach(groups) { group in
+                if let title = group.title {
+                    HStack {
+                        Text(title)
+                        Spacer(minLength: SH.Space.m)
+                        Text("\(group.rows.count)")
+                    }
+                    .font(.sh(.caption, weight: .medium))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, AppLayout.fleetRowInset)
+                    .padding(.top, group.id == groups.first?.id ? 0 : SH.Space.l)
+                    .padding(.bottom, SH.Space.xs)
+                    .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(group.rows) { row in
+                    FleetListRowView(row: row, selected: row.id == selected) { choose(row.id) }
+                        .equatable()
+                }
+            }
+        }
+    }
+}
+
+/// One Mac in the list: its glyph, its name over a line, and a word at the end.
+struct FleetListRowView: View, Equatable {
+    let row: FleetListRow
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    nonisolated static func == (a: FleetListRowView, b: FleetListRowView) -> Bool { a.row == b.row && a.selected == b.selected }
+
+    var body: some View {
+        let sh = Color.sh
+        Button(action: action) {
+            HStack(spacing: SH.Space.l) {
+                Image(systemName: "desktopcomputer")
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: AppLayout.fleetRowGlyph)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: SH.Space.xxs / 2) {
+                    Text(row.name).font(.sh(.ui, weight: .medium)).foregroundStyle(row.dim ? sh.textSecondary : sh.textPrimary).lineLimit(1)
+                    Text(row.subtitle).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(row.word).font(.sh(.caption, weight: .regular)).foregroundStyle(row.attention ? sh.lantern : sh.textSecondary).lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.horizontal, AppLayout.fleetRowInset)
+            .padding(.vertical, SH.Space.s)
+            .frame(minHeight: AppLayout.fleetRowHeight)
+            .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(row.name)
+        .accessibilityValue([row.subtitle, row.word].filter { !$0.isEmpty }.joined(separator: ", "))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// One Mac, in full (the boards' `.gfl-det`): its room, its readings, Send work here and its repos on a card.
+struct FleetMacDetailView: View, Equatable {
+    let detail: FleetMacDetail
+    let actions: FleetPageActions
+
+    nonisolated static func == (a: FleetMacDetailView, b: FleetMacDetailView) -> Bool { a.detail == b.detail }
+
+    var body: some View {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.xxl) {
+            head
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Room").foregroundStyle(sh.textSecondary)
+                    Spacer(minLength: SH.Space.m)
+                    Text(detail.room).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary)
+                }
+                .font(.sh(.ui, weight: .regular))
+                SHMeter(fraction: detail.roomFraction, height: AppLayout.fleetRoomBarHeight)
+            }
+            .accessibilityElement(children: .combine)
+            facts
+            if let note = detail.note {
+                Text(note).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                    .lineSpacing(AppLayout.fleetProseSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            weights
+        }
+        .padding(.vertical, SH.Space.xxl)
+        .padding(.horizontal, AppLayout.fleetDetailInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(detail.name)
+    }
+
+    private var head: some View {
+        let sh = Color.sh
+        return HStack(spacing: AppLayout.fleetHeadGap) {
+            Image(systemName: "desktopcomputer")
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textPrimary)
+                .frame(width: AppLayout.fleetTileSize, height: AppLayout.fleetTileSize)
+                .background(sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(detail.name).font(.shSans(AppLayout.fleetDetailTitle, .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                if !detail.hardware.isEmpty {
+                    Text(detail.hardware).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if detail.canRetry {
+                Button("Retry") { actions.retry(detail.id) }
+                    .buttonStyle(.shTextAction)
+                    .accessibilityLabel("Retry \(detail.name)")
+            }
+            if detail.behind {
+                Button("Update…") { actions.openUpdate(detail.id) }
+                    .buttonStyle(.shTextAction)
+                    .accessibilityLabel("Update Shepherd on \(detail.name)")
+            }
+            // A Mac whose only need is its build has Update… alone: Check… would open the same row.
+            if detail.checkable {
+                Button("Check…") { actions.openCheck(detail.id) }
+                    .buttonStyle(.shTextAction)
+                    .accessibilityLabel("See what \(detail.name) needs")
+            }
+        }
+    }
+
+    private var facts: some View {
+        let sh = Color.sh
+        return Grid(alignment: .leading, horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.l) {
+            FleetFactRow("CPU") { FleetMeterValue(meter: detail.cpu) }
+            FleetFactRow("Memory") { FleetMeterValue(meter: detail.memory) }
+            FleetFactRow("Power") { Text(detail.power).foregroundStyle(sh.textPrimary) }
+            FleetFactRow("Ready") { Text(detail.ready).foregroundStyle(detail.needsAttention ? sh.lantern : sh.textPrimary) }
+            FleetFactRow("Agents") { Text(detail.agents).foregroundStyle(sh.textPrimary) }
+            if let link = detail.link {
+                FleetFactRow("Link") { Text(link).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle) }
+            }
+        }
+        .font(.sh(.ui, weight: .regular))
+    }
+
+    private var weights: some View {
+        let sh = Color.sh
+        return Grid(alignment: .leading, horizontalSpacing: SH.Space.xl, verticalSpacing: SH.Space.l) {
+            GridRow(alignment: .center) {
+                Text("Send work here").foregroundStyle(sh.textTertiary).fixedSize()
+                FleetWeightPicker(selection: detail.weight, label: detail.weightLabel) { actions.choose($0, detail.id) }
+                    .gridColumnAlignment(.leading)
+            }
+            if !detail.repos.isEmpty {
+                FleetFactRow("Repos") { Text(detail.repos).foregroundStyle(sh.textPrimary) }
+            }
+        }
+        .font(.sh(.ui, weight: .regular))
+    }
+}
+
+/// A fact: its label in the quiet color, then the value.
+private struct FleetFactRow<Value: View>: View {
+    let label: String
+    let value: Value
+
+    init(_ label: String, @ViewBuilder value: () -> Value) {
+        self.label = label
+        self.value = value()
+    }
+
+    var body: some View {
+        GridRow(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(Color.sh.textTertiary).frame(width: AppLayout.fleetFactLabelWidth, alignment: .leading)
+            value.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// CPU or memory: a meter and its words, or a dash while the Mac isn't answering.
+private struct FleetMeterValue: View {
+    let meter: FleetMacMeter?
+
+    var body: some View {
+        HStack(spacing: SH.Space.l) {
+            SHMeter(fraction: meter?.fraction ?? 0, height: AppLayout.fleetMetricBarHeight)
+                .frame(width: AppLayout.fleetMeterWidth)
+            Text(meter?.text ?? "—").foregroundStyle(Color.sh.textPrimary)
+        }
+    }
+}
+
+/// Send work here: Prefer, Normal, Less often, Manual only.
 struct FleetWeightPicker: View {
     let selection: FleetSendWeight
     let label: String
     let choose: (FleetSendWeight) -> Void
 
     var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.xxs) {
-            ForEach(FleetSendWeight.allCases, id: \.self) { weight in
-                let on = weight == selection
-                Button { choose(weight) } label: {
-                    Text(weight.title)
-                        .font(.sh(.caption, weight: on ? .semibold : .regular))
-                        .foregroundStyle(on ? sh.textPrimary : sh.textSecondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: AppLayout.fleetWeightHeight)
-                        .background(on ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-        .padding(SH.Space.xxs)
-        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-        .shBorder(sh.lineSubtle, radius: SH.Radius.s)
-        .shComponentAnimation(.content, value: selection)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(label)
+        SHLiftSegments(label, selection: Binding(get: { selection }, set: choose),
+                       segments: FleetSendWeight.allCases.map { SHLiftSegment($0, $0.title) }, style: .choice)
     }
 }
 
@@ -537,7 +590,7 @@ struct FleetDispatchesCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
     }
 }
 
@@ -604,12 +657,26 @@ struct FleetDispatchStatePill: View {
 struct FleetDestination: View {
     var vm: ShepherdViewModel
     var chrome = PageHeaderChrome()
-    @State private var adding = false
+    @State private var sheet: Sheet?
+
+    /// What Add a Mac and the lone Mac's other ways open.
+    private enum Sheet: Identifiable {
+        case add, mac(FoundMac), ssh, join
+        var id: String {
+            switch self {
+            case .add: "add"
+            case .mac(let mac): mac.id
+            case .ssh: "ssh"
+            case .join: "join"
+            }
+        }
+    }
 
     var body: some View {
         let _ = SHRenderProbe.tick("page.fleet")
         let model = vm.fleetPage
-        FleetPageContent(page: model.page, actions: FleetPageActions(
+        let alone = model.page.cards.count <= 1
+        FleetPageContent(page: model.page, layout: model.layout, actions: FleetPageActions(
             choose: { model.choose($0, for: $1) },
             retry: { id in Task { await vm.fleet.reconnect(id) } },
             openSettings: {
@@ -618,10 +685,20 @@ struct FleetDestination: View {
             },
             addMac: {
                 vm.fleet.openPairing()
-                adding = true
+                sheet = .add
             },
             openCheck: { model.openCheck(for: $0) },
-            openUpdate: { model.openCheck(for: $0, row: "build") }), chrome: chrome,
+            openUpdate: { model.openCheck(for: $0, row: "build") },
+            select: { model.focusedMac = $0 },
+            addFound: {
+                vm.fleet.openPairing()
+                sheet = .mac($0)
+            },
+            addOverSSH: {
+                vm.fleet.openPairing()
+                sheet = .ssh
+            },
+            joinWithCode: { sheet = .join }), chrome: chrome,
             tab: Binding(get: { model.tab }, set: { model.tab = $0 }),
             check: FleetCheckState(row: model.checkRow, mac: model.checkMac, checking: model.checking, problem: model.checkProblem),
             checkActions: FleetCheckActions(
@@ -637,17 +714,29 @@ struct FleetDestination: View {
                 update: { vm.updateFleetMac($0, when: $1) },
                 cancelUpdate: { vm.cancelFleetUpdate($0) },
                 updateAll: { vm.updateEveryFleetMac($0) }),
-            focusedMac: model.focusedMac)
+            focusedMac: model.focusedMac,
+            found: alone ? vm.fleet.found : [])
             .task {
                 await vm.fleet.refresh()
                 await vm.fleet.watch(true)
             }
+            // A lone Mac looks for the others on its network while its page is open (the sheets look for themselves).
+            .task(id: alone && sheet == nil) {
+                guard alone, sheet == nil else { return }
+                vm.fleet.startFinding()
+            }
             .onDisappear {
                 model.focusedMac = nil
+                vm.fleet.stopFinding()
                 Task { await vm.fleet.watch(false) }
             }
-            .sheet(isPresented: $adding) {
-                FleetPairSheet(model: vm.fleet) { adding = false }
+            .sheet(item: $sheet) { sheet in
+                switch sheet {
+                case .add: FleetPairSheet(model: vm.fleet) { self.sheet = nil }
+                case .mac(let mac): FleetPairSheet(model: vm.fleet, candidate: mac) { self.sheet = nil }
+                case .ssh: FleetPairSheet(model: vm.fleet, showsOtherWays: true) { self.sheet = nil }
+                case .join: FleetJoinView(model: vm.fleet) { self.sheet = nil }
+                }
             }
     }
 }

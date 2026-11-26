@@ -38,20 +38,9 @@ extension FleetCheckCell {
         let sh = Color.sh
         return switch tone {
         case .ok: sh.textPrimary
-        case .warn: sh.lanternText
-        case .fixing: sh.running
-        case .none, .old: sh.textTertiary
-        }
-    }
-
-    @MainActor var dotColor: Color {
-        let sh = Color.sh
-        return switch tone {
-        case .ok: sh.done
         case .warn: sh.lantern
         case .fixing: sh.running
-        case .none: sh.lineStrong
-        case .old: sh.textTertiary
+        case .none, .old: sh.textTertiary
         }
     }
 }
@@ -71,14 +60,18 @@ struct FleetCheckContent: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: SH.Space.xl) {
-            FleetCheckGrid(check: check, selected: row, mac: state.mac, actions: actions)
-            FleetCheckPanel(detail: row.map { check.detail(row: $0, mac: state.mac) } ?? .none, problem: state.problem,
-                            fix: { mac, rows in check.fix(on: mac, rows: rows) }, actions: actions)
-                .frame(width: AppLayout.fleetCheckPanelWidth)
+        ScrollView {
+            HStack(alignment: .top, spacing: SH.Space.xl) {
+                FleetCheckGrid(check: check, selected: row, mac: state.mac, actions: actions)
+                FleetCheckPanel(detail: row.map { check.detail(row: $0, mac: state.mac) } ?? .none, problem: state.problem,
+                                fix: { mac, rows in check.fix(on: mac, rows: rows) }, actions: actions)
+                    .frame(width: AppLayout.fleetCheckPanelWidth)
+            }
+            .padding(.top, SH.Space.s)
+            .padding(.bottom, SH.Space.xxl)
+            .padding(.trailing, SH.Space.xxl)
+            .padding(.leading, AppLayout.fleetPageLeading)
         }
-        .padding(.vertical, SH.Space.xxl)
-        .padding(.horizontal, SH.Space.xxxl)
     }
 }
 
@@ -97,19 +90,20 @@ private struct FleetCheckColumns: Layout {
         var x = bounds.minX
         for (subview, width) in zip(subviews, columnWidths(bounds.width, count: subviews.count)) {
             subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
-            x += width + SH.Space.l
+            x += width + SH.Space.xl
         }
     }
 
     private func columnWidths(_ total: CGFloat, count: Int) -> [CGFloat] {
         guard count > 0 else { return [] }
-        let free = max(0, total - SH.Space.l * CGFloat(count - 1))
+        let free = max(0, total - SH.Space.xl * CGFloat(count - 1))
         let units = AppLayout.fleetCheckNameWeight + CGFloat(count - 1)
         let unit = free / units
         return [unit * AppLayout.fleetCheckNameWeight] + Array(repeating: unit, count: count - 1)
     }
 }
 
+/// The grid on its card (the boards' `.gfl-mx`), and under it what a look does and doesn't do.
 private struct FleetCheckGrid: View {
     let check: FleetCheckPage
     let selected: String?
@@ -118,26 +112,23 @@ private struct FleetCheckGrid: View {
 
     var body: some View {
         let sh = Color.sh
-        VStack(spacing: 0) {
-            head
-            SHHairline()
-            if check.groups.isEmpty {
-                Text("Nothing to compare yet. Each Mac looks at itself soon after it joins, and again every day.")
-                    .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
-                    .padding(SH.Space.xl)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                ScrollView {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            VStack(spacing: 0) {
+                head
+                if check.groups.isEmpty {
+                    Text("Nothing to compare yet. Each Mac looks at itself soon after it joins, and again every day.")
+                        .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
+                        .padding(SH.Space.xl)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                } else {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(check.groups) { group in
                             Text(group.name)
-                                .font(.sh(.micro))
-                                .tracking(AppLayout.fleetCheckGroupTracking)
-                                .textCase(.uppercase)
+                                .font(.sh(.caption, weight: .regular))
                                 .foregroundStyle(sh.textTertiary)
-                                .padding(.top, SH.Space.m)
+                                .padding(.top, SH.Space.l)
                                 .padding(.bottom, SH.Space.xs)
-                                .padding(.horizontal, SH.Space.xl)
+                                .padding(.horizontal, SH.Space.m)
                                 .accessibilityAddTraits(.isHeader)
                             ForEach(group.rows) { row in
                                 FleetCheckRowView(row: row, columns: check.columns.map(\.id), selected: row.id == selected, mac: mac, actions: actions).equatable()
@@ -146,44 +137,33 @@ private struct FleetCheckGrid: View {
                     }
                 }
             }
-            SHHairline()
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.l)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("What each Mac has")
             Text(check.footer)
                 .font(.sh(.caption, weight: .regular))
                 .foregroundStyle(sh.textTertiary)
-                .padding(.vertical, SH.Space.m)
-                .padding(.horizontal, SH.Space.xl)
+                .padding(.horizontal, SH.Space.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("What each Mac has")
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var head: some View {
         let sh = Color.sh
         return FleetCheckColumns {
-            Text("What the fleet needs").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1)
+            Text("What the fleet needs").font(.sh(.caption, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
             ForEach(check.columns) { column in
-                HStack(spacing: SH.Space.s) {
-                    Circle().fill(color(of: column)).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                    Text(column.name).font(.sh(.ui, weight: .semibold))
-                        .foregroundStyle(column.isAsleep ? sh.textTertiary : sh.textPrimary).lineLimit(1)
-                }
+                Text(column.isAsleep ? "\(column.name), asleep" : column.name)
+                    .font(.sh(.caption, weight: .medium))
+                    .foregroundStyle(column.isAsleep ? sh.textTertiary : sh.textPrimary).lineLimit(1)
             }
         }
-        .padding(.horizontal, SH.Space.xl)
+        .padding(.horizontal, SH.Space.m)
         .frame(height: AppLayout.fleetCheckHeadHeight)
-    }
-
-    private func color(of column: FleetCheckColumn) -> Color {
-        let sh = Color.sh
-        return switch column.status {
-        case .thisMac: sh.lantern
-        case .connected: sh.done
-        case .connecting: sh.running
-        case .asleep: sh.textTertiary
-        }
     }
 }
 
@@ -205,7 +185,7 @@ private struct FleetCheckRowView: View, Equatable {
         let sh = Color.sh
         FleetCheckColumns {
             Button { actions.select(row.id, nil) } label: {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs / 2) {
                     Text(row.name).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
                     Text(row.why).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1)
                 }
@@ -217,20 +197,17 @@ private struct FleetCheckRowView: View, Equatable {
             .accessibilityLabel(row.label)
             ForEach(Array(row.cells.enumerated()), id: \.offset) { index, cell in
                 Button { actions.select(row.id, cellMac(index)) } label: {
-                    HStack(spacing: SH.Space.s) {
-                        Circle().fill(cell.dotColor).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                        Text(cell.text).font(.sh(.ui, weight: .regular)).foregroundStyle(cell.textColor).lineLimit(1).truncationMode(.tail)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: AppLayout.fleetCheckRowHeight, alignment: .leading)
-                    .contentShape(Rectangle())
+                    Text(cell.text).font(.sh(.ui, weight: .regular)).foregroundStyle(cell.textColor).lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, minHeight: AppLayout.fleetCheckRowHeight, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(row.name), \(cell.text)")
             }
         }
-        .padding(.horizontal, SH.Space.xl)
+        .padding(.horizontal, SH.Space.m)
         .frame(minHeight: AppLayout.fleetCheckRowHeight)
-        .background(selected ? sh.bgSelected : hovering ? sh.bgHover : .clear)
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -242,6 +219,7 @@ private struct FleetCheckRowView: View, Equatable {
 
 // MARK: The panel
 
+/// What differs on the Mac picked (the boards' `.gfl-cd`): a card of prose, the command, the fix and what to set aside.
 private struct FleetCheckPanel: View {
     let detail: FleetCheckDetail
     let problem: String?
@@ -251,9 +229,8 @@ private struct FleetCheckPanel: View {
 
     var body: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             summary
-            SHHairline()
             if let update = detail.update {
                 updateSection(update)
             } else if detail.command != nil || detail.fixable || detail.fixing != nil {
@@ -261,64 +238,56 @@ private struct FleetCheckPanel: View {
             }
             if let problem {
                 Text(problem)
-                    .font(.sh(.caption, weight: .regular))
+                    .font(.sh(.ui, weight: .regular))
                     .foregroundStyle(sh.failed)
-                    .padding(.horizontal, SH.Space.xl)
-                    .padding(.bottom, SH.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Couldn’t do that: \(problem)")
             }
-            Spacer(minLength: 0)
             if detail.ignorable || detail.fixAllCount > 0, let mac = detail.mac {
-                SHHairline()
                 HStack(spacing: SH.Space.m) {
                     if detail.ignorable {
                         Button(detail.ignored ? "Stop ignoring on \(detail.macName)" : "Ignore on \(detail.macName)") {
                             actions.ignore(detail.rowID, mac, !detail.ignored)
                         }
-                        .buttonStyle(.sh(.ghost))
+                        .buttonStyle(.shTextAction(quiet: true))
                     }
                     Spacer(minLength: 0)
                     if detail.fixAllCount > 0, let all = fix(mac, nil) {
-                        Button("Fix everything on \(detail.macName) (\(detail.fixAllCount))") { actions.fix(all) }
-                            .buttonStyle(.sh(.secondary))
+                        Button("Fix everything (\(detail.fixAllCount))") { actions.fix(all) }
+                            .buttonStyle(.shTextAction)
+                            .shHelp("Fix everything on \(detail.macName)")
                     }
                 }
-                .padding(.vertical, SH.Space.l)
-                .padding(.horizontal, SH.Space.xl)
+                .padding(.horizontal, -SH.Space.s)
+                .padding(.top, SH.Space.xs)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .shCard(radius: SH.Radius.l, fill: sh.bgRaised, line: sh.lineSubtle)
+        .padding(.top, SH.Space.xl)
+        .padding(.horizontal, AppLayout.fleetCheckPanelInset)
+        .padding(.bottom, AppLayout.fleetCheckPanelInset)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .shCard(radius: SH.Radius.xl, fill: sh.bgRaised, line: sh.lineStrong, lift: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(detail.title.isEmpty ? "Details" : detail.title)
     }
 
     private var summary: some View {
         let sh = Color.sh
-        return VStack(alignment: .leading, spacing: SH.Space.m) {
-            if !detail.pill.isEmpty { pill }
+        return VStack(alignment: .leading, spacing: SH.Space.l) {
+            if !detail.pill.isEmpty {
+                Text(detail.pill).font(.sh(.caption, weight: .regular)).foregroundStyle(detail.pillTone == .warn ? sh.lantern : sh.textTertiary)
+            }
             Text(detail.title).font(.sh(.title)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
             if !detail.body.isEmpty {
-                Text(detail.body).font(.sh(.ui, weight: .regular)).lineSpacing(AppLayout.fleetCheckProseSpacing)
+                Text(detail.body).font(.sh(.ui, weight: .regular)).lineSpacing(AppLayout.fleetProseSpacing)
                     .foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
             if !detail.effect.isEmpty {
-                Text(detail.effect).font(.sh(.ui, weight: .regular)).lineSpacing(AppLayout.fleetCheckProseSpacing)
-                    .foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
+                Text(detail.effect).font(.sh(.ui, weight: .regular)).lineSpacing(AppLayout.fleetProseSpacing)
+                    .foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder private var pill: some View {
-        let sh = Color.sh
-        switch detail.pillTone {
-        case .warn: FleetPill(text: detail.pill, dot: sh.lantern, text: sh.lanternText, fill: sh.lanternTint)
-        case .good: FleetPill(text: detail.pill, dot: sh.done, text: sh.done, fill: sh.doneTint)
-        case .quiet: FleetPill(text: detail.pill, dot: sh.textTertiary, text: sh.textTertiary, fill: sh.bgSelected)
-        }
     }
 
     /// Update Shepherd on the Mac (FleetCheck, the Shepherd row): what is ready, the button, and while the host carries it out the state it is in.
@@ -327,40 +296,37 @@ private struct FleetCheckPanel: View {
         return VStack(alignment: .leading, spacing: SH.Space.l) {
             if let running = update.running {
                 VStack(alignment: .leading, spacing: SH.Space.m) {
-                    HStack(spacing: SH.Space.s) {
-                        Circle().fill(sh.running).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                        Text(running.state).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.running)
-                    }
+                    Text(running.state).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).shShimmer(active: true)
                     Text(running.note).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                     if running.cancellable {
                         Button("Cancel") { actions.cancelUpdate(update.mac) }
-                            .buttonStyle(.sh(.secondary))
+                            .buttonStyle(.shTextAction(quiet: true))
+                            .padding(.horizontal, -SH.Space.s)
                             .accessibilityLabel("Cancel updating \(update.macName)")
                     }
                 }
-                .padding(SH.Space.l)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                 .accessibilityElement(children: .contain)
             } else {
                 VStack(alignment: .leading, spacing: SH.Space.s) {
                     if update.canStart {
                         Text(update.headline).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
                         Button(update.buttonTitle) { actions.update(update.mac, .idle) }
-                            .buttonStyle(.sh(.primary, size: .l))
+                            .buttonStyle(.shTextAction)
+                            .padding(.horizontal, -SH.Space.s)
                     }
-                    Text(update.note).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    Text(update.note).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
                     if update.canStart, let now = update.nowTitle {
-                        Button(now) { actions.update(update.mac, .now) }.buttonStyle(.sh(.ghost))
+                        Button(now) { actions.update(update.mac, .now) }
+                            .buttonStyle(.shTextAction(quiet: true))
+                            .padding(.horizontal, -SH.Space.s)
                     }
                     if let problem = update.problem {
-                        Text(problem).font(.sh(.caption, weight: .regular)).foregroundStyle(update.failed ? sh.failed : sh.textSecondary)
+                        Text(problem).font(.sh(.ui, weight: .regular)).foregroundStyle(update.failed ? sh.failed : sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
-        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -369,22 +335,17 @@ private struct FleetCheckPanel: View {
         return VStack(alignment: .leading, spacing: SH.Space.l) {
             if let fixing = detail.fixing {
                 VStack(alignment: .leading, spacing: SH.Space.m) {
-                    HStack(spacing: SH.Space.s) {
-                        Circle().fill(sh.running).frame(width: AppLayout.fleetDotSize, height: AppLayout.fleetDotSize)
-                        Text("An agent on \(detail.macName) is fixing this").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.running)
-                    }
+                    Text("An agent on \(detail.macName) is fixing this").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).shShimmer(active: true)
                     Text("“\(fixing.threadTitle)”. This row checks again when it finishes.")
                         .font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
-                    Button("Open thread") { actions.openThread(fixing) }.buttonStyle(.sh(.secondary))
+                    Button("Open thread") { actions.openThread(fixing) }
+                        .buttonStyle(.shTextAction)
+                        .padding(.horizontal, -SH.Space.s)
                 }
-                .padding(SH.Space.l)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                 .accessibilityElement(children: .contain)
             } else {
                 if let command = detail.command {
-                    VStack(alignment: .leading, spacing: SH.Space.s) {
-                        Text("Run on \(detail.macName)").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
+                    VStack(alignment: .leading, spacing: SH.Space.l) {
                         HStack(spacing: SH.Space.m) {
                             Text(command).font(.sh(.mono)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -393,31 +354,28 @@ private struct FleetCheckPanel: View {
                                 actions.copy(command)
                                 copied = true
                             }
-                            .buttonStyle(.sh(.ghost))
+                            .buttonStyle(.plain)
+                            .font(.sh(.ui, weight: .semibold))
+                            .foregroundStyle(sh.textPrimary)
                             .accessibilityLabel("Copy command")
                         }
                         .padding(.vertical, SH.Space.m)
-                        .padding(.leading, SH.Space.l)
-                        .padding(.trailing, SH.Space.m)
-                        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
-                        if let note = detail.commandNote {
-                            Text(note).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
-                        }
+                        .padding(.horizontal, SH.Space.l)
+                        .background(sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                        Text("Run on \(detail.macName)." + (detail.commandNote.map { " " + $0 } ?? ""))
+                            .font(.sh(.ui, weight: .regular)).lineSpacing(AppLayout.fleetProseSpacing)
+                            .foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
                     }
                     .onChange(of: command) { copied = false }
                 }
                 if detail.fixable, let mac = detail.mac, let made = fix(mac, [detail.rowID]) {
-                    VStack(alignment: .leading, spacing: SH.Space.s) {
-                        Button("Fix with an agent on \(detail.macName)") { actions.fix(made) }
-                            .buttonStyle(.sh(.primary, size: .l))
-                        Text("Starts a thread on \(detail.macName) with this checklist. You watch it work like any thread, and it asks before anything needs your password.")
-                            .font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
-                    }
+                    Button("Fix with an agent on \(detail.macName)") { actions.fix(made) }
+                        .buttonStyle(.shTextAction)
+                        .padding(.horizontal, -SH.Space.s)
+                        .shHelp("Starts a thread on \(detail.macName) with this checklist. You watch it work like any thread, and it asks before anything needs your password.")
                 }
             }
         }
-        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

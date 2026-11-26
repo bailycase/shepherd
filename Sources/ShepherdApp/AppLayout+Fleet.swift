@@ -24,14 +24,30 @@ extension AppLayout {
     static let fleetDotSize: CGFloat = 6
 
     // The Fleet page (FleetA).
-    /// A Mac card's tile: 32pt with a 16pt display glyph.
-    static let fleetTileSize: CGFloat = 32
-    static let fleetTileGlyph: CGFloat = 16
-    /// The cards' columns, and the least width a card keeps before the grid drops a column.
-    static let fleetColumns = 3
+    /// The Mac's tile in its detail: 40pt (FleetA).
+    static let fleetTileSize: CGFloat = 40
+    /// The page: its body sits 28pt from the sidebar, the list 300pt wide beside the detail 24pt on (the boards' `.gfl`).
+    static let fleetPageLeading: CGFloat = 28
+    static let fleetListWidth: CGFloat = 300
+    static let fleetBodyGap: CGFloat = SH.Space.xxl
+    /// A Mac's row: 48pt at least, its glyph in an 18pt slot, 10pt in from the list's sides.
+    static let fleetRowHeight: CGFloat = 48
+    static let fleetRowGlyph: CGFloat = 18
+    static let fleetRowInset: CGFloat = 10
+    /// The detail card: padded 28 at the sides, its title 18pt, the tile 14pt before the name, a meter 120pt wide.
+    static let fleetDetailInset: CGFloat = 28
+    static let fleetDetailTitle: CGFloat = 18
+    static let fleetHeadGap: CGFloat = 14
+    static let fleetMeterWidth: CGFloat = 120
+    /// The lone Mac's invitation (FleetEmpty): a 56pt tile, a 20pt title, 480pt wide.
+    static let fleetInviteTile: CGFloat = 56
+    static let fleetInviteTitle: CGFloat = 20
+    static let fleetInviteWidth: CGFloat = 480
+    /// The rule between the header capsule's words, and a prose line's extra leading (the boards' 19pt lines).
+    static let fleetCapsuleRule: CGFloat = 16
+    static let fleetProseSpacing: CGFloat = 4
     /// A fact row's label column, and the readings' value column.
-    static let fleetFactLabelWidth: CGFloat = 76
-    static let fleetFactValueWidth: CGFloat = 84
+    static let fleetFactLabelWidth: CGFloat = 120
     /// Room's gauge is 6pt tall, the CPU and memory gauges 4pt.
     static let fleetRoomBarHeight: CGFloat = 6
     static let fleetMetricBarHeight: CGFloat = 4
@@ -46,14 +62,10 @@ extension AppLayout {
     static let fleetSendBarHeight: CGFloat = 6
     /// Ignored files · Per space…: the list of paths a space keeps home or sends.
     static let fleetExcludeEditorHeight: CGFloat = 88
-    /// Send work here: its four buttons are 24pt tall.
-    static let fleetWeightHeight: CGFloat = 24
     /// A repo tag.
     static let fleetTagHeight: CGFloat = 16
     /// A Mac's tag ("mini") is mono 10 (FleetDispatch, FleetSidebar).
     static let fleetTagFont: CGFloat = 10
-    /// A card of a Mac that isn't answering fades.
-    static let fleetAsleepOpacity: Double = 0.72
     /// The sidebar's Fleet corner (the boards' `.flt`): the header 30pt tall, a Mac's row 26pt.
     static let fleetCornerHeaderHeight: CGFloat = 30
     static let fleetCornerRowHeight: CGFloat = 26
@@ -65,9 +77,11 @@ extension AppLayout {
 
     // The Check tab (FleetCheck): the grid beside a panel.
     /// The panel's width, the grid's head and its rows' least height.
-    static let fleetCheckPanelWidth: CGFloat = 400
-    static let fleetCheckHeadHeight: CGFloat = 36
-    static let fleetCheckRowHeight: CGFloat = 34
+    static let fleetCheckPanelWidth: CGFloat = 340
+    /// The panel is padded 18 at its sides and bottom.
+    static let fleetCheckPanelInset: CGFloat = 18
+    static let fleetCheckHeadHeight: CGFloat = 40
+    static let fleetCheckRowHeight: CGFloat = 42
     /// The grid's columns: the thing's name is this many times a Mac's column.
     static let fleetCheckNameWeight: CGFloat = 1.5
     /// A group's label is tracked wide (the board's .05em of 10.5pt).
@@ -82,7 +96,7 @@ extension AppLayout {
     static let fleetFromDash: [CGFloat] = [4, 3]
     static let fleetResultTick: CGFloat = 12
     /// A sent thread as one line in the thread that sent it (FleetDispatch): 36pt tall, its arrow in a 14pt slot.
-    static let fleetCompactRowHeight: CGFloat = 36
+    static let fleetCompactRowHeight: CGFloat = 32
     static let fleetCompactRowGlyph: CGFloat = 14
     /// A card's buttons are 26pt tall.
     static let fleetCardButtonHeight: CGFloat = 26
@@ -91,5 +105,7 @@ extension AppLayout {
 
     // Moving a thread to another Mac (FleetMove).
     /// A step's mark column in the progress card.
-    static let fleetMoveMarkWidth: CGFloat = 14
+    /// A step's row is 28pt, the card padded 20.
+    static let fleetMoveStepHeight: CGFloat = 28
+    static let fleetMoveCardInset: CGFloat = 20
 }

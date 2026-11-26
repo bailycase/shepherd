@@ -20,7 +20,7 @@ struct FleetDeviceSheet: View {
                     outcome(end)
                 } else if let join = model.deviceCode {
                     FleetQRCode(link: FleetProtocol.pairLink(code: join.code, advertisedID: model.snapshot.hostID.map(FleetProtocol.advertisedIDHash) ?? ""))
-                    FleetJoinCode(join: join, note: "the device connects as a client and holds no sign-ins")
+                    FleetJoinCode(join: join, note: "The device connects as a client and holds no sign-ins.")
                     Text("Both need to be on the same local network as this Mac.")
                         .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 } else {

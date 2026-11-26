@@ -131,7 +131,7 @@ struct FleetDispatchPreviewTests {
         }
         let source = SidebarSource(local: ShepherdState(), localFleetID: P.here, fleet: SidebarFleet(records: [record], macs: snapshot.macNames))
         let row = try #require(SidebarDerivation.dispatchRows(source, threads: []).first?.row)
-        #expect(row.subtitle?.text == "model request failed")
+        #expect(row.subtitle?.text == "mini, model request failed")
         try await Preview.render("fleet-sidebar-provider-error", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 100)) {
             SHSidebarRow(row.title, leading: row.leading, accessory: row.accessory, subtitle: row.subtitle)
                 .padding(SH.Space.m)
@@ -311,7 +311,7 @@ struct FleetDispatchPreviewTests {
         try await Preview.renderMatrix("fleet4d-new-thread-chip", size: CGSize(width: 1280, height: 760)) {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome())
         }
-        try await Preview.renderMatrix("fleet4d-new-thread-popover", size: CGSize(width: 1280, height: 760)) {
+        try await Preview.renderMatrix("fleet4d-new-thread-popover", size: CGSize(width: 1280, height: 1040)) {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome(), whereOpen: true)
         }
         // The Mac Auto picks lacks an MCP server's command: still the pick, and the note says the thread starts without that server.

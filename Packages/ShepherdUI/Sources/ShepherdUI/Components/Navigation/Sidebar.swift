@@ -707,8 +707,8 @@ extension SHSidebarFooter {
     }
 }
 
-/// An update is ready (UpdateFooterStates, UpdateButton): `square.and.arrow.down` in lantern text, on the
-/// lantern tint when hovered, in the footer gear's 26pt place. It stands in for the gear in `SHSidebarFooter`
+/// An update is ready (UpdateFooterStates, UpdateButton): `square.and.arrow.down` in the attention orange, on the
+/// hover fill when hovered, in the footer gear's 28pt place. It stands in for the gear in `SHSidebarFooter`
 /// and the Fleet corner; the action brings up the update.
 public struct SHUpdateButton: View {
     let version: String
@@ -721,7 +721,7 @@ public struct SHUpdateButton: View {
 
     public var body: some View {
         Button(action: action) { Image(systemName: "square.and.arrow.down") }
-            .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar, tint: .sh.lanternText, hoverFill: .sh.lanternTint))
+            .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar, tint: .sh.lantern))
             .shHelp("Update to \(version)…")
             .accessibilityLabel("Update Shepherd to \(version)")
     }
