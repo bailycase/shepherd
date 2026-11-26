@@ -17,7 +17,7 @@ extension AppLayout {
     /// A picker row's board picture is kept this many pixels wide (drawn 40pt).
     static let referenceRowPicturePixels: CGFloat = 160
     /// An element's picture in a picker row: its thumbnail's size, in pixels at 2x.
-    static let referenceCropPixels = CGSize(width: SHReferenceMetrics.thumbnail.width * 2, height: SHReferenceMetrics.thumbnail.height * 2)
+    static let referenceCropPixels = CGSize(width: SHReferenceMetrics.boardThumbnail.width * 2, height: SHReferenceMetrics.boardThumbnail.height * 2)
     /// A board an element's picture is cut from is kept at most this many pixels wide.
     static let referenceCropSourcePixels: CGFloat = 1280
 

@@ -460,24 +460,21 @@ struct DesignGitCanvasLayer: View {
             .allowsHitTesting(git.panelOpen)
             .shAnimation(.overlay, value: git.panelOpen)
         case .notices:
-            // As the boards place them: Pull paused at the canvas's bottom leading corner (16pt
-            // in, 80pt up, over the canvas toolbar); the Opened from Git toast at its bottom
-            // center, 24pt up. Pull paused stays while the merge waits; the toast until dismissed.
-            ZStack {
+            // As the boards place them (GitDesignConflict, GitDesignCoworker): at the canvas's top
+            // center, 14pt down. Pull paused stays while the merge waits; the Opened from Git
+            // notice until it is dismissed.
+            VStack(spacing: SH.Space.m) {
                 if [.conflict, .stopped, .failed].contains(git.state?.merge?.phase) {
                     SHGitCanvasNotice(.paused, title: "Pull paused",
                                       detail: "Your work is safe. Resolve overlapping changes before updating the canvas.")
-                        .padding(.leading, SH.Space.xl)
-                        .padding(.bottom, SHGitMetrics.pausedBottom)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
                 if let detail = git.openedNotice {
                     SHGitCanvasNotice(.opened, title: "Opened from Git", detail: detail, dismiss: { git.openedNotice = nil })
-                        .padding(.bottom, SHGitMetrics.toastBottom)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .shTransition(.sheet, edge: .bottom)
+                        .shTransition(.sheet, edge: .top)
                 }
             }
+            .padding(.top, SHGitMetrics.noticeTop)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .shAnimation(.sheet, value: git.openedNotice)
         }
     }

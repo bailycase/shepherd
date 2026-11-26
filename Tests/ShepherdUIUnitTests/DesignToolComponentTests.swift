@@ -284,6 +284,26 @@ struct DesignToolComponentTests {
         #expect(ranges.map { String(title[$0]) } == ["funnel"])
     }
 
+    @Test(arguments: [
+        ("main · 3 changes", "main" as String?, "3 changes"),
+        ("main · Pull paused", "main", "Pull paused"),
+        ("Share with Git", nil, "Share with Git"),
+    ])
+    func theGitChipSetsTheBranchApartFromItsState(_ label: String, _ branch: String?, _ state: String) {
+        let parts = SHDesignGitChip.split(label)
+        #expect(parts.branch == branch)
+        #expect(parts.state == state)
+    }
+
+    @Test(arguments: [
+        (SHImplementThread(id: "1", name: "Checkout page polish", project: "dashboard-web"), "dashboard-web" as String?),
+        (SHImplementThread(id: "2", name: "Funnel events backfill", project: "analytics-ingest", host: "demo-mac"), "analytics-ingest on demo-mac"),
+        (SHImplementThread(id: "3", name: "Fix CSV export encoding"), nil),
+    ])
+    func aThreadsRowSaysWhereItLives(_ thread: SHImplementThread, _ place: String?) {
+        #expect(SHImplementThreadRow.place(thread) == place)
+    }
+
     @Test func thePickerShowsAtMostEightRowsAndFitsTheRoomAboveTheCard() {
         let M = SHMentionMetrics.self
         let rows = (0..<20).map { SHMentionRow(id: "\($0)", kind: .design, title: "D\($0)", trailing: .drill) }

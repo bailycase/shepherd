@@ -78,7 +78,6 @@ enum DesignRuleAllowlist {
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ContextMeter.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ModelSettings.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/Lifecycle.swift", 1, kind),
-        .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/References.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/SidePane.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/MCPServerRow.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/Compaction.swift", 1, "Follows the compaction's tone, drawn only once it has ended and fixed from then on, so nothing renames it."),
