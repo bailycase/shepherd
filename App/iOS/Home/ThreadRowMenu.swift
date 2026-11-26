@@ -129,21 +129,7 @@ struct MarkAllSeenChip: View {
     }
 }
 
-/// An automation run's long press (the Mac's This Mac run menu: Run Now or Stop, Delete Automation). Run Now acts on the
-/// run's own host where it takes it; Stop and Delete open the automation, whose detail confirms them as everywhere on the
-/// phone. A Project's automation says it is managed in its Project.
-struct AutomationRunMenu: View {
-    let row: FleetAutomationRow
-    @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        if let run = row.run { OpenInNewWindowButton(thread: run.agentRef) }
-        AutomationKeyMenu(key: AutomationKey(host: row.host, automation: row.automationID))
-    }
-}
-
-/// An automation's long press by its key (the sidebar's automation row and a run's menu): open it, Run Now or Stop.
+/// The sidebar's automation row's long press: open it, Run Now or Stop.
 struct AutomationKeyMenu: View {
     let key: AutomationKey
     @Environment(MobileHosts.self) private var hosts
