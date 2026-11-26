@@ -358,7 +358,7 @@ struct RemoteDesignLayoutView: View {
                                  designName: vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.designs
                                      .first { $0.id == ref.designID }?.name ?? "")
                 RemoteDesignChatPane(vm: vm, screen: screen, agent: agent, agentName: agentName, threadPaneID: threadPaneID)
-                    .frame(width: AppLayout.designChatWidth)
+                    .designChatCard()
             }
         }
         .onAppear { [vm] in
@@ -401,7 +401,6 @@ struct RemoteDesignChatPane: View {
                     .accessibilityHidden(!chat)
                 if tab == .comments {
                     DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
-                        .background(Color.sh.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
                     DesignTweakPane(model: tweak, target: screen.tweakTarget) { [vm] in
@@ -412,8 +411,6 @@ struct RemoteDesignChatPane: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in if screen.paneTab == .chat { vm.remoteFocusedPaneID = threadPaneID } })
     }
 }

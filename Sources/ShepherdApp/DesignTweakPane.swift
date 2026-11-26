@@ -54,6 +54,9 @@ struct DesignTweakPane: View {
                 SHTweakFooter(canReset: shown.canReset, reset: { model.reset() }, ask: ask)
             }
         }
+        .padding(.horizontal, SHDesignChrome.tweakPaneInset)
+        .padding(.top, SH.Space.l + SH.Space.xxs)
+        .padding(.bottom, SH.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { model.undoManager = undoManager }
         .onChange(of: undoManager) { _, manager in model.undoManager = manager }
@@ -83,8 +86,8 @@ private struct DesignTweakRowView: View {
             }
         case .choice(let options, let selected):
             SHTweakRow(row.label) {
-                SHSegmentedPicker(row.label, selection: Binding(get: { selected ?? "" }, set: choose),
-                                  options: options.map { ($0.value, $0.title) }, size: .s)
+                SHTweakSegmented(row.label, selection: Binding(get: { selected ?? "" }, set: choose),
+                                 options: options.map { .init($0.value, $0.title) })
             }
         case .menu(let options, let selected):
             SHTweakRow(row.label) {
@@ -96,10 +99,16 @@ private struct DesignTweakRowView: View {
             }
         case .colors(let colors, let selected):
             SHTweakRow(row.label) {
-                SHTokenChipFlow {
-                    ForEach(colors) { color in
-                        SHTokenChip(color.title, swatch: Color(light: color.hex, dark: color.hex), isSelected: color.id == selected) {
-                            pick(color)
+                // A few colors sit in one track (DZTweak); more wrap as chips.
+                ViewThatFits(in: .horizontal) {
+                    SHTweakSegmented(row.label, selection: Binding(get: { selected ?? "" }, set: { id in
+                        if let color = colors.first(where: { $0.id == id }) { pick(color) }
+                    }), options: colors.map { .init($0.id, $0.title, swatch: Color(light: $0.hex, dark: $0.hex)) })
+                    SHTokenChipFlow {
+                        ForEach(colors) { color in
+                            SHTokenChip(color.title, swatch: Color(light: color.hex, dark: color.hex), isSelected: color.id == selected) {
+                                pick(color)
+                            }
                         }
                     }
                 }

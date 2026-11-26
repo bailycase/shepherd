@@ -45,9 +45,9 @@ struct DesignExportSheet: View {
     var body: some View {
         SHExportSheet(exportTitle: model.exportTitle, canExport: model.canExport,
                       close: { vm.closeDesignExport() }, export: { vm.runDesignExport(model) }) {
-            SHExportSection("Boards") { boards }
+            SHExportSection("Boards", detail: "\(model.selection.count) of \(model.selection.rows.count)") { boards }
             SHExportSection("Format") { formats }
-            SHExportSection("Use it somewhere else", divided: false) { share }
+            SHExportSection("Use it somewhere else") { share }
         }
         .disabled(model.working)
     }
@@ -55,7 +55,7 @@ struct DesignExportSheet: View {
     /// One row per board; past eight, they scroll.
     private var boards: some View {
         let rows = model.selection.rows
-        let height = SHDesignMetrics.exportRowHeight * min(CGFloat(rows.count), SHDesignMetrics.exportVisibleRows)
+        let height = SHDesignChrome.exportRowHeight * min(CGFloat(rows.count), SHDesignMetrics.exportVisibleRows)
         return ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(rows) { row in
@@ -68,6 +68,7 @@ struct DesignExportSheet: View {
         }
         .scrollDisabled(CGFloat(rows.count) <= SHDesignMetrics.exportVisibleRows)
         .frame(height: height)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     private var formats: some View {
@@ -86,7 +87,7 @@ struct DesignExportSheet: View {
     }
 
     private var share: some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             HStack(spacing: SHDesignMetrics.exportShareSpacing) {
                 // Which thread is not drawn: the button lists them.
                 Menu {
@@ -94,16 +95,21 @@ struct DesignExportSheet: View {
                         Button(thread.name) { vm.attachDesignExport(model, to: thread.id) }
                     }
                 } label: {
-                    Label("Attach to a thread", systemImage: "text.bubble")
+                    HStack(spacing: SH.Space.s) {
+                        Image(systemName: "text.bubble").font(.shSans(SHDesignChrome.chipGlyph))
+                        Text("Attach to a thread").font(.shSans(SHDesignChrome.toolbarTextSize))
+                        Image(systemName: "chevron.down").font(.shSans(SH.Space.m + 2, .medium)).foregroundStyle(Color.sh.textSecondary)
+                    }
+                    .foregroundStyle(Color.sh.textPrimary)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.sh(.secondary, size: .s))
+                .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .disabled(model.threads.isEmpty || model.selection.count == 0)
             }
             Text("Attached boards arrive as HTML plus a note of the tokens they use.")
-                .font(.shSans(SHDesignMetrics.exportNoteSize))
+                .font(.shSans(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textTertiary)
         }
     }
@@ -117,7 +123,7 @@ struct DesignExportOverlay: View {
     var body: some View {
         ZStack {
             if let model = vm.designExport {
-                Color.sh.sheetScrim
+                Color.sh.modalScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)

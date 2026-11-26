@@ -18,6 +18,38 @@ public struct SHTweakHeader: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // DZTweak: "A · Funnel first › card “…”" in 13 (the element medium in ink), the note under it in 12; the pane gives
+        // the 16pt sides, a rule 12pt under the note.
+        VStack(alignment: .leading, spacing: SH.Space.xs - 1) {
+            HStack(spacing: SH.Space.s) {
+                Text(board)
+                    .foregroundStyle(element == nil ? Color.sh.textPrimary : Color.sh.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+                if let element {
+                    Image(systemName: "chevron.right")
+                        .font(.shSans(SH.Space.m + 2, .medium))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .accessibilityHidden(true)
+                    Text(element)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .font(.shSans(SHDesignChrome.toolbarTextSize))
+            Text(note)
+                .font(.shSans(SHDesignChrome.paneCountSize))
+                .foregroundStyle(Color.sh.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, SH.Space.l)
+        .overlay(alignment: .bottom) { SHHairline() }
+        #else
         VStack(alignment: .leading, spacing: SHDesignMetrics.tweakHeaderSpacing) {
             Group {
                 if let element {
@@ -39,6 +71,7 @@ public struct SHTweakHeader: View {
         .padding(.vertical, SHDesignMetrics.tweakPaddingVertical)
         .padding(.horizontal, SHDesignMetrics.tweakPaddingHorizontal)
         .overlay(alignment: .bottom) { SHHairline() }
+        #endif
     }
 }
 
@@ -56,6 +89,21 @@ public struct SHTweakGroup<Content: View>: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // The title in 13 semibold, 4pt over its rows; 12pt above and 6 below, the pane's 16pt sides, a rule under.
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.shSans(SHDesignChrome.toolbarTextSize, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .padding(.bottom, SH.Space.xs)
+                .accessibilityAddTraits(.isHeader)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, SH.Space.l)
+        .padding(.bottom, SH.Space.s)
+        .overlay(alignment: .bottom) { if divided { SHHairline() } }
+        #else
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .shSectionLabel()
@@ -67,6 +115,7 @@ public struct SHTweakGroup<Content: View>: View {
         .padding(.vertical, SHDesignMetrics.tweakPaddingVertical)
         .padding(.horizontal, SHDesignMetrics.tweakPaddingHorizontal)
         .overlay(alignment: .bottom) { if divided { SHHairline() } }
+        #endif
     }
 }
 
@@ -118,17 +167,34 @@ public struct SHTweakRow<Control: View>: View {
                 }
             }
         }
-        .frame(minHeight: layout == .slider ? SHDesignMetrics.tweakSliderRowHeight : SHDesignMetrics.tweakRowHeight)
+        .frame(minHeight: Self.height(layout))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
     }
 
+    /// 34pt rows on the Mac (DZTweak), 30 for a slider and 32 for the rest on the iPad.
+    private static func height(_ layout: Layout) -> CGFloat {
+        #if os(macOS)
+        SHDesignChrome.tweakRowHeight
+        #else
+        layout == .slider ? SHDesignMetrics.tweakSliderRowHeight : SHDesignMetrics.tweakRowHeight
+        #endif
+    }
+
     private var title: some View {
+        #if os(macOS)
+        Text(label)
+            .font(.shSans(SHDesignChrome.toolbarTextSize))
+            .foregroundStyle(Color.sh.textSecondary)
+            .lineLimit(1)
+            .frame(width: SHDesignChrome.tweakLabelWidth, alignment: .leading)
+        #else
         Text(label)
             .font(.shSans(SHDesignMetrics.tweakLabelSize))
             .foregroundStyle(Color.sh.textSecondary)
             .lineLimit(1)
             .frame(width: SHDesignMetrics.tweakLabelWidth, alignment: .leading)
+        #endif
     }
 }
 
@@ -237,7 +303,11 @@ public struct SHTweakScope: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        SHTweakSegmented("Scope", selection: $selection, options: [.init(.board, "This board"), .init(.every, every)])
+        #else
         SHSegmentedPicker("Scope", selection: $selection, options: [(.board, "This board"), (.every, every)], size: .s)
+        #endif
     }
 }
 
@@ -247,9 +317,17 @@ public struct SHTweakNote: View {
 
     public init(_ text: String) { self.text = text }
 
+    private static var size: CGFloat {
+        #if os(macOS)
+        SHDesignChrome.paneCountSize
+        #else
+        SHDesignMetrics.tweakNoteSize
+        #endif
+    }
+
     public var body: some View {
         Text(text)
-            .font(.shSans(SHDesignMetrics.tweakNoteSize))
+            .font(.shSans(Self.size))
             .lineSpacing(SHDesignMetrics.tweakScopeNoteLineSpacing)
             .foregroundStyle(Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -315,6 +393,20 @@ public struct SHTweakFooter: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // Two text buttons under a rule: Reset dim, "Ask the agent instead…" in ink.
+        HStack(spacing: SH.Space.m) {
+            Button("Reset", action: reset)
+                .buttonStyle(.sh(.ghost, size: .s))
+                .disabled(!canReset)
+            Spacer(minLength: 0)
+            Button("Ask the agent instead…", action: ask)
+                .buttonStyle(.sh(.ghost, size: .s, tint: Color.sh.textPrimary))
+        }
+        .padding(.top, SH.Space.l)
+        .padding(.bottom, SH.Space.xs)
+        .overlay(alignment: .top) { SHHairline() }
+        #else
         HStack(spacing: SH.Space.m) {
             Button("Reset", action: reset)
                 .buttonStyle(.sh(.ghost, size: .s))
@@ -326,5 +418,82 @@ public struct SHTweakFooter: View {
         .padding(.vertical, SHDesignMetrics.tweakFooterPaddingVertical)
         .padding(.horizontal, SHDesignMetrics.tweakFooterPaddingHorizontal)
         .overlay(alignment: .top) { SHHairline() }
+        #endif
+    }
+}
+
+/// A segmented track (DZTweak's `.gdz-seg`): a 26pt track on `bgHover` at radius 8, 2pt around its
+/// segments, the chosen one raised on the card fill with the `lift`, in `textPrimary` medium; the others in
+/// `textSecondary`. A segment may carry a swatch (a design's color) before its words.
+public struct SHTweakSegmented<Value: Hashable>: View {
+    public struct Option {
+        public let value: Value
+        public let title: String
+        public let swatch: Color?
+
+        public init(_ value: Value, _ title: String, swatch: Color? = nil) {
+            self.value = value
+            self.title = title
+            self.swatch = swatch
+        }
+    }
+
+    let label: String
+    @Binding var selection: Value
+    let options: [Option]
+
+    public init(_ label: String, selection: Binding<Value>, options: [Option]) {
+        self.label = label
+        _selection = selection
+        self.options = options
+    }
+
+    public var body: some View {
+        let M = SHDesignChrome.self
+        HStack(spacing: SH.Space.xxs) {
+            ForEach(options.indices, id: \.self) { index in
+                let option = options[index]
+                SHTweakSegment(title: option.title, swatch: option.swatch, isSelected: option.value == selection) {
+                    selection = option.value
+                }
+            }
+        }
+        .padding(SH.Space.xxs)
+        .frame(height: M.segmentHeight)
+        .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .fixedSize()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct SHTweakSegment: View {
+    let title: String
+    let swatch: Color?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.s - 1)
+        Button(action: action) {
+            HStack(spacing: SH.Space.s) {
+                if let swatch {
+                    RoundedRectangle(cornerRadius: SHDesignChrome.chipSwatchRadius)
+                        .fill(swatch)
+                        .frame(width: SHDesignChrome.chipSwatch, height: SHDesignChrome.chipSwatch)
+                        .accessibilityHidden(true)
+                }
+                Text(title)
+                    .font(.shSans(SHDesignChrome.zoomTextSize, isSelected ? .medium : .regular))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? Color.sh.textPrimary : Color.sh.textSecondary)
+            .padding(.horizontal, SH.Space.m + 2)
+            .frame(height: SHDesignChrome.segmentHeight - SH.Space.xs)
+            .background { if isSelected { Color.clear.shLift(shape, fill: .sh.bgRaised) } }
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

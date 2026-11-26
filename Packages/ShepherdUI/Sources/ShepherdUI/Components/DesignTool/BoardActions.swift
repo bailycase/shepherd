@@ -45,6 +45,53 @@ public struct SHBoardActions: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        if size == .compact { macBar } else { regularBar }
+        #else
+        regularBar
+        #endif
+    }
+
+    #if os(macOS)
+    /// DZCanvas' bar: a 36pt capsule on the card fill (the toolbar capsule's line and lift), items 28pt with
+    /// a 14pt glyph before 13pt words, a rule, then ⋯.
+    private var macBar: some View {
+        let M = SHDesignChrome.self
+        let shape = Capsule()
+        return HStack(spacing: M.barSpacing) {
+            SHBoardAction("Comment", symbol: "text.bubble", size: size, action: actions.comment)
+            SHBoardAction("Tweak", symbol: "slider.horizontal.3", size: size, action: actions.tweak)
+            SHBoardAction("Variations", symbol: "square.grid.2x2", size: size, action: actions.variations)
+            SHBoardAction("Duplicate", symbol: "doc.on.doc", size: size, action: actions.duplicate)
+            if let implement = actions.implement {
+                SHBoardAction("Implement…", symbol: "chevron.left.forwardslash.chevron.right", size: size, action: implement)
+            }
+            SHHairline(.vertical)
+                .frame(height: M.dividerHeight)
+                .padding(.horizontal, M.barDividerMargin)
+            Menu {
+                if let play = actions.play { Button("Play", systemImage: "play.fill", action: play) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.shSans(M.barGlyph))
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.shIcon(size: M.barItemHeight, round: true))
+            .fixedSize()
+            .disabled(actions.play == nil)
+            .accessibilityLabel("More")
+        }
+        .padding(M.barPadding)
+        .frame(height: M.barHeight)
+        .shLift(shape)
+        .overlay { shape.strokeBorder(Color.sh.lineSubtle, lineWidth: 1).allowsHitTesting(false) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Board actions")
+    }
+    #endif
+
+    @ViewBuilder private var regularBar: some View {
         let M = SHDesignMetrics.self
         let compact = size == .compact
         let itemHeight = compact ? M.compactActionItemHeight : M.actionItemHeight
@@ -96,19 +143,34 @@ private struct SHBoardAction: View {
     var body: some View {
         let M = SHDesignMetrics.self
         let compact = size == .compact
+        #if os(macOS)
+        let mac = compact
+        let radius = mac ? SHDesignChrome.barItemRadius : compact ? M.compactActionItemRadius : M.actionItemRadius
+        let glyph = mac ? SHDesignChrome.barGlyph : M.actionGlyph
+        let textSize = mac ? SHDesignChrome.barTextSize : compact ? M.compactActionTextSize : M.actionTextSize
+        let padding = mac ? SHDesignChrome.barItemPadding : compact ? M.compactActionItemPadding : M.actionItemPadding
+        let height = mac ? SHDesignChrome.barItemHeight : compact ? M.compactActionItemHeight : M.actionItemHeight
+        let gap = mac ? SHDesignChrome.barItemGap : M.actionItemGap
+        #else
         let radius = compact ? M.compactActionItemRadius : M.actionItemRadius
+        let glyph = M.actionGlyph
+        let textSize = compact ? M.compactActionTextSize : M.actionTextSize
+        let padding = compact ? M.compactActionItemPadding : M.actionItemPadding
+        let height = compact ? M.compactActionItemHeight : M.actionItemHeight
+        let gap = M.actionItemGap
+        #endif
         Button(action: action) {
-            HStack(spacing: M.actionItemGap) {
+            HStack(spacing: gap) {
                 Image(systemName: symbol)
-                    .font(.shSans(M.actionGlyph))
+                    .font(.shSans(glyph))
                     .foregroundStyle(Color.sh.textSecondary)
                 Text(title)
-                    .font(.shSans(compact ? M.compactActionTextSize : M.actionTextSize))
+                    .font(.shSans(textSize))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
             }
-            .padding(.horizontal, compact ? M.compactActionItemPadding : M.actionItemPadding)
-            .frame(height: compact ? M.compactActionItemHeight : M.actionItemHeight)
+            .padding(.horizontal, padding)
+            .frame(height: height)
             .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: radius))
             .contentShape(RoundedRectangle(cornerRadius: radius))
         }
@@ -132,18 +194,27 @@ extension SHBoardActions {
         guard board.intersects(CGRect(origin: .zero, size: canvas)) else { return nil }
         let M = SHDesignMetrics.self
         let margin = SH.Space.xs
+        #if os(macOS)
+        // DZCanvas: the bar's leading edge is the board's, over its label.
+        let x = min(max(board.minX, inset), max(inset, canvas.width - bar.width - inset))
+        let toolsHeight = SHDesignChrome.barHeight
+        let gap = SHDesignChrome.barGap
+        #else
         let x = min(max(board.midX, inset), max(inset, canvas.width - bar.width - inset))
-        let floor = canvas.height - M.toolbarHeight - inset - margin
+        let toolsHeight = M.toolbarHeight
+        let gap = M.actionsGap
+        #endif
+        let floor = canvas.height - toolsHeight - inset - margin
         func fits(_ y: CGFloat) -> Bool {
             guard y >= margin, y + bar.height <= floor else { return false }
             let rect = CGRect(x: x, y: y, width: bar.width, height: bar.height)
             return !labels.contains { $0.intersects(rect) }
         }
-        let above = board.minY - M.labelHeight - M.labelGap - M.actionsGap - bar.height
+        let above = board.minY - M.labelHeight - M.labelGap - gap - bar.height
         if fits(above) { return CGPoint(x: x, y: above) }
-        let below = board.maxY + M.actionsGap
+        let below = board.maxY + gap
         if fits(below) { return CGPoint(x: x, y: below) }
-        let inside = min(board.minY + M.actionsGap, canvas.height - bar.height - margin)
+        let inside = min(board.minY + gap, canvas.height - bar.height - margin)
         return CGPoint(x: x, y: max(inside, margin))
     }
 }
@@ -291,7 +362,7 @@ public struct SHBoardPresentation<Slot: View>: View {
     /// The board fitted into a view of `size` with the canvas's fitted margins around it, never
     /// larger than 100%.
     public static func zoom(for board: CGSize, in size: CGSize) -> CGFloat {
-        let room = CGSize(width: size.width - SHDesignMetrics.fitLeading * 2, height: size.height - SHDesignMetrics.fitTop * 2)
+        let room = CGSize(width: size.width - SHDesignMetrics.presentLeading * 2, height: size.height - SHDesignMetrics.presentTop * 2)
         guard board.width > 0, board.height > 0, room.width > 0, room.height > 0 else { return SHCanvasViewport.zoomRange.lowerBound }
         return SHCanvasViewport.clamp(min(1, room.width / board.width, room.height / board.height))
     }

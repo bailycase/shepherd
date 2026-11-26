@@ -17,6 +17,43 @@ public struct SHCanvasToolbar: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBar
+        #else
+        iosBar
+        #endif
+    }
+
+    #if os(macOS)
+    /// DZCanvas: a 36pt capsule on the card fill with the toolbar capsule's line and lift, three 28pt tools,
+    /// a rule, and the zoom in 12.
+    private var macBar: some View {
+        let M = SHDesignChrome.self
+        let shape = Capsule()
+        return HStack(spacing: M.barSpacing) {
+            ForEach(SHCanvasTool.allCases, id: \.self) { item in
+                SHCanvasToolButton(tool: item, current: tool == item) { tool = item }
+                    .disabled(disabled.contains(item))
+            }
+            SHHairline(.vertical)
+                .frame(height: M.dividerHeight)
+                .padding(.leading, M.barDividerMargin)
+            Text(zoom)
+                .font(.shSans(M.zoomTextSize))
+                .foregroundStyle(Color.sh.textSecondary)
+                .monospacedDigit()
+                .padding(.leading, M.zoomPaddingLeading)
+                .padding(.trailing, M.zoomPaddingTrailing)
+                .accessibilityLabel("Zoom \(zoom)")
+        }
+        .padding(M.barPadding)
+        .frame(height: M.barHeight)
+        .shLift(shape)
+        .overlay { shape.strokeBorder(Color.sh.lineSubtle, lineWidth: 1).allowsHitTesting(false) }
+    }
+    #endif
+
+    private var iosBar: some View {
         HStack(spacing: 0) {
             ForEach(SHCanvasTool.allCases, id: \.self) { item in
                 SHCanvasToolButton(tool: item, current: tool == item) { tool = item }
@@ -50,13 +87,23 @@ private struct SHCanvasToolButton: View {
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
+        #if os(macOS)
+        // The boards' `.ib`: a 28pt rounded square, the current tool on `bgSelected`.
+        let side = SHDesignChrome.barItemHeight
+        let glyph = SHDesignChrome.barGlyph
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
+        #else
+        let side = SHDesignMetrics.toolSize
+        let glyph = SHDesignMetrics.toolGlyph
+        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.toolSize / 2)
+        #endif
         Button(action: action) {
             Image(systemName: tool.symbol)
-                .font(.shSans(SHDesignMetrics.toolGlyph))
+                .font(.shSans(glyph))
                 .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
-                .frame(width: SHDesignMetrics.toolSize, height: SHDesignMetrics.toolSize)
-                .background(current ? Color.sh.bgSelected : .clear, in: Circle())
-                .contentShape(Circle())
+                .frame(width: side, height: side)
+                .background(current ? Color.sh.bgSelected : .clear, in: shape)
+                .contentShape(shape)
                 .opacity(isEnabled ? 1 : SHControlMetrics.disabledOpacity)
         }
         .buttonStyle(.plain)

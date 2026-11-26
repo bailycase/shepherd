@@ -74,7 +74,7 @@ struct DesignSystemLayoutView: View {
         HStack(spacing: 0) {
             DesignSystemBuildPane(vm: vm, designID: designID)
             DesignSystemChatPane(vm: vm, model: model, thread: thread)
-                .frame(width: AppLayout.designChatWidth)
+                .designChatCard()
         }
     }
 }
@@ -107,6 +107,9 @@ struct DesignSystemChatPane: View {
     var body: some View {
         VStack(spacing: 0) {
             SHDesignPaneTabs([SHDesignPaneTabs.Tab(id: "chat", title: "Chat")], selection: "chat")
+                .designChatOptions(refresh: { [vm, agentID = thread.agentID] in
+                    Task { await vm.threadStores.store(for: agentID).refresh(fresh: true) }
+                })
             if let pane = model.tab.layout.leaf(withID: thread.paneID) {
                 let agentID = thread.agentID
                 AgentThreadPane(
@@ -125,8 +128,6 @@ struct DesignSystemChatPane: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in vm.focusedPaneID = thread.paneID })
     }
 }
@@ -153,11 +154,23 @@ struct DesignSystemHeader: View, Equatable {
         SHDesignHeader(model.title, style: toolbar ? .toolbar : .page, section: "Design systems", status: model.status,
                        leadingInset: leadingInset, sidebar: showSidebar,
                        sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs) {
-            if let namespace = model.namespace {
-                SHDesignSystemChip(namespace, colors: model.chip.map { Color(light: $0.light, dark: $0.dark) })
-            }
-            if let menu {
-                SHDesignToolbarMore(label: "More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
+            if toolbar {
+                // Over a build (DZSystem) the capsule holds the system's chip and ⋯.
+                if let namespace = model.namespace {
+                    SHDesignToolbarSystem(namespace, colors: model.chip.map { Color(light: $0.light, dark: $0.dark) })
+                    SHDesignCapsuleDivider()
+                }
+                if let menu {
+                    SHOptionsMenu("More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
+                        .shHelp("More for \(model.title)")
+                }
+            } else {
+                if let namespace = model.namespace {
+                    SHDesignSystemChip(namespace, colors: model.chip.map { Color(light: $0.light, dark: $0.dark) })
+                }
+                if let menu {
+                    SHDesignToolbarMore(label: "More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
+                }
             }
         }
     }
@@ -194,9 +207,11 @@ struct DesignSystemContent: View, Equatable {
                                 .id(item.id)
                         }
                     }
+                    // One centered column, 820pt at most (DZSystem).
+                    .frame(maxWidth: SHDesignChrome.systemColumn, alignment: .leading)
                     .padding(.vertical, AppLayout.designSystemPaddingVertical)
                     .padding(.horizontal, AppLayout.designSystemPaddingHorizontal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -208,22 +223,22 @@ struct DesignSystemContent: View, Equatable {
     /// The page's elements, in order.
     enum Item: Identifiable {
         case heading
-        case label(DesignSystemPageModel.Section)
+        case label(DesignSystemPageModel.Section, count: Int?)
         case colors([DesignSystemPageModel.Swatch], first: Bool)
-        case type(DesignSystemPageModel.TypeRow)
-        case step(DesignSystemPageModel.Step)
+        case types([DesignSystemPageModel.TypeRow])
+        case steps([DesignSystemPageModel.Step])
         case components([DesignSystemPageModel.Component], first: Bool)
-        case board(DesignSystemPageModel.BoardsRow)
+        case boards([DesignSystemPageModel.BoardsRow])
 
         var id: String {
             switch self {
             case .heading: "heading"
-            case .label(let section): section.rawValue
+            case .label(let section, _): section.rawValue
             case .colors(let row, _): "colors.\(row.first?.id ?? "")"
-            case .type(let style): "type.\(style.id)"
-            case .step(let step): "step.\(step.id)"
+            case .types: "type.table"
+            case .steps: "step.table"
             case .components(let row, _): "components.\(row.first?.id ?? 0)"
-            case .board(let row): "board.\(row.id.rawValue)"
+            case .boards: "board.table"
             }
         }
     }
@@ -231,21 +246,22 @@ struct DesignSystemContent: View, Equatable {
     static func items(_ model: DesignSystemPageModel) -> [Item] {
         var items: [Item] = [.heading]
         guard !model.sections.isEmpty else { return items }
-        items.append(.label(.colors))
+        func count(_ section: DesignSystemPageModel.Section) -> Int? { model.sections.first { $0.id == section.rawValue }?.count }
+        items.append(.label(.colors, count: count(.colors)))
         items += stride(from: 0, to: model.colors.count, by: AppLayout.designSystemColorColumns).map { start in
             .colors(Array(model.colors[start..<min(start + AppLayout.designSystemColorColumns, model.colors.count)]), first: start == 0)
         }
-        items.append(.label(.type))
-        items += model.type.map(Item.type)
-        items.append(.label(.steps))
-        items += model.steps.map(Item.step)
-        items.append(.label(.components))
+        items.append(.label(.type, count: count(.type)))
+        if !model.type.isEmpty { items.append(.types(model.type)) }
+        items.append(.label(.steps, count: count(.steps)))
+        if !model.steps.isEmpty { items.append(.steps(model.steps)) }
+        items.append(.label(.components, count: count(.components)))
         items += stride(from: 0, to: model.components.count, by: AppLayout.designSystemComponentColumns).map { start in
             .components(Array(model.components[start..<min(start + AppLayout.designSystemComponentColumns, model.components.count)]),
                         first: start == 0)
         }
-        items.append(.label(.boards))
-        items += model.boards.map(Item.board)
+        items.append(.label(.boards, count: count(.boards)))
+        if !model.boards.isEmpty { items.append(.boards(model.boards)) }
         return items
     }
 
@@ -254,63 +270,80 @@ struct DesignSystemContent: View, Equatable {
         switch item {
         case .heading:
             heading
-        case .label(let section):
-            Text(section.title)
-                .shSectionLabel()
-                .accessibilityAddTraits(.isHeader)
-                .padding(.top, AppLayout.designSystemSectionSpacing)
-                .padding(.bottom, SH.Space.s)
+        case .label(let section, let count):
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m + 2) {
+                Text(section.title)
+                    .font(.shSans(SHDesignChrome.systemHeadingSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                if let count {
+                    Text("\(count)")
+                        .font(.shSans(SHDesignChrome.toolbarTextSize))
+                        .foregroundStyle(Color.sh.textTertiary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            .padding(.top, AppLayout.designSystemSectionSpacing)
+            .padding(.bottom, SH.Space.m)
         case .colors(let row, let first):
             DesignSystemSwatchRow(swatches: row)
                 .equatable()
-                .padding(.top, first ? 0 : AppLayout.designSystemColorGap)
-        case .type(let style):
-            SHTypeSpecimen(style.name, spec: style.spec) {
-                Text(style.sample).font(Self.font(style))
+                .padding(.top, first ? 0 : SHDesignChrome.systemGap)
+        case .types(let styles):
+            SHDesignSystemTable {
+                ForEach(Array(styles.enumerated()), id: \.element.id) { index, style in
+                    SHTypeSpecimen(style.name, spec: style.spec, divided: index > 0) {
+                        Text(style.sample).font(Self.font(style))
+                    }
+                }
             }
-        case .step(let step):
-            SHTypeSpecimen(step.name, spec: step.detail) { EmptyView() }
+        case .steps(let steps):
+            SHDesignSystemTable {
+                ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                    SHTypeSpecimen(step.name, spec: step.detail, divided: index > 0) { EmptyView() }
+                }
+            }
         case .components(let row, let first):
             DesignSystemSpecimenRow(namespace: model.namespace ?? "", components: row, background: model.background,
                                     specimens: specimens)
-                .padding(.top, first ? 0 : AppLayout.designSystemComponentGap)
-        case .board(let design):
-            Button { openDesign(design.id) } label: {
-                HStack(spacing: SH.Space.xl) {
-                    Text(design.name)
-                        .font(.sh(.body))
-                        .foregroundStyle(Color.sh.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: SH.Space.xl)
-                    Text(design.detail)
-                        .font(.shMono(SHDesignMetrics.typeSpecSize))
-                        .foregroundStyle(Color.sh.textTertiary)
+                .padding(.top, first ? 0 : SHDesignChrome.systemGap)
+        case .boards(let designs):
+            SHDesignSystemTable {
+                ForEach(Array(designs.enumerated()), id: \.element.id) { index, design in
+                    Button { openDesign(design.id) } label: {
+                        HStack(spacing: SH.Space.xl) {
+                            Text(design.name)
+                                .font(.shSans(SHDesignChrome.toolbarTextSize))
+                                .foregroundStyle(Color.sh.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: SH.Space.xl)
+                            Text(design.detail)
+                                .font(.shSans(SHDesignChrome.paneCountSize))
+                                .foregroundStyle(Color.sh.textTertiary)
+                        }
+                        .padding(.horizontal, SH.Space.xl)
+                        .frame(minHeight: SHDesignChrome.systemRowHeight)
+                        .overlay(alignment: .top) { if index > 0 { SHHairline() } }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open \(design.name)")
                 }
-                .padding(.vertical, SH.Space.m)
-                .overlay(alignment: .top) { SHHairline() }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("Open \(design.name)")
         }
     }
 
+    /// Where the system was read from, and Re-sync (DZSystem). The name is the toolbar's breadcrumb.
     private var heading: some View {
-        HStack(alignment: .bottom, spacing: SH.Space.xl) {
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                Text(model.title)
-                    .font(.shMono(AppLayout.designSystemNameSize, .semibold))
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-                Self.sourceLine(model.source)
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.l) {
+            Self.sourceLine(model.source)
+                .foregroundStyle(Color.sh.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: SH.Space.xl)
             if let namespace = model.namespace, !model.builtIn {
                 Button("Re-sync", systemImage: "arrow.clockwise") { resync(namespace) }
-                    .buttonStyle(.sh(.secondary))
+                    .buttonStyle(.sh(.ghost, tint: Color.sh.textPrimary))
                     .disabled(!model.canResync || model.syncing)
                     .help(model.canResync ? "Read \(namespace)'s stylesheets again from its space"
                           : "Nothing to read again: it names no stylesheets, or its space is gone")
@@ -322,7 +355,7 @@ struct DesignSystemContent: View, Equatable {
     static func sourceLine(_ segments: [DesignSystemPageModel.Segment]) -> Text {
         segments.reduce(Text(verbatim: "")) { line, segment in
             let run = Text(verbatim: segment.text)
-                .font(segment.mono ? .shMono(AppLayout.designSystemSourceSize) : .shSans(AppLayout.designSystemSourceSize))
+                .font(segment.mono ? .shMono(SHDesignChrome.paneCountSize) : .shSans(SHDesignChrome.toolbarTextSize))
             return Text("\(line)\(run)")
         }
     }
@@ -355,7 +388,7 @@ struct DesignSystemSwatchRow: View, Equatable {
     let swatches: [DesignSystemPageModel.Swatch]
 
     var body: some View {
-        HStack(alignment: .top, spacing: AppLayout.designSystemColorGap) {
+        HStack(alignment: .top, spacing: SHDesignChrome.systemGap) {
             ForEach(swatches) { swatch in
                 SHTokenSwatch(swatch.name, detail: swatch.detail,
                               color: swatch.hex.map { Color(light: $0, dark: $0) } ?? .clear)
@@ -379,7 +412,7 @@ struct DesignSystemSpecimenRow: View {
     var body: some View {
         let _ = specimens.version
         let fill = background.map { Color(light: $0, dark: $0) } ?? Color.sh.bgSunken
-        HStack(alignment: .top, spacing: AppLayout.designSystemComponentGap) {
+        HStack(alignment: .top, spacing: SHDesignChrome.systemGap) {
             ForEach(components) { component in
                 SHComponentSpecimen(component.name, template: component.template, background: fill) {
                     if let image = specimens.image(namespace, component.id) {

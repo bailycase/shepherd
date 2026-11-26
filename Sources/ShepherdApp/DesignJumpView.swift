@@ -3,8 +3,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdUI
 
-/// Jump to a board (JumpInContext) over the window: the sheet's scrim, and the card 15% down,
-/// 620pt wide (less 16pt margins in a narrow window). A click on the scrim or Esc closes it.
+/// Jump to a board (JumpInContext) over the window: the palette's scrim, and its card 112pt down,
+/// 680pt wide (less 16pt margins in a narrow window). A click on the scrim or Esc closes it.
 struct DesignJumpOverlay: View {
     var vm: ShepherdViewModel
 
@@ -13,7 +13,7 @@ struct DesignJumpOverlay: View {
             let M = SHJumpMetrics.self
             ZStack(alignment: .top) {
                 if let model = vm.designJump {
-                    Color.sh.sheetScrim
+                    Color.sh.paletteScrim
                         .contentShape(Rectangle())
                         .onTapGesture { vm.designJump = nil }
                         .accessibilityHidden(true)
@@ -22,10 +22,10 @@ struct DesignJumpOverlay: View {
                                    picture: { vm.jumpPicture($0, in: model.design) },
                                    run: { vm.runDesignJump($0) }, close: { vm.designJump = nil },
                                    visibility: { vm.jumpPictureVisibility($0, in: model.design, visible: $1) })
-                        .frame(width: max(0, min(M.width, geo.size.width - 2 * SHPaletteMetrics.margin)))
+                        .frame(width: max(0, min(M.width, geo.size.width - 2 * M.margin)))
                         .accessibilityAddTraits(.isModal)
                         .shTransition(.overlay, anchor: .top)
-                        .padding(.top, (geo.size.height * M.topFraction).rounded())
+                        .padding(.top, M.top)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
@@ -39,8 +39,7 @@ struct DesignJumpOverlay: View {
     /// at most `maxVisibleRows` rows, at least one.
     static func maxListHeight(in size: CGSize) -> CGFloat {
         let M = SHJumpMetrics.self
-        let room = size.height - (size.height * M.topFraction).rounded() - SHPaletteMetrics.margin
-            - M.searchHeight - M.footerHeight - M.listTop - M.listInset
+        let room = size.height - M.top - M.margin - SHPaletteMetrics.chrome
         return max(M.rowHeight, min(M.rowHeight * CGFloat(M.maxVisibleRows), room))
     }
 }
@@ -75,9 +74,9 @@ struct DesignJumpCard: View {
         } footer: {
             HStack(spacing: SHJumpMetrics.footerSpacing) {
                 SHJumpHint("↑↓", "move")
-                SHJumpHint("⏎", "jump")
+                SHJumpHint("↵", "jump")
                 Spacer(minLength: 0)
-                SHJumpHint("esc", "close")
+                Text("Esc to close")
             }
         }
         .onAppear { fieldFocused = true }
@@ -142,9 +141,8 @@ struct DesignJumpBackLayer: View {
     var body: some View {
         ZStack {
             if let back = screen.jumpBack {
-                SHJumpBackToast(title: back.title, shortcut: KeybindingsStore.shared.display(.designJumpBack)) {
-                    screen.goBackFromJump()
-                }
+                SHJumpBackToast(title: back.title, shortcut: KeybindingsStore.shared.display(.designJumpBack),
+                                back: { screen.goBackFromJump() }, close: { screen.dismissJumpBack(back.id) })
                 .padding(.horizontal, SH.Space.xl)
                 .padding(.bottom, SHJumpMetrics.backBottom)
                 .id(back.id)

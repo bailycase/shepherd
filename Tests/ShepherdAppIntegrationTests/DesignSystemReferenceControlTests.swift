@@ -91,14 +91,14 @@ struct DesignSystemReferenceControlTests {
     private static func onScreen(_ label: String, in window: OffscreenWindow) -> Bool {
         window.layout()
         let area = window.window.frame
-        return AccessibilityNode.all(under: window.host).contains { $0.label == label && $0.frame.intersects(area) }
+        return AccessibilityNode.all(under: window.host).contains { ($0.label == label || $0.label?.hasPrefix(label + ",") == true) && $0.frame.intersects(area) }
     }
 
     @MainActor
     private static func more(in window: OffscreenWindow, _ help: String) -> AccessibilityNode? {
         AccessibilityNode.all(under: window.host).first { node in
             node.role == ControlRole.menuButton
-                && (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String) == help
+                && (node.label == help || (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String) == help)
         }
     }
 
@@ -275,12 +275,12 @@ struct DesignSystemReferenceControlTests {
         // Dark | Light: the picker reports its own value, so the press is read back from the tree, not assumed.
         func chosen() -> String? {
             window.layout()
-            return AccessibilityNode.all(under: window.host).first { $0.role == ControlRole.radioButton && $0.isSelected }?.label
+            return AccessibilityNode.all(under: window.host).first { ["Light", "Dark"].contains($0.label ?? "") && $0.isSelected }?.label
         }
         #expect(chosen() == "Dark", "the page starts in the window's appearance")
-        try window.press("Light", role: ControlRole.radioButton)
+        try window.press("Light")
         try await eventuallyOnMain("Light to be chosen") { chosen() == "Light" }
-        try window.press("Dark", role: ControlRole.radioButton)
+        try window.press("Dark")
         try await eventuallyOnMain("Dark to be chosen") { chosen() == "Dark" }
 
         // The contents button opens the menu with the system's parts; a Used by row opens that design.
@@ -303,9 +303,7 @@ struct DesignSystemReferenceControlTests {
         try await eventuallyOnMain("the page to scroll to Size") { onScreen("Size", in: window) }
         #expect(!onScreen("Principles", in: window), "pressing a part moves the page to it, not just closes the menu")
 
-        // The breadcrumb goes back to the Designs page.
-        try window.press("Design systems")
-        #expect(vm.shownDestination == .designs)
+        // The redesigned toolbar names the system alone, with no breadcrumb back to the Designs page (the sidebar goes there).
     }
 
     @Test func reSyncOnAProjectsSystemReadsItsStylesheetsAgain() async {
