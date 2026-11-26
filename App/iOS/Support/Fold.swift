@@ -22,6 +22,15 @@ extension GeometryProxy {
 }
 
 extension GeometryProxy {
+    /// Where a flat inner display's halves meet: its middle, as wide as nothing, across the view in the view's own
+    /// coordinates. The view is the display less what the system's bars take down its trailing side.
+    var seam: ClosedRange<CGFloat> {
+        let middle = (size.width + safeAreaInsets.leading + safeAreaInsets.trailing) / 2 - safeAreaInsets.leading
+        return middle...middle
+    }
+}
+
+extension GeometryProxy {
     /// iPhone Duo's fold while it splits this view into a top and a bottom part (the inner display
     /// held in portrait, half open: the laptop pose). Nil otherwise.
     var horizontalFold: ClosedRange<CGFloat>? {

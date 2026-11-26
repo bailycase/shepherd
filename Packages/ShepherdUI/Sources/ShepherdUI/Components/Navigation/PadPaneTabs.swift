@@ -24,12 +24,14 @@ public struct SHPadPaneTab: Identifiable, Equatable, Sendable {
 public enum SHPadPaneMetrics {
     /// The head: as tall as the thread's title bar beside it, with a 12pt leading and 10pt trailing inset.
     public static let headHeight: CGFloat = 52
+    /// iPhone Duo's head and thread title row, beside each other across the hinge (DuoOpenSidePane's 60pt).
+    public static let duoHeadHeight: CGFloat = 60
     public static let leading: CGFloat = SH.Space.l
     public static let trailing: CGFloat = SH.Space.m + SH.Space.xxs
-    /// A tab's capsule: 40pt inside its 44pt target, its glyph 17pt and its label 15 (iPadPaneFiles).
-    public static let tabHeight: CGFloat = 40
-    public static let tabGlyph: CGFloat = 17
-    public static let tabFont: CGFloat = 15
+    /// A tab's capsule: 36pt inside its 44pt target, its glyph 18pt and its label 14 medium (DuoOpenSidePane).
+    public static let tabHeight: CGFloat = 36
+    public static let tabGlyph: CGFloat = 18
+    public static let tabFont: CGFloat = 14
     /// The status dot, its center on the glyph's top trailing corner.
     public static let dot: CGFloat = 6
 }
@@ -39,13 +41,15 @@ public struct SHPadPaneHead<Options: View>: View {
     let selection: String
     let select: (String) -> Void
     /// The pane's ⋯: the open tab's options, and Hide side pane.
+    let height: CGFloat
     @ViewBuilder let options: () -> Options
 
-    public init(_ tabs: [SHPadPaneTab], selection: String, select: @escaping (String) -> Void,
+    public init(_ tabs: [SHPadPaneTab], selection: String, select: @escaping (String) -> Void, height: CGFloat = SHPadPaneMetrics.headHeight,
                 @ViewBuilder options: @escaping () -> Options) {
         self.tabs = tabs
         self.selection = selection
         self.select = select
+        self.height = height
         self.options = options
     }
 
@@ -66,7 +70,7 @@ public struct SHPadPaneHead<Options: View>: View {
                                 }
                             }
                         if selected {
-                            Text(tab.title).font(.shSans(SHPadPaneMetrics.tabFont, .semibold)).lineLimit(1).fixedSize()
+                            Text(tab.title).font(.shSans(SHPadPaneMetrics.tabFont, .medium)).lineLimit(1).fixedSize()
                             if let count = tab.count {
                                 Text("\(count)").font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
                                     .shContentTransition(.numeric())
@@ -91,7 +95,7 @@ public struct SHPadPaneHead<Options: View>: View {
         }
         .padding(.leading, SHPadPaneMetrics.leading)
         .padding(.trailing, SHPadPaneMetrics.trailing)
-        .frame(minHeight: SHPadPaneMetrics.headHeight)
+        .frame(minHeight: height)
         .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side pane tabs")

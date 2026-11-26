@@ -125,14 +125,14 @@ private struct PaneCompareRow: View {
                 Text(store.filesArePR ? "Pull request" : "Working tree").foregroundStyle(sh.textPrimary).lineLimit(1)
             }
             if store.loaded {
-                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .shSans(MobileLayout.touchBodyFont)).fixedSize()
+                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .shSans(MobileLayout.reviewPaneRowFont)).fixedSize()
             }
             Spacer(minLength: SH.Space.s)
             PadCommitButton(store: store)
         }
-        .font(.shMono(MobileLayout.touchBodyFont - 1))
+        .font(.shMono(MobileLayout.reviewPaneRowFont))
         .padding(.horizontal, SH.Space.xl)
-        .frame(minHeight: MobileLayout.reviewToolbarHeight)
+        .frame(minHeight: MobileLayout.reviewCompareHeight)
         .overlay(alignment: .bottom) { SHHairline() }
         // The base picker opens here, from the base and from the ⋯'s Compare against….
         .popover(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
@@ -182,14 +182,14 @@ private struct PaneFileSwitcher: View {
             }
             Spacer(minLength: SH.Space.s)
             if let current {
-                SHDiffStat(added: current.added, removed: current.removed, font: .shSans(MobileLayout.touchBodyFont)).fixedSize()
+                SHDiffStat(added: current.added, removed: current.removed, font: .shSans(MobileLayout.reviewPaneRowFont)).fixedSize()
             }
             Button { step(1, from: index) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.shIcon(size: SH.Height.touch))
                 .disabled((index ?? count) >= count - 1)
                 .accessibilityLabel("Next file")
         }
-        .font(.shMono(MobileLayout.touchBodyFont - 1))
+        .font(.shMono(MobileLayout.reviewPaneRowFont))
         .padding(.horizontal, SH.Space.s)
         .frame(minHeight: SH.Height.touch)
         .overlay(alignment: .bottom) { SHHairline() }

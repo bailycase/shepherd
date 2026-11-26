@@ -32,6 +32,8 @@ enum MobileLayout {
     static let threadMaxWidth: CGFloat = 780
     /// The iPad thread's and composer's side gutters (iPadThread's 24pt; the phone keeps `gutter`).
     static let padThreadGutter: CGFloat = SH.Space.xxl
+    /// The round Show sidebar button in a thread's header beside an open side pane (DuoOpenSidePane's 40pt).
+    static let padHeaderButton: CGFloat = 40
     /// A note's indent from its rule.
     static let noteIndent: CGFloat = SH.Space.m
     /// The iPad sidebar's width beside the thread, in landscape (iPadThread).
