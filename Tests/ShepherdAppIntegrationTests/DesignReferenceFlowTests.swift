@@ -644,6 +644,80 @@ struct DesignReferenceFlowTests {
         #expect(screen.page == "flow" && screen.boards.map(\.id) == ["Hero.dc.html", payment.rawValue])
     }
 
+    /// A page's boards are drawn together, a few at a time: each file still comes out under its own
+    /// board's name, size and text, in the page's order, and the copy holds every one.
+    @Test func aPageOfManyBoardsKeepsEachBoardsFilesInOrder() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let count = 14
+        let paths = try (0..<count).map { try DesignPath.validate("Board\($0).dc.html") }
+        func source(_ i: Int) -> String {
+            Self.hero.replacingOccurrences(of: "Pay now", with: "Board number \(i)")
+                .replacingOccurrences(of: "width: 400px; height: 300px", with: "width: \(400 + i * 10)px; height: 300px")
+                .replacingOccurrences(of: "\"width\":400", with: "\"width\":\(400 + i * 10)")
+        }
+        _ = try await w.app.server.writeDesignBoards(w.design.id, sources: Dictionary(uniqueKeysWithValues: paths.enumerated().map { ($1, source($0)) }))
+        var boards: [String: JSONValue] = ["Hero.dc.html": .object(["page": .string("other")])]
+        for (i, path) in paths.enumerated() {
+            boards[path.rawValue] = .object(["page": .string("many"), "x": .number(Double(i) * 900), "y": .number(0),
+                                             "w": .number(Double(400 + i * 10)), "h": .number(300)])
+        }
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object([
+            "pages": .array([.object(["id": .string("many"), "name": .string("Many")]), .object(["id": .string("other")])]), "boards": .object(boards)]))
+        let picked = try await w.app.server.pinDesignReference(DesignReference(designID: w.design.id, page: "many")!)
+        let (record, folder, _) = try await sent(w, [picked.reference])
+        let payload = try JSONDecoder().decode(DesignReferencePayload.self, from: Data(contentsOf: folder.appendingPathComponent(DesignReferencePayload.manifestName)))
+        #expect(record.boards == count && payload.boards?.map(\.board) == paths.sorted { $0.rawValue < $1.rawValue })
+        for (position, board) in try #require(payload.boards).enumerated() {
+            let i = try #require(paths.firstIndex(of: board.board))
+            let picture = try #require(board.picture), htmlFile = try #require(board.html)
+            #expect(picture.name.hasPrefix(String(format: "%02d-", position + 1)) && htmlFile.name.hasPrefix(String(format: "%02d-", position + 1)))
+            let png = try #require(NSBitmapImageRep(data: try Data(contentsOf: folder.appendingPathComponent(picture.name))))
+            #expect(png.pixelsWide == (400 + i * 10) * 2 && png.pixelsHigh == 600, "board \(i)'s own picture")
+            #expect(picture.pixelWidth == png.pixelsWide && picture.pixelHeight == png.pixelsHigh)
+            let html = try String(contentsOf: folder.appendingPathComponent(htmlFile.name), encoding: .utf8)
+            #expect(html.contains("Board number \(i)<"), "board \(i)'s own page")
+            #expect(htmlFile.bytes == html.utf8.count)
+        }
+    }
+
+    /// One board of a page failing to draw fails the send, and the copy keeps nothing of the boards
+    /// the others drew meanwhile.
+    @Test func aBoardOfAPageThatCantBeDrawnKeepsNothing() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let paths = try (0..<8).map { try DesignPath.validate("Board\($0).dc.html") }
+        _ = try await w.app.server.writeDesignBoards(w.design.id, sources: Dictionary(uniqueKeysWithValues: paths.map { ($0, Self.hero) }))
+        var boards: [String: JSONValue] = ["Hero.dc.html": .object(["page": .string("other")])]
+        for (i, path) in paths.enumerated() {
+            boards[path.rawValue] = .object(["page": .string("many"), "x": .number(Double(i) * 460), "y": .number(0), "w": .number(400), "h": .number(300)])
+        }
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object([
+            "pages": .array([.object(["id": .string("many")]), .object(["id": .string("other")])]), "boards": .object(boards)]))
+        let picked = try await w.app.server.pinDesignReference(DesignReference(designID: w.design.id, page: "many")!)
+        let handler = try #require(w.app.server.onDesignReferenceCapture)
+        w.app.server.onDesignReferenceCapture = { request, respond in
+            var request = request
+            request.files?.index.boards[paths[5]] = nil
+            handler(request, respond)
+        }
+        let store = w.vm.threadStores.store(for: w.thread.agent.id)
+        let server = w.app.server, id = w.thread.agent.id
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        let before = AppHarness.prompts(in: w.log).count
+        do {
+            try await w.vm.sendDesignReferences([picked.reference], text: "x", to: id)
+            Issue.record("the send went with a board undrawn")
+        } catch {
+            #expect("\(error)".contains("Board5"), "names the board that failed: \(error)")
+        }
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: w.app.dir.appendingPathComponent("design-refs/\(id.rawValue)").path)) ?? []
+        #expect(kept.isEmpty, "no copy of any board is kept")
+        #expect(AppHarness.prompts(in: w.log).count == before && w.app.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
+    }
+
     /// Copy reference, then a paste into a thread's composer (RefCopied, RefPasted, RefSentThread):
     /// the reference becomes a chip and leaves the words, the composer's send carries it, the sent
     /// message draws the chip from the copy the host kept, and that chip stays (greyed, "deleted")
