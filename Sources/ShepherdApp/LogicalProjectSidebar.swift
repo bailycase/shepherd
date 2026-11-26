@@ -2,6 +2,7 @@ import SwiftUI
 import ShepherdRemote
 import ShepherdCore
 import ShepherdUI
+import ShepherdSidebar
 
 /// A Project's row in the sidebar. Activity (ProjectLead-Activity) draws the summary row; the Spaces mode
 /// (ProjectLead-AddsSpace, -Paused, -Question) draws the count row, with a lantern dot while something waits. A click opens

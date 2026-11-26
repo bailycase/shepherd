@@ -9,6 +9,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A host's design on this Mac (`designs.v1`): the Designs page listing it under the host's name,
 /// and its canvas beside the design agent's chat on the host, drawn here from the files the host

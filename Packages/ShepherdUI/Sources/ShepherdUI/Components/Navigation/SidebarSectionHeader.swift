@@ -93,7 +93,7 @@ public struct SHSidebarSectionHeader: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: max(density.rowHeight, SH.Height.controlS))
+                .frame(maxWidth: .infinity, minHeight: max(SHSidebarMetrics.rowHeight(density), SH.Height.controlS))
                 .contentShape(Rectangle())
             }
             .buttonStyle(SHPlainPressStyle())

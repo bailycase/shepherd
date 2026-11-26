@@ -9,6 +9,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The new Projects, pressed through accessibility on a real scratch server (ProjectLead boards):
 /// New project creates one atomically with its chosen Space, and a stale second view is refused without being

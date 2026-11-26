@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Switching agents is a visibility flip, never a remount: every mounted layout (the ones
 /// shown this session) stays in the view tree in a stable order and exactly one is visible.

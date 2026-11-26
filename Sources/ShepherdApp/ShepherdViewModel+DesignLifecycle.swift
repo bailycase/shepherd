@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import UniformTypeIdentifiers
+import ShepherdSidebar
 
 // Deleting, renaming, duplicating and importing designs and design systems
 // (DesignLifecycleStates). Delete asks first, then the design leaves every

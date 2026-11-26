@@ -139,7 +139,17 @@ struct AutomationRunMenu: View {
 
     var body: some View {
         if let run = row.run { OpenInNewWindowButton(thread: run.agentRef) }
-        let key = AutomationKey(host: row.host, automation: row.automationID)
+        AutomationKeyMenu(key: AutomationKey(host: row.host, automation: row.automationID))
+    }
+}
+
+/// An automation's long press by its key (the sidebar's automation row and a run's menu): open it, Run Now or Stop.
+struct AutomationKeyMenu: View {
+    let key: AutomationKey
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
         let store = AutomationsStore.of(hosts)
         let listed = store.model.row(key)
         Button("Open Automation", systemImage: SHGlyph.automation.symbolName) { AutomationsHooks.open(key, navigator: navigator) }

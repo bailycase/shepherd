@@ -9,6 +9,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 @testable import TerminalSurfaceKit
+@testable import ShepherdSidebar
 
 /// The view model over a real server: restoring a persisted workspace, moving between agents
 /// and pages, pane focus, and cold parking.

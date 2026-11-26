@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdCore
 import ShepherdUI
+import ShepherdSidebar
 
 /// The Designs page in the main column (NavDesigns; Settings ▸ Experiments ▸ Design tool): its
 /// model from the view model, and each design's first board read again as designs change.

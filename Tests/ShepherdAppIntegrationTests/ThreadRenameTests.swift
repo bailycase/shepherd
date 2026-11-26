@@ -7,6 +7,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A rename shows in the sidebar row and the header the moment it is submitted, the host stays the
 /// only writer, and the outcome reconciles with whatever snapshots arrive.

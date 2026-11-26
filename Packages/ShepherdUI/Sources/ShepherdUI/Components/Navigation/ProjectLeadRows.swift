@@ -51,7 +51,7 @@ public struct SHLeadProjectRow: View, Equatable {
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
-        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: SHSidebarMetrics.rowHeight(density), alignment: .leading)
         .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
@@ -108,7 +108,7 @@ public struct SHLeadSpaceProjectRow: View, Equatable {
         }
         .padding(.leading, SH.Space.s)
         .padding(.trailing, density.sidebarRowPadding)
-        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: SHSidebarMetrics.rowHeight(density), alignment: .leading)
         .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .onHover { hovering = $0 }

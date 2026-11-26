@@ -9,6 +9,7 @@ import SwiftUI
 import Testing
 import Vision
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The user's sidebar redesign in light and dark (FleetCornerFull, FleetCornerMin, FleetCornerMany, FleetCornerManyMin, FleetSubthreads, SidebarTree): the
 /// real sidebar through the real view model, with fixture Macs, their dispatch records and a connected Mac's threads. Made-up names only.

@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The sidebar organized by project (Sidebar — Projects): a folder per project in the spaces'
 /// order, its threads newest activity first, rolled up while collapsed; idle threads leave after

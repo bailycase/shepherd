@@ -4,6 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Deleting and importing designs as values (DesignLifecycleStates): each menu's items where it
 /// opens, what each dialog and toast says, the importing card, and Remove from Recents.

@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 import SwiftUI
+import ShepherdSidebar
 
 /// The sidebar's pull request badges: the links and kept-open notes the background host on this
 /// Mac pushes (`RemoteReply.pullRequestLinks`). The host looks them up and closes merged threads
@@ -37,16 +38,3 @@ extension ShepherdViewModel {
     }
 }
 
-/// A thread row's pull request: its badge, and the line its help and VoiceOver label gain.
-struct SidebarPullRequest: Equatable {
-    var badge: SHSidebarRow.Badge
-    var line: String
-}
-
-extension SidebarListRow {
-    mutating func attach(_ pull: SidebarPullRequest) {
-        pullRequest = pull.badge
-        help += "\n" + pull.line
-        accessibilityLabel += ", " + pull.line
-    }
-}

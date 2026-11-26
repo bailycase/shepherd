@@ -335,14 +335,14 @@ public struct SHSidebarAutomationRow: View, Equatable {
                         .foregroundStyle(sh.textSecondary)
                         .shContentTransition(.numeric())
                 }
-                if let expanded, hovering || expanded {
+                if let expanded, hovering || expanded || SHPlatform.showsHoverDetails {
                     Button(action: toggle) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: SHProjectMetrics.chevron, weight: .semibold))
                             .foregroundStyle(sh.textSecondary)
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                             .shAnimation(.disclosure, value: expanded)
-                            .frame(width: SHProjectMetrics.chevronSlot, height: density.rowHeight)
+                            .frame(width: SHProjectMetrics.chevronSlot, height: SHSidebarMetrics.rowHeight(density))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(SHPlainPressStyle())
@@ -355,7 +355,7 @@ public struct SHSidebarAutomationRow: View, Equatable {
         }
         .padding(.leading, density.sidebarRowPadding)
         .padding(.trailing, expanded == nil || !(hovering || expanded == true) ? density.sidebarRowPadding : 0)
-        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: SHSidebarMetrics.rowHeight(density), alignment: .leading)
         .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }

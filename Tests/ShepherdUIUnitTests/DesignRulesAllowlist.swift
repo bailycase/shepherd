@@ -52,11 +52,10 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Settings/InstructionsScreens.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Settings/SkillsScreens.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Home/HomeRows.swift", 2, bolt),
-        .init(.rawGlyphName, "App/iOS/Home/PadSidebar.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Settings/ExperimentsScreens.swift", 2, bolt),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/Automations.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
-        .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
+        .init(.rawGlyphName, "Sources/ShepherdSidebar/SidebarModel.swift", 7, bolt),
         // Symbols that follow state where no animation reaches them. Each file says why; a disclosure
         // chevron that does animate is an SHTurningChevron, and any other pair that animates fades.
         .init(.symbolRenameUnderAnimation, "App/Widgets/ShepherdWidgets.swift", 1, "A widget draws one snapshot per timeline entry, so a symbol is never renamed on screen."),

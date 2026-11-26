@@ -6,6 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
+import ShepherdSidebar
 
 // Handing a design's piece to a thread from its canvas (RefImplementMenu, RefImplementSheet,
 // RefImplementBoard, RefSentStay, RefCopied, RefNoteBack): the canvas's actions, Implement in a

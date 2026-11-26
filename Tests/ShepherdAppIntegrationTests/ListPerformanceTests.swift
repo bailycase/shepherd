@@ -9,6 +9,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
+@testable import ShepherdSidebar
 
 /// Budgets for the long lists, over realistic large fixtures in
 /// off-screen windows. The budgets count row bodies (`SHRenderProbe`), which a slower machine

@@ -97,6 +97,15 @@ public struct FleetSidebarState: Equatable, Sendable {
 
     public func isPinned(_ ref: FleetRef) -> Bool { pins.contains(ref) }
 
+    /// What `observe` has seen of each thread's completion, for the sidebar's shared derivation (`ShepherdSidebar`), which reads
+    /// the same three facts the Mac does: whether it finished, the completion's generation, and when.
+    public var completionStamps: [FleetRef: (finished: Bool, generation: Int, completedAt: Double?)] {
+        records.mapValues { ($0.finished, $0.generation, $0.completedAt) }
+    }
+
+    /// The completion generation of each thread whose Done row was seen here (`select`, `markSeen`).
+    public var seenGenerations: [FleetRef: Int] { seen }
+
     /// Pinning again moves nothing; unpinning then pinning puts it last, as on the Mac.
     public mutating func pin(_ ref: FleetRef) {
         if !pins.contains(ref) { pins.append(ref) }

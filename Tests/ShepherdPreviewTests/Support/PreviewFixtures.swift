@@ -6,6 +6,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import SwiftUI
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 // MARK: Workspace
 

@@ -9,6 +9,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Triggered automations on the Mac: the Automations page as an inbox (a GitHub trigger paused by
 /// an error with an event waiting, a schedule, a host's), the editor's Schedule (an interval and

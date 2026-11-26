@@ -6,6 +6,7 @@ import ShepherdTestKit
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The Design tool's pure rules: which boards get a live view and which views make room, the
 /// Designs page's cards, the canvas's boards from a canvas.json, the sidebar's Designs

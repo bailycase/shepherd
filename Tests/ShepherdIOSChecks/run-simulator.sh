@@ -181,7 +181,7 @@ sources=()
 while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance App/NotificationContent App/FilesShared -name '*.swift' ! -path 'App/NotificationContent/NotificationViewController.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
     -j 4 -Onone -D DEBUG -I "$products" \
-    "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \
+    "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdSidebar.o" "$products/ShepherdUI.o" \
     "$products/SwiftTerm.o" "$products/DesignSurfaceKit.o" \
     "${sources[@]}" Sources/ShepherdApp/Thread/ComposerMentions.swift Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift Tests/ShepherdIOSChecks/FixtureHost.swift \
     Tests/ShepherdIOSChecks/Fixtures/*.swift Tests/ShepherdTestSupport/MarkdownFixtures.swift \

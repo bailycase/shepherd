@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SystemConfiguration
+#endif
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -9,7 +11,7 @@ import ShepherdUI
 // This Mac's state and every connected host's, never in a view's body.
 
 /// A page the main column shows in place of a thread.
-enum MainDestination: Hashable, CaseIterable {
+public enum MainDestination: Hashable, CaseIterable, Sendable {
     /// NavNewThread: ⌘N or the first destination.
     case newThread
     /// NavDesigns (Settings ▸ Experiments ▸ Design tool).
@@ -36,7 +38,7 @@ enum MainDestination: Hashable, CaseIterable {
 
 /// What a Needs you, Pinned or Recents row opens: an agent's thread, or a design (its canvas and
 /// its agent's chat).
-enum SidebarRowID: Hashable {
+public enum SidebarRowID: Hashable, Sendable {
     case local(AgentID)
     case remote(RemoteAgentRef)
     case design(DesignID)
@@ -47,13 +49,13 @@ enum SidebarRowID: Hashable {
     case dispatch(UUID)
 
     /// The dispatch a row names, when it has no thread.
-    var dispatchID: UUID? {
+    public var dispatchID: UUID? {
         if case .dispatch(let id) = self { return id }
         return nil
     }
 
     /// The agent the row names; nil for a design or a dispatch with no thread.
-    var agentID: AgentID? {
+    public var agentID: AgentID? {
         switch self {
         case .local(let id): id
         case .remote(let ref): ref.agentID
@@ -63,63 +65,100 @@ enum SidebarRowID: Hashable {
 }
 
 /// One row of Needs you, Pinned or Recents, as the row draws it and its context menu needs it.
-struct SidebarListRow: Identifiable, Equatable {
-    let id: SidebarRowID
-    let title: String
-    var leading: SHSidebarRow.Leading
-    var accessory: SHSidebarRow.Accessory
-    var hasGoal = false
-    var selected = false
+public struct SidebarListRow: Identifiable, Equatable {
+    public let id: SidebarRowID
+    public let title: String
+    public var leading: SHSidebarRow.Leading
+    public var accessory: SHSidebarRow.Accessory
+    public var hasGoal = false
+    public var selected = false
     /// One extra project level in the project sidebar, never in Activity.
-    var projectDepth = 0
-    var inChildProject: Bool { projectDepth > 0 }
+    public var projectDepth = 0
+    public var inChildProject: Bool { projectDepth > 0 }
     /// A thread the Activity sidebar can pin: not an automation run or a design. Only the
     /// Activity lists say so, so the project tree's menus offer no Pin.
-    var pinnable = false
+    public var pinnable = false
     /// A pinned thread stays in Pinned, including while it waits on the user.
-    var pinned = false
-    var section: SidebarActivitySection = .recents
+    public var pinned = false
+    public var section: SidebarActivitySection = .recents
     /// App-owned completion generation, unchanged by sends or repeated snapshots.
-    var completion: Int?
+    public var completion: Int?
     /// A remote thread whose host is not connected: its last known state, dimmed, and its menu
     /// has nothing to offer until the host is back.
-    var offline = false
+    public var offline = false
     /// The title, the worktree's branch and its pull request.
-    var help: String
+    public var help: String
     /// "Fix the login, worktree, running, on orbit"; ", pinned" follows a pinned thread's.
-    var accessibilityLabel: String
+    public var accessibilityLabel: String
     /// A worktree agent: its menu offers Delete Worktree Agent.
-    let worktree: Bool
+    public let worktree: Bool
     /// A run of one of This Mac's automations: its menu offers Stop or Run Now.
-    let automation: AutomationID?
+    public let automation: AutomationID?
     /// That run is going (its menu offers Stop).
-    let automationLive: Bool
+    public let automationLive: Bool
     /// A triggered automation's run thread: the space tree folds it under its automation.
-    var runGroup: AutomationID? = nil
+    public var runGroup: AutomationID? = nil
     /// Activity folds it under this active automation's row in Automations.
-    var foldedUnder: AutomationKey? = nil
+    public var foldedUnder: AutomationKey? = nil
     /// This Mac's thread's pull request (`ShepherdViewModel.pullRequestLinks`).
-    var pullRequest: SHSidebarRow.Badge? = nil
+    public var pullRequest: SHSidebarRow.Badge? = nil
     /// A thread the thread above it in this list started, here or on another Mac (`SidebarSent.arrange`): drawn a level in, with an elbow.
-    var fleetNested = false
+    public var fleetNested = false
     /// The thread that sent a nested row, at the top of its tree; nil for a row that isn't nested.
-    var sentRoot: SidebarRowID? = nil
+    public var sentRoot: SidebarRowID? = nil
     /// The second line: "3 sent · 1 back" on a sender, "mini · delivering" on a thread it sent, "sent by <thread>" on one that is back.
-    var subtitle: SHSidebarRow.Subtitle? = nil
+    public var subtitle: SHSidebarRow.Subtitle? = nil
     /// A sender of more than two threads folds them under its chevron (`SidebarSent`).
-    var fold: SidebarFold? = nil
+    public var fold: SidebarFold? = nil
+
+    public init(id: SidebarRowID, title: String, leading: SHSidebarRow.Leading, accessory: SHSidebarRow.Accessory, hasGoal: Bool = false,
+                selected: Bool = false, projectDepth: Int = 0, pinnable: Bool = false, pinned: Bool = false,
+                section: SidebarActivitySection = .recents, completion: Int? = nil, offline: Bool = false, help: String,
+                accessibilityLabel: String, worktree: Bool, automation: AutomationID?, automationLive: Bool,
+                runGroup: AutomationID? = nil, foldedUnder: AutomationKey? = nil, pullRequest: SHSidebarRow.Badge? = nil,
+                fleetNested: Bool = false, sentRoot: SidebarRowID? = nil, subtitle: SHSidebarRow.Subtitle? = nil, fold: SidebarFold? = nil) {
+        self.id = id
+        self.title = title
+        self.leading = leading
+        self.accessory = accessory
+        self.hasGoal = hasGoal
+        self.selected = selected
+        self.projectDepth = projectDepth
+        self.pinnable = pinnable
+        self.pinned = pinned
+        self.section = section
+        self.completion = completion
+        self.offline = offline
+        self.help = help
+        self.accessibilityLabel = accessibilityLabel
+        self.worktree = worktree
+        self.automation = automation
+        self.automationLive = automationLive
+        self.runGroup = runGroup
+        self.foldedUnder = foldedUnder
+        self.pullRequest = pullRequest
+        self.fleetNested = fleetNested
+        self.sentRoot = sentRoot
+        self.subtitle = subtitle
+        self.fold = fold
+    }
 }
 
 /// A sender's chevron, on a sender of more than two sent threads: where its open state is remembered (`ShepherdViewModel.collapsedProjects`, with
 /// the other chevrons'), and whether it is open now (`[SidebarListRow].foldingSent`). Selecting a sender or one of its threads opens it.
-struct SidebarFold: Equatable {
-    let key: String
-    var open = false
+public struct SidebarFold: Equatable {
+    public let key: String
+    public var open = false
+
+    public init(key: String, open: Bool = false) {
+        self.key = key
+        self.open = open
+    }
 }
 
 extension [SidebarListRow] {
     /// The rows with each sender's fold set from `open` (the remembered keys), and the threads under a closed sender left out.
-    func foldingSent(open: Set<String>) -> [SidebarListRow] {
+    public func foldingSent(open: Set<String>) -> [SidebarListRow] {
         guard contains(where: { $0.fold != nil }) else { return self }
         var closed: Set<SidebarRowID> = []
         var rows: [SidebarListRow] = []
@@ -139,89 +178,115 @@ extension [SidebarListRow] {
 /// An active automation's row in Activity's Automations group (the user's request: one row per automation, as Designs
 /// and Projects list theirs): This Mac's or a connected host's enabled schedule or GitHub automation, or a manual
 /// one while its watcher's run is live. Its run threads fold under it.
-struct SidebarAutomation: Identifiable, Equatable {
-    let key: AutomationKey
-    let name: String
+public struct SidebarAutomation: Identifiable, Equatable {
+    public let key: AutomationKey
+    public let name: String
     /// "2 running", "asked you", "paused", "next 09:00", "watching".
-    let word: String
-    let tone: AgentState?
+    public let word: String
+    public let tone: AgentState?
     /// A run asks you (it is in Needs you too).
-    let attention: Bool
-    let unread: Int
+    public let attention: Bool
+    public let unread: Int
     /// A schedule or GitHub trigger starts its runs (its menu offers Pause or Resume trigger).
-    let triggered: Bool
+    public let triggered: Bool
     /// Its trigger is paused, by the user or an error (Resume trigger).
-    let paused: Bool
+    public let paused: Bool
     /// A manual automation's watcher run is live (Stop).
-    let live: Bool
+    public let live: Bool
     /// A Project owns it: its Project's settings change it.
-    let project: Bool
+    public let project: Bool
     /// Run threads folded under it.
-    let runs: Int
-    let help: String
-    let accessibilityLabel: String
-    var selected = false
+    public let runs: Int
+    public let help: String
+    public let accessibilityLabel: String
+    public var selected = false
 
-    var id: AutomationKey { key }
+    public var id: AutomationKey { key }
+
+    public init(key: AutomationKey, name: String, word: String, tone: AgentState?, attention: Bool, unread: Int, triggered: Bool,
+                paused: Bool, live: Bool, project: Bool, runs: Int, help: String, accessibilityLabel: String, selected: Bool = false) {
+        self.key = key
+        self.name = name
+        self.word = word
+        self.tone = tone
+        self.attention = attention
+        self.unread = unread
+        self.triggered = triggered
+        self.paused = paused
+        self.live = live
+        self.project = project
+        self.runs = runs
+        self.help = help
+        self.accessibilityLabel = accessibilityLabel
+        self.selected = selected
+    }
 }
 
 /// What an active automation's runs add up to while the lists are derived.
-struct AutomationTally {
-    let automation: Automation
+public struct AutomationTally {
+    public let automation: Automation
     /// 0 for This Mac, then each host in order.
-    let host: Int
-    let hostName: String?
-    var running = 0
-    var asking = false
+    public let host: Int
+    public let hostName: String?
+    public var running = 0
+    public var asking = false
     /// A manual automation's watcher run is live.
-    var live = false
-    var latest: Double = -1
-    var runs = 0
+    public var live = false
+    public var latest: Double = -1
+    public var runs = 0
+
+    public init(automation: Automation, host: Int, hostName: String?) {
+        self.automation = automation
+        self.host = host
+        self.hostName = hostName
+    }
 
     /// Asking you, then running, then the rest.
-    var rank: Int { asking ? 0 : running > 0 || live ? 1 : 2 }
+    public var rank: Int { asking ? 0 : running > 0 || live ? 1 : 2 }
 }
 
 extension Automation {
     /// On, with a schedule or GitHub trigger that starts its runs (a Project's own fire into the Project instead).
-    var activeTrigger: Bool { enabled && isTriggered && projectID == nil }
+    public var activeTrigger: Bool { enabled && isTriggered && projectID == nil }
 }
 
 /// Activity groups in display order, before selection and ⌘-digit hints are applied.
-struct SidebarLists: Equatable {
+public struct SidebarLists: Equatable {
+    public init() {}
+
     /// Unpinned threads waiting on the user, most recently active first.
-    var needsYou: [SidebarListRow] = []
+    public var needsYou: [SidebarListRow] = []
     /// The threads the user pinned, in the order they pinned them (oldest first).
-    var pinned: [SidebarListRow] = []
-    var working: [SidebarListRow] = []
+    public var pinned: [SidebarListRow] = []
+    public var working: [SidebarListRow] = []
     /// Finished, unseen threads; reading one keeps it here until another thread opens.
-    var done: [SidebarListRow] = []
+    public var done: [SidebarListRow] = []
     /// Idle and seen threads, most recently active first (`Agent.lastActiveAt`).
-    var recents: [SidebarListRow] = []
-    var designs: [SidebarListRow] = []
+    public var recents: [SidebarListRow] = []
+    public var designs: [SidebarListRow] = []
     /// The run threads folded under an active automation (`foldedUnder`), in `automationRows` order and most recently
     /// active first under each; one waiting on you is in Needs you instead.
-    var automations: [SidebarListRow] = []
+    public var automations: [SidebarListRow] = []
     /// Active automations: a run asking you first, then running, then the rest by their latest run, then by name.
-    var automationRows: [SidebarAutomation] = []
+    public var automationRows: [SidebarAutomation] = []
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
-    var activity: [SidebarListRow] = []
+    public var activity: [SidebarListRow] = []
     /// Next and Review Next read the whole sidebar.
-    var supervisionQueues = SupervisionQueues<SidebarRowID>(blocked: [], unseenDone: [])
+    public var supervisionQueues = SupervisionQueues<SidebarRowID>(blocked: [], unseenDone: [])
 
-    var all: [SidebarListRow] { sections.flatMap(\.rows) }
+    public var all: [SidebarListRow] { sections.flatMap(\.rows) }
 
     /// Needs you, Designs and Automations have no digit; folded groups and the threads under a closed sender have no
     /// visible hint or target. The badges and ⌘1–9 both read this.
-    var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
+    public var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
 
-    func shortcutRows(collapsed: Set<SidebarActivitySection>, openFolds: Set<String> = []) -> [SidebarListRow] {
+    public func shortcutRows(collapsed: Set<SidebarActivitySection>, openFolds: Set<String> = []) -> [SidebarListRow] {
         sections.filter { ![.needsYou, .designs, .automations].contains($0.section) && !collapsed.contains($0.section) }
             .flatMap { $0.rows.foldingSent(open: openFolds) }.filter { $0.id.dispatchID == nil }
     }
 
-    func presented(selected: SidebarRowID?, shortcuts: Bool,
+    public func presented(selected: SidebarRowID?, shortcuts: Bool,
                    collapsed: Set<SidebarActivitySection> = [], openFolds: Set<String> = []) -> SidebarLists {
         var lists = self
         for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents] {
@@ -241,62 +306,101 @@ struct SidebarLists: Equatable {
 }
 
 /// What the sidebar's lists are derived from: This Mac's state, and each connected host's.
-struct SidebarSource: Equatable {
-    struct Host: Equatable {
-        var id: UUID
-        var name: String
-        var state: ShepherdState
+public struct SidebarSource: Equatable {
+    public struct Host: Equatable {
+        public var id: UUID
+        public var name: String
+        public var state: ShepherdState
         /// Not connected: `state` is what it last sent this launch.
-        var offline = false
+        public var offline = false
         /// The Mac's fleet host id (`helloOk.hostID`), which `DispatchedFrom.hostID` names; nil before it has said it.
-        var fleetID: UUID?
+        public var fleetID: UUID?
+
+        public init(id: UUID, name: String, state: ShepherdState, offline: Bool = false, fleetID: UUID? = nil) {
+            self.id = id
+            self.name = name
+            self.state = state
+            self.offline = offline
+            self.fleetID = fleetID
+        }
     }
 
-    var local: ShepherdState
+    public var local: ShepherdState
     /// This Mac's own fleet host id, for a thread whose sender is one of This Mac's.
-    var localFleetID: UUID?
-    var openingTurns: Set<AgentID> = []
-    var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
+    public var localFleetID: UUID?
+    public var openingTurns: Set<AgentID> = []
+    public var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
     /// This Mac's agents whose last turn ended in an error.
-    var failedTurns: Set<AgentID> = []
+    public var failedTurns: Set<AgentID> = []
     /// This Mac's agents whose pi stopped (before it served or on its own after), waiting for Retry.
-    var cannotStart: Set<AgentID> = []
+    public var cannotStart: Set<AgentID> = []
     /// Of those, the ones that stopped because nothing signs in for their model: Needs you.
-    var notSignedIn: Set<AgentID> = []
+    public var notSignedIn: Set<AgentID> = []
     /// This Mac's restored agents the first launch's copy from your pi holds.
-    var waiting: Set<AgentID> = []
+    public var waiting: Set<AgentID> = []
     /// When each of This Mac's agents entered its status: a running row's elapsed time.
-    var statusSince: [AgentID: Date] = [:]
+    public var statusSince: [AgentID: Date] = [:]
     /// Each automation's latest run while it is open, or ended unsettled with its agent kept (`AutomationRun.isLive`).
-    var openRuns: [AutomationID: AutomationRun] = [:]
+    public var openRuns: [AutomationID: AutomationRun] = [:]
     /// This Mac's triggered run threads nobody opened since they settled or asked.
-    var unreadRuns: Set<AgentID> = []
+    public var unreadRuns: Set<AgentID> = []
     /// This Mac's triggered automations whose trigger is paused (or all are).
-    var pausedAutomations: Set<AutomationID> = []
+    public var pausedAutomations: Set<AutomationID> = []
     /// Every host's trigger status as last read (This Mac's under `PageHost.localID`).
-    var triggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:]
+    public var triggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:]
     /// Pause all triggers on This Mac.
-    var triggersAllPaused = false
+    public var triggersAllPaused = false
     /// Runs not opened since they settled or asked, by automation, as each host's run log was last read.
-    var unreadRunCounts: [AutomationKey: Int] = [:]
+    public var unreadRunCounts: [AutomationKey: Int] = [:]
     /// Each host's automations' latest run as last read (absent until the Automations page reads them).
-    var hostRuns: [AutomationKey: AutomationRun] = [:]
+    public var hostRuns: [AutomationKey: AutomationRun] = [:]
     /// Every configured host, in configured order; one that is offline lists what it last sent.
-    var hosts: [Host] = []
+    public var hosts: [Host] = []
     /// Settings ▸ Experiments ▸ Design tool: This Mac's designs have their own group. Their agents
     /// never are: a design's chat is its agent's thread.
-    var designs = false
+    public var designs = false
     /// This Mac's spaces whose folder is gone (moved, renamed or deleted): no new threads.
-    var missingSpaces: Set<SpaceID> = []
+    public var missingSpaces: Set<SpaceID> = []
     /// This Mac's threads' pull requests.
-    var pullRequests: [AgentID: SidebarPullRequest] = [:]
+    public var pullRequests: [AgentID: SidebarPullRequest] = [:]
     /// What this Mac sent to others: the dispatches that are on their way or going, and what sentences about them need.
-    var fleet = SidebarFleet()
+    public var fleet = SidebarFleet()
+
+    public init(local: ShepherdState, localFleetID: UUID? = nil, openingTurns: Set<AgentID> = [],
+                completions: [SidebarRowID: SidebarCompletions.Record] = [:], failedTurns: Set<AgentID> = [],
+                cannotStart: Set<AgentID> = [], notSignedIn: Set<AgentID> = [], waiting: Set<AgentID> = [],
+                statusSince: [AgentID: Date] = [:], openRuns: [AutomationID: AutomationRun] = [:], unreadRuns: Set<AgentID> = [],
+                pausedAutomations: Set<AutomationID> = [], triggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:],
+                triggersAllPaused: Bool = false, unreadRunCounts: [AutomationKey: Int] = [:],
+                hostRuns: [AutomationKey: AutomationRun] = [:], hosts: [Host] = [], designs: Bool = false,
+                missingSpaces: Set<SpaceID> = [], pullRequests: [AgentID: SidebarPullRequest] = [:], fleet: SidebarFleet = SidebarFleet()) {
+        self.local = local
+        self.localFleetID = localFleetID
+        self.openingTurns = openingTurns
+        self.completions = completions
+        self.failedTurns = failedTurns
+        self.cannotStart = cannotStart
+        self.notSignedIn = notSignedIn
+        self.waiting = waiting
+        self.statusSince = statusSince
+        self.openRuns = openRuns
+        self.unreadRuns = unreadRuns
+        self.pausedAutomations = pausedAutomations
+        self.triggerStatuses = triggerStatuses
+        self.triggersAllPaused = triggersAllPaused
+        self.unreadRunCounts = unreadRunCounts
+        self.hostRuns = hostRuns
+        self.hosts = hosts
+        self.designs = designs
+        self.missingSpaces = missingSpaces
+        self.pullRequests = pullRequests
+        self.fleet = fleet
+    }
 
     /// Child work affects sidebar presentation, never the parent's actual turn status. Ignore tab
     /// layout and keep only whether each checkout has changes: Review Next needs that flag, not the
     /// exact file count.
-    static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
+    public static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
         state.tabs = []
         for index in state.agents.indices {
@@ -314,22 +418,28 @@ struct SidebarSource: Equatable {
 }
 
 /// The threads this Mac started on other Macs, as the sidebar reads them (`FleetPageModel.sidebarFleet`).
-struct SidebarFleet: Equatable {
+public struct SidebarFleet: Equatable {
     /// Every dispatch but a move, newest first (a move is its thread's own card).
-    var records: [FleetDispatchRecord] = []
+    public var records: [FleetDispatchRecord] = []
     /// This Mac and its peers by fleet id: a dispatch names the Mac it asked for by id.
-    var macs: [UUID: String] = [:]
+    public var macs: [UUID: String] = [:]
     /// Failed threads the person deleted on this Mac: not drawn (`ShepherdViewModel.dismissedDispatches`).
-    var dismissed: Set<UUID> = []
+    public var dismissed: Set<UUID> = []
 
-    func record(_ id: UUID) -> FleetDispatchRecord? { records.first { $0.id == id } }
+    public init(records: [FleetDispatchRecord] = [], macs: [UUID: String] = [:], dismissed: Set<UUID> = []) {
+        self.records = records
+        self.macs = macs
+        self.dismissed = dismissed
+    }
+
+    public func record(_ id: UUID) -> FleetDispatchRecord? { records.first { $0.id == id } }
 }
 
-enum SidebarDerivation {
+public enum SidebarDerivation {
     private typealias Entry = (row: SidebarListRow, pin: PinnedThread?, needsYou: Bool, key: Double, host: Int, index: Int)
 
     /// Exclusive activity groups. The same source, pins and seen generations give the same lists.
-    @MainActor static func lists(_ source: SidebarSource, pins: SidebarPins = SidebarPins(),
+    @MainActor public static func lists(_ source: SidebarSource, pins: SidebarPins = SidebarPins(),
                                 seen: [SidebarRowID: Int] = [:]) -> SidebarLists {
         SHRenderProbe.tick("sidebar.lists")
         let pinned = Set(pins.threads)
@@ -583,7 +693,7 @@ enum SidebarDerivation {
 
     /// The row of the thread that sent `agent` to another Mac (`Agent.dispatchedFrom`): This Mac's, or a connected host's. Nil for a
     /// thread the person started, or whose sender is on a Mac this one isn't connected to.
-    static func fleetSender(of agent: Agent, _ source: SidebarSource) -> SidebarRowID? {
+    public static func fleetSender(of agent: Agent, _ source: SidebarSource) -> SidebarRowID? {
         guard let from = agent.dispatchedFrom, let sender = from.agentID else { return nil }
         if let local = source.localFleetID, from.hostID == local { return .local(sender) }
         return source.hosts.first { $0.fleetID == from.hostID }.map { .remote(RemoteAgentRef(hostID: $0.id, agentID: sender)) }
@@ -591,13 +701,13 @@ enum SidebarDerivation {
 
     /// The short reason a Needs you row gives: the agent's own word or two for its question
     /// ("retention?"), else the question cut short; else "ASK".
-    static func reason(question: String?, short: String? = nil) -> String {
+    public static func reason(question: String?, short: String? = nil) -> String {
         if let question = question.flatMap(nonEmpty) { return shortened(short.flatMap(nonEmpty) ?? question) }
         return "ASK"
     }
 
     /// One line, at most `SHSidebarMetrics.reasonLength` characters (`NeedsYouReason`).
-    static func shortened(_ text: String) -> String {
+    public static func shortened(_ text: String) -> String {
         NeedsYouReason.shortened(text, limit: SHSidebarMetrics.reasonLength)
     }
 
@@ -606,7 +716,7 @@ enum SidebarDerivation {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?,
+    public static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?,
                          needsYou: Bool, failed: Bool, cannotStart: Bool = false, notSignedIn: Bool = false, waiting: Bool = false,
                          opening: Bool = false, since: Date?) -> SidebarListRow {
         var agent = agent
@@ -645,7 +755,7 @@ enum SidebarDerivation {
                 word = failed ? "failed" : "done"
             }
         } else {
-            leading = .dot(failed ? .failed : AgentState(agent.status))
+            leading = .dot(failed ? .failed : AgentState(sidebarStatus: agent.status))
             // No dot says it failed any more: the word does.
             accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none
                 : failed ? .text("failed", tone: .failed) : .none
@@ -667,7 +777,7 @@ enum SidebarDerivation {
     }
 
     /// An active automation's row: its bolt, name and one word, from what its runs add up to and its trigger's status.
-    static func automationRow(_ key: AutomationKey, _ tally: AutomationTally, status: AutomationTriggerStatus?,
+    public static func automationRow(_ key: AutomationKey, _ tally: AutomationTally, status: AutomationTriggerStatus?,
                               allPaused: Bool, unread: Int, showHost: Bool = false) -> SidebarAutomation {
         let automation = tally.automation
         let (word, tone) = automationWord(automation, running: tally.running, asking: tally.asking, status: status, allPaused: allPaused)
@@ -688,7 +798,7 @@ enum SidebarDerivation {
     /// The word an active automation's row ends with, in the mono of a design's board count: a run asking you, then how
     /// many run, then a paused or retrying trigger (`failed` when an error paused it), then when a schedule runs next
     /// ("next 09:00", on the host's clock) or "watching" for GitHub.
-    static func automationWord(_ automation: Automation, running: Int, asking: Bool, status: AutomationTriggerStatus?,
+    public static func automationWord(_ automation: Automation, running: Int, asking: Bool, status: AutomationTriggerStatus?,
                                allPaused: Bool) -> (word: String, tone: AgentState?) {
         if asking { return ("asked you", .attention) }
         guard automation.isTriggered else { return ("running", .running) }
@@ -705,7 +815,7 @@ enum SidebarDerivation {
 
     /// A design in its own sidebar group: the nib and its board count.
     private static func designRow(_ design: Design) -> SidebarListRow {
-        let boards = DesignsPageModel.boardsText(design.boardCount ?? 0)
+        let boards = RemoteDesignPresentation.boardsText(design.boardCount ?? 0)
         return SidebarListRow(
             id: .design(design.id), title: design.name, leading: .glyph("pencil.tip", attention: false),
             accessory: .text(boards), section: .designs, help: design.name, accessibilityLabel: "\(design.name), design, \(boards)",
@@ -713,7 +823,7 @@ enum SidebarDerivation {
     }
 
     /// `folded`: it sits under its automation in Automations (else `automation` says).
-    static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
+    public static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
                           needsYou: Bool, folded: Bool? = nil) -> SidebarListRow {
         let leading: SHSidebarRow.Leading
         let accessory: SHSidebarRow.Accessory
@@ -723,7 +833,7 @@ enum SidebarDerivation {
             accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason))
             word = "needs you"
         } else {
-            leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))
+            leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(sidebarStatus: agent.status))
             // A Mac of the fleet is tagged as the boards draw it: "mini", not "Mac mini".
             accessory = .tag(host.fleetID == nil ? host.name : FleetWherePicker.tagName(host.name))
             word = AgentRow.statusWord(agent.status)
@@ -753,19 +863,29 @@ enum SidebarDerivation {
     // MARK: Destinations
 
     /// One destination row, in the order they draw.
-    struct Destination: Equatable, Identifiable {
-        enum Target: Hashable {
+    public struct Destination: Equatable, Identifiable {
+        public enum Target: Hashable {
             case page(MainDestination)
         }
 
-        let target: Target
-        let title: String
-        let icon: SHSidebarDestination.Icon
-        let selected: Bool
-        let child: Bool
-        let trailing: SHSidebarDestination.Trailing
+        public let target: Target
+        public let title: String
+        public let icon: SHSidebarDestination.Icon
+        public let selected: Bool
+        public let child: Bool
+        public let trailing: SHSidebarDestination.Trailing
 
-        var id: Target { target }
+        public var id: Target { target }
+
+        public init(target: Target, title: String, icon: SHSidebarDestination.Icon, selected: Bool, child: Bool,
+                    trailing: SHSidebarDestination.Trailing) {
+            self.target = target
+            self.title = title
+            self.icon = icon
+            self.selected = selected
+            self.child = child
+            self.trailing = trailing
+        }
     }
 
     /// New thread (with its chord), Designs while the Design tool is on (selected on its page and on New design), Automations
@@ -773,11 +893,11 @@ enum SidebarDerivation {
     /// as every ProjectLead board draws them. Hosts, Design systems and Extensions have no sidebar row: the command palette
     /// opens them ("Open Hosts", "Open Design systems", "Open Extensions"), Settings ▸ Remote and Settings ▸ Extensions hold the
     /// same settings, and a notification still opens Hosts. Archive is not built, so it is not shown.
-    static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false,
+    public static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false,
                              automations: SHSidebarDestination.Trailing = .none, forge: Int = 0) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
-                        child: false, trailing: .keycaps(newThreadChord)),
+                        child: false, trailing: newThreadChord.isEmpty ? .none : .keycaps(newThreadChord)),
         ]
         if designs {
             rows.append(Destination(target: .page(.designs), title: "Designs", icon: .symbol("pencil.tip"),
@@ -793,7 +913,7 @@ enum SidebarDerivation {
 
     /// The Automations row's trailing: a trigger stopped by an error ("1 paused"), else runs
     /// nobody opened, else "paused" while Pause all triggers holds them all.
-    static func automationsTrailing(runs: [AutomationID: [AutomationRun]], statuses: [AutomationID: AutomationTriggerStatus],
+    public static func automationsTrailing(runs: [AutomationID: [AutomationRun]], statuses: [AutomationID: AutomationTriggerStatus],
                                     allPaused: Bool) -> SHSidebarDestination.Trailing {
         let failing = statuses.values.filter { $0.state == .paused && $0.reason != nil && !$0.allPaused }.count
         if failing > 0, !allPaused { return .alert("\(failing) paused") }
@@ -803,7 +923,7 @@ enum SidebarDerivation {
     }
 
     /// What VoiceOver reads for a destination: its title and what its trailing says.
-    static func accessibilityLabel(_ row: Destination) -> String {
+    public static func accessibilityLabel(_ row: Destination) -> String {
         switch row.trailing {
         case .count(let count): "\(row.title), \(count) \(row.target == .page(.forge) ? "need you" : "unread")"
         case .alert(let text): "\(row.title), \(text)"
@@ -814,14 +934,16 @@ enum SidebarDerivation {
     // MARK: Footer
 
     /// The footer's second line: "This Mac · demo-mac".
-    static func footerDetail(computerName: String?) -> String {
+    public static func footerDetail(computerName: String?) -> String {
         let name = computerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? "This Mac" : "This Mac · \(name)"
     }
 
+#if os(macOS)
     /// The Mac's user and computer, read once.
-    @MainActor static let footer: (name: String, detail: String) = {
+    @MainActor public static let footer: (name: String, detail: String) = {
         let computer = SCDynamicStoreCopyComputerName(nil, nil) as String?
         return (NSFullUserName(), footerDetail(computerName: computer))
     }()
+#endif
 }

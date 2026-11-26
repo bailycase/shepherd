@@ -4,6 +4,7 @@ import ShepherdSessions
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The old folder concept reads "Space" everywhere a person sees it, so the new Projects feature
 /// can own "Project". Stored values, protocol names and

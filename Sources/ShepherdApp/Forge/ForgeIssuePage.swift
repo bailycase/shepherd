@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// An issue's page (IssueReview, IssueStarted): its labels, title, body and Activity; the rail's
 /// Hand it to an agent card until a thread works on it, then the linked thread; Leave a comment.

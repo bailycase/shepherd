@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The Mac's automation triggers as drawn: what the editor adds to the shared form (speed, a
 /// changed rule's anchor), the line under a triggered automation's name, a host's inbox, the

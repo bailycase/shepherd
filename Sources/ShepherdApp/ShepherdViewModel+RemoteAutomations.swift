@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // A remote host's automations: the shared presentation of them, their runs, and the changes
 // that go to the host (`RemoteAutomationRequest`), which applies the same rules as its own. A

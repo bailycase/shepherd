@@ -7,6 +7,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The Automations page's table is a long list too: it builds the
 /// rows on screen, and one automation changing or the selection moving redraws only the rows

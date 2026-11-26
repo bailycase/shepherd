@@ -6,6 +6,7 @@ import ShepherdTestKit
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Design systems in the app, as pure rules: the Designs page's systems grid (NavDesigns), a
 /// system's page (DZSystem), a component's specimen board, New design's system card (DZStart),

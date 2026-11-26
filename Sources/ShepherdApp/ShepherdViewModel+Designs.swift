@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import ShepherdSidebar
 
 // The Design tool (Settings ▸ Experiments ▸ Design tool): the Designs page, New design, and
 // opening a design. A design's screen is its agent's layout (`DesignLayoutView`): the canvas

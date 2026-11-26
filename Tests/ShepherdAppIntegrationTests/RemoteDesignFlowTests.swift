@@ -9,6 +9,7 @@ import ShepherdTestSupport
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A host's designs on this Mac (`designs.v1`): listed on the Designs page under the host's
 /// name, opened on the same canvas beside the design agent's chat on the host, drawn here from

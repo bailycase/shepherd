@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A Project's coordinator is its conversation (a thread the Project owns), never an ordinary agent: it must
 /// reach no producer that lists, pins, notifies about or completes ordinary threads.

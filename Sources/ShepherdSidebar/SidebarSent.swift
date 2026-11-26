@@ -10,15 +10,15 @@ import ShepherdUI
 // never in a view's body.
 
 /// Who started a thread: what the tree needs to nest its row.
-struct SidebarSentInfo: Equatable {
+public struct SidebarSentInfo: Equatable {
     /// The row of the thread that started it, when this Mac can name it.
-    var sender: SidebarRowID?
+    public var sender: SidebarRowID?
     /// When it was started, in epoch milliseconds: a thread lists the ones it started in this order.
-    var at: Double
+    public var at: Double
 }
 
 extension AgentState {
-    init(_ mark: FleetSentStage.Mark) {
+    public init(_ mark: FleetSentStage.Mark) {
         switch mark {
         case .hollow: self = .idle
         case .running: self = .running
@@ -29,7 +29,7 @@ extension AgentState {
 }
 
 extension SHSidebarRow.Subtitle.Tone {
-    init(_ mark: FleetSentStage.Mark?) {
+    public init(_ mark: FleetSentStage.Mark?) {
         switch mark {
         case .running?: self = .running
         case .failed?: self = .failed
@@ -40,7 +40,7 @@ extension SHSidebarRow.Subtitle.Tone {
 
 extension SidebarDerivation {
     /// The tree facts of a thread another Mac or thread started; nil for any other. `host` is the connected host it runs on, nil for This Mac.
-    static func sentInfo(of agent: Agent, host: UUID? = nil, _ source: SidebarSource) -> SidebarSentInfo? {
+    public static func sentInfo(of agent: Agent, host: UUID? = nil, _ source: SidebarSource) -> SidebarSentInfo? {
         if let started = agent.startedBy {
             return SidebarSentInfo(sender: startedByRow(started.agentID, near: host, source), at: started.at)
         }
@@ -50,7 +50,7 @@ extension SidebarDerivation {
 
     /// The row of the thread that started one with `agent_spawn`: on the same host, else wherever it is now (either may have moved to another
     /// Mac since; a thread keeps its id when it moves). Nil when no host this Mac sees has it.
-    static func startedByRow(_ id: AgentID, near host: UUID?, _ source: SidebarSource) -> SidebarRowID? {
+    public static func startedByRow(_ id: AgentID, near host: UUID?, _ source: SidebarSource) -> SidebarRowID? {
         if let host, source.hosts.first(where: { $0.id == host })?.state.agents.contains(where: { $0.id == id }) == true {
             return .remote(RemoteAgentRef(hostID: host, agentID: id))
         }
@@ -61,7 +61,7 @@ extension SidebarDerivation {
     /// The threads this Mac started on other Macs that don't exist yet, and the ones that failed before they did: their own rows, with their facts. A
     /// thread that exists among `threads` is drawn as itself. One that is starting reads as a normal thread's row in Working; one that failed is a finished
     /// thread in Done with its reason in red.
-    static func dispatchRows(_ source: SidebarSource, threads: Set<UUID>, now: Date = Date()) -> [(row: SidebarListRow, info: SidebarSentInfo, key: Double, space: SpaceID?)] {
+    public static func dispatchRows(_ source: SidebarSource, threads: Set<UUID>, now: Date = Date()) -> [(row: SidebarListRow, info: SidebarSentInfo, key: Double, space: SpaceID?)] {
         let pending: Set<FleetDispatchState> = [.placing, .waitingRoom, .waitingWake, .heldLimit, .heldRestart, .preparing, .failed]
         let dayAgo = (now.timeIntervalSince1970 - 86_400) * 1000
         return source.fleet.records.compactMap { record in
@@ -87,9 +87,9 @@ extension SidebarDerivation {
     }
 }
 
-enum SidebarSent {
+public enum SidebarSent {
     /// The key a sender's open state is remembered under (`ShepherdViewModel.collapsedProjects`, with the other chevrons').
-    static func foldKey(_ row: SidebarRowID) -> String {
+    public static func foldKey(_ row: SidebarRowID) -> String {
         switch row {
         case .local(let id): "sent.open:local:\(id.rawValue)"
         case .remote(let ref): "sent.open:remote:\(ref.hostID.uuidString):\(ref.agentID.rawValue)"
@@ -100,14 +100,14 @@ enum SidebarSent {
     }
 
     /// More than this many threads nested under one thread fold under it until it is opened or one of them is on screen.
-    static let foldsAbove = 2
+    public static let foldsAbove = 2
 
     /// Places every thread another thread started among `lists` (the rows of one or more groups, in order): under the thread that started it while it
     /// works or asks, and in its own group, as the thread it is, once it is finished or when that thread isn't among the rows. One that asks you stays
     /// in Needs you as well. Activity only: the Spaces tree keeps every thread in its own space.
     /// `working` is the index of the Working list: a sender whose sent thread is working moves there with it from Done or Recents,
     /// so the two always sit together and live work is always under Working. A sender that is pinned or asks you stays where it is.
-    static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo], working: Int? = nil) {
+    public static func arrange(_ lists: inout [[SidebarListRow]], by infos: [SidebarRowID: SidebarSentInfo], working: Int? = nil) {
         guard !infos.isEmpty else { return }
         let present = Set(lists.flatMap { $0.map(\.id) })
         // The top of each chain of threads that started one another that this Mac can see.

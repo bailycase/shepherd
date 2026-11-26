@@ -3,25 +3,10 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // Projects in the sidebar, selection and sheets. The runtime (conversation, tasks, pause dispatch)
 // is the parent's lane; this file reads and edits the persisted record only.
-
-/// One Project as the sidebar draws it, in either mode.
-struct SidebarLogicalProject: Identifiable, Equatable {
-    let ref: LogicalProjectRef
-    let name: String
-    /// The host that owns it, when it is not this Mac ("demo-mac").
-    let hostName: String?
-    /// Real thread count and state only: nothing here is synthetic. Empty until the lifecycle
-    /// reports tasks for the project.
-    var summary: String?
-    var needsYou = false
-    /// Its open threads (not resolved), the Spaces mode's count.
-    var count = 0
-    var selected = false
-    var id: LogicalProjectRef { ref }
-}
 
 extension ShepherdViewModel {
     func openProjectTask(_ task: ProjectTaskID) {

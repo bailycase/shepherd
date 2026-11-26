@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// The Fleet page, its sidebar row and its palette row (FleetA, FleetSidebar): the host's
 /// snapshot and the Send work here weights turned into plain values once per change

@@ -6,6 +6,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
+import ShepherdSidebar
 
 /// Disambiguates from SwiftUI.Tab for every file in this module.
 typealias Tab = ShepherdCore.Tab

@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import ShepherdSidebar
 
 /// Automations: saved monitoring prompts run by ordinary agents. The
 /// automation persists in state.json; its running agent is ephemeral and

@@ -2,20 +2,18 @@ import SwiftUI
 import ShepherdUI
 import ShepherdRemote
 
-/// iPad (iPadThread, iPadSidebar, iPadPortrait boards) and iPhone Duo's inner display (DuoOpenThread, DuoBook): the sidebar beside
-/// the selected thread in landscape; in portrait the thread takes the width and the sidebar slides over it. The sidebar is the home
-/// track's `PadSidebar`; with no thread selected the detail shows its `PadOverview`. Other screens are pushed over the detail. The
-/// thread's side pane docks beside it (`ThreadWithSidePane`), by the Mac's rule: where it leaves the thread too little beside the
-/// sidebar, the sidebar slides over the thread instead (`PadSplitLayout.sidebarFitsBesidePane`). In the laptop pose the thread
-/// takes the window as an arrangement (DuoLaptop, `PadArrangedThread`).
+/// iPad (iPadThread, iPadSidebar, iPadPortrait boards) and iPhone Duo's inner display (DuoOpenThread, DuoBook): the Mac's sidebar as the
+/// boards' floating glass card beside the selected thread in landscape; in portrait the thread takes the width and the card slides over
+/// it. The sidebar is the home track's `PadSidebar`; with no thread selected the detail shows its `PadOverview`. Other screens are pushed
+/// over the detail. The thread's side pane docks beside it (`ThreadWithSidePane`), by the Mac's rule: where it leaves the thread too
+/// little beside the sidebar, the sidebar slides over the thread instead (`PadSplitLayout.sidebarFitsBesidePane`). Half open (the book
+/// pose) the card takes the display on the fold's left and the thread the right. In the laptop pose the thread takes the window as an
+/// arrangement (DuoLaptop, `PadArrangedThread`).
+///
+/// The card is ours, not the split view's system sidebar: the split view keeps only the detail column (its bar, back button and the
+/// system's Show sidebar, which brings the card back), and `navigator.padColumns` says whether the card shows (`.detailOnly` hides it).
 struct PadShell: View {
     @Environment(MobileNavigator.self) private var navigator
-    /// Until when the columns the layout calls for are held against the split view's own.
-    @State private var settling: ContinuousClock.Instant?
-
-    /// How long the split view may still write its own idea of the columns after a change of
-    /// style or its first layout (a new window opened on a thread).
-    private static let settleTime: Duration = .milliseconds(600)
 
     /// The columns the layout calls for: where the sidebar overlays, the thread alone, but with no
     /// thread chosen the sidebar stays out (the overview alone offers no way to one); else both.
@@ -34,47 +32,51 @@ struct PadShell: View {
                 && !PadSplitLayout.sidebarFitsBesidePane(window: proxy.size.width, sidebar: MobileLayout.sidebarWidth)
             let overlays = PadSplitLayout.sidebarOverlays(window: proxy.size) || crowded
             let laptop = proxy.horizontalFold != nil
+            let fold = proxy.verticalFold
+            // Half open (iPhone Duo): the card fills the display on the fold's left and the thread starts on its right.
+            let column = fold?.lowerBound ?? (overlays ? MobileLayout.sidebarOverlayWidth : MobileLayout.sidebarWidth)
+            let detailLeading = fold?.upperBound ?? column
+            let shown = navigator.padColumns != .detailOnly
+            let docked = shown && !overlays
             Group {
                 if let arranged = navigator.sidePane.arranged, arranged == navigator.padSelection {
                     PadArrangedThread(ref: arranged)
                 } else {
-                    NavigationSplitView(columnVisibility: $navigator.padColumns) {
-                        // Half open (iPhone Duo), no width: the split view meets the fold itself, a column
-                        // on each side. Any width of ours, even a range, would hold it off the fold.
-                        PadSidebar()
-                            .columnWidth(proxy.verticalFold == nil ? (overlays ? MobileLayout.sidebarOverlayWidth : MobileLayout.sidebarWidth) : nil)
-                            // Beside an open pane the thread's own Show sidebar brings it back
-                            // (`ThreadSidebarButton`), by its title where the bars run down the side.
-                            .toolbar(removing: overlays && navigator.sidePane.isOpen && navigator.padSelection != nil ? .sidebarToggle : nil)
-                    } detail: {
-                        NavigationStack(path: $navigator.padPath) {
-                            PadDetailRoot().mobileDestinations()
+                    ZStack(alignment: .leading) {
+                        // The split view's sidebar column never shows: the system's Show sidebar asks for it, and the card answers.
+                        NavigationSplitView(columnVisibility: Binding(
+                            get: { .detailOnly },
+                            set: { if $0 != .detailOnly { withSHAnimation(.pane) { navigator.padColumns = .all } } })) {
+                            // The card has its own Hide sidebar; the system's returns while the card is away.
+                            Color.clear.toolbar(removing: shown ? .sidebarToggle : nil)
+                        } detail: {
+                            NavigationStack(path: $navigator.padPath) {
+                                PadDetailRoot().mobileDestinations()
+                            }
                         }
+                        .navigationSplitViewStyle(.prominentDetail)
+                        .padding(.leading, docked ? detailLeading : 0)
+                        if overlays, shown {
+                            Color.sh.paletteScrim
+                                .ignoresSafeArea()
+                                .onTapGesture { withSHAnimation(.pane) { navigator.padColumns = .detailOnly } }
+                                .accessibilityHidden(true)
+                                .transition(.opacity)
+                        }
+                        PadSidebar(overlays: overlays)
+                            .frame(width: column)
+                            .offset(x: shown ? 0 : -(column + SHSidebarMetrics.panelInset * 2))
+                            .allowsHitTesting(shown)
+                            .accessibilityHidden(!shown)
                     }
-                    // Side by side in landscape; in portrait the thread keeps the width and the sidebar
-                    // slides over it. One split view either way, so rotating keeps the selection and the
-                    // pushed screens, but a change of style builds the columns anew (hence the composer's
-                    // refocus below, and the pane and drafts kept in the navigator).
-                    .navigationSplitViewStyle(PadSplitStyle(portrait: overlays))
+                    .background(Color.sh.bgBase)
+                    .shAnimation(.pane, value: shown)
                 }
             }
             .onChange(of: overlays, initial: true) { _, overlays in
                 navigator.padSidebarOverlays = overlays
-                // The new style builds the columns anew: the composer that had the focus takes
-                // it back as it mounts, and only then.
-                navigator.refocusComposer = navigator.focusedComposer
-                Task { @MainActor in
-                    try? await Task.sleep(for: Self.settleTime)
-                    navigator.refocusComposer = nil
-                }
-                // While the split view takes its new style, or lays out for the first time (a new
-                // window opened on a thread), it writes its own idea of the columns back through
-                // the binding, before or after this: set them now, again once it has changed,
-                // and put them back over any write-back for a moment.
-                settling = .now + Self.settleTime
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
-                Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
             }
             // Folding into the laptop pose with a thread open, or opening one in it, arranges it
             // (DuoLaptop); laid flat it stays so, its composer a card (DuoLaptopOpen), until Back.
@@ -94,16 +96,6 @@ struct PadShell: View {
             .onChange(of: navigator.padShowsForgeWide) { _, _ in
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
-            }
-            .onChange(of: navigator.padColumns) { _, current in
-                guard let settling else { return }
-                guard ContinuousClock.now < settling else {
-                    self.settling = nil
-                    return
-                }
-                if current != Self.columns(navigator) {
-                    Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
-                }
             }
         }
         // The window's shape, not what the keyboard leaves of it (`PadSplitLayout`).
@@ -128,12 +120,6 @@ private struct PadArrangedThread: View {
                 }
                 .mobileDestinations()
         }
-    }
-}
-
-private extension View {
-    @ViewBuilder func columnWidth(_ width: CGFloat?) -> some View {
-        if let width { navigationSplitViewColumnWidth(width) } else { self }
     }
 }
 
@@ -176,19 +162,6 @@ private struct PadDetailRoot: View {
             mounted.removeAll { $0 == ref }
             mounted.append(ref)
             if mounted.count > Self.retainedDetails { mounted.removeFirst(mounted.count - Self.retainedDetails) }
-        }
-    }
-}
-
-/// `.balanced` in landscape, `.prominentDetail` in portrait, as one style type.
-private struct PadSplitStyle: NavigationSplitViewStyle {
-    let portrait: Bool
-
-    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
-        if portrait {
-            ProminentDetailNavigationSplitViewStyle().makeBody(configuration: configuration)
-        } else {
-            BalancedNavigationSplitViewStyle().makeBody(configuration: configuration)
         }
     }
 }

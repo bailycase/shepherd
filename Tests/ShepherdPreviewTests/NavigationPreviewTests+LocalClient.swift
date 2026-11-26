@@ -8,6 +8,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// This Mac's window as the host's client matches the in-process app's, recorded before its
 /// server went (always-host 7b): `Baselines/<surface>-<light|dark>.png`, byte for byte.

@@ -4,6 +4,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 // MARK: The destination's list
 
@@ -318,66 +319,6 @@ private struct ForgeListRowView: View {
 }
 
 // MARK: Pinned (PRSidebarPinned)
-
-/// A pin in the main sidebar's Pinned: its kind's glyph, title and one word, and the preview its
-/// hover shows.
-struct SidebarForgePin: Equatable, Identifiable {
-    /// A preview line: a glyph (nil draws a dot) and its words.
-    struct Line: Equatable {
-        let symbol: String?
-        let text: String
-        let tone: ForgeTone
-    }
-
-    let ref: ForgeItemRef
-    let title: String
-    let tag: String
-    let tagTone: ForgeTone?
-    /// "Open", "Merged": nil until the host could read it.
-    let badge: (label: String, tone: ForgeTone)?
-    let lines: [Line]
-
-    var id: ForgeItemRef { ref }
-    /// "payments #31".
-    var place: String { "\(ref.repoName) #\(ref.number)" }
-
-    static func == (a: Self, b: Self) -> Bool {
-        a.ref == b.ref && a.title == b.title && a.tag == b.tag && a.tagTone == b.tagTone && a.badge?.label == b.badge?.label
-            && a.badge?.tone == b.badge?.tone && a.lines == b.lines
-    }
-
-    init(_ item: ForgePinnedItem, viewer: String?) {
-        ref = item.pin.ref
-        title = item.title
-        let tag = ForgePresentation.pinnedTag(item, viewer: viewer)
-        self.tag = tag.label
-        tagTone = tag.tone
-        var lines: [Line] = []
-        if let pull = item.pullRequest {
-            badge = ForgePresentation.badge(pull.state)
-            switch pull.reviewDecision {
-            case .changesRequested?: lines.append(Line(symbol: ForgeSymbol.comment, text: "Changes requested", tone: .failed))
-            case .approved?: lines.append(Line(symbol: "checkmark", text: "Approved", tone: .done))
-            case .reviewRequired?: lines.append(Line(symbol: ForgeSymbol.comment, text: "Waiting on review", tone: .idle))
-            case nil: break
-            }
-            switch pull.checks {
-            case .failing: lines.append(Line(symbol: "xmark", text: "Checks failing", tone: .failed))
-            case .running: lines.append(Line(symbol: nil, text: "Checks running", tone: .running))
-            case .passed: lines.append(Line(symbol: "checkmark", text: "Checks passed", tone: .done))
-            case .none: break
-            }
-            if let thread = pull.thread { lines.append(Line(symbol: nil, text: "Thread: \(thread.title)", tone: thread.running ? .running : .idle)) }
-        } else if let issue = item.issue {
-            badge = ForgePresentation.badge(issue.state)
-            lines.append(Line(symbol: nil, text: ForgePresentation.label(issue.progress), tone: ForgePresentation.tone(issue.progress)))
-            if let thread = issue.thread { lines.append(Line(symbol: nil, text: "Thread: \(thread.title)", tone: thread.running ? .running : .idle)) }
-        } else {
-            badge = nil
-        }
-        self.lines = lines
-    }
-}
 
 /// A pin's row: opens the item in Issues & PRs; its menu unpins it; resting the pointer on it
 /// shows what it is waiting on.

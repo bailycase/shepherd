@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The new Projects in the sidebar (ProjectLead-Activity, -AddsSpace): where the group sits in
 /// Activity, that a Project is never a thread row, and that nothing is invented for a Project that
