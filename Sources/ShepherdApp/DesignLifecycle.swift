@@ -111,9 +111,6 @@ struct DeleteDesignWords: Hashable {
     struct Line: Hashable {
         enum Role: Hashable { case goes, stays }
         let role: Role
-        /// Its glyph (DeleteDesignDialog): the boards a trash can, the chat a bubble, what stays a
-        /// check.
-        let symbol: String
         /// A bold lead ("4 boards"), then the rest.
         let lead: String?
         let text: String
@@ -130,11 +127,11 @@ struct DeleteDesignWords: Hashable {
 
     init(name: String, boards: Int, versions: Int?, comments: Int?, system: String?, agentWorking: Bool, drawing: Int) {
         title = "Delete “\(name)”?"
-        var lines = [Line(role: .goes, symbol: "trash", lead: Self.count(boards, "board"),
+        var lines = [Line(role: .goes, lead: Self.count(boards, "board"),
                           text: Self.after(boards: boards, versions: versions, comments: comments))]
-        lines.append(Line(role: .goes, symbol: "text.bubble", lead: nil, text: "The design agent’s chat for this design"))
+        lines.append(Line(role: .goes, lead: nil, text: "The design agent’s chat for this design"))
         if let system {
-            lines.append(Line(role: .stays, symbol: "checkmark", lead: nil, text: "Stays: ", mono: system, tail: ", the design system it uses"))
+            lines.append(Line(role: .stays, lead: nil, text: "", mono: system, tail: ", the design system it uses"))
         }
         self.lines = lines
         note = "You can undo right after."
@@ -211,7 +208,7 @@ struct DeleteSystemWords: Hashable {
     init(name: String, components: Int, usedBy: [String], repo: String?, building: Bool) {
         let used: Line = usedBy.isEmpty
             ? Line(role: .stays, lead: nil, text: "No designs use it yet")
-            : Line(role: .stays, lead: "Used by \(DeleteDesignWords.count(usedBy.count, "design")); they keep their copy.",
+            : Line(role: .stays, lead: "Used by \(DeleteDesignWords.count(usedBy.count, "design")); they keep their copy:",
                    text: " " + usedBy.joined(separator: ", "))
         if building {
             title = "Delete “\(name)”?"
@@ -267,7 +264,6 @@ struct DesignToast: Identifiable, Equatable {
 
     var isFailure: Bool { if case .deleted = kind { false } else { true } }
     var actionTitle: String { isFailure ? "Try again" : "Undo" }
-    var actionSymbol: String { isFailure ? "arrow.clockwise" : "arrow.uturn.backward" }
 
     /// "Deleted " name "." / "Couldn’t delete " name ". <reason>"
     var words: (before: String, after: String) {
@@ -336,7 +332,7 @@ struct ImportAgainWords: Hashable {
     /// "New copy: " then the copy's name bold, then " · 12 boards · 3 pages".
     let copyName: String
     let copyRest: String
-    /// "Design system: uses the " then the system in mono, then " you already have".
+    /// "Uses the " then the system in mono, then " you already have".
     let systemBefore: String?
     let system: String?
     let systemAfter: String?
@@ -357,7 +353,7 @@ struct ImportAgainWords: Hashable {
         let pages = preview.pages > 1 ? " · \(DeleteDesignWords.count(preview.pages, "page"))" : ""
         copyRest = " · \(DeleteDesignWords.count(preview.boards, "board"))\(pages)"
         if let first = preview.systems.first {
-            systemBefore = first.existing != nil ? "Design system: uses the " : "Design system: "
+            systemBefore = first.existing != nil ? "Uses the " : ""
             system = first.title
             systemAfter = first.existing != nil ? " you already have" : " comes along as a system of its own"
         } else {

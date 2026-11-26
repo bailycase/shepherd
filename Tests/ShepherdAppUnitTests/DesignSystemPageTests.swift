@@ -68,23 +68,21 @@ struct DesignSystemPageTests {
                                           swatches: ["acme-web": DesignSystemPresentation.swatches(Self.tokens, count: 4)])
         #expect(model.systems.map(\.name) == ["acme-web", "zeta", "shepherd", "Shepherd Design"])
         #expect(model.systems.map(\.id) == [.system("acme-web"), .system("zeta"), .build(build.id), .system("shepherd-design")])
-        #expect(model.systems.map(\.source) == ["dashboard-web · tokens.css", "shepherd", "shepherd · building",
+        #expect(model.systems.map(\.source) == ["dashboard-web · tokens.css", "shepherd", "Reading shepherd…",
                                                 DesignsPageModel.builtInSource])
-        #expect(model.systems.map(\.count) == ["2 designs", "0 designs", "", "1 design"])
+        #expect(model.systems.map(\.count) == ["2 designs", "0 designs", "building", "1 design"])
         #expect(model.systems[0].swatches.map(\.light) == ["#4f46e5", "#0f172a", "#f8fafc", "#059669"])
         #expect(!model.cards.contains { $0.id == build.id }, "a build has no card")
         #expect(model.projects.map(\.name) == ["dashboard-web", "shepherd"])
     }
 
-    /// Three to a row; "Build one from a repo" follows the last system, on a row of its own when
-    /// the last is full.
-    @Test(arguments: [(0, [0], [true]), (2, [2], [true]), (3, [3, 0], [false, true]), (4, [3, 1], [false, true])])
-    func theBuildTileFollowsTheLastSystem(count: Int, rows: [Int], tiles: [Bool]) {
+    /// Three to a row.
+    @Test(arguments: [(0, [Int]()), (2, [2]), (3, [3]), (4, [3, 1])])
+    func theSystemsGoThreeToARow(count: Int, rows: [Int]) {
         let systems = (0..<count).map { Self.summary("s\($0)") }
         let model = DesignsPageModel.make(designs: [], spaces: [], firstBoards: [:], filter: "", selection: nil, now: Self.now,
                                           systems: systems)
-        #expect(model.systemRows.map(\.systems.count) == rows)
-        #expect(model.systemRows.map(\.tile) == tiles)
+        #expect(model.systemRows.map(\.count) == rows)
     }
 
     @Test func theFilterKeepsSystemsByNameSourceOrTheDesignsItKeeps() {

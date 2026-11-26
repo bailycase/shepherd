@@ -117,7 +117,7 @@ struct DesignLifecycleFlowTests {
         let design = try #require(vm.shownDesign)
         #expect(design.importedFrom?.file == "checkout-funnel.zip" && design.systemNamespace == "checkout-ds")
         try await eventuallyOnMain("its system in the catalog") { vm.designSystems.summary("checkout-ds") != nil }
-        #expect(vm.designsPage.systems.first { $0.name == "Checkout DS" }?.source == "came with Checkout funnel")
+        #expect(vm.designsPage.systems.first { $0.name == "Checkout DS" }?.source == "Comes with Checkout funnel")
         // Its agent's first message has it read the design and change nothing.
         let agent = try #require(vm.selectedAgent)
         let server = app.server
@@ -205,7 +205,7 @@ struct DesignLifecycleFlowTests {
             return vm.designSystemDeleteRequest != nil
         }
         let request = try #require(vm.designSystemDeleteRequest)
-        #expect(request.words.lines.first?.lead == "Used by 1 design; they keep their copy.")
+        #expect(request.words.lines.first?.lead == "Used by 1 design; they keep their copy:")
         vm.confirmDesignSystemDelete(request)
 
         try await eventuallyOnMain("the system gone") { vm.designSystems.summary("acme-web") == nil }

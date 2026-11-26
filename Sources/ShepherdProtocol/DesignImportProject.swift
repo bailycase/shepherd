@@ -91,11 +91,11 @@ public enum DesignImportFailure: Error, Hashable, Sendable, Codable, CustomStrin
         return []
     }
 
-    /// The line under the message: "Nothing was imported.", or, while the choice is open,
+    /// The line under the message: "Nothing was imported, and nothing was left behind.", or, while the choice is open,
     /// "Nothing’s imported until you choose."
     public var footer: String {
         if case .unreadableBoards = self { return "Nothing’s imported until you choose." }
-        return "Nothing was imported."
+        return "Nothing was imported, and nothing was left behind."
     }
 
     /// Whether the dialog offers another file (only when it wasn't a project at all).

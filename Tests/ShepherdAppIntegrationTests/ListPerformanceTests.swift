@@ -370,11 +370,11 @@ struct ListPerformanceTests {
 
     private static let designsSize = CGSize(width: 1200, height: 800)
     /// A card's height: its thumbnail and its three lines, with the gap under it.
-    private static let designRowHeight = SHDesignMetrics.cardThumbnailHeight + 80 + SHPageMetrics.columnGap
+    private static let designRowHeight = SHDesignsHomeMetrics.thumbnailHeight + 70 + SHDesignsHomeMetrics.gap
 
     /// Rows of cards that fit the page under its header.
     private static var designRowsOnScreen: Int {
-        Int((designsSize.height - SHPageMetrics.headerHeight) / designRowHeight) + 1
+        Int((designsSize.height - SHToolbarMetrics.height) / designRowHeight) + 1
     }
 
     /// The Designs page over 120 designs (no boards, so no thumbnails to render), and what opens
@@ -498,7 +498,7 @@ struct ListPerformanceTests {
     // MARK: Design systems
 
     /// A system card's height (its 12pt padding and two lines) with the gap under it.
-    private static let systemRowHeight: CGFloat = 2 * SHDesignMetrics.cardPaddingVertical + 32 + SHPageMetrics.columnGap
+    private static let systemRowHeight: CGFloat = SHDesignsHomeMetrics.systemHeight + SHDesignsHomeMetrics.gap
 
     /// `count` systems in the server's store, as folders it lists (the store's cap is 100), each
     /// with `colors` colors.
@@ -535,7 +535,7 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        let onScreen = (Int((Self.designsSize.height - SHPageMetrics.headerHeight) / Self.systemRowHeight) + 1) * DesignsPageModel.systemColumns
+        let onScreen = (Int((Self.designsSize.height - SHToolbarMetrics.height) / Self.systemRowHeight) + 1) * DesignsPageModel.systemColumns
         #expect(counts["design.systemCard", default: 0] > 0)
         #expect(counts["design.systemCard", default: 0] <= 2 * (onScreen + DesignsPageModel.systemColumns), "\(counts)")
         #expect(counts["design.systemCard", default: 0] < DesignSystemStore.maxSystems)

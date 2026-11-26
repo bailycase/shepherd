@@ -269,7 +269,7 @@ struct RemoteDesignFlowTests {
         await vm.loadRemoteDesigns()
         let building = try #require(vm.remoteDesignSections.first?.systems.first)
         guard case .remoteBuild = building.id else { Issue.record("expected the build's card, got \(building.id)"); return }
-        #expect(building.source == "\(space.name) · building")
+        #expect(building.source == "Reading \(space.name)…" && building.count == "building")
 
         // A second build of the same space answers the one there.
         let existing = try #require(hostServer.state.designs.first { $0.buildsSystem })

@@ -150,7 +150,7 @@ struct DesignArchiveTests {
         ])
         #expect(links.message.hasPrefix("4 boards point to files outside the project folder."))
         #expect(links.listedLinks.count == 3 && !links.offersAnother)
-        #expect(links.footer == "Nothing was imported.")
+        #expect(links.footer == "Nothing was imported, and nothing was left behind.")
         let unreadable = DesignImportFailure.unreadableBoards([DesignImportUnreadable(path: "boards/pricing-v3.html", title: "Pricing — v3",
                                                                                        reason: "is empty")], readable: 11)
         #expect(unreadable.message == "The board Pricing — v3 couldn’t be read: boards/pricing-v3.html is empty. The other 11 boards are fine.")

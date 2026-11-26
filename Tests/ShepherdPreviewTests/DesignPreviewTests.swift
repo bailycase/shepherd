@@ -722,7 +722,7 @@ struct DesignPreviewTests {
                                 reason: "Events explorer is exporting with it right now; try again when that’s done.")
         try await Preview.render("system-delete-failed", size: CGSize(width: 700, height: 120)) {
             SHUndoToast(tone: .failed, message: Text("\(toast.words.before)\(Text(toast.name).fontWeight(.semibold))\(toast.words.after)"),
-                        actionTitle: toast.actionTitle, actionSymbol: toast.actionSymbol, action: {}, dismiss: {})
+                        actionTitle: toast.actionTitle, action: {}, dismiss: {})
                 .frame(width: 620)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.sh.bgBase)
@@ -755,7 +755,7 @@ struct DesignPreviewTests {
             vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil || $0.boardCount == 0 }
         }) {
             DesignsDestination(vm: vm)
-                .overlay { if state == "drop" { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
+                .overlay { if state == "drop" { SHDesignsDropTarget().padding(.top, SHToolbarMetrics.height) } }
         }
     }
 
@@ -809,8 +809,10 @@ private struct CardWithMenu: View {
                              selected: true, action: {}) {
                     DesignThumbnailSlot(image: vm.designRendering.thumbnails.image(id))
                 }
-                .overlay(alignment: .topTrailing) {
-                    SHDesignMoreButton { EmptyView() }.padding(SHDesignMetrics.cardMoreInset)
+                .overlay(alignment: .bottomTrailing) {
+                    SHDesignMoreButton { EmptyView() }
+                        .padding(.trailing, SHDesignsHomeMetrics.moreInsetTrailing)
+                        .padding(.bottom, SHDesignsHomeMetrics.moreInsetBottom)
                 }
                 .frame(width: 278)
                 DesignMenuLookalike(menu: card.menu)

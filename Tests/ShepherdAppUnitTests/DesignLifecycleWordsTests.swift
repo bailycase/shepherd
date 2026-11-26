@@ -65,7 +65,6 @@ struct DesignLifecycleWordsTests {
                                       agentWorking: false, drawing: 0)
         #expect(words.title == "Delete “Checkout funnel dashboard”?")
         #expect(words.lines.map(\.role) == [.goes, .goes, .stays])
-        #expect(words.lines.map(\.symbol) == ["trash", "text.bubble", "checkmark"], "the boards, the chat, what stays")
         #expect(words.lines[0].lead == "4 boards" && words.lines[0].text == ", their 23 versions and 2 comments")
         #expect(words.lines[1].text == "The design agent’s chat for this design")
         #expect(words.lines[2].mono == "acme-web" && words.lines[2].tail == ", the design system it uses")
@@ -127,7 +126,7 @@ struct DesignLifecycleWordsTests {
                                       repo: "dashboard-web", building: false)
         #expect(words.title == "Delete the design system “acme-web”?")
         #expect(words.message == "Its colors, type, spacing and 9 components go from Shepherd.")
-        #expect(words.lines[0].lead == "Used by 3 designs; they keep their copy.")
+        #expect(words.lines[0].lead == "Used by 3 designs; they keep their copy:")
         #expect(words.lines[0].text == " Checkout funnel dashboard, Events explorer, Onboarding flow")
         #expect(words.lines[1].text == "Built from " && words.lines[1].mono == "dashboard-web" && words.lines[1].tail == ". The repo isn’t touched.")
         #expect(words.lines[2].role == .note && words.lines[2].text == "New designs can’t pick it. Build it again from the repo any time.")
@@ -179,7 +178,7 @@ struct DesignLifecycleWordsTests {
             == "You imported Checkout funnel on Sep 20. Import it again as a separate copy, or open the one you have. The two don’t affect each other.")
         #expect(words.copyName + words.copyRest == "Checkout funnel 2 · 12 boards · 3 pages")
         #expect((words.systemBefore ?? "") + (words.system ?? "") + (words.systemAfter ?? "")
-            == "Design system: uses the Checkout DS you already have")
+            == "Uses the Checkout DS you already have")
     }
 
     @Test func theImportingCardFollowsTheBoardsAsTheyLand() {
@@ -202,7 +201,7 @@ struct DesignLifecycleWordsTests {
         #expect(model.rows.first?.map(\.id) == ["importing", design.id.rawValue])
         #expect(model.systems.map(\.name) == ["acme-web", "Shepherd Design", "Checkout DS"])
         let coming = model.systems.first { $0.dashed }
-        #expect(coming?.name == "Checkout DS" && coming?.source == "came with Checkout funnel" && coming?.count == "after the boards")
+        #expect(coming?.name == "Checkout DS" && coming?.source == "Comes with Checkout funnel" && coming?.count == "after the boards")
         #expect(coming?.menu == nil)
     }
 
@@ -231,9 +230,9 @@ struct DesignLifecycleWordsTests {
         let model = DesignsPageModel.make(designs: [design], spaces: [], firstBoards: [:], filter: "", selection: nil, now: Date(),
                                           systems: systems)
         let checkout = model.systems.first { $0.name == "Checkout DS" }
-        #expect(checkout?.source == "came with Checkout funnel" && checkout?.tag == nil)
+        #expect(checkout?.source == "Comes with Checkout funnel")
         let shepherdDesign = model.systems.first { $0.name == "Shepherd Design" }
-        #expect(shepherdDesign?.tag == "Built-in")
+        #expect(shepherdDesign?.source == DesignsPageModel.builtInSource)
         #expect(shepherdDesign?.menu?.items.last?.enabled == false)
     }
 
