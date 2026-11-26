@@ -311,14 +311,14 @@ extension ShepherdViewModel {
                 let target = DesignSystemTarget.remote(RemoteSystemRef(hostID: connection.id, namespace: summary.namespace))
                 return DesignsPageModel.System(id: target, name: summary.info.title, source: summary.info.sources.first,
                                                count: DeleteDesignWords.count(used, "design"), swatches: [],
-                                               tag: summary.builtIn ? "Built-in" : nil, menu: designSystemMenu(target))
+                                               menu: designSystemMenu(target))
             }
             // Builds still reading their space, before their agent wrote a system.
             let built = Set(listing.systems.compactMap(\.info.ownerDesignID))
             let builds = connection.state.designs.filter { $0.buildsSystem && !built.contains($0.id) }.map { build in
                 let space = build.sourceSpaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
                 return DesignsPageModel.System(id: .remoteBuild(RemoteDesignRef(hostID: connection.id, designID: build.id)), name: build.name,
-                                               source: space.map { "\($0) · building" } ?? "building", count: "", swatches: [],
+                                               source: space.map { "Reading \($0)…" } ?? "Reading the repo…", count: "building", swatches: [],
                                                menu: designSystemMenu(.remoteBuild(RemoteDesignRef(hostID: connection.id, designID: build.id))))
             }
             let projects = connection.supportsDesignCapability(RemoteProtocol.designSystemsCapability)
