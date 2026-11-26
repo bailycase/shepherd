@@ -69,6 +69,7 @@ struct SHMenuRow<Label: View>: View {
     var height = SHComposerMetrics.menuRowHeight
     /// The fill under the highlighted row; nil is `runningTint`, the menus' own.
     var highlight: Color? = nil
+    var radius: CGFloat = SH.Radius.s
     let action: () -> Void
     let onHover: () -> Void
     @ViewBuilder let label: () -> Label
@@ -90,8 +91,8 @@ struct SHMenuRow<Label: View>: View {
             .padding(padding)
             .frame(minHeight: height)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(highlighted ? highlight ?? Self.highlightFill : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+            .background(highlighted ? highlight ?? Self.highlightFill : .clear, in: RoundedRectangle(cornerRadius: radius))
+            .contentShape(RoundedRectangle(cornerRadius: radius))
             .onTapGesture(perform: action)
             .onHover { if $0 { onHover() } }
             .accessibilityElement(children: .combine)

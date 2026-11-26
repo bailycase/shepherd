@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 /// What a design system's page shows: a system by its namespace, or a system build ("Build one
 /// from a repo") whose agent may not have written its system yet.

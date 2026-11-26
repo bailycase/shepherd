@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 // Moving a thread to another Mac (FleetMove): what the thread options menu, the sidebar row menu and the palette offer, and what they ask. The host
 // that runs the thread does the move (`RemoteAgentAction.moveToMac`); this reads the fleet snapshot for the menu and the move's record for

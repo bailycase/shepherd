@@ -9,6 +9,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Window, sidebar, toolbar, palette, and right pane (Navigation board). An extension of the
 /// serialized preview suite, so these renders never interleave with the others.

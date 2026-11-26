@@ -3,6 +3,7 @@ import ShepherdRemote
 import Foundation
 import ShepherdCore
 import ShepherdUI
+import ShepherdSidebar
 
 /// The sidebar organized by project (Sidebar — Projects): the tree's values, its projects'
 /// disclosure, order and visibility, and the project menu's actions.

@@ -4,6 +4,7 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// The sidebar (SHNavigation; Main, Running, NavNewThread, NavAutomations, NavHosts): the top bar
 /// with Search and Hide sidebar, the destinations (New thread, Automations, More ▸ Hosts and
@@ -391,49 +392,6 @@ private struct RemoteRowMenu: View {
         Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent…", role: .destructive) {
             vm.requestRemoteDelete(ref)
         }
-    }
-}
-
-// MARK: Words
-
-/// The status language's words for an agent row.
-enum AgentRow {
-    /// A finished agent whose turn ended in an error reads failed; so does one restored idle
-    /// with that failure remembered (`Agent.lastFailure`).
-    static func statusWord(_ status: AgentStatus, turnFailed: Bool = false) -> String {
-        switch status {
-        case .working: "running"
-        case .blocked: "needs you"
-        case .idle: turnFailed ? "failed" : "idle"
-        case .done: turnFailed ? "failed" : "done"
-        }
-    }
-}
-
-/// An automation run's state, as its row and menu read it.
-enum AutomationRow {
-    /// A run still starting (idle before its first turn settled) reads running; one that has
-    /// settled reads done, or failed when its last turn ended in an error.
-    static func stateWord(_ agent: Agent?, run: AutomationRun?, turnFailed: Bool) -> String {
-        guard let agent else { return "stopped" }
-        return switch agent.status {
-        case .blocked: "needs you"
-        case .working, .idle, .done:
-            if isLive(agent, run: run) { "running" } else { turnFailed ? "failed" : "done" }
-        }
-    }
-
-    /// Its run is going (`AutomationRun.isLive`, the rule the host refuses Run Now by): the
-    /// menu offers Stop rather than Run Now.
-    static func isLive(_ agent: Agent?, run: AutomationRun?) -> Bool {
-        agent.map { AutomationRun.isLive(agentStatus: $0.status, run: run) } ?? false
-    }
-
-    static func state(_ agent: Agent?, run: AutomationRun?, turnFailed: Bool) -> AgentState {
-        guard let agent else { return .idle }
-        if agent.status == .blocked { return .attention }
-        if isLive(agent, run: run) { return .running }
-        return turnFailed ? .failed : .done
     }
 }
 

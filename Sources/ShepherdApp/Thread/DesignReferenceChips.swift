@@ -445,13 +445,19 @@ typealias ReferencePreviewOpenKey = SHPreviewOpenKey
 struct SentReferenceChips: View {
     let records: [DesignReferenceRecord]
     @Environment(\.designReferences) private var references
+    @Environment(\.shUserBubbleMetrics) private var bubble
+
+    /// Where the chips sit in the bubble (.gdz-you2): 6pt from its edges, the words 9pt in from them.
+    private static let inset: CGFloat = 6
 
     var body: some View {
-        SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             ForEach(Array(records.enumerated()), id: \.offset) { _, record in
                 SentReferenceChip(record: record, references: references)
             }
         }
+        .padding(.horizontal, Self.inset - bubble.horizontal)
+        .padding(.top, Self.inset - bubble.vertical)
     }
 }
 
@@ -471,7 +477,7 @@ private struct SentReferenceChip: View {
     /// a guess until it has opened once.
     final class ChipTop {
         var value = CGFloat.infinity
-        var previewHeight = SHReferenceMetrics.previewPicture.height + SHReferenceMetrics.previewPadding * 12
+        var previewHeight = SHReferenceMetrics.previewTray + SHReferenceMetrics.previewPadding * 16
         var fitsAbove: Bool { DesignReferenceChips.previewFitsAbove(room: value, previewHeight: previewHeight) }
     }
 
@@ -488,8 +494,8 @@ private struct SentReferenceChip: View {
         let crumbs = kept.map(\.crumbs).flatMap { $0.isEmpty ? nil : $0 } ?? DesignReferenceChips.crumbs(record)
         let state = DesignReferenceChips.state(kept?.freshness)
         let version = DesignReferencePresentation.version(record.revision)
-        SHDesignReferenceChip(crumbs: crumbs, version: version, state: state, thumbnail: kept?.picture, highlighted: hover.shown)
-            .contentShape(RoundedRectangle(cornerRadius: SHReferenceMetrics.chipRadius))
+        SHDesignReferenceChip(crumbs: crumbs, version: version, state: state, thumbnail: kept?.picture, highlighted: hover.shown, raised: true, fills: true)
+            .contentShape(RoundedRectangle(cornerRadius: SHReferenceMetrics.boardChipRadius))
             .onTapGesture { open() }
             .onHover { hover.pointer($0) }
             .accessibilityAddTraits(.isButton)

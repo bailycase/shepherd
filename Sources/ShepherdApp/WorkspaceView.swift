@@ -5,6 +5,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import ShepherdSidebar
 
 struct WorkspaceView: View {
     var vm: ShepherdViewModel

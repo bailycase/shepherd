@@ -4,6 +4,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// Issues & PRs in the main column: the picked pull request's or issue's page, else why there is
 /// none (PRReviewEmpty, gh missing or signed out), with a banner for a refused change or a sent brief.

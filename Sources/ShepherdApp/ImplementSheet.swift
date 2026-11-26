@@ -158,8 +158,9 @@ struct ImplementSheetView: View {
                          sends: model.sends, canSend: model.canSend, sending: model.sending,
                          close: { vm.closeImplementSheet() }, send: { vm.sendImplementSheet(model) }) {
             if model.mode == .existing {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
+                VStack(alignment: .leading, spacing: 0) {
                     SHSearchField("Search threads", text: $model.query)
+                        .padding(.top, SHImplementMetrics.searchTop)
                     if model.shownThreads.isEmpty {
                         Text(model.threads.isEmpty ? "No threads yet. Start one in a space." : "No thread matches “\(model.query)”.")
                             .font(.shSans(SHImplementMetrics.rowMetaSize))
@@ -167,6 +168,7 @@ struct ImplementSheetView: View {
                             .frame(maxWidth: .infinity, minHeight: SHImplementMetrics.rowHeight)
                     } else {
                         SHImplementThreadList(threads: model.shownThreads, selection: $model.thread)
+                            .padding(.top, SHImplementMetrics.listTop)
                     }
                 }
             } else {
@@ -200,13 +202,15 @@ struct ImplementSheetView: View {
             }
             Toggle(isOn: $model.opensThread) {
                 Text("Open the thread after sending")
-                    .font(.shSans(SHImplementMetrics.checkLabelSize))
-                    .foregroundStyle(Color.sh.textSecondary)
+                    .font(.shSans(SHImplementMetrics.fieldTextSize))
+                    .foregroundStyle(Color.sh.textPrimary)
             }
             .toggleStyle(.shCheckbox)
+            .padding(.top, SHImplementMetrics.checkTop)
             if let error = model.error, model.prepared != nil {
                 Text(error).font(.shSans(SHImplementMetrics.rowMetaSize)).foregroundStyle(Color.sh.failed)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, SHImplementMetrics.checkTop)
             }
         }
         .disabled(model.sending)
@@ -270,12 +274,12 @@ struct DesignReferenceToastLayer: View {
                     switch toast.kind {
                     case .sent(let thread, let name):
                         SHReferenceToast(.sent, message: Text("Sent \(toast.piece) to \(Text(name).fontWeight(.semibold))."),
-                                         actionTitle: "Open thread", actionSymbol: "text.bubble",
+                                         actionTitle: "Open thread",
                                          action: { vm.referenceToast = nil; vm.selectAgent(thread) },
                                          dismiss: { vm.referenceToast = nil })
                     case .sentRemote(let thread, let name):
                         SHReferenceToast(.sent, message: Text("Sent \(toast.piece) to \(Text(name).fontWeight(.semibold))."),
-                                         actionTitle: "Open thread", actionSymbol: "text.bubble",
+                                         actionTitle: "Open thread",
                                          action: { vm.referenceToast = nil; vm.selectRemoteAgent(hostID: thread.hostID, agentID: thread.agentID) },
                                          dismiss: { vm.referenceToast = nil })
                     case .copied:

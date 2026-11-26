@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // The Spaces, Memory and Automations tabs of Project settings. Spaces are the owner's, named by the
 // owner's own IDs; this device never resolves them against its own list unless it is the owner.

@@ -5,6 +5,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 extension ShepherdViewModel {
     // MARK: Lookups

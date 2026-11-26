@@ -7,6 +7,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Opt in: SHEPHERD_ENGINE_SMOKE=$PWD/.build/pi-engine swift test --build-system native --filter NativePeerEngineTests
 /// Synthetic model traffic only: the existing fake-provider library listens on IPv4 loopback.

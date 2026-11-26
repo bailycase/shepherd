@@ -266,7 +266,7 @@ struct SHThreadChevron: View {
 }
 
 /// What a "Looked at…" line opens to (SHActivityLine(.lookedAtDesign) · expanded): on the calls'
-/// rail, one 22pt mono row per part the agent got — `pic` the picture and its size, `html` the
+/// rail, one 18pt row per part the agent got — `pic` the picture and its size, `html` the
 /// page and its weight, `css` the styles, `tok` the tokens with the file and lines they live in.
 public struct SHLookedAtDetails: View {
     public struct Row: Identifiable, Equatable, Sendable {
@@ -291,25 +291,25 @@ public struct SHLookedAtDetails: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHReferenceMetrics.self
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: M.detailRowGap) {
             ForEach(rows) { row in
-                HStack(spacing: SH.Space.m + 2) {
-                    Text(row.label).foregroundStyle(sh.textTertiary).frame(width: M.detailLabelWidth, alignment: .leading)
-                    Text(row.detail).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.tail)
+                HStack(spacing: M.detailColumnGap) {
+                    Text(row.label).font(.shMono(M.detailSize)).foregroundStyle(sh.textTertiary)
+                        .frame(width: M.detailLabelWidth, alignment: .leading)
+                    Text(row.detail).font(.shMono(M.detailSize)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: SH.Space.m)
-                    if let trailing = row.trailing { Text(trailing).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize() }
+                    if let trailing = row.trailing {
+                        Text(trailing).font(.shSans(M.detailSize)).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize()
+                    }
                 }
-                .font(.shMono(11))
                 .frame(height: M.detailRowHeight)
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(.vertical, SH.Space.xxs)
         .padding(.leading, M.detailRail)
-        .overlay(alignment: .leading) { SHHairline(.vertical, color: sh.lineStrong) }
+        .overlay(alignment: .leading) { SHHairline(.vertical, color: sh.lineSubtle) }
         .padding(.leading, M.detailIndent)
-        .padding(.top, -SH.Space.xs)
-        .padding(.bottom, SH.Space.xxs)
+        .padding(.top, SH.Space.xs)
     }
 }
 

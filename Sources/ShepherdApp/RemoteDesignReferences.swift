@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import ShepherdSidebar
 
 // Design references in a connected host's thread (`design.references.v1`): the same chips, "Looked
 // at…" lines and @ picker as a local thread's, for that host's own designs. In a host's thread a

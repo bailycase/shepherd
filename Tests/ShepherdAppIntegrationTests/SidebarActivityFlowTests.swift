@@ -6,6 +6,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 @Suite("Sidebar activity flow", .mainActorExclusive)
 @MainActor

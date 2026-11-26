@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // A connected host's design systems on this Mac (`designs.v1`, changed with `design.systems.v1`):
 // listed under the host on the Designs page, each opening the Design systems page drawn from the

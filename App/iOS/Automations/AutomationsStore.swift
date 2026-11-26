@@ -45,6 +45,10 @@ final class AutomationsStore {
     /// paused (its own, or Pause all): the sidebar's run groups roll them up.
     private(set) var unreadRuns: Set<FleetRef> = []
     private(set) var pausedTriggers: Set<AutomationKey> = []
+    /// What the sidebar's automation rows read: each automation's trigger status as its host last said, and how many of its runs
+    /// nobody has opened.
+    private(set) var triggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:]
+    private(set) var unreadRunCounts: [AutomationKey: Int] = [:]
     /// The last change a host refused.
     var failure: Failure?
     /// The automation the iPad shows beside the list; the first one when nil or gone.
@@ -246,10 +250,16 @@ final class AutomationsStore {
         }
         if zoneLines != zoneNotes { zoneNotes = zoneLines }
         var unread = Set<FleetRef>()
+        var counts: [AutomationKey: Int] = [:]
         for (key, list) in runs {
-            for run in list where run.unread { if let agent = run.agentID { unread.insert(FleetRef(host: key.host, agent: agent)) } }
+            for run in list where run.unread {
+                if let agent = run.agentID { unread.insert(FleetRef(host: key.host, agent: agent)) }
+                counts[key, default: 0] += 1
+            }
         }
         if unread != unreadRuns { unreadRuns = unread }
+        if counts != unreadRunCounts { unreadRunCounts = counts }
+        if statuses != triggerStatuses { triggerStatuses = statuses }
         let paused = Set(statuses.filter { $0.value.allPaused || $0.value.state == .paused }.keys)
         if paused != pausedTriggers { pausedTriggers = paused }
         var hostsPaused: [UUID: Bool] = [:]

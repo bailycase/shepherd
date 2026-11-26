@@ -3,18 +3,12 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // What the Automations page draws (NavAutomations), derived once per change from this Mac's
 // automations, each connected host's, and the runs each host kept. This Mac is one more host to
 // the shared presentation (`AutomationsModel`), under an id no remote host takes, so its rows
 // read by the same rules as a host's.
-
-/// This Mac, as the destination pages name it among the hosts.
-enum PageHost {
-    /// This Mac's id among the hosts' (remote ids are random UUIDs).
-    static let localID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
-    static let localName = "This Mac"
-}
 
 /// One automation's row in the table.
 struct AutomationsPageRow: Identifiable, Equatable {

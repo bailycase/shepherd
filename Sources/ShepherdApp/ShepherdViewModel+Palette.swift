@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
+import ShepherdSidebar
 
 /// The ⌘K command palette: agent and space lifecycle on the keyboard instead
 /// of a menu bar. Items are destinations (agents, spaces, subagent

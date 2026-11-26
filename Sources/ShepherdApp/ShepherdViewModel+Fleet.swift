@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 // Dispatches in the app's threads: what a thread draws of them (`FleetThreadSurface`) and what their buttons do. The host holds the
 // records and does the sending; this only reads its snapshot and asks it to act.

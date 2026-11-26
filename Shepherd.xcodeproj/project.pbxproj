@@ -24,6 +24,7 @@
 		15000000000000000000B203 /* ShepherdRemote in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C003 /* ShepherdRemote */; };
 		15000000000000000000B204 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C004 /* ShepherdUI */; };
 		15000000000000000000B205 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C005 /* SwiftTerm */; };
+		15000000000000000000B208 /* ShepherdSidebar in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C008 /* ShepherdSidebar */; };
 		15000000000000000000B207 /* Sentry-Dynamic in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C007 /* Sentry-Dynamic */; };
 		15000000000000000000B206 /* DesignSurfaceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C006 /* DesignSurfaceKit */; };
 		5E000000000000000000B001 /* ShepherdLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A001 /* ShepherdLauncher.swift */; };
@@ -227,6 +228,7 @@
 				15000000000000000000B202 /* ShepherdProtocol in Frameworks */,
 				15000000000000000000B203 /* ShepherdRemote in Frameworks */,
 				15000000000000000000B204 /* ShepherdUI in Frameworks */,
+				15000000000000000000B208 /* ShepherdSidebar in Frameworks */,
 				15000000000000000000B205 /* SwiftTerm in Frameworks */,
 				15000000000000000000B206 /* DesignSurfaceKit in Frameworks */,
 				15000000000000000000B207 /* Sentry-Dynamic in Frameworks */,
@@ -395,6 +397,7 @@
 				15000000000000000000C002 /* ShepherdProtocol */,
 				15000000000000000000C003 /* ShepherdRemote */,
 				15000000000000000000C004 /* ShepherdUI */,
+				15000000000000000000C008 /* ShepherdSidebar */,
 				15000000000000000000C005 /* SwiftTerm */,
 				15000000000000000000C006 /* DesignSurfaceKit */,
 				15000000000000000000C007 /* Sentry-Dynamic */,
@@ -1324,6 +1327,10 @@
 		15000000000000000000C004 /* ShepherdUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ShepherdUI;
+		};
+		15000000000000000000C008 /* ShepherdSidebar */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ShepherdSidebar;
 		};
 		15000000000000000000C005 /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;

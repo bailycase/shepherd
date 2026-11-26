@@ -15,6 +15,8 @@ extension MobileLayout {
     static let reviewToolbarHeight: CGFloat = 54
     /// The compare row (38pt) and a file's head (44pt).
     static let reviewCompareHeight: CGFloat = 38
+    /// The type of the pane's compare row and file switcher (DuoOpenSidePane, iPadReview: 13 over the diff's 12).
+    static let reviewPaneRowFont: CGFloat = 13
     /// The send bar (iPadReview: at least 56pt) and a full-screen file row (56pt).
     static let reviewSendBarHeight: CGFloat = 56
     static let reviewFileRowHeight: CGFloat = 56

@@ -38,8 +38,6 @@ final class PadDesigns {
     @ObservationIgnored private var canvases: [PadDesignRef: PadDesignCanvas] = [:]
     /// Designs on screen, by host: their hosts push changes for these alone.
     @ObservationIgnored private var onScreen: [PadDesignRef: Int] = [:]
-    /// The sidebar's Recents as last merged (`recents`).
-    @ObservationIgnored var recentsCache: (input: RecentsInput, output: [PadRecent])?
 
     private static var stores: [ObjectIdentifier: PadDesigns] = [:]
 
@@ -60,7 +58,6 @@ final class PadDesigns {
         store.sessions.removeValue(forKey: host)
         store.rows.removeAll { $0.ref.host == host }
         store.available = hosts.hosts.contains { $0.id != host && $0.phase.isConnected && $0.supports(RemoteProtocol.designsCapability) }
-        store.recentsCache = nil
         PadDesignRendering.shared.forget(host: host)
     }
 
@@ -176,29 +173,5 @@ final class PadDesigns {
         for (id, session) in sessions where session != nil {
             await library(id).refresh()
         }
-    }
-}
-
-// MARK: Recents
-
-/// A row of the iPad sidebar's Recents (iPadSidebar): a thread, or a design with its nib and
-/// "4 boards" (`DesignRecents`).
-typealias PadRecent = DesignRecents.Entry<PadDesigns.Row>
-
-extension PadDesigns {
-    /// Recents with the designs among the threads, derived once per change of either list. A
-    /// design agent is never a thread (FleetModel); the row Fleet gives its design is the
-    /// phone's, and here the design is this store's row (decision 6).
-    func recents(_ threads: [FleetThreadRow]) -> [PadRecent] {
-        let input = RecentsInput(threads: threads, designs: rows)
-        if let cached = recentsCache, cached.input == input { return cached.output }
-        let output = DesignRecents.merge(threads: threads.filter { $0.design == nil }, designs: rows) { $0.lastActive }
-        recentsCache = (input, output)
-        return output
-    }
-
-    struct RecentsInput: Equatable {
-        var threads: [FleetThreadRow]
-        var designs: [Row]
     }
 }

@@ -4,6 +4,7 @@ import ShepherdProtocol
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 @Suite("Sidebar activity groups")
 @MainActor

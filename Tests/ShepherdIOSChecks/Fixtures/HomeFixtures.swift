@@ -552,23 +552,30 @@ enum HomeFixtureData {
         let listed = runs.filter { $0.run.map { !waiting.contains($0) } == true }
         check(Set(listed.map(\.hostName)) == ["Studio", "build-01"], "the group spans both connected hosts (\(listed.map { "\($0.hostName): \($0.name)" }))")
         let titles = labels()
-        let triage = titles.filter { $0.contains("Triage new Sentry issues") }
+        // The waiting run is a thread in Needs you (the Mac's rule); its automation's row says it asked.
+        let triage = titles.filter { $0.hasPrefix("Triage new Sentry issues, automation, needs you") }
         check(triage.count == 1, "the attention run is drawn once, in Needs you (\(triage.count): \(triage))")
-        // The destination row above ("Automations, 5") counts every definition; the group's header counts the runs listed.
-        let header = all.first { $0.accessibilityLabel == "Automations, \(listed.count)" }
-        check(header != nil, "the group header reads \"Automations, \(listed.count)\", not counting the attention run (labels: \(titles.filter { $0.hasPrefix("Automations") }))")
-        check(header?.accessibilityTraits.contains(.header) == true && header?.accessibilityHint == "Opens Automations", "it is a header that says what it opens (\(String(describing: header?.accessibilityHint)))")
-        if let frame = header?.accessibilityFrame { check(frame.height >= 44, "its hit area is at least 44pt (\(Int(frame.height))pt)") }
-        // Press the header the way VoiceOver activates it.
-        let opened = header?.accessibilityActivate() ?? false
+        // The Automations section is the Mac's: a header with its count and one row per active automation, on both hosts.
+        let header = all.first { $0.accessibilityLabel?.hasPrefix("Automations, ") == true && $0.accessibilityTraits.contains(.header) }
+        check(header != nil, "the Automations header reads its count (labels: \(titles.filter { $0.hasPrefix("Automations") }))")
+        let rows = titles.filter { $0.contains(", automation, ") && $0.contains(" on ") }
+        check(Set(rows.compactMap { $0.components(separatedBy: " on ").last?.components(separatedBy: ",").first }) == ["Studio", "build-01"],
+              "an automation row for each host (\(rows))")
+        if let frame = all.first(where: { $0.accessibilityLabel?.hasPrefix("Merge PR #24 after CI") == true })?.accessibilityFrame {
+            check(frame.height >= 44, "its hit area is at least 44pt (\(Int(frame.height))pt)")
+        }
+        // Press an automation row the way VoiceOver activates it: it opens Automations.
+        let row = all.first { $0.accessibilityLabel?.hasPrefix("Merge PR #24 after CI") == true }
+        let opened = row?.accessibilityActivate() ?? false
         await FixtureCheck.wait("the Automations screen to open", seconds: 5) { app.navigator.padPath.last == .home(.automations) }
-        check(opened && app.navigator.padPath.last == .home(.automations), "activating the header opens Automations")
-        // Press a run: it opens its thread. Opening Automations closed a portrait sidebar: show it again.
+        check(opened && app.navigator.padPath.last == .home(.automations), "activating the row opens Automations")
+        // Press the waiting run's thread: it opens. Opening Automations closed a portrait sidebar: show it again.
         app.navigator.open(.thread(FixtureData.ref(FixtureData.preview)))
+        try? await Task.sleep(for: .seconds(1))
         app.navigator.padColumns = .all
         try? await Task.sleep(for: .seconds(1))
-        if let run = listed.first?.run, let row = all.first(where: { $0.accessibilityLabel?.contains(listed[0].name) == true }) {
-            let pressed = row.accessibilityActivate()
+        if let run = attention.first?.run, let thread = all.first(where: { $0.accessibilityLabel?.hasPrefix("Triage new Sentry issues, automation, needs you") == true }) {
+            let pressed = thread.accessibilityActivate()
             await FixtureCheck.wait("the run's thread to open", seconds: 5) { app.navigator.selectedThread == AgentRef(host: run.host, agent: run.agent) }
             check(pressed && app.navigator.selectedThread == AgentRef(host: run.host, agent: run.agent), "activating a run opens its thread")
         } else {

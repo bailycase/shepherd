@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Pinned: the first, exclusive sidebar group, and what it does to the
 /// order, the digits and the walk.

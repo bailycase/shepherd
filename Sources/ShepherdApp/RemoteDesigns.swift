@@ -5,17 +5,12 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
+import ShepherdSidebar
 
 // A remote host's designs on this Mac (`designs.v1`, served while the host's Design tool is on):
 // the Designs page lists them under the host's name, and opening one shows its canvas beside its
 // agent's chat, the same screen as a local design's. The boards render here, from files fetched
 // by hash; every change goes to the host, through its own mutations and checks.
-
-/// A design on a remote host.
-struct RemoteDesignRef: Hashable {
-    var hostID: UUID
-    var designID: DesignID
-}
 
 extension ShepherdViewModel {
     // MARK: Lookups
@@ -358,7 +353,7 @@ struct RemoteDesignLayoutView: View {
                                  designName: vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.designs
                                      .first { $0.id == ref.designID }?.name ?? "")
                 RemoteDesignChatPane(vm: vm, screen: screen, agent: agent, agentName: agentName, threadPaneID: threadPaneID)
-                    .frame(width: AppLayout.designChatWidth)
+                    .designChatCard()
             }
         }
         .onAppear { [vm] in
@@ -401,7 +396,6 @@ struct RemoteDesignChatPane: View {
                     .accessibilityHidden(!chat)
                 if tab == .comments {
                     DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
-                        .background(Color.sh.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
                     DesignTweakPane(model: tweak, target: screen.tweakTarget) { [vm] in
@@ -412,8 +406,6 @@ struct RemoteDesignChatPane: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.sh.bgWindow)
-        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in if screen.paneTab == .chat { vm.remoteFocusedPaneID = threadPaneID } })
     }
 }

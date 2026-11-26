@@ -6,6 +6,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // The Browser tab's web views, and the only app file that imports WebKit (as DesignHost is for
 // DesignSurfaceKit and TerminalHost for TerminalSurfaceKit). Each local thread has at most one

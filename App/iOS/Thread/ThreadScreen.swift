@@ -112,7 +112,7 @@ struct ThreadScreen: View {
                     title
                 }
                 .padding(.horizontal, MobileLayout.padThreadGutter)
-                .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.headHeight, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.duoHeadHeight, alignment: .leading)
                 .background(Color.sh.bgWindow)
                 .accessibilityAddTraits(.isHeader)
             }
@@ -175,16 +175,6 @@ struct ThreadScreen: View {
                 // down the side (iPhone Duo).
                 if agent != nil {
                     ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) { navigator.present(.review(.branch(ref))) } }
-                }
-                // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
-                // horizontal bar leaves it to the sidebar's row.
-                if sizeClass == .regular, verticalBars {
-                    ToolbarItem(placement: .bottomBar) {
-                        Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
-                            .buttonStyle(.glassProminent)
-                            .disabled(hosts.hosts.isEmpty)
-                    }
-                    .visibilityPriority(.high)
                 }
             }
         }
@@ -778,7 +768,9 @@ private struct ThreadSidebarButton: View {
         if inBar {
             button
         } else {
-            button.labelStyle(.iconOnly).buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.large)
+            // The board's 40pt circle (DuoOpenSidePane), not the large control's.
+            button.labelStyle(.iconOnly).buttonStyle(.glass).buttonBorderShape(.circle)
+                .frame(width: MobileLayout.padHeaderButton, height: MobileLayout.padHeaderButton)
         }
     }
 }

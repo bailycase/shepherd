@@ -6,6 +6,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The sidebar's Automations group (Sidebar › Automations): one row per active automation, its run folded under it and
 /// never among Working, Done or Recents, and the header, the row, its chevron and the run each do what they say.

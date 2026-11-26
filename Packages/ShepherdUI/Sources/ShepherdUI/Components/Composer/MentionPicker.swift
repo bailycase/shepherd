@@ -7,19 +7,24 @@ import SwiftUI
 
 /// The picker's own measures.
 public enum SHMentionMetrics {
-    public static let rowHeight: CGFloat = 48
+    public static let rowHeight: CGFloat = 46
     /// A thread's row (ThreadLinkA's `.opt`): a dot, the title and its project, no picture.
     public static let threadRowHeight: CGFloat = 34
     /// "Link a thread"'s label row, in the caption's words rather than a menu's section label.
     public static let captionHeaderHeight: CGFloat = 30
-    public static let rowPaddingHorizontal: CGFloat = 10
-    public static let rowSpacing: CGFloat = 10
-    public static let rowRadius: CGFloat = 7
+    public static let rowPaddingHorizontal: CGFloat = 8
+    public static let rowSpacing: CGFloat = 12
+    public static let rowRadius: CGFloat = 9
     public static let titleSize: CGFloat = 13
-    public static let subtitleSize: CGFloat = 11.5
-    public static let pickSize: CGFloat = 11
-    public static let headerHeight: CGFloat = 24
-    public static let backHeaderHeight: CGFloat = 34
+    public static let subtitleSize: CGFloat = 12
+    public static let pickSize: CGFloat = 12
+    /// A section's label row (.ah2).
+    public static let headerHeight: CGFloat = 30
+    public static let headerSize: CGFloat = 12
+    public static let popoverRadius: CGFloat = SH.Radius.xl
+    /// The ⏎ keycap.
+    public static let keycap: CGFloat = 18
+    public static let offlineOpacity: Double = 0.55
     public static let backSize: CGFloat = 22
     public static let emptyPadding: CGFloat = 22
     public static let emptyTitleSize: CGFloat = 13
@@ -183,7 +188,7 @@ public struct SHMentionPicker: View {
         let M = SHMentionMetrics.self
         VStack(alignment: .leading, spacing: 0) {
             if let crumbs {
-                HStack(spacing: SH.Space.m) {
+                HStack(spacing: SH.Space.s) {
                     Button(action: back) {
                         Image(systemName: "chevron.left").font(.system(size: M.pickSize, weight: .semibold))
                             .frame(width: M.backSize, height: M.backSize)
@@ -192,15 +197,11 @@ public struct SHMentionPicker: View {
                     .buttonStyle(.shIcon(size: M.backSize))
                     .help("Back")
                     .accessibilityLabel("Back")
-                    SHReferenceCrumbs(crumbs: crumbs)
+                    SHMentionCrumbsHeader(crumbs: crumbs)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, M.rowPaddingHorizontal)
-                .frame(height: M.backHeaderHeight)
-                .overlay(alignment: .bottom) { SHHairline() }
-                .padding(.horizontal, -SH.Space.s)
-                .padding(.top, -SH.Space.s)
-                .padding(.bottom, SH.Space.xs)
+                .frame(height: M.headerHeight)
             }
             switch empty {
             case .nothingMatches(let query, let searched):
@@ -214,21 +215,21 @@ public struct SHMentionPicker: View {
                 .padding(.vertical, M.emptyPadding)
                 .padding(.horizontal, SH.Space.xl)
             case .noDesigns:
-                SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                SHMentionSectionHeader(title: "Designs", trailing: nil)
                 statusLine {
                     Image(systemName: "pencil.tip").font(.system(size: M.pickSize)).foregroundStyle(Color.sh.textTertiary)
                     noDesignsLine
                 }
             case .loading:
                 // One quiet line that chooses nothing: ↩ over it leaves the message alone.
-                SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                SHMentionSectionHeader(title: "Designs", trailing: nil)
                 statusLine {
                     SHBusyLabel("Loading designs…", font: .shSans(M.noDesignsSize))
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Loading designs")
             case .failed(let reason):
-                SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                SHMentionSectionHeader(title: "Designs", trailing: nil)
                 statusLine {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: M.pickSize)).foregroundStyle(AgentState.failed.color)
                         .accessibilityHidden(true)
@@ -257,7 +258,9 @@ public struct SHMentionPicker: View {
             }
             if !sections.isEmpty { list }
         }
-        .modifier(SHMenuSurface(width: nil))
+        .padding(SH.Space.s)
+        .frame(maxWidth: .infinity)
+        .shPopover(radius: M.popoverRadius)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Mention")
     }
@@ -297,9 +300,7 @@ public struct SHMentionPicker: View {
                                 SHMentionCaptionHeader(title: section.title, trailing: section.trailing)
                                     .frame(height: section.headerHeight)
                             case .header(let section):
-                                SHMenuHeader(section.title, trailing: section.trailing, inset: SHMentionMetrics.rowPaddingHorizontal)
-                                    .padding(.top, SH.Space.xs)
-                                    .frame(height: SHMentionMetrics.headerHeight)
+                                SHMentionSectionHeader(title: section.title, trailing: section.trailing)
                             case .row(let row):
                                 SHMentionRowView(row: row, highlighted: row.id == highlighted, choose: choose, drill: drill) {
                                     guard row.id != highlighted else { return }
@@ -315,7 +316,7 @@ public struct SHMentionPicker: View {
                     }
                 }
             }
-            .frame(height: Self.listHeight(sections, room: maxHeight.map { $0 - 2 * SH.Space.s - (crumbs == nil ? 0 : SHMentionMetrics.backHeaderHeight) }))
+            .frame(height: Self.listHeight(sections, room: maxHeight.map { $0 - 2 * SH.Space.s - (crumbs == nil ? 0 : SHMentionMetrics.headerHeight) }))
             .onChange(of: highlighted) { _, id in
                 defer { pointed = nil }
                 guard let id, id != pointed else { return }
@@ -386,45 +387,56 @@ struct SHMentionRowView: View, Equatable {
     private var piece: some View {
         let sh = Color.sh
         let M = SHMentionMetrics.self
+        let R = SHReferenceMetrics.self
         return SHMenuRow(highlighted: highlighted, spacing: M.rowSpacing,
                   padding: EdgeInsets(top: 0, leading: M.rowPaddingHorizontal, bottom: 0, trailing: M.rowPaddingHorizontal),
-                  height: M.rowHeight, action: { row.trailing == .drill ? drill(row) : choose(row) }, onHover: hover) {
+                  height: M.rowHeight, radius: M.rowRadius, action: { row.trailing == .drill ? drill(row) : choose(row) }, onHover: hover) {
             if row.kind == .page {
                 Image(systemName: "rectangle.stack")
                     .font(.system(size: M.titleSize))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: SHReferenceMetrics.thumbnail.width, height: SHReferenceMetrics.thumbnail.height)
+                    .foregroundStyle(sh.textTertiary)
+                    .frame(width: R.rowThumbnail.width, height: R.rowThumbnail.height)
                     .accessibilityHidden(true)
             } else if row.kind == .file {
-                Image(systemName: "doc")
-                    .font(.system(size: M.pickSize))
+                Image(systemName: SHGlyph.document.symbolName)
+                    .font(.system(size: M.titleSize))
                     .foregroundStyle(sh.textTertiary)
-                    .frame(width: SHReferenceMetrics.thumbnail.width, height: SHReferenceMetrics.thumbnail.height)
+                    .frame(width: R.rowThumbnail.width, height: R.rowThumbnail.height)
+                    .accessibilityHidden(true)
             } else {
-                SHReferenceThumbnail(row.thumbnail)
+                SHReferenceThumbnail(row.thumbnail, size: R.rowThumbnail, radius: R.rowThumbnailRadius)
             }
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 title
                 if row.subtitle != nil || row.lead != nil {
-                    HStack(spacing: SH.Space.xs) {
-                        if let lead = row.lead { Text(lead).font(.shMono(M.subtitleSize - 0.5)) }
-                        if let subtitle = row.subtitle { Text((row.lead == nil ? "" : "· ") + subtitle) }
-                    }
-                    .font(.shSans(M.subtitleSize))
-                    .foregroundStyle(sh.textTertiary)
-                    .lineLimit(1)
+                    Text([row.lead, row.subtitle].compactMap { $0 }.joined(separator: " · "))
+                        .font(.shSans(M.subtitleSize))
+                        .foregroundStyle(sh.textTertiary)
+                        .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let host = row.host { SHReferenceHostTag(host, offline: row.hostOffline) }
-            switch row.trailing {
-            case .drill:
-                Image(systemName: "chevron.right").font(.system(size: M.pickSize - 2, weight: .semibold)).foregroundStyle(sh.textTertiary)
-            case .pick:
-                Text("⏎").font(.shMono(M.pickSize)).foregroundStyle(sh.running).accessibilityHidden(true)
+            HStack(spacing: SH.Space.m) {
+                if let host = row.host {
+                    Text(host).font(.shSans(M.subtitleSize)).foregroundStyle(row.hostOffline ? sh.lanternText : sh.textTertiary).lineLimit(1)
+                }
+                switch row.trailing {
+                case .drill:
+                    Image(systemName: "chevron.right").font(.system(size: M.pickSize - 2, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                case .pick:
+                    // The return key shows on the row that ⏎ chooses.
+                    Text("↵")
+                        .font(.shSans(M.pickSize - 1))
+                        .foregroundStyle(sh.textSecondary)
+                        .frame(minWidth: M.keycap, minHeight: M.keycap)
+                        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                        .shBorder(sh.lineSubtle, radius: SH.Radius.xs)
+                        .opacity(highlighted ? 1 : 0)
+                        .accessibilityHidden(true)
+                }
             }
         }
-        .opacity(row.hostOffline ? 0.5 : 1)
+        .opacity(row.hostOffline ? M.offlineOpacity : 1)
         .accessibilityLabel((row.crumbs + [row.title]).joined(separator: ", ") + (row.subtitle.map { ", \($0)" } ?? ""))
         .accessibilityHint(row.trailing == .drill ? "Shows what is inside" : "Adds it to the message")
     }
@@ -453,14 +465,14 @@ struct SHMentionRowView: View, Equatable {
         return text
     }
 
-    /// `title` with each of `words` it holds (ignoring case and accents) bold and underlined.
+    /// `title` with each of `words` it holds (ignoring case and accents) on an attention wash (the board's `u`).
     static func highlighted(_ title: String, words: [String]) -> AttributedString {
         var text = AttributedString(title)
         for range in matchRanges(title, words: words) {
             guard let lower = AttributedString.Index(range.lowerBound, within: text),
                   let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
-            text[lower..<upper].underlineStyle = .single
-            text[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+            text[lower..<upper].backgroundColor = Color.sh.lanternTint
+            text[lower..<upper].foregroundColor = Color.sh.textPrimary
         }
         return text
     }
@@ -501,10 +513,47 @@ private struct SHMentionCrumbs: View {
         HStack(spacing: SHReferenceMetrics.crumbSpacing) {
             ForEach(Array(crumbs.enumerated()), id: \.offset) { index, crumb in
                 Text(crumb).foregroundStyle(sh.textSecondary).lineLimit(1).layoutPriority(Double(index))
-                Text("›").foregroundStyle(sh.textTertiary)
+                Text("›").foregroundStyle(sh.textSecondary)
             }
-            Text(title).fontWeight(.semibold).foregroundStyle(sh.textPrimary).lineLimit(1).layoutPriority(Double(crumbs.count + 1))
+            Text(title).fontWeight(.medium).foregroundStyle(sh.textPrimary).lineLimit(1).layoutPriority(Double(crumbs.count + 1))
         }
-        .font(.shSans(SHReferenceMetrics.crumbSize))
+        .font(.shSans(SHReferenceMetrics.boardCrumbSize))
+    }
+}
+
+/// A section's label in the list (.ah2): the title in 12 medium `textSecondary`, its count or the
+/// place it is from at the right in `textTertiary`.
+private struct SHMentionSectionHeader: View {
+    let title: String
+    let trailing: String?
+
+    var body: some View {
+        let M = SHMentionMetrics.self
+        HStack(spacing: SH.Space.s) {
+            Text(title).font(.shSans(M.headerSize, .medium)).foregroundStyle(Color.sh.textSecondary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            if let trailing {
+                Text(trailing).font(.shSans(M.headerSize)).foregroundStyle(Color.sh.textTertiary).monospacedDigit()
+            }
+        }
+        .lineLimit(1)
+        .padding(.horizontal, M.rowPaddingHorizontal)
+        .frame(height: M.headerHeight)
+    }
+}
+
+/// Where a design's boards or a board's elements are, at the head of the list: the parents in
+/// `textTertiary`, the place last in `textSecondary` medium.
+private struct SHMentionCrumbsHeader: View {
+    let crumbs: [String]
+
+    var body: some View {
+        let sh = Color.sh
+        let parents = crumbs.dropLast().map { $0 + " › " }.joined()
+        Text("\(Text(parents).foregroundStyle(sh.textTertiary))\(Text(crumbs.last ?? "").fontWeight(.medium).foregroundStyle(sh.textSecondary))")
+            .font(.shSans(SHMentionMetrics.headerSize))
+            .lineLimit(1)
+            .truncationMode(.head)
     }
 }

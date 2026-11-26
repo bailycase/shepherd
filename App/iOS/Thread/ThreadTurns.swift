@@ -239,6 +239,8 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             onCopy: presentation.hasCopyText ? { UIPasteboard.general.string = presentation.copyText } : nil,
             onRetry: actions.retry,
             timing: presentation.timing.map(SHResponseTimingModel.init))
+        // The glyphs sit flush with the reply's text (iPadReview), the 44pt targets reaching out into the gutter.
+        .padding(.leading, -(SH.Height.touch - SHThreadMetrics.footerGlyph) / 2)
     }
 }
 

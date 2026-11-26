@@ -8,6 +8,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Slice 4d: the thread surfaces of a dispatch, in light and dark (FleetDispatch, FleetRemote, FleetNewThread, FleetSidebar, FleetStates, FleetA),
 /// through the real derivations and views. Fixture Macs and made-up names only.

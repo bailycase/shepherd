@@ -5,6 +5,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// This Mac's automations in the sidebar, over a real server whose run agent's status arrives
 /// from its extension: a run reads live from the moment it starts, Run Now never fails

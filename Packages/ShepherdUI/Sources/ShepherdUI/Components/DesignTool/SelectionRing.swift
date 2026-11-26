@@ -22,6 +22,24 @@ public struct SHSelectionRing: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        // DZTweak: an ink ring 3pt outside the element and an ink tag over it, no fill and no handles.
+        let M = SHDesignChrome.self
+        Color.clear
+            .overlay {
+                RoundedRectangle(cornerRadius: SH.Radius.l)
+                    .strokeBorder(style == .selected ? Color.sh.textPrimary : Color.sh.textTertiary, lineWidth: SHDesignMetrics.elementRingWidth)
+                    .padding(-M.selectionOutset)
+            }
+            .overlay(alignment: .topLeading) {
+                if style == .selected, let tag {
+                    SHSelectionTag(tag)
+                        .offset(x: -M.selectionTagInset, y: -(M.selectionTagHeight + M.selectionOutset + M.selectionTagGap))
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        #else
         Rectangle()
             .fill(style == .selected ? Color.sh.runningTint : .clear)
             .overlay { Rectangle().strokeBorder(Color.sh.running, lineWidth: SHDesignMetrics.elementRingWidth) }
@@ -33,8 +51,10 @@ public struct SHSelectionRing: View {
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        #endif
     }
 
+    #if os(iOS)
     private var handles: some View {
         let half = SHDesignMetrics.handleSize / 2
         return ZStack {
@@ -51,6 +71,7 @@ public struct SHSelectionRing: View {
             .overlay { shape.strokeBorder(Color.sh.running, lineWidth: SHDesignMetrics.handleLineWidth) }
             .frame(width: SHDesignMetrics.handleSize, height: SHDesignMetrics.handleSize)
     }
+    #endif
 }
 
 /// The name over a selected element: 18pt, 6pt padding, radius 4, `running`, white mono 10.5.
@@ -62,6 +83,17 @@ public struct SHSelectionTag: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        let M = SHDesignChrome.self
+        Text(text)
+            .font(.shSans(M.selectionTagTextSize, .medium))
+            .foregroundStyle(Color.sh.textOnPrimary)
+            .lineLimit(1)
+            .padding(.horizontal, M.selectionTagPadding)
+            .frame(height: M.selectionTagHeight)
+            .background(Color.sh.primary, in: RoundedRectangle(cornerRadius: M.selectionTagRadius))
+            .fixedSize()
+        #else
         Text(text)
             .font(.shMono(SHDesignMetrics.tagTextSize))
             .foregroundStyle(Color.sh.textOnRunning)
@@ -70,5 +102,6 @@ public struct SHSelectionTag: View {
             .frame(height: SHDesignMetrics.tagHeight)
             .background(Color.sh.running, in: RoundedRectangle(cornerRadius: SHDesignMetrics.tagRadius))
             .fixedSize()
+        #endif
     }
 }

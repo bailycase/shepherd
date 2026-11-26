@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import ShepherdCore
 import ShepherdUI
+import ShepherdSidebar
 
 /// The sidebar organized by project (Sidebar — Projects: SidebarTree, SidebarProjects,
 /// SidebarProjectsHosts): Projects with its +, or a section per host while grouped, each project a

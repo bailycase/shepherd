@@ -4,10 +4,9 @@ import SwiftUI
 // component specimens, and the Designs page's "Build one from a repo" tile (NavDesigns). The
 // specimens draw in the system's own look; everything around them is Shepherd Design.
 
-/// The system page's section list (DZSystem): a 200pt column (18×10 padding, a hairline on its
-/// trailing edge, rows 2pt apart). Each row is 30pt, 10pt padding, radius 6, its title in 12.5 and
-/// its count trailing in mono 10.5 `textTertiary`; the current one on `bgSelected`, semibold, the
-/// rest `textSecondary`.
+/// The system page's section list: a 200pt column (16×8 padding, rows 2pt apart) with no rule beside it, as the
+/// sidebar's rows are. Each row is 30pt, 10pt padding, radius 7, its title in 13 and its count trailing in 12
+/// `textTertiary`; the current one on `bgSelected`, medium, in ink, the rest `textSecondary`.
 public struct SHSectionRail: View {
     public struct Section: Identifiable, Equatable, Sendable {
         public let id: String
@@ -37,11 +36,10 @@ public struct SHSectionRail: View {
                 SHSectionRailRow(section: section, current: section.id == selection) { select(section.id) }
             }
         }
-        .padding(.vertical, SHDesignMetrics.railPaddingVertical)
-        .padding(.horizontal, SHDesignMetrics.railPaddingHorizontal)
+        .padding(.vertical, SH.Space.xl)
+        .padding(.horizontal, SH.Space.m)
         .frame(width: SHDesignMetrics.railWidth, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .top)
-        .overlay(alignment: .trailing) { SHHairline(.vertical) }
     }
 }
 
@@ -56,13 +54,13 @@ private struct SHSectionRailRow: View {
         Button(action: action) {
             HStack(spacing: SH.Space.m) {
                 Text(section.title)
-                    .font(.shSans(SHDesignMetrics.railTextSize, current ? .semibold : .regular))
+                    .font(.shSans(SHDesignChrome.toolbarTextSize, current ? .medium : .regular))
                     .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: SH.Space.m)
                 if let count = section.count {
                     Text("\(count)")
-                        .font(.shMono(SHDesignMetrics.railCountSize))
+                        .font(.shSans(SHDesignChrome.paneCountSize))
                         .foregroundStyle(Color.sh.textTertiary)
                 }
             }
@@ -79,9 +77,23 @@ private struct SHSectionRailRow: View {
     }
 }
 
-/// A token read from a design system (SHTokenSwatch; DZSystem): a 56pt swatch (radius 8, a 1px
-/// `bgSelected` inner line), the token's name in mono 11.5 semibold, and its value and the line
-/// it came from in mono 10.5 `textTertiary` ("#4f46e5 · tokens.css:8"), 6pt apart.
+/// A card of rows on a design system's page (DZSystem): the card fill and `lift` at radius 14 with a `lineSubtle`
+/// line, holding its rows (`SHTypeSpecimen` and the like) with nothing between them.
+public struct SHDesignSystemTable<Content: View>: View {
+    let content: Content
+
+    public init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shCard(radius: SH.Radius.xl, lift: true)
+    }
+}
+
+/// A token read from a design system (SHTokenSwatch; DZSystem): a 44pt swatch (radius 8, a 1px
+/// `lineSubtle` inner line), the token's name in mono 12, and its value and the line it came from
+/// in 12 `textTertiary` ("#4f46e5 · tokens.css:8", wrapping), 6pt apart.
 public struct SHTokenSwatch: View {
     let name: String
     let detail: String
@@ -98,19 +110,21 @@ public struct SHTokenSwatch: View {
         let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.tokenSwatchRadius)
         VStack(alignment: .leading, spacing: SH.Space.s) {
             shape.fill(color)
-                .overlay { shape.strokeBorder(Color.sh.bgSelected, lineWidth: SHDesignMetrics.lineWidth) }
-                .frame(height: SHDesignMetrics.tokenSwatchHeight)
+                .overlay { shape.strokeBorder(Color.sh.lineSubtle, lineWidth: SHDesignMetrics.lineWidth) }
+                .frame(height: SHDesignChrome.systemSwatchHeight)
             Text(name)
-                .font(.shMono(SHDesignMetrics.tokenSwatchNameSize, .semibold))
+                .font(.shMono(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            // The value leads and stays whole; where it came from gives way first.
+            // The value leads; where it came from follows it onto a second line.
             Text(detail)
-                .font(.shMono(SHDesignMetrics.tokenSwatchDetailSize))
+                .font(.shSans(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textTertiary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, -SH.Space.xs)
         }
         .help("\(name) \(detail)")
         .accessibilityElement(children: .ignore)
@@ -118,25 +132,27 @@ public struct SHTokenSwatch: View {
     }
 }
 
-/// One of a system's type styles (DZSystem): its name in mono 11 `textTertiary` in a 90pt
-/// column, a specimen drawn in the style (the system's face at its size and weight, in
-/// `textPrimary`), and its size and weight trailing in mono 10.5 `textTertiary` ("26/700"), on a
-/// row padded 8pt above and below with a hairline above it.
+/// One of a system's type styles (DZSystem), a row of `SHDesignSystemTable`: its name in mono 12
+/// `textTertiary` in a 90pt column, a specimen drawn in the style (the system's face at its size and weight, in
+/// `textPrimary`), and its size and weight trailing in 12 `textTertiary` ("26/700"), a row at least 40pt tall
+/// with 16pt sides and a hairline above it unless it is the card's first.
 public struct SHTypeSpecimen<Specimen: View>: View {
     let name: String
     let spec: String
+    let divided: Bool
     let specimen: Specimen
 
-    public init(_ name: String, spec: String, @ViewBuilder specimen: () -> Specimen) {
+    public init(_ name: String, spec: String, divided: Bool = true, @ViewBuilder specimen: () -> Specimen) {
         self.name = name
         self.spec = spec
+        self.divided = divided
         self.specimen = specimen()
     }
 
     public var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: SH.Space.xl) {
             Text(name)
-                .font(.shMono(SHDesignMetrics.typeNameSize))
+                .font(.shMono(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -147,20 +163,21 @@ public struct SHTypeSpecimen<Specimen: View>: View {
                 .truncationMode(.tail)
             Spacer(minLength: SH.Space.xl)
             Text(spec)
-                .font(.shMono(SHDesignMetrics.typeSpecSize))
+                .font(.shSans(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textTertiary)
                 .fixedSize()
         }
-        .padding(.vertical, SH.Space.m)
-        .overlay(alignment: .top) { SHHairline() }
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SH.Space.s)
+        .frame(minHeight: SHDesignChrome.systemRowHeight)
+        .overlay(alignment: .top) { if divided { SHHairline() } }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// One of a system's components (DZSystem): a 92pt specimen tile (radius 8, 12pt side padding,
-/// on the system's own background) with the component drawn in the system, and 10pt under it
-/// the component's name in 12.5 semibold with its template trailing in mono 10.5 `textTertiary`
-/// ("partials/button.html").
+/// One of a system's components (DZSystem): a card (radius 10, a `lineSubtle` line) with a 92pt specimen
+/// (12pt side padding, on the system's own background) holding the component drawn in the system, and under it
+/// the component's name in 13 medium with its template trailing in mono 12 `textTertiary` ("partials/button.html").
 public struct SHComponentSpecimen<Specimen: View>: View {
     let name: String
     let template: String?
@@ -175,28 +192,32 @@ public struct SHComponentSpecimen<Specimen: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: SHDesignMetrics.specimenSpacing) {
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m + 2)
+        VStack(alignment: .leading, spacing: 0) {
             specimen
                 .padding(.horizontal, SH.Space.l)
                 .frame(maxWidth: .infinity)
                 .frame(height: SHDesignMetrics.specimenHeight)
                 .background(background)
-                .clipShape(RoundedRectangle(cornerRadius: SHDesignMetrics.specimenRadius))
             HStack(spacing: SH.Space.m) {
                 Text(name)
-                    .font(.shSans(SHDesignMetrics.specimenNameSize, .semibold))
+                    .font(.shSans(SHDesignChrome.toolbarTextSize, .medium))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: SH.Space.m)
                 if let template {
                     Text(template)
-                        .font(.shMono(SHDesignMetrics.specimenTemplateSize))
+                        .font(.shMono(SHDesignChrome.paneCountSize))
                         .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
             }
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.m)
         }
+        .clipShape(shape)
+        .shBorder(Color.sh.lineSubtle, in: shape)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, template].compactMap { $0 }.joined(separator: ", "))
     }

@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// Renaming a thread is optimistic: the sidebar row and the header show the submitted name at once
 /// (`pendingRenames`, a presentation overlay), and the host stays the only writer of the name.

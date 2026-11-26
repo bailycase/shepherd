@@ -317,7 +317,7 @@ private let previewActions = SHBoardActions.Actions(comment: {}, tweak: {}, vari
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
-            SHExportSection("Use it somewhere else", divided: false) {
+            SHExportSection("Use it somewhere else") {
                 Button("Attach to a thread", systemImage: "text.bubble") {}
                     .buttonStyle(.sh(.secondary, size: .s))
             }

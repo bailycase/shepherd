@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import UniformTypeIdentifiers
+import ShepherdSidebar
 
 // Export (DZExport) and import (decision 4): a design's boards written where the user picks in a
 // save panel, or attached to a thread's composer; a Claude Design folder read into a new design.

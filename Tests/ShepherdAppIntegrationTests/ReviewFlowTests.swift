@@ -7,6 +7,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The diff review against real scratch repositories: an agent asking for review over the
 /// extension socket, the diff git produces, sending the review to pi, and reverting files.

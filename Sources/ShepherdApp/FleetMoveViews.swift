@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // Moving a thread to another Mac (FleetMove board): the card a move draws above the conversation, and "Move to Mac" in a thread's menu. Plain values in (`FleetMovePresentation`); what a pick does is the caller's.
 

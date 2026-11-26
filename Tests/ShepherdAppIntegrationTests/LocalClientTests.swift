@@ -8,6 +8,7 @@ import ShepherdTestSupport
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The app as its host's client: a headless host serves
 /// threads and terminals on its local socket, and the app's view model, on an idle server that

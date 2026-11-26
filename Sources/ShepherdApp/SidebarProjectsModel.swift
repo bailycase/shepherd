@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // The sidebar organized by project (Sidebar — Projects: SidebarTree, SidebarProjects,
 // SidebarProjectsHosts) as plain values: a folder per project with its threads inside, derived

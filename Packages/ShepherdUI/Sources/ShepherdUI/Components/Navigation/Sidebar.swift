@@ -4,12 +4,13 @@ import SwiftUI
 /// a 1px shine along its top and a soft shadow, holding the 44pt top bar (room for the window
 /// controls, then Hide sidebar and Search; it drags the window), the destinations and lists, and
 /// the 44pt footer. The caller insets it from the window.
-public struct SHSidebar<Content: View, Footer: View>: View {
-    let topBar: SHSidebarTopBar
+public struct SHSidebar<TopBar: View, Content: View, Footer: View>: View {
+    let topBar: TopBar
     @ViewBuilder let content: () -> Content
     @ViewBuilder let footer: () -> Footer
 
-    public init(topBar: SHSidebarTopBar, @ViewBuilder content: @escaping () -> Content,
+    /// `topBar` is the Mac's `SHSidebarTopBar`, or the touch client's own bar of the same height.
+    public init(topBar: TopBar, @ViewBuilder content: @escaping () -> Content,
                 @ViewBuilder footer: @escaping () -> Footer) {
         self.topBar = topBar
         self.content = content
@@ -54,7 +55,7 @@ extension View {
 }
 
 extension SHSidebar where Footer == EmptyView {
-    public init(topBar: SHSidebarTopBar, @ViewBuilder content: @escaping () -> Content) {
+    public init(topBar: TopBar, @ViewBuilder content: @escaping () -> Content) {
         self.init(topBar: topBar, content: content, footer: { EmptyView() })
     }
 }
@@ -99,6 +100,15 @@ public enum SHSidebarMetrics {
     public static let sentLeading: CGFloat = 26
     /// The trailing reason a Needs you row shows ("retention?") is cut to this many characters.
     public static let reasonLength = 14
+
+    /// A row's height: the density's, and on a touch screen never under the 44pt minimum.
+    @MainActor public static func rowHeight(_ density: SHDensity) -> CGFloat {
+        #if os(iOS)
+        max(density.rowHeight, SH.Height.touch)
+        #else
+        density.rowHeight
+        #endif
+    }
 }
 
 /// The measures that change with the row density: Standard is the boards' value, Compact the
@@ -118,7 +128,7 @@ extension SHDensity {
     /// A list row's glyph (an automation's bolt).
     public var rowGlyph: CGFloat { self == .compact ? 11 : 13 }
     /// A destination's height at the current density scale.
-    @MainActor public var destinationHeight: CGFloat { rowHeight + SHSidebarMetrics.destinationExtra }
+    @MainActor public var destinationHeight: CGFloat { SHSidebarMetrics.rowHeight(self) + SHSidebarMetrics.destinationExtra }
 }
 
 // MARK: Top bar
@@ -492,7 +502,7 @@ public struct SHSidebarRow: View, Equatable {
             SHSidebarAccessoryView(accessory: accessory)
                 .shAnimation(.content, value: accessory.motionKey)
             // An open sender's chevron shows while the pointer is over it, so its title keeps its room.
-            if let fold, !fold.open || hovering {
+            if let fold, !fold.open || hovering || SHPlatform.showsHoverDetails {
                 Button(action: fold.toggle) {
                     SHTurningChevron(isOpen: fold.open)
                         .font(.sh(.micro, weight: .semibold))
@@ -507,7 +517,7 @@ public struct SHSidebarRow: View, Equatable {
         .padding(.leading, nested ? density.treeChildLeading : elbow ? SHSidebarMetrics.sentLeading : density.sidebarRowPadding)
         .padding(.trailing, density.sidebarRowPadding)
         .padding(.vertical, subtitle == nil ? 0 : SHSidebarMetrics.subtitleRowPadding)
-        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? density.rowHeight : SHSidebarMetrics.subtitleRowHeight,
+        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? SHSidebarMetrics.rowHeight(density) : SHSidebarMetrics.subtitleRowHeight,
                alignment: subtitle == nil ? .leading : .topLeading)
         .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
@@ -631,9 +641,12 @@ public struct SHSidebarFooter: View, Equatable {
     let updateVersion: String?
     let settings: () -> Void
     let update: () -> Void
+    /// The detail line as a button (the iPhone and iPad's Fleet line opens Fleet); the Mac's is plain text.
+    let openDetail: (() -> Void)?
 
     public init(name: String, detail: String, settingsShortcut: String? = nil, updateVersion: String? = nil,
-                settings: @escaping () -> Void, update: @escaping () -> Void = {}) {
+                openDetail: (() -> Void)? = nil, settings: @escaping () -> Void, update: @escaping () -> Void = {}) {
+        self.openDetail = openDetail
         self.name = name
         self.detail = detail
         self.settingsShortcut = settingsShortcut
@@ -653,13 +666,14 @@ public struct SHSidebarFooter: View, Equatable {
 
     public var body: some View {
         HStack(spacing: SH.Space.m) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: SHSidebarMetrics.footerGlyph - 2))
-                .foregroundStyle(.sh.textSecondary)
-                .frame(width: SHSidebarMetrics.footerGlyph)
-                .accessibilityHidden(true)
-            Text(detail).font(.sh(.caption)).foregroundStyle(.sh.textSecondary).lineLimit(1)
-                .accessibilityLabel("\(name), \(detail)")
+            if detail.isEmpty {
+                EmptyView()
+            } else if let openDetail {
+                Button(action: openDetail) { line }
+                    .buttonStyle(.plain)
+            } else {
+                line
+            }
             Spacer(minLength: 0)
             if let updateVersion {
                 SHUpdateButton(version: updateVersion, action: update)
@@ -673,6 +687,23 @@ public struct SHSidebarFooter: View, Equatable {
         .padding(.leading, SHSidebarMetrics.footerLeading)
         .padding(.trailing, SHSidebarMetrics.topBarTrailing)
         .frame(height: SHSidebarMetrics.footerHeight)
+    }
+}
+
+extension SHSidebarFooter {
+    /// The Mac glyph and the detail words.
+    @ViewBuilder fileprivate var line: some View {
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "desktopcomputer")
+                .font(.system(size: SHSidebarMetrics.footerGlyph - 2))
+                .foregroundStyle(.sh.textSecondary)
+                .frame(width: SHSidebarMetrics.footerGlyph)
+                .accessibilityHidden(true)
+            Text(detail).font(.sh(.caption)).foregroundStyle(.sh.textSecondary).lineLimit(1)
+                .accessibilityLabel(name.isEmpty ? detail : "\(name), \(detail)")
+        }
+        .frame(minHeight: SHSidebarMetrics.footerHeight)
+        .contentShape(Rectangle())
     }
 }
 

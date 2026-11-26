@@ -9,6 +9,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 @testable import ShepherdSessions
+@testable import ShepherdSidebar
 
 extension PreviewTests {
     /// A host whose run history file can't be read says which file and how to fix it, where the runs would be.

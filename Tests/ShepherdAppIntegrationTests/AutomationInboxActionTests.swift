@@ -9,6 +9,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A triggered automation's inbox on the Automations page, on This Mac (real accessibility
 /// presses on the page) and on a host over the remote protocol (the view model's entry points

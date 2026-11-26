@@ -2,20 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdRemote
 
-/// A design in the iPad sidebar's Recents (iPadSidebar): the nib, its name, and "4 boards" in
-/// mono, with its host when designs from several hosts mix.
-struct PadDesignRecentRow: View, Equatable {
-    let row: PadDesigns.Row
-    var selected = false
-
-    var body: some View {
-        SHListRow(row.name, leading: .symbol("pencil.tip"), trailing: .meta(row.boards), chevron: false,
-                  selected: selected, compact: true)
-            .accessibilityValue("Design, \(row.boards)")
-    }
-}
-
-/// "Open in new window" for a design (a Recents row's menu): the design in a window of its own,
+/// "Open in new window" for a design (a sidebar Designs row's menu): the design in a window of its own,
 /// as Split View puts it beside a thread (iPadSplitView). Nothing where the window can't open
 /// another (`WindowsAvailable`).
 struct PadDesignWindowButton: View {

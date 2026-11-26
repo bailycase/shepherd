@@ -6,6 +6,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The Automations page's New automation, Edit, switch and Delete, on this Mac's server and on a
 /// host over the remote protocol: each lands on the host that owns the automation, and the page
