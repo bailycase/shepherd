@@ -21,21 +21,23 @@ struct ThreadWithSidePane: View {
             PadChangesFull(ref: ref)
         } else {
             GeometryReader { proxy in
-                let fold = proxy.verticalFold
+                // iPhone Duo's inner display has two halves, the hinge between them: half open it reports the fold, flat it
+                // reports none, but the halves are there and the board splits at the middle either way (DuoOpenSidePane).
+                let seam = proxy.verticalFold ?? (navigator.hingeClosed == nil ? nil : proxy.seam)
                 let dock = PadSplitLayout.pane(column: proxy.size.width)
-                let alone = open && fold == nil && dock == .alone
-                let threadWidth = fold?.lowerBound ?? dock.width.map { proxy.size.width - $0 - PadSplitLayout.dividerWidth }
+                let alone = open && seam == nil && dock == .alone
+                let threadWidth = seam?.lowerBound ?? dock.width.map { proxy.size.width - $0 - PadSplitLayout.dividerWidth }
                 HStack(spacing: 0) {
                     ThreadScreen(ref: ref)
-                        .paneWidth(open ? (alone ? 0 : fold?.lowerBound) : nil)
-                        .padding(.trailing, open ? fold.map { $0.upperBound - $0.lowerBound } ?? 0 : 0)
+                        .paneWidth(open ? (alone ? 0 : seam?.lowerBound) : nil)
+                        .padding(.trailing, open ? seam.map { $0.upperBound - $0.lowerBound } ?? 0 : 0)
                         .opacity(alone ? 0 : 1)
                         .accessibilityHidden(alone)
                     if open {
-                        // Half open, the pane is the screen's flat second half; otherwise a card.
-                        if !alone, fold != nil { SHHairline(.vertical, color: Color.sh.lineStrong) }
-                        ThreadSidePane(ref: ref, floating: fold == nil)
-                            .paneWidth(fold != nil || alone ? nil : dock.width)
+                        // Across the hinge the pane is the screen's flat second half; otherwise a card.
+                        if !alone, seam != nil { SHHairline(.vertical, color: Color.sh.lineStrong).ignoresSafeArea(.container, edges: .vertical) }
+                        ThreadSidePane(ref: ref, floating: seam == nil)
+                            .paneWidth(seam != nil || alone ? nil : dock.width)
                             .shTransition(.pane, edge: .trailing)
                     }
                 }
@@ -86,7 +88,8 @@ struct ThreadSidePane: View {
         let tab = pane.tab
         VStack(spacing: 0) {
             SHPadPaneHead(SidePaneTabs.items(shown, review: review, thread: store, terminals: runningTerminals(ref)),
-                          selection: tab.rawValue, select: { id in PadSidePaneTab(rawValue: id).map(pane.show) }) {
+                          selection: tab.rawValue, select: { id in PadSidePaneTab(rawValue: id).map(pane.show) },
+                          height: floating ? SHPadPaneMetrics.headHeight : SHPadPaneMetrics.duoHeadHeight) {
                 SidePaneOptions(ref: ref, tab: tab)
             }
             Group {
