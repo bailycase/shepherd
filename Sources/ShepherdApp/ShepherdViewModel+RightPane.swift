@@ -4,6 +4,7 @@ import Observation
 import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 /// A tab of the side pane beside a thread (FileOpenSplit board for Files).
 /// Pull request takes ⌃3 (the removed Artifacts tab's), Subagents ⌃4 and Files ⌃5. The digit is fixed per tab (not derived

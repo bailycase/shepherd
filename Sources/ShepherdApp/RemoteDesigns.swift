@@ -5,17 +5,12 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
+import ShepherdSidebar
 
 // A remote host's designs on this Mac (`designs.v1`, served while the host's Design tool is on):
 // the Designs page lists them under the host's name, and opening one shows its canvas beside its
 // agent's chat, the same screen as a local design's. The boards render here, from files fetched
 // by hash; every change goes to the host, through its own mutations and checks.
-
-/// A design on a remote host.
-struct RemoteDesignRef: Hashable {
-    var hostID: UUID
-    var designID: DesignID
-}
 
 extension ShepherdViewModel {
     // MARK: Lookups

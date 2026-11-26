@@ -4,6 +4,7 @@ import AppKit
 import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
+import ShepherdSidebar
 
 struct RootView: View {
     @Bindable var vm: ShepherdViewModel

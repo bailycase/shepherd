@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 extension ShepherdViewModel {
     var supervisionQueues: SupervisionQueues<SidebarRowID> { sidebarLists.supervisionQueues }

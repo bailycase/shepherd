@@ -4,6 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Activity's Automations group (the user's request): one row per active automation, as Designs and Projects list
 /// theirs, with its run threads folded under it.

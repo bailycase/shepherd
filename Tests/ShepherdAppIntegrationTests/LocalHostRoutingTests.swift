@@ -7,6 +7,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The background host's workspace as the app's own (`adoptLocalHost`): the host's threads are
 /// the app's local threads (local rows, `selectedAgentID`, the local menus and dialogs), and

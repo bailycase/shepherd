@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import ShepherdSidebar
 
 // Dispatches in a thread (FleetDispatch, FleetRemote) and where else a record needs a decision (FleetStates): plain values in
 // (`FleetDispatchPresentation`), what a button does is the caller's (`FleetThreadActions`).

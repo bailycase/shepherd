@@ -6,6 +6,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Signing in through the app for real: the sheet's store on the sign-in bridge (node, the fake pi
 /// SDK) against a scratch Shepherd home, with the stub engine refusing to start an agent until the

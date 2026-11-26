@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdSidebar
 
 /// Pinned threads (Sidebar › Pinned): pinning and unpinning, where each is offered, and keeping
 /// the pins tidy. The pins themselves are `sidebarPins`, view state of this Mac.

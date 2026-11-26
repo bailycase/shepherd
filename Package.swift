@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "ShepherdCore", targets: ["ShepherdCore"]),
         .library(name: "ShepherdProtocol", targets: ["ShepherdProtocol"]),
         .library(name: "ShepherdRemote", targets: ["ShepherdRemote"]),
+        .library(name: "ShepherdSidebar", targets: ["ShepherdSidebar"]),
         .library(name: "ShepherdSessions", targets: ["ShepherdSessions"]),
         .library(name: "TerminalSurfaceKit", targets: ["TerminalSurfaceKit"]),
         .library(name: "DesignSurfaceKit", targets: ["DesignSurfaceKit"]),
@@ -41,6 +42,13 @@ let package = Package(
         .target(
             name: "ShepherdRemote",
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // The sidebar's lists as plain values (groups, rows, sent nesting, pins), derived the same way for the Mac and the
+        // iPhone and iPad from each host's state. Imports ShepherdUI for the row's own value types only.
+        .target(
+            name: "ShepherdSidebar",
+            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", .product(name: "ShepherdUI", package: "ShepherdUI")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // The pty child side (fork → exec) in C: nothing in Swift may run between fork and exec.
@@ -80,7 +88,7 @@ let package = Package(
         .target(
             name: "ShepherdApp",
             dependencies: [
-                "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "TerminalSurfaceKit", "DesignSurfaceKit",
+                "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "ShepherdSidebar", "TerminalSurfaceKit", "DesignSurfaceKit",
                 .product(name: "ShepherdUI", package: "ShepherdUI"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
@@ -115,8 +123,10 @@ let package = Package(
         .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdUIUnitTests", dependencies: [.product(name: "ShepherdUI", package: "ShepherdUI")]),
         .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdTestKit"]),
+        .testTarget(name: "ShepherdSidebarUnitTests", dependencies: ["ShepherdSidebar", "ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdTestKit",
+                                                         .product(name: "ShepherdUI", package: "ShepherdUI")]),
         .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions", "ShepherdTestKit"]),
-        .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdTestKit", "ShepherdTestSupport"]),
+        .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdSidebar", "ShepherdTestKit", "ShepherdTestSupport"]),
         .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
         .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit", "ShepherdTestKit"],
                     resources: [.copy("Fixtures")]),
@@ -145,11 +155,11 @@ let package = Package(
         ),
         .testTarget(
             name: "ShepherdAppIntegrationTests",
-            dependencies: ["ShepherdApp", "TerminalSurfaceKit", "DesignSurfaceKit", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
+            dependencies: ["ShepherdApp", "ShepherdSidebar", "TerminalSurfaceKit", "DesignSurfaceKit", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
         ),
         .testTarget(
             name: "ShepherdPreviewTests",
-            dependencies: ["ShepherdApp", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")],
+            dependencies: ["ShepherdApp", "ShepherdSidebar", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")],
             // The in-process app's renders, which the host's client must match (always-host 7b).
             exclude: ["Baselines"]
         ),

@@ -4,6 +4,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The notification follow-ups' new controls, in light and dark. Both sit in system chrome a test can't open (a
 /// Mac menu, the buttons under an opened push), so a card stands in for the chrome and draws the items with the

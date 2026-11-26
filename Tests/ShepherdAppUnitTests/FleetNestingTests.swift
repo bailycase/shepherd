@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A thread another thread started on another Mac, in the sidebar (FleetSubthreads): it nests under the thread that sent it with its Mac and stage on a second line,
 /// work with no thread yet has a row of its own, a sender says what it sent and folds more than two, a thread that is back leaves the tree, one

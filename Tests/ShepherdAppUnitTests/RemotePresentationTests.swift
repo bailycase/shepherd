@@ -4,6 +4,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// What a remote agent's pane draws, and the values its layout reads (`RemoteLayoutModel`).
 @Suite("Remote presentation")

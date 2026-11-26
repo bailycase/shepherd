@@ -4,6 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
+import ShepherdSidebar
 
 /// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk, FleetMove, FleetRemote boards)
 /// for the agent on screen: "space / parent / title" (the parent only for a thread another thread

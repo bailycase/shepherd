@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 // The pieces Issues & PRs' sidebar list, pages and pins share: tone colors, dots, avatars, the
 // state tag, activity rows and the floating field.
@@ -14,22 +15,6 @@ extension ForgeTone {
     @MainActor var color: Color { agentState?.color ?? Color.sh.synKeyword }
     @MainActor var textColor: Color { agentState?.textColor ?? Color.sh.synKeyword }
     @MainActor var fill: Color { agentState?.tint ?? Color.sh.bgSelected }
-}
-
-/// The glyphs Issues & PRs draws. The boards' octicons have no SF Symbol; these are the nearest.
-enum ForgeSymbol {
-    static let pullRequest = "arrow.triangle.pull"
-    static let issue = "smallcircle.circle"
-    static let merge = "arrow.triangle.merge"
-    static let comment = "text.bubble"
-    static let push = "circle.and.line.horizontal"
-    static let link = "link"
-    static let external = "arrow.up.right.square"
-    static let review = "checkmark.bubble"
-    static let filter = "line.3.horizontal.decrease"
-    static let edit = "pencil"
-
-    static func kind(_ kind: ForgeKind) -> String { kind == .pullRequest ? pullRequest : issue }
 }
 
 /// A row's state dot.

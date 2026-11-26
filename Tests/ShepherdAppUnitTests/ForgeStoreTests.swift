@@ -4,6 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Issues & PRs' sidebar list and store, over a stub transport: sections in order, each item once,
 /// folded on-demand sections, the empty list, search and pasted links, pins.

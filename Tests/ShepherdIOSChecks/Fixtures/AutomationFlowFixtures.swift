@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 import UIKit
 
 // The trigger controls pressed for real, through the accessibility tree as VoiceOver presses them
@@ -296,12 +297,16 @@ final class TriggerFlowHost: @unchecked Sendable {
               && groups().recents.allSatisfy { $0.ref.agent != AutomationsFixtureData.loopDone }, "its runs are not loose rows")
         SidebarAutomationsCheck.enableAccessibility()
         try? await Task.sleep(for: .seconds(1))
-        let header = SidebarAutomationsCheck.all.first { $0.accessibilityLabel?.hasPrefix("pr-loop · build-01, automation, 2 runs") == true }
-        check(header?.accessibilityLabel?.contains("1 unread") == true && header?.accessibilityLabel?.contains("paused") == true,
-              "the row reads its runs, unread and pause (\(String(describing: header?.accessibilityLabel)))")
-        // Close and open it again the way VoiceOver presses it.
-        check(header?.accessibilityActivate() == true && groups().runs.first?.expanded == false, "pressing the row closes it")
-        _ = header?.accessibilityActivate()
-        check(groups().runs.first?.expanded == true, "pressing it again opens it")
+        // The sidebar's own row is the Mac's automation row: its label names the host, the word, the unread and the runs.
+        let header = SidebarAutomationsCheck.all.first { $0.accessibilityLabel?.hasPrefix("pr-loop on build-01, automation") == true }
+        check(header?.accessibilityLabel?.contains("2 runs") == true && header?.accessibilityLabel?.contains("1 unread") == true
+              && header?.accessibilityLabel?.contains("1 running") == true,
+              "the row reads its runs, unread and what runs (the Mac's word: running first, then paused) (\(String(describing: header?.accessibilityLabel)))")
+        // Open and close it the way VoiceOver presses its chevron: a named action.
+        let key = SidebarLists.runGroupKey(loop)
+        let opened = { sidebar.openFolds.contains(key) }
+        let toggle = header?.accessibilityCustomActions?.first { $0.name == "Show runs" || $0.name == "Hide runs" }
+        let first = opened()
+        check(toggle != nil && toggle?.actionHandler?(toggle!) == true && opened() != first, "its action shows or hides the runs")
     }
 }

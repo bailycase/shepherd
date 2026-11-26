@@ -2,6 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
+import ShepherdSidebar
 
 /// Where a page's header starts: clear of the window controls, with the sidebar button while the
 /// sidebar is not docked (as the thread toolbar).

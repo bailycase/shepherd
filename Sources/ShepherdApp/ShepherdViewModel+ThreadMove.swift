@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
+import ShepherdSidebar
 
 /// Recognizes bounded thread-ID payloads, not file paths or ordinary dropped text.
 struct ThreadMoveDrag: Codable, Equatable {

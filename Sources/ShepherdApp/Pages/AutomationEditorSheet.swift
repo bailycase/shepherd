@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// What the automation editor opens on.
 enum AutomationEditorTarget: Identifiable, Equatable {

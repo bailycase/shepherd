@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdSidebar
 
 /// Which pane layouts the workspace mounts, and which single one is visible.
 ///

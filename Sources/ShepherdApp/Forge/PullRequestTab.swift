@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// The side pane's Pull request tab (PRPane, PRPaneMerged): the thread branch's pull request,
 /// drawn from the Issues & PRs page's pieces. A head row (state, number, link buttons), then the title and byline over

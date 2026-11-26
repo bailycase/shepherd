@@ -7,6 +7,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// Recents: every agent, local and remote, most recently active first, in an order that only a
 /// turn starting or ending (or a send) moves.

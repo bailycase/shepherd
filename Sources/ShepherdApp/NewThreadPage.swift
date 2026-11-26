@@ -5,6 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 import ShepherdSessions
+import ShepherdSidebar
 
 /// The New thread page (NavNewThread; ⌘N or the first destination): "What should the agent work
 /// on?", the composer with attach, the workplace chip (project · host, with the worktree option

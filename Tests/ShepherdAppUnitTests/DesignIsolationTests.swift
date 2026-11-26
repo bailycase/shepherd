@@ -6,6 +6,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// A design's agent is no thread: it
 /// launches without the peer tools, agent_list leaves it out, the palette never searches its

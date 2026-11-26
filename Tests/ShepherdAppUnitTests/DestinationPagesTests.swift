@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSidebar
 
 /// The Automations page's model (NavAutomations): This Mac and every host in one table, the
 /// filter and the selection, each row's last run, what can be changed from here, and the

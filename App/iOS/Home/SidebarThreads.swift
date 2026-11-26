@@ -11,10 +11,21 @@ import ShepherdRemote
 @Observable
 final class SidebarThreads {
     private(set) var state: FleetSidebarState
-    @ObservationIgnored private let hosts: MobileHosts
+    @ObservationIgnored let hosts: MobileHosts
     @ObservationIgnored private let defaults: UserDefaults
 
     static let pinsKey = "shepherd.ios.sidebar.pinned"
+    static let collapsedKey = "shepherd.ios.sidebar.collapsedSections"
+    static let foldsKey = "shepherd.ios.sidebar.openFolds"
+
+    /// The sections folded to their header (their raw names) and the sent-thread and run-group chevrons opened, as the Mac keeps them
+    /// (`collapsedActivitySections`, `collapsedProjects`): this device's view state, kept in its preferences. The shared sidebar's
+    /// rows read them (`SidebarListing.swift`).
+    private(set) var collapsedSections: Set<String>
+    private(set) var openFolds: Set<String>
+    /// What the shared sidebar's rows keep between redraws, and the chevrons a selected thread opens.
+    @ObservationIgnored var listingCache: Any?
+    @ObservationIgnored var foldsHoldingSelection: ((AgentRef) -> [String])?
     private static var stores: [ObjectIdentifier: SidebarThreads] = [:]
 
     /// The store of the app's hosts: one per `MobileHosts`, shared by every window, made on first use.
@@ -30,6 +41,8 @@ final class SidebarThreads {
         self.defaults = defaults
         let saved = (try? JSONDecoder().decode([FleetRef].self, from: defaults.data(forKey: Self.pinsKey) ?? Data())) ?? []
         state = FleetSidebarState(pins: saved)
+        collapsedSections = Set(defaults.stringArray(forKey: Self.collapsedKey) ?? [])
+        openFolds = Set(defaults.stringArray(forKey: Self.foldsKey) ?? [])
         track()
     }
 
@@ -61,6 +74,33 @@ final class SidebarThreads {
     @ObservationIgnored private var cache: (model: FleetModel, state: FleetSidebarState, unread: Set<FleetRef>,
                                             paused: Set<AutomationKey>, groups: FleetSidebarGroups)?
 
+    /// A section's header was pressed: fold it, or open it.
+    func toggleSection(_ section: String) {
+        if collapsedSections.contains(section) { collapsedSections.remove(section) } else { collapsedSections.insert(section) }
+        defaults.set(collapsedSections.sorted(), forKey: Self.collapsedKey)
+    }
+
+    /// A sender's or an automation's chevron: show or hide what is under it.
+    func toggleFold(_ key: String) {
+        if openFolds.contains(key) { openFolds.remove(key) } else { openFolds.insert(key) }
+        defaults.set(openFolds.sorted(), forKey: Self.foldsKey)
+    }
+
+    /// Opens chevrons (selecting a sender, or a thread it sent, shows what it sent).
+    private func open(folds keys: [String]) {
+        let next = openFolds.union(keys)
+        guard next != openFolds else { return }
+        openFolds = next
+        defaults.set(openFolds.sorted(), forKey: Self.foldsKey)
+    }
+
+    /// Done's Mark all seen on the shared sidebar.
+    func markSeen(refs: [FleetRef]) {
+        var marks: [(FleetRef, Double)] = []
+        mutate { marks = $0.markSeen(refs) }
+        report(marks)
+    }
+
     /// A run group's row was pressed.
     func toggleRunGroup(_ key: AutomationKey) { mutate { $0.toggleRunGroup(key) } }
 
@@ -86,6 +126,7 @@ final class SidebarThreads {
             if let origin { state.openRunGroup(origin) }
         }
         report(marks)
+        if let ref, let keys = foldsHoldingSelection?(ref) { open(folds: keys) }
     }
 
     func markSeen(_ rows: [FleetThreadRow]) {

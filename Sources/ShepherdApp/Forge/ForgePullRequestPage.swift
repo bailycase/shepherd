@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 
 /// A pull request's page (PRReview, PRReviewChanges, PRReviewMerge, PRReviewDraft, PRReviewMerged,
 /// PRReviewClosed, PRReviewLoading): Summary, Changes and Checks under one header whose actions
