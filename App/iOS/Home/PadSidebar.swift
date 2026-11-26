@@ -37,7 +37,8 @@ struct PadSidebar: View {
             },
             selectedAutomation: pushed == .home(.automations) ? automations.chosen : nil,
             forgePins: pins.pins, forgePinsProblem: forgeShown ? forge.pinsProblems.first?.message : nil,
-            unreadRuns: automations.unreadRuns))
+            unreadRuns: automations.unreadRuns, unreadRunCounts: automations.unreadRunCounts,
+            triggerStatuses: automations.triggerStatuses))
         let shown: MainDestination? = pushed?.isPadDesign == true ? .designs : pushed == .home(.automations) ? .automations
             : pushed?.isForge == true ? .forge : nil
         let destinations = SidebarDerivation.destinations(
@@ -91,7 +92,7 @@ struct PadSidebar: View {
         }
         // Automations' unread dots and paused triggers, read while their rows show.
         .task(id: listing.items.contains { if case .automation = $0 { true } else { false } }) { await automations.watch() }
-        .task(id: forge.sessionsKey) { if forgeShown { await forge.loadSidebars() } }
+        .task(id: forge.sessionsKey) { if forgeShown { await forge.loadRepos() } }
         .background(overlays ? Color.sh.bgBase : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xl))
         .padding(SHSidebarMetrics.panelInset)
     }

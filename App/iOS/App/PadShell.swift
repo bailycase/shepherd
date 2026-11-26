@@ -57,7 +57,7 @@ struct PadShell: View {
                         .navigationSplitViewStyle(.prominentDetail)
                         .padding(.leading, docked ? detailLeading : 0)
                         if overlays, shown {
-                            Color.sh.paletteScrim
+                            Color.sh.scrim
                                 .ignoresSafeArea()
                                 .onTapGesture { withSHAnimation(.pane) { navigator.padColumns = .detailOnly } }
                                 .accessibilityHidden(true)

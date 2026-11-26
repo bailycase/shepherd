@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSidebar
 
@@ -15,6 +16,8 @@ extension SidebarThreads {
         var forgePins: [SidebarForgePin]
         var forgePinsProblem: String?
         var unreadRuns: Set<FleetRef>
+        var unreadRunCounts: [AutomationKey: Int]
+        var triggerStatuses: [AutomationKey: AutomationTriggerStatus]
     }
 
     struct Listing: Equatable {
@@ -40,6 +43,7 @@ extension SidebarThreads {
                                offline: !host.phase.isConnected, fleetID: host.fleetID)
         }
         let source = SidebarPaired.source(hosts: hostInputs, state: state, designs: inputs.designs,
+                                          triggerStatuses: inputs.triggerStatuses, unreadRunCounts: inputs.unreadRunCounts,
                                           unreadRuns: Set(inputs.unreadRuns.map(\.agent)))
         if let cached = listingCache as? Cache, cached.source == source, cached.state == state, cached.inputs == inputs,
            cached.collapsed == collapsedSections, cached.folds == openFolds {
