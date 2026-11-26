@@ -1395,11 +1395,10 @@ extension DesignRendering {
 extension DesignRendering {
     func capture(_ request: DesignReferenceCaptureRequest, files: DesignExportFiles) async throws -> DesignReferenceCaptured {
         let surface = DesignSurface(designID: request.reference.designID, source: files, network: network)
+        let drawn = try await drawBoards(of: request, files: files, surface: surface)
         var outputs: [String: Data] = [:]
         var captured = DesignReferenceCaptured(boards: [])
-        for (index, board) in request.boards.enumerated() {
-            let element = index == 0 ? request.reference.element : nil
-            let drawn = try await DesignExporter.reference(board, element: element, files: files, surface: surface)
+        for (board, drawn) in zip(request.boards, drawn) {
             outputs[board.picture] = drawn.image.data
             outputs[board.html] = Data(drawn.page.utf8)
             captured.boards.append(.init(
@@ -1415,6 +1414,36 @@ extension DesignRendering {
         }
         try await DesignExporter.write(outputs, into: request.folder)
         return captured
+    }
+
+    /// How many boards of one capture are drawn at once, each by a view of its own (a page can hold
+    /// dozens: drawn one after another the send waits for all of them).
+    static let captureLanes = 4
+
+    /// The request's boards drawn, in the request's order; the first board alone carries the
+    /// element. The views load and read concurrently, a few at a time, on the main actor; the first
+    /// failure cancels the rest.
+    private func drawBoards(of request: DesignReferenceCaptureRequest, files: DesignExportFiles, surface: DesignSurface) async throws
+        -> [DesignExporter.ReferenceDrawing] {
+        let boards = request.boards, element = request.reference.element
+        var drawn: [Int: DesignExporter.ReferenceDrawing] = [:]
+        try await withThrowingTaskGroup(of: (Int, DesignExporter.ReferenceDrawing).self) { group in
+            var next = 0
+            func startNext() {
+                guard next < boards.count else { return }
+                let index = next
+                next += 1
+                group.addTask { @MainActor in
+                    (index, try await DesignExporter.reference(boards[index], element: index == 0 ? element : nil, files: files, surface: surface))
+                }
+            }
+            for _ in 0..<Self.captureLanes { startNext() }
+            while let (index, board) = try await group.next() {
+                drawn[index] = board
+                startNext()
+            }
+        }
+        return boards.indices.compactMap { drawn[$0] }
     }
 
     /// The element's own computed styles: the first entry of its detail's styles.
@@ -1605,13 +1634,14 @@ enum DesignExporter {
         return DesignBundle.rewritingBoardLinks(withFonts, page: path, exported: Set(files.boards))
     }
 
+    typealias ReferenceDrawing = (image: (data: Data, width: Int, height: Int), page: String, element: DesignElementDetail?)
+
     /// What a reference's copy holds of one board, from one view of it showing `board.source`
     /// (loaded from immutable pinned inputs, never the current design folder): the PNG
     /// (the element cut from the board where it names one), the standalone page, and the
     /// element's detail.
     static func reference(_ board: DesignReferenceCaptureRequest.Board, element: DesignElementID?, files: DesignExportFiles,
-                          surface: DesignSurface) async throws -> (image: (data: Data, width: Int, height: Int), page: String,
-                                                                  element: DesignElementDetail?) {
+                          surface: DesignSurface) async throws -> ReferenceDrawing {
         let path = board.path
         return try await render(path, files: files, surface: surface) { view in
             try await view.replaceSource(board.source, props: DesignTweakModel.json(.object(files.index.tweaks(for: path))) ?? "{}")
