@@ -15,60 +15,12 @@ struct PadSidebar: View {
     var overlays = false
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
-    @Environment(MobileProjects.self) private var projects
-
-    private var settings: SettingsStore { SettingsStore.of(hosts) }
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
-        let sidebar = SidebarThreads.of(hosts)
-        let designs = PadDesigns.of(hosts)
-        let automations = AutomationsStore.of(hosts)
-        let forgeShown = ForgeEntry.available(hosts)
-        let forge = ForgeStore.of(hosts)
-        let pushed = navigator.padPath.last
-        let pins = forgeShown ? forge.sidebarPins : (pins: [], hosts: [:])
-        let listing = sidebar.listing(.init(
-            selected: navigator.selectedThread.map { .remote(RemoteAgentRef(hostID: $0.host, agentID: $0.agent)) },
-            designs: designs.available,
-            projects: projects.rows.map { row in
-                SidebarLogicalProject(ref: row.ref, name: row.name, hostName: row.owner, summary: row.summary.isEmpty ? nil : row.summary,
-                                      needsYou: row.needsYou > 0, selected: pushed?.isProjects == true)
-            },
-            selectedAutomation: pushed == .home(.automations) ? automations.chosen : nil,
-            forgePins: pins.pins, forgePinsProblem: forgeShown ? forge.pinsProblems.first?.message : nil,
-            unreadRuns: automations.unreadRuns, unreadRunCounts: automations.unreadRunCounts,
-            triggerStatuses: automations.triggerStatuses))
-        let shown: MainDestination? = pushed?.isPadDesign == true ? .designs : pushed == .home(.automations) ? .automations
-            : pushed?.isForge == true ? .forge : nil
-        let destinations = SidebarDerivation.destinations(
-            shown: shown, newThreadChord: "", designs: designs.available,
-            automations: automations.unreadRuns.isEmpty ? .none : .count(automations.unreadRuns.count),
-            forge: forgeShown ? forge.needsYou : 0)
-        let fleetRows = settings.fleetRows
         SHSidebar(topBar: PadSidebarTopBar()) {
             ScrollView {
-                VStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
-                        ForEach(destinations) { row in
-                            SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
-                                open(row)
-                            }
-                            .equatable()
-                            .accessibilityLabel(SidebarDerivation.accessibilityLabel(row))
-                        }
-                    }
-                    .padding(.vertical, SHSidebarMetrics.destinationsPadding)
-                    .padding(.horizontal, SHSidebarMetrics.listInset)
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(listing.items) { item in
-                            PadSidebarItem(item: item, forgeHosts: pins.hosts, done: listing.done)
-                                .equatable()
-                        }
-                    }
-                    .padding(.horizontal, SHSidebarMetrics.listInset)
-                    .padding(.bottom, SH.Space.m)
-                }
+                SidebarContent()
             }
             .scrollIndicators(.hidden)
             .refreshable {
@@ -76,36 +28,11 @@ struct PadSidebar: View {
                 await feed.refresh()
             }
         } footer: {
-            SHSidebarFooter(name: "", detail: fleetRows.isEmpty ? "" : "Fleet · \(FleetDeviceList.footer(fleetRows).detail)",
-                            openDetail: { navigator.open(.settings(.fleet)) },
-                            settings: { navigator.open(.settings(.root)) })
-                .equatable()
+            SidebarFooterBar()
         }
         .task { await feed.watch() }
-        // The Fleet line's "1 asleep", read every so often while a Mac serves the fleet (the Fleet screen reads faster).
-        .task(id: settings.showsFleet) {
-            guard settings.showsFleet else { return }
-            while !Task.isCancelled {
-                await settings.fleet.refresh(settings.hosts)
-                try? await Task.sleep(for: .seconds(MobileLayout.fleetFooterPoll))
-            }
-        }
-        // Automations' unread dots and paused triggers, read while their rows show.
-        .task(id: listing.items.contains { if case .automation = $0 { true } else { false } }) { await automations.watch() }
-        .task(id: forge.sessionsKey) { if forgeShown { await forge.loadRepos() } }
         .background(overlays ? Color.sh.bgBase : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xl))
         .padding(SHSidebarMetrics.panelInset)
-    }
-
-    private func open(_ row: SidebarDerivation.Destination) {
-        guard case .page(let page) = row.target else { return }
-        switch page {
-        case .newThread: NewThreadHooks.open(navigator: navigator)
-        case .designs: PadDesignHooks.openList(navigator: navigator)
-        case .automations: navigator.open(.home(.automations))
-        case .forge: navigator.open(.forge(.list))
-        default: break
-        }
     }
 }
 
@@ -132,15 +59,17 @@ private struct PadSidebarTopBar: View {
 }
 
 /// One element of the sidebar's list, a single view whatever it shows (a lazy stack's fast path), redrawn only when its values change.
-private struct PadSidebarItem: View, Equatable {
+struct SidebarItem: View, Equatable {
     let item: SidebarActivityItem
     let forgeHosts: [ForgeItemRef: UUID]
     let done: [SidebarListRow]
+    /// The iPhone's list: Needs you's header opens its screen.
+    var phone = false
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
 
-    static func == (a: PadSidebarItem, b: PadSidebarItem) -> Bool {
-        a.item == b.item && a.forgeHosts == b.forgeHosts && (!a.item.isDoneHeader || a.done == b.done)
+    static func == (a: SidebarItem, b: SidebarItem) -> Bool {
+        a.item == b.item && a.forgeHosts == b.forgeHosts && a.phone == b.phone && (!a.item.isDoneHeader || a.done == b.done)
     }
 
     var body: some View {
@@ -151,7 +80,8 @@ private struct PadSidebarItem: View, Equatable {
                 SHSidebarSectionHeader(section.title, count: count, isExpanded: !collapsed,
                                        attention: section == .needsYou, pulse: section == .working,
                                        toggle: { sidebar.toggle(section) },
-                                       markAllSeen: section == .done ? { sidebar.markSeen(done) } : nil)
+                                       markAllSeen: section == .done ? { sidebar.markSeen(done) } : nil,
+                                       textAction: phone && section == .needsYou ? ("Answer in Needs you", { navigator.open(.home(.needsYou)) }) : nil)
             case .project(let project):
                 Button { navigator.open(.projects(.project(project.ref))) } label: {
                     SHLeadProjectRow(project.name, selected: project.selected, summary: project.summary, needsYou: project.needsYou)

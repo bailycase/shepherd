@@ -119,16 +119,6 @@ struct ThreadRowMenuItems: View {
     }
 }
 
-/// Done's "Mark all seen" chip, beside its header.
-struct MarkAllSeenChip: View {
-    let rows: [FleetThreadRow]
-    @Environment(MobileHosts.self) private var hosts
-
-    var body: some View {
-        SHSidebarHeaderChip("Mark all seen") { SidebarThreads.of(hosts).markSeen(rows) }
-    }
-}
-
 /// The sidebar's automation row's long press: open it, Run Now or Stop.
 struct AutomationKeyMenu: View {
     let key: AutomationKey

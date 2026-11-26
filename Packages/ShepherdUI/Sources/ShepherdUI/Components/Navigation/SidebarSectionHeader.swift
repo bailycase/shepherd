@@ -48,10 +48,13 @@ public struct SHSidebarSectionHeader: View {
     let markAllSeen: (() -> Void)?
     /// A trailing action ("New project"), drawn as a plus with the title as its tip.
     let chip: (title: String, action: () -> Void)?
+    /// A trailing text button that opens somewhere else ("Answer in Needs you" on the iPhone), set like Mark all seen.
+    let textAction: (title: String, action: () -> Void)?
     @Environment(\.shDensity) private var density
 
     public init(_ title: String, count: Int, isExpanded: Bool, attention: Bool = false, pulse: Bool = false,
-                toggle: @escaping () -> Void, markAllSeen: (() -> Void)? = nil, chip: (title: String, action: () -> Void)? = nil) {
+                toggle: @escaping () -> Void, markAllSeen: (() -> Void)? = nil, chip: (title: String, action: () -> Void)? = nil,
+                textAction: (title: String, action: () -> Void)? = nil) {
         self.title = title
         self.count = count
         self.isExpanded = isExpanded
@@ -60,6 +63,7 @@ public struct SHSidebarSectionHeader: View {
         self.toggle = toggle
         self.markAllSeen = markAllSeen
         self.chip = chip
+        self.textAction = textAction
     }
 
     public var body: some View {
@@ -117,6 +121,18 @@ public struct SHSidebarSectionHeader: View {
                 .buttonStyle(SHPlainPressStyle())
                 .accessibilityLabel("Mark all seen")
                 .help("Move finished threads to Recents")
+            }
+            if let textAction {
+                Button(action: textAction.action) {
+                    Text(textAction.title)
+                        .font(.sh(.caption))
+                        .foregroundStyle(.sh.textTertiary)
+                        .fixedSize()
+                        .frame(minHeight: SH.Height.controlS)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(SHPlainPressStyle())
+                .accessibilityLabel(textAction.title)
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)

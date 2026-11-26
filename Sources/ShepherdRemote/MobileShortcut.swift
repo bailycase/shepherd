@@ -24,4 +24,12 @@ public enum MobileShortcut: CaseIterable, Sendable {
         case .alternateSend: KeyboardShortcut(.return)
         }
     }
+
+    /// A letter shortcut as the Mac shows it ("⌘N", "⇧⌘S"): the sidebar's New thread row names its chord this way.
+    public var display: String {
+        let chord = shortcut
+        let modifiers = [(EventModifiers.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
+            .filter { chord.modifiers.contains($0.0) }.map(\.1).joined()
+        return modifiers + String(chord.key.character).uppercased()
+    }
 }
