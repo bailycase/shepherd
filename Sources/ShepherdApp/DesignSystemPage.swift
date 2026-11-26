@@ -162,6 +162,7 @@ struct DesignSystemHeader: View, Equatable {
                 }
                 if let menu {
                     SHOptionsMenu("More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
+                        .shHelp("More for \(model.title)")
                 }
             } else {
                 if let namespace = model.namespace {

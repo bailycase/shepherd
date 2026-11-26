@@ -117,6 +117,7 @@ struct DesignSystemReferencePage: View {
                     SHOptionsMenu("More for \(reference.title)") {
                         DesignMenuItems(menu: vm.designSystemMenu(.system(namespace))) { vm.performDesignSystemMenu($0, on: .system(namespace)) }
                     }
+                    .shHelp("More for \(reference.title)")
                 }
             }
         }
