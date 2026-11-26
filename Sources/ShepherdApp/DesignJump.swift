@@ -3,8 +3,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// Jump to a board (JumpInContext): over a design, the command palette's chord opens this card
-// instead of the palette. "This design" lists the boards opened lately, newest first, then the
+// Jump to a board (JumpInContext): over a design, ⌘P (Jump to a Board…) opens this card;
+// ⌘K stays the command palette. "This design" lists the boards opened lately, newest first, then the
 // rest of the design in canvas order; "All designs" lists this Mac's designs, most recently
 // edited first. A query filters either by name, with the palette's ranking. ⏎ shows the board
 // picked and in view, or opens the design.

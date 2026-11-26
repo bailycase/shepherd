@@ -54,7 +54,7 @@ struct TerminalSurfaceConfigTests {
     /// The default shortcut table, in ghostty syntax. (ShortcutAction lives in the app,
     /// so the table is spelled out here; a rebound chord arrives through `extraUnbinds`.)
     private static let defaultAppChords = [
-        "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+r", "shift+cmd+w", "cmd+k", "cmd+down", "cmd+up",
+        "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+r", "shift+cmd+w", "cmd+k", "cmd+p", "cmd+down", "cmd+up",
         "cmd+d", "cmd+w", "shift+cmd+s", "shift+cmd+b",
         "shift+cmd+m", "cmd+period", "alt+cmd+up", "alt+cmd+down", "cmd+i", "cmd+j", "shift+cmd+enter",
         // New Terminal (⌘D), Close Terminal (⌘W) above; Next and Previous Terminal here.

@@ -10,8 +10,8 @@ import Testing
 @testable import ShepherdUI
 
 /// Jump to a board (JumpInContext) against a real server, a live stub design agent and real
-/// board views: the command palette's chord opens the card over a design and the palette
-/// anywhere else, the toolbar's field opens it too, and a row pressed through accessibility
+/// board views: ⌘P opens the card over a design (⌘K stays the palette), the toolbar's
+/// field opens it too, and a row pressed through accessibility
 /// shows its board picked and in view, or opens another design.
 @Suite("Design jump flow", .mainActorExclusive)
 @MainActor
@@ -59,21 +59,39 @@ struct DesignJumpFlowTests {
         return Opened(app: app, vm: vm, window: window, design: design, other: other, thread: thread)
     }
 
-    @Test func thePalettesChordJumpsOverADesignAndOpensThePaletteElsewhere() async throws {
+    /// ⌘P reaches Jump (the View menu item's chord, as the toolbar's field draws it) over a design
+    /// and does nothing elsewhere; ⌘K stays the command palette over a design and on a thread.
+    @Test func jumpsChordOpensTheCardOverADesignAndThePalettesStaysThePalette() async throws {
         let opened = try await Self.open()
         defer { opened.app.stop(); opened.window.close() }
         let vm = opened.vm
-        vm.toggleCommandPaletteOrJump()
+        let keys = KeybindingsStore.shared
+        let press = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0,
+                                                  context: nil, characters: "p", charactersIgnoringModifiers: "p", isARepeat: false, keyCode: 35))
+        #expect(keys.chord(for: .designJump).matches(press) && keys.display(.designJump) == "⌘P")
+        #expect(keys.chord(for: .commandPalette).matches(press) == false)
+        #expect(MenuState.Snapshot(vm).canJumpToBoard)
+
+        vm.toggleDesignJump()
         #expect(vm.designJump?.design == opened.design.id)
-        #expect(!vm.showCommandPalette, "over a design the chord never shows the palette")
-        vm.toggleCommandPaletteOrJump()
+        #expect(vm.showCommandPalette == false)
+        vm.toggleDesignJump()
         #expect(vm.designJump == nil, "pressed again it closes the card")
 
+        vm.toggleCommandPalette()
+        #expect(vm.showCommandPalette && vm.designJump == nil, "over a design ⌘K is still the palette")
+        vm.toggleDesignJump()
+        #expect(vm.designJump != nil && vm.showCommandPalette == false, "⌘P over the palette swaps it for the card")
+        vm.toggleDesignJump()
+
         vm.selectAgent(opened.thread.agent.id)
-        vm.toggleCommandPaletteOrJump()
-        #expect(vm.showCommandPalette && vm.designJump == nil, "on a thread it is the palette")
-        vm.toggleCommandPaletteOrJump()
-        #expect(!vm.showCommandPalette)
+        #expect(MenuState.Snapshot(vm).canJumpToBoard == false)
+        vm.toggleDesignJump()
+        #expect(vm.designJump == nil, "on a thread ⌘P opens nothing")
+        vm.toggleCommandPalette()
+        #expect(vm.showCommandPalette)
+        vm.toggleCommandPalette()
+        #expect(vm.showCommandPalette == false)
     }
 
     /// The toolbar's field opens the card; a board's row, pressed, picks that board and brings it

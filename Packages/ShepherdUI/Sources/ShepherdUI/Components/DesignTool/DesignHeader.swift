@@ -138,32 +138,7 @@ extension SHDesignHeader {
                     .accessibilityLabel("Show sidebar")
                     .padding(.trailing, SH.Space.l)
             }
-            HStack(spacing: SH.Space.m) {
-                Button(action: designs) { Text(section).foregroundStyle(Color.sh.textTertiary) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(section)
-                Text("/")
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .accessibilityHidden(true)
-                Text(title)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(title)
-                    .accessibilityAddTraits(.isHeader)
-                    .shContentTransition(.crossFade)
-                    .shAnimation(.content, value: title)
-                if let status {
-                    // A word, not a pill (DZSystem): "Synced", or the working word shimmering.
-                    Text(status.label)
-                        .foregroundStyle(Color.sh.textTertiary)
-                        .shShimmer(active: status.state == .running)
-                        .shTransition(.content)
-                }
-            }
-            .font(.shSans(M.toolbarTextSize))
-            .shAnimation(.content, value: status)
+            SHDesignBreadcrumb(title, section: section, status: status, designs: designs)
             Spacer(minLength: SH.Space.l)
             if Trailing.self != EmptyView.self {
                 SHToolbarCapsule { trailing }
@@ -186,6 +161,58 @@ extension SHDesignHeader {
         .background(Color.sh.bgWindow)
         .contentShape(Rectangle())
         .shWindowDrag()
+    }
+}
+
+/// The toolbar's breadcrumb (DZCanvas, DZSystem, DesignSystemPage): the section ("Designs") in 13
+/// `textTertiary` as a button back to its page, "/", then the page in 13 semibold, and a status
+/// word after it ("Synced", or the working word shimmering). The design screen's toolbar and a
+/// system's page draw it alike.
+public struct SHDesignBreadcrumb: View {
+    let title: String
+    let section: String
+    let status: SHDesignHeaderStatus?
+    let designs: () -> Void
+
+    public init(_ title: String, section: String = "Designs", status: SHDesignHeaderStatus? = nil, designs: @escaping () -> Void) {
+        self.title = title
+        self.section = section
+        self.status = status
+        self.designs = designs
+    }
+
+    public var body: some View {
+        HStack(spacing: SH.Space.m) {
+            Button(action: designs) {
+                Text(section)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .frame(minHeight: SH.Height.controlM)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(section)
+            Text("/")
+                .foregroundStyle(Color.sh.textTertiary)
+                .accessibilityHidden(true)
+            Text(title)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.sh.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(title)
+                .accessibilityAddTraits(.isHeader)
+                .shContentTransition(.crossFade)
+                .shAnimation(.content, value: title)
+            if let status {
+                // A word, not a pill (DZSystem): "Synced", or the working word shimmering.
+                Text(status.label)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .shShimmer(active: status.state == .running)
+                    .shTransition(.content)
+            }
+        }
+        .font(.shSans(SHDesignChrome.toolbarTextSize))
+        .shAnimation(.content, value: status)
     }
 }
 

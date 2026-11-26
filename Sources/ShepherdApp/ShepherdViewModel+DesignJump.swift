@@ -58,12 +58,18 @@ extension ShepherdViewModel {
         return design
     }
 
-    /// The command palette's chord: over a design, Jump to a board; anywhere else, the palette.
-    /// Pressed again, it closes whichever is up.
-    func toggleCommandPaletteOrJump() {
+    /// The command palette's chord (⌘K), over a design too. Pressed again, it closes it.
+    func toggleCommandPalette() {
+        if designJump != nil { designJump = nil }
+        showCommandPalette.toggle()
+    }
+
+    /// Jump to a board's chord (⌘P): over a design, opens the card; pressed again, closes it.
+    /// Where no design shows it does nothing.
+    func toggleDesignJump() {
         if designJump != nil { designJump = nil; return }
-        if showCommandPalette { showCommandPalette = false; return }
-        if let design = jumpableDesign { openDesignJump(design.id) } else { showCommandPalette = true }
+        guard let design = jumpableDesign else { return }
+        openDesignJump(design.id)
     }
 
     /// Opens the card over `id`'s canvas, on This design.

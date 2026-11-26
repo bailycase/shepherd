@@ -34,6 +34,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// Scoped to a design's canvas while a Jump's toast shows (JumpLanded): Back to where the
     /// canvas was.
     case designJumpBack
+    /// View ▸ Jump to a Board…, over a design (JumpInContext's ⌘P); ⌘K stays the command palette.
+    case designJump
     /// Scoped to a thread's Browser tab while it shows (PaneStates › Keyboard): the address field
     /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
     /// so ⇧⌘C here never meets the canvas's Copy reference. ⌘T opens a new Browser tab
@@ -76,6 +78,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .implementInThread: return "Implement in a Thread…"
         case .copyDesignReference: return "Copy Design Reference"
         case .designJumpBack: return "Back After a Jump"
+        case .designJump: return "Jump to a Board…"
         case .focusAddressBar: return "Focus Address Bar"
         case .selectElement: return "Select an Element"
         case .browserNewTab: return "New Browser Tab"
@@ -153,6 +156,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .copyDesignReference: return KeyChord(key: "c", command: true, shift: true)
         // JumpLanded's toast: ⌘[, the system's Back.
         case .designJumpBack: return KeyChord(key: "[", command: true)
+        // JumpInContext and DZCanvas: the toolbar's field reads ⌘P.
+        case .designJump: return KeyChord(key: "p", command: true)
         // PaneStates › Keyboard: ⌘L the address bar, ⇧⌘C select an element.
         case .focusAddressBar: return KeyChord(key: "l", command: true)
         case .selectElement: return KeyChord(key: "c", command: true, shift: true)

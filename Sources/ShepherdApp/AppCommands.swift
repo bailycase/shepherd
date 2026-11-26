@@ -36,6 +36,8 @@ final class MenuState {
         /// Save in Settings ▸ Spaces or ▸ Subagents; nil hides the item.
         var saveTitle: String?
         var canSave = false
+        /// A design's canvas is on screen: Jump to a Board… applies.
+        var canJumpToBoard = false
         var agents: [Item] = []
         var spaces: [Item] = []
     }
@@ -65,6 +67,7 @@ final class MenuState {
     private(set) var selectedPinned: Bool?
     private(set) var saveTitle: String?
     private(set) var canSave = false
+    private(set) var canJumpToBoard = false
     private(set) var agents: [Item] = []
     private(set) var spaces: [Item] = []
 
@@ -86,6 +89,7 @@ final class MenuState {
         if selectedPinned != snapshot.selectedPinned { selectedPinned = snapshot.selectedPinned }
         if saveTitle != snapshot.saveTitle { saveTitle = snapshot.saveTitle }
         if canSave != snapshot.canSave { canSave = snapshot.canSave }
+        if canJumpToBoard != snapshot.canJumpToBoard { canJumpToBoard = snapshot.canJumpToBoard }
         if agents != snapshot.agents { agents = snapshot.agents }
         if spaces != snapshot.spaces { spaces = snapshot.spaces }
     }
@@ -114,6 +118,7 @@ extension MenuState.Snapshot {
             selectedPinned: local.map { vm.canPin(.local($0.id)) ? vm.isPinned(.local($0.id)) : nil } ?? nil,
             saveTitle: save?.title,
             canSave: save?.enabled ?? false,
+            canJumpToBoard: vm.jumpableDesign != nil,
             agents: vm.sidebarShortcutRows.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
             spaces: vm.visibleSpaces.map { MenuState.Item(id: $0.id.rawValue, title: $0.name) }
         )
@@ -254,9 +259,12 @@ struct ViewCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .toolbar) {
             Group {
-                // Over a design it opens Jump to a board instead (JumpInContext).
-                Button("Command Palette") { later { vm?.toggleCommandPaletteOrJump() } }
+                Button("Command Palette") { later { vm?.toggleCommandPalette() } }
                     .keyboardShortcut(keys.shortcut(.commandPalette))
+                // Over a design (JumpInContext); the toolbar's field opens it too.
+                Button("Jump to a Board…") { later { vm?.toggleDesignJump() } }
+                    .keyboardShortcut(keys.shortcut(.designJump))
+                    .disabled(!menu.canJumpToBoard)
                 Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm?.toggleSidebar() } }
                     .keyboardShortcut(keys.shortcut(.toggleSidebar))
                 // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects). A picker

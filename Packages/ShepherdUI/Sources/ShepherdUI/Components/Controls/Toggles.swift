@@ -18,29 +18,34 @@ private struct SHSwitch: View {
     let configuration: ToggleStyleConfiguration
     @Environment(\.isEnabled) private var enabled
     @Environment(\.labelsVisibility) private var labelsVisibility
+    @Environment(\.shControlScale) private var scale
 
     var body: some View {
         let sh = Color.sh
         let on = configuration.isOn
+        // The Tweak pane's (DZTweak): 26×16, a 12pt knob 2pt in, the lift shadow under it.
+        let tweak = scale == .tweak
+        let T = SHTweakControlMetrics.self
+        let knob = tweak ? T.switchKnob : 14
         HStack(spacing: SH.Space.m) {
             if labelsVisibility != .hidden { configuration.label }
             Button { configuration.isOn.toggle() } label: {
                 Capsule()
                     .fill(on ? sh.primary : sh.lineStrong)
-                    .frame(width: 30, height: 18)
+                    .frame(width: tweak ? T.switchWidth : 30, height: tweak ? T.switchHeight : 18)
                     .overlay(alignment: on ? .trailing : .leading) {
                         Circle()
                             .fill(on ? sh.knobOn : sh.knobOff)
-                            .shadow(color: sh.knobShadow, radius: 1, y: 1)
-                            .frame(width: 14, height: 14)
-                            .padding(2)
+                            .shadow(color: tweak ? sh.liftNear : sh.knobShadow, radius: 1, y: 1)
+                            .frame(width: knob, height: knob)
+                            .padding(tweak ? T.switchInset : 2)
                     }
                     .frame(minHeight: SH.Height.controlS)
                     .contentShape(Rectangle())
                     // The knob slides and the fill turns lantern however the value changed
                     // (a click, Space, a reset, another window).
                     .shComponentAnimation(.content, value: on)
-                    .shFocusRing(radius: 9)
+                    .shFocusRing(radius: tweak ? T.switchHeight / 2 : 9)
             }
             .buttonStyle(.plain)
         }

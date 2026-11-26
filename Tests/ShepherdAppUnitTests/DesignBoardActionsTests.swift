@@ -227,23 +227,20 @@ struct DesignBoardActionsTests {
         #expect(screen.actionsBoard == Self.path("A-copy.dc.html"))
     }
 
-    /// Variations and another direction are fixed words; the board goes in the record, as data.
-    @Test func variationsAndAnotherDirectionAskTheAgentWithTheBoardInTheRecord() async throws {
+    /// Variations is a fixed word; the board goes in the record, as data.
+    @Test func variationsAskTheAgentWithTheBoardInTheRecord() async throws {
         let host = CanvasHost(try Self.index())
         let screen = await screen(host)
         screen.select("B.dc.html")
         await screen.askForVariations(of: Self.a)?.value
-        await screen.askForAnotherDirection()?.value
-        #expect(host.asked.map(\.text) == [DesignScreenModel.variationsMessage, DesignScreenModel.anotherDirectionMessage])
+        #expect(host.asked.map(\.text) == [DesignScreenModel.variationsMessage])
         let variations = try #require(host.asked.first?.record)
         #expect(variations.isValid && variations.selectedBoards == ["A.dc.html"] && variations.selected.isEmpty)
         #expect(variations.page == "flows")
-        let direction = try #require(host.asked.last?.record)
-        #expect(direction.isValid && direction.selectedBoards.isEmpty)
         #expect(screen.picks == [.init(board: Self.b)], "asking leaves the selection as it was")
 
         host.hasAgent = false
-        await screen.askForAnotherDirection()?.value
+        await screen.askForVariations(of: Self.a)?.value
         #expect(host.reports.count == 1, "a design without an agent says so")
     }
 

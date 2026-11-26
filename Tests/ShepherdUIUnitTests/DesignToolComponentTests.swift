@@ -327,4 +327,14 @@ struct DesignToolComponentTests {
         #expect(SHBoardCardMetrics.zoomed(1, by: 1) == 1.25 && SHBoardCardMetrics.zoomed(4, by: 1) == 4)
         #expect(SHBoardCardMetrics.zoomed(0.1, by: -1) == 0.1)
     }
+
+    /// The Tweak pane's slider and switch take DZTweak's measures (a 4pt track under a 16pt knob, a 26×16 switch with a 12pt
+    /// knob 2pt in); the shared controls' own scale stays the default everywhere else.
+    @Test func theTweakPanesControlsKeepTheBoardsMeasures() {
+        typealias M = SHTweakControlMetrics
+        #expect(M.sliderTrack == 4 && M.sliderKnob == 16 && M.sliderValueWidth == 24 && M.valueSize == 12)
+        #expect(M.switchWidth == 26 && M.switchHeight == 16 && M.switchKnob == 12 && M.switchInset == 2)
+        #expect(M.switchWidth == M.switchKnob + M.switchInset * 2 + 10, "the knob slides 10pt")
+        #expect(EnvironmentValues().shControlScale == .standard)
+    }
 }

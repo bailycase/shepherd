@@ -229,6 +229,7 @@ private let previewBoards = [
             SHTweakGroup("Layout") {
                 SHTweakRow("Padding", layout: .slider) {
                     SHValueSlider("Padding", value: $padding, in: 0...48, step: 4) { "\(Int($0))" }
+                        .shControlScale(.tweak)
                 }
                 SHTweakRow("Radius") {
                     SHSegmentedPicker("Radius", selection: $radius, options: [(8, "8"), (12, "12"), (16, "16")], size: .s)
