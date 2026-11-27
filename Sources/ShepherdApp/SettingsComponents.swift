@@ -157,6 +157,7 @@ struct SettingsLink: Identifiable {
 struct SettingsRow<Control: View>: View {
     let title: String
     var subtitle: String?
+    var subtitleTone: SHRowTone = .normal
     var problem: String?
     var problemHelp: String?
     /// A status dot before the title.
@@ -167,7 +168,7 @@ struct SettingsRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        SHCardRow(title, description: subtitle, problem: problem, problemHelp: problemHelp, style: .settings,
+        SHCardRow(title, description: subtitle, descriptionTone: subtitleTone, problem: problem, problemHelp: problemHelp, style: .settings,
                   dot: dot, monoTitle: mono, indented: indented) { control }
             .accessibilityElement(children: .contain)
     }
@@ -294,6 +295,7 @@ struct SettingsValue: View {
 struct SettingsDrillRow<Extra: View>: View {
     let title: String
     var subtitle: String?
+    var subtitleTone: SHRowTone = .normal
     var value: String?
     var valueTone: SettingsValue.Tone = .plain
     var dot: SHRowDot?
@@ -308,7 +310,7 @@ struct SettingsDrillRow<Extra: View>: View {
     var body: some View {
         // The row opens its page on a click anywhere but its own controls (a switch), so it is a
         // tap target with a button's accessibility, not a Button around a Button.
-        SHCardRow(title, description: subtitle, style: .settings, dot: dot, monoTitle: mono, indented: indented) {
+        SHCardRow(title, description: subtitle, descriptionTone: subtitleTone, style: .settings, dot: dot, monoTitle: mono, indented: indented) {
             HStack(spacing: SH.Space.m) {
                 if let value { SettingsValue(text: value, tone: valueTone) }
                 extra
@@ -328,9 +330,9 @@ struct SettingsDrillRow<Extra: View>: View {
 }
 
 extension SettingsDrillRow where Extra == EmptyView {
-    init(title: String, subtitle: String? = nil, value: String? = nil, dot: SHRowDot? = nil, mono: Bool = false,
+    init(title: String, subtitle: String? = nil, subtitleTone: SHRowTone = .normal, value: String? = nil, dot: SHRowDot? = nil, mono: Bool = false,
          indented: Bool = false, accessibilityName: String? = nil, action: @escaping () -> Void) {
-        self.init(title: title, subtitle: subtitle, value: value, dot: dot, mono: mono, indented: indented,
+        self.init(title: title, subtitle: subtitle, subtitleTone: subtitleTone, value: value, dot: dot, mono: mono, indented: indented,
                   accessibilityName: accessibilityName, action: action, extra: { EmptyView() })
     }
 }

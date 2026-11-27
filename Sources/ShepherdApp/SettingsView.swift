@@ -173,11 +173,19 @@ struct SettingsView: View {
         if let back = drill?.parent ?? vm.settingsSection.parent?.title {
             VStack(alignment: .leading, spacing: SH.Space.m) {
                 Button { goBack() } label: {
-                    Text("‹ \(back)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    HStack(spacing: SH.Space.xs) {
+                        Image(systemName: "chevron.left").font(.system(size: SHSettingsControlMetrics.popupChevronSize + 2, weight: .semibold))
+                        Text(back).font(.shSans(SHSettingsControlMetrics.segmentTextSize))
+                    }
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .frame(height: AppLayout.settingsGroupHeaderHeight)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
                 .accessibilityLabel("Back to \(back)")
+                // The board lifts the link into the column's top margin and the page up under it.
+                .padding(.top, -AppLayout.settingsUpLinkLift)
                 localPage
             }
         } else {
@@ -248,7 +256,7 @@ struct SettingsView: View {
                 ScrollView(.vertical) {
                     Group { page }
                         .shTransition(.content)
-                        .frame(maxWidth: AppLayout.settingsColumnWidth, alignment: .leading)
+                        .frame(maxWidth: vm.settingsSection == .projects ? AppLayout.settingsWideColumnWidth : AppLayout.settingsColumnWidth, alignment: .leading)
                         .contentShape(Rectangle())
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("SettingsPageContent")

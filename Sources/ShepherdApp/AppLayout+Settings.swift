@@ -11,10 +11,14 @@ extension AppLayout {
     static let settingsModalMargin: CGFloat = SH.Space.xxxl
     /// The page's one column, 56pt under the top.
     static let settingsColumnWidth: CGFloat = 620
+    /// The Spaces list's column: 40pt in from the nav's edge and the modal's.
+    static let settingsWideColumnWidth: CGFloat = 680
     static let settingsTop: CGFloat = 44
     static let settingsFadeHeight: CGFloat = SH.Space.xxxl
     /// Between the controls at a row's end (a menu, then a button).
     static let settingsControlsSpacing: CGFloat = SHCardRowMetrics.settingsHorizontalPadding
+    /// A sub-page's "‹ Parent" link sits this far above the column's top.
+    static let settingsUpLinkLift: CGFloat = SH.Space.xxl
     static let settingsBottom: CGFloat = SH.Space.xxxl + SH.Space.xl
     /// Spaces keeps its full-width layout's bottom margin.
     static let settingsWideBottomSpaces: CGFloat = 48

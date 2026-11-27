@@ -234,7 +234,7 @@ struct SettingsPreviewTests {
         try await workspace.seed(ShepherdState())
         let vm = workspace.vm
         vm.settingsSection = .skills
-        try await Preview.render("settings-skills-installed", size: CGSize(width: 1440, height: 900),
+        try await Preview.render("settings-skills-installed", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight),
                                  ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
             SettingsView(vm: vm)
         }
@@ -258,11 +258,11 @@ struct SettingsPreviewTests {
         try store.checkUpdates()
         try await workspace.seed(ShepherdState())
         let vm = workspace.vm
-        try await Preview.render("settings-skill-detail", size: CGSize(width: 1180, height: 560),
+        vm.settingsSection = .skills
+        vm.skillsOpenSkill = "pdf"
+        try await Preview.render("settings-skill-detail", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight),
                                  ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
-            SkillsSettings(vm: vm, model: vm.skills, open: "pdf")
-                .padding(SH.Space.xxl)
-                .background(Color.sh.bgWindow)
+            SettingsView(vm: vm)
         }
     }
 
@@ -289,7 +289,7 @@ struct SettingsPreviewTests {
                     .background(Color.sh.bgWindow)
             }
         } else {
-            try await Preview.render("settings-skills-damaged", size: CGSize(width: 1440, height: 900), ready: { vm.skills.recordsProblem(in: vm.skillsHosts) != nil }) {
+            try await Preview.render("settings-skills-damaged", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight), ready: { vm.skills.recordsProblem(in: vm.skillsHosts) != nil }) {
                 SettingsView(vm: vm)
             }
         }
@@ -349,7 +349,7 @@ struct SettingsPreviewTests {
         let vm = workspace.vm
         vm.mcpOpenServer = "linear"
         vm.settingsSection = .tools
-        try await Preview.renderMatrix("settings-mcp-servers", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.renderMatrix("settings-mcp-servers", size: CGSize(width: AppLayout.settingsModalWidth, height: SettingsBoardPreviewTests.boardHeight(.tools))) {
             SettingsView(vm: vm)
         }
     }
@@ -363,7 +363,7 @@ struct SettingsPreviewTests {
         let vm = workspace.vm
         vm.mcpOpenServer = "github"
         vm.settingsSection = .tools
-        try await Preview.renderMatrix("settings-mcp-servers-edges", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.renderMatrix("settings-mcp-servers-edges", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: vm)
         }
     }
@@ -484,7 +484,7 @@ struct SettingsPreviewTests {
         model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
                       file: .agents)
         workspace.vm.settingsSection = .instructions; workspace.vm.instructions.editing = true
-        try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.render("settings-instructions-edited", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -521,7 +521,7 @@ struct SettingsPreviewTests {
         model.piHome = workspace.server.pi.home
         await model.refresh()
         workspace.vm.settingsSection = .instructions; workspace.vm.instructions.editing = true
-        try await Preview.render("settings-instructions-imported", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.render("settings-instructions-imported", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -594,7 +594,7 @@ struct SettingsPreviewTests {
         let editing = try #require(model.snapshot.waiting.first)
         model.edit(editing)
         workspace.vm.settingsSection = .experiments
-        try await Preview.render("settings-experiments-suggestions", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.render("settings-experiments-suggestions", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -609,11 +609,11 @@ struct SettingsPreviewTests {
         await workspace.vm.suggestions.refresh()
         #expect(workspace.vm.suggestions.unavailable?.contains(url.path) == true)
         workspace.vm.settingsSection = .experiments
-        try await Preview.render("settings-suggestions-damaged", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.render("settings-suggestions-damaged", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
         workspace.vm.experimentsPage = .waiting
-        try await Preview.render("settings-waiting-damaged", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.render("settings-waiting-damaged", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -1023,7 +1023,7 @@ extension SettingsPreviewTests {
         defer { workspace.stop() }
         workspace.vm.settingsSection = .instructions
         workspace.vm.instructions.editing = editing
-        try await Preview.renderMatrix(editing ? "settings-instructions-file" : "settings-instructions-list", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.renderMatrix(editing ? "settings-instructions-file" : "settings-instructions-list", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -1034,7 +1034,7 @@ extension SettingsPreviewTests {
         defer { workspace.stop() }
         workspace.vm.settingsSection = .experiments
         workspace.vm.experimentsPage = .waiting
-        try await Preview.renderMatrix("settings-experiments-waiting", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.renderMatrix("settings-experiments-waiting", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }

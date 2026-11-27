@@ -18,6 +18,8 @@ public struct SHButtonStyle: ButtonStyle {
         case danger
         /// Failed fill: a confirmed destructive action (Delete).
         case dangerFill
+        /// A row's main word (Settings): 600 text with no box; outside Settings it is a secondary button.
+        case bold
         /// Text-colored fill on the window's color: a page header's state action beside its
         /// secondary buttons (PRReview's Merge, IssueReview's Start a thread).
         case strong
@@ -91,7 +93,7 @@ private struct SHStyledButton: View {
             // the hit area overhangs them so a 26pt target keeps the words flush with the row's padding.
             let overhang = M.buttonOverhang
             configuration.label
-                .font(.shSans(M.textSize, kind == .ghost ? .regular : .medium))
+                .font(.shSans(M.textSize, kind == .ghost ? .regular : kind == .bold ? .semibold : .medium))
                 .labelStyle(SHButtonLabelStyle())
                 .lineLimit(1)
                 .foregroundStyle(foreground(sh))
@@ -141,14 +143,14 @@ private struct SHStyledButton: View {
         #if os(iOS)
         kind == .raised || kind == .danger || (kind == .secondary && scale == .settings)
         #else
-        kind == .secondary || kind == .raised || kind == .danger
+        kind == .secondary || kind == .raised || kind == .danger || kind == .bold
         #endif
     }
 
     private func foreground(_ sh: SHPalette) -> Color {
         switch kind {
         case .primary: sh.textOnPrimary
-        case .secondary, .raised: tint ?? sh.textPrimary
+        case .secondary, .raised, .bold: tint ?? sh.textPrimary
         case .ghost: tint ?? (hovering && enabled && !configuration.isPressed ? sh.textPrimary : sh.textSecondary)
         case .danger: sh.failed
         case .dangerFill: sh.textOnFailed
@@ -167,7 +169,7 @@ private struct SHStyledButton: View {
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.failedPressed : sh.failed)
         case .strong:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.textSecondary : sh.textPrimary)
-        case .secondary:
+        case .secondary, .bold:
             // The Settings buttons are unfilled.
             #if os(iOS)
             return AnyShapeStyle(scale == .settings && !active ? Color.clear : sh.bgSelected)

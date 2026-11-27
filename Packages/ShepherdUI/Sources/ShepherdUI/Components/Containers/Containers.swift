@@ -140,6 +140,11 @@ public enum SHCardRowStyle: Sendable {
     case settings
 }
 
+/// The color of a Settings row's hint: the quiet default, `lantern` when something wants you, `failed` when it broke.
+public enum SHRowTone: Sendable {
+    case normal, warn, bad
+}
+
 /// The 8pt status dot leading a Settings row: filled `done` when on, `lantern` when it wants you,
 /// `failed` when broken, a hollow ring when off.
 public enum SHRowDot: Sendable {
@@ -159,11 +164,13 @@ public struct SHCardRow<Control: View>: View {
     let dot: SHRowDot?
     let monoTitle: Bool
     let indented: Bool
+    let descriptionTone: SHRowTone
     @ViewBuilder let control: () -> Control
 
-    public init(_ title: String, description: String? = nil, problem: String? = nil, problemHelp: String? = nil,
+    public init(_ title: String, description: String? = nil, descriptionTone: SHRowTone = .normal, problem: String? = nil, problemHelp: String? = nil,
                 style: SHCardRowStyle = .standard, dot: SHRowDot? = nil, monoTitle: Bool = false, indented: Bool = false,
                 @ViewBuilder control: @escaping () -> Control) {
+        self.descriptionTone = descriptionTone
         self.dot = dot
         self.monoTitle = monoTitle
         self.indented = indented
@@ -197,7 +204,7 @@ public struct SHCardRow<Control: View>: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .foregroundStyle(settings ? sh.textTertiary : sh.textSecondary)
+                    .foregroundStyle(settings ? (descriptionTone == .warn ? sh.lantern : descriptionTone == .bad ? sh.failed : sh.textTertiary) : sh.textSecondary)
                 }
                 if let problem {
                     Group {
