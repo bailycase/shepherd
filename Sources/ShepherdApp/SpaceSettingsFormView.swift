@@ -7,46 +7,35 @@ import ShepherdUI
 struct SpaceSettingsFormView: View {
     @Bindable var model: ProjectsModel
     let project: ProjectsRow
+    /// The line back to the space.
+    let up: (label: String, action: () -> Void)
 
     private var locked: Bool { !model.formEditable }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: SH.Space.xxl) {
-                VStack(alignment: .leading, spacing: SH.Space.s) {
-                    Text("Space defaults").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                    Text(scopeCopy).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                }
-                Spacer(minLength: 0)
-                HStack(spacing: SH.Space.m) {
-                    Text(model.selectedFile?.path ?? ".pi/settings.json").font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
-                    // The form shows only its keys; every other key is edited as JSON, over the same draft.
-                    Button("Edit JSON…") { model.showingSettingsJSON = true }.buttonStyle(.sh(.secondary))
-                        .disabled(!model.fileLoaded || model.saving)
-                    Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(.sh(.secondary))
-                        .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil || model.openingEditor)
-                }.padding(.top, SH.Space.l)
-            }.padding(.top, SH.Space.xxl - AppLayout.projectDetailGap).padding(.bottom, SH.Space.xl)
+        SpacePageFrame {
+            SpacePageHeader(up: up, title: "Settings", subtitle: project.project.name, intro: scopeCopy, disabled: model.saving) {
+                Text(model.selectedFile?.path ?? ".pi/settings.json").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                // The form shows only its keys; every other key is edited as JSON, over the same draft.
+                Button("Edit JSON…") { model.showingSettingsJSON = true }.buttonStyle(SpaceLinkStyle())
+                    .disabled(!model.fileLoaded || model.saving)
+                Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(SpaceLinkStyle())
+                    .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil || model.openingEditor)
+            }
+            SpacePageStatus(text: statusText, alert: statusAlert)
             if let parent = model.context.parentName { inheritance(parent) }
-            Text(statusText).font(.sh(.caption)).foregroundStyle(statusAlert ? Color.sh.lanternText : Color.sh.textSecondary)
-                .padding(.bottom, SH.Space.l).accessibilityAddTraits(.updatesFrequently)
-            ScrollView {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
-                    if model.fileLoaded, model.formSettings == nil {
-                        SHEmptyState(Text("This settings file isn’t a JSON object"),
-                                     message: "Fix \(model.selectedFile?.path ?? "settings.json") in an editor, then come back. The form won’t overwrite it.") {
-                            Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(.sh(.secondary))
-                                .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil)
-                        }.frame(maxWidth: .infinity).padding(.vertical, SH.Space.xxxl)
-                    }
-                    parentCard
-                    ForEach(model.formGroups) { group in card(group) }
-                    if model.formSettings != nil { codemodeCard }
-                    if !model.formGroups.isEmpty {
-                        Text("Space defaults apply to new threads.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                    }
-                }.padding(.bottom, SH.Space.xxl)
-            }.scrollIndicators(.automatic)
+            if model.fileLoaded, model.formSettings == nil {
+                SHEmptyState(Text("This settings file isn’t a JSON object"),
+                             message: "Fix \(model.selectedFile?.path ?? "settings.json") in an editor, then come back. The form won’t overwrite it.") {
+                    Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(.sh(.secondary))
+                        .disabled(model.selectedFile?.exists != true || !project.host.supportsDetails || project.unavailable != nil)
+                }.frame(maxWidth: .infinity)
+            }
+            parentSection
+            ForEach(model.formGroups) { group in section(group) }
+            if model.formSettings != nil { codemodeSection }
+        } bar: {
+            SpaceSettingsFormFooter(model: model, project: project)
         }.accessibilityElement(children: .contain).accessibilityLabel("Space settings form")
     }
 
@@ -62,7 +51,6 @@ struct SpaceSettingsFormView: View {
         return SpaceInheritanceBanner(title: "Inherited from \(parent)", message: SpaceInheritanceBanner.childMessage(project.project.name),
                                       open: row.map { row in ("Open \(parent)", { Task { await model.navigate(.close); if model.selected == nil { await model.open(row) } } }) },
                                       disabled: model.saving)
-            .padding(.bottom, SH.Space.l)
     }
 
     private var statusText: String {
@@ -75,51 +63,30 @@ struct SpaceSettingsFormView: View {
 
     private var statusAlert: Bool { project.unavailable != nil || model.conflict || model.fileError != nil }
 
-    private func card(_ group: SpaceSettingsForm.Group) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text(group.title).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                Text(group.note).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.xl)
-                .background(Color.sh.bgSunken)
+    private func section(_ group: SpaceSettingsForm.Group) -> some View {
+        SpaceSection(group.title, note: group.note) {
             ForEach(group.rows) { row in
-                SHHairline(color: Color.sh.lineSubtle)
-                rowView(row)
+                if group.tools && row.key == "defaultTools" {
+                    VStack(spacing: 0) { rowView(row); tools }
+                } else {
+                    rowView(row)
+                }
             }
-            if group.tools {
-                SHHairline(color: Color.sh.lineSubtle)
-                tools
-            }
-        }.background(Color.sh.bgRaised)
-            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-            .accessibilityElement(children: .contain).accessibilityLabel(group.title)
+        }
     }
 
     private func rowView(_ row: SpaceSettingsForm.Row) -> some View {
-        HStack(spacing: SH.Space.xl) {
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text(row.label).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                Text(row.description).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                Text(row.source).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                if let error = row.error {
-                    Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed).accessibilityAddTraits(.isStaticText)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+        SpaceRow(title: row.label, hint: row.description, source: row.source,
+                 reset: row.overridden ? ("Reset to \(row.resetTo)", "Reset \(row.label) to \(row.resetTo)", { model.resetForm(row) }, !locked) : nil,
+                 problem: row.error) {
             control(row).disabled(locked)
-            Button("Reset to \(row.resetTo)") { model.resetForm(row) }
-                .buttonStyle(.sh(.ghost)).frame(width: AppLayout.spaceFormResetWidth)
-                .disabled(locked || !row.overridden)
-                .accessibilityLabel("Reset \(row.label) to \(row.resetTo)")
-        }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
-            .accessibilityElement(children: .contain)
+        }
     }
 
     @ViewBuilder private func control(_ row: SpaceSettingsForm.Row) -> some View {
         switch row.control {
         case .dropdown(let options):
-            dropdown(row.label, value: options.first { $0.value == row.value }?.label ?? row.value) {
+            SpaceMenu(label: row.label, value: options.first { $0.value == row.value }?.label ?? row.value) {
                 ForEach(options, id: \.self) { option in Button(option.label) { model.setForm(row, option.value) } }
             }
         case .segments(let options):
@@ -127,128 +94,90 @@ struct SpaceSettingsFormView: View {
                               options: options.map { ($0.value, $0.label) })
                 .shControlScale(.settings)
         case .field, .number:
-            SettingsTextField(label: row.label, prompt: row.placeholder,
-                              text: Binding(get: { row.value }, set: { model.setForm(row, $0) }),
-                              mono: true, width: AppLayout.spaceFormControlWidth)
+            SpaceField(label: row.label, prompt: row.placeholder, text: Binding(get: { row.value }, set: { model.setForm(row, $0) }),
+                       width: row.control == .field ? AppLayout.spaceWideFieldWidth : AppLayout.spaceFieldWidth, invalid: row.error != nil)
         case .stepper:
-            SHStepper(row.label, value: Binding(get: { row.effective }, set: { model.setForm(row, String($0)) }), in: 0...AppLayout.spaceFormStepperMax)
-                .shControlScale(.settings)
+            SpaceStepper(label: row.label, value: Binding(get: { row.effective }, set: { model.setForm(row, String($0)) }), range: 0...AppLayout.spaceFormStepperMax)
         }
-    }
-
-    private func dropdown(_ label: String, value: String, @ViewBuilder items: () -> some View) -> some View {
-        Menu(content: items) {
-            HStack(spacing: SH.Space.m) {
-                Text(value).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                Spacer(minLength: 0)
-                SHGlyph.popupChevrons.image.font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-            }.padding(.horizontal, SH.Space.l).frame(width: AppLayout.spaceFormControlWidth, height: SHSettingsControlMetrics.controlHeight)
-                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SHSettingsControlMetrics.radius))
-                .shBorder(Color.sh.lineStrong, radius: SHSettingsControlMetrics.radius)
-                .contentShape(Rectangle())
-        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-            .accessibilityLabel(label).accessibilityValue(value)
     }
 
     /// The space's parent space, as Add space sets it. It saves at once: it is Shepherd's record,
     /// not a line of the settings file this form drafts.
-    private var parentCard: some View {
+    private var parentSection: some View {
         let problem = model.parentProblem
-        let note = model.parentError ?? problem
-            ?? "Lists this space under another on \(project.host.name). A folder inside the parent’s also inherits its settings and resources. No files move."
-        return VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Organization").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                Text("Where this space sits in the Spaces list.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.xl).background(Color.sh.bgSunken)
-            SHHairline(color: Color.sh.lineSubtle)
-            HStack(spacing: SH.Space.xl) {
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text("Parent space").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                    Text(note).font(.sh(.caption)).foregroundStyle(model.parentError == nil ? Color.sh.textSecondary : Color.sh.failed)
-                        .fixedSize(horizontal: false, vertical: true)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                dropdown("Parent space", value: model.parentSpaceName ?? "None · root space") {
+        let note = problem ?? "Lists this space under another on \(project.host.name). A folder inside the parent’s also inherits its settings and resources. No files move."
+        return SpaceSection("Organization", note: "Where this space sits in the Spaces list.") {
+            SpaceRow(title: "Parent space", hint: note, problem: model.parentError) {
+                SpaceMenu(label: "Parent space", value: model.parentSpaceName ?? "None · root space") {
                     Button("None · root space") { Task { await model.setParent(nil) } }
                     ForEach(model.parentChoices) { parent in Button(parent.name) { Task { await model.setParent(parent.id) } } }
                 }.disabled(problem != nil || model.settingParent || model.saving)
-                Color.clear.frame(width: AppLayout.spaceFormResetWidth, height: 0)
-            }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
-        }.background(Color.sh.bgRaised)
-            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-            .accessibilityElement(children: .contain).accessibilityLabel("Organization")
+            }
+        }
     }
 
     private var tools: some View {
         let follows = model.formSettings?["defaultTools"] == nil
-        return VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(spacing: SH.Space.xl) {
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: AppLayout.spaceToolsGap) {
                 ForEach(SpaceSettingsForm.tools, id: \.self) { tool in
-                    Toggle(tool, isOn: Binding(get: { model.formTools.contains(tool) }, set: { model.toggleFormTool(tool, on: $0) }))
-                        .toggleStyle(.shCheckbox).font(.sh(.body)).foregroundStyle(Color.sh.textSecondary)
+                    Toggle(isOn: Binding(get: { model.formTools.contains(tool) }, set: { model.toggleFormTool(tool, on: $0) })) {
+                        Text(tool).font(.sh(.ui).monospaced()).foregroundStyle(Color.sh.textPrimary)
+                    }.toggleStyle(.shCheckbox)
                 }
-            }.frame(minHeight: SH.Height.controlL).disabled(locked || follows).accessibilityElement(children: .contain).accessibilityLabel("Built-in tools")
+                Spacer(minLength: 0)
+            }.padding(.horizontal, AppLayout.spaceRowSides).padding(.top, SH.Space.l - SH.Space.xxs).padding(.bottom, SH.Space.xs)
+                .disabled(locked || follows).accessibilityElement(children: .contain).accessibilityLabel("Built-in tools")
             Text(follows ? "Inherited tool selection. Switch to Space selection to change tools."
                          : "Explicit space selection. Unchecked tools are unavailable; an empty selection enables none.")
-                .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-        }.padding(.horizontal, SH.Space.xxl).padding(.bottom, SH.Space.xl)
+                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                .padding(.horizontal, AppLayout.spaceRowSides).padding(.bottom, SH.Space.l)
+        }
     }
 
     /// Codemode, kept from the editor this form replaces: the board has no row for it.
-    private var codemodeCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Codemode").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                Text("Overrides this host’s global setting for this space.").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.xl).background(Color.sh.bgSunken)
-            SHHairline(color: Color.sh.lineSubtle)
-            HStack(spacing: SH.Space.xl) {
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text("Codemode").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                    Text(model.codemodeProblem ?? "Lets the agent call tools from scripts.").font(.sh(.caption))
-                        .foregroundStyle(model.codemodeProblem == nil ? Color.sh.textSecondary : Color.sh.failed)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+    private var codemodeSection: some View {
+        SpaceSection("Codemode", note: "Overrides this host’s global setting for this space.",
+                     footnote: model.formGroups.isEmpty ? nil : "Space defaults apply to new threads.") {
+            SpaceRow(title: "Codemode", hint: model.codemodeProblem ?? "Lets the agent call tools from scripts.",
+                     problem: nil) {
                 SHSegmentedPicker("Space codemode", selection: $model.projectCodemode,
                                   options: [(ProjectsModel.CodemodeChoice.inherit, "Follow global"), (.on, "On"), (.off, "Off")])
                     .shControlScale(.settings)
                     .disabled(locked || model.codemodeProblem != nil)
-                Color.clear.frame(width: AppLayout.spaceFormResetWidth, height: 0)
-            }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
-        }.background(Color.sh.bgRaised)
-            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-            .accessibilityElement(children: .contain).accessibilityLabel("Codemode")
+            }
+        }
     }
 }
 
-/// The form's footer, across the whole detail: save state, what the save applies to, Discard and Save changes.
+/// The form's bar, across the whole page: save state, what the save applies to, Discard and Save changes.
 struct SpaceSettingsFormFooter: View {
     @Bindable var model: ProjectsModel
     let project: ProjectsRow
 
     var body: some View {
         let offline = project.unavailable != nil
-        HStack(spacing: SH.Space.l) {
-            Text(badge).font(.sh(.caption)).foregroundStyle(Color.sh.lanternText)
-                .padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.xs)
-                .background(Color.sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
-            Text(model.formInvalid ? "Fix invalid values before saving." : model.conflict ? "Saving is blocked. Existing values will not be overwritten." : model.hasInheritingChildren ? "Applies to new threads in this space and inheriting child spaces." : "Applies to new threads in this space.")
-                .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-            Spacer(minLength: 0)
+        SpacePageBar(status: badge, tone: tone, note: note) {
             if model.conflict {
-                Button("Reload latest") { model.pending = .reload }.buttonStyle(.sh(.secondary, size: .l)).disabled(offline || model.saving)
+                Button("Reload latest") { model.pending = .reload }.buttonStyle(SpaceBarStyle(kind: .strong)).disabled(offline || model.saving)
             }
-            Button("Discard") { model.discardForm() }.buttonStyle(.sh(.secondary, size: .l))
+            Button("Discard") { model.discardForm() }.buttonStyle(SpaceBarStyle())
                 .disabled(offline || model.saving || !model.dirty && !model.conflict)
-            Button(model.saving ? "Saving…" : "Save changes") { Task { await model.save() } }.buttonStyle(.sh(.primary, size: .l))
+            Button(model.saving ? "Saving…" : "Save changes") { Task { await model.save() } }.buttonStyle(SpaceBarStyle(kind: .primary))
                 .disabled(offline || model.saving || model.conflict || !model.dirty || model.formInvalid || model.formSettings == nil)
                 .keyboardShortcut("s", modifiers: .command)
-        }.padding(.horizontal, AppLayout.settingsWideSides).padding(.vertical, SH.Space.xl)
-            .background(Color.sh.bgWindow)
-            .overlay(alignment: .top) { SHHairline(color: Color.sh.lineSubtle) }
+        }
+    }
+
+    private var note: String {
+        model.formInvalid ? "Fix invalid values before saving." : model.conflict ? "Saving is blocked. Existing values will not be overwritten."
+            : model.hasInheritingChildren ? "Applies to new threads in this space and inheriting child spaces." : "Applies to new threads in this space."
+    }
+
+    private var tone: SpaceBarTone {
+        if model.conflict { return .warn }
+        if project.unavailable != nil || model.fileError != nil, model.fileLoaded { return .bad }
+        return model.saving || model.dirty ? .warn : .plain
     }
 
     private var badge: String {
@@ -300,19 +229,18 @@ struct SpaceInheritanceBanner: View {
     static func childMessage(_ space: String) -> String { "Local overrides win. Reset removes only \(space)’s override." }
 
     var body: some View {
-        HStack(spacing: SH.Space.l) {
-            SHGlyph.Settings.subagents.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text(title).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+        HStack(spacing: AppLayout.spaceControlGap) {
+            SHGlyph.Settings.worktrees.image.foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
                 Text(message).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
             }
             Spacer(minLength: 0)
             if let open {
-                Button(open.label, action: open.action).buttonStyle(.sh(.ghost)).disabled(disabled)
+                Button(open.label, action: open.action).buttonStyle(SpaceLinkStyle(tone: .strong)).disabled(disabled)
             }
-        }.padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
-            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+        }.padding(.horizontal, AppLayout.spaceRowSides).padding(.vertical, SH.Space.m + SH.Space.xxs)
+            .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: AppLayout.spaceBannerRadius))
             .accessibilityElement(children: .contain).accessibilityLabel(title)
     }
 }

@@ -28,11 +28,22 @@ struct ProjectMCPSettings: View {
         var id: String { inherited ? "inherited:" + row.name : overrides ? "override:" + row.name : "own" }
     }
 
-    init(model: ProjectsModel, initiallyExpanded: String? = nil, initialQuery: String = "", copyJSON: @escaping (String) -> Void = {
+    /// The line back to the space, the page's files row, a prompt above the list and its bar: the page around the servers (nil in a bare preview).
+    var up: (label: String, action: () -> Void)?
+    var files: AnyView?
+    var notice: AnyView?
+    var bar: AnyView?
+
+    init(model: ProjectsModel, up: (label: String, action: () -> Void)? = nil, files: AnyView? = nil, notice: AnyView? = nil, bar: AnyView? = nil,
+         initiallyExpanded: String? = nil, initialQuery: String = "", copyJSON: @escaping (String) -> Void = {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString($0, forType: .string)
     }) {
         self.model = model
+        self.up = up
+        self.files = files
+        self.notice = notice
+        self.bar = bar
         self.copyJSON = copyJSON
         _expanded = State(initialValue: initiallyExpanded)
         _query = State(initialValue: initialQuery)
@@ -51,13 +62,12 @@ struct ProjectMCPSettings: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.l) {
-            HStack(alignment: .top, spacing: SH.Space.l) {
-                SettingsHeader(title: "MCP servers", explanation: explanation)
-                    .frame(maxWidth: AppLayout.mcpExplanationWidth, alignment: .leading)
-                Spacer(minLength: SH.Space.m)
-                MCPAddServerButton(editable: model.mcpEditable) { sheet = .add(.remote) }
+        SpacePageFrame {
+            SpacePageHeader(up: up, title: "MCP servers", subtitle: space, intro: explanation, disabled: model.saving) {
+                Button("Add server") { sheet = .add(.remote) }.buttonStyle(SpaceLinkStyle()).disabled(!model.mcpEditable)
             }
+            if let files { files }
+            if let notice { notice }
             if let parent {
                 SpaceInheritanceBanner(title: "Inherited from \(parent)", message: SpaceInheritanceBanner.childMessage(space),
                                        open: model.inheritanceParent == nil ? nil : ("Open \(parent)", { Task { await model.openInheritanceParent() } }),
@@ -65,57 +75,26 @@ struct ProjectMCPSettings: View {
             } else if children > 0 {
                 SpaceInheritanceBanner(title: "Shared with child spaces", message: "Saved MCP servers flow down to child spaces that have not overridden them.")
             }
-            HStack(spacing: SH.Space.m) {
-                SHSearchField("Filter servers", text: $query).frame(width: AppLayout.mcpFilterWidth)
-                if sourced {
-                    SHSegmentedPicker("Server source", selection: $scope, options: [(Scope.all, "All"), (.here, "Defined here"), (.inherited, "Inherited")])
-                        .shControlScale(.settings).fixedSize()
-                }
-                Spacer(minLength: SH.Space.m)
-                if sourced && model.mcp.problem == nil {
-                    let count = blocks.reduce(0) { $0 + $1.rows.count }
-                    Text("\(count) \(count == 1 ? "server" : "servers")").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                } else {
-                    Button("Reload") {
-                        guard let file = model.selectedFile else { return }
-                        Task { await model.navigate(.file(file)) }
-                    }.buttonStyle(.sh(.secondary)).disabled(model.fileLoading || model.saving)
-                }
-            }
             if let problem = model.mcpTrustError {
                 SHInlineProblem(problem).accessibilityLabel(problem)
             }
             if let problem = model.mcp.problem {
                 SHInlineProblem(problem)
             } else if sourced {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: SH.Space.l) {
-                        if blocks.isEmpty {
-                            MCPServerList(rows: [], details: [:], editable: false, expanded: nil,
-                                          empty: query.isEmpty ? "No servers here yet. Add a server to get started." : "No servers match your search.",
-                                          rowActions: rowActions, detailActions: detailActions)
-                        }
-                        ForEach(blocks) { block in self.block(block) }
-                    }
-                }
-                .scrollIndicators(.hidden)
+                sourcedPage
             } else {
-                ScrollView {
-                    MCPServerList(rows: visible, details: model.mcp.details, editable: model.mcpEditable,
-                                  expanded: expanded, empty: query.isEmpty ? "No servers in this file yet. Add a server to get started." : "No servers match your search.",
-                                  rowActions: rowActions, detailActions: detailActions)
+                SpaceSection(title: "", footnote: footnote) { EmptyView() } content: {
+                    filterRow
+                    if visible.isEmpty {
+                        SpaceEmpty(query.isEmpty ? "No servers in this file yet. Add a server to get started." : "No servers match your search.")
+                    }
+                    SpaceMCPList(rows: visible, details: model.mcp.details, editable: model.mcpEditable, expanded: expanded,
+                                 rowActions: rowActions, detailActions: detailActions)
                 }
-                .scrollIndicators(.hidden)
             }
-            Text(sourced
-                 ? "Credentials stay on \(model.selected?.host.name ?? "this host"). Parent configuration is inherited without copying sign-in sessions or secret values."
-                 : model.mcp.native
-                 ? "Added spaces are trusted automatically. Sign-in credentials stay on the space's host; live status belongs to its threads."
-                 : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the space's host.")
-                .font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+        } bar: {
+            if let bar { bar }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear(perform: filter)
         .onChange(of: model.mcp.rows) { _, _ in filter() }
         .onChange(of: query) { _, _ in filter() }
@@ -167,36 +146,77 @@ struct ProjectMCPSettings: View {
         return result.filter { scope == .all || (scope == .inherited) == $0.inherited }
     }
 
-    @ViewBuilder private func block(_ block: Block) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            HStack(spacing: SH.Space.m) {
-                Text(block.inherited ? "Inherited from \(parent ?? "parent")" : "Defined in \(space)")
-                    .font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                if block.overrides, let parent {
-                    Text("Overrides \(parent)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+    private var footnote: String {
+        sourced
+            ? "Credentials stay on \(model.selected?.host.name ?? "this host"). Parent configuration is inherited without copying sign-in sessions or secret values."
+            : model.mcp.native
+            ? "Added spaces are trusted automatically. Sign-in credentials stay on the space's host; live status belongs to its threads."
+            : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the space's host."
+    }
+
+    /// The filter row inside the card (`gspc-filter`): search, then Reload.
+    private var filterRow: some View {
+        HStack(spacing: SH.Space.l) {
+            SpaceSearchField(prompt: "Filter servers", text: $query)
+            Spacer(minLength: 0)
+            Button("Reload") {
+                guard let file = model.selectedFile else { return }
+                Task { await model.navigate(.file(file)) }
+            }.buttonStyle(SpaceLinkStyle(tone: .strong)).disabled(model.fileLoading || model.saving)
+        }.padding(.horizontal, AppLayout.spaceRowSides).padding(.vertical, SH.Space.m).frame(minHeight: AppLayout.spaceFilterHeight)
+    }
+
+    /// A parent or child space's servers by where each comes from: this space's own and its overrides, then the parent's.
+    private var sourcedPage: some View {
+        let all = blocks
+        let defined = all.filter { !$0.inherited }.flatMap(\.rows)
+        let supplied = all.filter(\.inherited).map(\.row)
+        let excludedRows = supplied
+        return VStack(alignment: .leading, spacing: AppLayout.spacePageGap) {
+            HStack(spacing: SH.Space.l) {
+                SpaceSearchField(prompt: "Filter servers", text: $query)
+                SpaceFilterTabs(label: "Server source", selection: $scope, options: [(Scope.all, "All"), (.here, "Defined here"), (.inherited, "Inherited")])
+                Spacer(minLength: 0)
+                if model.mcp.problem == nil {
+                    let count = defined.count + supplied.count
+                    Text("\(count) \(count == 1 ? "server" : "servers")").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
-                Spacer(minLength: SH.Space.m)
-                if block.inherited, let parent {
-                    let excluded = model.isExcluded(mcp: block.row.name)
+            }.padding(.horizontal, SH.Space.xs)
+            if defined.isEmpty && supplied.isEmpty {
+                SpaceSection("") {
+                    SpaceEmpty(query.isEmpty ? "No servers here yet. Add a server to get started." : "No servers match your search.")
+                }
+            }
+            if !defined.isEmpty {
+                SpaceSection("Defined in \(space)") {
+                    SpaceMCPList(rows: defined, details: model.mcp.details, editable: model.mcpEditable, expanded: expanded,
+                                 rowActions: rowActions, detailActions: detailActions, overrides: { name in
+                        guard let parent, model.parentMCP?.rows.contains(where: { $0.name == name }) == true else { return nil }
+                        return (parent, { Task { await remove(name) } }, model.mcpEditable)
+                    })
+                }
+            }
+            if !supplied.isEmpty, let parent {
+                SpaceSection(title: "Inherited from \(parent)", trailing: {
                     if model.inheritanceParent != nil {
-                        Button("Manage in \(parent)") { Task { await model.openInheritanceParent() } }
-                            .buttonStyle(.sh(.ghost, size: .s)).disabled(model.saving)
+                        Button("Manage in \(parent)") { Task { await model.openInheritanceParent() } }.buttonStyle(SpaceLinkStyle()).disabled(model.saving)
                     }
-                    Button("Override here") {
-                        Task { await model.overrideMCP(block.row.name); if model.mcp.entries.contains(where: { $0.name == block.row.name }) { sheet = .edit(block.row.name) } }
-                    }.buttonStyle(.sh(.ghost)).disabled(!model.mcpEditable || !model.mcp.native)
-                    Button(excluded ? "Enable in \(space)" : "Disable in \(space)") {
-                        Task { await model.setInherited(mcp: block.row.name, on: excluded) }
-                    }.buttonStyle(.sh(.ghost)).disabled(!model.canExcludeInherited)
-                        .help(model.selected?.host.supportsInheritance == false ? "Update Shepherd on \(model.selected?.host.name ?? "the host") to turn off inherited servers." : "")
-                } else if block.overrides {
-                    Button("Reset to inherited") { Task { await remove(block.row.name) } }
-                        .buttonStyle(.sh(.ghost)).disabled(!model.mcpEditable)
-                }
-            }.accessibilityElement(children: .contain)
-            MCPServerList(rows: block.rows, details: block.inherited ? [:] : model.mcp.details,
-                          editable: !block.inherited && model.mcpEditable, expanded: block.inherited ? nil : expanded, empty: "",
-                          rowActions: rowActions, detailActions: detailActions)
+                }, content: {
+                    SpaceMCPList(rows: excludedRows, details: [:], editable: false, expanded: nil, rowActions: rowActions,
+                                 detailActions: detailActions, inherited: { row in
+                        let excluded = model.isExcluded(mcp: row.name)
+                        return SpaceMCPRow.Inherited(
+                            overrideHere: { Task { await model.overrideMCP(row.name); if model.mcp.entries.contains(where: { $0.name == row.name }) { sheet = .edit(row.name) } } },
+                            overrideEnabled: model.mcpEditable && model.mcp.native,
+                            toggleTitle: excluded ? "Enable in \(space)" : "Disable in \(space)",
+                            toggle: { Task { await model.setInherited(mcp: row.name, on: excluded) } },
+                            toggleEnabled: model.canExcludeInherited,
+                            toggleHelp: model.selected?.host.supportsInheritance == false ? "Update Shepherd on \(model.selected?.host.name ?? "the host") to turn off inherited servers." : "")
+                    })
+                })
+            }
+            Text(footnote).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

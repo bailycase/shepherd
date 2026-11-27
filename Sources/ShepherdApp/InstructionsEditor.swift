@@ -56,7 +56,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.drawsBackground = true
         textView.project = project
         textView.plain = plain
-        textView.backgroundColor = NSColor(project ? Color.sh.projectEditorBackground : Color.sh.bgRaised)
+        textView.backgroundColor = NSColor(Color.sh.bgRaised)
         textView.insertionPointColor = NSColor(Color.sh.lantern)
         textView.textContainerInset = NSSize(width: 0, height: project ? AppLayout.projectEditorInset : AppLayout.instructionsEditorInset)
         textView.textContainer?.lineFragmentPadding = 0
@@ -305,7 +305,7 @@ final class InstructionsTextView: NSTextView {
         guard let layoutManager else { return }
         let styles = InstructionsEditorStyles(scale: ThemeStore.shared.textScale, project: project, plain: plain)
         if project, !plain {
-            NSColor(Color.sh.projectEditorBackground).setFill()
+            NSColor(Color.sh.bgRaised).setFill()
             NSRect(x: 0, y: rect.minY, width: gutter, height: rect.height).fill()
         }
         let origin = textContainerOrigin

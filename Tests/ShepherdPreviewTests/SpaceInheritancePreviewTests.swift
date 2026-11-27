@@ -79,7 +79,7 @@ struct SpaceInheritancePreviewTests {
             }
         }
         try await Preview.renderMatrix("space-inheritance-\(state)", size: CGSize(width: 1440, height: 900)) {
-            SettingsView(vm: world.vm)
+            RootView(vm: world.vm)
         }
     }
 }

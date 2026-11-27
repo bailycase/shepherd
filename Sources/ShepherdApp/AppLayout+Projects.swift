@@ -108,9 +108,9 @@ extension AppLayout {
     static let projectEditorHeaderHeight: CGFloat = 34
     static let projectEditorFooterHeight: CGFloat = 40
     static let projectEditorButtonHeight: CGFloat = 30
-    static let projectEditorLineHeight: CGFloat = 21.25
-    static let projectEditorGutter: CGFloat = 44
-    static let projectEditorInset: CGFloat = 12
+    static let projectEditorLineHeight: CGFloat = 20
+    static let projectEditorGutter: CGFloat = 36
+    static let projectEditorInset: CGFloat = 10
     static let projectSideGap: CGFloat = 14
     static let projectDotSize: CGFloat = 6
     static let projectReadRowHeight: CGFloat = 46

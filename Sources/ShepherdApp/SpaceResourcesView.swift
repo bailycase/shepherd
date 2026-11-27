@@ -39,74 +39,54 @@ struct SpaceResourcesView: View {
     private var locked: Bool { project.unavailable != nil || !project.host.supportsResources || model.saving || model.loading || !model.loadedOnce }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xl) {
+        VStack(alignment: .leading, spacing: AppLayout.spacePageGap) {
+            SpaceKindTabs(label: "Resource kind", selection: $model.kind, options: ProjectResource.Kind.allCases.map { ($0, $0.title) })
             // ProjectChildSkills: skills, slash commands and extensions inherit from the parent space.
             if model.inheritedKinds.contains(model.kind), let parent = model.parent {
                 SpaceInheritanceBanner(title: "Inherited from \(parent.name)", message: SpaceInheritanceBanner.childMessage(project.project.name),
                                        open: openParent.map { ("Open \(parent.name)", $0) }, disabled: model.saving)
             }
-            // Departure: the boards draw no kind switcher inside the Resources tab.
-            SHSegmentedPicker("Resource kind", selection: $model.kind,
-                              options: ProjectResource.Kind.allCases.map { ($0, $0.title) })
-                .shControlScale(.settings).fixedSize()
-            HStack(alignment: .top, spacing: SH.Space.xl) {
-                SettingsHeader(title: model.kind.title, explanation: model.inheritedKinds.contains(model.kind) && model.parent != nil
-                               ? "Inherited resources from \(model.parent!.name) stay read-only. Overrides change only \(project.project.name)."
-                               : model.kind.subtitle(project.project.name))
-                Spacer(minLength: 0)
+            SpaceSection(title: model.kind.title, note: note, footnote: model.kind == .agent ? "Global subagents are turned on or off in Settings • Agents • Profiles." : nil) {
                 if model.kind == .skill {
-                    Button("Add from repo") { model.install = .init() }.buttonStyle(.sh(.secondary, size: .l)).disabled(locked)
+                    Button("Add from repo") { model.install = .init() }.buttonStyle(SpaceLinkStyle()).disabled(locked)
                 }
-                Button { model.create() } label: {
-                    Label(model.kind.addLabel, systemImage: "plus")
-                }.buttonStyle(.sh(.primary, size: .l)).disabled(locked)
-            }
-            HStack(spacing: SH.Space.xl) {
-                SHSearchField("Search \(model.kind.title.lowercased())", text: $model.query).frame(width: AppLayout.resourceSearchWidth)
-                SHSegmentedPicker("Resource scope", selection: $model.scope,
-                                  options: [(SpaceResourcesModel.Scope.all, "All"), (.space, "Space"), (.inherited, "Inherited")])
-                    .shControlScale(.settings).fixedSize()
-                Spacer(minLength: 0)
-                Text("\(model.spaceCount) space · \(model.inheritedCount) inherited").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-            }
-            if let warning {
-                HStack(spacing: SH.Space.xl) {
-                    Text(warning).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).frame(maxWidth: .infinity, alignment: .leading)
-                    if project.unavailable == nil {
-                        Button(model.conflict ? "Reload latest" : "Retry") {
-                            if model.conflict { model.reloading = true; model.confirmingDiscard = true }
-                            else { model.message = nil; Task { await reload() } }
-                        }.buttonStyle(.sh(.secondary)).disabled(model.saving || model.loading)
-                    }
-                }.padding(SH.Space.l).background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
-                    .accessibilityElement(children: .contain).accessibilityAddTraits(.updatesFrequently)
-            }
-            ScrollView {
-                VStack(spacing: 0) {
-                    HStack(spacing: SH.Space.xl) {
-                        Text(model.kind.column).frame(maxWidth: .infinity, alignment: .leading)
-                        Text("FROM").frame(width: AppLayout.resourceFromWidth, alignment: .leading)
-                        Text("STATUS").frame(width: AppLayout.resourceStatusWidth, alignment: .leading)
-                        Color.clear.frame(width: AppLayout.resourceRemoveWidth, height: 0)
-                    }.font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
-                        .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.m)
-                        .background(Color.sh.bgSunken).accessibilityHidden(true)
-                    SHHairline(color: Color.sh.lineSubtle)
-                    if model.rows.isEmpty {
-                        empty
-                    } else {
-                        LazyVStack(spacing: 0) {
-                            ForEach(model.rows) { row in
-                                SpaceResourceRow(model: model, row: row, project: project.project.name, locked: locked, last: row.id == model.rows.last?.id)
-                            }
+                Button(model.kind.addLabel) { model.create() }.buttonStyle(SpaceLinkStyle()).disabled(locked)
+            } content: {
+                if let warning {
+                    HStack(spacing: AppLayout.spaceControlGap) {
+                        Text(warning).font(.sh(.ui)).foregroundStyle(Color.sh.failed).frame(maxWidth: .infinity, alignment: .leading)
+                        if project.unavailable == nil {
+                            Button(model.conflict ? "Reload latest" : "Retry") {
+                                if model.conflict { model.reloading = true; model.confirmingDiscard = true }
+                                else { model.message = nil; Task { await reload() } }
+                            }.buttonStyle(SpaceLinkStyle(tone: .strong)).disabled(model.saving || model.loading)
                         }
+                    }.padding(.horizontal, AppLayout.spaceRowSides).padding(.vertical, SH.Space.l)
+                        .accessibilityElement(children: .contain).accessibilityAddTraits(.updatesFrequently)
+                }
+                HStack(spacing: SH.Space.l) {
+                    SpaceSearchField(prompt: "Search \(model.kind.title.lowercased())", text: $model.query)
+                    SpaceFilterTabs(label: "Resource scope", selection: $model.scope,
+                                    options: [(SpaceResourcesModel.Scope.all, "All"), (.space, "Space"), (.inherited, "Inherited")])
+                    Spacer(minLength: 0)
+                    Text("\(model.spaceCount) space · \(model.inheritedCount) inherited").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                }.padding(.horizontal, AppLayout.spaceRowSides).padding(.vertical, SH.Space.m).frame(minHeight: AppLayout.spaceFilterHeight)
+                if model.rows.isEmpty {
+                    empty
+                } else {
+                    ForEach(model.rows) { row in
+                        SpaceResourceRow(model: model, row: row, project: project.project.name, locked: locked)
                     }
-                }.clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
-                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.l)
-            }.scrollIndicators(.automatic)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .contain).accessibilityLabel("Space resources")
+    }
+
+    private var note: String {
+        model.inheritedKinds.contains(model.kind) && model.parent != nil
+            ? "Inherited resources from \(model.parent!.name) stay read-only. Overrides change only \(project.project.name)."
+            : model.kind.subtitle(project.project.name)
     }
 
     private func reload() async {
@@ -123,15 +103,9 @@ struct SpaceResourcesView: View {
     }
 
     private var empty: some View {
-        VStack(spacing: SH.Space.m) {
-            model.kind.glyph.image.resizable().scaledToFit().frame(width: AppLayout.resourceEmptyGlyph, height: AppLayout.resourceEmptyGlyph)
-                .foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-            Text(model.loading ? "Loading \(model.kind.title.lowercased())…" : !model.query.isEmpty ? "No matching \(model.kind.title.lowercased())"
-                 : model.scope == .space ? "No space \(model.kind.title.lowercased())" : "No \(model.kind.title.lowercased())")
-                .font(.sh(.title, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-            Text(!model.query.isEmpty ? "Try another search." : "Add a resource to use it only in \(project.project.name).")
-                .font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-        }.frame(maxWidth: .infinity, minHeight: AppLayout.resourceEmptyHeight).padding(SH.Space.xxl)
+        SpaceEmpty(model.loading ? "Loading \(model.kind.title.lowercased())…" : !model.query.isEmpty ? "No matching \(model.kind.title.lowercased())"
+                   : model.scope == .space ? "No space \(model.kind.title.lowercased())" : "No \(model.kind.title.lowercased())",
+                   message: !model.query.isEmpty ? "Try another search." : "Add a resource to use it only in \(project.project.name).")
     }
 }
 
@@ -141,8 +115,6 @@ private struct SpaceResourceRow: View {
     let row: SpaceResourcesModel.Row
     let project: String
     let locked: Bool
-    let last: Bool
-    @State private var hovered = false
 
     private func open() { Task { await model.edit(row) } }
     private func toggle(_ on: Bool) { Task { await model.toggle(row, on: on) } }
@@ -151,77 +123,66 @@ private struct SpaceResourceRow: View {
     var body: some View {
         let _ = SHRenderProbe.tick("spaceResources.row")
         let item = row.resource
-        VStack(spacing: 0) {
-            HStack(spacing: SH.Space.xl) {
-                HStack(spacing: SH.Space.l) {
-                    item.kind.glyph.image.resizable().scaledToFit().frame(width: AppLayout.resourceGlyph, height: AppLayout.resourceGlyph)
-                        .foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: SH.Space.xs) {
-                        if row.local, item.kind != .extension {
-                            Button(action: open) { Text(row.displayName).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary) }
-                                .buttonStyle(.plain).shFocusRing(radius: SH.Radius.xs, color: .sh.running)
-                                .accessibilityLabel("Edit \(item.name)").disabled(locked)
-                        } else {
-                            Text(row.displayName).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
-                        }
-                        Text(item.description).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                        Text(row.detail).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
-                    }.lineLimit(1).truncationMode(.tail)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text(row.inheritedFrom.map { "From \($0)" } ?? (item.global ? "Global" : "This space")).font(.shSans(SHTextStyle.micro.size))
-                        .foregroundStyle(row.local ? Color.sh.running : Color.sh.textSecondary)
-                        .padding(.horizontal, SH.Space.s).padding(.vertical, SH.Space.xxs)
-                        .background(row.local ? Color.sh.runningTint : Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+        HStack(spacing: AppLayout.spaceRowGap) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                if row.local, item.kind != .extension {
+                    Button(action: open) { name }
+                        .buttonStyle(.plain).shFocusRing(radius: SH.Radius.xs, color: .sh.running)
+                        .accessibilityLabel("Edit \(item.name)").disabled(locked)
+                } else {
+                    name
+                }
+                Text(item.description).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                Text(row.detail).font(.shMono(AppLayout.spaceDetailSize)).foregroundStyle(Color.sh.textTertiary)
+            }.lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: AppLayout.spaceControlGap) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text(row.inheritedFrom.map { "From \($0)" } ?? (item.global ? "Global" : "This space")).font(.sh(.ui))
+                        .foregroundStyle(row.local ? Color.sh.textPrimary : Color.sh.textSecondary)
                     if row.inheritedFrom != nil {
-                        Button("Override here") { Task { await model.overrideInherited(row) } }.buttonStyle(.sh(.ghost)).disabled(locked)
+                        Button("Override here") { Task { await model.overrideInherited(row) } }
+                            .buttonStyle(SpaceLinkStyle(tone: .strong, caption: true)).disabled(locked)
                             .accessibilityLabel("Override \(item.name) in \(project)")
                     } else if let parent = row.overrides {
-                        Button("Reset to inherited") { Task { await model.resetToInherited(row) } }.buttonStyle(.sh(.ghost)).disabled(locked)
+                        Button("Reset to inherited") { Task { await model.resetToInherited(row) } }
+                            .buttonStyle(SpaceLinkStyle(tone: .strong, caption: true)).disabled(locked)
                             .accessibilityLabel("Reset \(item.name) to \(parent)’s")
                     }
-                }.frame(width: AppLayout.resourceFromWidth, alignment: .leading)
-                HStack(spacing: SH.Space.m) {
-                    Toggle("Enable \(item.name) in \(project)", isOn: Binding(get: { row.enabled }, set: toggle))
-                        .toggleStyle(.shSwitch).labelsHidden().disabled(locked || !row.canToggle)
-                        .help(row.canToggle ? "" : row.inheritedFrom != nil ? "Update Shepherd on this space’s host to turn off inherited \(model.kind.title.lowercased())." : "Global subagents are turned on or off in Settings ▸ Subagents.")
-                    Text(row.enabled ? "Enabled" : "Disabled").font(.sh(.caption))
-                        .foregroundStyle(row.enabled ? Color.sh.textSecondary : Color.sh.textTertiary)
-                }.frame(width: AppLayout.resourceStatusWidth, alignment: .leading)
+                }.frame(width: AppLayout.spaceFromWidth, alignment: .leading)
+                Toggle("Enable \(item.name) in \(project)", isOn: Binding(get: { row.enabled }, set: toggle))
+                    .toggleStyle(.shSwitch).labelsHidden().disabled(locked || !row.canToggle)
+                    .help(row.canToggle ? "" : row.inheritedFrom != nil ? "Update Shepherd on this space’s host to turn off inherited \(model.kind.title.lowercased())." : "Global subagents are turned on or off in Settings ▸ Subagents.")
                 Group {
                     if row.local {
-                        Button(action: remove) { Image(systemName: "trash").frame(width: AppLayout.resourceRemoveWidth, height: SH.Height.controlL) }
-                            .buttonStyle(.sh(.ghost)).accessibilityLabel("Remove \(item.name) from \(project)").disabled(locked)
+                        Button("Remove", action: remove).buttonStyle(SpaceLinkStyle())
+                            .accessibilityLabel("Remove \(item.name) from \(project)").disabled(locked)
                     } else { Color.clear.frame(height: 0) }
-                }.frame(width: AppLayout.resourceRemoveWidth)
-            }.padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
-                .background(hovered ? Color.sh.bgHover : .clear)
-                .onHover { hovered = $0 }
-            if !last { SHHairline(color: Color.sh.lineSubtle) }
-        }.accessibilityElement(children: .contain).accessibilityLabel("\(row.displayName), \(row.inheritedFrom.map { "from \($0)" } ?? (item.global ? "global" : "this space")), \(row.enabled ? "enabled" : "disabled")")
+                }.frame(width: AppLayout.spaceRemoveWidth, alignment: .trailing)
+            }.fixedSize()
+        }.padding(.horizontal, AppLayout.spaceRowSides).padding(.vertical, SH.Space.m).frame(minHeight: AppLayout.spaceRowMinHeight)
+            .accessibilityElement(children: .contain).accessibilityLabel("\(row.displayName), \(row.inheritedFrom.map { "from \($0)" } ?? (item.global ? "global" : "this space")), \(row.enabled ? "enabled" : "disabled")")
+    }
+
+    private var name: some View {
+        Text(row.displayName).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
     }
 }
 
-/// The Resources tab's footer: save state, Discard changes and Save changes.
+/// The Resources tab's bar: save state, Discard changes and Save changes.
 struct SpaceResourcesFooter: View {
     @Bindable var model: SpaceResourcesModel
     let project: ProjectsRow
 
     var body: some View {
         let offline = project.unavailable != nil
-        HStack(spacing: SH.Space.l) {
-            Text(model.saving ? "Saving…" : model.dirty ? "Unsaved changes" : "Saved · applies to new threads")
-                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityAddTraits(.updatesFrequently)
-            Spacer(minLength: 0)
-            Button("Discard changes") { model.reloading = false; model.confirmingDiscard = true }.buttonStyle(.sh(.ghost, size: .l))
+        SpacePageBar(status: model.saving ? "Saving…" : model.dirty ? "Unsaved changes" : "", tone: .warn,
+                     note: model.dirty || model.saving ? "" : "Saved · applies to new threads") {
+            Button("Discard changes") { model.reloading = false; model.confirmingDiscard = true }.buttonStyle(SpaceBarStyle())
                 .disabled(offline || model.saving || !model.dirty)
-            Button(model.saving ? "Saving…" : "Save changes") { Task { await model.save() } }.buttonStyle(.sh(.primary, size: .l))
+            Button(model.saving ? "Saving…" : "Save changes") { Task { await model.save() } }.buttonStyle(SpaceBarStyle(kind: .primary))
                 .disabled(offline || model.saving || model.conflict || !model.dirty)
                 .keyboardShortcut("s", modifiers: .command)
-        }.padding(.vertical, SH.Space.xl)
-            .overlay(alignment: .top) { SHHairline(color: Color.sh.lineSubtle) }
-            .padding(.horizontal, AppLayout.settingsWideSides)
-            .background(Color.sh.bgWindow)
+        }
     }
 }
 

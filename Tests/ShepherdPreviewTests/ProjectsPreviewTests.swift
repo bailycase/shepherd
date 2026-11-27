@@ -95,10 +95,10 @@ struct ProjectsPreviewTests {
         ]
         try await model.saveMCP(entries, replacing: ["docs", "ledger"])
         let size = CGSize(width: 1440, height: 900)
-        try await Preview.renderMatrix("projects-mcp", size: size) { SettingsView(vm: fixture.vm) }
-        try await Preview.renderMatrix("projects-mcp-narrow", size: CGSize(width: 1024, height: 800)) { SettingsView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp", size: size) { RootView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp-narrow", size: CGSize(width: 1024, height: 800)) { RootView(vm: fixture.vm) }
         model.selected?.host.unavailable = "Host offline"
-        try await Preview.renderMatrix("projects-mcp-offline", size: size) { SettingsView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp-offline", size: size) { RootView(vm: fixture.vm) }
         model.selected?.host.unavailable = nil
         try await Preview.renderMatrix("projects-mcp-detail", size: CGSize(width: 1040, height: 720)) {
             ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(SH.Space.xxl)
@@ -141,7 +141,7 @@ struct ProjectsPreviewTests {
             to: URL(fileURLWithPath: project.project.directory).appendingPathComponent(native.path), atomically: true, encoding: .utf8)
         await model.setMCPEnabled("docs", false)
         #expect(model.fileError != nil && model.dirty)
-        try await Preview.renderMatrix("projects-mcp-conflict", size: size) { SettingsView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp-conflict", size: size) { RootView(vm: fixture.vm) }
         await model.navigate(.file(native)); await model.discard()
         let shared = try #require(model.selectedFiles.first { $0.path == ".mcp.json" })
         await model.navigate(.file(shared))
@@ -152,9 +152,9 @@ struct ProjectsPreviewTests {
         }
         await model.navigate(.file(native))
         for name in model.mcp.entries.map(\.name) { try await model.removeMCP(name) }
-        try await Preview.renderMatrix("projects-mcp-empty", size: size) { SettingsView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp-empty", size: size) { RootView(vm: fixture.vm) }
         model.draft = "{ invalid JSON"
-        try await Preview.renderMatrix("projects-mcp-invalid", size: size) { SettingsView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp-invalid", size: size) { RootView(vm: fixture.vm) }
     }
 
     @Test(arguments: ProjectFile.Category.allCases)
@@ -168,7 +168,7 @@ struct ProjectsPreviewTests {
             await world.vm.projects.navigate(.file(file))
         }
         try await Preview.renderMatrix("projects-detail-\(category.rawValue)", size: CGSize(width: 1440, height: 900)) {
-            SettingsView(vm: world.vm)
+            RootView(vm: world.vm)
         }
     }
 
@@ -260,7 +260,7 @@ struct ProjectsPreviewTests {
             if state == "discard" { await model.navigate(.close) }
             if state == "saved" { await model.save() }
         }
-        try await Preview.renderMatrix("projects-\(state)", size: CGSize(width: 1440, height: 1000)) { SettingsView(vm: world.vm) }
+        try await Preview.renderMatrix("projects-\(state)", size: CGSize(width: 1440, height: 900)) { RootView(vm: world.vm) }
     }
 }
 
