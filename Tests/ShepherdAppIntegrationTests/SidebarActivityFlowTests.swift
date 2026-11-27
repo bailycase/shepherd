@@ -379,7 +379,8 @@ struct SidebarActivityFlowTests {
         }
         let span = at.timeIntervalSince(start)
         let publishes = Int(span / 0.25) + 2
-        #expect(rows["sidebar.row", default: 0] >= ids.count, "the rows showed their sparklines: \(rows)")
+        // The redesign's rows carry no sparkline (a row's trailing accessory says why it is there), so a sample draws no row at all; the
+        // bound below is what an accessory that did publish with them would have to keep.
         #expect(rows["sidebar.row", default: 0] <= ids.count * publishes, "\(finishes) tool finishes in \(span) s, at most \(publishes) draws a row: \(rows)")
         try await eventuallyOnMain("every row's newest samples") { ids.allSatisfy { vm.agentLive($0).samples.count == 10 } }
     }

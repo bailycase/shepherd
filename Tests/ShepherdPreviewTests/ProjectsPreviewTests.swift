@@ -44,7 +44,8 @@ struct ProjectsPreviewTests {
 
     /// The board's tree (SettingsProjects, parents and subprojects): acme with the three projects
     /// added inside its folder (frontend, backend, admin), which share its two MCP servers (frontend
-    /// adds its own), then payments, and the daemon on Build-01. Collapsed, acme folds them away.
+    /// adds its own), then payments. Spaces are the fleet's, the same on every Mac, so another host's spaces
+    /// are not listed. Collapsed, acme folds them away.
     @Test(arguments: ["tree", "tree-collapsed", "tree-filtered"])
     func subprojects(state: String) async throws {
         let world = try await ProjectsPreviewWorld(empty: true)
@@ -71,13 +72,9 @@ struct ProjectsPreviewTests {
                       Space(name: "payments", path: payments.path)]
         try await world.local.server.putState(ShepherdState(spaces: spaces))
         try await world.synced()
-        let daemon = URL(fileURLWithPath: world.remote.server.pi.userHome).appendingPathComponent("srv/daemon")
-        try write(daemon, ".shepherd/settings.json", #"{"extensions":["./a.ts","./b.ts"]}"#)
-        try await world.remote.server.putState(ShepherdState(spaces: [Space(name: "daemon", path: daemon.path)]))
-        try await eventuallyOnMain("the host's project") { world.vm.remoteHosts.connections.first?.state.spaces.count == 1 }
         await world.vm.projects.load(world.vm.projectsSources, force: true)
         let model = world.vm.projects
-        #expect(model.visible.map(\.project.name) == ["acme", "frontend", "backend", "admin", "payments", "daemon"])
+        #expect(model.visible.map(\.project.name) == ["acme", "frontend", "backend", "admin", "payments"])
         #expect(model.visible[1].configuration == "2 inherited · 1 local MCP")
         if state == "tree-collapsed" { model.collapsed = [model.visible[0].id] }
         if state == "tree-filtered" { model.filter = "front" }
