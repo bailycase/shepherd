@@ -66,7 +66,6 @@ private struct NewThreadForm: View {
     @FocusState private var promptFocused: Bool
     /// Popovers widen with the text size, so a host's name still fits at accessibility sizes.
     @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ScrollView {
@@ -137,15 +136,12 @@ private struct NewThreadForm: View {
         .shLift(shape)
     }
 
-    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first. From the accessibility
-    /// sizes they stack, each whole: three chips beside each other were cut to their first letters.
-    @ViewBuilder private var row: some View {
-        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.s, stackedSpacing: 0)
-        adaptive {
-            NewThreadAttachButton(model: model)
-            workplace
-            if !typeSize.isAccessibilitySize { Spacer(minLength: SH.Space.s) }
-            modelChip
+    /// Attach, the repo on its host, and the model: one line while they fit. Where they do not (an accessibility text size, a narrow window
+    /// of Split View or Slide Over) they stack, each whole: three chips beside each other were cut to their first letters.
+    private var row: some View {
+        ViewThatFits(in: .horizontal) {
+            rowParts(stacked: false)
+            rowParts(stacked: true)
         }
         .padding(.horizontal, -SH.Space.m)
         .frame(minHeight: SH.Height.touch)
@@ -153,12 +149,22 @@ private struct NewThreadForm: View {
         .buttonStyle(.plain)
     }
 
+    @ViewBuilder private func rowParts(stacked: Bool) -> some View {
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: SH.Space.s))
+        layout {
+            NewThreadAttachButton(model: model)
+            workplace(stacked: stacked)
+            if !stacked { Spacer(minLength: SH.Space.s) }
+            modelChip
+        }
+    }
+
     /// "shepherd on Studio ⌄". On iPhone one button opens Where it runs; on iPad the repo and the host each open a popover.
-    @ViewBuilder private var workplace: some View {
+    @ViewBuilder private func workplace(stacked: Bool) -> some View {
         let repo = model.repoName ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
-        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.xs, stackedSpacing: 0)
-        adaptive {
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: SH.Space.xs))
+        layout {
             Button { open(pad ? .repo : .workspace) } label: {
                 HStack(spacing: SH.Space.s) {
                     Image(systemName: SHGlyph.repository.symbolName).font(.sh(.ui, weight: .regular)).accessibilityHidden(true)
