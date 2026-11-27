@@ -608,7 +608,8 @@ struct ThreadScrollingTests {
     /// animation starts inside the threshold, and those first frames once re-stuck the follower,
     /// so the next streamed chunk yanked the reader back to the bottom (no pill).
     @Test func aJumpFromTheTailToANearbyTurnStaysDetachedWhileStreaming() async throws {
-        let thread = ThreadHarness(messages: 24, running: true, paragraphs: 16)
+        // The room the thread has above the composer is what the turn's height was tuned against (`composerRoomGained`).
+        let thread = ThreadHarness(messages: 24, running: true, paragraphs: 16, height: 600 - ThreadTailFlowTests.composerRoomGained)
         defer { thread.close() }
         try await thread.waitUntilReady()
 
