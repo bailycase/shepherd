@@ -150,7 +150,8 @@ struct BranchCardPaneHost: View {
     var body: some View {
         if let card = store.card {
             BranchCardOverlay(store: store, branch: card.branch, active: true, wide: true, runsOn: runsOn, inPane: true)
-                .padding(.bottom, SH.Space.xs)
+                // The board's `.pbody` pads its card 12pt from the tabs; the rows or the diff below add their own 12.
+                .padding(.top, SH.Space.l)
         }
     }
 }

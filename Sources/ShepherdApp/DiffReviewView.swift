@@ -65,16 +65,18 @@ struct ReviewPane: View, Equatable {
     /// The agent's latest recorded turn: a turn ending, an Undo or a Redo reloads the diff.
     var latestTurn: ChangesTurn? = nil
     var maximized = false
+    /// The side pane's Changes tab (GXSidePane): the files and one diff, no toolbar or compare row; those live in the pane's ⋯ menu.
+    var compact = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.session === rhs.session && lhs.touchedPaths == rhs.touchedPaths && lhs.chrome == rhs.chrome
-            && lhs.latestTurn == rhs.latestTurn && lhs.maximized == rhs.maximized
+            && lhs.latestTurn == rhs.latestTurn && lhs.maximized == rhs.maximized && lhs.compact == rhs.compact
     }
 
     var body: some View {
         // A review retargeted at another repository starts over: folds, the comment being
         // edited, the current file, and syntax colors all belonged to the old diff.
-        ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths, chrome: chrome, maximized: maximized)
+        ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths, chrome: chrome, maximized: maximized, compact: compact)
             .id(Identity(session: session.id, cwd: session.cwd))
             // The pane mounts when its tab shows: it catches up on what happened while it was hidden.
             .task(id: session.id) { ChangesFollow.shown(session, latestTurn: latestTurn, actions: actions) }
@@ -153,12 +155,13 @@ struct ReviewPaneHost: View {
     let actions: ReviewActions
     var store: NativeThreadStore
     var maximized = false
+    var compact = false
     @State private var touched = ReviewTouchedPaths()
 
     var body: some View {
         ReviewPane(session: session, actions: actions,
                    touchedPaths: touched.paths(store.messages, running: store.hostRunning),
-                   latestTurn: store.snapshot?.turnChanges?.last, maximized: maximized)
+                   latestTurn: store.snapshot?.turnChanges?.last, maximized: maximized, compact: compact)
     }
 }
 
@@ -168,21 +171,25 @@ struct ReviewPaneContent: View {
     let touchedPaths: Set<String>
     let chrome: ReviewChrome
     let maximized: Bool
+    let compact: Bool
     @State private var model: ReviewPaneModel
     @FocusState private var commentFocused: Bool
     /// Where the compare row's base button sits, for the base picker under it.
     @State private var baseAnchor: CGFloat = 0
 
-    init(session: ReviewSession, actions: ReviewActions, touchedPaths: Set<String>, chrome: ReviewChrome = .tab, maximized: Bool = false) {
-        self.init(model: ReviewPaneModel(session: session, actions: actions), touchedPaths: touchedPaths, chrome: chrome, maximized: maximized)
+    init(session: ReviewSession, actions: ReviewActions, touchedPaths: Set<String>, chrome: ReviewChrome = .tab, maximized: Bool = false,
+         compact: Bool = false) {
+        self.init(model: ReviewPaneModel(session: session, actions: actions), touchedPaths: touchedPaths, chrome: chrome, maximized: maximized,
+                  compact: compact)
     }
 
     /// A pane over a model the caller holds (tests drive it as the pane's own controls do).
-    init(model: ReviewPaneModel, touchedPaths: Set<String> = [], chrome: ReviewChrome = .tab, maximized: Bool = false) {
+    init(model: ReviewPaneModel, touchedPaths: Set<String> = [], chrome: ReviewChrome = .tab, maximized: Bool = false, compact: Bool = false) {
         session = model.session
         self.touchedPaths = touchedPaths
         self.chrome = chrome
         self.maximized = maximized
+        self.compact = compact
         _model = State(initialValue: model)
     }
 
@@ -195,8 +202,10 @@ struct ReviewPaneContent: View {
                     EmptyView()
                 }
             }
-            ChangesToolbar(model: model, session: session)
-            ChangesCompare(model: model, session: session, baseAnchor: $baseAnchor)
+            if !compact {
+                ChangesToolbar(model: model, session: session)
+                ChangesCompare(model: model, session: session, baseAnchor: $baseAnchor)
+            }
             if let problem = session.overview?.turnHistoryProblem {
                 SHBanner(.failed, title: "Turn history", message: problem, stacked: true) {
                     Button("Refresh", action: model.actions.refresh).buttonStyle(.sh(.ghost, size: .s))
@@ -204,18 +213,18 @@ struct ReviewPaneContent: View {
                 .padding(SH.Space.m)
             }
             if !maximized, !session.files.isEmpty {
-                ReviewFileStrip(model: model, session: session, touchedPaths: touchedPaths)
+                ReviewFileStrip(model: model, session: session, touchedPaths: touchedPaths, compact: compact)
                     .shTransition(.content)
             }
             HStack(spacing: 0) {
                 if maximized, !session.files.isEmpty {
                     ChangesFileListColumn(model: model, session: session)
                 }
-                ReviewBody(model: model, session: session, commentFocused: $commentFocused)
+                ReviewBody(model: model, session: session, compact: compact, commentFocused: $commentFocused)
             }
             ChangesSendBar(session: session, actions: model.actions)
         }
-        .overlay(alignment: .topLeading) { ChangesMenus(model: model, session: session, baseAnchor: baseAnchor) }
+        .overlay(alignment: .topLeading) { ChangesMenus(model: model, session: session, baseAnchor: baseAnchor, compact: compact) }
         // Loading, the diff, "No changes", and an error cross-fade, as does one scope's diff for
         // another; a reload of the same scope changes in place.
         .shAnimation(.content, value: ReviewBody.Content(session))
@@ -377,7 +386,7 @@ private struct ChangesToolbar: View, Equatable {
     }
 
     @ViewBuilder private func commitButton(label: Bool) -> some View {
-        Button { commit() } label: {
+        Button { model.commit() } label: {
             if label {
                 Label("Commit…", systemImage: "smallcircle.filled.circle")
             } else {
@@ -386,19 +395,9 @@ private struct ChangesToolbar: View, Equatable {
         }
         .buttonStyle(.sh(.secondary, size: .s))
         .fixedSize()
-        .disabled(!canCommit)
-        .help(canCommit ? "Commit these changes" : "Commit works on the working tree: pick Uncommitted or Branch")
+        .disabled(!model.canCommit)
+        .help(model.canCommit ? "Commit these changes" : "Commit works on the working tree: pick Uncommitted or Branch")
         .accessibilityLabel("Commit…")
-    }
-
-    private var canCommit: Bool {
-        guard !session.isSubmitting, !session.files.isEmpty else { return false }
-        return session.engine == nil ? !session.isPRMode : session.scope.comparesWorkingTree
-    }
-
-    /// The sheet where the host commits from review; otherwise the agent is asked to.
-    private func commit() {
-        if model.actions.canCommitDirectly() { model.commitStore = model.actions.commitStore() } else { model.actions.commit() }
     }
 }
 
@@ -510,11 +509,14 @@ private struct ReviewFileStrip: View {
     let model: ReviewPaneModel
     let session: ReviewSession
     let touchedPaths: Set<String>
+    var compact = false
 
     var body: some View {
-        SHFileRows(items, selection: model.currentFile) { model.select($0) }
+        // The compact pane is the board's `.pbody`: its card above, the rows 12pt under it, the diff's card under them.
+        SHFileRows(items, selection: model.currentFile) { compact ? model.show($0) : model.select($0) }
             .padding(.horizontal, AppLayout.changesFileRowsInset)
-            .padding(.vertical, SH.Space.m)
+            .padding(.top, compact ? SH.Space.l : SH.Space.m)
+            .padding(.bottom, compact ? 0 : SH.Space.m)
             .background(SHPaneSurface.fill)
     }
 
@@ -555,9 +557,10 @@ private struct ChangesFileListColumn: View {
 private struct ReviewBody: View, Equatable {
     let model: ReviewPaneModel
     let session: ReviewSession
+    var compact = false
     var commentFocused: FocusState<Bool>.Binding
 
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session && lhs.compact == rhs.compact }
 
     /// What the body shows.
     enum Content: Equatable {
@@ -589,7 +592,7 @@ private struct ReviewBody: View, Equatable {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .shTransition(.content)
             case .diff(let scope):
-                ReviewDiffList(model: model, session: session, commentFocused: commentFocused)
+                ReviewDiffList(model: model, session: session, compact: compact, commentFocused: commentFocused)
                     .id(scope)
                     .shTransition(.content)
             }
@@ -620,9 +623,17 @@ private struct ChangesErrorView: View {
 private struct ReviewDiffList: View, Equatable {
     let model: ReviewPaneModel
     let session: ReviewSession
+    /// One file's diff, the one the rows name, in a bordered card (GXSidePane `.diff`), with no file header: the rows above it are the header.
+    var compact = false
     var commentFocused: FocusState<Bool>.Binding
+    @State private var cardWidth: CGFloat?
 
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session && lhs.compact == rhs.compact }
+
+    private var shown: [DiffFile] {
+        guard compact else { return session.files }
+        return (session.files.first { $0.id == model.currentFile } ?? session.files.first).map { [$0] } ?? []
+    }
 
     var body: some View {
         let _ = SHRenderProbe.tick("review.diffList")
@@ -633,16 +644,16 @@ private struct ReviewDiffList: View, Equatable {
             // Vertical only: each file's code scrolls sideways under its own scrollbar, so headers,
             // gutters and comments stay in the viewport.
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    ForEach(session.files) { file in
-                        let folded = model.isFolded(file.id)
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: compact ? [] : [.sectionHeaders]) {
+                    ForEach(shown) { file in
+                        let folded = !compact && model.isFolded(file.id)
                         DiffFileSection(
                             model: model, file: file, status: listed[file.id]?.shStatus ?? file.reviewStatus,
                             rows: folded ? [] : model.rows(for: file), layout: model.layout, wraps: session.wrapLines,
                             comments: session.commentsByFile[file.id] ?? [:],
                             editingLine: model.editing?.fileID == file.id ? model.editing?.lineID : nil,
                             isFolded: folded, isViewed: session.viewed.contains(file.id),
-                            canRevert: canRevert, canOpen: canOpen, commentFocused: commentFocused
+                            canRevert: canRevert, canOpen: canOpen, compact: compact, cardWidth: cardWidth, commentFocused: commentFocused
                         )
                     }
                 }
@@ -650,11 +661,34 @@ private struct ReviewDiffList: View, Equatable {
                 // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
                 .shAnimation(.disclosure, value: model.disclosures)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if compact { cardWidth = $0 } }
+            .modifier(CompactDiffCard(compact: compact))
             .background { SplitDiffWheelReader(model: model) }
             .modifier(ReviewScrollFollower(model: model, session: session, proxy: proxy))
+            // Another file's diff starts at its top.
+            .onChange(of: shown.first?.id) { _, id in
+                if compact, let id { proxy.scrollTo(id, anchor: .topLeading) }
+            }
         }
         .task(id: session.filesVersion) { await model.highlightFiles(style: .theme) }
         .onAppear { if model.currentFile == nil { model.currentFile = session.files.first?.id } }
+    }
+}
+
+/// The side pane's diff, in the board's card: a hairline outline on `radius.l`, 12pt in from the pane's sides and bottom, 10 under the rows.
+private struct CompactDiffCard: ViewModifier {
+    let compact: Bool
+
+    func body(content: Content) -> some View {
+        if compact {
+            content
+                .shCard(radius: SH.Radius.l, fill: .clear, line: Color.sh.lineSubtle)
+                .padding(.horizontal, SH.Space.l)
+                .padding(.top, SH.Space.m)
+                .padding(.bottom, SH.Space.l)
+        } else {
+            content
+        }
     }
 }
 
@@ -717,45 +751,86 @@ private struct DiffFileSection: View, Equatable {
     let isViewed: Bool
     let canRevert: Bool
     let canOpen: Bool
+    var compact = false
+    /// The compact diff's width, read from its scroll view; the full pane reads its file header's.
+    var cardWidth: CGFloat?
     var commentFocused: FocusState<Bool>.Binding
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.model === rhs.model && lhs.file == rhs.file && lhs.status == rhs.status && lhs.rows == rhs.rows && lhs.layout == rhs.layout && lhs.wraps == rhs.wraps && lhs.comments == rhs.comments
+        lhs.model === rhs.model && lhs.compact == rhs.compact && lhs.cardWidth == rhs.cardWidth && lhs.file == rhs.file && lhs.status == rhs.status && lhs.rows == rhs.rows && lhs.layout == rhs.layout && lhs.wraps == rhs.wraps && lhs.comments == rhs.comments
             && lhs.editingLine == rhs.editingLine && lhs.isFolded == rhs.isFolded && lhs.isViewed == rhs.isViewed
             && lhs.canRevert == rhs.canRevert && lhs.canOpen == rhs.canOpen
     }
 
     var body: some View {
         let _ = SHRenderProbe.tick("review.section")
-        Section {
-            // Where the file's rows start: a fold eases only while the file sits in its place.
+        if compact {
+            // No header to pin or measure from: the pane hands down the card's width, and no zero-height row leads the lazy stack.
+            Section { rowsContent }
+                .onChange(of: cardWidth) { _, _ in updateHorizontalLimits() }
+                .onChange(of: isFolded) { _, _ in updateHorizontalLimits() }
+                .onChange(of: layout) { _, _ in updateHorizontalLimits() }
+                .onChange(of: wraps) { _, _ in updateHorizontalLimits() }
+                .onChange(of: file) { _, _ in updateHorizontalLimits() }
+                .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits() }
+                .onAppear { updateHorizontalLimits() }
+        } else {
+            Section {
+                rowsContent
+            } header: {
+                measured(fileHeader)
+            }
+        }
+    }
+
+    @ViewBuilder private var rowsContent: some View {
+        // Where the file's rows start: a fold eases only while the file sits in its place.
+        if !compact {
             Color.clear.frame(height: 0)
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { model.noteRowsTop($0, of: file.id) }
-            if !isFolded {
-                // A comment on the whole file sits under its header.
-                if let note = notes[ReviewSession.fileLineID] {
-                    annotation(nil, note)
-                        .padding(SHDiffMetrics.annotationInsets)
-                        .overlay(alignment: .bottom) { SHHairline() }
-                }
-                SHDiffView(rows, notes: notes, onComment: file.isBinary ? nil : { model.startComment(fileID: file.id, lineID: $0.key) },
-                           onReveal: { model.reveal($0, $1, in: file.id) }) { line, note in
-                    annotation(line, note)
-                }
-                .environment(\.splitDiffScroll, horizontalScroll)
-                .environment(\.diffWrapsLines, wraps)
-                if !wraps {
-                    SHSplitDiffScrollbars(horizontalScroll, unified: layout == .unified)
-                }
+        }
+        if !isFolded {
+            // A comment on the whole file sits under its header.
+            if let note = notes[ReviewSession.fileLineID] {
+                annotation(nil, note)
+                    .padding(SHDiffMetrics.annotationInsets)
+                    .overlay(alignment: .bottom) { SHHairline() }
             }
-        } header: {
-            PinnedFileHeader { pinned in
-                SHFileHeader(path: file.displayPath, status: status, added: file.addedCount, removed: file.removedCount,
-                             isExpanded: !isFolded, isViewed: isViewed,
-                             toggle: { model.toggleFolded(file.id) }, toggleViewed: { model.toggleViewed(file.id) },
-                             comment: { model.startFileComment(file.id) },
-                             open: canOpen ? { model.actions.open?(file) } : nil, isPinned: pinned)
+            SHDiffView(rows, notes: notes, onComment: file.isBinary ? nil : { model.startComment(fileID: file.id, lineID: $0.key) },
+                       onReveal: { model.reveal($0, $1, in: file.id) }) { line, note in
+                annotation(line, note)
             }
+            .environment(\.splitDiffScroll, horizontalScroll)
+            .environment(\.diffWrapsLines, wraps)
+            if !wraps {
+                SHSplitDiffScrollbars(horizontalScroll, unified: layout == .unified)
+            }
+        }
+    }
+
+    /// What reads the viewport's width from `view` and keeps the horizontal scroll's limits to it.
+    private func measured(_ view: some View) -> some View {
+        view
+            .onGeometryChange(for: CGSize.self) { $0.size } action: {
+                model.noteHeaderHeight($0.height)
+                viewportWidth = $0.width
+                updateHorizontalLimits()
+            }
+            .onChange(of: isFolded) { _, _ in updateHorizontalLimits() }
+            .onChange(of: layout) { _, _ in updateHorizontalLimits() }
+            .onChange(of: wraps) { _, _ in updateHorizontalLimits() }
+            .onChange(of: file) { _, _ in updateHorizontalLimits() }
+            .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits() }
+    }
+
+    private var fileHeader: some View {
+        PinnedFileHeader { pinned in
+            SHFileHeader(path: file.displayPath, status: status, added: file.addedCount, removed: file.removedCount,
+                         isExpanded: !isFolded, isViewed: isViewed,
+                         toggle: { model.toggleFolded(file.id) }, toggleViewed: { model.toggleViewed(file.id) },
+                         comment: { model.startFileComment(file.id) },
+                         open: canOpen ? { model.actions.open?(file) } : nil, isPinned: pinned)
+        }
                 .containerRelativeFrame(.horizontal, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -774,17 +849,6 @@ private struct DiffFileSection: View, Equatable {
                         NSPasteboard.general.setString(file.displayPath, forType: .string)
                     }
                 }
-                .onGeometryChange(for: CGSize.self) { $0.size } action: {
-                    model.noteHeaderHeight($0.height)
-                    viewportWidth = $0.width
-                    updateHorizontalLimits()
-                }
-                .onChange(of: isFolded) { _, _ in updateHorizontalLimits() }
-                .onChange(of: layout) { _, _ in updateHorizontalLimits() }
-                .onChange(of: wraps) { _, _ in updateHorizontalLimits() }
-                .onChange(of: file) { _, _ in updateHorizontalLimits() }
-                .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits() }
-        }
     }
 
     /// Folded files keep their offsets and defer measurement until reopened. Use the header's
@@ -793,7 +857,7 @@ private struct DiffFileSection: View, Equatable {
         #if DEBUG
         model.widthRequests += 1
         #endif
-        guard !isFolded, let width = viewportWidth else { return }
+        guard !isFolded, let width = compact ? cardWidth : viewportWidth else { return }
         let widths = wraps ? (old: 0, new: 0) : model.splitLineWidths(file, textScale: ThemeStore.shared.textScale)
         if layout == .split {
             horizontalScroll.resize(oldWidth: widths.old, newWidth: widths.new,

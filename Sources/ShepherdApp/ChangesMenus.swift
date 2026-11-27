@@ -12,8 +12,47 @@ struct ChangesMenus: View {
     let model: ReviewPaneModel
     let session: ReviewSession
     let baseAnchor: CGFloat
+    /// The side pane's Changes tab has no toolbar to hang the menus from: they open at its top right, from the pane's ⋯ menu.
+    var compact = false
 
     var body: some View {
+        if compact { compactBody } else { toolbarBody }
+    }
+
+    private var compactBody: some View {
+        ZStack(alignment: .topTrailing) {
+            if let menu = model.menu {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.closeMenu() }
+                    .accessibilityHidden(true)
+                switch menu {
+                case .scope, .commits:
+                    ChangesScopeMenu(model: model, session: session)
+                        .padding(.trailing, SH.Space.m)
+                        .shTransition(.overlay, edge: .top)
+                    if menu == .commits {
+                        ChangesCommitsMenu(model: model, session: session)
+                            .padding(.trailing, SH.Space.m + SHChangesMenuMetrics.scopeWidth + SH.Space.xs)
+                            .offset(y: ChangesMenuLayout.commitsTop)
+                            .shTransition(.overlay, edge: .leading)
+                    }
+                case .base:
+                    ChangesBasePicker(model: model, session: session)
+                        .padding(.trailing, SH.Space.m)
+                        .shTransition(.overlay, edge: .top)
+                case .options:
+                    ChangesOptionsMenu(model: model, session: session)
+                        .padding(.trailing, SH.Space.m)
+                        .shTransition(.overlay, edge: .top)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .shAnimation(.overlay, value: model.menu)
+    }
+
+    private var toolbarBody: some View {
         ZStack(alignment: .topLeading) {
             if let menu = model.menu {
                 Color.clear
@@ -312,30 +351,106 @@ private struct ChangesOptionsMenu: View {
     }
 }
 
-/// The Changes tab's items in the side pane's ⋯ menu: Maximize (ChangesWide), Expand and Collapse
-/// All Files, Copy Review as Text. Without a `model` the items find the pane drawing the review
-/// when chosen (`ReviewSession.paneModel`, unobserved): the strip draws before its pane appears.
+/// The Changes tab's items in the side pane's ⋯ menu: Maximize (ChangesWide), and in the tab itself (`compact`, which draws only the
+/// branch card, the files and one diff) everything the toolbar and the file header carry: the file's Viewed mark, comment, editor,
+/// whole file, revert and path; Compare (the scope menu), Base, Commit…, Refresh, the diff's layout and options. Expand and
+/// Collapse All Files, Copy Review as Text. Without a `model` the items find the pane drawing the review when chosen
+/// (`ReviewSession.paneModel`, unobserved): the strip draws before its pane appears.
 struct ReviewOptionItems: View {
     let session: ReviewSession
     var model: ReviewPaneModel?
     var maximized = false
+    var compact = false
     var toggleMaximized: (() -> Void)? = nil
 
     var body: some View {
+        let pane = model ?? session.paneModel
         if let toggleMaximized {
             Button(maximized ? "Restore the Thread" : "Maximize Pane", action: toggleMaximized)
             Divider()
         }
-        Button("Expand All Files") { (model ?? session.paneModel)?.expandAllFiles() }
-            .disabled(session.files.isEmpty)
-        Button("Collapse All Files") { (model ?? session.paneModel)?.collapseAllFiles() }
-            .disabled(session.files.isEmpty)
-        Divider()
+        if compact, let pane {
+            ReviewCompactItems(model: pane, session: session)
+            Divider()
+        }
+        if !compact {
+            Button("Expand All Files") { pane?.expandAllFiles() }
+                .disabled(session.files.isEmpty)
+            Button("Collapse All Files") { pane?.collapseAllFiles() }
+                .disabled(session.files.isEmpty)
+            Divider()
+        }
         Button("Copy Review as Text") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(formatChangesReview(fileIDs: session.files.map(\.id), comments: session.comments,
                                                                scopeTitle: session.scopeTitle), forType: .string)
         }
         .disabled(session.files.isEmpty)
+    }
+}
+
+/// What the toolbar, the compare row and the file header hold, as menu items (the side pane's Changes tab draws none of them).
+private struct ReviewCompactItems: View {
+    let model: ReviewPaneModel
+    let session: ReviewSession
+
+    var body: some View {
+        let file = session.files.first { $0.id == model.currentFile } ?? session.files.first
+        if let file {
+            let viewed = session.viewed.contains(file.id)
+            Button(viewed ? "Mark \(SHFileHeader.split(file.displayPath).name) Not Viewed" : "Mark \(SHFileHeader.split(file.displayPath).name) Viewed") {
+                model.toggleViewed(file.id)
+            }
+            Button("Comment on \(SHFileHeader.split(file.displayPath).name)…") { model.startFileComment(file.id) }
+                .disabled(file.isBinary)
+            if let open = model.actions.open { Button("Open in Your Editor") { open(file) } }
+            Button("Show Whole File") { model.revealWholeFile(file.id) }
+                .disabled(file.isBinary)
+            if canRevert, let revert = model.actions.revert {
+                Button("Revert File…") {
+                    if AppSettings.shared.skipped(.revertFile) != nil { revert(file, model.cwd) } else { model.reverting = file }
+                }
+            }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(file.displayPath, forType: .string)
+            }
+            Divider()
+        }
+        let files = session.files.count
+        if files > 0 {
+            Text("\(session.viewed.intersection(session.files.map(\.id)).count) of \(files) viewed")
+        }
+        Button("Compare: \(ChangesText.scopeButton(session))…") { model.toggleMenu(.scope) }
+        if session.engine != nil, session.scope.kind == .branch {
+            Button("Base: \(session.list?.comparison.base ?? "choose")…") {
+                if session.branches == nil { model.actions.loadBranches() }
+                model.toggleMenu(.base)
+            }
+        }
+        Button("Commit…") { model.commit() }
+            .disabled(!model.canCommit)
+        Button("Refresh") { model.actions.refresh() }
+            .disabled(session.isLoading)
+        Divider()
+        Button(model.layout == .split ? "Show Unified Diff" : "Show Split Diff") { model.toggleLayout() }
+        Button("Diff Options…") { model.toggleMenu(.options) }
+    }
+
+    private var canRevert: Bool {
+        session.engine == nil ? !session.isPRMode : session.scope == .uncommitted
+    }
+}
+
+extension ReviewPaneModel {
+    /// Commit… works on the working tree, with changes to commit.
+    var canCommit: Bool {
+        guard !session.isSubmitting, !session.files.isEmpty else { return false }
+        return session.engine == nil ? !session.isPRMode : session.scope.comparesWorkingTree
+    }
+
+    /// The sheet where the host commits from review; otherwise the agent is asked to.
+    func commit() {
+        if actions.canCommitDirectly() { commitStore = actions.commitStore() } else { actions.commit() }
     }
 }

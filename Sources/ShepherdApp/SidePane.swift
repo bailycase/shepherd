@@ -35,7 +35,7 @@ struct SidePaneView: View {
                             // The branch card sits at the top of Changes, inside the pane (GXSidePane), never over the transcript.
                             if !maximized { branchCard }
                             ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: isRemote), store: store,
-                                           maximized: maximized)
+                                           maximized: maximized, compact: !maximized)
                                 .id(review.id)
                         }
                         .shTransition(.content)
@@ -148,7 +148,7 @@ private struct SidePaneTabBar: View {
             // The pane's ⋯ menu: what the tab on screen offers, then the pane's own. Split below,
             // Open in its own window and Show tabs wait for the tabs that need them.
             if tab == .changes, let review {
-                ReviewOptionItems(session: review, maximized: maximized, toggleMaximized: { vm.toggleSidePaneMaximized(owner) })
+                ReviewOptionItems(session: review, maximized: maximized, compact: !maximized, toggleMaximized: { vm.toggleSidePaneMaximized(owner) })
                 Divider()
             }
             if tab == .pullRequest, let ref = pullRequest?.selection {

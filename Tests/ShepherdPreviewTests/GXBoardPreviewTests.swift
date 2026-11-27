@@ -43,11 +43,52 @@ struct GXBoardPreviewTests {
         }
     }
 
+    /// The review GXSidePane draws: seven files, the first with the board's ToolRow hunk and the board's +58 −41, none viewed.
+    static func sidePaneSession() -> ReviewSession {
+        func hunk(_ start: Int, removed: Int, added: Int, context: Int) -> String {
+            let lines = (0..<context).map { "     let value\(start + $0) = \($0)" } + (0..<removed).map { "-    old\(start + $0)()" } + (0..<added).map { "+    new\(start + $0)()" }
+            return "@@ -\(start),\(context + removed) +\(start),\(context + added) @@ struct Filler\n" + lines.joined(separator: "\n")
+        }
+        func modified(_ path: String, _ body: String) -> String {
+            "diff --git a/\(path) b/\(path)\nindex 1111111..2222222 100644\n--- a/\(path)\n+++ b/\(path)\n" + body
+        }
+        let toolRow = """
+        @@ -212,8 +212,7 @@ struct ToolRow: View
+             var body: some View {
+                 HStack(spacing: SH.Space.s) {
+        -            Text(row.speaker.label)
+        -                .foregroundStyle(.secondary)
+        +            ToolRowPreview(call: row.call)
+                     Spacer(minLength: 0)
+        -            Text("complete")
+        +            Text(row.call.summary)
+                 }
+             }
+        """
+        let diff = [modified("Sources/ShepherdApp/DesktopNativeThreadView.swift", toolRow + "\n" + hunk(300, removed: 38, added: 56, context: 3)),
+                    modified("Sources/ShepherdApp/ToolRowPreview.swift", hunk(1, removed: 0, added: 31, context: 0)),
+                    modified("Tests/ShepherdAppTests/ToolRowPreviewTests.swift", hunk(1, removed: 0, added: 22, context: 0)),
+                    modified("Sources/ShepherdApp/ThreadRows.swift", hunk(40, removed: 4, added: 9, context: 3)),
+                    modified("Sources/ShepherdApp/Spacing.swift", hunk(8, removed: 2, added: 3, context: 3)),
+                    modified("App/iOS/ThreadView.swift", hunk(90, removed: 6, added: 8, context: 3)),
+                    modified("Sources/ShepherdCore/Rows.swift", hunk(12, removed: 1, added: 2, context: 3))].joined(separator: "\n")
+        let files = GitDiff.parse(diff)
+        let list = ChangesBoard.listed(files, scope: .branch(base: nil), comparison: ChangesBoard.branchComparison)
+        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/Users/alex/shepherd", reference: nil)
+        session.engine = ChangesBoard.engine(files, list: list)
+        session.scope = .branch(base: nil)
+        session.list = list
+        session.overview = ChangesBoard.overview
+        session.branches = ChangesBoard.branches
+        session.files = files
+        return session
+    }
+
     /// GXSidePane: Changes, the branch card at its top, the thread beside it with no card of its own.
     @Test func sidePane() async throws {
         let fixture = ThreadFixture(ActivityThreads.idle)
         defer { fixture.store.stop() }
-        let session = ChangesBoard.session(comment: false)
+        let session = Self.sidePaneSession()
         let (store, _) = Self.branchStore()
         try await Preview.render("gxb-side-pane", size: SidePanePreviewTests.column, ready: { fixture.store.ready && store.status != nil }) {
             SidePanePreviewTests.PaneWindow(fixture: fixture) {
@@ -57,7 +98,7 @@ struct GXBoardPreviewTests {
                         Button("Reset Width") {}
                     }
                     BranchCardPaneHost(store: store)
-                    ReviewPane(session: session, actions: Reviews.actions)
+                    ReviewPane(session: session, actions: Reviews.actions, compact: true)
                 }
             }
             .task { await store.refresh() }

@@ -673,6 +673,12 @@ final class ReviewPaneModel {
         keyFocusRequest = byKey ? session.focusRequest : nil
     }
 
+    /// The compact pane's row: that file's diff is the one on show. A file already viewed stays viewed.
+    func show(_ fileID: String) {
+        movedByKey = false
+        currentFile = fileID
+    }
+
     /// A click on a file's header makes it current.
     func point(at fileID: String) {
         movedByKey = false

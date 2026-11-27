@@ -67,7 +67,7 @@ struct SidePanePreviewTests {
             PaneWindow(fixture: fixture) {
                 VStack(spacing: 0) {
                     tabs(.changes)
-                    ReviewPane(session: session, actions: Reviews.actions)
+                    ReviewPane(session: session, actions: Reviews.actions, compact: true)
                 }
             }
             .task { await fixture.store.run(request: fixture.request) }
