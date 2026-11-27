@@ -40,6 +40,9 @@ enum SHContextMacMetrics {
 }
 
 extension SHContextDetails {
+    /// The breakdown shows past 85% only once Details is open.
+    var showsBreakdown: Bool { model.variant != .almostFull || detailsOpen }
+
     /// The Mac's details: the board's popover, where the total, the bar and the rows sit as plain
     /// text on the card and the actions are words, not buttons.
     var macBody: some View {
@@ -57,9 +60,10 @@ extension SHContextDetails {
                         .padding(.top, SHContextMacMetrics.noteTop)
                 }
                 if let note = model.note { macNote(note) }
-                if !model.rows.isEmpty { macRows }
-                if !model.items.isEmpty { macLargest }
-                if let footnote = model.footnote {
+                // Past 85% the breakdown waits behind Details (GXContextFull).
+                if !model.rows.isEmpty, showsBreakdown { macRows }
+                if !model.items.isEmpty, showsBreakdown { macLargest }
+                if let footnote = model.footnote, showsBreakdown {
                     Text(footnote).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, SHContextMacMetrics.footnoteTop)
@@ -223,7 +227,7 @@ extension SHContextDetails {
             EmptyView()
         case .almostFull:
             macKeepField
-            macActionBar { macPill }
+            macActionBar(leading: model.rows.isEmpty ? nil : macLink(detailsOpen ? "Hide details" : "Details") { detailsOpen.toggle() }) { macPill }
         case .simple, .split:
             if composing {
                 macKeepField
@@ -241,9 +245,10 @@ extension SHContextDetails {
     }
 
     /// The row under the card's content: a hairline over words at its trailing edge.
-    private func macActionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    private func macActionBar<Content: View>(leading: (some View)? = Optional<EmptyView>.none, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: SH.Space.m) {
+                if let leading { leading }
                 Spacer(minLength: 0)
                 content()
             }

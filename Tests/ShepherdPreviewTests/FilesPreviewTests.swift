@@ -184,7 +184,13 @@ struct FilesPreviewTests {
 
     /// The pane card of GXPaneFiles and GXPaneFilesEdit: 720 wide, 8pt in from the window.
     private func paneCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
+        VStack(spacing: 0) {
+            SHSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 5, browser: true, subagents: (5, .done), pullRequest: 31),
+                           selection: SidePaneTab.files.rawValue, select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
+                Button("Reset Width") {}
+            }
+            content()
+        }
             .frame(width: AppLayout.paneDefaultWidth, height: 884)
             .shCard(lift: true)
             .padding(SHSidePaneMetrics.cardInset)

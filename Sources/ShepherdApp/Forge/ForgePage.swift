@@ -318,6 +318,8 @@ struct ForgeColumns<Content: View, Rail: View>: View {
 struct ForgeTitle: View {
     let title: String
     let editable: Bool
+    /// The pane draws no pencil (GXPanePR): a double click edits the title there.
+    var pencil = true
     var font: Font = .shSans(AppLayout.forgeTitleSize, .semibold)
     var tracking: CGFloat = AppLayout.forgeTitleTracking
     var lineSpacing: CGFloat = 0
@@ -350,7 +352,8 @@ struct ForgeTitle: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                if editable {
+                    .onTapGesture(count: 2) { if editable { draft = title } }
+                if editable, pencil {
                     Button { draft = title } label: { Image(systemName: ForgeSymbol.edit) }
                         .buttonStyle(.shIcon(size: SH.Height.controlS))
                         .foregroundStyle(Color.sh.textTertiary)

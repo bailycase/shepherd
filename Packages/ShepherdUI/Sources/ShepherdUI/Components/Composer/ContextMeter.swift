@@ -307,6 +307,8 @@ public struct SHContextDetails: View {
     let presentation: Presentation
     /// Compact now… opens the field for what to keep.
     @State var composing = false
+    /// Past 85% the Mac keeps the breakdown behind Details.
+    @State var detailsOpen = false
     @State var keep = ""
     @FocusState var keepFocused: Bool
 
@@ -343,9 +345,9 @@ public struct SHContextDetails: View {
                         .padding(.top, 5).padding(.horizontal, SHContextMetrics.side)
                 }
                 if let note = model.note { noteText(note) }
-                if !model.rows.isEmpty { rows }
-                if !model.items.isEmpty { largest }
-                if let footnote = model.footnote {
+                if !model.rows.isEmpty, model.variant != .almostFull { rows }
+                if !model.items.isEmpty, model.variant != .almostFull { largest }
+                if let footnote = model.footnote, model.variant != .almostFull {
                     Text(footnote).font(.shSans(11)).lineSpacing(2).foregroundStyle(sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, SH.Space.m).padding(.horizontal, SHContextMetrics.side)

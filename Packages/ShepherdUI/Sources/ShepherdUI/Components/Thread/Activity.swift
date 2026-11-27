@@ -218,6 +218,26 @@ public struct SHActivityLine: View {
         .accessibilityLabel(accessibilityText)
     }
 
+    #if os(macOS)
+    /// The running call's last output lines (GXRunning `.out`): a `bgHover` well the column's width, 12pt mono in `textSecondary`.
+    private func liveTail(_ tail: [String]) -> some View {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SHThreadMetrics.tailLineSpacing) {
+            ForEach(Array(tail.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.shMono(12))
+                    .foregroundStyle(sh.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .accessibilityHidden(true)
+    }
+    #else
     private func liveTail(_ tail: [String]) -> some View {
         let sh = Color.sh
         return VStack(alignment: .leading, spacing: SHThreadMetrics.tailLineSpacing) {
@@ -232,6 +252,7 @@ public struct SHActivityLine: View {
         .padding(.leading, SHThreadMetrics.liveTailIndent)
         .accessibilityHidden(true)
     }
+    #endif
 }
 
 /// An activity line's words: the label, then the meta (when there is one) 8pt after it. The label

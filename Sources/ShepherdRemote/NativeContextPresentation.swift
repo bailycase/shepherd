@@ -263,7 +263,7 @@ public struct NativeContextDetails: Equatable, Sendable {
             title = "Context almost full"
             meta = nil
             note = Self.almostFullNote(split: split, autoCompact: context.autoCompact ?? false, at: context.autoCompactAt)
-            return
+            // The breakdown is built too: the Mac's "Details" opens it under the note (GXContextFull).
         }
         guard let split else { return }
         let files = split.instructionFiles

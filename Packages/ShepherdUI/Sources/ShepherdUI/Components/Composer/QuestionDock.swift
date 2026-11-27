@@ -645,7 +645,7 @@ public struct SHQuestionRadioRow: View {
 
     #if os(macOS)
     /// The redesign's row: a 20pt key chip, the title in 14 with "Recommended" after it in 12
-    /// `textTertiary`, the description under it in 12 `textSecondary`. Picked lights the row
+    /// `textTertiary`, the description under it in 12.5 `textSecondary`. Picked lights the row
     /// `bgSelected` and fills the chip with ink; the pointer lights it `bgHover`.
     private var macRow: some View {
         let sh = Color.sh
@@ -654,10 +654,11 @@ public struct SHQuestionRadioRow: View {
         return Button(action: pick) {
             HStack(alignment: .top, spacing: B.rowSpacing) {
                 SHQuestionKeyChip(number: option.number, on: picked)
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     macTitle.fixedSize(horizontal: false, vertical: true)
                     if let detail = option.detail {
-                        Text(detail).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                        // The board's description: 12.5 on an 18pt line.
+                        Text(detail).font(.shSans(12.5)).lineSpacing(3).foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
