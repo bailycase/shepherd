@@ -303,7 +303,12 @@ struct DesignSystemReferenceControlTests {
         try await eventuallyOnMain("the page to scroll to Size") { onScreen("Size", in: window) }
         #expect(!onScreen("Principles", in: window), "pressing a part moves the page to it, not just closes the menu")
 
-        // The redesigned toolbar names the system alone, with no breadcrumb back to the Designs page (the sidebar goes there).
+        // The breadcrumb ("Designs / Shepherd UI", the design screen's own) goes back to the Designs page.
+        window.layout()
+        #expect(AccessibilityNode.all(under: window.host).contains { $0.label == "Shepherd UI" }, "the breadcrumb names the system")
+        let designs = try window.press("Designs")
+        #expect(ControlPress.undersized([designs], minimum: .desktop).isEmpty, "the breadcrumb's hit area is \(String(describing: designs.frame))")
+        try await eventuallyOnMain("the Designs page to open") { vm.shownDestination == .designs }
     }
 
     @Test func reSyncOnAProjectsSystemReadsItsStylesheetsAgain() async {

@@ -12,7 +12,7 @@ struct SettingsResetTests {
         app.settings.terminalFontSize = 20
         app.settings.defaultModel = "openai/gpt-5"
         app.settings.textGenerationModel = "google/gemini-2.5-flash"
-        _ = app.keybindings.assign(KeyChord(key: "p", command: true), to: .newAgent)
+        _ = app.keybindings.assign(KeyChord(key: "y", command: true), to: .newAgent)
         app.themeManager.select(.light)
     }
 
@@ -51,7 +51,7 @@ struct SettingsResetTests {
         #expect(app.settings.terminalFontSize == 20)
         #expect(app.settings.defaultModel == "openai/gpt-5")
         #expect(app.settings.textGenerationModel == "google/gemini-2.5-flash")
-        #expect(app.keybindings.overrides[.newAgent] == KeyChord(key: "p", command: true))
+        #expect(app.keybindings.overrides[.newAgent] == KeyChord(key: "y", command: true))
         #expect(app.themeManager.current.id == "shepherd-design-light")
     }
 }

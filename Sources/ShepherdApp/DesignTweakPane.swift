@@ -77,12 +77,14 @@ private struct DesignTweakRowView: View {
                               in: 0...Double(max(1, values.count - 1)), step: 1,
                               format: { DesignTweakControls.format(values[min(max(0, Int($0)), values.count - 1)]) },
                               onEditingChanged: { editing in if !editing { step(nil, .ended) } })
+                    .shControlScale(.tweak)
             }
         case .slider(let value, let min, let max, let step):
             SHTweakRow(row.label, layout: .slider) {
                 SHValueSlider(row.label, value: Binding(get: { value }, set: { set(.number($0), .changed) }),
                               in: min...max, step: step, format: { DesignTweakControls.format($0) },
                               onEditingChanged: { editing in if !editing { set(.number(latest ?? value), .ended) } })
+                    .shControlScale(.tweak)
             }
         case .choice(let options, let selected):
             SHTweakRow(row.label) {
@@ -117,6 +119,7 @@ private struct DesignTweakRowView: View {
             SHTweakRow(row.label) {
                 Toggle(row.label, isOn: Binding(get: { on }, set: { set(.bool($0), .ended) }))
                     .toggleStyle(.shSwitch)
+                    .shControlScale(.tweak)
                     .labelsHidden()
             }
         case .stepper(let value):

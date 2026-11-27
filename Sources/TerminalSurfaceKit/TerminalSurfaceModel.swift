@@ -642,6 +642,8 @@ extension TerminalConfiguration {
         "cmd+q",
         // ⌘K command palette (ghostty binds cmd+k=clear_screen by default).
         "cmd+k",
+        // ⌘P Jump to a board, over a design.
+        "cmd+p",
         // ⌘J shows or hides the terminal panel; ⇧⌘↩ maximizes it (ghostty's toggle_split_zoom).
         "cmd+j", "shift+cmd+enter",
     ]

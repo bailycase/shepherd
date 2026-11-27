@@ -10,6 +10,9 @@ public enum SHControlScale: Sendable {
     case standard
     /// The Settings boards' pages.
     case settings
+    /// The design Tweak pane (DZTweak): the Controls board's sizes, but its slider is a 4pt `bgSelected` track filled with ink under a
+    /// 16pt card knob, and its switch is 26×16 (`SHTweakControlMetrics`). Only the slider and the switch differ.
+    case tweak
 }
 
 extension EnvironmentValues {
@@ -21,6 +24,20 @@ extension View {
     public func shControlScale(_ scale: SHControlScale) -> some View {
         environment(\.shControlScale, scale)
     }
+}
+
+/// The design Tweak pane's slider and switch (DZTweak's `.gdz-sl` and `.tgl`), used at `SHControlScale.tweak`.
+public enum SHTweakControlMetrics {
+    public static let sliderTrack: CGFloat = 4
+    public static let sliderKnob: CGFloat = 16
+    /// The slider takes the room the label leaves; its value is 24pt wide, 10pt after it.
+    public static let sliderValueWidth: CGFloat = 24
+    public static let sliderValueGap: CGFloat = SH.Space.l - 2
+    public static let valueSize: CGFloat = 12
+    public static let switchWidth: CGFloat = 26
+    public static let switchHeight: CGFloat = 16
+    public static let switchKnob: CGFloat = 12
+    public static let switchInset: CGFloat = SH.Space.xxs
 }
 
 /// The Settings boards' control measures, as the canvas renders them (a 30pt CSS box plus its

@@ -905,21 +905,15 @@ final class DesignScreenModel {
     /// Whether the canvas can ask the design agent for more ("Ask for another direction").
     var canAsk: Bool { canvasActions != nil && !(snapshot?.index.boards.isEmpty ?? true) }
 
-    /// The words Variations and "Ask for another direction" send; the board they are about goes
-    /// in the message's view record, as data.
+    /// The words Variations sends; the board they are about goes in the message's view record, as data.
     static let variationsMessage = "Draw variations of the selected board as new boards beside it."
-    static let anotherDirectionMessage = "Draw another direction as a new board."
+    /// What "Ask for another direction" puts in the chat's composer, for the person to send.
+    static let anotherDirectionDraft = "Draw another direction"
 
     /// Variations: asks the design agent for variations of `path`, the record naming it selected.
     @discardableResult
     func askForVariations(of path: DesignPath) -> Task<Void, Never>? {
         ask(Self.variationsMessage, record: record(selecting: [Pick(board: path)]))
-    }
-
-    /// "Ask for another direction": one more direction, nothing selected in the record.
-    @discardableResult
-    func askForAnotherDirection() -> Task<Void, Never>? {
-        ask(Self.anotherDirectionMessage, record: record(selecting: []))
     }
 
     private func ask(_ text: String, record: DesignViewRecord?) -> Task<Void, Never>? {

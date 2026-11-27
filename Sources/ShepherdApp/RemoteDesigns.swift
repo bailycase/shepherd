@@ -351,7 +351,11 @@ struct RemoteDesignLayoutView: View {
             if let screen = vm.remoteDesignScreen(ref) {
                 DesignCanvasPane(screen: screen, vm: vm,
                                  designName: vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.state.designs
-                                     .first { $0.id == ref.designID }?.name ?? "")
+                                     .first { $0.id == ref.designID }?.name ?? "",
+                                 anotherDirection: { [vm, agent, pane = threadPaneID] in
+                                     screen.draftAnotherDirection(store: vm.remoteThreadStores.store(for: agent),
+                                                                  input: vm.remoteThreadStores.input(for: agent)) { vm.remoteFocusedPaneID = pane }
+                                 })
                 RemoteDesignChatPane(vm: vm, screen: screen, agent: agent, agentName: agentName, threadPaneID: threadPaneID)
                     .designChatCard()
             }
