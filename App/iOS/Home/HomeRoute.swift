@@ -10,9 +10,6 @@ struct HomeDestination: View {
         case .automations: AutomationsScreen()
         // Hosts became Fleet: the Macs this device is paired with, as one fleet.
         case .more: FleetScreen()
-        case .recents: RecentsScreen(group: .recents)
-        case .working: RecentsScreen(group: .working)
-        case .done: RecentsScreen(group: .done)
         }
     }
 }

@@ -2,10 +2,11 @@ import SwiftUI
 import ShepherdUI
 import ShepherdRemote
 
-/// The iPhone Home tab's root, the inbox (DuoClosedHome board; home track): hosts that are not
-/// connected with Retry, a short Needs you list, the Mac sidebar's Working, Done and Pinned
-/// (`SidebarThreads`), and Recents across every host. Designs, Projects and Automations are
-/// tabs beside it (`PhoneShell`). A row's long press is the Mac's row menu (`ThreadRowMenu`).
+/// The iPhone Home tab's root, and the iPhone Duo's closed display: the Mac's sidebar as a list screen with the large title
+/// (MobileAgents, DuoClosedHome), no card. Hosts that are not connected come first with Retry, then `SidebarContent`: the
+/// destinations (New thread, Designs, Automations, Issues & PRs, the Review queue), Needs you, Working, Done, Pinned, and Recents with
+/// the spaces, and the footer's Fleet line and Settings under the list. Designs, Projects and Automations are tabs beside it
+/// (`PhoneShell`). A row's long press is the Mac's row menu (`ThreadRowMenu`).
 struct HomeScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -14,19 +15,21 @@ struct HomeScreen: View {
         let feed = HomeFeed.of(hosts)
         let model = feed.model
         ScrollView {
-            VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                if model.hosts.isEmpty {
-                    NoHostsState()
-                } else {
-                    HomeSections(model: model, selected: navigator.selectedThread)
+            if model.hosts.isEmpty {
+                NoHostsState().padding(.horizontal, MobileLayout.gutter)
+            } else {
+                VStack(spacing: 0) {
+                    HostNotices(cards: model.offlineHosts)
+                        .padding(.horizontal, MobileLayout.gutter)
+                        .padding(.bottom, model.offlineHosts.isEmpty ? 0 : SH.Space.m)
+                    SidebarContent(phone: true)
                 }
             }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.bottom, MobileLayout.sectionSpacing)
-            .frame(maxWidth: MobileLayout.homeMaxWidth)
-            .frame(maxWidth: .infinity)
         }
         .background(Color.sh.bgWindow)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SidebarFooterBar().background(Color.sh.bgWindow)
+        }
         .refreshable {
             hosts.retryAll()
             await feed.refresh()
@@ -48,157 +51,6 @@ struct HomeScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) { StopAllWorkingMenu() }
         }
-    }
-}
-
-/// Home's sections, in the board's order.
-private struct HomeSections: View {
-    let model: FleetModel
-    let selected: AgentRef?
-    @Environment(MobileNavigator.self) private var navigator
-    @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileProjects.self) private var projects
-
-    var body: some View {
-        let automations = AutomationsStore.of(hosts)
-        let groups = SidebarThreads.of(hosts).groups(model, unread: automations.unreadRuns, paused: automations.pausedTriggers)
-        HostNotices(cards: model.offlineHosts)
-        if !groups.needsYou.isEmpty {
-            section("Needs you", attention: true, count: groups.needsYou.count) {
-                SHListCard {
-                    ForEach(groups.needsYou.prefix(HomeLimits.needsYou)) { item in
-                        attentionRow(item)
-                    }
-                    Button { navigator.open(.home(.needsYou)) } label: {
-                        Text(groups.needsYou.count > HomeLimits.needsYou ? "See all \(groups.needsYou.count)" : "Answer in Needs you")
-                            .font(.sh(.caption, weight: .medium))
-                            .foregroundStyle(Color.sh.textSecondary)
-                            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-                    }
-                    .buttonStyle(.shRow(radius: 0))
-                }
-            }
-        }
-        HomeReviewQueueRow()
-        HomeForgeSection()
-        // The Mac's Working, Done and Pinned, in its order.
-        // A card draws every row it holds, so each group shows its first few and lists the rest on
-        // its own screen.
-        if !groups.working.isEmpty {
-            section("Working", count: groups.working.count) {
-                SHListCard {
-                    ForEach(groups.working.prefix(HomeLimits.group)) { row in threadRow(row) }
-                    showAll(groups.working.count, route: .working)
-                }
-            }
-        }
-        if !groups.done.isEmpty {
-            section("Done", count: groups.done.count, trailing: MarkAllSeenChip(rows: groups.done)) {
-                SHListCard {
-                    ForEach(groups.done.prefix(HomeLimits.group)) { row in threadRow(row) }
-                    showAll(groups.done.count, route: .done)
-                }
-            }
-        }
-        if !groups.pinned.isEmpty {
-            // Pins have no cap and no screen of their own, so every one stays here; the card is
-            // lazy, building only the rows on screen.
-            section("Pinned", count: groups.pinned.count) {
-                SHLazyListCard(groups.pinned) { pinned in
-                    switch pinned {
-                    case .thread(let row): threadRow(row)
-                    case .attention(let item): attentionRow(item)
-                    }
-                }
-            }
-        }
-        // A triggered automation's run threads, folded under one row each (`FleetRunGroup`).
-        if !groups.runs.isEmpty {
-            section("Automation runs", count: groups.runs.count) {
-                SHListCard {
-                    ForEach(groups.runs) { group in RunGroupSection(group: group, selected: selected) }
-                }
-            }
-            // Their unread dots and paused triggers, read while they show.
-            .task { await automations.watch() }
-        }
-        section("Recents", count: nil) {
-            if groups.recents.isEmpty {
-                SHListCard { EmptyRecents() }
-            } else {
-                SHListCard {
-                    ForEach(groups.recents.prefix(HomeLimits.recents)) { row in
-                        threadRow(row)
-                    }
-                    if groups.recents.count > HomeLimits.recents {
-                        Button { navigator.open(.home(.recents)) } label: {
-                            Text("Show all recents")
-                                .font(.sh(.caption, weight: .medium))
-                                .foregroundStyle(Color.sh.textSecondary)
-                                .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-                        }
-                        .buttonStyle(.shRow(radius: 0))
-                    }
-                }
-            }
-        }
-    }
-
-    private func section(_ title: String, attention: Bool = false, count: Int?, trailing: MarkAllSeenChip? = nil,
-                         @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            HStack(alignment: .center, spacing: SH.Space.s) {
-                SHListHeader(title, attention: attention, count: count)
-                trailing
-            }
-            content()
-        }
-    }
-
-    /// The row past a group's first few: the rest, on the group's own screen.
-    @ViewBuilder private func showAll(_ count: Int, route: HomeRoute) -> some View {
-        if count > HomeLimits.group {
-            Button { navigator.open(.home(route)) } label: {
-                Text("Show all \(count)")
-                    .font(.sh(.caption, weight: .medium))
-                    .foregroundStyle(Color.sh.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
-            }
-            .buttonStyle(.shRow(radius: 0))
-        }
-    }
-
-    /// A thread or design row; a design's row keeps its own route and has no thread menu.
-    private func threadRow(_ row: FleetThreadRow) -> some View {
-        Button { navigator.open(row.route) } label: {
-            ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
-        }
-        .buttonStyle(.shRow(radius: 0))
-        .contextMenu { if row.design == nil { ThreadRowMenu(thread: row.ref.agentRef) } }
-    }
-
-    private func attentionRow(_ item: FleetAttention) -> some View {
-        Button { navigator.open(projects.route(item)) } label: { AttentionRow(item: item).equatable() }
-            .buttonStyle(.shRow(radius: 0))
-            .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
-    }
-}
-
-/// No threads on any connected host yet.
-struct EmptyRecents: View {
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            Text("No threads yet").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
-            Text("Start one on any host; it shows here with the host it runs on.")
-                .shText(.caption).foregroundStyle(Color.sh.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
-                .buttonStyle(.sh(.secondary))
-        }
-        .padding(SH.Space.l)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

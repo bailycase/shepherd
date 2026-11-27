@@ -18,12 +18,3 @@ extension MobileLayout {
     /// A readable measure for Home's lists on iPad.
     static let homeMaxWidth: CGFloat = 640
 }
-
-/// How much of each list Home shows before "See all".
-enum HomeLimits {
-    static let needsYou = 2
-    static let recents = 6
-    /// Working and Done rows on Home before "Show all": a card draws every row it holds, so a
-    /// large group lists past these on its own screen.
-    static let group = 8
-}

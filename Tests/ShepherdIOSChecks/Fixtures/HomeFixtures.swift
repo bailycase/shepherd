@@ -53,7 +53,6 @@ extension FixtureCatalog {
                 await HostNoticeCheck.run(app, label: "Add MacBook Air again with a code") { app in app.navigator.presented?.route == .settings(.host(nil)) }
             }),
             FixtureScreen(name: "more-refused", hosts: FixtureData.refusingLaptop(fleet), routes: [.home(.more)], prepare: settle),
-            FixtureScreen(name: "recents", hosts: fleet, routes: [.home(.recents)], prepare: settle),
             // iPad: the sidebar over a portrait thread (run with --sidebar).
             FixtureScreen(name: "home-sidebar", hosts: fleet, routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: settle),
             // The sidebar's Automations group (run with --sidebar): runs of two hosts, one waiting on you (in Needs you only),
