@@ -85,23 +85,26 @@ extension SHContextDetailsModel {
             return words.joined(separator: ", ")
         }
         let instructionsPrefix = "Instructions · "
+        func row(_ row: NativeContextDetails.Row) -> Row {
+            let named = row.label.hasPrefix(instructionsPrefix)
+            return Row(part: part(row.part) ?? .system, label: named ? "Instructions" : row.label, value: row.value,
+                       children: row.children.map { Child(label: $0.label, value: $0.value) },
+                       detail: named ? String(row.label.dropFirst(instructionsPrefix.count)) : nil)
+        }
+        func item(_ item: NativeContextDetails.Largest) -> Item {
+            Item(id: item.entryID, kind: ItemKind(item.kind), label: item.label, value: item.value)
+        }
         self.init(
             variant: variant, title: details.title, meta: meta, total: details.total, ofWindow: details.ofWindow,
             trailing: details.trailing, segments: details.segments.map { Segment(part: part($0.part), fraction: $0.fraction) },
             mark: details.mark, markLabel: details.autoCompactText.map { "Compacts on its own at \($0)" },
-            rows: details.rows.map { row in
-                let named = row.label.hasPrefix(instructionsPrefix)
-                return Row(part: part(row.part) ?? .system, label: named ? "Instructions" : row.label, value: row.value,
-                           children: row.children.map { Child(label: $0.label, value: $0.value) },
-                           detail: named ? String(row.label.dropFirst(instructionsPrefix.count)) : nil)
-            },
+            rows: details.rows.map(row),
             free: details.free,
-            items: details.largest.map { item in
-                Item(id: item.entryID, kind: ItemKind(item.kind), label: item.label, value: item.value)
-            },
+            items: details.largest.map(item),
             note: details.note?.replacingOccurrences(of: "The agent will compact on its own", with: "The agent compacts on its own"),
             emphasis: details.emphasis, footnote: details.footnote, showsSummary: details.summaryEntryID != nil,
             compactOffered: details.compactOffered)
+        breakdown = details.breakdown.map { Breakdown(rows: $0.rows.map(row), free: $0.free, items: $0.largest.map(item), footnote: $0.footnote) }
     }
 }
 

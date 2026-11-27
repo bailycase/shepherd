@@ -94,6 +94,9 @@ public enum SHQuestionBoardMetrics {
     public static let chip: CGFloat = 20
     public static let chipRadius: CGFloat = SH.Radius.s - 1
     public static let chipSize: CGFloat = 11
+    /// The description under a title: 12.5 on an 18pt line (GXQuestion `.d`).
+    public static let descriptionSize: CGFloat = 12.5
+    public static let descriptionLineSpacing: CGFloat = 3
     /// The title's 1pt drop and the "Recommended" tag's 8pt lead.
     public static let bodyTop: CGFloat = 1
     public static let recommendedLead: CGFloat = SH.Space.m
@@ -658,7 +661,7 @@ public struct SHQuestionRadioRow: View {
                     macTitle.fixedSize(horizontal: false, vertical: true)
                     if let detail = option.detail {
                         // The board's description: 12.5 on an 18pt line.
-                        Text(detail).font(.shSans(12.5)).lineSpacing(3).foregroundStyle(sh.textSecondary)
+                        Text(detail).font(.shSans(B.descriptionSize)).lineSpacing(B.descriptionLineSpacing).foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

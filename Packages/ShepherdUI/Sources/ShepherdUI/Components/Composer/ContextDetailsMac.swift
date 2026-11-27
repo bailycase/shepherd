@@ -40,8 +40,12 @@ enum SHContextMacMetrics {
 }
 
 extension SHContextDetails {
-    /// The breakdown shows past 85% only once Details is open.
-    var showsBreakdown: Bool { model.variant != .almostFull || detailsOpen }
+    /// What the split shows: the model's own, or past 85% the breakdown behind Details once it is open (GXContextFull).
+    var split: (rows: [SHContextDetailsModel.Row], free: String?, items: [SHContextDetailsModel.Item], footnote: String?) {
+        guard model.variant == .almostFull else { return (model.rows, model.free, model.items, model.footnote) }
+        guard detailsOpen, let more = model.breakdown else { return ([], nil, [], nil) }
+        return (more.rows, more.free, more.items, more.footnote)
+    }
 
     /// The Mac's details: the board's popover, where the total, the bar and the rows sit as plain
     /// text on the card and the actions are words, not buttons.
@@ -60,10 +64,10 @@ extension SHContextDetails {
                         .padding(.top, SHContextMacMetrics.noteTop)
                 }
                 if let note = model.note { macNote(note) }
-                // Past 85% the breakdown waits behind Details (GXContextFull).
-                if !model.rows.isEmpty, showsBreakdown { macRows }
-                if !model.items.isEmpty, showsBreakdown { macLargest }
-                if let footnote = model.footnote, showsBreakdown {
+                let split = split
+                if !split.rows.isEmpty { macRows }
+                if !split.items.isEmpty { macLargest }
+                if let footnote = split.footnote {
                     Text(footnote).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, SHContextMacMetrics.footnoteTop)
@@ -163,7 +167,7 @@ extension SHContextDetails {
     private var macRows: some View {
         let sh = Color.sh
         return VStack(spacing: 0) {
-            ForEach(model.rows) { row in
+            ForEach(split.rows) { row in
                 HStack(spacing: SHContextMacMetrics.rowGap) {
                     RoundedRectangle(cornerRadius: 2).fill(Self.macColor(row.part, sh))
                         .frame(width: SHContextMetrics.swatch, height: SHContextMetrics.swatch)
@@ -190,7 +194,7 @@ extension SHContextDetails {
                     .accessibilityLabel("\(child.label), \(child.value) tokens")
                 }
             }
-            if let free = model.free {
+            if let free = split.free {
                 HStack(spacing: SHContextMacMetrics.rowGap) {
                     Color.clear.frame(width: SHContextMetrics.swatch, height: SHContextMetrics.swatch)
                     Text("Free").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
@@ -213,7 +217,7 @@ extension SHContextDetails {
             .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             .frame(height: SHContextMacMetrics.largestHeight)
             .padding(.top, SHContextMacMetrics.largestTop)
-            ForEach(model.items) { item in
+            ForEach(split.items) { item in
                 SHContextMacItemRow(item: item) { actions.find(item.id) }
             }
         }
@@ -227,7 +231,7 @@ extension SHContextDetails {
             EmptyView()
         case .almostFull:
             macKeepField
-            macActionBar(leading: model.rows.isEmpty ? nil : macLink(detailsOpen ? "Hide details" : "Details") { detailsOpen.toggle() }) { macPill }
+            macActionBar(leading: model.breakdown == nil ? nil : macLink(detailsOpen ? "Hide details" : "Details") { detailsOpen.toggle() }) { macPill }
         case .simple, .split:
             if composing {
                 macKeepField
