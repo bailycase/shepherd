@@ -79,8 +79,6 @@ struct ProjectSettingsDetail: View {
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("SettingsPageContent")
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .shControlScale(.settings)
     }

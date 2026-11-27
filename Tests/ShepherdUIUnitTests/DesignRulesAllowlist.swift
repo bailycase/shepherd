@@ -88,7 +88,6 @@ enum DesignRuleAllowlist {
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Forge/ForgePage.swift", 1, unanimated("whether the page is pinned; the page animates its notices, not the pin")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/MCP/AddMCPServerSheet.swift", 1, unanimated("whether a variable is secret; the sheet animates its check and advanced sections, not this")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, unanimated("Pause and Resume; nothing in the page animates it")),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/RemoteDirectoryPicker.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsExperiments.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SkillsSheets.swift", 1, unanimated("the typed source; the sheet animates the skill detail, not the field")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/TerminalPanelViews.swift", 1, unanimated("the terminal panel's maximized state, which lands at once")),

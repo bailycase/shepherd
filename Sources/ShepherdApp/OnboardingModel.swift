@@ -44,7 +44,7 @@ final class OnboardingModel {
 
     /// `marker` is a file in the support folder: where onboarding ended is a fact about that folder, so a fresh one starts it again.
     init(marker: URL? = (try? ShepherdPaths.supportDirectory())?.appendingPathComponent("onboarding-finished"),
-         home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+         home: URL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory(), isDirectory: true)) {
         self.marker = marker
         self.home = home
     }

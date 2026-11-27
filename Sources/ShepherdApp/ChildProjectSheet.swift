@@ -69,7 +69,7 @@ struct ChildProjectSheet: View {
                     TextField(model.create ? "Folder name" : "Folder path", text: $model.folder)
                         .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize)).focused($focused, equals: .folder)
                     if !model.create {
-                        Button("Browse…") { model.browsing = true }.buttonStyle(SpaceLinkStyle(tone: .strong))
+                        Button("Browse…") { model.browsing = true }.buttonStyle(SpaceLinkStyle(tone: .strong)).frame(minHeight: SH.Height.controlS)
                     }
                 }
             }

@@ -79,7 +79,7 @@ private struct OnboardingWall: View {
         let sh = Color.sh
         ZStack {
             sh.bgBase
-            RadialGradient(colors: [sh.lantern.opacity(0.09), .clear], center: .init(x: 0.78, y: 0.08), startRadius: 0, endRadius: 700)
+            RadialGradient(colors: [sh.lanternTint, .clear], center: .init(x: 0.78, y: 0.08), startRadius: 0, endRadius: 700)
             RadialGradient(colors: [sh.textTertiary.opacity(0.26), .clear], center: .init(x: 0.08, y: 1), startRadius: 0, endRadius: 600)
         }
     }

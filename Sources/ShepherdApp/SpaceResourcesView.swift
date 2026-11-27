@@ -46,7 +46,7 @@ struct SpaceResourcesView: View {
                 SpaceInheritanceBanner(title: "Inherited from \(parent.name)", message: SpaceInheritanceBanner.childMessage(project.project.name),
                                        open: openParent.map { ("Open \(parent.name)", $0) }, disabled: model.saving)
             }
-            SpaceSection(title: model.kind.title, note: note, footnote: model.kind == .agent ? "Global subagents are turned on or off in Settings • Agents • Profiles." : nil) {
+            SpaceSection(title: model.kind.title, note: note, footnote: model.kind == .agent ? "Global subagents are turned on or off in Settings • Agents • Profiles." : nil, lazy: true) {
                 if model.kind == .skill {
                     Button("Add from repo") { model.install = .init() }.buttonStyle(SpaceLinkStyle()).disabled(locked)
                 }

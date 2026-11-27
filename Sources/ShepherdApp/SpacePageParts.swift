@@ -129,6 +129,7 @@ struct SpacePageFrame<Content: View, Bar: View>: View {
 
     private var column: some View {
         VStack(alignment: .leading, spacing: AppLayout.spacePageGap) { content }
+            .accessibilityElement(children: .contain).accessibilityIdentifier("SettingsPageContent")
             .padding(.horizontal, AppLayout.spacePageSides)
             .padding(.top, AppLayout.spacePageTop).padding(.bottom, AppLayout.spacePageBottom)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -180,12 +181,14 @@ struct SpaceSection<Trailing: View, Content: View>: View {
     /// A paragraph between the header and the card (`gspc-lead`).
     var lead: String?
     var footnote: String?
+    /// Build only the rows near the screen: a list that can run to hundreds of rows.
+    var lazy = false
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.m) {
-            if !title.isEmpty || note != nil {
+            if !title.isEmpty || note != nil || Trailing.self != EmptyView.self {
             HStack(alignment: .firstTextBaseline, spacing: SH.Space.l) {
                 Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).fixedSize()
                     .accessibilityAddTraits(.isHeader)
@@ -201,7 +204,7 @@ struct SpaceSection<Trailing: View, Content: View>: View {
                     .frame(maxWidth: AppLayout.spaceLeadWidth, alignment: .leading).padding(.horizontal, SH.Space.xs).padding(.bottom, SH.Space.xs)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            SpaceCard { content }
+            SpaceCard(lazy: lazy) { content }
             if let footnote {
                 Text(footnote).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs)
                     .fixedSize(horizontal: false, vertical: true)
@@ -289,6 +292,8 @@ struct SpaceLinkStyle: ButtonStyle {
             .font(.sh(caption ? .caption : .ui, weight: tone == .quiet || tone == .danger ? .regular : .medium))
             .foregroundStyle(color(hover: hovering && enabled))
             .lineLimit(1).fixedSize()
+            // A link on its own is a whole target; one inside a line of small print keeps that line's height.
+            .frame(minHeight: caption ? nil : SH.Height.controlS)
             .opacity(configuration.isPressed ? 0.6 : 1)
             .shEnabledOpacity(enabled)
             .contentShape(Rectangle())
@@ -391,6 +396,8 @@ struct SpaceKindTabs<Value: Hashable>: View {
                         .padding(.horizontal, compact ? AppLayout.spaceSegmentPadding : SH.Space.l)
                         .frame(height: compact ? AppLayout.spaceSegmentHeight : AppLayout.spaceKindHeight).fixedSize()
                         .modifier(SpaceLiftedIf(on: on))
+                        // The 22pt segment is a 24pt target.
+                        .padding(.vertical, compact ? SH.Space.xxs / 2 : 0)
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(option.1).accessibilityAddTraits(on ? .isSelected : [])
             }
@@ -424,7 +431,8 @@ struct SpaceBarStyle: ButtonStyle {
                              : kind == .strong || hovering ? Color.sh.textPrimary : Color.sh.textSecondary)
             .lineLimit(1).fixedSize()
             .padding(.horizontal, pill ? SH.Space.l : 0)
-            .frame(height: pill ? AppLayout.spaceMenuHeight : nil)
+            // A word is still a whole target: 24pt tall at least.
+            .frame(height: pill ? AppLayout.spaceMenuHeight : nil).frame(minHeight: SH.Height.controlS)
             .background {
                 if primary { Capsule().fill(configuration.isPressed ? Color.sh.primaryPressed : hovering && enabled ? Color.sh.primaryHover : Color.sh.primary) }
                 else if kind == .danger { Capsule().fill(Color.sh.bgHover) }
@@ -469,7 +477,12 @@ struct SpaceSearchField: View {
         HStack(spacing: SH.Space.s) {
             Image(systemName: "magnifyingglass").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
             TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(Color.sh.textTertiary))
-                .textFieldStyle(.plain).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+                .textFieldStyle(.plain).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).accessibilityLabel(prompt)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
         }.padding(.horizontal, SH.Space.m).frame(width: width, height: AppLayout.spaceSearchHeight)
             .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .accessibilityElement(children: .contain)
