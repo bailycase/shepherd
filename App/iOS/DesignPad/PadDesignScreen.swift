@@ -37,16 +37,16 @@ struct PadDesignScreen: View {
             let wide = proxy.size.width >= MobileLayout.padDesignSideBySideMinWidth
             // Half open (iPhone Duo), the canvas ends at the fold and the chat starts after it.
             let fold = wide ? proxy.verticalFold : nil
+            let canvasWidth = fold?.lowerBound ?? proxy.size.width - (wide ? MobileLayout.padDesignChatWidth : 0)
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    PadDesignHeader(title: name, wide: wide,
+                    PadDesignHeader(title: name, wide: wide, compact: canvasWidth < MobileLayout.padDesignCompactCanvasWidth,
                                     subtitle: wide ? Self.subtitle(canvas: canvas, design: design) : nil,
                                     swatches: canvas.systemSwatches,
                                     back: back,
                                     chat: wide ? nil : { showingChat = true },
                                     pages: canvas.pageList, page: canvas.page,
-                                    pageMenuWidth: Self.pageMenuWidth(canvas: fold?.lowerBound ?? proxy.size.width
-                                                                        - (wide ? MobileLayout.padDesignChatWidth : 0)),
+                                    pageMenuWidth: Self.pageMenuWidth(canvas: canvasWidth),
                                     showPage: canvas.showPage,
                                     // Nothing to export on a page with no boards.
                                     export: canvas.canPresent && !canvas.boards.isEmpty && !exportBusy ? { choosingExport = true } : nil)
@@ -167,6 +167,8 @@ struct PadDesignScreen: View {
 private struct PadDesignHeader: View {
     let title: String
     let wide: Bool
+    /// Wide, over a canvas too narrow for the full-size pills (iPhone Duo's half).
+    let compact: Bool
     /// The design system, the boards and the page, under the name; wide only.
     let subtitle: String?
     let swatches: [DesignSystemPresentation.Swatch]
@@ -181,17 +183,20 @@ private struct PadDesignHeader: View {
 
     var body: some View {
         let sh = Color.sh
+        let pill = compact ? MobileLayout.padDesignPillCompact : MobileLayout.padDesignPill
+        let backText = compact ? MobileLayout.padDesignBackTextCompact : MobileLayout.padDesignBackText
         HStack(spacing: SH.Space.m) {
             Button(action: back) {
                 HStack(spacing: SH.Space.xxs) {
                     Image(systemName: "chevron.left")
-                        .font(.shSans(wide ? MobileLayout.padDesignBackGlyph : MobileLayout.padDesignHeaderText, .semibold))
-                    if wide { Text("Designs").font(.shSans(MobileLayout.padDesignBackText, .medium)) }
+                        .font(.shSans(wide ? (compact ? MobileLayout.padDesignBackGlyphCompact : MobileLayout.padDesignBackGlyph)
+                                      : MobileLayout.padDesignHeaderText, .semibold))
+                    if wide { Text("Designs").font(.shSans(backText, .medium)) }
                 }
                 .foregroundStyle(sh.textPrimary)
                 .padding(.leading, wide ? SH.Space.m : 0)
                 .padding(.trailing, wide ? MobileLayout.padDesignPillInset : 0)
-                .frame(minHeight: wide ? MobileLayout.padDesignPill : SH.Height.touch)
+                .frame(minHeight: wide ? pill : SH.Height.touch)
                 .contentShape(Rectangle().inset(by: -SH.Space.m))
             }
             .buttonStyle(.plain)
@@ -201,7 +206,7 @@ private struct PadDesignHeader: View {
             .accessibilityLabel("Designs")
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(wide ? .shSans(MobileLayout.padDesignTitle, .semibold) : .sh(.headline))
+                    .font(wide ? .shSans(compact ? MobileLayout.padDesignTitleCompact : MobileLayout.padDesignTitle, .semibold) : .sh(.headline))
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -274,10 +279,10 @@ private struct PadDesignHeader: View {
                     .layoutPriority(1)
                 }
                 Button { export?() } label: {
-                    Text("Export").font(.shSans(MobileLayout.padDesignBackText, .medium))
+                    Text("Export").font(.shSans(backText, .medium))
                         .foregroundStyle(export == nil ? sh.textTertiary : sh.textPrimary)
                         .padding(.horizontal, MobileLayout.padDesignPillInset)
-                        .frame(minHeight: MobileLayout.padDesignPill)
+                        .frame(minHeight: pill)
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)

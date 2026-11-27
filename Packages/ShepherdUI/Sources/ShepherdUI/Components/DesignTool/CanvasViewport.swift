@@ -156,13 +156,15 @@ public struct SHLabelRoom: Equatable, Sendable {
 
     /// The label at `zoom` over a board `width` points wide on screen: whether it is drawn, how
     /// wide it runs, and its gap to the frame. It keeps its 8pt gap where the room allows, moves
-    /// down toward the frame where it doesn't, and isn't drawn where not even a 2pt gap fits.
+    /// down toward the frame where it doesn't, and isn't drawn where not even a 2pt gap fits, or where
+    /// the next board along leaves it less than `labelMinShownWidth`.
     public func layout(width: CGFloat, zoom: CGFloat) -> (shown: Bool, width: CGFloat, gap: CGFloat) {
         var labelWidth = Swift.max(width, SHDesignMetrics.labelMinWidth)
         if let along { labelWidth = Swift.min(labelWidth, along * zoom - SHDesignMetrics.labelSpacing) }
-        guard let above else { return (labelWidth > 0, labelWidth, SHDesignMetrics.labelGap) }
+        guard labelWidth >= SHDesignMetrics.labelMinShownWidth else { return (false, Swift.max(labelWidth, 0), SHDesignMetrics.labelGap) }
+        guard let above else { return (true, labelWidth, SHDesignMetrics.labelGap) }
         let room = above * zoom - SHDesignMetrics.labelHeight
-        guard room >= SHDesignMetrics.labelMinGap, labelWidth > 0 else { return (false, Swift.max(labelWidth, 0), SHDesignMetrics.labelGap) }
+        guard room >= SHDesignMetrics.labelMinGap else { return (false, Swift.max(labelWidth, 0), SHDesignMetrics.labelGap) }
         return (true, labelWidth, Swift.min(SHDesignMetrics.labelGap, room))
     }
 

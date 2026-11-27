@@ -3,8 +3,8 @@ import ShepherdUI
 
 /// The iPad Design tool's own measures (iPadDesign, iPadSplitView).
 extension MobileLayout {
-    /// The chat pane beside the canvas (iPadDesign's 360pt).
-    static let padDesignChatWidth: CGFloat = 360
+    /// The chat pane beside the canvas (iPadDesign's 380pt).
+    static let padDesignChatWidth: CGFloat = 380
     /// The header over the canvas, and the chat pane's tab row beside it.
     static let padDesignHeaderHeight: CGFloat = 52
     /// Below this width (Split View, a narrow Stage Manager window) the chat leaves the canvas's
@@ -47,6 +47,13 @@ extension MobileLayout {
     static let padDesignTitle: CGFloat = 18
     static let padDesignSubtitle: CGFloat = 12
     static let padDesignSwatch = CGSize(width: 6, height: 10)
+    /// Over a canvas narrower than this (iPhone Duo's half beside the fold) the pills shrink, so "‹ Designs",
+    /// the name and Export keep their room: 36pt tall, the labels in 15, the name in 17.
+    static let padDesignCompactCanvasWidth: CGFloat = 640
+    static let padDesignPillCompact: CGFloat = 36
+    static let padDesignBackGlyphCompact: CGFloat = 16
+    static let padDesignBackTextCompact: CGFloat = 15
+    static let padDesignTitleCompact: CGFloat = 17
     /// The chat pane is a card at radius 20 on the lift, 8pt in from the screen's edge (iPadDesign).
     static let padDesignPaneRadius: CGFloat = 20
     static let padDesignPaneInset: CGFloat = SH.Space.m

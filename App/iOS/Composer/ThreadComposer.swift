@@ -13,7 +13,8 @@ import ShepherdRemote
 ///   Photos, Files and Commands; the model chip opens the model picker, which also holds the thinking
 ///   level and the speed. On iPhone Duo's narrow column the chip steps aside while a draft is typed.
 /// - **A design's chat on iPad** (iPadDesign): the same pill with no "/" (typing / still opens the
-///   commands), the model's short name and no thinking level.
+///   commands), the model's name and thinking level kept whole, no context ring, and no goal or
+///   subagents card above it.
 ///
 /// Send queues the message while pi works (it goes when the turn ends); hold it for the other way
 /// (`NativeSendChoice`): steer now, which stops pi and sends at once. Stop is Send's corner while
@@ -28,7 +29,7 @@ struct ThreadComposer: View {
     @Environment(MobileNavigator.self) private var navigator
     /// A thread iPad keeps mounted behind the selected one presents nothing (`threadDetailActive`).
     @Environment(\.threadDetailActive) private var detailActive
-    /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
+    /// A design's chat (iPadDesign): the card without "/", the ring or the goal and subagents cards (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
     /// Whether the field has the keyboard (`ComposerTextView` follows and reports it).
     @State private var focused = false
@@ -93,7 +94,8 @@ struct ThreadComposer: View {
                 ComposerWidget(title: widget.title, text: widget.text)
             }
             if store.hasGoal || store.dialogs.isEmpty {
-                if store.hasGoal || store.hasTray {
+                // A design's chat draws the pill alone (iPadDesign): the goal and the subagents are on the thread's own screen.
+                if !designChat, store.hasGoal || store.hasTray {
                     SHDockStack(size: store.hasGoal && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
                         VStack(spacing: 0) {
                             if store.hasGoal {
@@ -268,12 +270,15 @@ struct ThreadComposer: View {
         let fieldView = field(store: store, state: state, live: live, placeholder: placeholder, command: state.matches != nil)
         let trailingView = HStack(spacing: 0) {
             if showsModel, store.model != nil || store.supportedActions.contains("setModel") {
-                ModelChip(model: store.model, thinking: wide && !designChat ? store.thinking.map(NativeThinkingLevel.title) : nil,
-                          canChange: live && store.supportedActions.contains("setModel"), short: designChat) {
+                ModelChip(model: store.model, thinking: wide ? store.thinking.map(NativeThinkingLevel.title) : nil,
+                          canChange: live && store.supportedActions.contains("setModel")) {
                     presentation.choosingModel = true
                 }
+                // A design's chat keeps its model whole ("claude-opus Medium"): the field gives way first.
+                .fixedSize(horizontal: designChat, vertical: false)
             }
-            contextMeter(store: store, state: state)
+            // The design chat's pill has no ring (iPadDesign): the context sheet is the thread's.
+            if !designChat { contextMeter(store: store, state: state) }
         }
         let actionView = sendButton(store: store, state: state, live: live)
         Group {

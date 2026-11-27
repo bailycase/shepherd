@@ -34,11 +34,14 @@ public enum SHDesignMetrics {
     /// A label is never narrower than this, whatever its board's width on screen, unless the next
     /// board along the row comes sooner.
     public static let labelMinWidth: CGFloat = 160
+    /// A label the next board along leaves less room than this isn't drawn: a name cut to a letter
+    /// or two (a canvas of hundreds of boards, fitted) is noise beside its neighbours'.
+    public static let labelMinShownWidth: CGFloat = 44
     /// Where the room above a board is short (rows closer than a label at a low zoom), the label
     /// moves down toward its frame, keeping at least this gap; with less room it isn't drawn.
     public static let labelMinGap: CGFloat = SH.Space.xxs
     /// A board frame's corners.
-    public static let frameRadius: CGFloat = SH.Radius.xs
+    public static let frameRadius: CGFloat = SH.Radius.l
     /// The selected board's `running` ring, outside the frame.
     public static let ringWidth: CGFloat = 2
     /// The frame's drop shadow (the board's 0 12 32).

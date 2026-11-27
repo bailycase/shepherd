@@ -28,7 +28,7 @@ struct PadDesignsScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 if !designs.rows.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        SHListHeader("Recent", count: nil)
+                        SHListHeader("Recent", style: .quiet)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: SHPhoneDesignMetrics.gridColumnMinimum),
                                                      spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top)],
                                   spacing: SHPhoneDesignMetrics.gridRowSpacing) {
@@ -54,7 +54,7 @@ struct PadDesignsScreen: View {
                 }
                 if !systems.model.systems.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        SHListHeader("Design systems", count: nil)
+                        SHListHeader("Design systems", style: .quiet)
                         DesignSystemsCard(rows: systems.model.systems, swatches: systems.swatches)
                     }
                 }
