@@ -57,6 +57,8 @@ struct SettingsHeader: View {
                     .font(.shSans(titleSize, .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
                     .padding(.horizontal, SH.Space.xs)
+                    // The board's title block: 27pt tall (a 24pt line and 3pt under it), the words centered in it.
+                    .frame(minHeight: AppLayout.settingsTitleLine)
                     .accessibilityAddTraits(.isHeader)
                 if let subtitle {
                     Text(subtitle).font(.shSans(SHSettingsControlMetrics.segmentTextSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)

@@ -8,8 +8,11 @@ extension AppLayout {
     /// A digit of the code: 40 by 48pt, the display size in mono.
     static let fleetDigitWidth: CGFloat = 40
     static let fleetDigitHeight: CGFloat = 48
-    /// The gap between the code's two groups of three.
+    /// The gap between the code's two groups of three, beyond the digits' own.
     static let fleetDigitGroupGap: CGFloat = SH.Space.l
+    static let fleetDigitSize: CGFloat = 22
+    /// A way's controls sit 10pt under what it says.
+    static let fleetWayGap: CGFloat = 10
     /// The sheet's rows of Macs found: a 16pt monitor glyph, then the name over its address.
     static let fleetFoundGlyphSize: CGFloat = 16
     /// What the new Mac gets: a 16pt column holding a 14pt tick or cross.
@@ -17,9 +20,13 @@ extension AppLayout {
     static let fleetGetsGlyphSize: CGFloat = 14
     /// Join a fleet (FleetStates): the code in mono at 40pt, its two groups of three a space apart.
     static let fleetJoinWidth: CGFloat = 460
-    static let fleetJoinCodeSize: CGFloat = 40
+    static let fleetJoinCodeSize: CGFloat = 28
+    static let fleetJoinCodeTracking: CGFloat = 2.2
     /// Add a device: the QR of the same code, a square this many points a side.
-    static let fleetQRSize: CGFloat = 168
+    static let fleetQRSize: CGFloat = 140
+    /// Its own white margin round the modules, and the corner.
+    static let fleetQRPadding: CGFloat = 16
+    static let fleetQRRadius: CGFloat = 10
     /// A Macs row's status dot.
     static let fleetDotSize: CGFloat = 6
 
@@ -61,7 +68,14 @@ extension AppLayout {
     /// The sending card's progress bar.
     static let fleetSendBarHeight: CGFloat = 6
     /// Ignored files · Per space…: the list of paths a space keeps home or sends.
-    static let fleetExcludeEditorHeight: CGFloat = 88
+    /// Ignored files · Per space…: a 480pt sheet, its text boxes 76pt tall with mono 12 inside.
+    static let fleetExcludesWidth: CGFloat = 480
+    static let fleetExcludeTextSize: CGFloat = 12
+    static let fleetExcludeEditorInset: CGFloat = 10
+    static let fleetExcludeEditorHeight: CGFloat = 52
+    static let fleetExcludeLine: CGFloat = 19
+    static let fleetExcludeEditorPadding: CGFloat = 34
+    static let fleetExcludeMaxLines = 6
     /// A repo tag.
     static let fleetTagHeight: CGFloat = 16
     /// A Mac's tag ("mini") is mono 10 (FleetDispatch, FleetSidebar).

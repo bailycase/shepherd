@@ -32,6 +32,7 @@ extension AppLayout {
     static let settingsGroupSpacing: CGFloat = SH.Space.xxl + SH.Space.xs
     /// A page's title (18/600).
     static let settingsTitleSize: CGFloat = 18
+    static let settingsTitleLine: CGFloat = 27
     /// A group's label line.
     static let settingsGroupHeaderHeight: CGFloat = 18
     /// A row's content, density-scaled; the row adds 6pt above and below (`SHCardRowFrame`).
