@@ -51,6 +51,18 @@ struct HookPresentationTests {
         #expect(noHash.hasBox && noHash.link == nil)
     }
 
+    /// "Ran a hook · SessionStart · [": a command that begins with a shell test named its hook "[".
+    @Test func aShellTestIsNeverTheHooksName() {
+        let older = NativeHookRow(NativeHookRecord(kind: "ran", event: "SessionStart", name: "["))
+        #expect(older.detail == "SessionStart", "an older host's punctuation-only name draws nothing")
+        #expect(NativeHookRow(NativeHookRecord(kind: "ran", event: "Stop", name: "run.sh")).detail == "Stop · run.sh")
+        let words: [(String, String?)] = [
+            ("[ -x ./run.sh ] && ./run.sh --quiet", "./run.sh"), ("[[ -f a ]] || notify now", "notify"), ("test -d x && build it", "build"),
+            ("npm test", "npm"), ("[ -x run.sh ]", nil), ("", nil), ("  \n", nil),
+        ]
+        for (command, word) in words { #expect(HookEntry.commandWord(command) == word, "\(command)") }
+    }
+
     @Test func theTurnDrawsAHookMessageAsItsRowAndFallsBackToItsText() {
         let record = NativeHookRecord(kind: "context", event: "SessionStart", name: "notes", lines: ["Read /v2"])
         var withRecord = NativeThreadMessage(entryID: "h1", role: "custom", blocks: [.init(kind: .text, text: "notes (SessionStart)")], customType: "shepherd.hook")

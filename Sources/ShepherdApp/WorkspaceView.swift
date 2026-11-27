@@ -281,6 +281,7 @@ struct AgentLayoutView: View, Equatable {
                        maximized: inspecting == nil && model.sideMaximized, card: true, inspector: inspecting != nil,
                        publishesReserve: model.isVisible) {
             PaneTreeView(vm: vm, model: model)
+                .environment(\.sidePaneOpen, inspecting != nil || sideTab != nil)
         } pane: {
             if let thread {
                 let agentID = thread.agentID
@@ -1005,6 +1006,7 @@ private struct RemoteAgentLayoutView: View, Equatable {
                     }
                     RemotePaneTreeView(vm: vm, model: model)
                 }
+                .environment(\.sidePaneOpen, inspecting != nil || sideTab != nil)
             } pane: {
             if let thread = model.thread {
                 let store = vm.remoteThreadStores.store(for: ref)

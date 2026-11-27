@@ -86,7 +86,8 @@ public enum SHSidebarMetrics {
     /// The touch boards' rows follow one another (DuoOpenOverview, iPadSidebar).
     public static let rowSpacing: CGFloat = 0
     #else
-    public static let rowSpacing: CGFloat = 1
+    /// The Mac's follow one another too: the boards' nav rows are 28pt apart.
+    public static let rowSpacing: CGFloat = 0
     #endif
     /// The destinations' stack is padded 2pt above and below.
     public static let destinationsPadding: CGFloat = 2

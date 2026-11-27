@@ -129,7 +129,7 @@ private struct SHPreviewSizedControls: View {
 #Preview("Send menu") {
     SHPreviewBoth {
         SHSendMenu(options: [
-            SHSendOption(id: "wait", title: "Wait for the turn to end", detail: "Goes when the agent finishes this turn.",
+            SHSendOption(id: "wait", title: "Wait for the turn to end", detail: "Sends when the agent finishes its turn.",
                          glyph: .queue, shortcut: "↩"),
             SHSendOption(id: "now", title: "Steer now", detail: "Stops what the agent is doing and sends this at once.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: "⌘↩"),

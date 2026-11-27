@@ -86,6 +86,16 @@ function context(cwd, select = async () => undefined) {
 }
 const editCall = (p = "/tmp/a.txt") => ({ type: "tool_call", toolName: "edit", toolCallId: "c1", input: { path: p, edits: [] } });
 
+test("a hook is named by the command it runs, never by a leading shell test", () => {
+  const name = (command, extra = {}) => hooks.hookName({ type: "command", command, ...extra });
+  assert.equal(name("[ -x ./run.sh ] && ./run.sh --quiet"), "./run.sh");
+  assert.equal(name("[[ -f a ]] || notify now"), "notify");
+  assert.equal(name("test -d x && build it"), "build");
+  assert.equal(name("npm test"), "npm");
+  assert.equal(name("[ -x run.sh ]"), "hook");
+  assert.equal(name("[ -x run.sh ]", { statusMessage: "Checking" }), "Checking");
+});
+
 test("canonical JSON and hashes match the shared vectors", () => {
   const vectors = JSON.parse(fs.readFileSync(path.join(root, "Tests/Fixtures/hooks/hash-vectors.json"), "utf8"));
   assert.ok(vectors.length >= 6);

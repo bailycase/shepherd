@@ -30,7 +30,7 @@ public enum NativeSendChoice: String, CaseIterable, Identifiable, Sendable {
     /// What the choice does, in a sentence.
     public var detail: String {
         switch self {
-        case .wait: "Goes when the agent finishes this turn."
+        case .wait: "Sends when the agent finishes its turn."
         case .now: "Stops what the agent is doing and sends this at once."
         }
     }
