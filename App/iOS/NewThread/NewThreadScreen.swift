@@ -176,6 +176,8 @@ private struct NewThreadForm: View {
                 .frame(minHeight: SH.Height.touch)
                 .contentShape(Rectangle())
             }
+            // The host's name gives way first, as the row's note says: the repo is what the thread is about.
+            .layoutPriority(1)
             .accessibilityLabel("Repo, \(repo)")
             .popover(isPresented: pad ? panel(.repo) : .constant(false), arrowEdge: .top) { repoPopover }
             Button { open(pad ? .host : .workspace) } label: {

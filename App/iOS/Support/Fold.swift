@@ -160,7 +160,7 @@ extension MobileLayout {
     /// nothing in it can be resized; the boards' glyphs are lighter and smaller than the system's 17pt (DuoOpenOverview, DuoClosedHome:
     /// the magnifier, plus and compose measure 15pt against the system's 17), except the side pane's, which the board draws smaller (DuoOpenThread).
     static let stripGlyph: CGFloat = 15
-    static let stripPaneGlyph: CGFloat = 12
+    static let stripPaneGlyph: CGFloat = 14
 }
 
 /// A bar button's icon, drawn at the boards' size where the bars run down the side (iPhone Duo); the system's size elsewhere. A label style
