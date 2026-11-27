@@ -105,7 +105,7 @@ public struct SHSidebarSectionHeader: View {
             .accessibilityAddTraits(.isHeader)
             if let chip {
                 Button(action: chip.action) { Image(systemName: "plus") }
-                    .buttonStyle(.shIcon(size: SHSidebarMetrics.sectionAction))
+                    .buttonStyle(.shIcon(size: SHSidebarMetrics.sectionAction, pressSize: SH.Height.controlS))
                     .shHelp(chip.title)
                     .accessibilityLabel(chip.title)
             }

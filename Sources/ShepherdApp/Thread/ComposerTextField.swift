@@ -156,13 +156,15 @@ struct ComposerTextField: NSViewRepresentable {
         field.preferredMaxLayoutWidth = width
         let height: CGFloat
         if field.currentEditor() != nil {
-            // The cell holds what editing began with: the editor's words are the field's.
-            height = field.fittingHeight(width: width)
+            // The cell holds what editing began with: the editor's words are the field's. A row asks the most room it
+            // could have (an unbounded width) to rank its parts; the height it needs is the one placed, so that ask
+            // is answered with the last one instead of laying the words out a third time.
+            height = width.isInfinite ? field.lastAnswer ?? field.fittingHeight(width: width) : field.fittingHeight(width: width)
         } else {
             let bounds = CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
             height = field.cell?.cellSize(forBounds: bounds).height ?? field.intrinsicContentSize.height
         }
-        field.answered(height, forWidth: width)
+        if width.isFinite { field.answered(height, forWidth: width) }
         return CGSize(width: width, height: height)
     }
 
@@ -279,6 +281,8 @@ struct ComposerTextField: NSViewRepresentable {
         }
 
         func answered(_ height: CGFloat, forWidth width: CGFloat) { answers[width] = height }
+        /// The height last answered, at whatever width.
+        var lastAnswer: CGFloat? { answers.latest }
 
         /// The field's words changed. Its size is asked again only when their height is not the one it last answered:
         /// a keystroke that keeps the height changes nothing SwiftUI laid out.
@@ -414,6 +418,7 @@ struct ComposerTextField: NSViewRepresentable {
                   abs(best.width - width) < tolerance else { return nil }
             return best
         }
+        var latest: CGFloat? { entries.last?.height }
         subscript(width: CGFloat) -> CGFloat? {
             get { entries.first { $0.width == width }?.height }
             set {
