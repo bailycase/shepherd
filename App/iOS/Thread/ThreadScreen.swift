@@ -389,8 +389,8 @@ struct ThreadTranscript: View {
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.padThreadColumn : .infinity)
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 .padding(.vertical, tailGap)
-                // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
-                .environment(\.shUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
+                // iPad bubbles (iPadThread) are wider than the phone's and the Duo's (DuoOpenThread).
+                .environment(\.shUserBubbleMetrics, sizeClass == .regular && navigator.hingeClosed == nil ? .pad : .standard)
                 .frame(maxWidth: .infinity)
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.

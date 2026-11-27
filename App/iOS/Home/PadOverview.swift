@@ -147,7 +147,9 @@ private struct OverviewColumns: View {
             } else {
                 ForEach(model.needsYou) { item in
                     // Tapping the card outside its answers opens its thread, as its Open does.
-                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id], overview: true)
+                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id],
+                                  // The Duo's inner display draws the phone's card (DuoOpenOverview); the iPad's, the overview's (iPadOverview).
+                                  overview: navigator.hingeClosed == nil)
                         .contentShape(.rect)
                         .onTapGesture { navigator.open(projects.route(item)) }
                 }

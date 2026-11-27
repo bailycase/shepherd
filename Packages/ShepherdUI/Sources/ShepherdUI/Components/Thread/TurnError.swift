@@ -249,7 +249,8 @@ public struct SHTurnError: View {
             .font(.shSans(SHTurnErrorMetrics.messageSize))
             .foregroundStyle(sh.textSecondary)
             .lineSpacing(SHTurnErrorMetrics.messageSize * 0.5 - 3)
-            .tint(sh.running)
+            // A link takes the tint, whatever its text is set in: the boards' are ink.
+            .tint(sh.textPrimary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }
