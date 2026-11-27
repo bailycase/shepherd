@@ -89,6 +89,9 @@ final class ThreadTailGuard {
     private var settling = false
     /// A repair has begun and the thread has not been seen resting on its tail since.
     private var unsettled = false
+    /// The guard's own walk took the view up from the end, to find rows: where it left the view is the walk's, and the end of the
+    /// document is not where to send it (`endOutOfView`) until it lands or rests there.
+    private var walkedUp = false
     private(set) var attempts = 0
     private var rebuilt = false
     private var changed = ContinuousClock.now
@@ -163,7 +166,7 @@ final class ThreadTailGuard {
     /// is out of view whatever SwiftUI's cached targets and scroll geometry say. SwiftUI applies an offset to the clip view that its
     /// own geometry never reports (a lazy stack that joins above the tail), reads distance 0 for good, and no event comes to check.
     private var endOutOfView: Bool {
-        guard let scroll = scrollView(), let gap = endDistance(of: scroll) else { return false }
+        guard !walkedUp, let scroll = scrollView(), let gap = endDistance(of: scroll) else { return false }
         return gap > Double(scroll.contentInsets.bottom) + Self.slack
     }
     /// Cached IDs, including current rows, need physical placement evidence in the production view.
@@ -225,6 +228,7 @@ final class ThreadTailGuard {
     func suspect(quiet wait: Duration = ThreadTailGuard.quiet) {
         changed = .now
         guard enabled, hasRows, active, !settling else { return }
+        if walkedUp, let scroll = scrollView(), let gap = endDistance(of: scroll), gap <= Self.slack { walkedUp = false }
         guard strayed else {
             attempts = 0
             unsettled = false
@@ -299,6 +303,7 @@ final class ThreadTailGuard {
         if attempts > 1 || !rowsInView { await walk(by: 1, until: { self.tailInView }, doubling: false) }
         if following, !userScrolling, active, ContinuousClock.now >= readerUntil {
             SHRenderProbe.scrollEvent("thread.write.M7", "guard.land", from: self, target: bottomID)
+            walkedUp = false
             land()
         }
     }
@@ -333,6 +338,7 @@ final class ThreadTailGuard {
             var bounds = clip.bounds
             bounds.origin.y += direction * (doubling ? page : clip.bounds.height * 0.9)
             ThreadScrollTrace.write("thread.write.M7", "guard.walk", in: scroll)
+            if direction < 0 { walkedUp = true }
             clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
             scroll.reflectScrolledClipView(clip)
             // At an end of the scroll view there is nowhere further to go.

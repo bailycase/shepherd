@@ -2611,8 +2611,9 @@ struct ListPerformanceTests {
         // from its fill too.
         let headers = all.filter { $0.layer.bounds.height == SHFileHeader.height }
         let shadows = all.filter { $0.layer.bounds.height != SHFileHeader.height }
-        // The card's lift is two shadows (near and far) on its fill, besides the floating one.
-        #expect(shadows.count == (floating ? 1 : 0) + (card ? 2 : 0), "\(shadows.map(\.layer))")
+        // The card's lift is two shadows (near and far) on its fill, floating or not: the boards' `.pane` lifts and never
+        // floats on the popover's shadow. A floating pane that isn't a card casts the float shadow from its fill.
+        #expect(shadows.count == (floating && !card ? 1 : 0) + (card ? 2 : 0), "\(shadows.map(\.layer))")
         #expect(headers.count == 1, "\(headers.map(\.layer))")
         #expect(all.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(all.map(\.subtree))")
     }
@@ -2641,8 +2642,10 @@ struct ListPerformanceTests {
         }
 
         let shadows = ListPerf.shadowedLayers(in: window)
-        // The overlaid sidebar's float is two shadows (near and far), each from a fill of its own.
-        #expect(shadows.count == cards.count + 2, "\(shadows.map(\.layer))")
+        // Showing the sidebar adds two drawn shadows: the panel's lift (in dark the far one is clear and its layer hidden, so
+        // only the near one draws) and one card inside the sidebar. Each comes from a fill of its own.
+        let drawn = { (layers: [(layer: CALayer, subtree: Int)]) in layers.filter { !$0.layer.isHidden }.count }
+        #expect(drawn(shadows) == drawn(cards) + 2, "\(drawn(shadows)) vs \(drawn(cards))")
         #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the sidebar's list: \(shadows.map(\.subtree))")
     }
 

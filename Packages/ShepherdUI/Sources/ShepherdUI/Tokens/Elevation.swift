@@ -46,20 +46,6 @@ extension View {
         shadow(color: floating ? .sh.popoverShadow : .clear, radius: SHPopoverModifier.shadowRadius)
     }
 
-    /// A card's popover shadow while it floats over the window (the thread's side pane overlaid), cast by a fill of the card's
-    /// shape beneath it, never by its content; none while `floating` is false.
-    public func shFloatCardShadow<S: Shape>(_ shape: S, floating: Bool) -> some View {
-        background {
-            if floating {
-                #if os(macOS)
-                SHShadowFill(shape: shape, fill: .sh.bgRaised, shadows: [SHShadowSpec(color: .sh.popoverShadow, radius: SHPopoverModifier.shadowRadius)])
-                #else
-                shape.fill(Color.sh.bgRaised).shadow(color: .sh.popoverShadow, radius: SHPopoverModifier.shadowRadius)
-                #endif
-            }
-        }
-    }
-
     /// An opaque pane's fill (a color, or one that reaches under the safe area), casting the
     /// popover's shadow while `floating`. Cast by the fill rather than the content: Core
     /// Animation redraws a content shadow from every layer inside as it changes, a scrolling

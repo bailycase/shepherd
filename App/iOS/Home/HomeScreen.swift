@@ -36,9 +36,13 @@ struct HomeScreen: View {
         }
         .task { await feed.watch() }
         .navigationTitle("Shepherd")
-        // New thread is the screen's one prominent action and the last to overflow; on the Duo's
-        // closed display both join the system column above the tabs (platform-iphone-duo.md).
+        // Search and More in one capsule, New thread beside it as the screen's one prominent action and the last to overflow; on the Duo's
+        // closed display both join the system column above the tabs (DuoClosedHome, platform-iphone-duo.md).
         .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { SearchHooks.open(navigator: navigator) } label: { Label("Search", systemImage: "magnifyingglass") }
+                StopAllWorkingMenu()
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { NewThreadHooks.open(navigator: navigator) } label: { Label("New thread", systemImage: "square.and.pencil") }
                     .buttonStyle(.glassProminent)
@@ -46,10 +50,6 @@ struct HomeScreen: View {
                     .disabled(model.hosts.isEmpty)
             }
             .visibilityPriority(.high)
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { SearchHooks.open(navigator: navigator) } label: { Label("Search", systemImage: "magnifyingglass") }
-            }
-            ToolbarItem(placement: .topBarTrailing) { StopAllWorkingMenu() }
         }
     }
 }

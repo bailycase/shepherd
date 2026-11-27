@@ -133,3 +133,22 @@ struct PadListDetail<List: View, Detail: View, Single: View>: View {
         }
     }
 }
+
+/// Where the bars run down the side (iPhone Duo's inner display) the screen's top edge holds nothing: a screen starts there, its head at the
+/// edge, as the boards draw it (DuoOpenThread, DuoOpenSidePane, DuoOpenNeedsYou). Elsewhere the bar's room stays.
+struct DuoTopEdge: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    func body(content: Content) -> some View {
+        VerticalBars { bars in
+            let duo = bars && sizeClass == .regular
+            // The bar's blur over the first 24pt goes with its room: nothing draws there.
+            content
+                .ignoresSafeArea(.container, edges: duo ? .top : [])
+                .scrollEdgeEffectHidden(duo, for: .top)
+                // The boards' heads sit 12pt below the edge (DuoOpenSettings, DuoOpenNeedsYou).
+                .contentMargins(.top, duo ? SH.Space.l : 0, for: .scrollContent)
+                .toolbarBackgroundVisibility(duo ? .hidden : .automatic, for: .navigationBar)
+        }
+    }
+}

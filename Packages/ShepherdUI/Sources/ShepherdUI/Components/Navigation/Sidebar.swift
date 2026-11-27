@@ -32,7 +32,7 @@ extension View {
     /// The boards' glass panel (`.side`): `bgGlass` in a 14pt rounded rectangle, a 1px `lineSubtle`
     /// border, a 1px shine inside its top edge, and the far `lift` shadow (light only). No live
     /// blur: nothing scrolls behind the sidebar, so the fill alone looks the same and costs nothing.
-    public func shGlassPanel(radius: CGFloat = SH.Radius.xl) -> some View {
+    public func shGlassPanel(radius: CGFloat = SHSidebarMetrics.panelRadius) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)
         return clipShape(shape)
             .background {
@@ -64,6 +64,12 @@ extension SHSidebar where Footer == EmptyView {
 public enum SHSidebarMetrics {
     /// The panel sits this far in from the window's leading, top and bottom edges.
     public static let panelInset: CGFloat = 8
+    /// The panel's corner: 14pt on the Mac, the touch boards' 20pt.
+    #if os(iOS)
+    public static let panelRadius: CGFloat = touchPanelRadius
+    #else
+    public static let panelRadius: CGFloat = SH.Radius.xl
+    #endif
     /// The panel's soft shadow (the boards' 0 6 20).
     public static let panelShadowRadius: CGFloat = 10
     public static let panelShadowOffset: CGFloat = 6
@@ -76,7 +82,12 @@ public enum SHSidebarMetrics {
     public static let topBarTrailing: CGFloat = 10
     /// The destinations and lists sit 8pt in from the column's sides, rows 1pt apart.
     public static let listInset: CGFloat = 8
+    #if os(iOS)
+    /// The touch boards' rows follow one another (DuoOpenOverview, iPadSidebar).
+    public static let rowSpacing: CGFloat = 0
+    #else
     public static let rowSpacing: CGFloat = 1
+    #endif
     /// The destinations' stack is padded 2pt above and below.
     public static let destinationsPadding: CGFloat = 2
     /// A destination is as tall as a list row.
@@ -90,7 +101,11 @@ public enum SHSidebarMetrics {
     /// The footer's buttons.
     public static let footerAvatar: CGFloat = 28
     /// The footer line: 44pt, padded 16 before and 10 after.
+    #if os(iOS)
+    public static let footerHeight: CGFloat = touchBarHeight
+    #else
     public static let footerHeight: CGFloat = 44
+    #endif
     public static let footerLeading: CGFloat = 16
     public static let footerGlyph: CGFloat = 16
     /// A row with a second line is padded this much above and below, at least 38pt tall.
@@ -101,10 +116,22 @@ public enum SHSidebarMetrics {
     /// The trailing reason a Needs you row shows ("retention?") is cut to this many characters.
     public static let reasonLength = 14
 
-    /// A row's height: the density's, and on a touch screen never under the 44pt minimum.
+    /// The touch boards' measures (DuoOpenOverview, iPadSidebar): rows 40pt tall, a section's header 34pt with its text 22pt under a 12pt
+    /// margin, the top bar and the footer 52pt, the top bar's buttons 40pt, the card's corner 20pt.
+    public static let touchRowHeight: CGFloat = 40
+    public static let touchHeaderTop: CGFloat = 12
+    public static let touchHeaderText: CGFloat = 22
+    public static let touchBarHeight: CGFloat = 52
+    public static let touchBarButton: CGFloat = 40
+    public static let touchPanelRadius: CGFloat = 20
+    /// The touch footer's side inset and its gear's slot.
+    public static let touchFooterInset: CGFloat = 18
+    public static let touchFooterGlyph: CGFloat = 18
+
+    /// A row's height: the density's; on a touch screen the boards' 40pt.
     @MainActor public static func rowHeight(_ density: SHDensity) -> CGFloat {
         #if os(iOS)
-        max(density.rowHeight, SH.Height.touch)
+        touchRowHeight
         #else
         density.rowHeight
         #endif
@@ -118,7 +145,13 @@ extension SHDensity {
     public var sidebarRowPadding: CGFloat { self == .compact ? SH.Space.s : SH.Space.m }
     public var sidebarRowGap: CGFloat { self == .compact ? SH.Space.s : SH.Space.m }
     /// A section header's top margin.
-    public var sidebarHeaderTop: CGFloat { self == .compact ? SH.Space.m : 10 }
+    public var sidebarHeaderTop: CGFloat {
+        #if os(iOS)
+        SHSidebarMetrics.touchHeaderTop
+        #else
+        self == .compact ? SH.Space.m : 10
+        #endif
+    }
     /// A destination's title and icon.
     @MainActor public var destinationFont: Font { self == .compact ? .shSans(12) : .sh(.ui) }
     @MainActor public func destinationFont(weight: Font.Weight) -> Font {
@@ -478,6 +511,15 @@ public struct SHSidebarRow: View, Equatable {
             && a.subtitle == b.subtitle && a.fold == b.fold && a.unseen == b.unseen
     }
 
+    /// The touch boards set the open thread's name in semibold (DuoOpenThread's `.sel .t`).
+    private var boldsWhenSelected: Bool {
+        #if os(iOS)
+        selected
+        #else
+        false
+        #endif
+    }
+
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.row")
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
@@ -485,7 +527,7 @@ public struct SHSidebarRow: View, Equatable {
         HStack(spacing: density.sidebarRowGap) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(density.rowTitleFont(weight: unseen ? .semibold : .regular))
+                    .font(density.rowTitleFont(weight: unseen || boldsWhenSelected ? .semibold : .regular))
                     .foregroundStyle(.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -603,7 +645,11 @@ private struct SHSidebarAccessoryView: View {
             // The boards draw nothing after a working thread: its section already says it works.
             EmptyView()
         case .reason(let text):
+            #if os(iOS)
+            word(text, color: .sh.lanternText)
+            #else
             word(text, color: .sh.textSecondary)
+            #endif
         case .elapsed(let since):
             TimelineView(SHElapsedSchedule(start: since, aligned: true, paused: motionPaused)) { context in
                 let _ = SHRenderProbe.tick("sidebar.clock")
@@ -615,7 +661,11 @@ private struct SHSidebarAccessoryView: View {
                 word(SHDuration.text(max(0, context.date.timeIntervalSince(since)))).monospacedDigit()
             }
         case .text(let text, let tone):
+            #if os(iOS)
+            word(text, color: tone == .attention ? .sh.lanternText : .sh.textTertiary)
+            #else
             word(text, color: tone == .attention ? .sh.textSecondary : .sh.textTertiary)
+            #endif
         case .tag(let name):
             word(name)
         case .shortcut(let text):
@@ -665,6 +715,39 @@ public struct SHSidebarFooter: View, Equatable {
     }
 
     public var body: some View {
+        #if os(iOS)
+        // The touch boards' footer (DuoOpenOverview, iPadSidebar): Settings leads, the Fleet line ends it.
+        HStack(spacing: SH.Space.l) {
+            if let updateVersion {
+                SHUpdateButton(version: updateVersion, action: update)
+            } else {
+                Button(action: settings) {
+                    HStack(spacing: SH.Space.l) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: SHSidebarMetrics.touchFooterGlyph))
+                            .foregroundStyle(.sh.textSecondary)
+                            .frame(width: SHSidebarMetrics.touchFooterGlyph)
+                        Text("Settings").font(.sh(.ui)).foregroundStyle(.sh.textPrimary).lineLimit(1)
+                    }
+                    .frame(minHeight: SHSidebarMetrics.footerHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
+            }
+            Spacer(minLength: SH.Space.m)
+            if detail.isEmpty {
+                EmptyView()
+            } else if let openDetail {
+                Button(action: openDetail) { line }
+                    .buttonStyle(.plain)
+            } else {
+                line
+            }
+        }
+        .padding(.horizontal, SHSidebarMetrics.touchFooterInset)
+        .frame(height: SHSidebarMetrics.footerHeight)
+        #else
         HStack(spacing: SH.Space.m) {
             if detail.isEmpty {
                 EmptyView()
@@ -687,6 +770,7 @@ public struct SHSidebarFooter: View, Equatable {
         .padding(.leading, SHSidebarMetrics.footerLeading)
         .padding(.trailing, SHSidebarMetrics.topBarTrailing)
         .frame(height: SHSidebarMetrics.footerHeight)
+        #endif
     }
 }
 

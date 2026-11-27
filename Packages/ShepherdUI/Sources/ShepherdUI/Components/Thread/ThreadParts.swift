@@ -31,6 +31,8 @@ public enum SHThreadMetrics {
     /// The most characters the kind column widens for ("shepherd_child_message"); a longer name
     /// truncates, so a tool with a long name never takes the room its detail needs.
     public static let callLabelMaxCharacters = 22
+    /// The widest the Mac's call row sets its verb before it truncates (the same 22 characters, at the verb's size).
+    public static let callVerbMaxWidth: CGFloat = 150
     /// The least room an activity line's meta gets (four mono 11 characters); with less it is not drawn.
     public static let activityMetaMinimum: CGFloat = 26
     /// The hairline rail sits under the line's icon; its rows start 16pt right of it.

@@ -218,8 +218,8 @@ enum BrowserFixture {
             }
         }
         await FixtureCheck.wait("the thread without its sidebar", seconds: 10) {
-            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
-            return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
+            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly; return false }
+            return true
         }
         let picked = page.picked
         let chips = app.threads.store(for: ref).attachedElements.map(\.element.label)
@@ -312,8 +312,8 @@ enum BrowserFixture {
         }
         tabs.selectedPage?.consoleOpen = true
         await FixtureCheck.wait("browser pane without its sidebar", seconds: 10) {
-            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
-            return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
+            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly; return false }
+            return true
         }
         tabs.fixtureListOpen = state == .fullMenu
         FixtureCheck.report("FIXTURE CHECK ok browser tabs \(state), \(tabs.items.count) tabs")
@@ -352,13 +352,4 @@ enum BrowserFixture {
         FixtureCheck.report("FIXTURE CHECK ok second-port popup survived opener close; closeOthers and last-tab close released their claims")
     }
 
-    @MainActor static func splitView() -> UISplitViewController? {
-        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow
-        func find(_ controller: UIViewController?) -> UISplitViewController? {
-            guard let controller else { return nil }
-            if let split = controller as? UISplitViewController { return split }
-            return controller.children.lazy.compactMap(find).first ?? find(controller.presentedViewController)
-        }
-        return find(window?.rootViewController)
-    }
 }

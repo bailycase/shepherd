@@ -36,8 +36,8 @@ public enum SHMCPMetrics {
     public static let hostNameWidth: CGFloat = 70
     public static let hostRowHeight: CGFloat = 26
     public static let visibleToolChips = 4
-    /// What a Tool exposure choice's hit area extends past its 17pt label, above and below, for a 24pt pointer target.
-    public static let optionHitPadding: CGFloat = 4
+    /// What a Tool exposure choice's hit area extends past its label (15pt in SF, 17 in Geist), above and below, for a 24pt pointer target.
+    public static let optionHitPadding: CGFloat = 5
     public static let budgetHeight: CGFloat = 4
     public static let cardRadius: CGFloat = 10
     public static let sheetStepIcon: CGFloat = 16
