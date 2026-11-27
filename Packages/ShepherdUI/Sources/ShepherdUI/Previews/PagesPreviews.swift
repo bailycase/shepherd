@@ -20,18 +20,18 @@ private let previewColumns: [SHTableColumns.Column] = [.flex(2), .fixed(76), .fi
 #Preview("Automation table") {
     SHPreviewBoth {
         VStack(spacing: 0) {
-            SHTableHead(["Automation", "Starts", "Host", "Last run"], columns: previewColumns)
+            SHAutomationHead(["", "Automation", "Trigger", "Host", "Last run"], columns: SHAutomationTableMetrics.columns)
             SHAutomationTableRow("Nightly migrations dry run", isOn: true, host: "build-01",
                                  outcome: SHRunOutcome("finished", state: .done, clock: .ago(Date().addingTimeInterval(-6 * 3600))),
-                                 selected: true, columns: previewColumns, toggle: { _ in }, select: {})
+                                 selected: true, toggle: { _ in }, select: {})
             SHAutomationTableRow("Triage new issues", isOn: true, host: "This Mac",
                                  outcome: SHRunOutcome("asked you", state: .attention, clock: .ago(Date().addingTimeInterval(-3600))),
-                                 selected: false, columns: previewColumns, toggle: { _ in }, select: {})
+                                 selected: false, toggle: { _ in }, select: {})
             SHAutomationTableRow("Weekly dependency bumps", isOn: true, host: "This Mac",
                                  outcome: SHRunOutcome("running", state: .running, clock: .elapsed(since: Date().addingTimeInterval(-240))),
-                                 selected: false, columns: previewColumns, toggle: { _ in }, select: {})
+                                 selected: false, toggle: { _ in }, select: {})
             SHAutomationTableRow("Stale branch cleanup", isOn: false, switchEnabled: false, host: "orbit",
-                                 outcome: SHRunOutcome("host offline"), selected: false, columns: previewColumns,
+                                 outcome: SHRunOutcome("host offline"), selected: false,
                                  toggle: nil, select: {})
         }
         .frame(width: 820)

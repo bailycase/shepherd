@@ -26,39 +26,46 @@ struct ForgeDot: View {
     }
 }
 
-/// An author's initial in a circle; lantern when it is you.
+/// An author's initial in a circle (the boards' `.av`): `bgSelected`, 10 semibold in `textSecondary`.
 struct ForgeAvatar: View {
     let login: String
     var you = false
-    var size: CGFloat = AppLayout.forgeAvatar
+    var size: CGFloat = AppLayout.forgeAvatarSize
 
     var body: some View {
         Text(login.first.map { String($0).uppercased() } ?? "?")
-            .font(.sh(.micro))
-            .foregroundStyle(you ? Color.sh.lanternText : Color.sh.textSecondary)
+            .font(.shSans(AppLayout.forgeAvatarFont, .semibold))
+            .foregroundStyle(Color.sh.textSecondary)
             .frame(width: size, height: size)
-            .background(you ? Color.sh.lanternTint : Color.sh.bgSelected, in: Circle())
+            .background(Color.sh.bgSelected, in: Circle())
             .accessibilityHidden(true)
     }
 }
 
-/// The page's state tag ("Open", "Merged"): its glyph, word and, as a menu, a chevron.
+/// The page's state chip (the boards' `.prs`): "Open", "Draft", "Merged" in 12 medium on `bgSelected` at radius 10, with a
+/// chevron when it is a menu. Pins and the pane use its glyph and tone.
 struct ForgeStateTag: View {
     let label: String
     let tone: ForgeTone
     var symbol: String? = nil
     var chevron = false
+    /// The page's own chip: neutral, whatever the state.
+    var plain = false
 
     var body: some View {
         HStack(spacing: SH.Space.xs) {
             if let symbol { Image(systemName: symbol).font(.sh(.caption)) }
-            Text(label).font(.sh(.ui))
-            if chevron { Image(systemName: "chevron.down").font(.sh(.micro)) }
+            Text(label).font(plain ? .sh(.caption, weight: .medium) : .sh(.ui))
+            if chevron {
+                Image(systemName: "chevron.down").font(.shSans(AppLayout.forgeChevron, .semibold))
+                    .foregroundStyle(plain ? Color.sh.textTertiary : tone.textColor)
+            }
         }
-        .foregroundStyle(tone.textColor)
-        .padding(.horizontal, SH.Space.s)
-        .frame(height: SH.Height.controlS - SH.Space.xxs)
-        .background(tone.fill, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .foregroundStyle(plain ? Color.sh.textPrimary : tone.textColor)
+        .padding(.horizontal, plain ? SH.Space.m : SH.Space.s)
+        .frame(height: plain ? AppLayout.forgeTagHeight : SH.Height.controlS - SH.Space.xxs)
+        .background(plain ? Color.sh.bgSelected : tone.fill,
+                    in: RoundedRectangle(cornerRadius: plain ? AppLayout.forgeTagRadius : SH.Radius.s))
         .fixedSize()
     }
 }
@@ -70,7 +77,7 @@ struct ForgeCaption: View {
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityAddTraits(.isHeader)
+        Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -87,9 +94,41 @@ struct ForgeActivityRow: View, Equatable {
     var pane = false
 
     var body: some View {
+        if pane { paneBody } else { pageBody }
+    }
+
+    /// The page's Activity (the boards' `.act` and `.rvw`): a plain row per event, a box around a comment or review.
+    @ViewBuilder private var pageBody: some View {
         let line = ForgePresentation.line(event, viewer: viewer)
         let age = ForgePresentation.age(event.at, now: now)
-        Group {
+        if Self.words(event) != nil || isReviewWithComments {
+            ForgeCommentBox(event: event, text: Self.commaText(line.text), you: isViewer, age: age, words: Self.words(event) ?? "",
+                            comments: { if case .reviewed(_, _, let comments) = event.kind { comments } else { [] } }())
+                .accessibilityElement(children: .combine)
+        } else {
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: glyph).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    .frame(width: AppLayout.forgeAvatarSize)
+                    .accessibilityHidden(true)
+                Text(line.actor).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary)
+                    + Text(" " + Self.commaText(line.text)).foregroundStyle(Color.sh.textSecondary)
+                Spacer(minLength: SH.Space.m)
+                Text(age).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            }
+            .font(.sh(.ui, weight: .regular))
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, minHeight: AppLayout.forgeActivityRow, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// The boards write "requested changes, 2 comments on outbox.go" where the presentation has a dot.
+    static func commaText(_ text: String) -> String { text.replacingOccurrences(of: " · ", with: ", ") }
+
+    private var paneBody: some View {
+        let line = ForgePresentation.line(event, viewer: viewer)
+        let age = ForgePresentation.age(event.at, now: now)
+        return Group {
             if lineComments, case .reviewed(let state, let body, let comments) = event.kind, !body.isEmpty || !comments.isEmpty {
                 ForgeReviewCard(event: event, state: state, words: body, comments: comments, you: isViewer, age: age, pane: pane)
             } else if let body = Self.words(event) {
@@ -167,6 +206,110 @@ struct ForgeActivityRow: View, Equatable {
         case .closed: ForgeTone.failed.color
         default: Color.sh.textTertiary
         }
+    }
+}
+
+/// A comment or review on the page (the boards' `.rvw`): its author and what they did over their words; a review's line
+/// comments each under their file and line, with the hunk's last lines.
+private struct ForgeCommentBox: View {
+    let event: ForgeEvent
+    let text: String
+    let you: Bool
+    let age: String
+    let words: String
+    let comments: [ForgeLineComment]
+
+    var body: some View {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SH.Space.m) {
+                ForgeAvatar(login: event.actor, you: you)
+                (Text(event.actor).fontWeight(.medium).foregroundStyle(sh.textPrimary) + Text(" " + text).foregroundStyle(sh.textSecondary))
+                    .lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                Text(age).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+            }
+            .font(.sh(.ui, weight: .regular))
+            .padding(.horizontal, AppLayout.forgeBoxInset)
+            .padding(.vertical, SH.Space.m)
+            if !words.isEmpty { paragraph(words) }
+            ForEach(comments) { comment in
+                (Text(comment.path).font(.shMono(SHTextStyle.caption.size)) + Text(comment.line.map { ", line \($0)" } ?? ""))
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, AppLayout.forgeBoxInset)
+                    .padding(.bottom, SH.Space.xs)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !comment.diffHunk.isEmpty { hunk(comment.diffHunk, endingAt: comment.line) }
+                paragraph(comment.body)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.forgeBoxRadius))
+        .shBorder(sh.lineSubtle, radius: AppLayout.forgeBoxRadius)
+        .padding(.vertical, SH.Space.xs)
+    }
+
+    /// A comment's words with their inline Markdown (`code`, **bold**, links) as written.
+    private func paragraph(_ text: String) -> some View {
+        let words = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        return Text(words)
+            .shText(.ui)
+            .foregroundStyle(Color.sh.textPrimary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, AppLayout.forgeBoxInset)
+            .padding(.top, SH.Space.m)
+            .padding(.bottom, AppLayout.forgeBoxInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The hunk's last two lines, numbered as the new side counts them.
+    private func hunk(_ hunk: String, endingAt line: Int?) -> some View {
+        let lines = Self.numbered(hunk, endingAt: line).suffix(AppLayout.prPaneHunkLines)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(spacing: 0) {
+                    Text(line.number.map(String.init) ?? "")
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .frame(width: AppLayout.forgeHunkNumber, alignment: .trailing)
+                        .padding(.trailing, SH.Space.l)
+                    Text(line.text).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .font(.shMono(SHTextStyle.caption.size - 0.5))
+            }
+        }
+        .padding(.vertical, SH.Space.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.sh.bgHover)
+    }
+
+    /// Each line after the `@@` header with its new-side number (none for a removed line); the diff marker leaves the text. A
+    /// hunk the host trimmed to its last lines has no header: the comment's line is its last line's, counted back.
+    static func numbered(_ hunk: String, endingAt last: Int?) -> [(number: Int?, text: String)] {
+        var rows: [(removed: Bool, text: String)] = []
+        var start: Int?
+        for raw in hunk.split(separator: "\n", omittingEmptySubsequences: false) {
+            if raw.hasPrefix("@@") {
+                if let plus = raw.split(separator: " ").first(where: { $0.hasPrefix("+") }) {
+                    start = Int(plus.dropFirst().split(separator: ",").first ?? "")
+                }
+                continue
+            }
+            rows.append((raw.first == "-", String(raw.dropFirst())))
+        }
+        var out: [(number: Int?, text: String)] = rows.map { (nil, $0.text) }
+        if let start {
+            var number = start
+            for index in rows.indices where !rows[index].removed { out[index].number = number; number += 1 }
+        } else if let last {
+            var number = last
+            for index in rows.indices.reversed() where !rows[index].removed { out[index].number = number; number -= 1 }
+        }
+        return out
     }
 }
 
@@ -254,11 +397,11 @@ private struct ForgeReviewCard: View {
     }
 }
 
-/// The floating field under a page (PRReview's Ask the agent, IssueReview's Leave a comment): a
-/// raised capsule over the page's bottom, its button sending what is typed.
+/// The dock under a page (PRReview's Ask the agent, IssueReview's Leave a comment): the composer's card, 720 wide at the
+/// leading edge, its button sending what is typed.
 struct ForgeFloatingField: View {
     let placeholder: String
-    /// The send button: an arrow in a lantern circle, or a titled button.
+    /// The send button: an arrow in the ink circle, or the words in a link.
     let sendTitle: String?
     let sending: Bool
     let send: (String) async -> Bool
@@ -267,39 +410,32 @@ struct ForgeFloatingField: View {
 
     var body: some View {
         let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        HStack(spacing: SH.Space.m) {
-            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(Color.sh.textTertiary), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.sh(.body))
-                .foregroundStyle(Color.sh.textPrimary)
-                .lineLimit(1...4)
-                .focused($focused)
-                .onSubmit(submit)
-                .accessibilityLabel(placeholder)
-            if let sendTitle {
-                Button(sendTitle, action: submit)
-                    .buttonStyle(.sh(.secondary, size: .s))
-                    .disabled(empty || sending)
-            } else {
-                Button(action: submit) {
-                    Image(systemName: "arrow.up").font(.sh(.headline))
-                        .foregroundStyle(Color.sh.textOnLantern)
-                        .frame(width: AppLayout.forgeSendButton, height: AppLayout.forgeSendButton)
-                        .background(empty ? Color.sh.lineStrong : Color.sh.lantern, in: Circle())
+        HStack(spacing: 0) {
+            SHComposer(isFocused: focused, layout: .inline, above: { EmptyView() }, top: { EmptyView() }, leading: { EmptyView() }, field: {
+                TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(Color.sh.textTertiary), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.sh(.body))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .lineLimit(1...4)
+                    .focused($focused)
+                    .onSubmit(submit)
+                    .accessibilityLabel(placeholder)
+                    .padding(.leading, SH.Space.m)
+            }, controls: {
+                if let sendTitle {
+                    Button(sendTitle, action: submit)
+                        .buttonStyle(.shLink(color: empty || sending ? Color.sh.textTertiary : Color.sh.textPrimary, font: .sh(.ui, weight: .medium)))
+                        .padding(.horizontal, SH.Space.m)
+                        .disabled(empty || sending)
+                } else {
+                    SHComposerActionButton(.send, enabled: !empty && !sending, action: submit)
                 }
-                .buttonStyle(.plain)
-                .disabled(empty || sending)
-                .accessibilityLabel("Send")
-            }
+            })
+            .frame(maxWidth: AppLayout.forgeComposerWidth)
+            Spacer(minLength: 0)
         }
-        .padding(.leading, SH.Space.l)
-        .padding(.trailing, SH.Space.s)
-        .frame(maxWidth: AppLayout.forgeComposerWidth)
-        .frame(minHeight: AppLayout.forgeComposerHeight)
-        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-        .shBorder(focused ? Color.sh.running : Color.sh.lineStrong, radius: SH.Radius.l)
-        .shPopover(radius: SH.Radius.l)
-        .padding(.horizontal, SH.Space.l)
+        .padding(.leading, AppLayout.forgePageLeading)
+        .padding(.trailing, AppLayout.forgePageTrailing)
         .padding(.bottom, AppLayout.forgeComposerBottom)
     }
 
@@ -310,31 +446,43 @@ struct ForgeFloatingField: View {
     }
 }
 
-/// A rail row: a thread linked to the item, its dot, title and word, and where it runs.
+/// A rail row: a thread linked to the item (`.rr` and `.gch-rsub`): its glyph and title, and where it runs under them.
 struct ForgeThreadLinkRow: View {
     let link: ForgeThreadLink
+    /// An issue's Linked row says how the thread is going.
+    var showsState = false
     let open: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
+        VStack(alignment: .leading, spacing: 0) {
             Button(action: open) {
                 HStack(spacing: SH.Space.m) {
-                    ForgeDot(tone: link.running ? .running : .idle)
+                    Image(systemName: ForgeSymbol.comment).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                        .frame(width: AppLayout.forgeAvatarSize)
+                        .accessibilityHidden(true)
                     Text(link.title).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                     Spacer(minLength: SH.Space.s)
-                    Text(link.running ? "running" : "idle").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    if showsState {
+                        Text(link.running ? "Running" : "Idle").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    }
                 }
+                .frame(minHeight: AppLayout.forgeRailRow)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Open the thread")
             .accessibilityLabel("\(link.title), \(link.running ? "running" : "idle"), open the thread")
-            Text([link.branch, "this Mac"].compactMap { $0 }.joined(separator: " · "))
-                .font(.sh(.mono))
+            Text([link.branch, "this Mac"].compactMap { $0 }.joined(separator: ", "))
+                .font(.shMono(SHTextStyle.caption.size))
                 .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.leading, SHPageMetrics.dot + SH.Space.m)
+                .padding(.leading, AppLayout.forgeAvatarSize + SH.Space.m)
         }
     }
+}
+
+extension String {
+    /// "changes requested" as "Changes requested".
+    var forgeCapitalized: String { prefix(1).uppercased() + dropFirst() }
 }
