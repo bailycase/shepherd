@@ -118,13 +118,11 @@ struct PadOverview: View {
             }
             // Search and More in one capsule, New thread beside it (DuoOpenOverview, iPadOverview).
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
-                    .duoStripIcon()
+                Button { SearchHooks.open(navigator: navigator) } label: { DuoStripLabel("Search", systemImage: "magnifyingglass") }
                 StopAllWorkingMenu()
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
-                    .duoStripIcon()
+                Button { NewThreadHooks.open(navigator: navigator) } label: { DuoStripLabel("New thread", systemImage: "plus") }
                     .buttonStyle(.glassProminent)
                     .tint(Color.sh.primary)
                     .accessibilityIdentifier("overview-toolbar-new-thread")

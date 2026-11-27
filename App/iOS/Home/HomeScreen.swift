@@ -40,11 +40,11 @@ struct HomeScreen: View {
         // closed display both join the system column above the tabs (DuoClosedHome, platform-iphone-duo.md).
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { SearchHooks.open(navigator: navigator) } label: { Label("Search", systemImage: "magnifyingglass").duoStripIcon() }
+                Button { SearchHooks.open(navigator: navigator) } label: { DuoStripLabel("Search", systemImage: "magnifyingglass") }
                 StopAllWorkingMenu()
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { NewThreadHooks.open(navigator: navigator) } label: { Label("New thread", systemImage: "square.and.pencil").duoStripIcon() }
+                Button { NewThreadHooks.open(navigator: navigator) } label: { DuoStripLabel("New thread", systemImage: "square.and.pencil") }
                     .buttonStyle(.glassProminent)
                     .tint(Color.sh.primary)
                     .disabled(model.hosts.isEmpty)

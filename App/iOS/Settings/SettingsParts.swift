@@ -578,7 +578,7 @@ struct PadBarButton: View {
     var body: some View {
         Button(action: action) {
             if let systemImage {
-                Label(title, systemImage: systemImage).duoStripIcon()
+                DuoStripLabel(title, systemImage: systemImage)
             } else {
                 Text(title)
             }
