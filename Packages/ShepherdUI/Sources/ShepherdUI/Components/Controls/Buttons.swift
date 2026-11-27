@@ -62,7 +62,7 @@ private struct SHStyledButton: View {
 
     var body: some View {
         let sh = Color.sh
-        let settings = scale == .settings
+        let settings = scale.isSettings
         let M = SHSettingsControlMetrics.self
         // A Settings page draws every size as its one button: 26pt at radius `s`, `caption`.
         #if os(iOS)
@@ -144,7 +144,7 @@ private struct SHStyledButton: View {
     /// The Mac's secondary buttons carry a line; the phone boards' pills are a plain `bgSelected` fill.
     private var bordered: Bool {
         #if os(iOS)
-        kind == .raised || kind == .danger || (kind == .secondary && scale == .settings)
+        kind == .raised || kind == .danger || (kind == .secondary && scale.isSettings)
         #else
         kind == .secondary || kind == .raised || kind == .danger || kind == .bold
         #endif
@@ -175,9 +175,9 @@ private struct SHStyledButton: View {
         case .secondary, .bold:
             // The Settings buttons are unfilled.
             #if os(iOS)
-            return AnyShapeStyle(scale == .settings && !active ? Color.clear : sh.bgSelected)
+            return AnyShapeStyle(scale.isSettings && !active ? Color.clear : sh.bgSelected)
             #else
-            return AnyShapeStyle(active ? sh.bgSelected : scale == .settings ? Color.clear : sh.bgRaised)
+            return AnyShapeStyle(active ? sh.bgSelected : scale.isSettings ? Color.clear : sh.bgRaised)
             #endif
         case .raised:
             return AnyShapeStyle(active ? sh.bgSelected : sh.bgRaised)
@@ -185,7 +185,7 @@ private struct SHStyledButton: View {
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.bgHover : Color.clear)
         case .danger:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.failedTint
-                : scale == .settings ? Color.clear : sh.bgRaised)
+                : scale.isSettings ? Color.clear : sh.bgRaised)
         }
     }
 }

@@ -61,8 +61,8 @@ public struct SHSectionLink: View {
         // boards write it as a 500 word in `textSecondary`.
         Button(action: action) {
             Text(title)
-                .font(scale == .settings ? .shSans(SHSettingsControlMetrics.segmentTextSize, .medium) : .sh(.caption))
-                .foregroundStyle(scale == .settings ? Color.sh.textSecondary : Color.sh.running)
+                .font(scale.isSettings ? .shSans(SHSettingsControlMetrics.segmentTextSize, .medium) : .sh(.caption))
+                .foregroundStyle(scale.isSettings ? Color.sh.textSecondary : Color.sh.running)
                 .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
         }
             .buttonStyle(.plain)

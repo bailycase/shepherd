@@ -26,8 +26,8 @@ public enum SHPiSignInMetrics {
     public static let cardRadius: CGFloat = 10
     /// The sheets.
     public static let sheetWidth: CGFloat = 500
-    public static let importWidth: CGFloat = 540
-    public static let importWideWidth: CGFloat = 600
+    public static let importWidth: CGFloat = 500
+    public static let importWideWidth: CGFloat = 440
     public static let sheetTile: CGFloat = 38
     public static let sheetTileRadius: CGFloat = 10
     public static let sheetTitleSize: CGFloat = 15

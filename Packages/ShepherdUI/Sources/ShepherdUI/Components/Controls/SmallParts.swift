@@ -25,7 +25,7 @@ public struct SHKeycap: View {
 
     public var body: some View {
         let sh = Color.sh
-        if scale == .settings {
+        if scale.isSettings {
             // The Settings boards write a shortcut as plain `textSecondary` text, tracked out, with no cap.
             Text(keys.joined())
                 .font(.shSans(SHSettingsControlMetrics.textSize))

@@ -462,7 +462,7 @@ struct SettingsSheetLabel: View {
 
     var body: some View {
         HStack(spacing: SH.Space.s) {
-            Text(title).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+            Text(title).font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.textSecondary)
             Spacer(minLength: 0)
             if let openIn { SettingsOpenIn(text: openIn, name: file).id(scope) }
         }

@@ -10,9 +10,17 @@ public enum SHControlScale: Sendable {
     case standard
     /// The Settings boards' pages.
     case settings
+    /// A form sheet opened from Settings (Add app, Edit hook, Add server): the Settings controls, but a field is 32pt at
+    /// radius 8 and a popup is drawn as a field.
+    case sheet
     /// The design Tweak pane (DZTweak): the Controls board's sizes, but its slider is a 4pt `bgSelected` track filled with ink under a
     /// 16pt card knob, and its switch is 26×16 (`SHTweakControlMetrics`). Only the slider and the switch differ.
     case tweak
+}
+
+extension SHControlScale {
+    /// The Settings boards' controls: a page's or a sheet's.
+    public var isSettings: Bool { self == .settings || self == .sheet }
 }
 
 extension EnvironmentValues {
@@ -67,6 +75,11 @@ public enum SHSettingsControlMetrics {
     public static let fieldWidth: CGFloat = 200
     /// The search fields: radius 7 on a `bgHover` fill, 26pt (28 in the nav).
     public static let searchRadius: CGFloat = 7
+    /// A form sheet's field: 32pt, radius 8, 10pt in.
+    public static let sheetFieldHeight: CGFloat = 32
+    public static let sheetFieldRadius: CGFloat = SH.Radius.m
+    public static let sheetFieldPadding: CGFloat = 10
+    public static let sheetMonoSize: CGFloat = 12
     public static let wideFieldWidth: CGFloat = 320
     public static let portFieldWidth: CGFloat = 100
     /// The segmented control: 22pt segments 10pt in, on a `bgSelected` track 2pt in at radius 8; the chosen

@@ -27,7 +27,7 @@ private struct SHSwitch: View {
         let tweak = scale == .tweak
         let T = SHTweakControlMetrics.self
         // The Settings boards' switch is the Tweak pane's size, 26 × 16 under a 12pt knob.
-        let small = tweak || scale == .settings
+        let small = tweak || scale.isSettings
         let knob = small ? T.switchKnob : 14
         HStack(spacing: SH.Space.m) {
             if labelsVisibility != .hidden { configuration.label }
@@ -37,7 +37,7 @@ private struct SHSwitch: View {
                     .frame(width: small ? T.switchWidth : 30, height: small ? T.switchHeight : 18)
                     .overlay(alignment: on ? .trailing : .leading) {
                         Circle()
-                            .fill(on ? sh.knobOn : scale == .settings ? sh.bgRaised : sh.knobOff)
+                            .fill(on ? sh.knobOn : scale.isSettings ? sh.bgRaised : sh.knobOff)
                             .shadow(color: small ? sh.liftNear : sh.knobShadow, radius: 1, y: 1)
                             .frame(width: knob, height: knob)
                             .padding(small ? T.switchInset : 2)

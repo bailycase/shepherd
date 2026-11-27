@@ -26,8 +26,8 @@ extension AppLayout {
     /// The state dot in a file row.
     static let hooksDotSize: CGFloat = 6
     /// The Edit sheet: 640pt wide, 840pt tall.
-    static let hooksSheetWidth: CGFloat = 640
-    static let hooksSheetHeight: CGFloat = 840
+    static let hooksSheetWidth: CGFloat = 600
+    static let hooksSheetHeight: CGFloat = 700
     /// The sheets' close button: a 26pt circle.
     static let hooksCloseSize: CGFloat = 26
     /// The command editor's height and the time limit field's width.

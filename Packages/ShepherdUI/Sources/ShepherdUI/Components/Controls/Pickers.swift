@@ -29,7 +29,7 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
         let sh = Color.sh
         // The Settings boards' track: 26pt segments on a filled track, the chosen one lifted on
         // the page's own fill. `s` keeps the Controls board's anatomy everywhere.
-        let settings = scale == .settings && size == .m
+        let settings = scale.isSettings && size == .m
         let M = SHSettingsControlMetrics.self
         let pillRadius = settings ? M.segmentRadius : SH.Radius.xs
         let trackRadius = settings ? M.segmentTrackRadius : SH.Radius.s
@@ -225,8 +225,8 @@ public struct SHPopupMenu<Content: View>: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             // The Settings boards size a popup to its value.
-            .frame(minWidth: scale == .settings ? nil : minWidth)
-            .fixedSize(horizontal: true, vertical: false)
+            .frame(minWidth: scale.isSettings ? nil : minWidth)
+            .fixedSize(horizontal: scale != .sheet, vertical: false)
             .accessibilityValue(title)
     }
 }
@@ -245,7 +245,23 @@ public struct SHPopupLabel: View {
 
     public var body: some View {
         let sh = Color.sh
-        if scale == .settings {
+        if scale == .sheet {
+            // A form sheet's popup is a field: the value, then a small up-and-down chevron, 32pt at radius 8.
+            let M = SHSettingsControlMetrics.self
+            HStack(spacing: M.popupGap) {
+                Text(title)
+                    .font(mono ? .shMono(M.sheetMonoSize) : .shSans(M.textSize))
+                    .foregroundStyle(sh.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: M.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
+            }
+            .padding(.horizontal, M.sheetFieldPadding)
+            .frame(maxWidth: .infinity, minHeight: M.sheetFieldHeight)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: M.sheetFieldRadius))
+            .shBorder(sh.lineStrong, radius: M.sheetFieldRadius)
+            .contentShape(Rectangle())
+        } else if scale.isSettings {
             // The Settings popup is written without a box: the value in `textSecondary`, then a small up-and-down chevron.
             let M = SHSettingsControlMetrics.self
             HStack(spacing: M.popupGap) {
@@ -312,7 +328,7 @@ public struct SHValueSlider: View {
 
     public var body: some View {
         let tweak = scale == .tweak
-        HStack(spacing: tweak ? SHTweakControlMetrics.sliderValueGap : scale == .settings ? SHSettingsControlMetrics.sliderValueGap : SH.Space.l) {
+        HStack(spacing: tweak ? SHTweakControlMetrics.sliderValueGap : scale.isSettings ? SHSettingsControlMetrics.sliderValueGap : SH.Space.l) {
             SHSliderTrack(value: $value, range: range, step: step, editingChanged: editingChanged)
                 .accessibilityRepresentation {
                     Slider(value: $value, in: range, step: step) { Text(label) }
@@ -322,7 +338,7 @@ public struct SHValueSlider: View {
                         }
                 }
             Text(format(value))
-                .font(tweak ? .shSans(SHTweakControlMetrics.valueSize) : scale == .settings ? .shSans(SHSettingsControlMetrics.textSize) : .sh(.mono))
+                .font(tweak ? .shSans(SHTweakControlMetrics.valueSize) : scale.isSettings ? .shSans(SHSettingsControlMetrics.textSize) : .sh(.mono))
                 .foregroundStyle(.sh.textSecondary)
                 .shContentTransition(.numeric())
                 .frame(minWidth: tweak ? SHTweakControlMetrics.sliderValueWidth : SHSliderMetrics.valueMinWidth, alignment: .trailing)
@@ -372,7 +388,7 @@ private struct SHSliderTrack: View {
         // The Settings boards' slider: 180pt, a 4pt `lineSubtle` track, an 18pt knob in a 1px line.
         // The Tweak pane's (DZTweak) centers the knob on the value as the Settings boards do, and takes the row's width.
         let tweak = scale == .tweak
-        let settings = scale == .settings || tweak
+        let settings = scale.isSettings || tweak
         let M = SHSettingsControlMetrics.self
         let T = SHTweakControlMetrics.self
         let knob = tweak ? T.sliderKnob : settings ? M.sliderKnob : SHSliderMetrics.knob
@@ -388,7 +404,7 @@ private struct SHSliderTrack: View {
             let filled = settings ? x : x + knob / 2
             ZStack(alignment: .leading) {
                 Capsule().fill(tweak ? sh.bgSelected : sh.lineStrong).frame(height: track)
-                Capsule().fill(tweak ? sh.textPrimary : scale == .settings ? sh.textSecondary : sh.primary).frame(width: filled, height: track)
+                Capsule().fill(tweak ? sh.textPrimary : scale.isSettings ? sh.textSecondary : sh.primary).frame(width: filled, height: track)
                 // A hairline ring outside the knob, as the board's 1px spread shadow draws. The Settings knob is a card.
                 Circle()
                     .fill(settings ? sh.bgRaised : sh.knobOff)
@@ -463,7 +479,7 @@ public struct SHStepper: View {
     public var body: some View {
         let sh = Color.sh
         // The Settings boards' stepper is drawn without a box: "−  5  +" in `textSecondary` around a medium value.
-        let settings = scale == .settings
+        let settings = scale.isSettings
         let M = SHSettingsControlMetrics.self
         let height = settings ? M.stepperHeight : 26
         let radius = SH.Radius.s
@@ -496,7 +512,7 @@ public struct SHStepper: View {
     }
 
     private func button(_ symbol: String, label: String, enabled: Bool, height: CGFloat, action: @escaping () -> Void) -> some View {
-        let settings = scale == .settings
+        let settings = scale.isSettings
         let M = SHSettingsControlMetrics.self
         return Button(action: action) {
             Image(systemName: symbol).font(.system(size: settings ? M.stepperGlyphSize : 10, weight: .semibold))

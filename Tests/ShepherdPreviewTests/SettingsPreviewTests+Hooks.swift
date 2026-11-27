@@ -53,18 +53,18 @@ extension SettingsPreviewTests {
         editor.test(with: hooks.model)
         try await eventuallyOnMain("the test to finish", timeout: .seconds(20)) { editor.testResult != nil }
         #expect(editor.testResult?.outcome == .blocked(reason: "No edits to .env files."))
-        try await Preview.render("settings-hooks-edit-form", size: CGSize(width: 640, height: 840)) {
+        try await Preview.render("settings-hooks-edit-form", size: CGSize(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)) {
             HookEditSheet(editor: editor, model: hooks.model) {}
         }
         editor.pane = .json
-        try await Preview.render("settings-hooks-edit-json", size: CGSize(width: 640, height: 840)) {
+        try await Preview.render("settings-hooks-edit-json", size: CGSize(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)) {
             HookEditSheet(editor: editor, model: hooks.model) {}
         }
         // Add, with a matcher that isn't an expression.
         hooks.model.add()
         let adding = try #require(hooks.model.editor)
         adding.matcher = "Edit|("
-        try await Preview.render("settings-hooks-add-invalid", size: CGSize(width: 640, height: 840)) {
+        try await Preview.render("settings-hooks-add-invalid", size: CGSize(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)) {
             HookEditSheet(editor: adding, model: hooks.model) {}
         }
     }
