@@ -5,23 +5,8 @@ import ShepherdUI
 /// frame (header, table, cards) is `SHPageMetrics`.
 extension AppLayout {
     // Automations
-    /// The table's columns: Automation · Trigger · Host · Last run (the board's `2fr 76px 76px
-    /// 1.15fr`; the board's When and Next live under the name and in the detail).
-    static let automationColumns: [SHTableColumns.Column] = [.flex(2), .fixed(76), .fixed(76), .flex(1.15)]
-    /// Above the table's column labels (the board's tabs sit there; there are none).
-    static let automationTableTop: CGFloat = SH.Space.xl
-    /// The detail pane beside the table.
-    static let automationDetailWidth: CGFloat = 360
-    /// The detail's sections: 14 above and below, 18 at the sides; its header 16 above and below.
-    static let automationDetailSide: CGFloat = 18
-    static let automationDetailSectionVertical: CGFloat = 14
-    static let automationDetailHeaderVertical: CGFloat = SH.Space.xl
-    /// The facts' label column, and the space between facts.
-    static let automationFactLabelWidth: CGFloat = 90
-    static let automationFactSpacing: CGFloat = SH.Space.s
-    /// The footer's padding: 12 above and below, 14 at the sides.
-    static let automationFooterVertical: CGFloat = SH.Space.l
-    static let automationFooterSide: CGFloat = 14
+    /// Between the table and the detail card.
+    static let automationPageGap: CGFloat = 20
     /// An empty table's message.
     static let automationEmptyMaxWidth: CGFloat = 420
     /// The editor's fields scroll past this, so the sheet fits a laptop screen with its footer.
