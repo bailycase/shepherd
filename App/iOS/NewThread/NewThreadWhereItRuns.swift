@@ -13,6 +13,8 @@ extension MobileLayout {
     static let newThreadThumbnail: CGFloat = 56
     /// The iPad's repo, host, worktree and model popovers.
     static let newThreadPopoverWidth: CGFloat = 380
+    /// A New thread row narrower than this (Slide Over's 320pt window) stacks its repo, host and model instead of cutting them.
+    static let newThreadRowStackWidth: CGFloat = 300
     static let newThreadPopoverMaxWidth: CGFloat = 640
     /// The repo, worktree and model popovers' ideal height (the host popover's is its rows'). With less
     /// room under their anchor they get shorter and scroll under their header.

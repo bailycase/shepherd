@@ -157,27 +157,32 @@ struct DuoTopEdge: ViewModifier {
 
 extension MobileLayout {
     /// A glyph in the column iPhone Duo's bars make at its side. The system draws the glass (a 48pt-wide pill of 44pt buttons) and
-    /// nothing in it can be resized; the boards' glyphs are lighter and smaller than the system's 17pt (DuoOpenOverview, DuoOpenThread).
-    static let stripGlyph: CGFloat = 15
+    /// nothing in it can be resized; the boards' glyphs are lighter and smaller than the system's 17pt (DuoOpenOverview, DuoClosedHome:
+    /// the magnifier, dots and compose measure 13pt), except the side pane's, which the board draws a size larger (DuoOpenThread).
+    static let stripGlyph: CGFloat = 13
+    static let stripPaneGlyph: CGFloat = 17
 }
 
 extension View {
     /// A bar button's icon, drawn at the boards' size where the bars run down the side (iPhone Duo); the system's size elsewhere.
-    func duoStripIcon() -> some View { labelStyle(DuoStripLabelStyle()) }
+    func duoStripIcon(size: CGFloat = MobileLayout.stripGlyph) -> some View { labelStyle(DuoStripLabelStyle(size: size)) }
 }
 
 struct DuoStripLabelStyle: LabelStyle {
+    let size: CGFloat
+
     func makeBody(configuration: Configuration) -> some View {
-        DuoStripIcon(label: Label(configuration).labelStyle(.iconOnly))
+        DuoStripIcon(label: Label(configuration).labelStyle(.iconOnly), size: size)
     }
 }
 
 private struct DuoStripIcon<Content: View>: View {
     let label: Content
+    let size: CGFloat
 
     var body: some View {
         VerticalBars { bars in
-            if bars { label.font(.system(size: MobileLayout.stripGlyph)) } else { label }
+            if bars { label.font(.system(size: size)) } else { label }
         }
     }
 }

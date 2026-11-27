@@ -797,7 +797,7 @@ private struct ThreadSidePaneButton: View {
     var body: some View {
         let label = isOn ? "Hide side pane" : "Show side pane"
         Button(label, systemImage: "sidebar.right", action: action)
-            .duoStripIcon()
+            .duoStripIcon(size: MobileLayout.stripPaneGlyph)
             .tint(isOn ? Color.sh.lantern : Color.sh.textPrimary)
             .accessibilityAddTraits(isOn ? .isSelected : [])
     }

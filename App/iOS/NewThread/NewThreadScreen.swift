@@ -64,6 +64,9 @@ private struct NewThreadForm: View {
     @Bindable var model: NewThreadModel
     let pad: Bool
     @FocusState private var promptFocused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// The row's width, which says whether its chips fit on one line.
+    @State private var rowWidth: CGFloat = .infinity
     /// Popovers widen with the text size, so a host's name still fits at accessibility sizes.
     @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
 
@@ -136,17 +139,17 @@ private struct NewThreadForm: View {
         .shLift(shape)
     }
 
-    /// Attach, the repo on its host, and the model: one line while they fit. Where they do not (an accessibility text size, a narrow window
-    /// of Split View or Slide Over) they stack, each whole: three chips beside each other were cut to their first letters.
+    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first. They stack, each whole,
+    /// where one line cannot hold them: from xxxLarge, and in a window as narrow as Slide Over's (three chips beside each other were
+    /// cut to their first letters).
     private var row: some View {
-        ViewThatFits(in: .horizontal) {
-            rowParts(stacked: false)
-            rowParts(stacked: true)
-        }
-        .padding(.horizontal, -SH.Space.m)
-        .frame(minHeight: SH.Height.touch)
-        .disabled(model.starting)
-        .buttonStyle(.plain)
+        let stacked = typeSize >= .xxxLarge || rowWidth < MobileLayout.newThreadRowStackWidth
+        return rowParts(stacked: stacked)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+            .padding(.horizontal, -SH.Space.m)
+            .frame(minHeight: SH.Height.touch)
+            .disabled(model.starting)
+            .buttonStyle(.plain)
     }
 
     @ViewBuilder private func rowParts(stacked: Bool) -> some View {

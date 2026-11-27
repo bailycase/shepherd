@@ -11,17 +11,22 @@ struct SubagentListScreen: View {
     @Environment(ThreadStores.self) private var threads
 
     var body: some View {
+        VerticalBars { verticalBars in content(verticalBars: verticalBars) }
+    }
+
+    private func content(verticalBars: Bool) -> some View {
         let store = threads.store(for: ref)
-        ScrollView {
+        return ScrollView {
             SubagentListContent(ref: ref, store: store, select: nil)
                 .frame(maxWidth: MobileLayout.threadMaxWidth)
                 .padding(MobileLayout.gutter)
                 .frame(maxWidth: .infinity)
         }
-        .background(Color.sh.bgSunken)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Subagents")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
+        // Where the bars run down the side (iPhone Duo closed) the tab bar stays (DuoClosedSubagents).
+        .toolbar(verticalBars ? .automatic : .hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) { Group { SubagentListTitle(store: store) }.shBarTitleType() }
         }
@@ -38,13 +43,8 @@ struct SubagentListTitle: View {
         VStack(spacing: SH.Space.xxs) {
             Text("Subagents").font(.shBar(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let tally {
-                let state = AgentState(tally.phase)
-                HStack(spacing: SH.Space.s) {
-                    SHStatusDot(state)
-                    Text(tally.text).foregroundStyle(state.textColor)
-                }
-                .font(.shBar(.caption, weight: .medium))
-                .lineLimit(1)
+                // Plain words, as the boards set them (MobileSubagents, DuoClosedSubagents): the cards carry the colors.
+                Text(tally.text).font(.shBar(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)
@@ -96,10 +96,11 @@ struct SubagentListContent: View {
 
     private func sectionHead(_ title: String, trailing: String, mono: Bool) -> some View {
         HStack {
-            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+            Text(title).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
+            if mono { Text(trailing).font(.sh(.body)).foregroundStyle(Color.sh.textTertiary) }
             Spacer(minLength: SH.Space.m)
-            Text(trailing).font(mono ? .sh(.mono) : .sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            if !mono { Text(trailing).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
         }
         .padding(.horizontal, SH.Space.xs)
     }
