@@ -78,6 +78,8 @@ struct ThreadScreen: View {
         let inlineTitle = verticalBars && sizeClass == .regular
         // The pane open beside the thread has sent the sidebar away (iPhone Duo; `PadShell`), and
         // the system's toggle with it: the thread offers it back.
+        // The side pane open beside the thread on an iPad: the bar's right side belongs to the pane's card, so the thread's buttons move.
+        let besidePane = titleMaxWidth != nil && !verticalBars && sizeClass == .regular && !arranged
         let sidebarHidden = navigator.layout == .pad && navigator.sidePane.isOpen && navigator.padSidebarOverlays
             && navigator.padColumns == .detailOnly && navigator.sidePane.arranged != ref
         Group {
@@ -140,41 +142,40 @@ struct ThreadScreen: View {
                 }
                 if !inlineTitle {
                     ToolbarItem(placement: .principal) {
-                        // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
-                        title.frame(maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
-                    }
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if agent != nil {
-                        if arranged {
-                            // What sits above the composer in the laptop pose (DuoLaptop's capsule).
-                            ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
-                                navigator.sidePane.arrangedTerminal = $0
-                            }
-                        } else if sizeClass == .regular {
-                            // The side pane's one button, lit while it is open (DuoOpenSidePane).
-                            ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
-                                withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
-                            }
-                        }
-                        // Where the bars run down the side (iPhone Duo closed) a waiting question has taken the composer's Stop; the rail
-                        // keeps one (DuoClosedQuestion). A phone's menu has Stop agent.
-                        if verticalBars, sizeClass != .regular, !store.dialogs.isEmpty {
-                            Button("Stop agent", systemImage: "stop.fill") { Task { await store.abort() } }
+                        // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`), and the column's own
+                        // buttons end its row (iPadReview, iPadThread) instead of sitting at the window's edge above the pane.
+                        HStack(spacing: SH.Space.m) {
+                            title
+                            if besidePane, agent != nil {
+                                Spacer(minLength: SH.Space.m)
+                                HStack(spacing: SH.Space.xs) {
+                                    barButtons(agent: agent, store: store, host: host, key: key, arranged: arranged, verticalBars: verticalBars)
+                                    Menu("More", systemImage: "ellipsis") {
+                                        ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) { navigator.present(.review(.branch(ref))) }
+                                    }
+                                }
+                                .labelStyle(.iconOnly)
                                 .tint(Color.sh.textPrimary)
-                                .disabled(key.session == nil || !store.supports("abort"))
-                        }
-                        if !arranged, let quick = apps.apps {
-                            ThreadAppsMenu(apps: quick, problem: apps.problem) { item in
-                                Task { await apps.act(on: item, client: host?.connectedClient, space: agent?.spaceID, agent: ref.agent) }
+                                .padding(.horizontal, SH.Space.s)
+                                .glassEffect(.regular.interactive(), in: Capsule())
                             }
                         }
+                        // The bar sizes the title to what it holds, so the column's width is asked for to carry the buttons to its end.
+                        .frame(minWidth: besidePane ? titleMaxWidth.map { $0 - 2 * MobileLayout.padThreadGutter } : nil,
+                               maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
                     }
                 }
-                // The system's ••• menu, so it overflows with the bar's items where the bar runs
-                // down the side (iPhone Duo).
-                if agent != nil {
-                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) { navigator.present(.review(.branch(ref))) } }
+                if !besidePane || inlineTitle {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        if agent != nil {
+                            barButtons(agent: agent, store: store, host: host, key: key, arranged: arranged, verticalBars: verticalBars)
+                        }
+                    }
+                    // The system's ••• menu, so it overflows with the bar's items where the bar runs
+                    // down the side (iPhone Duo).
+                    if agent != nil {
+                        ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) { navigator.present(.review(.branch(ref))) } }
+                    }
                 }
             }
         }
@@ -195,6 +196,35 @@ struct ThreadScreen: View {
             }
             let agentID = ref.agent
             await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
+        }
+    }
+
+    /// The bar's buttons ahead of the ••• menu: the side pane's, a waiting question's Stop, and the space's apps. In the bar's trailing group,
+    /// or at the end of the thread column's title row beside an open side pane.
+    @ViewBuilder private func barButtons(agent: Agent?, store: NativeThreadStore, host: MobileHost?, key: RunKey, arranged: Bool,
+                                         verticalBars: Bool) -> some View {
+        if arranged {
+            // What sits above the composer in the laptop pose (DuoLaptop's capsule).
+            ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
+                navigator.sidePane.arrangedTerminal = $0
+            }
+        } else if sizeClass == .regular {
+            // The side pane's one button, lit while it is open (DuoOpenSidePane).
+            ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
+                withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
+            }
+        }
+        // Where the bars run down the side (iPhone Duo closed) a waiting question has taken the composer's Stop; the rail
+        // keeps one (DuoClosedQuestion). A phone's menu has Stop agent.
+        if verticalBars, sizeClass != .regular, !store.dialogs.isEmpty {
+            Button("Stop agent", systemImage: "stop.fill") { Task { await store.abort() } }
+                .tint(Color.sh.textPrimary)
+                .disabled(key.session == nil || !store.supports("abort"))
+        }
+        if !arranged, let quick = apps.apps {
+            ThreadAppsMenu(apps: quick, problem: apps.problem) { item in
+                Task { await apps.act(on: item, client: host?.connectedClient, space: agent?.spaceID, agent: ref.agent) }
+            }
         }
     }
 

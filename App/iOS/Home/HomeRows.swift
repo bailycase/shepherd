@@ -85,64 +85,6 @@ extension FleetThreadRow {
     }
 }
 
-/// A thread in Home, Recents and the sidebar; a design's row (MobileAgents) wears the nib and
-/// "design · 4 boards". Home's rows (DuoClosedHome) have no dot: the title over what a working
-/// thread does as a verb ("Running python") or where any other works ("Shepherd"), the state in
-/// words at the right ("Running, 2m"; "13m" for the rest, after the host's name while rows from
-/// several hosts mix), and a chevron. The sidebar's rows are the title and one word (iPadSidebar).
-struct ThreadRow: View, Equatable {
-    let row: FleetThreadRow
-    var selected = false
-    /// The sidebar's rows are one line: the title alone.
-    var compact = false
-
-    private var trailing: SHListRow.Trailing {
-        if compact {
-            if row.failed { return .alert("failed") }
-            if row.status == .done, let clock = row.clock?.rowClock { return .stamp(nil, clock) }
-            return row.hostTag.map { .host($0) } ?? .none
-        }
-        if row.status == .working, !row.offline, row.design == nil {
-            return .stamp("Running", row.clock?.rowClock, joiner: ", ")
-        }
-        if row.hostTag == nil, row.clock == nil { return .none }
-        return .stamp(row.hostTag, row.clock?.rowClock)
-    }
-
-    var body: some View {
-        SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, subtitleMono: false,
-                  leading: row.design != nil ? .symbol("pencil.tip") : .none, trailing: trailing,
-                  chevron: !compact, selected: selected, dimmed: row.offline, compact: compact)
-            // The words at the right say the state; VoiceOver hears it.
-            .accessibilityValue((compact && row.failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : ""))
-    }
-}
-
-extension FleetThreadRow {
-    /// Home's line under the title: what a working thread does now ("Running python",
-    /// "Thinking"), else the repo it works in, else what the host says of it.
-    var inboxLine: String {
-        if design != nil { return detail }
-        if status == .working, !offline { return doing ?? place ?? detail }
-        return place ?? detail
-    }
-}
-
-/// Something waiting on you, as one row (Home's preview, the sidebar).
-struct AttentionRow: View, Equatable {
-    let item: FleetAttention
-    var selected = false
-    /// The sidebar's rows show the reason chip; Home's show the question under the title.
-    var compact = false
-
-    var body: some View {
-        // The sidebar names the thread; its chip says who asks ("reviewer") or why.
-        SHListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleMono: false, subtitleLines: 2,
-                  leading: .none, trailing: compact ? .reason(item.reason) : .stamp(item.hostTag, item.since.map { .ago(Date(milliseconds: $0)) }),
-                  chevron: !compact, selected: selected, compact: compact)
-    }
-}
-
 /// A Needs you card with the answers that fit in place, and Open.
 struct AttentionCard: View {
     let item: FleetAttention

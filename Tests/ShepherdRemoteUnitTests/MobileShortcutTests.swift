@@ -37,4 +37,9 @@ struct MobileShortcutTests {
     @Test func newWindowUsesOptionCommandN() {
         #expect(MobileShortcut.newWindow.shortcut == KeyboardShortcut("n", modifiers: [.command, .option]))
     }
+
+    @Test(arguments: [(MobileShortcut.newThread, "⌘N"), (.newWindow, "⌥⌘N"), (.toggleSidebar, "⇧⌘S"), (.search, "⌘K")])
+    func chordsReadAsTheMacShowsThem(action: MobileShortcut, display: String) {
+        #expect(action.display == display)
+    }
 }

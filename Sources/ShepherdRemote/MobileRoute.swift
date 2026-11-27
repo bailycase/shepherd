@@ -208,11 +208,6 @@ public enum HomeRoute: Hashable, Codable, Sendable {
     case automations
     /// Fleet (what Hosts was): the Macs this device is paired with; on iPhone, the Settings tab.
     case more
-    /// Every recent thread, past Home's first few.
-    case recents
-    /// Every thread in Working or Done, past Home's first few of each.
-    case working
-    case done
 }
 
 /// New thread's screens (newthread track). Presented modally: `NewThreadHooks.open`.
@@ -429,7 +424,7 @@ extension MobileTab {
         switch route {
         case .settings, .home(.more): .settings
         case .home(.automations), .automations: .automations
-        case .home(.needsYou), .home(.recents), .home(.working), .home(.done): .home
+        case .home(.needsYou): .home
         case .designs(.systems), .designs(.system): nil
         case .designs, .padDesign: .designs
         case .projects: .projects
