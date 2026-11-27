@@ -56,6 +56,7 @@ public enum SHSettingsSheetMetrics {
 public struct SHSettingsSheet<Content: View, Status: View, Actions: View>: View {
     let title: String
     let subtitle: String?
+    /// A second line under the subtitle, in mono.
     let detail: String?
     let width: CGFloat
     let content: Content
@@ -248,6 +249,7 @@ public struct SHSheetFieldLabel<Trailing: View>: View {
             trailing.font(.shSans(SHSettingsSheetMetrics.smallSize))
         }
         .foregroundStyle(Color.sh.textSecondary)
+        .frame(minHeight: SHSettingsSheetMetrics.baseLine)
         .padding(.bottom, SHSettingsSheetMetrics.fieldLabelGap)
     }
 }

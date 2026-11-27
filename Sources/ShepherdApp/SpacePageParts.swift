@@ -586,7 +586,8 @@ struct SpaceSheet<Content: View, Actions: View>: View {
 
 extension AppLayout {
     static let spaceSheetWidth: CGFloat = 480
-    static let spaceChildWidth: CGFloat = 460
+    static let spaceChildWidth: CGFloat = 500
+    static let spaceChildSegGap: CGFloat = 14
     /// A page dialog hangs 28pt under the modal's top (`gspc-dlg`).
     static let spaceDialogTop: CGFloat = 28
     static let spaceConfirmWidth: CGFloat = 440

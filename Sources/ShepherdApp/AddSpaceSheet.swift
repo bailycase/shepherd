@@ -97,51 +97,68 @@ struct AddSpaceSheet: View {
     private enum Field: Hashable { case name, path }
 
     var body: some View {
-        SpaceSheet(title: model.title, width: AppLayout.spaceAddWidth, note: model.footer) {
-            SpaceSheetLabel("Space name")
-            SpaceSheetField(focused: focused == .name) {
-                TextField("Space name", text: $model.name, prompt: Text("shepherd-landing").foregroundStyle(Color.sh.textTertiary))
-                    .textFieldStyle(.plain).font(.sh(.ui)).focused($focused, equals: .name).accessibilityLabel("Space name")
+        SHSettingsSheet(model.title, width: AppLayout.spaceAddWidth) {
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel("Space name")
+                SHSheetField(focused: focused == .name) {
+                    TextField("Space name", text: $model.name, prompt: Text("shepherd-landing").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shSans(SHSettingsSheetMetrics.textSize)).focused($focused, equals: .name)
+                        .accessibilityLabel("Space name")
+                }
             }
-            SpaceSheetLabel("Parent space")
-            Menu {
-                Button("None · root space") { model.parentID = nil }
-                ForEach(model.parents) { parent in Button(parent.name) { model.parentID = parent.id } }
-            } label: {
-                SpaceSheetField {
-                    Text(model.parentName ?? "None · root space").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    SHGlyph.popupChevrons.image.font(.shSans(SHSettingsControlMetrics.popupChevronSize)).foregroundStyle(Color.sh.textTertiary)
-                        .accessibilityHidden(true)
-                }.contentShape(Rectangle())
-            }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel("Parent space")
+                Menu {
+                    Button("None · root space") { model.parentID = nil }
+                    ForEach(model.parents) { parent in Button(parent.name) { model.parentID = parent.id } }
+                } label: {
+                    SHSheetField {
+                        Text(model.parentName ?? "None · root space").font(.shSans(SHSettingsSheetMetrics.textSize)).foregroundStyle(Color.sh.textPrimary)
+                            .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                        SHGlyph.popupChevrons.image.font(.shSans(SHSettingsControlMetrics.popupChevronSize)).foregroundStyle(Color.sh.textTertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                 .accessibilityLabel("Parent space").disabled(!model.offersParents)
-            SpaceSheetNote(text: "Choose None to create a root space.")
-            SpaceSheetLabel("Space folder")
-            SpaceSheetField(focused: focused == .path) {
-                TextField("Space folder", text: $model.path, prompt: Text("~/code/shepherd-landing").foregroundStyle(Color.sh.textTertiary))
-                    .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize)).focused($focused, equals: .path).accessibilityLabel("Space folder")
+                SHSheetFieldNote("Choose None to create a root space.")
             }
-            HStack(spacing: SH.Space.l) {
-                Button("Choose a folder…") { model.browsing = true }.buttonStyle(SpaceLinkStyle(tone: .strong)).disabled(model.host == nil)
-                Text("Or enter its path above.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-            }.padding(.top, SH.Space.m)
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel("Space folder")
+                SHSheetField(focused: focused == .path) {
+                    TextField("Space folder", text: $model.path, prompt: Text("~/code/shepherd-landing").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shMono(SHSettingsSheetMetrics.monoSize)).focused($focused, equals: .path)
+                        .accessibilityLabel("Space folder")
+                }
+            }
+            HStack(spacing: SH.Space.xs) {
+                Button("Choose a folder…") { model.browsing = true }.buttonStyle(.sh(.secondary)).disabled(model.host == nil)
+                Text("Or enter its path above.").foregroundStyle(Color.sh.textTertiary)
+            }
+            .font(.shSans(SHSettingsSheetMetrics.textSize))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shSheetTight()
             if let parent = model.parentName {
-                SpaceSheetNote(text: "Inherited from \(parent)", emphasis: true)
+                SHSheetParagraph(Text("Inherited from \(parent)").fontWeight(.medium).foregroundStyle(Color.sh.textPrimary))
                 if model.inheritsFromParent == false {
-                    SpaceSheetNote(text: "Nothing: this folder isn’t inside \(parent)’s. The space is listed under \(parent) only. This does not move files.", secondary: true)
+                    SHSheetParagraph("Nothing: this folder isn’t inside \(parent)’s. The space is listed under \(parent) only. This does not move files.")
+                        .shSheetTight()
                 } else {
-                    SpaceSheetNote(text: "Shared MCP servers, skills, slash commands and extensions, and the startup model and thinking. Child overrides stay separate.", secondary: true)
-                    SpaceSheetNote(text: "A folder inside \(parent)’s inherits; one elsewhere on \(model.host?.name ?? "this host") is only listed under it. This does not move files.")
+                    SHSheetParagraph("Shared MCP servers, skills, slash commands and extensions, and the startup model and thinking. Child overrides stay separate.")
+                        .shSheetTight()
+                    SHSheetParagraph("A folder inside \(parent)’s inherits; one elsewhere on \(model.host?.name ?? "this host") is only listed under it. This does not move files.", style: .small)
                 }
             }
             if let error = model.error {
-                SpaceSheetNote(text: error, failed: true).accessibilityAddTraits(.isStaticText)
+                SHSheetFieldNote(error, tone: .failed).textSelection(.enabled).accessibilityAddTraits(.isStaticText)
             }
+        } status: {
+            SHSheetStatus(model.footer, tone: model.busy ? .now : .quiet)
         } actions: {
-            Button("Cancel", action: dismiss).buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+            Button("Cancel", action: dismiss).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button(model.title) { Task { if await model.submit() { dismiss() } } }
-                .buttonStyle(SpaceBarStyle(kind: .primary)).keyboardShortcut(.defaultAction).disabled(!model.canSubmit)
+                .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction).disabled(!model.canSubmit)
         }
         .disabled(model.busy)
         .interactiveDismissDisabled(model.busy)

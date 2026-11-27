@@ -57,35 +57,38 @@ struct ChildProjectSheet: View {
     private enum Field: Hashable { case folder, name }
 
     var body: some View {
-        SpaceSheet(title: "Add child space", caption: AnyView(VStack(alignment: .leading, spacing: SH.Space.xs) {
-            SpaceSheetCaption(text: model.parentName)
-            SpaceSheetCaption(text: model.parentPath, mono: true)
-        }), width: AppLayout.spaceChildWidth) {
-            row("Folder source") {
-                SpaceKindTabs(label: "Folder source", selection: $model.create, options: [(true, "New folder"), (false, "Existing folder")], compact: true)
+        SHSettingsSheet("Add child space", subtitle: model.parentName, detail: model.parentPath, width: AppLayout.spaceChildWidth) {
+            HStack(spacing: AppLayout.spaceChildSegGap) {
+                Text("Folder source").foregroundStyle(Color.sh.textSecondary)
+                SHSegmentedPicker("Folder source", selection: $model.create, options: [(true, "New folder"), (false, "Existing folder")])
+                    .fixedSize()
             }
-            row(model.create ? "Folder name" : "Folder path") {
-                SpaceSheetField(focused: focused == .folder) {
+            .font(.shSans(SHSettingsSheetMetrics.textSize))
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel(model.create ? "Folder name" : "Folder path")
+                SHSheetField(focused: focused == .folder) {
                     TextField(model.create ? "Folder name" : "Folder path", text: $model.folder)
-                        .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize)).focused($focused, equals: .folder)
+                        .textFieldStyle(.plain).font(.shMono(SHSettingsSheetMetrics.monoSize)).focused($focused, equals: .folder)
                     if !model.create {
-                        Button("Browse…") { model.browsing = true }.buttonStyle(SpaceLinkStyle(tone: .strong)).frame(minHeight: SH.Height.controlS)
+                        Button("Browse…") { model.browsing = true }.buttonStyle(.sh(.secondary))
                     }
                 }
             }
-            row("Display name") {
-                SpaceSheetField(focused: focused == .name) {
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel("Display name")
+                SHSheetField(focused: focused == .name) {
                     TextField("Display name", text: $model.displayName, prompt: Text("Defaults to folder name").foregroundStyle(Color.sh.textTertiary))
-                        .textFieldStyle(.plain).font(.sh(.ui)).focused($focused, equals: .name)
+                        .textFieldStyle(.plain).font(.shSans(SHSettingsSheetMetrics.textSize)).focused($focused, equals: .name)
                 }
             }
-            SpaceSheetNote(text: model.status, failed: model.error != nil).textSelection(.enabled)
+            SHSheetParagraph(model.status, style: .small).foregroundStyle(model.error != nil ? Color.sh.failed : Color.sh.textTertiary)
+                .textSelection(.enabled)
         } actions: {
-            Button("Cancel", action: dismiss).buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+            Button("Cancel", action: dismiss).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button(model.actionTitle) {
                 Task { if await model.submit() { dismiss() } }
             }
-            .buttonStyle(SpaceBarStyle(kind: .primary)).keyboardShortcut(.defaultAction).disabled(!model.canSubmit)
+            .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction).disabled(!model.canSubmit)
         }
         .disabled(model.busy)
         .interactiveDismissDisabled(model.busy)
@@ -97,13 +100,5 @@ struct ChildProjectSheet: View {
                                   choose: { model.folder = $0; model.browsing = false },
                                   cancel: { model.browsing = false })
         }
-    }
-
-    /// A label column and its control (`gspcs-frow`).
-    private func row<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {
-        HStack(spacing: SH.Space.l) {
-            Text(label).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).frame(width: AppLayout.spaceSheetLabelWidth, alignment: .leading)
-            control().frame(maxWidth: .infinity, alignment: .leading)
-        }.padding(.top, SH.Space.l)
     }
 }
