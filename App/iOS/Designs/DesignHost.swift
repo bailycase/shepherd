@@ -91,6 +91,7 @@ final class DesignRendering {
         surfaces = surfaces.filter { $0.key.host != host }
         images = images.filter { !$0.key.hasPrefix(host.uuidString + "/") }
         imageOrder.removeAll { $0.hasPrefix(host.uuidString + "/") }
+        DesignPictures.cache.removeAll()
     }
 
     /// Forgets the sandboxes and images of designs no host lists any more.
@@ -107,6 +108,15 @@ final class DesignRendering {
         guard !forgottenHosts.contains(ref.host) else { return nil }
         let key = "\(ref.host.uuidString)/\(ref.design.rawValue)/\(path.rawValue)/\(sha256)/\(Int(width))"
         if let image = images[key] { return image }
+        // Drawn before (and not changed since): read back from disk, without waiting for the renderer's turn.
+        let shown = min(width, size.width)
+        let picture = DesignPictures.key(content: sha256, board: size, width: shown)
+        if DesignPictures.cache.contains(picture), let cg = await DesignPictures.load(picture) {
+            guard !Task.isCancelled, !forgottenHosts.contains(ref.host) else { return nil }
+            let image = UIImage(cgImage: cg, scale: max(1, shown > 0 ? CGFloat(cg.width) / shown : 1), orientation: .up)
+            remember(image, key)
+            return image
+        }
         let rendered: UIImage? = await exclusively {
             // A tile scrolled away while it waited its turn draws nothing: no web view for it.
             guard !Task.isCancelled, !self.forgottenHosts.contains(ref.host) else { return nil }
@@ -116,6 +126,7 @@ final class DesignRendering {
             let view = self.makeView(ref, source: source, path: path, size: size)
             defer { self.release(view) }
             guard (try? await Self.load(view)) != nil, let image = try? await view.snapshot(width: min(width, size.width)) else { return nil }
+            DesignPictures.save(image, as: picture)
             return UIImage(cgImage: image, scale: max(1, image.width > 0 ? CGFloat(image.width) / min(width, size.width) : 1),
                            orientation: .up)
         }

@@ -282,7 +282,7 @@ for screen in "${screens[@]}"; do
         # Whether the window offers a new window (iPhone Duo: only open and upright).
         [[ -n "$pose" ]] && { grep "^FIXTURE WINDOWS AVAILABLE" "$log" | tail -1 | sed "s/^/$screen ($scheme): /" || true; }
         # A screen that measures what it shows prints "FIXTURE CHECK ok|FAILED: …".
-        grep "^FIXTURE CHECK\|^TIMING" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
+        grep "^FIXTURE CHECK" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
         if [[ "$screen" == tail-frames && "${FIXTURE_SCROLL_LEDGER:-}" == 1 ]]; then
             container=$("${simctl[@]}" get_app_container "$device" com.shepherd.ios-fixture data)
             if [[ -f "$container/tmp/scroll-frames.json" ]]; then

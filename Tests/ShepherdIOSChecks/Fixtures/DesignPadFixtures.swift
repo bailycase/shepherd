@@ -105,6 +105,11 @@ extension FixtureCatalog {
             FixtureScreen(name: "design-pad-wall-timed", hosts: DesignPadFixtures.hosts(wall: true),
                           routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
                           prepare: { app in await DesignPadFixtures.timeWall(app) }),
+            // The same design on the iPhone: its boards as tiles, timed until the first screenful has pictures.
+            FixtureScreen(name: "design-wall-tiles", hosts: DesignPadFixtures.hosts(wall: true),
+                          routes: [.designs(.list), .designs(.design(HostDesignRef(host: DesignPadFixtures.largeRef.host,
+                                                                                    design: DesignPadFixtures.largeRef.design)))],
+                          prepare: { _ in await DesignPadFixtures.timeTiles() }),
             // The Designs list the sidebar's row opens.
             FixtureScreen(name: "designs-pad", hosts: DesignPadFixtures.hosts(), routes: [.padDesign(.list)],
                           prepare: { _ in
@@ -146,7 +151,7 @@ enum DesignPadFixtures {
             let design = Design(id: largeID, name: "Every checkout screen", systemNamespace: "acme-web", createdAt: FixtureData.start,
                                 lastActiveAt: FixtureData.start, boardCount: count)
             hosts[index].state.designs.append(design)
-            hosts[index].designs?.designs.append(largeCanvas(design, count: count, columns: wall ? wallColumns : largeColumns))
+            hosts[index].designs?.designs.append(largeCanvas(design, count: count, columns: wall ? wallColumns : largeColumns, unique: wall))
         }
         return hosts
     }
@@ -162,7 +167,8 @@ enum DesignPadFixtures {
     static let wallColumns = 24
 
     /// 64 boards on an 8 × 8 grid, the four checkout boards over and over, each its own file.
-    static func largeCanvas(_ design: Design, count: Int = largeColumns * largeRows, columns: Int = largeColumns) -> FixtureDesigns.Item {
+    static func largeCanvas(_ design: Design, count: Int = largeColumns * largeRows, columns: Int = largeColumns,
+                            unique: Bool = false) -> FixtureDesigns.Item {
         let sources = [DesignPadBoards.funnel, DesignPadBoards.steps, DesignPadBoards.trend, DesignPadBoards.phone]
         var files: [String: Data] = [:]
         var boards: [DesignPath: DesignIndex.Board] = [:]
@@ -172,7 +178,9 @@ enum DesignPadFixtures {
             let raw = "Screen\(number).dc.html"
             let path = DesignPath(raw)!
             let phone = number % sources.count == 3
-            files[raw] = Data(sources[number % sources.count].utf8)
+            // Each board its own content (its title carries its number), as a real design's boards are.
+            let source = sources[number % sources.count]
+            files[raw] = Data((unique ? source.replacingOccurrences(of: "</title>", with: " \(number + 1)</title>") : source).utf8)
             boards[path] = .init(x: Double(column) * 1400, y: Double(row) * 1000, w: phone ? 390 : 1280, h: phone ? 844 : 800,
                                  title: "Screen \(number + 1)")
             order.append(path)
@@ -254,26 +262,49 @@ enum DesignPadFixtures {
         return canvas
     }
 
-    /// Times the wall's pictures: the first 12, half, and all of the boards on screen.
+    /// Times the wall's pictures: until the first 12, half and all of the boards on screen have one (the
+    /// view holding still: the same boards on screen for a third of a second).
     @MainActor static func timeWall(_ app: MobileApp) async {
         let canvas = PadDesigns.of(app.hosts).canvas(largeRef)
         await FixtureWindows.wait("wall canvas snapshot", seconds: 30) { canvas.snapshot != nil }
         await FixtureWindows.wait("wall boards on screen", seconds: 30) { !canvas.visibleBoards.isEmpty }
         let start = Date()
-        let total = canvas.visibleBoards.count
-        var marks: [String] = []
-        var seen: Set<Int> = []
-        let steps = [(12, "12"), (total / 2, "half"), (total, "all")]
-        while seen.count < steps.count {
-            let drawn = canvas.visibleBoards.filter { canvas.host.hasCurrentSnapshot($0) }.count
-            for (index, step) in steps.enumerated() where drawn >= step.0 && !seen.contains(index) {
-                seen.insert(index)
-                marks.append("\(step.1)=\(String(format: "%.1f", Date().timeIntervalSince(start)))s")
-            }
-            if Date().timeIntervalSince(start) > 1_500 { FixtureCheck.fail("wall pictures: \(drawn)/\(total) after 1500 s") }
+        var marks: [String: Double] = [:]
+        var steady = 0
+        var total = 0
+        while true {
+            let visible = canvas.visibleBoards
+            let drawn = visible.filter { canvas.host.hasCurrentSnapshot($0) }.count
+            let seconds = Date().timeIntervalSince(start)
+            if marks["12"] == nil, drawn >= 12 { marks["12"] = seconds }
+            if marks["half"] == nil, drawn >= visible.count / 2 { marks["half"] = seconds }
+            if drawn == visible.count, visible.count == total { steady += 1 } else { steady = 0 }
+            total = visible.count
+            if steady == 1 { marks["all"] = seconds }
+            if steady >= 3 { break }
+            if seconds > 1_500 { FixtureCheck.fail("wall pictures: \(drawn)/\(visible.count) after 1500 s") }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        FixtureCheck.report("FIXTURE CHECK ok wall \(total) boards: \(marks.joined(separator: " ")) footprint=\(String(format: "%.0f", TailFixture.footprintMB()))MB")
+        let times = ["12", "half", "all"].map { "\($0)=\(String(format: "%.1f", marks[$0] ?? 0))s" }.joined(separator: " ")
+        let rasterizer = PadDesignRendering.shared.rasterizer
+        FixtureCheck.report("FIXTURE CHECK ok wall \(total) boards: \(times) footprint=\(String(format: "%.0f", TailFixture.footprintMB()))MB pictures=\(canvas.host.imageBytes / 1_048_576)MB drawn=\(rasterizer.rendered) read=\(rasterizer.restored) disk=\(DesignPictures.cache.count)/\(DesignPictures.cache.bytes / 1024)KB")
+    }
+
+    /// Times the iPhone's tiles: until 1, 4 and 8 boards have pictures (a screenful), then what the app weighs.
+    @MainActor static func timeTiles() async {
+        let rendering = DesignRendering.shared
+        let start = Date()
+        var marks: [Int: Double] = [:]
+        while marks[8] == nil {
+            for count in [1, 4, 8] where marks[count] == nil && rendering.renderedImages >= count {
+                marks[count] = Date().timeIntervalSince(start)
+            }
+            if Date().timeIntervalSince(start) > 300 { FixtureCheck.fail("tile pictures: \(rendering.renderedImages) after 300 s") }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        try? await Task.sleep(for: .seconds(1))
+        let times = [1, 4, 8].map { "\($0)=\(String(format: "%.1f", marks[$0] ?? 0))s" }.joined(separator: " ")
+        FixtureCheck.report("FIXTURE CHECK ok tiles: \(times) pictures=\(rendering.renderedImages) footprint=\(String(format: "%.0f", TailFixture.footprintMB()))MB disk=\(DesignPictures.cache.count)/\(DesignPictures.cache.bytes / 1024)KB")
     }
 
     /// Taps a board as a finger would with Select, and waits for its element's ring.
