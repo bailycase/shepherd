@@ -106,13 +106,13 @@ private struct DiffTitle: View {
     var body: some View {
         VStack(spacing: SH.Space.xxs) {
             Text(summary?.name ?? "Diff")
-                .font(.shMono(MobileLayout.touchBodyFont - 1, .semibold))
+                .font(.shBarMono(MobileLayout.touchBodyFont - 1, .semibold))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let summary {
                 Text(subtitle(summary))
-                    .font(.sh(.caption))
+                    .font(.shBar(.caption))
                     .foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.head)

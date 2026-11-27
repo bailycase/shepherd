@@ -120,12 +120,12 @@ struct ChangesTitle: View {
     var body: some View {
         ChangesScopeMenu(store: store, pickBase: pickBase) {
             VStack(spacing: SH.Space.xxs) {
-                Text("Changes").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text("Changes").font(.shBar(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                 HStack(spacing: SH.Space.xs) {
                     Text(store.scopeTitle).lineLimit(1).truncationMode(.middle)
                     Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(Color.sh.textTertiary)
                 }
-                .font(.sh(.caption))
+                .font(.shBar(.caption))
                 .foregroundStyle(Color.sh.textSecondary)
             }
             .accessibilityElement(children: .combine)

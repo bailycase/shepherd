@@ -75,6 +75,8 @@ public enum SHGoalSize: Equatable, Sendable {
 
 /// Goal card, MobileGoal and iPadGoal: shared anatomy that grows with text size.
 public enum SHGoalMetrics {
+    /// The most the card's header height follows the text size.
+    public static let headerScaleLimit: CGFloat = 1.6
     public static let desktopHeight: CGFloat = 70
     public static let touchHeight: CGFloat = 92
     public static let desktopHeaderHeight: CGFloat = 32
@@ -152,7 +154,8 @@ public struct SHGoalCard: View {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("goal.card")
-        let scale = max(1, ThemeStore.shared.textScale * dynamicScale)
+        // The header's height follows the text up to 1.6x; past it the wrapped words grow the card on their own.
+        let scale = min(max(1, ThemeStore.shared.textScale * dynamicScale), SHGoalMetrics.headerScaleLimit)
         VStack(spacing: 0) {
             SHGoalCardHeader(state: state, time: time, meta: meta, size: size, scale: scale,
                              resumeEnabled: resumeEnabled, confirmationRequired: confirmationRequired,

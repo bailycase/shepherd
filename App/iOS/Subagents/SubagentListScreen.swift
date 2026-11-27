@@ -36,14 +36,14 @@ struct SubagentListTitle: View {
     var body: some View {
         let tally = nativeRunTally(store.subagents)
         VStack(spacing: SH.Space.xxs) {
-            Text("Subagents").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Text("Subagents").font(.shBar(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let tally {
                 let state = AgentState(tally.phase)
                 HStack(spacing: SH.Space.s) {
                     SHStatusDot(state)
                     Text(tally.text).foregroundStyle(state.textColor)
                 }
-                .font(.sh(.caption, weight: .medium))
+                .font(.shBar(.caption, weight: .medium))
                 .lineLimit(1)
             }
         }

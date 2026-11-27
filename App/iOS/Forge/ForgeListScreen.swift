@@ -463,9 +463,9 @@ struct ForgeTitle: View {
 
     var body: some View {
         VStack(alignment: alignment, spacing: SH.Space.xxs) {
-            Text(title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Text(title).font(.shBar(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let subtitle {
-                Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                Text(subtitle).font(.shBar(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)

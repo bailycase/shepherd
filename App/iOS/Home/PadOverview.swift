@@ -79,9 +79,9 @@ struct PadOverview: View {
                 HStack(spacing: SH.Space.m) {
                     if sidebarHidden { PadSidebarButton() }
                     HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-                        Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        Text("Overview").font(.shBarSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                         if !model.hosts.isEmpty {
-                            Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                            Text(model.summary).font(.shBarSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -104,9 +104,9 @@ struct PadOverview: View {
                 ToolbarItem(placement: .topBarLeading) {
                     // The board's head: "Overview" over its summary.
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        Text("Overview").font(.shBarSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                         if !model.hosts.isEmpty {
-                            Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                            Text(model.summary).font(.shBarSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                         }
                     }
                     .fixedSize()

@@ -714,10 +714,10 @@ struct ThreadTitle: View {
             HStack(spacing: SH.Space.m) {
                 // A thread another thread started names it: a link where it opens (a phone has no room, so it sits in the status line).
                 if wide, let parent {
-                    parentName(parent).font(.sh(.title, weight: .regular)).layoutPriority(-1)
-                    Text("/").font(.sh(.title, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                    parentName(parent).font(.shBar(.title, weight: .regular)).layoutPriority(-1)
+                    Text("/").font(.shBar(.title, weight: .regular)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                 }
-                Text(name).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text(name).font(.shBar(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             }
             statusLine
         }
@@ -753,14 +753,14 @@ struct ThreadTitle: View {
             if wide { ThreadGoalHeader(store: goalStore, time: goalTime) }
             if let branch {
                 Text("·").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-                Text(branch.branch).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                Text(branch.branch).font(.shBar(.mono)).foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1).truncationMode(.tail)
                 if wide, let host = branch.host {
                     Text("· \(host)").foregroundStyle(Color.sh.textTertiary).lineLimit(1).layoutPriority(-1)
                 }
             }
         }
-        .font(.sh(.caption))
+        .font(.shBar(.caption))
         .lineLimit(1)
     }
 }

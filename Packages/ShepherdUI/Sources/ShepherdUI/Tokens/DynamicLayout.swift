@@ -14,7 +14,7 @@ extension DynamicTypeSize {
 }
 
 extension View {
-    /// A navigation bar's title and subtitle, capped at `DynamicTypeSize.shBarTitleLimit`: the bar is a fixed height between its
-    /// buttons, so a title past it would overlap its own subtitle.
+    /// A navigation bar's title and subtitle, capped at `DynamicTypeSize.shBarTitleLimit` for text SwiftUI scales (system fonts); the
+    /// Shepherd fonts are capped where they are built: `Font.shBar`, `shBarSans`, `shBarMono`.
     public func shBarTitleType() -> some View { dynamicTypeSize(...DynamicTypeSize.shBarTitleLimit) }
 }

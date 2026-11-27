@@ -612,7 +612,7 @@ private struct DesignBoardContent: View {
     private var boardTitle: some View {
         VStack(spacing: SH.Space.xxs) {
             Text(model.current == nil ? model.pageName ?? "" : model.label)
-                .font(.shSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
+                .font(.shBarSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
             if model.boards.count > 1, let current = model.current {
