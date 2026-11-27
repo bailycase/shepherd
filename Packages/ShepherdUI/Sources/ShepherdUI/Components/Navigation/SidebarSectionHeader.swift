@@ -88,7 +88,8 @@ public struct SHSidebarSectionHeader: View {
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.header")
         // From the accessibility sizes the header's actions go under its title instead of off the edge.
-        typeSize.shAdaptiveLayout(spacing: SH.Space.s) {
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.s)
+        adaptive {
             Button(action: toggle) {
                 HStack(spacing: SH.Space.s) {
                     Text(title)

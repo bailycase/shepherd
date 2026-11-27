@@ -728,7 +728,8 @@ public struct SHSidebarFooter: View, Equatable {
         #if os(iOS)
         // The touch boards' footer (DuoOpenOverview, iPadSidebar): Settings leads, the Fleet line ends it.
         // From the accessibility sizes the Fleet line goes under Settings, each whole.
-        typeSize.shAdaptiveLayout(spacing: SH.Space.l, stackedSpacing: 0) {
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.l, stackedSpacing: 0)
+        adaptive {
             if let updateVersion {
                 SHUpdateButton(version: updateVersion, action: update)
             } else {

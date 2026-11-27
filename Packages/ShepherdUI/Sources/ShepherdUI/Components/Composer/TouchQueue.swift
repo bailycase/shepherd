@@ -270,7 +270,8 @@ public struct SHTouchQueueRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .modifier(SHTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
-        return typeSize.shAdaptiveLayout(spacing: SH.Space.m, stackedSpacing: 0) {
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.m, stackedSpacing: 0)
+        return adaptive {
             content
             if !steering, let steer {
                 Button(steerLabel, action: steer)

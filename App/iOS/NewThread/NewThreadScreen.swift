@@ -139,8 +139,9 @@ private struct NewThreadForm: View {
 
     /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first. From the accessibility
     /// sizes they stack, each whole: three chips beside each other were cut to their first letters.
-    private var row: some View {
-        typeSize.shAdaptiveLayout(spacing: SH.Space.s, stackedSpacing: 0) {
+    @ViewBuilder private var row: some View {
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.s, stackedSpacing: 0)
+        adaptive {
             NewThreadAttachButton(model: model)
             workplace
             if !typeSize.isAccessibilitySize { Spacer(minLength: SH.Space.s) }
@@ -156,7 +157,8 @@ private struct NewThreadForm: View {
     @ViewBuilder private var workplace: some View {
         let repo = model.repoName ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
-        typeSize.shAdaptiveLayout(spacing: SH.Space.xs, stackedSpacing: 0) {
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.xs, stackedSpacing: 0)
+        adaptive {
             Button { open(pad ? .repo : .workspace) } label: {
                 HStack(spacing: SH.Space.s) {
                     Image(systemName: SHGlyph.repository.symbolName).font(.sh(.ui, weight: .regular)).accessibilityHidden(true)
