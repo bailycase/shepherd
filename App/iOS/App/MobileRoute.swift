@@ -33,6 +33,6 @@ struct PresentedRoute: Identifiable, Hashable {
 extension View {
     /// Resolves pushed routes in a navigation stack. Every stack in the app applies it once.
     func mobileDestinations() -> some View {
-        navigationDestination(for: MobileRoute.self) { $0.destination }
+        navigationDestination(for: MobileRoute.self) { $0.destination.modifier(DuoTopEdge()) }
     }
 }

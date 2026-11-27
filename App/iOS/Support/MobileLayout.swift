@@ -28,18 +28,22 @@ enum MobileLayout {
     static let turnItemSpacing: CGFloat = SH.Space.l
     /// Lines inside a work group.
     static let activitySpacing: CGFloat = SH.Space.xxs
-    /// A thread's readable measure on iPad (iPadThread's 780pt column); the phone uses its full width.
+    /// A readable measure on iPad; the phone uses its full width.
     static let threadMaxWidth: CGFloat = 780
+    /// A thread's column on iPad and iPhone Duo (every iPad board's `.gpad-col`: 680pt, its composer as wide).
+    static let padThreadColumn: CGFloat = 680
     /// The iPad thread's and composer's side gutters (iPadThread's 24pt; the phone keeps `gutter`).
     static let padThreadGutter: CGFloat = SH.Space.xxl
     /// The round Show sidebar button in a thread's header beside an open side pane (DuoOpenSidePane's 40pt).
     static let padHeaderButton: CGFloat = 40
     /// A note's indent from its rule.
     static let noteIndent: CGFloat = SH.Space.m
-    /// The iPad sidebar's width beside the thread, in landscape (iPadThread).
-    static let sidebarWidth: CGFloat = 300
-    /// The iPad sidebar's width as it slides over the thread, in portrait (iPadSidebar).
-    static let sidebarOverlayWidth: CGFloat = 340
+    /// The iPad sidebar's column beside the thread, in landscape (iPadThread: the card 304 wide, 8 from each edge), and as it slides over the
+    /// thread in portrait (iPadSidebar: the same card).
+    static let sidebarWidth: CGFloat = 320
+    static let sidebarOverlayWidth: CGFloat = 320
+    /// iPhone Duo's sidebar column when the inner display is flat (DuoOpenThread: the card 284 wide); half open it ends at the fold.
+    static let duoSidebarWidth: CGFloat = 300
     /// The narrowest detail an iPad list keeps beside it (`PadListDetail`); narrower, the screen
     /// shows the list alone, its rows pushing their detail.
     static let splitDetailMinWidth: CGFloat = 280
