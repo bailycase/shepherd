@@ -217,6 +217,7 @@ public struct SHFileHeader: View {
     static let actionSize: CGFloat = 26
     static let chevronSize: CGFloat = 10
     static let chevronSlot: CGFloat = 14
+    static let checkSize: CGFloat = 8
 }
 
 /// Viewed, as a checkbox and its label (FileHeader · viewed / not): a 14pt box, radius 4, a 1.5pt
@@ -246,7 +247,7 @@ public struct SHViewedCheckbox: View {
                         .strokeBorder(isViewed ? sh.primary : sh.lineStrong, lineWidth: 1.5)
                     if isViewed {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: SHFileHeader.checkSize, weight: .bold))
                             .foregroundStyle(sh.textOnPrimary)
                     }
                     #else

@@ -104,7 +104,7 @@ struct AutomationTriggersPresentationTests {
         let model = AutomationsPageModel.make(hosts: [host], runs: [key: runs], selection: key, filter: "", triggers: [key: status],
                                               now: now, timeZone: utc, locale: locale)
         let row = try #require(model.rows.first)
-        #expect(row.trigger == "GitHub" && row.unread == 1 && row.noteState == .failed)
+        #expect(row.trigger == "On GitHub activity in acme/app" && row.unread == 1 && row.noteState == .failed)
         #expect(model.hasTriggers)
         let detail = try #require(model.detail)
         #expect(detail.triggered && detail.paused == true)

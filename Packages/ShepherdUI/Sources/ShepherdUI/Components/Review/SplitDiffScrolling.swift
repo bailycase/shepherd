@@ -44,6 +44,11 @@ public struct SHSplitDiffScrollbars: View {
     let unified: Bool
     public init(_ scroll: SHSplitDiffScroll, unified: Bool = false) { self.scroll = scroll; self.unified = unified }
     public var body: some View {
+        // Only a file with code past its edge has a scroller to draw.
+        if scroll.oldLimit > 0 || scroll.newLimit > 0 { scrollers }
+    }
+
+    private var scrollers: some View {
         HStack(spacing: 0) {
             if unified {
                 SplitScroller(scroll: scroll, old: false, codeLeading: SHDiffMetrics.codeLeading)

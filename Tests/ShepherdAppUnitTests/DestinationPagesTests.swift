@@ -67,15 +67,15 @@ struct AutomationsPageTests {
         let runs = [AutomationRun(startedAt: night - 86_400, settledAt: night - 86_400 + 40, endedAt: night - 86_400 + 60, result: .finished),
                     AutomationRun(startedAt: night, endedAt: night + 660, result: .interrupted)]
         let last = make(hosts, runs: [key: runs]).rows.first?.lastRun
-        #expect(last == SHRunOutcome("interrupted", state: .failed, clock: .ago(Date(timeIntervalSince1970: night + 660))))
-        #expect(make(hosts, runs: [key: []]).rows.first?.lastRun == SHRunOutcome("not run yet"))
+        #expect(last == SHRunOutcome("Interrupted", state: .failed, clock: .ago(Date(timeIntervalSince1970: night + 660))))
+        #expect(make(hosts, runs: [key: []]).rows.first?.lastRun == SHRunOutcome("Not run yet"))
         #expect(make(hosts, runs: [key: [AutomationRun(startedAt: night, endedAt: night + 5, result: .stopped)]]).rows.first?.lastRun?.state == nil,
                 "a stopped run is quiet")
     }
 
     /// A run's agent on the host decides: working counts up, asking glows, a settled one is done.
-    @Test(arguments: [(AgentStatus.working, "running", AgentState?.some(.running)), (.blocked, "asked you", .attention),
-                      (.done, "finished", .done)])
+    @Test(arguments: [(AgentStatus.working, "Running", AgentState?.some(.running)), (.blocked, "Asked you", .attention),
+                      (.done, "Finished", .done)])
     func aLiveRunReadsFromItsAgent(status: AgentStatus, word: String, state: AgentState?) {
         let space = Space(name: "Automations", path: "~", hidden: true)
         let pane = LeafPane(cwd: "/tmp")
@@ -98,7 +98,7 @@ struct AutomationsPageTests {
         let a = Automation(name: "a", prompt: "p", cwd: "/tmp"), b = Automation(name: "b", prompt: "p", cwd: "/tmp")
         let offline = make([host(remoteID, "orbit", automations: [a], connected: false)])
         let row = offline.rows.first
-        #expect(row?.lastRun == SHRunOutcome("host offline"))
+        #expect(row?.lastRun == SHRunOutcome("Host offline"))
         #expect(row?.canToggle == false && row?.canRun == false && row?.canEdit == false)
         #expect(row?.disabledReason == "Host offline", "the row's menu says why Edit and Delete are off")
         #expect(offline.detail?.readOnlyReason == "Host offline")
@@ -130,7 +130,7 @@ struct AutomationsPageTests {
         #expect(detail.prompt == "Run every pending migration.")
         #expect(detail.facts.map(\.label) == ["When", "Host", "Folder", "Model"])
         #expect(detail.facts.map(\.value) == ["When Shepherd starts", "build-01", "/srv/orders", "claude-sonnet"])
-        #expect(detail.runs.map(\.started) == ["Sep 24 02:00", "Sep 23 02:00"])
+        #expect(detail.runs.map(\.started) == ["Sep 24, 02:00", "Sep 23, 02:00"])
         #expect(detail.runs.map(\.duration) == ["3m", "4m"])
         #expect(detail.runs.map(\.thread) == [FleetRef(host: remoteID, agent: agent.id), nil], "only a run whose thread exists opens")
         #expect(detail.runsNote == nil && !detail.live && detail.canRun && detail.canEdit)
