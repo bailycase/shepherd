@@ -312,24 +312,24 @@ private struct ChangesToolbar: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("review.toolbar")
         let files = session.files.count
-        HStack(spacing: 10) {
+        HStack(spacing: SH.Space.l - SH.Space.xxs) {
             SHScopeButton(title: ChangesText.scopeButton(session), glyph: session.engine == nil ? (session.isPRMode ? .pullRequest : .uncommitted) : session.scope.glyph,
                           isOpen: model.menu == .scope || model.menu == .commits) { model.toggleMenu(.scope) }
             if !(session.isLoading && session.files.isEmpty) {
-                SHDiffStat(added: session.list?.added ?? session.addedCount, removed: session.list?.removed ?? session.removedCount, font: .sh(.code))
+                SHDiffStat(added: session.list?.added ?? session.addedCount, removed: session.list?.removed ?? session.removedCount, font: .sh(.caption))
                     .shContentTransition(.crossFade)
             }
             Spacer(minLength: SH.Space.m)
             // A narrow pane drops the viewed count, then Commit…'s label.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
+                HStack(spacing: SH.Space.l - SH.Space.xxs) {
                     if files > 0 { viewedPill(files) }
                     commitButton(label: true)
                 }
                 commitButton(label: true)
                 commitButton(label: false)
             }
-            HStack(spacing: SH.Space.xxs) {
+            HStack(spacing: 0) {
                 Button { model.actions.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.shIcon(size: SHChangesMetrics.toolbarIcon))
                     .disabled(session.isLoading)
@@ -365,11 +365,10 @@ private struct ChangesToolbar: View, Equatable {
                     .accessibilityLabel("Diff options")
             }
         }
-        .padding(.leading, SH.Space.l)
-        .padding(.trailing, 10)
+        .padding(.leading, SH.Space.m)
+        .padding(.trailing, SH.Space.s)
         .frame(height: SHChangesMetrics.toolbarHeight)
         .background(SHPaneSurface.fill)
-        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private func viewedPill(_ files: Int) -> some View {
@@ -377,14 +376,16 @@ private struct ChangesToolbar: View, Equatable {
     }
 
     @ViewBuilder private func commitButton(label: Bool) -> some View {
+        // The boards' `.gch-tact`: the words alone, in 500; quiet while there is nothing to commit.
         Button { commit() } label: {
             if label {
-                Label("Commit…", systemImage: "smallcircle.filled.circle")
+                Text("Commit…").fontWeight(canCommit ? .medium : .regular)
             } else {
                 Image(systemName: "smallcircle.filled.circle")
             }
         }
-        .buttonStyle(.sh(.secondary, size: .s))
+        .buttonStyle(.shBar)
+        .foregroundStyle(canCommit ? Color.sh.textPrimary : Color.sh.textTertiary)
         .fixedSize()
         .disabled(!canCommit)
         .help(canCommit ? "Commit these changes" : "Commit works on the working tree: pick Uncommitted or Branch")
@@ -412,7 +413,7 @@ private struct ChangesCompare: View {
     var body: some View {
         if let lead = ChangesText.compareLead(session) {
             let picks = session.engine != nil && session.scope.kind == .branch
-            SHCompareRow(lead, note: session.list?.comparison.mergeBase.map { "merge base \($0)" }, pickerOpen: model.menu == .base,
+            SHCompareRow(lead, note: session.list?.comparison.mergeBase.map { "merge base \($0)" } ?? session.pullRequestNote, pickerOpen: model.menu == .base,
                          pickBase: picks ? { toggleBase() } : nil)
                 // The picker hangs from the base button, which follows the head's width.
                 .background(alignment: .leading) { BaseAnchorReader(lead: lead, anchor: $baseAnchor) }
@@ -457,7 +458,7 @@ enum ChangesText {
     static func compareLead(_ session: ReviewSession) -> SHCompareRow.Lead? {
         let directory = session.otherDirectoryName.map { "\($0) · " } ?? ""
         guard session.engine != nil else {
-            if session.isPRMode { return .compare(head: directory + "HEAD", base: session.reference ?? "the PR's base") }
+            if session.isPRMode { return .compare(head: directory + (session.pullRequestHead ?? "HEAD"), base: session.reference ?? "the PR's base") }
             return .compare(head: directory + "Working tree", base: session.reference ?? "HEAD")
         }
         guard let list = session.list else { return nil }
@@ -512,10 +513,7 @@ private struct ReviewFileStrip: View {
     let touchedPaths: Set<String>
 
     var body: some View {
-        SHFileRows(items, selection: model.currentFile) { model.select($0) }
-            .padding(.horizontal, AppLayout.changesFileRowsInset)
-            .padding(.vertical, SH.Space.m)
-            .background(SHPaneSurface.fill)
+        SHFileStrip(items, selection: model.currentFile) { model.select($0) }
     }
 
     private var items: [SHFileStrip.Item] {
@@ -831,7 +829,10 @@ private struct DiffFileSection: View, Equatable {
             }
         }
         .containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
-            max(0, width - SHDiffMetrics.annotationInsets.leading - SHDiffMetrics.annotationInsets.trailing)
+            // A split row's note sits in one half (its 12 in and 12 clear of the edge); a unified one past the code's start.
+            layout == .split
+                ? max(0, (width - 1) / 2 - SHDiffMetrics.splitAnnotationLeading - SHDiffMetrics.annotationInsets.trailing)
+                : max(0, width - SHDiffMetrics.annotationInsets.leading - SHDiffMetrics.annotationInsets.trailing)
         }
     }
 }

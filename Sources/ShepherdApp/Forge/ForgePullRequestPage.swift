@@ -40,7 +40,7 @@ struct ForgePullRequestPage: View {
                             ForgeFloatingField(placeholder: "Ask the agent about this pull request", sendTitle: nil,
                                                sending: false) { await vm.forgeAsk($0) }
                         }
-                case .changes: ForgeChangesTab(vm: vm, store: store, detail: detail)
+                case .changes: ForgeChangesTab(vm: vm, store: store, detail: detail, card: true)
                 case .checks:
                     ForgePullRequestSummary(vm: vm, store: store, detail: detail, checksOnly: true)
                         .overlay(alignment: .bottom) {
@@ -688,12 +688,25 @@ struct ForgeChangesTab: View {
     var vm: ShepherdViewModel
     let store: ForgeStore
     let detail: PullRequestDetail
+    /// On the page the pane sits in a card under the header (the boards' `.gch-card`); the side pane draws it flush.
+    var card = false
     @State private var session: ReviewSession?
 
     var body: some View {
         Group {
             if let session {
-                ReviewPane(session: session, actions: actions(session), maximized: true)
+                if card {
+                    ReviewPane(session: session, actions: actions(session), maximized: true)
+                        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.xl))
+                        .shLift(RoundedRectangle(cornerRadius: SH.Radius.xl))
+                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xl)
+                        .padding(.leading, SH.Space.xl)
+                        .padding(.trailing, SH.Space.m)
+                        .padding(.top, SH.Space.xs)
+                        .padding(.bottom, SH.Space.m)
+                } else {
+                    ReviewPane(session: session, actions: actions(session), maximized: true)
+                }
             } else if let error = store.filesError {
                 ForgeDetailError(error: error) { store.loadFiles() }
             } else {
@@ -709,6 +722,9 @@ struct ForgeChangesTab: View {
                                             reference: detail.summary.baseRef)
         next.pullRequestOnly = true
         next.isPRMode = true
+        next.pullRequestHead = detail.summary.headRef
+        let commits = detail.events.reduce(0) { total, event in if case .pushed(let count) = event.kind { total + count } else { total } }
+        next.pullRequestNote = ["#\(detail.ref.number)", commits > 0 ? "\(commits) commit\(commits == 1 ? "" : "s")" : nil].compactMap { $0 }.joined(separator: " · ")
         next.adopt(files: files.files.map(\.file), truncated: Set(files.files.filter(\.truncated).map(\.file.id)))
         next.isLoading = false
         session = next

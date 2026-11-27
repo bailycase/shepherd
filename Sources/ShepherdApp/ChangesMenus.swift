@@ -23,24 +23,24 @@ struct ChangesMenus: View {
                 switch menu {
                 case .scope, .commits:
                     ChangesScopeMenu(model: model, session: session)
-                        .offset(x: SH.Space.l, y: SHChangesMetrics.toolbarHeight - SH.Space.xs)
+                        .offset(x: ChangesMenuLayout.scopeLeading, y: ChangesMenuLayout.scopeTop)
                         .shTransition(.overlay, edge: .top)
                     if menu == .commits {
                         ChangesCommitsMenu(model: model, session: session)
-                            .offset(x: SH.Space.l + SHChangesMenuMetrics.scopeWidth + SH.Space.xs,
-                                    y: SHChangesMetrics.toolbarHeight + ChangesMenuLayout.commitsTop)
+                            .offset(x: ChangesMenuLayout.scopeLeading + SHChangesMenuMetrics.scopeWidth + SH.Space.xs,
+                                    y: ChangesMenuLayout.commitsTop)
                             .shTransition(.overlay, edge: .leading)
                     }
                 case .base:
                     ChangesBasePicker(model: model, session: session)
                         .offset(x: max(SH.Space.s, baseAnchor - SH.Space.s),
-                                y: SHChangesMetrics.toolbarHeight + SHChangesMetrics.compareHeight - SH.Space.xs)
+                                y: SHChangesMetrics.toolbarHeight + SHChangesMetrics.compareHeight - SH.Space.xs - SH.Space.xxs)
                         .shTransition(.overlay, edge: .top)
                 case .options:
                     ChangesOptionsMenu(model: model, session: session)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.trailing, 10)
-                        .offset(y: SHChangesMetrics.toolbarHeight - SH.Space.xs)
+                        .padding(.trailing, SH.Space.m)
+                        .offset(y: ChangesMenuLayout.scopeTop)
                         .shTransition(.overlay, edge: .top)
                 }
             }
@@ -50,8 +50,10 @@ struct ChangesMenus: View {
 }
 
 enum ChangesMenuLayout {
-    /// Where the Commits submenu sits beside its row: the scope menu's rows above Commits.
-    static let commitsTop: CGFloat = 127
+    /// The scope menu (`.gch-pop` at 10, 38) and, beside it, the Commits submenu's top (206) from the pane's.
+    static let scopeLeading: CGFloat = 10
+    static let scopeTop: CGFloat = 38
+    static let commitsTop: CGFloat = 206
 }
 
 /// What to compare (ScopeMenu): Last turn, the working tree's three, Commits, Branch and Pull

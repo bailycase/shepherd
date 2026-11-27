@@ -16,9 +16,11 @@ import Testing
 @Suite("Changes previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ChangesPreviewTests {
-    /// The side pane's width on the Changes boards.
-    static let boardWidth: CGFloat = 1040
-    static let boardHeight: CGFloat = 852
+    /// The side pane's width on the Changes boards (the 720 pane), and its height under the tab strip.
+    static let boardWidth: CGFloat = 720
+    static let boardHeight: CGFloat = 839
+    /// ChangesWide: the pane maximized beside the sidebar.
+    static let wideWidth: CGFloat = 1324
 
     init() {
         // Compile the grammars up front so the pane's off-main highlighting lands before the
@@ -27,7 +29,7 @@ struct ChangesPreviewTests {
         _ = CodeHighlight.highlightLines(["package warm"], path: "warm.go", style: .theme)
     }
 
-    /// The pane at the boards' width (1040pt: split), with a state opened on its model.
+    /// The pane at the boards' width (720pt), with a state opened on its model.
     private func pane(_ session: ReviewSession, width: CGFloat = boardWidth, height: CGFloat = boardHeight,
                       maximized: Bool = false, setUp: (ReviewPaneModel) -> Void = { _ in }) -> some View {
         let model = ReviewPaneModel(session: session, actions: Reviews.actions)
@@ -41,18 +43,21 @@ struct ChangesPreviewTests {
     /// ChangesSplit: Branch vs origin/main, split, two files viewed, a comment waiting to send.
     @Test func changesSplit() async throws {
         let session = ChangesBoard.session()
+        session.layoutChoice = .split
         try await Preview.render("changes-split", size: boardSize) { pane(session) }
     }
 
     /// ChangesScope: the scope menu with the Commits submenu open.
     @Test func changesScope() async throws {
         let session = ChangesBoard.session(comment: false)
+        session.layoutChoice = .split
         try await Preview.render("changes-scope", size: boardSize) { pane(session) { $0.menu = .commits } }
     }
 
     /// ChangesBase: the base picker under the compare row.
     @Test func changesBase() async throws {
         let session = ChangesBoard.session(comment: false)
+        session.layoutChoice = .split
         try await Preview.render("changes-base", size: boardSize) { pane(session) { $0.menu = .base } }
     }
 
@@ -95,6 +100,7 @@ struct ChangesPreviewTests {
     /// ChangesLastTurn: just the agent's last turn, a comment being written on line 103.
     @Test func changesLastTurn() async throws {
         let session = ChangesBoard.lastTurnSession()
+        session.layoutChoice = .split
         let file = session.files[0]
         let line = try #require(file.hunks.flatMap(\.lines).first { $0.newLine == 103 })
         try await Preview.render("changes-last-turn", size: boardSize) {
@@ -105,8 +111,9 @@ struct ChangesPreviewTests {
     /// ChangesWide: maximized, with the file list.
     @Test func changesWide() async throws {
         let session = ChangesBoard.session()
-        try await Preview.render("changes-wide", size: CGSize(width: 1548, height: Self.boardHeight)) {
-            pane(session, width: 1548, maximized: true) { $0.currentFile = session.files[0].id }
+        session.layoutChoice = .split
+        try await Preview.render("changes-wide", size: CGSize(width: Self.wideWidth, height: Self.boardHeight)) {
+            pane(session, width: Self.wideWidth, maximized: true) { $0.currentFile = session.files[0].id }
         }
     }
 

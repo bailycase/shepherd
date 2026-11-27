@@ -99,6 +99,57 @@ public struct SHFileHeader: View {
         let _ = SHRenderProbe.tick("review.fileHeader")
         let sh = Color.sh
         let (directory, name) = Self.split(path)
+        #if os(macOS)
+        // The boards' `.gch-fh`: the name in 500, its folder and "new file" in `caption`, the stat, then Viewed and two buttons.
+        HStack(spacing: SH.Space.m) {
+            Button(action: toggle) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: SHFileHeader.chevronSize, weight: .semibold))
+                    .foregroundStyle(sh.textTertiary)
+                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .shAnimation(.disclosure, value: isExpanded)
+                    .frame(width: SHFileHeader.chevronSlot, height: SHFileHeader.chevronSlot)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Collapse \(name)" : "Expand \(name)")
+            HStack(spacing: SH.Space.m) {
+                Text(name).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1).layoutPriority(1)
+                let place = ([directory.isEmpty ? nil : String(directory.dropLast())] + [Self.macNote(status)]).compactMap { $0 }.joined(separator: " ")
+                if !place.isEmpty {
+                    Text(place).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.head)
+                }
+            }
+            .help(path)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(directory.isEmpty ? "\(name), \(status.label)" : "\(name), in \(directory), \(status.label)")
+            .accessibilityAddTraits(.isHeader)
+            SHDiffStat(added: added, removed: removed, font: .sh(.caption, weight: .regular), hidesZero: true)
+            Spacer(minLength: SH.Space.s)
+            SHViewedCheckbox(isViewed: isViewed, name: name, toggle: toggleViewed)
+                .padding(.trailing, SH.Space.xs)
+            HStack(spacing: 0) {
+                if let comment {
+                    Button(action: comment) { Image(systemName: "bubble.left") }
+                        .buttonStyle(.shIcon(size: SHFileHeader.actionSize))
+                        .help("Comment on the file")
+                        .accessibilityLabel("Comment on \(name)")
+                }
+                if let open {
+                    Button(action: open) { Image(systemName: "arrow.up.forward.square") }
+                        .buttonStyle(.shIcon(size: SHFileHeader.actionSize))
+                        .help(openLabel)
+                        .accessibilityLabel("\(openLabel): \(name)")
+                }
+            }
+        }
+        .padding(.leading, SHFileHeader.leadingInset)
+        .padding(.trailing, SH.Space.s)
+        .frame(height: SHFileHeader.height)
+        .shPinnedBackground(sh.bgRaised, pinned: isPinned)
+        .overlay(alignment: .bottom) { SHHairline() }
+        .accessibilityElement(children: .contain)
+        #else
         HStack(spacing: SH.Space.m) {
             Button(action: toggle) {
                 Image(systemName: "chevron.down")
@@ -144,11 +195,28 @@ public struct SHFileHeader: View {
         .overlay(alignment: .top) { SHHairline() }
         .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
+        #endif
+    }
+
+    /// The word after the folder on the Mac ("ledger new file").
+    static func macNote(_ status: SHFileStatus) -> String? {
+        switch status {
+        case .modified: nil
+        case .added: "new file"
+        case .deleted: "deleted"
+        case .renamed: "renamed"
+        }
     }
 
     static let leadingInset: CGFloat = 10
+    #if os(macOS)
+    public static let height: CGFloat = 38
+    #else
     public static let height: CGFloat = 36
+    #endif
     static let actionSize: CGFloat = 26
+    static let chevronSize: CGFloat = 10
+    static let chevronSlot: CGFloat = 14
 }
 
 /// Viewed, as a checkbox and its label (FileHeader · viewed / not): a 14pt box, radius 4, a 1.5pt
@@ -170,6 +238,18 @@ public struct SHViewedCheckbox: View {
         Button(action: toggle) {
             HStack(spacing: SH.Space.s) {
                 ZStack {
+                    #if os(macOS)
+                    // The boards' `.cb`: the ink fill and a check in the button's own ink once ticked.
+                    RoundedRectangle(cornerRadius: SH.Radius.xs)
+                        .fill(isViewed ? sh.primary : sh.bgRaised)
+                    RoundedRectangle(cornerRadius: SH.Radius.xs)
+                        .strokeBorder(isViewed ? sh.primary : sh.lineStrong, lineWidth: 1.5)
+                    if isViewed {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(sh.textOnPrimary)
+                    }
+                    #else
                     RoundedRectangle(cornerRadius: SH.Radius.xs)
                         .fill(isViewed ? sh.lantern : sh.bgRaised)
                     RoundedRectangle(cornerRadius: SH.Radius.xs)
@@ -179,6 +259,7 @@ public struct SHViewedCheckbox: View {
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(sh.textOnLantern)
                     }
+                    #endif
                 }
                 .frame(width: 14, height: 14)
                 .shPop(trigger: pops)

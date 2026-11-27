@@ -3,15 +3,38 @@ import SwiftUI
 /// The Changes pane's measures (ChangesStates › Toolbar): a 44pt toolbar row, a 32pt compare row,
 /// a 48pt send bar (58pt on iPad), and the maximized pane's 260pt file list.
 public enum SHChangesMetrics {
+    #if os(macOS)
+    /// The Mac pane's (the boards' `.gch-tb` 40, `.gch-cmp` 30, `.gch-send` 46, `.gch-flist` 248).
+    public static let toolbarHeight: CGFloat = 40
+    public static let compareHeight: CGFloat = 30
+    #else
     public static let toolbarHeight: CGFloat = 44
     public static let compareHeight: CGFloat = 32
+    #endif
+    #if os(macOS)
+    public static let sendBarHeight: CGFloat = 46
+    #else
     public static let sendBarHeight: CGFloat = 48
+    #endif
     /// The send bar on iPad (iPadReview, iPadReviewSplit).
     public static let touchSendBarHeight: CGFloat = 58
+    #if os(macOS)
+    public static let fileListWidth: CGFloat = 248
+    #else
     public static let fileListWidth: CGFloat = 260
+    #endif
     public static let fileListRowHeight: CGFloat = 46
     public static let scopeButtonRadius: CGFloat = 7
     public static let toolbarIcon: CGFloat = 28
+    /// The Mac scope button's glyph and chevron.
+    public static let scopeGlyph: CGFloat = 13
+    public static let compareArrow: CGFloat = 11
+    /// The Mac file list's comment glyph and a row's meta line.
+    public static let fileListGlyph: CGFloat = 10
+    public static let fileListMeta: CGFloat = 16
+    public static let compareLeading: CGFloat = SH.Space.xl
+    public static let compareTrailing: CGFloat = 14
+    public static let scopeChevron: CGFloat = 9
 }
 
 /// What the toolbar's scope button names (ScopeMenu): its glyph by scope.
@@ -48,6 +71,25 @@ public struct SHScopeButton: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The boards' `.gch-scope`: no line, 28pt at radius 7, the glyph, the scope in 500 and a chevron; selected while open.
+        Button(action: action) {
+            HStack(spacing: SH.Space.s) {
+                Image(systemName: glyph.systemImage).font(.system(size: SHChangesMetrics.scopeGlyph, weight: .regular)).foregroundStyle(sh.textPrimary)
+                Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: SHChangesMetrics.scopeChevron, weight: .semibold)).foregroundStyle(sh.textTertiary)
+            }
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SH.Height.controlM)
+            .background(isOpen ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SHChangesMetrics.scopeButtonRadius))
+            .contentShape(RoundedRectangle(cornerRadius: SHChangesMetrics.scopeButtonRadius))
+        }
+        .buttonStyle(.shRow(radius: SHChangesMetrics.scopeButtonRadius))
+        .fixedSize()
+        .help("What to compare (⌘E)")
+        .accessibilityLabel("Compare: \(title)")
+        .accessibilityHint("Chooses what the pane compares")
+        #else
         Button(action: action) {
             HStack(spacing: 7) {
                 Image(systemName: glyph.systemImage).font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)
@@ -66,6 +108,7 @@ public struct SHScopeButton: View {
         .help("What to compare (⌘E)")
         .accessibilityLabel("Compare: \(title)")
         .accessibilityHint("Chooses what the pane compares")
+        #endif
     }
 }
 
@@ -81,6 +124,17 @@ public struct SHViewedPill: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The boards' `.gch-vwd`: "2 of 5 viewed" in `caption` and `textTertiary`.
+        Text("\(viewed) of \(total) viewed")
+            .font(.sh(.caption))
+            .foregroundStyle(sh.textTertiary)
+            .contentTransition(.numericText())
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(viewed) of \(total) files viewed")
+        #else
         HStack(spacing: SH.Space.s) {
             Image(systemName: "eye").font(.system(size: 10, weight: .medium))
             Text("\(Text("\(viewed)/\(total)").font(.shMono(11.5))) viewed")
@@ -94,6 +148,7 @@ public struct SHViewedPill: View {
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(viewed) of \(total) files viewed")
+        #endif
     }
 }
 
@@ -126,6 +181,48 @@ public struct SHCompareRow: View {
 
     public var body: some View {
         let sh = Color.sh
+        #if os(macOS)
+        // The boards' `.gch-cmp`: 30pt, head → base in 12 mono (the head in `textPrimary`), the base a picker, and a note at the end.
+        HStack(spacing: SH.Space.m) {
+            switch lead {
+            case .compare(let head, let base):
+                Text(head).font(.shMono(SHTextStyle.caption.size)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                Image(systemName: "arrow.right").font(.shSans(SHChangesMetrics.compareArrow)).foregroundStyle(sh.textTertiary)
+                    .accessibilityLabel("against")
+                if let pickBase {
+                    Button(action: pickBase) {
+                        HStack(spacing: SH.Space.xs) {
+                            Text(base).font(.shMono(SHTextStyle.caption.size)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.system(size: SHChangesMetrics.scopeChevron, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                        }
+                        .padding(.horizontal, SH.Space.s)
+                        .frame(height: SH.Height.controlS)
+                        .background(pickerOpen ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+                    }
+                    .buttonStyle(.shRow(radius: SH.Radius.s))
+                    .fixedSize()
+                    .padding(.leading, -SH.Space.s)
+                    .help("Compare against another branch")
+                    .accessibilityLabel("Base: \(base)")
+                    .accessibilityHint("Chooses what to compare against")
+                } else {
+                    Text(base).font(.shMono(SHTextStyle.caption.size)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                }
+            case .turn(let title, let detail):
+                Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary).lineLimit(1).fixedSize()
+                Text(detail).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: SH.Space.m)
+            if let note {
+                Text(note).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+            }
+        }
+        .foregroundStyle(sh.textSecondary)
+        .padding(.leading, SHChangesMetrics.compareLeading)
+        .padding(.trailing, SHChangesMetrics.compareTrailing)
+        .frame(height: SHChangesMetrics.compareHeight)
+        #else
         HStack(spacing: SH.Space.m) {
             switch lead {
             case .compare(let head, let base):
@@ -166,6 +263,7 @@ public struct SHCompareRow: View {
         .frame(height: SHChangesMetrics.compareHeight)
         .background(sh.bgBase)
         .overlay(alignment: .bottom) { SHHairline() }
+        #endif
     }
 }
 
@@ -210,6 +308,49 @@ public struct SHChangesFileList: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The boards' `.gch-flist`: 248 wide with a line at its end, "5 files +200 −8" over two-line rows (8pt radius, 2 apart).
+    @ViewBuilder private var macBody: some View {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                Text("\(items.count) file\(items.count == 1 ? "" : "s")")
+                    .font(.sh(.title))
+                    .foregroundStyle(sh.textPrimary)
+                    .padding(.trailing, SH.Space.xs)
+                    .accessibilityAddTraits(.isHeader)
+                SHDiffStat(added: added, removed: removed, font: .sh(.caption, weight: .regular))
+            }
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.m)
+            ScrollView {
+                LazyVStack(spacing: SH.Space.xxs) {
+                    ForEach(items) { item in
+                        SHChangesFileRow(item: item, selected: item.id == selection) { onSelect(item.id) }
+                            .equatable()
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+        }
+        .padding(.horizontal, SH.Space.m)
+        .padding(.vertical, SH.Space.l - SH.Space.xxs)
+        .frame(width: SHChangesMetrics.fileListWidth, alignment: .leading)
+        .background(SHPaneSurface.fill)
+        .overlay(alignment: .trailing) { SHHairline(.vertical) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Changed files")
+    }
+    #endif
+
+    @ViewBuilder private var touchBody: some View {
         let sh = Color.sh
         VStack(spacing: 0) {
             HStack {
@@ -252,6 +393,59 @@ private struct SHChangesFileRow: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.item == rhs.item && lhs.selected == rhs.selected }
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The boards' `.gch-lr`: the name in 13 (500 while selected, `textTertiary` once viewed) and its stat, the folder in 12 under
+    /// it with the comment count at the end.
+    @ViewBuilder private var macBody: some View {
+        let _ = SHRenderProbe.tick("review.fileRow")
+        let sh = Color.sh
+        let (directory, name) = SHFileHeader.split(item.path)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs / 2) {
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                    Text(name)
+                        .font(.sh(.ui, weight: selected ? .medium : .regular))
+                        .foregroundStyle(item.isViewed ? sh.textTertiary : sh.textPrimary)
+                        .lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    SHDiffStat(added: item.added, removed: item.removed, font: .sh(.caption, weight: .regular), hidesZero: true)
+                }
+                HStack(spacing: SH.Space.m) {
+                    Text(String(directory.dropLast()))
+                        .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                        .lineLimit(1).truncationMode(.head)
+                    Spacer(minLength: 0)
+                    if item.comments > 0 {
+                        HStack(spacing: SH.Space.xxs + 1) {
+                            Image(systemName: "bubble.left").font(.system(size: SHChangesMetrics.fileListGlyph))
+                            Text("\(item.comments)").font(.sh(.caption))
+                        }
+                        .foregroundStyle(sh.textSecondary)
+                    }
+                }
+                .frame(minHeight: SHChangesMetrics.fileListMeta)
+            }
+            .padding(.horizontal, SH.Space.m)
+            .padding(.vertical, SH.Space.s + SH.Space.xxs / 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.shRow(selected: selected, radius: SH.Radius.m))
+        .help(item.path)
+        .accessibilityLabel("\(name), \(item.status.label), \(item.added) added, \(item.removed) removed"
+                            + (item.comments > 0 ? ", \(item.comments) comments" : "") + (item.isViewed ? ", viewed" : ""))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+    #endif
+
+    @ViewBuilder private var touchBody: some View {
         let _ = SHRenderProbe.tick("review.fileRow")
         let sh = Color.sh
         let (directory, name) = SHFileHeader.split(item.path)

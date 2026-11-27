@@ -35,6 +35,61 @@ public struct SHReviewSendBar: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        if size == .regular { macBody } else { touchBody }
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The boards' `.gch-send`: 46pt on `bgRaised` under a line, a bubble, "**1 comment** on outbox.go, not sent yet", then Discard,
+    /// Comment on GitHub and Send to agent as plain words (the send in 600 with its chord).
+    @ViewBuilder private var macBody: some View {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "bubble.left").font(.sh(.ui)).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+                Text("\(Text(count).fontWeight(.semibold).foregroundStyle(sh.textPrimary)) \(Text(detail).foregroundStyle(sh.textSecondary))")
+                    .font(.sh(.ui, weight: .regular))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: SH.Space.m)
+            Button("Discard", action: onDiscard)
+                .buttonStyle(.shBar)
+                .foregroundStyle(sh.textSecondary)
+                .disabled(sending)
+                .accessibilityHint("Deletes the comments you haven't sent")
+            if let onPost {
+                Button("Comment on GitHub", action: onPost)
+                    .buttonStyle(.shBar)
+                    .disabled(sending)
+                    .help("Post your comments on the pull request as a review")
+            }
+            Button(action: onSend) {
+                HStack(spacing: SH.Space.s) {
+                    Text(sendTitle).fontWeight(.semibold).shShimmer(active: sending)
+                    Text("⌘↩").font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
+                }
+            }
+            .buttonStyle(.shBar)
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(sending)
+            .help("\(sendTitle) (⌘↩)")
+            .accessibilityHint(sendTitle == "Send to agent" ? "Sends your comments as the agent's next message" : sendTitle)
+        }
+        .padding(.leading, SH.Space.xl)
+        .padding(.trailing, SH.Space.l - SH.Space.xxs)
+        .frame(maxWidth: .infinity, minHeight: SHChangesMetrics.sendBarHeight, alignment: .leading)
+        .background(sh.bgRaised)
+        .overlay(alignment: .top) { SHHairline() }
+        .accessibilityElement(children: .contain)
+    }
+    #endif
+
+    @ViewBuilder private var touchBody: some View {
         let sh = Color.sh
         let stacked = typeSize.isAccessibilitySize
         let buttons: SHButtonStyle.Size = size == .touch ? .m : .s
