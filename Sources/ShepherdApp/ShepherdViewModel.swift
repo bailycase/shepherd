@@ -100,6 +100,10 @@ final class ShepherdViewModel {
     @ObservationIgnored var automationsPageCache: (inputs: AutomationsPageInputs, model: AutomationsPageModel)?
     /// The New thread page's draft: what to do, where, and how. Kept while the page is away.
     let newThread = NewThreadState()
+    /// First-run setup (the Onboarding boards), over the window until it ends.
+    let onboarding = OnboardingModel()
+    /// This is the app, not a fixture: its first launch runs setup.
+    @ObservationIgnored private(set) var runsOnboarding = false
     /// The New design page's brief, images and project. Kept while the page is away.
     let newDesign = NewDesignState()
     /// The Export sheet over a design (DZExport), while it is up.
@@ -940,6 +944,7 @@ final class ShepherdViewModel {
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes.
+        runsOnboarding = welcomesYourPi
         if welcomesYourPi {
             holdsForWelcome = true
             Task { [weak self] in

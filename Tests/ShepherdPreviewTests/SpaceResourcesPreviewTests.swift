@@ -97,7 +97,7 @@ struct SpaceResourcesPreviewTests {
         default: break
         }
         try await Preview.renderMatrix("space-resources-\(state)", size: CGSize(width: 1440, height: 900)) {
-            SettingsView(vm: world.vm)
+            RootView(vm: world.vm)
         }
     }
 }

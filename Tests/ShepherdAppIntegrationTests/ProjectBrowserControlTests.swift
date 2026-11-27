@@ -75,7 +75,7 @@ struct ProjectBrowserControlTests {
             return window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
         }
         // Settings is one centered column: the list, a space's page and its Browser drill-in all keep its width as the window resizes.
-        let columnWidth = AppLayout.settingsColumnWidth
+        let columnWidth = AppLayout.settingsModalWidth - SHSettingsNavMetrics.width - 2 * AppLayout.spacePageSides
         let list = try column("SettingsPageContent")
         #expect(abs(list.width - columnWidth) <= 1, "the list fills the column: \(list) vs \(columnWidth)")
         try ControlPress.press("Open payments", under: window.host)

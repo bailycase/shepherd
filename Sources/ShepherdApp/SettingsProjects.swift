@@ -51,17 +51,27 @@ struct ProjectsSettings: View {
 
     /// The spaces, children indented under their parents; a row opens the space.
     private var list: some View {
-        SettingsPage(title: "Spaces") {
-            SettingsGroup(title: "", footnote: model.error ?? "Grouping changes only Shepherd. Instructions and settings follow folders on disk.",
-                          links: model.addHost == nil || model.addHost?.unavailable != nil ? [] : [
-                              SettingsLink("Add space") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } },
-                          ], lazy: true) {
+        SpacePageFrame {
+            SpacePageHeader(title: "Spaces")
+            SpaceSection(title: "", footnote: model.error ?? "Grouping changes only Shepherd. Instructions and settings follow folders on disk.", lazy: true,
+                         showsHeader: !model.rows.isEmpty && model.addHost != nil && model.addHost?.unavailable == nil) {
+                if !model.rows.isEmpty, model.addHost != nil, model.addHost?.unavailable == nil {
+                    Button("Add space") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } }.buttonStyle(SpaceLinkStyle())
+                }
+            } content: {
                 if !model.rows.isEmpty {
-                    SettingsSearchRow(prompt: "Filter spaces", text: $model.filter)
+                    HStack(spacing: SH.Space.l) {
+                        SpaceSearchField(prompt: "Filter spaces", text: $model.filter)
+                        Spacer(minLength: 0)
+                    }.padding(.horizontal, AppLayout.spaceRowSides).padding(.vertical, SH.Space.m).frame(minHeight: AppLayout.spaceFilterHeight)
                 }
                 if model.visible.isEmpty {
-                    SettingsRow(title: model.loading ? "Loading spaces…" : model.rows.isEmpty ? "No spaces yet" : "No spaces match",
-                                subtitle: model.rows.isEmpty && !model.loading ? "Add a folder to get started" : nil) { EmptyView() }
+                    SpaceEmpty(title: model.loading ? "Loading spaces…" : model.rows.isEmpty ? "No spaces yet" : "No spaces match",
+                               message: model.rows.isEmpty && !model.loading ? "Add a folder to get started." : nil) {
+                        if model.rows.isEmpty, !model.loading, model.addHost != nil, model.addHost?.unavailable == nil {
+                            Button("Add space") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } }.buttonStyle(SpaceLinkStyle(tone: .strong))
+                        }
+                    }
                 }
                 ForEach(model.visible) { row in
                     SpaceListRow(row: row, collapsed: model.collapsed.contains(row.id), open: { Task { await model.open(row) } }) {
@@ -86,11 +96,24 @@ private struct SpaceListRow<Actions: View>: View, Equatable {
 
     var body: some View {
         let _ = SHRenderProbe.tick("settings.project.row")
-        SettingsDrillRow(title: row.project.name, subtitle: row.unavailable ?? row.project.displayPath,
-                         value: row.host.name, indented: !row.ancestorIDs.isEmpty,
-                         accessibilityName: row.isSubproject ? "Open \(row.project.name) under \(row.parentName ?? "")" : "Open \(row.project.name)",
-                         action: open)
-            .contextMenu { actions }
-            .accessibilityActions { actions }
+        Button(action: open) {
+            HStack(spacing: AppLayout.spaceRowGap) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text(row.project.name).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                    Text(row.unavailable ?? row.project.displayPath).font(.shMono(AppLayout.spaceDetailSize))
+                        .foregroundStyle(row.unavailable == nil ? Color.sh.textTertiary : Color.sh.lanternText).lineLimit(1).truncationMode(.middle)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                Text(row.host.name).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                Image(systemName: "chevron.right").font(.shSans(SHSettingsControlMetrics.popupChevronSize, .semibold))
+                    .foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+            }
+            .padding(.leading, AppLayout.spaceRowSides + (row.ancestorIDs.isEmpty ? 0 : AppLayout.spaceRowIndent))
+            .padding(.trailing, AppLayout.spaceRowSides).padding(.vertical, SH.Space.m).frame(minHeight: AppLayout.spaceRowMinHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(row.isSubproject ? "Open \(row.project.name) under \(row.parentName ?? "")" : "Open \(row.project.name)")
+        .contextMenu { actions }
+        .accessibilityActions { actions }
     }
 }

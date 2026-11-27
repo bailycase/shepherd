@@ -21,7 +21,7 @@ struct ProjectRenamePreviewTests {
         try await world.synced()
         await world.vm.projects.load(world.vm.projectsSources, force: true)
         try await Preview.renderMatrix("projects-explicit-organization", size: CGSize(width: 1440, height: 900)) {
-            SettingsView(vm: world.vm)
+            RootView(vm: world.vm)
         }
     }
 

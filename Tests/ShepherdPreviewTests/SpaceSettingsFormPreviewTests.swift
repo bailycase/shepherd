@@ -11,7 +11,7 @@ import ShepherdTestSupport
 @Suite("Space settings form previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled))
 @MainActor
 struct SpaceSettingsFormPreviewTests {
-    @Test(arguments: ["saved", "full", "dirty", "conflict", "offline", "invalid", "leave", "error"])
+    @Test(arguments: ["saved", "full", "dirty", "conflict", "offline", "invalid", "leave", "error", "json"])
     func form(state: String) async throws {
         let world = try await ProjectsPreviewWorld(detail: true)
         defer { world.stop() }
@@ -36,6 +36,8 @@ struct SpaceSettingsFormPreviewTests {
             model.setForm(row("defaultTools"), "project")
             model.toggleFormTool("grep", on: true)
             if state == "leave" { await model.navigate(.category(.skills)) }
+        case "json":
+            model.showingSettingsJSON = true
         case "error":
             model.setForm(row("compaction.reserveTokens"), "lots")
             model.setForm(row("shellPath"), "zsh")
@@ -48,8 +50,16 @@ struct SpaceSettingsFormPreviewTests {
             model.selected?.host.unavailable = "Host offline. Reconnect in Settings > Remote to edit its spaces."
         default: break
         }
-        try await Preview.renderMatrix("space-settings-\(state)", size: CGSize(width: 1440, height: state == "full" || state == "error" ? 1800 : 900)) {
-            SettingsView(vm: world.vm)
+        if state == "full" || state == "error" {
+            // ProjectSettings is the whole form in one tall modal: the Settings window itself, 980 wide, 1500 tall, 110 down.
+            try await Preview.renderMatrix("space-settings-\(state)", size: CGSize(width: 1440, height: 1720)) {
+                SettingsView(vm: world.vm).frame(width: AppLayout.settingsModalWidth, height: 1500).padding(.top, 110)
+                    .frame(width: 1440, height: 1720, alignment: .top)
+            }
+            return
+        }
+        try await Preview.renderMatrix("space-settings-\(state)", size: CGSize(width: 1440, height: 900)) {
+            RootView(vm: world.vm)
         }
     }
 
@@ -75,7 +85,7 @@ struct SpaceSettingsFormPreviewTests {
         await model.navigate(.category(.pi))
         try await eventuallyOnMain("the form") { model.fileLoaded && !model.formGroups.isEmpty && (state == "parent" || model.context.parentName != nil) }
         try await Preview.renderMatrix("space-settings-\(state)", size: CGSize(width: 1440, height: 900)) {
-            SettingsView(vm: world.vm)
+            RootView(vm: world.vm)
         }
     }
 }
