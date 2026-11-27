@@ -257,7 +257,7 @@ struct SettingsView: View {
                 ScrollView(.vertical) {
                     Group { page }
                         .shTransition(.content)
-                        .frame(maxWidth: vm.settingsSection == .projects ? AppLayout.settingsWideColumnWidth : AppLayout.settingsColumnWidth, alignment: .leading)
+                        .frame(maxWidth: AppLayout.settingsColumnWidth, alignment: .leading)
                         .contentShape(Rectangle())
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("SettingsPageContent")
