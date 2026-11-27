@@ -21,8 +21,9 @@ enum DesignPictures {
     @MainActor static var scale: Int { max(1, Int((DesignRenderAnchor.window?.screen.scale ?? 2).rounded())) }
 
     @MainActor
-    static func key(content: String, props: String? = nil, board: CGSize, width: CGFloat) -> BoardPictureKey {
-        BoardPictureKey(content: content, props: props, board: board, width: Int(width.rounded()), scale: scale, renderer: renderer)
+    static func key(content: String, props: String? = nil, dependencies: String = "", board: CGSize, width: CGFloat) -> BoardPictureKey {
+        BoardPictureKey(content: content, props: props, dependencies: dependencies, board: board, width: Int(width.rounded()), scale: scale,
+                        renderer: renderer)
     }
 
     /// The kept picture, decoded off the main thread; nil when none is kept or it does not decode (then it is forgotten).

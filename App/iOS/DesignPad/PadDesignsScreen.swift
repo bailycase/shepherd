@@ -33,7 +33,8 @@ struct PadDesignsScreen: View {
                                                      spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top)],
                                   spacing: SHPhoneDesignMetrics.gridRowSpacing) {
                             ForEach(designs.rows) { row in
-                                let first = designs.library(row.ref.host).listing?.designs.first { $0.id == row.ref.design }?.firstBoard
+                                let summary = designs.library(row.ref.host).listing?.designs.first { $0.id == row.ref.design }
+                                let first = summary?.firstBoard
                                 let drawing = row.agentID.flatMap { hosts.host(row.ref.host)?.agent($0) }?.status == .working
                                 SHDesignTile(name: row.name,
                                              detail: drawing ? "Drawing · \(row.boards)"
@@ -43,10 +44,10 @@ struct PadDesignsScreen: View {
                                              action: { PadDesignHooks.open(row.ref, navigator: navigator) }) {
                                     PadDesignThumbnail(image: thumbnails.image(row.ref), version: thumbnails.versions[row.ref] ?? 0)
                                 }
-                                .task(id: first?.sha256) {
+                                .task(id: (first?.sha256 ?? "") + "@\(summary?.revision ?? 0)") {
                                     guard let first else { return }
                                     thumbnails.update(row.ref, path: first.path, size: CGSize(width: first.width, height: first.height),
-                                                      sha: first.sha256, source: designs.library(row.ref.host).source(row.ref.design))
+                                                      sha: first.sha256, revision: summary?.revision ?? 0, source: designs.library(row.ref.host).source(row.ref.design))
                                 }
                             }
                         }

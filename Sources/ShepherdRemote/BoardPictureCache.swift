@@ -10,6 +10,9 @@ public struct BoardPictureKey: Hashable, Sendable {
     public var content: String
     /// The board's tweaked props as JSON, nil when it has none.
     public var props: String?
+    /// A digest of what the board draws from outside its own file (`BoardDependencies`): the
+    /// design-system files and imported pieces it reads. Empty when it reads none.
+    public var dependencies: String
     /// The board's own size in points.
     public var board: CGSize
     /// How wide the picture is drawn, in points (one of `BoardPictureTier.widths` for the canvas).
@@ -19,9 +22,10 @@ public struct BoardPictureKey: Hashable, Sendable {
     /// The renderer's version: the app that drew it, so a new runtime draws again.
     public var renderer: String
 
-    public init(content: String, props: String? = nil, board: CGSize, width: Int, scale: Int, renderer: String) {
+    public init(content: String, props: String? = nil, dependencies: String = "", board: CGSize, width: Int, scale: Int, renderer: String) {
         self.content = content
         self.props = props
+        self.dependencies = dependencies
         self.board = board
         self.width = width
         self.scale = scale
@@ -30,7 +34,7 @@ public struct BoardPictureKey: Hashable, Sendable {
 
     /// The picture's file name: a hash of every field, so no two keys share one.
     public var name: String {
-        let text = [renderer, content, props ?? "", "\(Int(board.width))x\(Int(board.height))", "\(width)", "\(scale)"]
+        let text = [renderer, content, dependencies, props ?? "", "\(Int(board.width))x\(Int(board.height))", "\(width)", "\(scale)"]
             .joined(separator: "\u{1F}")
         return SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }

@@ -102,16 +102,23 @@ final class DesignRendering {
     fileprivate func opened() { liveViews += 1 }
     fileprivate func closed() { liveViews -= 1 }
 
-    /// The board drawn as an image `width` points wide, from the cache while its hash holds.
+    /// The board drawn as an image `width` points wide, from the cache while what it reads holds: its own hash
+    /// and its design-system files and imported pieces (`BoardDependencies`). A design this phone has not
+    /// synced (a Designs tile) names `revision`, its files' revision, instead, which moves with any file.
     func image(_ ref: HostDesignRef, source: RemoteDesignSource, path: DesignPath, sha256: String, size: CGSize,
-               width: CGFloat) async -> UIImage? {
+               width: CGFloat, revision: UInt64? = nil) async -> UIImage? {
         guard !forgottenHosts.contains(ref.host) else { return nil }
-        let key = "\(ref.host.uuidString)/\(ref.design.rawValue)/\(path.rawValue)/\(sha256)/\(Int(width))"
+        let synced = source.index?.snapshot.revision
+        let digests = await Task.detached(priority: .userInitiated) { source.dependencyDigests() }.value
+        // The digests are of the files as last synced: right unless the caller knows a newer revision.
+        let current = revision == nil || revision == synced
+        let dependencies = (current ? digests?[path] : nil) ?? revision.map { "r\($0)" }
+        let key = "\(ref.host.uuidString)/\(ref.design.rawValue)/\(path.rawValue)/\(sha256)/\(Int(width))/\(dependencies ?? "-")"
         if let image = images[key] { return image }
         // Drawn before (and not changed since): read back from disk, without waiting for the renderer's turn.
         let shown = min(width, size.width)
-        let picture = DesignPictures.key(content: sha256, board: size, width: shown)
-        if DesignPictures.cache.contains(picture), let cg = await DesignPictures.load(picture) {
+        let picture = dependencies.map { DesignPictures.key(content: sha256, dependencies: $0, board: size, width: shown) }
+        if let picture, DesignPictures.cache.contains(picture), let cg = await DesignPictures.load(picture) {
             guard !Task.isCancelled, !forgottenHosts.contains(ref.host) else { return nil }
             let image = UIImage(cgImage: cg, scale: max(1, shown > 0 ? CGFloat(cg.width) / shown : 1), orientation: .up)
             remember(image, key)
@@ -126,7 +133,8 @@ final class DesignRendering {
             let view = self.makeView(ref, source: source, path: path, size: size)
             defer { self.release(view) }
             guard (try? await Self.load(view)) != nil, let image = try? await view.snapshot(width: min(width, size.width)) else { return nil }
-            DesignPictures.save(image, as: picture)
+            // Kept only if the files it read are the ones its key names (a design that changed meanwhile draws again).
+            if let picture, source.index?.snapshot.revision == synced { DesignPictures.save(image, as: picture) }
             return UIImage(cgImage: image, scale: max(1, image.width > 0 ? CGFloat(image.width) / min(width, size.width) : 1),
                            orientation: .up)
         }
@@ -431,6 +439,8 @@ struct DesignBoardImage: View {
     let size: CGSize
     let shown: CGSize
     var alignment: Alignment = .topLeading
+    /// The design's files' revision: a board's picture is drawn again when a design-system file it reads changes.
+    var revision: UInt64?
     @State private var image: UIImage?
 
     var body: some View {
@@ -447,10 +457,10 @@ struct DesignBoardImage: View {
                 }
             }
             .clipped()
-            .task(id: sha256 + "/\(Int(shown.width))") {
+            .task(id: sha256 + "/\(Int(shown.width))/\(revision ?? 0)") {
                 guard let source, size.width > 0, size.height > 0 else { return }
                 image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: sha256, size: size,
-                                                           width: shown.width)
+                                                           width: shown.width, revision: revision)
             }
             .accessibilityHidden(true)
     }

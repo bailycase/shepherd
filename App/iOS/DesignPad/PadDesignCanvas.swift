@@ -95,6 +95,7 @@ final class PadDesignCanvas {
         host = PadDesignRendering.shared.host(for: ref, source: source)
         tweak = DesignTweakModel(designID: ref.design, io: Self.tweakIO(library, source: source, design: ref.design), host: host)
         host.source = { path in try await source.source(path) }
+        host.latestRevision = { source.index?.snapshot.revision }
         host.redrawn = { [weak self] path in self?.relocate(on: path) }
         host.rasterized = { [weak self] _ in self?.placeUnplacedPins() }
         host.linked = { [weak self] from, to in self?.follow(link: to, from: from) }
@@ -234,6 +235,7 @@ final class PadDesignCanvas {
         problem = nil
         labelRooms = [:]
         host.source = nil
+        host.latestRevision = nil
         host.redrawn = nil
         host.rasterized = nil
         host.linked = nil
@@ -252,7 +254,11 @@ final class PadDesignCanvas {
         repeat {
             refreshAgain = false
             do {
-                apply(try await source.sync().snapshot)
+                let index = try await source.sync()
+                // What each board reads outside its own file, as a digest: read off the main thread, once per change.
+                let source = source
+                let dependencies = await Task.detached(priority: .userInitiated) { source.dependencyDigests() }.value ?? [:]
+                apply(index.snapshot, dependencies: dependencies)
                 if loadError != nil { loadError = nil }
             } catch {
                 guard !source.cache.isForgotten(host: ref.host) else { return }
@@ -262,7 +268,7 @@ final class PadDesignCanvas {
         } while refreshAgain
     }
 
-    private func apply(_ next: DesignSnapshot) {
+    private func apply(_ next: DesignSnapshot, dependencies: [DesignPath: String]) {
         guard !source.cache.isForgotten(host: ref.host), snapshot != next else { return }
         let previous = snapshot?.index
         let shown = RemoteDesignPresentation.page(pages.chosen[designRef] ?? page, in: next.index)
@@ -287,8 +293,10 @@ final class PadDesignCanvas {
             guard let sha = next.boards[path] else { continue }
             let tweaks = next.index.tweaks(for: path)
             boards[path] = PadDesignHost.Board(size: CGSize(width: board.w, height: board.h), sha: sha,
-                                               props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)))
+                                               props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)),
+                                               dependencies: dependencies[path] ?? "")
         }
+        host.revision = next.revision
         host.update(boards)
         Task { await tweak.snapshotChanged(next) }
         fitIfNeeded()

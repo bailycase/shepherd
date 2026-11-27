@@ -496,9 +496,11 @@ final class MobileDesigns {
             guard !Task.isCancelled, mentionPictures[key] === value else { return }
             let source = library.source(item.reference.designID)
             let image: UIImage?
-            if item.kind == .design, let first = library.listing?.designs.first(where: { $0.id == item.reference.designID })?.firstBoard {
+            if item.kind == .design, let summary = library.listing?.designs.first(where: { $0.id == item.reference.designID }),
+               let first = summary.firstBoard {
                 image = await rendering.image(key.ref, source: source, path: first.path, sha256: first.sha256,
-                                              size: CGSize(width: first.width, height: first.height), width: SHReferenceMetrics.thumbnail.width)
+                                              size: CGSize(width: first.width, height: first.height), width: SHReferenceMetrics.thumbnail.width,
+                                              revision: summary.revision)
             } else {
                 guard let path = item.reference.board, let index = await sync(key.ref), !Task.isCancelled,
                       mentionPictures[key] === value, let board = index.snapshot.index.boards[path],
