@@ -95,7 +95,7 @@ enum WindowsFixtures {
         let image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: label, size: size, width: 160)
         let thumbnails = PadDesignThumbnails.shared
         let version = thumbnails.versions[DesignPadFixtures.ref] ?? 0
-        thumbnails.update(DesignPadFixtures.ref, path: path, size: size, sha: label, source: source)
+        thumbnails.update(DesignPadFixtures.ref, path: path, size: size, sha: label, revision: 1, source: source)
         await FixtureWindows.wait("pad thumbnail \(label)", seconds: 20) { thumbnails.versions[DesignPadFixtures.ref, default: 0] > version }
         do {
             for format in DesignExportFormat.allCases {

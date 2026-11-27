@@ -242,6 +242,9 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     private let transport: @Sendable () -> (any RemoteDesignTransport)?
     private let lock = NSLock()
     private var lastIndex: RemoteDesignIndex?
+    private let dependencies = BoardDependencies()
+    private let computing = NSLock()
+    private var dependencyMemo: (files: [RemoteDesignFileInfo], boards: Set<DesignPath>, digests: [DesignPath: String])?
 
     /// `transport` is asked each time: the host's connection now, or nil while it is away (the
     /// cache still serves what it has).
@@ -254,7 +257,28 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     public func invalidate() {
         lock.lock()
         lastIndex = nil
+        dependencyMemo = nil
         lock.unlock()
+    }
+
+    /// For each board of the design as last synced, a digest of the files it draws from outside its own
+    /// (`BoardDependencies`); "" for a board that reads none. Nil until the design has been synced.
+    /// Reads files, so ask off the main thread; the answer is kept until the files change.
+    public func dependencyDigests() -> [DesignPath: String]? {
+        guard let index else { return nil }
+        computing.lock()
+        defer { computing.unlock() }
+        lock.lock()
+        let kept = dependencyMemo
+        lock.unlock()
+        if let kept, kept.files == index.files, kept.boards == Set(index.snapshot.boards.keys) { return kept.digests }
+        let digests = dependencies.digests(for: Array(index.snapshot.boards.keys), files: index.files) { [cache, key] in
+            cache.object(key, sha256: $0)
+        }
+        lock.lock()
+        dependencyMemo = (index.files, Set(index.snapshot.boards.keys), digests)
+        lock.unlock()
+        return digests
     }
 
     /// The index as last synced.

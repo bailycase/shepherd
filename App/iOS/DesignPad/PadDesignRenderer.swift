@@ -14,7 +14,8 @@ import ShepherdRemote
 // (`PadDesignRasterizer`) draws every other board's snapshot, one at a time (two while no board
 // is live, as a canvas zoomed far out has none): two web views at most, the plan's iOS cap, however large the canvas and however many designs are on screen (a
 // design taking its live view takes it from the others). A hidden design gives its live view up
-// and keeps its snapshots.
+// and keeps its snapshots. Every finished snapshot is also kept on disk by the board's content
+// (`DesignPictures`): a board that has not changed is read back, never drawn again.
 
 /// An element a board reported under a point: its id as a view record names it, where the board
 /// draws it (the board's own points), and what it is.
@@ -85,6 +86,8 @@ final class PadDesignRendering {
     func forget(host: UUID) {
         forgottenHosts.insert(host)
         for ref in Array(hosts.keys) where ref.host == host { hosts.removeValue(forKey: ref)?.release() }
+        // Pictures are kept by content, not by host: a host this device forgets takes them all.
+        DesignPictures.cache.removeAll()
     }
 
     /// Designs that are gone give up everything they held.
@@ -105,8 +108,10 @@ final class PadDesignHost {
         var sha: String
         /// Its tweaked props as JSON (canvas.json's `tweaks` for it); nil when it has none.
         var props: String?
+        /// A digest of the design-system files and imported pieces it draws from (`BoardDependencies`); "" for none.
+        var dependencies = ""
 
-        var drawing: String { props.map { sha + "+" + $0 } ?? sha }
+        var drawing: String { (dependencies.isEmpty ? sha : sha + "^" + dependencies) + (props.map { "+" + $0 } ?? "") }
     }
 
     let designID: DesignID
@@ -123,6 +128,11 @@ final class PadDesignHost {
     @ObservationIgnored private let liveCap: Int
     /// Reads a board's source (for a live reload in place).
     @ObservationIgnored var source: ((DesignPath) async throws -> String)?
+    /// The design's files' revision the boards were last planned at, and the newest the device has synced. A
+    /// picture drawn while they differ may have read files its key doesn't name, so it is shown, not kept on disk.
+    @ObservationIgnored var revision: UInt64 = 0
+    @ObservationIgnored var latestRevision: (() -> UInt64?)?
+    private var isCurrent: Bool { latestRevision?().map { $0 == revision } ?? true }
     /// A presented board's link asked for another board of the design (Play).
     @ObservationIgnored var linked: ((_ from: DesignPath, _ to: DesignPath) -> Void)?
     /// A live board drew new source: a selection on it is found again where it is now.
@@ -164,6 +174,9 @@ final class PadDesignHost {
         self.rasterizer = rasterizer
         self.liveCap = liveCap
     }
+
+    /// Bytes of pixels the snapshots hold (fixtures measure it).
+    var imageBytes: Int { images.bytes }
 
     var liveCount: Int { slots.count }
     var liveBoards: Set<DesignPath> { Set(slots.keys) }
@@ -212,7 +225,9 @@ final class PadDesignHost {
         }
         for (path, board) in next {
             guard let old = previous[path], old != board, let slot = slots[path] else { continue }
-            if old.size != board.size {
+            if old.size != board.size || old.dependencies != board.dependencies {
+                // A new size, or a file it reads changed: the page loads again, since a source swapped
+                // in place keeps the stylesheet and pieces it drew with.
                 releaseSlot(path)
             } else if slot.ready, slot.sha != board.drawing {
                 reload(path, slot: slot)
@@ -435,30 +450,52 @@ final class PadDesignHost {
                 return
             }
             guard self.slots[path] === slot, !Task.isCancelled else { return }
-            await self.snapshot(path, slot: slot)
+            await self.snapshot(path, slot: slot, keeping: false)
         }
     }
 
-    private func snapshot(_ path: DesignPath, slot: Slot) async {
+    /// Snapshots a live board. A page swapped in place (`reload`) may still draw with the head and pieces it
+    /// loaded, so its picture is shown but not kept on disk (`keeping`); a page just loaded is kept.
+    private func snapshot(_ path: DesignPath, slot: Slot, keeping: Bool = true) async {
         let width = min(slot.view.boardSize.width, PadDesignRasterizer.snapshotWidth)
         guard let image = try? await slot.view.snapshot(width: width), slots[path] === slot else { return }
-        images.store(image, sha: slot.sha, for: path, keeping: onScreen)
+        images.store(image, sha: slot.sha, width: PadDesignRasterizer.snapshotWidth, for: path, keeping: onScreen)
+        if keeping, isCurrent, let board = boards[path], board.drawing == slot.sha {
+            DesignPictures.save(image, as: DesignPictures.key(content: board.sha, props: board.props, dependencies: board.dependencies, board: board.size,
+                                                              width: PadDesignRasterizer.snapshotWidth))
+        }
         bump(path)
     }
 
+    /// The width a board's snapshot is drawn at where it is shown now (`BoardPictureTier`).
+    private func wantedWidth(_ board: Board) -> CGFloat {
+        BoardPictureTier.width(boardWidth: board.size.width, zoom: zoom)
+    }
+
+    /// Whether the board's snapshot is of its current version and at least as wide as it is shown.
+    private func isSharp(_ path: DesignPath, _ board: Board) -> Bool {
+        images.sha(path) == board.drawing && (images.width(path) ?? 0) >= wantedWidth(board)
+    }
+
     private func rasterizeIfStale(_ path: DesignPath) {
-        guard let board = boards[path], images.sha(path) != board.drawing, failed[path] != board.drawing else { return }
+        guard let board = boards[path], !isSharp(path, board), failed[path] != board.drawing else { return }
         let drawing = board.drawing
+        let width = wantedWidth(board)
+        let picture = DesignPictures.key(content: board.sha, props: board.props, dependencies: board.dependencies, board: board.size, width: width)
+        let planned = revision
         rasterizer.enqueue(PadDesignRasterizer.Job(key: "\(designID.rawValue)/\(path.rawValue)", surface: surface, path: path,
-                                                   size: board.size, wanted: { [weak self] in
+                                                   size: board.size, width: width, picture: picture,
+                                                   keep: { [weak self] in
+                                                       guard let self else { return false }
+                                                       return self.isCurrent && self.revision == planned && self.boards[path]?.drawing == drawing
+                                                   }, wanted: { [weak self] in
                                                        guard let self, self.isActive, self.slots[path] == nil,
-                                                             self.visible.contains(path) else { return false }
-                                                       return self.boards[path]?.drawing == drawing && self.images.sha(path) != drawing
+                                                             self.visible.contains(path), let board = self.boards[path] else { return false }
+                                                       return board.drawing == drawing && !self.isSharp(path, board)
                                                    }) { [weak self] image in
             guard let self, self.boards[path]?.drawing == drawing else { return }
             guard let image else { self.failed[path] = drawing; self.bump(path); return }
-            guard self.boards[path]?.drawing == drawing else { return }
-            self.images.store(image, sha: drawing, for: path, keeping: self.onScreen)
+            self.images.store(image, sha: drawing, width: width, for: path, keeping: self.onScreen)
             self.bump(path)
             self.rasterized?(path)
         })
@@ -487,15 +524,17 @@ final class PadDesignHost {
     private func currentImage(_ path: DesignPath) async -> CGImage? {
         guard let board = boards[path] else { return nil }
         let drawing = board.drawing
-        if images.sha(path) == drawing, let image = images.image(path) { return image }
+        if images.sha(path) == drawing, (images.width(path) ?? 0) >= PadDesignRasterizer.snapshotWidth, let image = images.image(path) { return image }
         // A key of its own: the rasterizer replaces a queued job with the same key, and this one
         // must answer.
         let image: CGImage? = await withCheckedContinuation { continuation in
+            let picture = DesignPictures.key(content: board.sha, props: board.props, dependencies: board.dependencies, board: board.size,
+                                             width: PadDesignRasterizer.snapshotWidth)
             rasterizer.enqueue(PadDesignRasterizer.Job(key: "render/\(UUID().uuidString)", surface: surface, path: path,
-                                                       size: board.size, wanted: { true }) { continuation.resume(returning: $0) })
+                                                       size: board.size, picture: picture, wanted: { true }) { continuation.resume(returning: $0) })
         }
         if let image, boards[path]?.drawing == drawing, images.sha(path) != drawing {
-            images.store(image, sha: drawing, for: path, keeping: onScreen)
+            images.store(image, sha: drawing, width: PadDesignRasterizer.snapshotWidth, for: path, keeping: onScreen)
             bump(path)
         }
         return image
@@ -507,16 +546,18 @@ final class PadDesignHost {
 struct PadDesignImageCache {
     /// Bytes of pixels kept per design: less than the Mac's, as an iPad has less memory to spare.
     static let budget = 64 * 1024 * 1024
-    private var entries: [DesignPath: (sha: String, image: CGImage)] = [:]
+    private var entries: [DesignPath: (sha: String, image: CGImage, width: CGFloat)] = [:]
     private var order: [DesignPath] = []
-    private var bytes = 0
+    private(set) var bytes = 0
 
     func image(_ path: DesignPath) -> CGImage? { entries[path]?.image }
     func sha(_ path: DesignPath) -> String? { entries[path]?.sha }
+    /// The width the snapshot was asked at, in points (`BoardPictureTier`).
+    func width(_ path: DesignPath) -> CGFloat? { entries[path]?.width }
 
-    mutating func store(_ image: CGImage, sha: String, for path: DesignPath, keeping protected: Set<DesignPath> = []) {
+    mutating func store(_ image: CGImage, sha: String, width: CGFloat, for path: DesignPath, keeping protected: Set<DesignPath> = []) {
         remove(path)
-        entries[path] = (sha, image)
+        entries[path] = (sha, image, width)
         order.append(path)
         bytes += image.bytesPerRow * image.height
         var index = 0
@@ -543,7 +584,9 @@ struct PadDesignImageCache {
 // MARK: Rasterizer
 
 /// Renders boards to snapshots, nearest the middle first, each in a view of its own on the stage
-/// (one at a time, or two with no live board): every board on screen that has no live view.
+/// (one at a time, or two with no live board): every board on screen that has no live view. A board
+/// whose finished picture is on disk (`DesignPictures`) is read back instead, which takes no web
+/// view and no turn: only a board never drawn before, or changed since, is rendered.
 @MainActor
 final class PadDesignRasterizer {
     /// Snapshots are at most this many points wide (twice as many pixels): enough for a board at
@@ -555,12 +598,24 @@ final class PadDesignRasterizer {
         let surface: DesignSurface
         let path: DesignPath
         let size: CGSize
+        /// How wide to draw it, in points (at most the board's own width).
+        var width: CGFloat = PadDesignRasterizer.snapshotWidth
+        /// What its finished picture is kept as on disk; nil keeps none.
+        let picture: BoardPictureKey?
+        /// Asked when it is drawn: false shows the picture without keeping it (the files it read moved on).
+        var keep: () -> Bool = { true }
         let wanted: () -> Bool
         let done: (CGImage?) -> Void
     }
 
     private var queue: [Job] = []
     private var active = 0
+    /// Pictures being read back from disk, at most `maxReads` at once so decoded pictures don't pile up.
+    private var reading = 0
+    static let maxReads = 8
+    /// Jobs reading or rendering now (by key and picture), so a plan that asks again doesn't draw twice.
+    private var inFlight: Set<String> = []
+    private var scheduled = false
     /// The web views the plan allows on iOS (`DesignTouchLivePlan`), live boards and renders together.
     static let webViewCap = 2
     /// Web views alive besides this rasterizer's (the designs' live boards); set by `PadDesignRendering`.
@@ -570,6 +625,9 @@ final class PadDesignRasterizer {
     private var running: Bool { active >= max(1, Self.webViewCap - liveViews()) }
     /// Its web view, while one renders.
     private(set) var webViews = 0
+    /// Boards drawn in a web view and boards read back from disk since launch (fixtures measure them).
+    private(set) var rendered = 0
+    private(set) var restored = 0
 
     func discard(surface: DesignSurface) {
         let removed = queue.filter { $0.surface === surface }
@@ -577,22 +635,88 @@ final class PadDesignRasterizer {
         for job in removed { job.done(nil) }
     }
 
+    private func flightKey(_ job: Job) -> String { job.key + "|" + (job.picture?.name ?? "") }
+
+    /// Queues a job behind the others (a plan's jobs come nearest the middle first); one already
+    /// queued moves to the back, one reading or drawing now is left to finish.
     func enqueue(_ job: Job) {
+        guard !inFlight.contains(flightKey(job)) else { return }
         queue.removeAll { $0.key == job.key }
         queue.append(job)
-        run()
+        // A plan queues every board on screen: look at the queue once, after all of them.
+        guard !scheduled else { return }
+        scheduled = true
+        Task { [weak self] in
+            self?.scheduled = false
+            self?.run()
+        }
     }
 
+    /// Takes jobs in order that are still wanted: a board kept on disk is read back (no web view, however
+    /// busy the renderers are), one not kept is drawn when a web view is free.
     private func run() {
-        while !running {
-            while let job = queue.first, !job.wanted() { queue.removeFirst() }
-            guard !queue.isEmpty else { return }
-            start(queue.removeFirst())
+        var index = 0
+        while index < queue.count {
+            let job = queue[index]
+            if !job.wanted() {
+                queue.remove(at: index)
+            } else if let picture = job.picture, DesignPictures.cache.contains(picture) {
+                guard reading < Self.maxReads else { index += 1; continue }
+                queue.remove(at: index)
+                restore(job, picture)
+            } else if running {
+                index += 1
+            } else {
+                queue.remove(at: index)
+                start(job)
+            }
+        }
+    }
+
+    private func restore(_ job: Job, _ picture: BoardPictureKey) {
+        reading += 1
+        inFlight.insert(flightKey(job))
+        Task { [weak self] in
+            let image = await DesignPictures.load(picture)
+            guard let self else { return }
+            self.reading -= 1
+            if let image {
+                self.restored += 1
+                self.arrived.append((job, image))
+                self.flushSoon()
+                self.run()
+            } else {
+                // Not readable after all (cleared, or it did not decode): draw it.
+                self.inFlight.remove(self.flightKey(job))
+                self.enqueue(job)
+            }
+        }
+    }
+
+    /// Pictures read back, handed over together a few times a second: the canvas redraws once for
+    /// a batch, not once for each of hundreds.
+    private var arrived: [(Job, CGImage)] = []
+    private var flushing = false
+
+    private func flushSoon() {
+        guard !flushing else { return }
+        flushing = true
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(60))
+            guard let self else { return }
+            self.flushing = false
+            let batch = self.arrived
+            self.arrived = []
+            for (job, image) in batch {
+                self.inFlight.remove(self.flightKey(job))
+                job.done(image)
+            }
         }
     }
 
     private func start(_ job: Job) {
         active += 1
+        inFlight.insert(flightKey(job))
         Task { [weak self] in
             let view = DesignBoardView(surface: job.surface, board: job.path, size: job.size)
             view.isUserInteractionEnabled = false
@@ -601,7 +725,7 @@ final class PadDesignRasterizer {
             var image: CGImage?
             do {
                 try await view.load()
-                image = try await view.snapshot(width: min(job.size.width, Self.snapshotWidth))
+                image = try await view.snapshot(width: min(job.size.width, job.width))
             } catch {
                 image = nil
             }
@@ -609,6 +733,11 @@ final class PadDesignRasterizer {
             guard let self else { return }
             self.webViews -= 1
             self.active -= 1
+            self.inFlight.remove(self.flightKey(job))
+            if let image, let picture = job.picture {
+                self.rendered += 1
+                if job.keep() { DesignPictures.save(image, as: picture) }
+            }
             job.done(image)
             self.run()
         }
@@ -761,16 +890,21 @@ final class PadDesignThumbnails {
 
     func image(_ ref: PadDesignRef) -> CGImage? { images[ref]?.image }
 
-    /// Renders the design's first board unless it is drawn at `sha` already.
-    func update(_ ref: PadDesignRef, path: DesignPath, size: CGSize, sha: String, source: @autoclosure () -> any DesignFileSource) {
-        guard images[ref]?.sha != sha, asked[ref] != sha, size.width > 0, size.height > 0 else { return }
-        asked[ref] = sha
+    /// Renders the design's first board unless it is drawn at `sha` already, at the design's files' `revision`
+    /// (a design-system file the board reads may have changed; revisions only move forward, so a picture kept
+    /// for one is never shown for another).
+    func update(_ ref: PadDesignRef, path: DesignPath, size: CGSize, sha: String, revision: UInt64,
+                source: @autoclosure () -> any DesignFileSource) {
+        let version = "\(sha)@\(revision)"
+        guard images[ref]?.sha != version, asked[ref] != version, size.width > 0, size.height > 0 else { return }
+        asked[ref] = version
         let surface = PadDesignRendering.shared.host(for: ref, source: source()).surface
         PadDesignRendering.shared.rasterizer.enqueue(PadDesignRasterizer.Job(
             key: "thumbnail/\(ref.host.uuidString)/\(ref.design.rawValue)", surface: surface, path: path, size: size,
-            wanted: { [weak self] in self?.asked[ref] == sha }) { [weak self] image in
-                guard let self, self.asked[ref] == sha, let image else { return }
-                self.images[ref] = (sha, image)
+            picture: DesignPictures.key(content: sha, dependencies: "r\(revision)", board: size, width: PadDesignRasterizer.snapshotWidth),
+            wanted: { [weak self] in self?.asked[ref] == version }) { [weak self] image in
+                guard let self, self.asked[ref] == version, let image else { return }
+                self.images[ref] = (version, image)
                 self.versions[ref, default: 0] += 1
             })
     }

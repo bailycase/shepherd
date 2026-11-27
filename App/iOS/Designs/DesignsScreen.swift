@@ -101,7 +101,7 @@ struct DesignTileView: View, Equatable {
                     let phone = size.height > size.width
                     DesignBoardImage(ref: tile.ref, source: source, path: first.path, sha256: first.sha256, size: size,
                                      shown: CGSize(width: size.width * scale, height: size.height * scale),
-                                     alignment: phone ? .top : .topLeading)
+                                     alignment: phone ? .top : .topLeading, revision: tile.revision)
                 }
             }
         }

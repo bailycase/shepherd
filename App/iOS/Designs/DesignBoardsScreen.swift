@@ -220,7 +220,8 @@ struct DesignBoardGrid: View {
                             let scale = RemoteDesignPresentation.tileScale(size, in: proxy.size)
                             DesignBoardImage(ref: ref, source: source, path: path, sha256: index.snapshot.boards[path] ?? "",
                                              size: size, shown: CGSize(width: size.width * scale, height: size.height * scale),
-                                             alignment: size.height > size.width ? .top : .topLeading)
+                                             alignment: size.height > size.width ? .top : .topLeading,
+                                             revision: index.snapshot.revision)
                                 .frame(width: proxy.size.width, height: proxy.size.height)
                         }
                     }
