@@ -179,10 +179,11 @@ struct DuoStripLabelStyle: LabelStyle {
 private struct DuoStripIcon<Content: View>: View {
     let label: Content
     let size: CGFloat
+    // The bar's own environment does not say which way it runs (`toolbarVerticalEdge` is not set for a toolbar's items), but only an
+    // iPhone Duo has a hinge, and every pose of it draws the bars as the column at its side.
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        VerticalBars { bars in
-            if bars { label.font(.system(size: size)) } else { label }
-        }
+        if navigator.hingeClosed != nil { label.font(.system(size: size)) } else { label }
     }
 }
