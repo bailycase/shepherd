@@ -95,23 +95,23 @@ private struct SHFieldChrome: ViewModifier {
         // search field is 34pt at radius 8 in Geist 13.
         let settings = scale == .settings
         let M = SHSettingsControlMetrics.self
-        let radius = settings ? (search ? M.segmentTrackRadius : M.radius) : SH.Radius.s
+        let radius = settings ? (search ? M.searchRadius : M.radius) : SH.Radius.s
         let shape = RoundedRectangle(cornerRadius: radius)
         content
             .textFieldStyle(.plain)
-            .font(settings ? (mono ? .shMono(M.fieldTextSize) : .shSans(search ? M.textSize : M.fieldTextSize))
+            .font(settings ? (mono ? .shMono(M.fieldTextSize) : .shSans(M.fieldTextSize))
                   : mono ? .shMono(12) : .shSans(12.5))
             .foregroundStyle(sh.textPrimary)
             .tint(sh.lantern)
             .padding(.horizontal, settings ? M.fieldPadding : SH.Space.m)
-            .padding(.vertical, SH.Space.xs)
-            .frame(minHeight: settings ? (search ? M.fieldHeight + SH.Space.xs : M.fieldHeight) : SH.Height.controlM)
-            .background(sh.bgRaised, in: shape)
+            .padding(.vertical, settings ? 0 : SH.Space.xs)
+            .frame(minHeight: settings ? M.fieldHeight : SH.Height.controlM)
+            .background(settings ? (search ? sh.bgHover : Color.clear) : sh.bgRaised, in: shape)
             .overlay {
                 // The line and the ring fade on their own layer, so focusing a field or
                 // flagging it never animates the text inside.
                 Color.clear
-                    .shBorder(error ? sh.failed : sh.lineStrong, radius: radius)
+                    .shBorder(error ? sh.failed : settings && search ? .clear : sh.lineStrong, radius: radius)
                     .shFocusRing(focused, radius: radius)
                     .shComponentAnimation(.hover, value: focused)
                     .shComponentAnimation(.hover, value: error)
@@ -165,7 +165,7 @@ public struct SHSearchField: View {
                 if let shortcut {
                     // The Settings boards write the hint as plain mono text ("⌘F").
                     if settings {
-                        Text(shortcut).font(.shMono(11)).foregroundStyle(.sh.textTertiary).accessibilityHidden(true)
+                        Text(shortcut).font(.shSans(SHTextStyle.caption.size)).foregroundStyle(.sh.textTertiary).accessibilityHidden(true)
                     } else {
                         SHKeycap(shortcut)
                     }

@@ -85,6 +85,37 @@ private struct SHStyledButton: View {
         #endif
         let filled = kind == .primary || kind == .dangerFill || kind == .strong
         let shape = RoundedRectangle(cornerRadius: radius)
+        #if os(macOS)
+        if settings && !filled {
+            // The Settings boards write a row's action as plain words (500, 400 for a quiet one) with no box;
+            // the hit area overhangs them so a 26pt target keeps the words flush with the row's padding.
+            let overhang = M.buttonOverhang
+            configuration.label
+                .font(.shSans(M.textSize, kind == .ghost ? .regular : .medium))
+                .labelStyle(SHButtonLabelStyle())
+                .lineLimit(1)
+                .foregroundStyle(foreground(sh))
+                .padding(.horizontal, overhang)
+                .frame(minHeight: height)
+                .background(active ? sh.bgHover : Color.clear, in: shape)
+                .contentShape(shape)
+                .padding(.horizontal, -overhang)
+                .offset(y: configuration.isPressed ? 0.5 : 0)
+                .shEnabledOpacity(enabled)
+                .onHover { hovering = $0 }
+                .shAnimation(.hover, value: hovering)
+                .shFocusRing(radius: radius)
+                .shTouchTarget(height: height)
+        } else {
+            styled(configuration, sh: sh, height: height, padding: padding, fontSize: fontSize, radius: radius, filled: filled, shape: shape)
+        }
+        #else
+        styled(configuration, sh: sh, height: height, padding: padding, fontSize: fontSize, radius: radius, filled: filled, shape: shape)
+        #endif
+    }
+
+    private func styled(_ configuration: ButtonStyleConfiguration, sh: SHPalette, height: CGFloat, padding: CGFloat, fontSize: CGFloat,
+                        radius: CGFloat, filled: Bool, shape: RoundedRectangle) -> some View {
         configuration.label
             .font(.shSans(fontSize, filled ? .semibold : .medium))
             .labelStyle(SHButtonLabelStyle())

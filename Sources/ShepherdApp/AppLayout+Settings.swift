@@ -11,7 +11,11 @@ extension AppLayout {
     static let settingsModalMargin: CGFloat = SH.Space.xxxl
     /// The page's one column, 56pt under the top.
     static let settingsColumnWidth: CGFloat = 620
-    static let settingsTop: CGFloat = 56
+    static let settingsTop: CGFloat = 44
+    static let settingsFadeHeight: CGFloat = SH.Space.xxxl
+    /// Between the controls at a row's end (a menu, then a button).
+    static let settingsControlsSpacing: CGFloat = SHCardRowMetrics.settingsHorizontalPadding
+    static let settingsBottom: CGFloat = SH.Space.xxxl + SH.Space.xl
     /// Spaces keeps its full-width layout's bottom margin.
     static let settingsWideBottomSpaces: CGFloat = 48
     /// An editor drill-in's card: at least this tall.
@@ -19,11 +23,15 @@ extension AppLayout {
     /// What the column keeps around an editor card that fills the window: the top margin, the title and the bottom margin.
     static let settingsEditorChrome: CGFloat = 56 + 44 + SH.Space.xxxl + SH.Space.xl
     /// A group's footnote line height.
-    static let settingsFootnoteLineHeight: CGFloat = 1.35
+    static let settingsFootnoteLineHeight: CGFloat = 1.42
     /// A remote host's address in its row ("orbit.starlight.internal:7433"): mono 12.
     static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group, and between groups.
-    static let settingsGroupSpacing: CGFloat = SH.Space.xl
+    static let settingsGroupSpacing: CGFloat = SH.Space.xxl + SH.Space.xs
+    /// A page's title (18/600).
+    static let settingsTitleSize: CGFloat = 18
+    /// A group's label line.
+    static let settingsGroupHeaderHeight: CGFloat = 18
     /// A row's content, density-scaled; the row adds 6pt above and below (`SHCardRowFrame`).
     @MainActor static var settingsRowMinHeight: CGFloat { SH.Height.scaled(SHCardRowMetrics.settingsMinHeight) }
     /// Settings ▸ Keyboard: a changed shortcut's Reset, in Geist 12.
@@ -170,7 +178,7 @@ extension AppLayout {
     static let mcpExplanationWidth: CGFloat = 700
     static let mcpFilterWidth: CGFloat = 240
     /// The filter field in a Settings list card's first row.
-    static let settingsFilterWidth: CGFloat = 250
+    static let settingsFilterWidth: CGFloat = 200
     static let mcpCardRadius: CGFloat = 10
     static let mcpNoteSize: CGFloat = 12
     static let mcpPathSize: CGFloat = 11

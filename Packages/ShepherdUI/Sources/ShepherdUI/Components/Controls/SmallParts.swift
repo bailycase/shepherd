@@ -25,35 +25,40 @@ public struct SHKeycap: View {
 
     public var body: some View {
         let sh = Color.sh
-        // The Settings caps: mono `caption` in `textSecondary`, 2/6pt padding, radius `xs`, 4pt apart.
-        let settings = scale == .settings
-        let M = SHSettingsControlMetrics.self
-        let side: CGFloat = settings ? 0 : 18
-        let radius = settings ? M.keycapRadius : SH.Radius.xs
-        HStack(spacing: settings ? M.keycapSpacing : 3) {
+        if scale == .settings {
+            // The Settings boards write a shortcut as plain `textSecondary` text, tracked out, with no cap.
+            Text(keys.joined())
+                .font(.shSans(SHSettingsControlMetrics.textSize))
+                .tracking(SHSettingsControlMetrics.keycapTracking)
+                .foregroundStyle(sh.textSecondary)
+                .fixedSize()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(keys.joined())
+        } else {
+        let side: CGFloat = 18
+        let radius = SH.Radius.xs
+        HStack(spacing: 3) {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
-                    .font(.shMono(settings ? M.keycapTextSize : 10.5))
+                    .font(.shMono(10.5))
                     .foregroundStyle(sh.textSecondary)
-                    .padding(.horizontal, settings ? M.keycapPadding : SH.Space.xs)
-                    .padding(.vertical, settings ? M.keycapVerticalPadding : 0)
+                    .padding(.horizontal, SH.Space.xs)
                     .frame(minWidth: side, minHeight: side)
                     .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
                     .shBorder(sh.lineStrong, radius: radius)
                     // The board's heavier bottom edge (1.5px against 1px): a cap, not a box. A
                     // second hairline just above the border's, since a device pixel does not split.
                     .overlay(alignment: .bottom) {
-                        if !settings {
-                            SHHairline(color: sh.lineStrong)
-                                .padding(.horizontal, radius)
-                                .padding(.bottom, SH.hairline(displayScale))
-                        }
+                        SHHairline(color: sh.lineStrong)
+                            .padding(.horizontal, radius)
+                            .padding(.bottom, SH.hairline(displayScale))
                     }
             }
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(keys.joined())
+        }
     }
 }
 

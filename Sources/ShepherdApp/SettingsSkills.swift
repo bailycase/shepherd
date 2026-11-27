@@ -27,7 +27,7 @@ struct SkillsSettings: View {
         initiallyOpen = open
     }
 
-    private var query: String { "" }
+    @State private var query = ""
 
     var body: some View {
         let hosts = vm.skillsHosts
@@ -59,8 +59,8 @@ struct SkillsSettings: View {
     }
 
     private func list(_ hosts: [SkillsHost]) -> some View {
-        let rows = model.rows(in: hosts, filter: filter, query: "")
-        let groups = model.piGroups(in: hosts, filter: filter, query: "")
+        let rows = model.rows(in: hosts, filter: filter, query: query)
+        let groups = model.piGroups(in: hosts, filter: filter, query: query)
         let updates = model.count(.updates, in: hosts)
         return SettingsPage(title: "Skills") {
             if let problem = model.recordsProblem(in: hosts) {
@@ -75,7 +75,7 @@ struct SkillsSettings: View {
                         (.all, "All \(model.count(.all, in: hosts))"),
                         (.on, "On \(model.count(.on, in: hosts))"),
                         (.updates, "Updates \(updates)"),
-                    ], note: SkillsPresentation.checkedLine(model.checkedAt(in: hosts), now: context.date),
+                    ], search: $query, searchPrompt: "Filter skills", note: SkillsPresentation.checkedLine(model.checkedAt(in: hosts), now: context.date),
                                       buttonTitle: updates > 0 ? "Update \(updates)" : nil) {
                         Task { await model.updateAll(in: vm.skillsHosts) }
                     }

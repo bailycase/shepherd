@@ -3,8 +3,8 @@ import SwiftUI
 /// A section label ("THIS MAC  19"): micro mono caps in tertiary, with an optional trailing
 /// count or accessory.
 public struct SHSectionHeader<Trailing: View>: View {
-    /// `settings` is a Settings group's label (caption 600, `textSecondary`, sentence case);
-    /// `settingsNav` is the label over a run of the Settings nav (caption, `textTertiary`).
+    /// `settings` is a Settings group's label (`ui` 600, `textPrimary`, sentence case);
+    /// `settingsNav` is the label over a run of the Settings nav (caption 500, `textTertiary`).
     public enum Style: Sendable { case standard, settings, settingsNav }
 
     let title: String
@@ -21,9 +21,9 @@ public struct SHSectionHeader<Trailing: View>: View {
         HStack(spacing: SH.Space.s) {
             Group {
                 if style == .settings {
-                    Text(title).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+                    Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                 } else if style == .settingsNav {
-                    Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    Text(title).font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.textTertiary)
                 } else {
                     Text(title).shSectionLabel()
                 }
@@ -54,10 +54,15 @@ public struct SHSectionLink: View {
         self.action = action
     }
 
+    @Environment(\.shControlScale) private var scale
+
     public var body: some View {
-        // A 24pt target around a caption-high word: the extra height overhangs the header's line.
+        // A 24pt target around a caption-high word: the extra height overhangs the header's line. In Settings the
+        // boards write it as a 500 word in `textSecondary`.
         Button(action: action) {
-            Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.running)
+            Text(title)
+                .font(scale == .settings ? .shSans(SHSettingsControlMetrics.segmentTextSize, .medium) : .sh(.caption))
+                .foregroundStyle(scale == .settings ? Color.sh.textSecondary : Color.sh.running)
                 .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
         }
             .buttonStyle(.plain)
@@ -80,13 +85,19 @@ public struct SHGroupCard<Content: View>: View {
     let fill: Color?
     let radius: CGFloat
     let lazy: Bool
+    let lift: Bool
+    let rule: Color?
     @ViewBuilder let content: () -> Content
 
-    /// `lazy` builds only the rows near the screen (a list that can run to hundreds of rows).
-    public init(fill: Color? = nil, radius: CGFloat = SH.Radius.m, lazy: Bool = false, @ViewBuilder content: @escaping () -> Content) {
+    /// `lazy` builds only the rows near the screen (a list that can run to hundreds of rows). `lift` raises the card
+    /// on the boards' shadow and `rule` colors the lines between rows (the Settings cards).
+    public init(fill: Color? = nil, radius: CGFloat = SH.Radius.m, lazy: Bool = false, lift: Bool = false, rule: Color? = nil,
+                @ViewBuilder content: @escaping () -> Content) {
         self.fill = fill
         self.radius = radius
         self.lazy = lazy
+        self.lift = lift
+        self.rule = rule
         self.content = content
     }
 
@@ -98,14 +109,21 @@ public struct SHGroupCard<Content: View>: View {
                 VStack(spacing: 0) { rows }
             }
         }
-        .shCard(radius: radius, fill: fill)
+        // The boards' card takes its 1px line out of its own room, so the rows sit inside it.
+        .padding(lift ? SHSettingsNavMetrics.borderWidth : 0)
+        .shCard(radius: radius, fill: fill, lift: lift)
     }
 
     private var rows: some View {
         Group(subviews: content()) { subviews in
             ForEach(subviews) { subview in
-                if subview.id != subviews.first?.id { SHHairline() }
-                subview
+                if subview.id != subviews.first?.id {
+                    SHHairline(color: rule, width: rule == nil ? nil : SHSettingsNavMetrics.borderWidth)
+                    // The boards' rows are 44pt with their rule inside it.
+                    subview.environment(\.shRuleAbove, rule != nil)
+                } else {
+                    subview
+                }
             }
         }
     }
@@ -160,18 +178,20 @@ public struct SHCardRow<Control: View>: View {
     public var body: some View {
         let sh = Color.sh
         let settings = style == .settings
-        HStack(alignment: .center, spacing: settings ? SH.Space.l : SH.Space.xl) {
+        HStack(alignment: .center, spacing: settings ? SHCardRowMetrics.settingsControlGap : SH.Space.xl) {
             if let dot { SHRowDotView(dot) }
-            VStack(alignment: .leading, spacing: settings ? 0 : 3) {
+            VStack(alignment: .leading, spacing: settings ? SHCardRowMetrics.settingsTextSpacing : 3) {
                 Text(title)
                     .font(monoTitle ? .sh(.mono) : settings ? .sh(.ui, weight: .regular) : .sh(.ui))
                     .foregroundStyle(sh.textPrimary)
+                    .frame(minHeight: settings ? SHCardRowMetrics.settingsLineHeight : nil, alignment: .leading)
                 if let description {
                     Group {
                         if settings {
                             SHMarkupText(description, size: SHTextStyle.caption.size,
                                            lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
                                 .lineLimit(1).truncationMode(.tail)
+                                .frame(minHeight: SHCardRowMetrics.settingsLineHeight, alignment: .leading)
                         } else {
                             Text(description).shText(.caption)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -225,15 +245,16 @@ struct SHRowDotView: View {
 /// below; a Settings row is at least 44pt, 6pt in from the top and the bottom.
 public struct SHCardRowFrame: ViewModifier {
     let settings: Bool
+    @Environment(\.shRuleAbove) private var ruleAbove
 
     public init(settings: Bool) { self.settings = settings }
 
     public func body(content: Content) -> some View {
         if settings {
             content
-                .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
-                .padding(.horizontal, SH.Space.l)
+                .padding(.horizontal, SHCardRowMetrics.settingsHorizontalPadding)
                 .padding(.vertical, SHCardRowMetrics.settingsVerticalPadding)
+                .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight) - (ruleAbove ? SHSettingsNavMetrics.borderWidth : 0))
         } else {
             content
                 .padding(.horizontal, SH.Space.xl)
@@ -278,12 +299,18 @@ public enum SHCardRowMetrics {
     public static let minHeight: CGFloat = 52
     /// A Settings row's least height, before density.
     public static let settingsMinHeight: CGFloat = 44
-    /// A Settings row's top and bottom padding.
-    public static let settingsVerticalPadding: CGFloat = SH.Space.s
+    /// A Settings row's top and bottom padding (the row's 44pt minimum holds a one-line title).
+    public static let settingsVerticalPadding: CGFloat = SH.Space.m
     /// The Settings cards: radius `l`.
     public static let settingsCardRadius: CGFloat = SH.Radius.l
     /// A settings description (and its problem) sits on 1.45 lines.
-    public static let settingsDescriptionLineHeight: CGFloat = 1.45
+    public static let settingsDescriptionLineHeight: CGFloat = 1.5
+    /// A Settings row's side padding, the gap before its control, and the gap between its title and hint.
+    public static let settingsHorizontalPadding: CGFloat = 14
+    public static let settingsControlGap: CGFloat = SH.Space.xl
+    public static let settingsTextSpacing: CGFloat = 1
+    /// The title's and the hint's line (the boards' 18pt).
+    public static let settingsLineHeight: CGFloat = 18
     public static let problemGlyphSize: CGFloat = 12
     /// A Settings row's status dot.
     public static let dotSize: CGFloat = 8
@@ -300,4 +327,9 @@ private struct SHOptionalHelp: ViewModifier {
             content
         }
     }
+}
+
+extension EnvironmentValues {
+    /// A row under a rule inside a Settings card: the rule counts toward the row's least height.
+    @Entry var shRuleAbove = false
 }

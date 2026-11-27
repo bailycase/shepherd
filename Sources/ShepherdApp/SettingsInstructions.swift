@@ -29,8 +29,8 @@ struct InstructionsSettings: View {
             }
             SettingsGroup(title: "Every agent reads", footnote: "Synced to every Mac in your fleet. A repo can add its own AGENTS.md.") {
                 ForEach(InstructionFile.allCases, id: \.self) { file in
-                    SettingsRow(title: file.fileName, subtitle: "\(Self.size(model.text(file))) · \(Self.purpose(file))", mono: true) {
-                        HStack(spacing: SH.Space.s) {
+                    SettingsRow(title: file.fileName, subtitle: "\(Self.size(model.text(file))) · \(Self.purpose(file))") {
+                        HStack(spacing: AppLayout.settingsControlsSpacing) {
                             SettingsOpenIn(text: Binding(get: { model.text(file) }, set: { model.setText($0, file: file) }), name: file.fileName)
                             Button("Edit") {
                                 model.file = file

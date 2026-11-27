@@ -31,23 +31,20 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
         // the page's own fill. `s` keeps the Controls board's anatomy everywhere.
         let settings = scale == .settings && size == .m
         let M = SHSettingsControlMetrics.self
-        let pillRadius = settings ? 0 : SH.Radius.xs
+        let pillRadius = settings ? M.segmentRadius : SH.Radius.xs
         let trackRadius = settings ? M.segmentTrackRadius : SH.Radius.s
         HStack(spacing: settings ? 0 : SH.Space.xxs) {
             ForEach(Array(options.enumerated()), id: \.element.value) { index, option in
                 let selected = option.value == selection
                 Button { selection = option.value } label: {
                     Text(option.title)
-                        .font(settings ? .shSans(SHTextStyle.caption.size) : .shSans(12, selected ? .semibold : .medium))
+                        .font(settings ? .shSans(M.segmentTextSize) : .shSans(12, selected ? .semibold : .medium))
                         .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                         .padding(.horizontal, settings ? M.segmentPadding : size == .s ? SH.Space.m : 10)
                         .frame(height: settings ? M.segmentHeight : size == .s ? 20 : SH.Height.controlS)
                         .matchedGeometryEffect(id: option.value, in: pill)
                         .contentShape(Rectangle())
-                        .overlay(alignment: .leading) {
-                            if settings && index > 0 { SHHairline(.vertical, color: sh.lineStrong) }
-                        }
                         .shFocusRing(radius: pillRadius)
                 }
                 .buttonStyle(.plain)
@@ -60,7 +57,9 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
             if options.contains(where: { $0.value == selection }) {
                 Group {
                     if settings {
-                        Rectangle().fill(sh.bgSelected)
+                        // The Settings boards' pill: a card lifted off the filled track.
+                        RoundedRectangle(cornerRadius: pillRadius).fill(sh.bgRaised)
+                            .shadow(color: sh.liftNear, radius: 1, y: 1)
                     } else {
                         RoundedRectangle(cornerRadius: pillRadius).fill(sh.bgSelected)
                             .shBorder(sh.lineStrong, radius: pillRadius)
@@ -72,10 +71,9 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
                 .id(reduceMotion ? AnyHashable(selection) : AnyHashable(Self.pillID))
             }
         }
-        .padding(settings ? 0 : SH.Space.xxs)
-        .background(settings ? Color.clear : sh.bgSunken, in: RoundedRectangle(cornerRadius: trackRadius))
-        .clipShape(RoundedRectangle(cornerRadius: settings ? trackRadius : 0))
-        .shBorder(settings ? sh.lineStrong : sh.lineSubtle, radius: trackRadius)
+        .padding(settings ? M.segmentTrackPadding : SH.Space.xxs)
+        .background(settings ? sh.bgSelected : sh.bgSunken, in: RoundedRectangle(cornerRadius: trackRadius))
+        .shBorder(settings ? .clear : sh.lineSubtle, radius: trackRadius)
         .fixedSize()
         // Disabled while what it switches loads (the review's Local | PR): the segments and the
         // pill dim and come back as a fade, like every other control.
@@ -94,6 +92,55 @@ public struct SHSegmentedPicker<Value: Hashable>: View {
     }
 
     private static var pillID: String { "selection" }
+}
+
+/// Settings' filter tabs (the boards' `gs-ftabs`): words 2pt apart with no track, the chosen one on a `bgSelected`
+/// pill. Drawn here and represented to accessibility as a native segmented `Picker`.
+public struct SHFilterTabs<Value: Hashable>: View {
+    @Binding var selection: Value
+    let label: String
+    let options: [(value: Value, title: String)]
+    @Environment(\.isEnabled) private var enabled
+    @State private var accessibilitySize: CGSize = .zero
+
+    public init(_ label: String = "", selection: Binding<Value>, options: [(Value, String)]) {
+        _selection = selection
+        self.label = label
+        self.options = options.map { (value: $0.0, title: $0.1) }
+    }
+
+    public var body: some View {
+        let sh = Color.sh
+        let M = SHSettingsControlMetrics.self
+        HStack(spacing: SH.Space.xxs) {
+            ForEach(options, id: \.value) { option in
+                let selected = option.value == selection
+                Button { selection = option.value } label: {
+                    Text(option.title)
+                        .font(.shSans(M.segmentTextSize))
+                        .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, M.segmentPadding)
+                        .frame(height: M.segmentHeight)
+                        .background(selected ? sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: M.segmentRadius))
+                        .contentShape(Rectangle())
+                        .shFocusRing(radius: M.segmentRadius)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .fixedSize()
+        .shEnabledOpacity(enabled)
+        .shComponentAnimation(.hover, value: selection)
+        .onGeometryChange(for: CGSize.self, of: \.size) { accessibilitySize = $0 }
+        .accessibilityRepresentation {
+            Picker(label, selection: $selection) {
+                ForEach(options, id: \.value) { Text($0.title).tag($0.value) }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: accessibilitySize.width, height: accessibilitySize.height)
+        }
+    }
 }
 
 /// A radio group (Controls board): rare, so prefer segmented or a popup. 14pt circles, off
@@ -199,20 +246,16 @@ public struct SHPopupLabel: View {
     public var body: some View {
         let sh = Color.sh
         if scale == .settings {
-            // The Settings popup: 26pt at radius `s`, the value in `caption` and a small ▾.
+            // The Settings popup is written without a box: the value in `textSecondary`, then a small up-and-down chevron.
             let M = SHSettingsControlMetrics.self
             HStack(spacing: M.popupGap) {
                 Text(title)
                     .font(mono ? .shMono(M.textSize) : .shSans(M.textSize))
-                    .foregroundStyle(sh.textPrimary)
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: SHSettingsControlMetrics.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: M.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
             }
-            .padding(.leading, M.popupLeading)
-            .padding(.trailing, M.popupTrailing)
             .frame(height: M.controlHeight)
-            .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: M.radius))
-            .shBorder(sh.lineStrong, radius: M.radius)
             .contentShape(Rectangle())
         } else {
             HStack(spacing: SH.Space.m) {
@@ -279,7 +322,7 @@ public struct SHValueSlider: View {
                         }
                 }
             Text(format(value))
-                .font(tweak ? .shSans(SHTweakControlMetrics.valueSize) : scale == .settings ? .sh(.caption) : .sh(.mono))
+                .font(tweak ? .shSans(SHTweakControlMetrics.valueSize) : scale == .settings ? .shSans(SHSettingsControlMetrics.textSize) : .sh(.mono))
                 .foregroundStyle(.sh.textSecondary)
                 .shContentTransition(.numeric())
                 .frame(minWidth: tweak ? SHTweakControlMetrics.sliderValueWidth : SHSliderMetrics.valueMinWidth, alignment: .trailing)
@@ -345,12 +388,12 @@ private struct SHSliderTrack: View {
             let filled = settings ? x : x + knob / 2
             ZStack(alignment: .leading) {
                 Capsule().fill(tweak ? sh.bgSelected : sh.lineStrong).frame(height: track)
-                Capsule().fill(tweak ? sh.textPrimary : sh.primary).frame(width: filled, height: track)
-                // A hairline ring outside the knob, as the board's 1px spread shadow draws.
+                Capsule().fill(tweak ? sh.textPrimary : scale == .settings ? sh.textSecondary : sh.primary).frame(width: filled, height: track)
+                // A hairline ring outside the knob, as the board's 1px spread shadow draws. The Settings knob is a card.
                 Circle()
-                    .fill(tweak ? sh.bgRaised : settings ? sh.textPrimary : sh.knobOff)
-                    .background { Circle().fill(tweak ? sh.lineSubtle : sh.lineStrong).padding(settings && !tweak ? 0 : -SH.hairline(displayScale)) }
-                    .shadow(color: tweak ? sh.liftNear : settings ? .clear : sh.knobShadow, radius: tweak ? 1 : 1.5, y: 1)
+                    .fill(settings ? sh.bgRaised : sh.knobOff)
+                    .background { Circle().fill(tweak ? sh.lineSubtle : sh.lineStrong).padding(-SH.hairline(displayScale)) }
+                    .shadow(color: settings ? sh.liftNear : sh.knobShadow, radius: settings ? 1 : 1.5, y: 1)
                     .frame(width: knob, height: knob)
                     .offset(x: settings ? x - knob / 2 : x)
             }
@@ -419,33 +462,32 @@ public struct SHStepper: View {
 
     public var body: some View {
         let sh = Color.sh
-        // The Settings boards' stepper: 30pt tall at radius 7, 30pt buttons around a 34pt value
-        // in mono 13, `lineSubtle` rules between.
+        // The Settings boards' stepper is drawn without a box: "−  5  +" in `textSecondary` around a medium value.
         let settings = scale == .settings
         let M = SHSettingsControlMetrics.self
         let height = settings ? M.stepperHeight : 26
-        let radius = settings ? M.radius : SH.Radius.s
-        HStack(spacing: 0) {
+        let radius = SH.Radius.s
+        HStack(spacing: settings ? M.stepperGap : 0) {
             button("minus", label: "Less", enabled: value > range.lowerBound, height: height) {
                 countsDown = true
                 value -= 1
             }
             Text(format(value))
-                .font(.shMono(settings ? M.textSize : 12))
+                .font(settings ? .shSans(M.textSize, .medium) : .shMono(12))
                 .foregroundStyle(sh.textPrimary)
                 .shContentTransition(.numeric(countsDown: countsDown))
                 .shComponentAnimation(.content, value: value)
                 .frame(minWidth: settings ? M.stepperValueWidth : 52)
                 .frame(height: height)
-                .overlay(alignment: .leading) { SHHairline(.vertical, color: settings ? sh.lineSubtle : nil) }
-                .overlay(alignment: .trailing) { SHHairline(.vertical, color: settings ? sh.lineSubtle : nil) }
+                .overlay(alignment: .leading) { if !settings { SHHairline(.vertical) } }
+                .overlay(alignment: .trailing) { if !settings { SHHairline(.vertical) } }
             button("plus", label: "More", enabled: value < range.upperBound, height: height) {
                 countsDown = false
                 value += 1
             }
         }
-        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
-        .shBorder(sh.lineStrong, radius: radius)
+        .background(settings ? Color.clear : sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
+        .shBorder(settings ? .clear : sh.lineStrong, radius: radius)
         .fixedSize()
         .accessibilityRepresentation {
             Stepper(label, value: $value, in: range)

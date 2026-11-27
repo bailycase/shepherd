@@ -18,15 +18,15 @@ public struct SHSettingsSearchField: View {
     public var body: some View {
         let glyph: SHGlyph.Settings = placement == .sites ? .browserSearch : .search
         let navigation = placement == .navigation
-        let radius = navigation ? SH.Radius.m : SHSettingsControlMetrics.radius
+        let radius = SHSettingsControlMetrics.searchRadius
         HStack(spacing: SH.Space.m) {
             glyph.image.foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(placement == .navigation ? Color.sh.textTertiary : Color.sh.textSecondary))
-                .textFieldStyle(.plain).font(.sh(.caption))
+            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(Color.sh.textTertiary))
+                .textFieldStyle(.plain).font(.shSans(SHSettingsControlMetrics.textSize))
                 .foregroundStyle(Color.sh.textPrimary).tint(Color.sh.lantern)
                 .focused($focused).accessibilityLabel(placeholder)
             if text.isEmpty, placement == .navigation {
-                Text("⌘F").font(.shMono(SHTextStyle.micro.size)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                Text("⌘F").font(.shSans(SHTextStyle.caption.size)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
             } else if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark").font(.shSans(SHTextStyle.micro.size))
@@ -35,9 +35,8 @@ public struct SHSettingsSearchField: View {
                 }.buttonStyle(.plain).accessibilityLabel("Clear search")
             }
         }.padding(.horizontal, SHSettingsControlMetrics.fieldPadding + SHSettingsNavMetrics.borderWidth)
-            .frame(height: placement == .navigation ? SHSettingsNavMetrics.searchHeight : SH.Height.controlL)
-            .background(navigation ? Color.sh.bgSunken : Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
-            .shBorder(navigation ? .clear : Color.sh.lineStrong, radius: radius, width: SHSettingsNavMetrics.borderWidth)
+            .frame(height: placement == .navigation ? SHSettingsNavMetrics.searchHeight : SHSettingsControlMetrics.fieldHeight)
+            .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: radius))
             .shFocusRing(focused, radius: radius, color: Color.sh.running)
             .shEnabledOpacity(enabled)
     }
