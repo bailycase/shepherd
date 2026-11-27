@@ -109,6 +109,10 @@ public struct SHGroupCard<Content: View>: View {
                 VStack(spacing: 0) { rows }
             }
         }
+        // The boards' rows are 44pt with their rule inside it: every row's least height gives up the rule's line, and the
+        // card's top (where no rule is) gets it back.
+        .environment(\.shRuleAbove, rule != nil)
+        .padding(.top, rule != nil ? SHSettingsNavMetrics.borderWidth : 0)
         // The boards' card takes its 1px line out of its own room, so the rows sit inside it.
         .padding(lift ? SHSettingsNavMetrics.borderWidth : 0)
         .shCard(radius: radius, fill: fill, lift: lift)
@@ -119,11 +123,8 @@ public struct SHGroupCard<Content: View>: View {
             ForEach(subviews) { subview in
                 if subview.id != subviews.first?.id {
                     SHHairline(color: rule, width: rule == nil ? nil : SHSettingsNavMetrics.borderWidth)
-                    // The boards' rows are 44pt with their rule inside it.
-                    subview.environment(\.shRuleAbove, rule != nil)
-                } else {
-                    subview
                 }
+                subview
             }
         }
     }

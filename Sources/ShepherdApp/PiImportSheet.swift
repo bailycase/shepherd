@@ -375,7 +375,7 @@ struct PiImportSheet: View {
                     HStack(spacing: SHPiSignInMetrics.rowGap) {
                         VStack(alignment: .leading, spacing: SH.Space.xxs) {
                             Text("Default model · \(NativeModelChoices.shortName(model))")
-                                .font(.shSans(SHPiSignInMetrics.nameSize, .medium)).foregroundStyle(Color.sh.textPrimary)
+                                .font(.shSans(SHPiSignInMetrics.stepTitleSize)).foregroundStyle(Color.sh.textPrimary)
                             Text(PiImportSheetState.unresolvedDetail(model))
                                 .font(.shSans(SHPiSignInMetrics.stepDetailSize)).foregroundStyle(Color.sh.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -388,8 +388,8 @@ struct PiImportSheet: View {
                         }
                         .accessibilityLabel("Choose another default model")
                     }
-                    .padding(.vertical, SHPiSignInMetrics.rowVertical)
-                    .padding(.horizontal, SHPiSignInMetrics.rowSides)
+                    .padding(.vertical, SHPiSignInMetrics.stepVertical)
+                    .overlay(alignment: .bottom) { SHHairline(color: Color.sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
                 }
                 ForEach(state.missing) { item in
                     SHImportSignInRow(PiSignInCatalog.name(item.id), badge: PiSignInCatalog.badge(item.id), detail: item.detail,
