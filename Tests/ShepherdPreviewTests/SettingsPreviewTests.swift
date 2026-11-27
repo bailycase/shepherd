@@ -397,7 +397,7 @@ struct SettingsPreviewTests {
             }
             """)
         }
-        try await Preview.renderMatrix("mcp-add-\(kind)", size: CGSize(width: kind == "local" ? 760 : 720, height: 620)) {
+        try await Preview.renderMatrix("mcp-add-\(kind)", size: CGSize(width: kind == "local" ? AppLayout.mcpSheetLocalWidth : AppLayout.mcpSheetWidth, height: 620)) {
             AddMCPServerSheet(store: store, initialKind: sheetKind, editing: nil, draft: draft) {}
         }
     }
@@ -411,7 +411,7 @@ struct SettingsPreviewTests {
         let entry = try #require(store.entry(state))
         // The check is fixture data, not executable discovery on the user's Mac.
         let draft = AddMCPServerSheet.Draft(command: command, checkedAt: MCPPreviewFixtures.now)
-        try await Preview.renderMatrix("mcp-local-arguments-\(state)", size: CGSize(width: 760, height: 900)) {
+        try await Preview.renderMatrix("mcp-local-arguments-\(state)", size: CGSize(width: AppLayout.mcpSheetLocalWidth, height: 900)) {
             AddMCPServerSheet(store: store, initialKind: .local, editing: entry, draft: draft) {}
         }
     }

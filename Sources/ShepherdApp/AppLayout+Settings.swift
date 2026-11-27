@@ -188,15 +188,15 @@ extension AppLayout {
     static let mcpPathSize: CGFloat = 11
     // The Add server sheet (SettingsMCPAdd, SettingsMCPLocal): 720pt wide (760 for Local),
     // 22pt sides, 34pt fields at radius 7, a 60pt footer.
-    static let mcpSheetWidth: CGFloat = 720
-    static let mcpSheetLocalWidth: CGFloat = 760
-    static let mcpSheetMinHeight: CGFloat = 520
+    static let mcpSheetWidth: CGFloat = 540
+    static let mcpSheetLocalWidth: CGFloat = 540
+    static let mcpSheetMinHeight: CGFloat = 420
     static let mcpSheetSides: CGFloat = 22
     static let mcpSheetTitleSize: CGFloat = SHTextStyle.title.size
     static let mcpSheetTextSize: CGFloat = 12.5
     static let mcpSheetCloseSize: CGFloat = 28
-    static let mcpSheetFieldHeight: CGFloat = 34
-    static let mcpSheetFieldRadius: CGFloat = 7
+    static let mcpSheetFieldHeight: CGFloat = 32
+    static let mcpSheetFieldRadius: CGFloat = 8
     static let mcpSheetFooterHeight: CGFloat = 60
     static let mcpSheetNameWidth: CGFloat = 200
     static let mcpSheetEnvKeyWidth: CGFloat = 250
