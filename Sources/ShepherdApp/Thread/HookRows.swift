@@ -91,7 +91,8 @@ struct HookEventRow: View, Equatable {
                 HStack(spacing: SH.Space.m) {
                     row.kind.glyph.font(.shSans(AppLayout.hookGlyphSize - SH.Space.xxs, .medium)).foregroundStyle(row.kind.color)
                         .frame(width: AppLayout.hookGlyphSize, height: AppLayout.hookGlyphSize)
-                    Text(row.verb).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).layoutPriority(1)
+                    Text(row.verb).font(.sh(.ui, weight: .regular)).foregroundStyle(row.kind == .failed ? Color.sh.failed : Color.sh.textPrimary)
+                        .lineLimit(1).layoutPriority(1)
                     if !row.detail.isEmpty {
                         Text(row.detail).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.tail)
                     }
@@ -107,29 +108,35 @@ struct HookEventRow: View, Equatable {
             .accessibilityLabel(row.spoken)
             .accessibilityValue(row.hasBox ? (open ? "Expanded" : "Collapsed") : "")
             if open, row.hasBox {
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                // The board's output box: a quiet `bgHover` tile at radius 8, mono 12 on 19pt lines in `textSecondary`,
+                // the command's meta in `textTertiary`.
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(row.lines.enumerated()), id: \.offset) { _, line in
-                        Text(line.isEmpty ? " " : line).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary)
+                        Text(line.isEmpty ? " " : line).shText(size: AppLayout.hookBoxSize, mono: true, lineHeight: AppLayout.hookBoxLine)
+                            .foregroundStyle(Color.sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let meta = row.meta {
-                        Text(meta).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary)
-                            .padding(.top, row.lines.isEmpty ? 0 : SH.Space.xxs).fixedSize(horizontal: false, vertical: true)
+                        Text(meta).shText(size: AppLayout.hookBoxSize, mono: true, lineHeight: AppLayout.hookBoxLine)
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .textSelection(.enabled)
                 .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+                .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                 .padding(.leading, AppLayout.hookBoxIndent)
                 .padding(.top, SH.Space.xs).padding(.bottom, SH.Space.s)
                 .shTransition(.disclosure)
             }
             if case .openHook(let hash)? = row.link, let presenter {
-                Button("Open hook") { presenter.open(hash: hash) }
-                    .buttonStyle(.shLink)
-                    .padding(.leading, AppLayout.hookBoxIndent)
+                Button { presenter.open(hash: hash) } label: {
+                    Text("Open hook").font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                        .frame(minHeight: AppLayout.hookRowHeight).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, AppLayout.hookBoxIndent)
             }
         }
         .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
@@ -160,64 +167,68 @@ struct HookProposalCard: View {
     }
 
     var body: some View {
+        let sh = Color.sh
+        // The board's card (`hk-card`): a raised, lifted card at radius 12; the title with its event at the right, a row of
+        // 13pt words per fact, the test in a quiet tile, and the three answers as words.
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: SH.Space.m) {
-                Image(systemName: "plus").font(.sh(.ui)).foregroundStyle(Color.sh.running).accessibilityHidden(true)
-                Text("Proposed hook: \(proposal.name)").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text("Proposed hook: \(proposal.name)").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: SH.Space.m)
-                Text(proposal.event).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary)
+                Text(proposal.event).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             }
-            .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
-            SHHairline()
-            VStack(alignment: .leading, spacing: SH.Space.l) {
-                Grid(alignment: .leading, horizontalSpacing: SH.Space.l, verticalSpacing: SH.Space.s) {
-                    pair("When") { Text(HookEvent(rawValue: proposal.event)?.label ?? proposal.event).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary) }
-                    pair("Matcher") { HookMatcherChip(text: proposal.matcher.isEmpty ? "always" : proposal.matcher, any: proposal.matcher.isEmpty) }
-                    pair("Runs") { HookCommandText(text: proposal.command) }
-                    if let status = proposal.statusMessage, !status.isEmpty {
-                        pair("While it runs") { Text(status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary) }
-                    }
-                    pair("Saved in") {
-                        HStack(spacing: SH.Space.l) {
-                            SHSegmentedPicker("Saved in", selection: $scope, options: scopes, size: .s).fixedSize()
-                            Text(Self.shown(proposal.path(scope: scope), scope: scope)).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+            .padding(.horizontal, AppLayout.hookCardInset).padding(.vertical, AppLayout.hookCardHeaderVertical)
+            VStack(alignment: .leading, spacing: 0) {
+                pair("When") { Text(HookEvent(rawValue: proposal.event)?.label ?? proposal.event).font(.sh(.ui)).foregroundStyle(sh.textPrimary) }
+                pair("Matcher") { Text(proposal.matcher.isEmpty ? "always" : proposal.matcher).font(.sh(.code)).foregroundStyle(sh.textPrimary) }
+                pair("Runs") { HookCommandText(text: proposal.command) }
+                if let status = proposal.statusMessage, !status.isEmpty {
+                    pair("While it runs") { Text(status).font(.sh(.ui)).foregroundStyle(sh.textPrimary) }
+                }
+                pair("Saved in") {
+                    HStack(spacing: AppLayout.hookCardScopeGap) {
+                        Menu {
+                            ForEach(scopes, id: \.0) { value, title in Button(title) { scope = value } }
+                        } label: {
+                            HStack(spacing: SH.Space.xxs) {
+                                Text(scopes.first { $0.0 == scope }?.1 ?? "").font(.sh(.ui)).foregroundStyle(sh.textPrimary)
+                                Image(systemName: "chevron.down").font(.shSans(AppLayout.hookCardChevron, .semibold)).foregroundStyle(sh.textTertiary)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                        .accessibilityLabel("Saved in")
+                        Text(Self.shown(proposal.path(scope: scope), scope: scope)).font(.sh(.ui)).foregroundStyle(sh.textTertiary)
+                            .lineLimit(1).truncationMode(.middle)
                     }
-                }
-                if let test = proposal.test {
-                    HStack(spacing: SH.Space.m) {
-                        Image(systemName: test.ok ? "checkmark" : "exclamationmark.triangle").font(.sh(.caption))
-                            .foregroundStyle(test.ok ? Color.sh.done : Color.sh.lanternText).accessibilityHidden(true)
-                        Text(proposal.testLead + test.summary).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
-                        Spacer(minLength: SH.Space.m)
-                        if let meta = proposal.testMeta { Text(meta).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary) }
-                    }
-                    .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
-                    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
-                    .accessibilityElement(children: .combine)
                 }
             }
-            .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
-            SHHairline()
-            HStack(spacing: SH.Space.m) {
-                Text("It runs with your permissions until you turn it off in Settings › Hooks.")
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(4)
+            if let test = proposal.test {
+                HStack(spacing: SH.Space.m) {
+                    Text(proposal.testLead + test.summary).font(.sh(.ui)).foregroundStyle(test.ok ? sh.textSecondary : sh.lanternText).lineLimit(2)
+                    Spacer(minLength: SH.Space.m)
+                    if let meta = proposal.testMeta { Text(meta).font(.sh(.ui)).foregroundStyle(sh.textTertiary) }
+                }
+                .padding(.horizontal, SH.Space.l - SH.Space.xxs).padding(.vertical, AppLayout.hookCardTestVertical)
+                .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .padding(.horizontal, AppLayout.hookCardInset).padding(.top, AppLayout.hookCardTestTop)
+                .accessibilityElement(children: .combine)
+            }
+            HStack(spacing: SH.Space.xl) {
+                Text("It runs with your permissions until you turn it off in Settings ▸ Hooks.")
+                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let presenter {
-                    Button("Edit…") { presenter.edit(proposal, scope: scope) { answer(NativeHookProposal.addedInSettings) } }.buttonStyle(.sh(.ghost, size: .m))
+                    Button("Edit…") { presenter.edit(proposal, scope: scope) { answer(NativeHookProposal.addedInSettings) } }.buttonStyle(HookWordStyle(quiet: true))
                 }
-                Button(NativeHookProposal.notNow) { answer(NativeHookProposal.notNow) }.buttonStyle(.sh(.secondary, size: .m))
+                Button(NativeHookProposal.notNow) { answer(NativeHookProposal.notNow) }.buttonStyle(HookWordStyle(quiet: true))
                 // No default action: Return never adds a hook.
-                Button("Add and turn on") { answer(proposal.addOption(scope: scope)) }
-                    .buttonStyle(.sh(.primary, size: .m))
+                Button("Add and turn on") { answer(proposal.addOption(scope: scope)) }.buttonStyle(HookWordStyle(quiet: false))
             }
             .disabled(!enabled)
-            .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
+            .padding(.horizontal, AppLayout.hookCardInset).padding(.top, AppLayout.hookCardFooterTop).padding(.bottom, AppLayout.hookCardFooterBottom)
         }
-        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-        .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
+        .shCard(radius: AppLayout.hookCardRadius, lift: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Proposed hook: \(proposal.name)")
     }
@@ -229,22 +240,25 @@ struct HookProposalCard: View {
     }
 
     private func pair<V: View>(_ key: String, @ViewBuilder value: () -> V) -> some View {
-        GridRow {
+        HStack(alignment: .top, spacing: SH.Space.l) {
             Text(key).font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary).frame(width: AppLayout.hookCardKeyWidth, alignment: .leading)
             value().frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.horizontal, AppLayout.hookCardInset).padding(.vertical, AppLayout.hookCardRowVertical)
     }
 }
 
 /// A command the person is asked about: whole and selectable, scrolling past a few lines, never cut.
 struct HookCommandText: View {
     let text: String
+    /// In `textSecondary` (the ask's tile) rather than primary ink.
+    var secondary = false
     @State private var height: CGFloat = 0
 
     var body: some View {
         // Its own height up to the cap, scrolling past it (as iOS's fitted scroll does).
         ScrollView {
-            Text(text).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).textSelection(.enabled)
+            Text(text).font(.sh(.code)).foregroundStyle(secondary ? Color.sh.textSecondary : Color.sh.textPrimary).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
@@ -263,37 +277,77 @@ struct HookAskPanel: View {
     let answer: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.l) {
-            HStack(spacing: SH.Space.m) {
-                Image(systemName: "questionmark.circle").font(.sh(.ui)).foregroundStyle(Color.sh.lantern).accessibilityHidden(true)
-                Text(NativeHookAsk.title).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: SH.Space.m)
-                Text(HooksPresentation.tilde(ask.file, home: home)).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary)
-                    .lineLimit(1).truncationMode(.middle).help(ask.file)
+        let sh = Color.sh
+        // The board's ask card (`ask`): lifted, radius 14, a lantern dot before the title, the call in a quiet tile, the
+        // hook's reason with its file after it, and Deny as a word beside the ink pill.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: AppLayout.hookAskGap) {
+                Circle().fill(sh.lanternText).frame(width: AppLayout.hookAskDot, height: AppLayout.hookAskDot)
+                    .padding(.top, AppLayout.hookAskDotTop).accessibilityHidden(true)
+                Text(NativeHookAsk.title).shText(size: AppLayout.hookAskTitleSize, weight: .semibold, lineHeight: AppLayout.hookAskTitleLine)
+                    .foregroundStyle(sh.textPrimary).accessibilityAddTraits(.isHeader)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.leading, AppLayout.hookAskInset).padding(.trailing, AppLayout.hookAskTitleTrailing)
             if !ask.call.isEmpty {
-                HookCommandText(text: ask.call)
+                HookCommandText(text: ask.call, secondary: true)
                     .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+                    .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .padding(.horizontal, AppLayout.hookAskInset).padding(.top, AppLayout.hookAskBlockTop)
             }
             if !ask.reason.isEmpty {
-                Text(ask.reason).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary).lineLimit(4)
+                (Text(ask.reason + " ").foregroundStyle(sh.textSecondary)
+                    + Text(HooksPresentation.tilde(ask.file, home: home)).foregroundStyle(sh.textTertiary))
+                    .font(.sh(.ui)).lineLimit(4)
+                    .help(ask.file)
+                    .padding(.horizontal, AppLayout.hookAskInset).padding(.top, AppLayout.hookAskBlockTop)
             }
-            HStack(spacing: SH.Space.m) {
-                Text("The agent waits. Deny sends the hook’s reason to it.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            HStack(spacing: AppLayout.hookAskButtonGap) {
+                Text("The agent waits. Deny sends the hook’s reason to it.").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    .padding(.leading, SH.Space.m)
                 Spacer(minLength: SH.Space.m)
-                Button(NativeHookAsk.deny) { answer(NativeHookAsk.deny) }.buttonStyle(.sh(.secondary, size: .l))
+                Button(NativeHookAsk.deny) { answer(NativeHookAsk.deny) }.buttonStyle(HookAskButton(allow: false))
                 // No default action: Return never allows the call.
-                Button(NativeHookAsk.allow) { answer(NativeHookAsk.allow) }.buttonStyle(.sh(.primary, size: .l))
+                Button(NativeHookAsk.allow) { answer(NativeHookAsk.allow) }.buttonStyle(HookAskButton(allow: true))
             }
+            .padding(.horizontal, AppLayout.hookAskFootInset).padding(.top, AppLayout.hookAskFootTop)
             .disabled(!enabled)
         }
-        .padding(SH.Space.xl)
-        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-        .shBorder(Color.sh.lantern, radius: SH.Radius.l)
+        .padding(EdgeInsets(top: AppLayout.hookAskTop, leading: AppLayout.hookAskSides, bottom: AppLayout.hookAskBottom, trailing: AppLayout.hookAskSides))
+        .shCard(radius: AppLayout.hookAskRadius, lift: true)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Deny (a word) and Allow once (an ink pill): 30pt tall.
+private struct HookAskButton: ButtonStyle {
+    let allow: Bool
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.sh(.ui, weight: allow ? .medium : .regular))
+            .foregroundStyle(allow ? Color.sh.textOnPrimary : Color.sh.textSecondary)
+            .padding(.horizontal, allow ? AppLayout.hookAskAllowPadding : AppLayout.hookAskDenyPadding)
+            .frame(height: AppLayout.hookAskButtonHeight)
+            .background { if allow { Capsule().fill(configuration.isPressed ? Color.sh.primaryPressed : Color.sh.primary) } }
+            .opacity(enabled ? 1 : 0.4)
+            .contentShape(Rectangle())
+    }
+}
+
+/// A proposal's answers as words: `quiet` ones in `textSecondary`, the one that adds in 500 `textPrimary`.
+private struct HookWordStyle: ButtonStyle {
+    let quiet: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.sh(.ui, weight: quiet ? .regular : .medium))
+            .foregroundStyle(quiet ? Color.sh.textSecondary : Color.sh.textPrimary)
+            .lineLimit(1).fixedSize()
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .contentShape(Rectangle())
     }
 }
 

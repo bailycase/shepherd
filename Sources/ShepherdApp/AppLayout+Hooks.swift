@@ -46,6 +46,40 @@ extension AppLayout {
     static let hookBoxIndent: CGFloat = 13 + SH.Space.m
     /// The proposal card's key column.
     static let hookCardKeyWidth: CGFloat = 96
+    /// The output box under a hook row: mono 12 on 19pt lines.
+    static let hookBoxSize: CGFloat = 12
+    static let hookBoxLine: CGFloat = 19.0 / 12
+    /// The proposal card (`hk-card`): radius 12, 14pt in; the title 10 over and under, a fact's row 3, the test 10 under the
+    /// facts and 7 in its tile, the foot 6 under that with 10 over and 12 under.
+    static let hookCardRadius: CGFloat = 12
+    static let hookCardInset: CGFloat = 14
+    static let hookCardHeaderVertical: CGFloat = 10
+    static let hookCardRowVertical: CGFloat = 3
+    static let hookCardTestTop: CGFloat = 10
+    static let hookCardTestVertical: CGFloat = 7
+    static let hookCardFooterTop: CGFloat = 16
+    static let hookCardFooterBottom: CGFloat = 12
+    static let hookCardScopeGap: CGFloat = 6
+    static let hookCardChevron: CGFloat = 9
+    /// The ask card (`ask`): radius 14, 14 over, 8 in, 10 under; a 7pt dot before a 14/21 title; blocks 10 apart.
+    static let hookAskRadius: CGFloat = 14
+    static let hookAskTop: CGFloat = 14
+    static let hookAskSides: CGFloat = 8
+    static let hookAskBottom: CGFloat = 10
+    static let hookAskInset: CGFloat = 12
+    static let hookAskTitleTrailing: CGFloat = 10
+    static let hookAskGap: CGFloat = 10
+    static let hookAskDot: CGFloat = 7
+    static let hookAskDotTop: CGFloat = 7
+    static let hookAskTitleSize: CGFloat = 14
+    static let hookAskTitleLine: CGFloat = 21.0 / 14
+    static let hookAskBlockTop: CGFloat = 10
+    static let hookAskFootTop: CGFloat = 6
+    static let hookAskFootInset: CGFloat = 4
+    static let hookAskButtonGap: CGFloat = 6
+    static let hookAskButtonHeight: CGFloat = 30
+    static let hookAskAllowPadding: CGFloat = 14
+    static let hookAskDenyPadding: CGFloat = 12
     /// The most a consent prompt's command takes before it scrolls (about ten code lines).
     static let hookCommandMaxHeight: CGFloat = 180
 }

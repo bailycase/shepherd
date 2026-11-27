@@ -182,7 +182,7 @@ struct MCPSettings<Extras: View>: View {
                     if let reconnect = actions.reconnect {
                         Button("Reconnect", action: reconnect).buttonStyle(.sh(.secondary, size: .s))
                     }
-                    Button("Edit", action: actions.edit).buttonStyle(.sh(.secondary, size: .s)).accessibilityLabel("Edit…")
+                    Button("Edit…", action: actions.edit).buttonStyle(.sh(.secondary, size: .s))
                 }
             }
         }

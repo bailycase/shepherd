@@ -89,6 +89,16 @@ public enum SHPiSignInMetrics {
     public static let failureLineOpacity: Double = 0.25
     public static let summaryLineHeight: CGFloat = 1.7
     public static let timeSize: CGFloat = 11
+    /// The not-signed-in card: radius 14, 14 over and under and 16 in, 13pt words on 18pt lines, the line 3pt under its title and the
+    /// actions 10pt under the line.
+    public static let noticeRadius: CGFloat = 14
+    public static let noticeVertical: CGFloat = 14
+    public static let noticeHorizontal: CGFloat = 16
+    public static let noticeTitleSize: CGFloat = 13
+    public static let noticeMonoSize: CGFloat = 12.5
+    public static let noticeLine: CGFloat = 18.0 / 13
+    public static let noticeGap: CGFloat = 3
+    public static let noticeActionsTop: CGFloat = 10
     public static let fieldLabelSize: CGFloat = 11.5
 }
 

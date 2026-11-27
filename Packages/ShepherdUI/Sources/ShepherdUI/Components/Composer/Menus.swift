@@ -368,7 +368,7 @@ struct SHSlashRow: View, Equatable {
         let sh = Color.sh
         if let lead = command.lead {
             // An argument row: "/login" quiet, then the argument with what's typed in semibold.
-            let head = Text(lead + " ").foregroundStyle(sh.textSecondary)
+            let head = Text(lead + " ").foregroundStyle(sh.textTertiary)
             let typedPart = Text(String(command.name.prefix(typed))).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
             let rest = Text(String(command.name.dropFirst(typed))).foregroundStyle(sh.textPrimary)
             return Text("\(head)\(typedPart)\(rest)").font(.shMono(12.5))
