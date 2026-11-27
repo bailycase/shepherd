@@ -102,12 +102,13 @@ struct ControlMotionTests {
         let model = Model()
         let window = OffscreenWindow(size: CGSize(width: 80, height: 40), dark: true, Switch(model: model))
         defer { window.close() }
-        // Through the knob's middle. In dark, the knob is the only light thing on the strip.
-        let strip = CGRect(x: 0, y: 19, width: 80, height: 1)
+        // Through the knob's middle: the switch is padded 10pt in, and its track sits in the middle of the control's height.
+        let strip = CGRect(x: 0, y: 10 + (SH.Height.controlS / 2).rounded(.down), width: 80, height: 1)
+        let track = 10..<40
         let recording = await MotionProbe.record(window, region: strip) { model.on = true }
 
-        let start = recording.before.knobCenter, end = recording.settled.knobCenter
-        let centers = recording.inBetween.compactMap(\.knobCenter)
+        let start = recording.before.knobCenter(track: track), end = recording.settled.knobCenter(track: track)
+        let centers = recording.inBetween.compactMap { $0.knobCenter(track: track) }
         #expect(start != nil && end != nil && end! > start! + 8, "the knob moved from \(String(describing: start)) to \(String(describing: end))")
         #expect(centers.contains { $0 > start! + 2 && $0 < end! - 2 }, "caught mid-slide: \(centers)")
         #expect(centers == centers.sorted(), "it only moves toward rest: \(centers)")
@@ -209,7 +210,9 @@ struct ControlMotionTests {
         let centroids = recording.inBetween.compactMap { $0.centroid(differingFrom: recording.before, minimumMass: 0.5) }
         #expect(!centroids.isEmpty, "caught arriving in \(recording.frames.count) frames")
         if reduceMotion {
-            #expect(centroids.allSatisfy { abs($0 - rest) < 5 }, "it fades where it rests (\(rest)): \(centroids)")
+            // The redesign's toast casts a lift shadow, which fades up beside the card and wanders this column's centroid by a
+            // few points (5.5 at most); a rise from the bottom edge moves it by more than 15.
+            #expect(centroids.allSatisfy { abs($0 - rest) < 8 }, "it fades where it rests (\(rest)): \(centroids)")
         } else {
             #expect(centroids.contains { $0 > rest + 15 }, "it rises from below \(rest): \(centroids)")
         }
@@ -433,11 +436,14 @@ fileprivate extension MotionRecording.Frame {
         return mass >= minimumMass ? moment / mass : nil
     }
 
-    /// The middle of the light pixels on the strip: a switch's knob on a dark window.
-    var knobCenter: Double? {
+    /// The middle of what stands out from a switch's track on the strip: its knob. The redesign's track is light when on
+    /// and gray when off, so the knob is whatever differs from the track's own value (its median over `track`).
+    func knobCenter(track: Range<Int>) -> Double? {
         let values = profile
-        let light = values.indices.filter { values[$0] > 0.7 }
-        return light.isEmpty ? nil : Double(light.reduce(0, +)) / Double(light.count)
+        guard values.indices.contains(track.lowerBound), values.indices.contains(track.upperBound - 1) else { return nil }
+        let rest = values[track].sorted()[track.count / 2]
+        let marks = track.filter { abs(values[$0] - rest) > 0.3 }
+        return marks.isEmpty ? nil : Double(marks.reduce(0, +)) / Double(marks.count)
     }
 
     /// The last pixel of a filled button on a light window.

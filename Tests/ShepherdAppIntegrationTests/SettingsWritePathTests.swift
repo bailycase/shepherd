@@ -367,6 +367,7 @@ struct SettingsWritePathTests {
             flip(K.piNativeSubagents, \.piNativeSubagents),
             flip(K.piMCPExtension, \.piMCPExtension),
             flip(K.piBrowserExtension, \.piBrowserExtension),
+            flip(K.piUsageExtension, \.piUsageExtension),
             flip(K.piDesignReferences, \.piDesignReferences),
             probe(K.childConcurrency, \.childConcurrency, to: 8),
             probe(K.childModel, \.childModel, to: "acme/child"),

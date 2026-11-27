@@ -72,7 +72,9 @@ extension PreviewTests {
         // The canvas: a thread's note on A's step card, its card open (RefNoteBack).
         let note = try await owner.designs.addThreadNote(design.id, DesignThreadNote(
             agentID: thread.0.id, thread: thread.0.name, board: a, element: card, label: "Step 1 90%", revision: 1,
-            text: "Implemented on `agent/checkout-rounding`. Totals round once, at the end.", createdAt: 1_700_000_000_000))
+            text: "Implemented on `agent/checkout-rounding`. Totals round once, at the end.",
+            // Three and a half days ago, so its age reads "3d" on any day the baseline is checked.
+            createdAt: (Date().timeIntervalSince1970 - 3.5 * 86_400) * 1000))
         vm.selectSidebarRow(.design(design.id))
         let screen = vm.designScreen(design.id)
         await screen.refresh()

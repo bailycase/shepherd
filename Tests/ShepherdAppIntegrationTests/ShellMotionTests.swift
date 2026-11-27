@@ -63,7 +63,7 @@ struct ShellMotionTests {
             let store = vm.threadStores.store(for: agent.agent.id)
             try await eventuallyOnMain("\(agent.agent.name)'s thread to load", timeout: .seconds(20)) { store.ready }
         }
-        let toolbar = CGRect(x: 0, y: SHToolbarMetrics.height / 2, width: size.width, height: 1)
+        let toolbar = CGRect(x: 0, y: AppLayout.toolbarTop + SHToolbarMetrics.height / 2, width: size.width, height: 1)
         _ = await MotionProbe.record(window, region: toolbar, timeout: 0.5) {}
 
         let switching = await MotionProbe.record(window, region: toolbar) { vm.selectAgent(second.agent.id) }

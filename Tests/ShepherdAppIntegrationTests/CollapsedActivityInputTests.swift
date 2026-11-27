@@ -50,7 +50,7 @@ struct CollapsedActivityInputTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func ordinaryRawInputsStillToggleAndOpenTheirFullText() async {
+    @Test func anOrdinaryCallsRawInputIsNotARowOfItsOwn() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.rawInputs() }
         }
@@ -167,23 +167,13 @@ struct CollapsedActivityInputTests {
         #expect(receipt.calls == 0)
         try window.press(fixture.burst.accessibilityLabel)
         ListPerf.settle(window)
-        #expect(!expanded(window, label: "fixture_tool arguments"))
-        try window.press("fixture_tool arguments")
-        ListPerf.settle(window)
-        #expect(expanded(window, label: "fixture_tool arguments"))
-        let more = try #require(window.controls().first { $0.label?.contains("more lines") == true })
-        try window.press(try #require(more.label))
-        try await eventuallyOnMain("the full raw input opens") { window.window.attachedSheet != nil }
-        let sheet = try #require(window.window.attachedSheet?.contentView)
-        #expect(text(sheet).contains(raw))
-        #expect(!text(sheet).contains("independent output"))
-        try ControlPress.press("Done", under: sheet)
-        try await eventuallyOnMain("the raw input sheet closes") { window.window.attachedSheet == nil }
+        // GXExpanded lists a stretch's calls alone: a call's arguments stay one click away (Show Call), not a row.
+        #expect(!window.controls().contains { $0.label == "fixture_tool arguments" }, "the raw input is not a row of its own")
         try window.press(fixture.burst.accessibilityLabel)
         ListPerf.settle(window)
         try window.press(fixture.burst.accessibilityLabel)
         ListPerf.settle(window)
-        #expect(expanded(window, label: "fixture_tool arguments"), "ordinary input expansion survives closing the outer line")
+        #expect(!window.controls().contains { $0.label == "fixture_tool arguments" }, "closing and reopening the outer line adds none")
     }
 }
 

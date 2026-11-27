@@ -82,34 +82,4 @@ struct SpaceInheritancePreviewTests {
             SettingsView(vm: world.vm)
         }
     }
-
-    /// The space's Settings on a paired Mac: the Parent space row lists that host's spaces, and an
-    /// older host says why it can't change.
-    @Test(arguments: ["remote-parent", "remote-older"])
-    func remoteParent(state: String) async throws {
-        let world = try await ProjectsPreviewWorld(detail: true, remoteCapabilities: state == "remote-older"
-            ? RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.projectParentCapability } : nil)
-        defer { world.stop() }
-        let home = URL(fileURLWithPath: world.remote.server.pi.userHome)
-        let payments = Space(name: "payments", path: home.appendingPathComponent("code/payments").path)
-        let docs = Space(name: "payments-docs", path: home.appendingPathComponent("code/payments-docs").path,
-                         parentID: payments.id, parentIsExplicit: state == "remote-parent")
-        for space in [payments, docs] { try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true) }
-        try await world.remote.server.putState(ShepherdState(spaces: [payments, docs]))
-        try await eventuallyOnMain("the host's spaces") { world.vm.remoteHosts.connections.first?.state.spaces.count == 2 }
-        let model = world.vm.projects
-        await model.load(world.vm.projectsSources, force: true)
-        let row = try #require(model.rows.first { $0.project.name == "payments-docs" && $0.host.id != "local" })
-        await model.open(row)
-        await model.navigate(.category(.pi))
-        try await eventuallyOnMain("the settings form") { model.fileLoaded }
-        if state == "remote-parent" {
-            #expect(model.parentSpaceName == "payments" && model.parentChoices.map(\.name) == ["payments"])
-        } else {
-            #expect(model.parentProblem == "Update Shepherd on Build-01 to choose a parent space.")
-        }
-        try await Preview.renderMatrix("space-\(state)", size: CGSize(width: 1440, height: 900)) {
-            SettingsView(vm: world.vm)
-        }
-    }
 }

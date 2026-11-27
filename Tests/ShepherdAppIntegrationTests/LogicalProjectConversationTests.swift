@@ -351,8 +351,8 @@ struct LogicalProjectConversationTests {
             || window.elements().contains { $0.label == "Message the agent" } }
         #expect(r.vm.state.agents.isEmpty, "opening a project starts no conversation")
         #expect(window.element("Spaces, sample-app-api · add more in settings") != nil)
-        // The pane is a 480 box beside a 232 sidebar in a 1600 window, so the conversation is 888 wide and its 680 column starts at x 336 (the
-        // boards' 336), not 336.5 as it did beside a 479 pane. Both appearances, both text scales.
+        // The pane is a 480 box beside the redesign's 248 sidebar in a 1600 window, so the conversation is 872 wide and its 680 column
+        // starts at x 344, not 344.5 as it did beside a 479 pane. Both appearances, both text scales.
         let original = ThemeStore.shared.textScale
         defer { ThemeStore.shared.textScale = original }
         for (dark, scale) in [(true, CGFloat(1)), (false, 1), (true, 1.3), (false, 1.3)] {
@@ -362,13 +362,14 @@ struct LogicalProjectConversationTests {
             window.layout()
             let page = try #require(window.elements().first { $0.role == "AXGroup" }?.frame)
             let field = try #require(window.elements().first { $0.label == "Message the agent" }?.frame)
-            // The page beside a 480 pane is 888 wide, and the 680 column is centred in it: 104 each side, so the column starts at 336 (a
-            // 479 pane left 336.5). The composer's accessibility frame is the field inside the card, so it is the column less its own insets.
+            // The page beside a 480 pane is 872 wide, and the 680 column is centred in it: 96 each side, so the column starts at 344 (a
+            // 479 pane left 344.5). The composer's accessibility frame is the field inside the card, so it is the column less its own insets: the redesign's inline
+            // card leads with its plus button, 52pt in.
             let sidebar = AppLayout.sidebarDefaultWidth
             let columnLeft = sidebar + (page.width - sidebar - SHLeadMetrics.paneWidth - SHLeadMetrics.columnWidth) / 2
             let inset = field.minX - page.minX - columnLeft
-            #expect(columnLeft == 336, "the column starts at \(columnLeft) in \(dark ? "dark" : "light") x\(scale)")
-            #expect(inset == 15 && field.width < SHLeadMetrics.columnWidth, "the composer's field starts \(inset) inside the column and within it: \(field.minX - page.minX) + \(field.width)")
+            #expect(columnLeft == 344, "the column starts at \(columnLeft) in \(dark ? "dark" : "light") x\(scale)")
+            #expect(inset == 52 && field.width < SHLeadMetrics.columnWidth, "the composer's field starts \(inset) inside the column and within it: \(field.minX - page.minX) + \(field.width)")
         }
 
         // Sending is the Project runtime's: the first message creates the coordinator and delivers once.
@@ -493,7 +494,7 @@ struct LogicalProjectConversationTests {
             #expect(field.maxX <= edge.minX, "the composer \(field) stays left of the divider \(edge) \(when)")
         }
         try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
-        // The default is the board's: a 1pt divider and the 479 pane, so the conversation keeps its 888.
+        // The default is the board's: a 1pt divider and the 479 pane, so the conversation keeps its 872.
         let edge = try #require(handle()).frame
         #expect(edge.width == AppLayout.resizeHandleWidth, "the shared 9pt handle: \(edge)")
         #expect(abs(window.window.frame.maxX - (edge.midX - AppLayout.dividerWidth / 2) - SHLeadMetrics.paneWidth) < 0.5, "the divider and pane are the board's 480: \(edge)")
@@ -511,8 +512,9 @@ struct LogicalProjectConversationTests {
         // location and what its onEnded saves, and `RightPaneDrag.layout` is what the split draws meanwhile. Driven over the page's
         // real split (its width checked against the drawn divider) and the view model's real binding, without mouse events, which
         // CI's runner does not deliver to this window (theSharedSplitFollowsAMouseDragAtItsDivider and theThreadsPaneFollowsAMouseDragAtItsDivider send them).
-        // The page is the window less the 232 sidebar and its 1pt edge: 1367, so the widest pane (half of it) is 683.5.
-        let page = AppLayout.sidebarDefaultWidth + AppLayout.dividerWidth
+        // The page is the window less the 248 sidebar and the 8pt the panel stands in from the window's edge: 1344, so the widest pane
+        // (half of it) is 672.
+        let page = AppLayout.sidebarDefaultWidth + AppLayout.sidebarGutter
         let total = window.window.frame.width - page
         let layout = RightPaneDrag.layout(nil, state: r.vm.logicalProjectPane, containerWidth: total)
         #expect(layout == ShellLayout.Pane(mode: .docked, width: 519, contentWidth: total - 520), "the split lays out the saved width")
@@ -536,10 +538,10 @@ struct LogicalProjectConversationTests {
             #expect(r.vm.logicalProjectPane.width == saved)
             #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == Double(saved), "persisted")
         }
-        // Past the widest (half the page, 683.5) and past the narrowest (380): each bound holds while dragging and when let go.
-        try drag(by: [-300, -400], previews: [683.5, 683.5], saves: 683.5)
-        try await eventuallyOnMain("the widest is drawn") { drawn().map { abs($0 - 683.5) <= 0.5 } == true }
-        try drag(by: [200, 200], previews: [483.5, 380], saves: 380)
+        // Past the widest (half the page, 672) and past the narrowest (380): each bound holds while dragging and when let go.
+        try drag(by: [-300, -400], previews: [672, 672], saves: 672)
+        try await eventuallyOnMain("the widest is drawn") { drawn().map { abs($0 - 672) <= 0.5 } == true }
+        try drag(by: [200, 200], previews: [472, 380], saves: 380)
         try await eventuallyOnMain("the narrowest is drawn") { paneWidth() == "380 points" }
         // Five 50pt moves add up, then 11 back: the pointer's place decides, so 239pt left of 380 is 619.
         try drag(by: [-50, -50, -50, -50, -50, 11], previews: [430, 480, 530, 580, 630, 619], saves: 619)
@@ -553,10 +555,10 @@ struct LogicalProjectConversationTests {
         #expect(paneWidth() == "619 points")
         r.vm.openLogicalProject(r.ref)
 
-        // A narrower window: the pane gives way so the conversation keeps 400 (1200 less the 232 sidebar and its edge is 967, half
-        // of which is 483); narrower still, it overlays the conversation as a thread's does. The saved width is kept for later.
+        // A narrower window: the pane gives way so the conversation keeps 400 (1200 less the 248 sidebar and the panel's 8pt is 944,
+        // half of which is 472); narrower still, it overlays the conversation as a thread's does. The saved width is kept for later.
         window.window.setContentSize(CGSize(width: 1200, height: 900))
-        try await eventuallyOnMain("clamped") { paneWidth() == "483 points" }
+        try await eventuallyOnMain("clamped") { paneWidth() == "472 points" }
         try expectReachable("in a 1200 window")
         #expect(r.vm.logicalProjectPane.width == 619)
         window.window.setContentSize(CGSize(width: 960, height: 900))
@@ -667,8 +669,8 @@ struct LogicalProjectConversationTests {
         }
         #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
         try mouse.move(to: grab - 1000)
-        try await eventuallyOnMain("no wider than half the page (683.5)") {
-            handle().map { abs(window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2 - 683.5) <= 0.5 } == true
+        try await eventuallyOnMain("no wider than half the page (672)") {
+            handle().map { abs(window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2 - 672) <= 0.5 } == true
         }
         try mouse.move(to: grab - 140)
         try mouse.release(at: grab - 140)

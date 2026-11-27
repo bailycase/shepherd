@@ -54,7 +54,8 @@ struct ProseLinkTests {
                     return .handled
                 }))
         defer { window.close() }
-        try window.press("Image, Build status")
+        // A web image's chip names its host and path, where the redesign drops the alt text.
+        try window.press("Image, ci.example.com/badge.png")
         try await eventuallyOnMain("the chip to reach the opener") { opened.count == 1 }
         #expect(opened.map(\.absoluteString) == ["https://ci.example.com/badge.png"])
     }

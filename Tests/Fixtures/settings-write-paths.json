@@ -534,6 +534,18 @@
     {
       "fields": {
         "followed": "yes",
+        "hostProcess.afterNotice": "false",
+        "hostProcess.before": "true",
+        "hostReply.bundledExtensions[usage].on": "false",
+        "stored": "false",
+        "storedKeysChanged": "shepherd.pi.extension.usage",
+        "write": "false"
+      },
+      "step": "direct.shepherd.pi.extension.usage"
+    },
+    {
+      "fields": {
+        "followed": "yes",
         "hostProcess.afterNotice": "fix-tests",
         "hostProcess.before": "",
         "hostReply.hiddenSlashCommands": "[\"fix-tests\"]",
@@ -615,7 +627,7 @@
       "fields": {
         "followed": "yes",
         "hostProcess.afterNotice": "Menlo",
-        "hostProcess.before": "sentinel-52",
+        "hostProcess.before": "sentinel-53",
         "stored": "\"Menlo\"",
         "storedKeysChanged": "shepherd.terminal.fontFamily",
         "write": "Menlo"
@@ -648,7 +660,7 @@
       "fields": {
         "followed": "yes",
         "hostProcess.afterNotice": "300.0",
-        "hostProcess.before": "232.0",
+        "hostProcess.before": "248.0",
         "stored": "300",
         "storedKeysChanged": "shepherd.ui.sidebarWidth",
         "write": "300.0"
@@ -1105,10 +1117,23 @@
       "fields": {
         "capability": "none",
         "reply.id": "31",
+        "reply.settings.bundledExtensions[usage].on": "false",
+        "reply.type": "\"hostSettings\"",
+        "request.body": "{\"change\":{\"_0\":{\"bundledExtension\":{\"id\":\"usage\",\"on\":false}}}}",
+        "request.id": "31",
+        "request.type": "\"hostSettings\"",
+        "stored.shepherd.pi.extension.usage": "false"
+      },
+      "step": "wire.bundledExtension.usage"
+    },
+    {
+      "fields": {
+        "capability": "none",
+        "reply.id": "32",
         "reply.settings.bundledExtensions[designReferences].on": "false",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"bundledExtension\":{\"id\":\"designReferences\",\"on\":false}}}}",
-        "request.id": "31",
+        "request.id": "32",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.pi.extension.designReferences": "false"
       },
@@ -1117,11 +1142,11 @@
     {
       "fields": {
         "capability": "none",
-        "reply.id": "32",
+        "reply.id": "33",
         "reply.settings.bundledExtensions[context].on": "false",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"bundledExtension\":{\"id\":\"context\",\"on\":false}}}}",
-        "request.id": "32",
+        "request.id": "33",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.agent.trimToolOutput": "false"
       },
@@ -1130,11 +1155,11 @@
     {
       "fields": {
         "capability": "none",
-        "reply.id": "33",
+        "reply.id": "34",
         "reply.settings.bundledExtensions[deferTools].on": "false",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"bundledExtension\":{\"id\":\"deferTools\",\"on\":false}}}}",
-        "request.id": "33",
+        "request.id": "34",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.agent.deferTools": "false"
       },
@@ -1143,11 +1168,11 @@
     {
       "fields": {
         "capability": "none",
-        "reply.id": "34",
+        "reply.id": "35",
         "reply.settings.bundledExtensions[codemode].on": "false",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"bundledExtension\":{\"id\":\"codemode\",\"on\":false}}}}",
-        "request.id": "34",
+        "request.id": "35",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.agent.codemode": "false"
       },
@@ -1156,10 +1181,10 @@
     {
       "fields": {
         "capability": "none",
-        "reply.id": "35",
+        "reply.id": "36",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"bundledExtension\":{\"id\":\"someday\",\"on\":false}}}}",
-        "request.id": "35",
+        "request.id": "36",
         "request.type": "\"hostSettings\""
       },
       "step": "wire.bundledExtension.unknown"
@@ -1167,10 +1192,10 @@
     {
       "fields": {
         "capability": "none",
-        "reply.id": "36",
+        "reply.id": "37",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"updatePiDaily\":{\"_0\":true}}}}",
-        "request.id": "36",
+        "request.id": "37",
         "request.type": "\"hostSettings\""
       },
       "step": "wire.updatePiDaily"
@@ -1178,10 +1203,10 @@
     {
       "fields": {
         "capability": "none",
-        "reply.id": "37",
+        "reply.id": "38",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"updateExtensionsDaily\":{\"_0\":true}}}}",
-        "request.id": "37",
+        "request.id": "38",
         "request.type": "\"hostSettings\""
       },
       "step": "wire.updateExtensionsDaily"
@@ -1189,11 +1214,11 @@
     {
       "fields": {
         "capability": "fleet.view.v1",
-        "reply.id": "38",
+        "reply.id": "39",
         "reply.settings.fleetWeights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetWeight\":{\"hostID\":\"00000000-0000-4000-8000-0000000000A1\",\"weight\":\"prefer\"}}}}",
-        "request.id": "38",
+        "request.id": "39",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.weights": "{\"fleet.weight.00000000-0000-4000-8000-0000000000A1\":\"prefer\"}"
       },
@@ -1202,11 +1227,11 @@
     {
       "fields": {
         "capability": "fleet.dispatch.v1",
-        "reply.id": "39",
+        "reply.id": "40",
         "reply.settings.fleetThreadsCanSend": "true",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetThreadsCanSend\":{\"_0\":true}}}}",
-        "request.id": "39",
+        "request.id": "40",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.threadsCanSend": "true"
       },
@@ -1215,11 +1240,11 @@
     {
       "fields": {
         "capability": "fleet.dispatch.v1",
-        "reply.id": "40",
+        "reply.id": "41",
         "reply.settings.fleetThreadCap": "5",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetThreadCap\":{\"_0\":5}}}}",
-        "request.id": "40",
+        "request.id": "41",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.threadCap": "5"
       },
@@ -1228,11 +1253,11 @@
     {
       "fields": {
         "capability": "fleet.dispatch.v1",
-        "reply.id": "41",
+        "reply.id": "42",
         "reply.settings.fleetThreadCap": "10",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetThreadCap\":{\"_0\":1000}}}}",
-        "request.id": "41",
+        "request.id": "42",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.threadCap": "10"
       },
@@ -1241,11 +1266,11 @@
     {
       "fields": {
         "capability": "fleet.snapshot.v1",
-        "reply.id": "42",
+        "reply.id": "43",
         "reply.settings.fleetUncommitted": "\"leaveBehind\"",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetUncommitted\":{\"_0\":\"leaveBehind\"}}}}",
-        "request.id": "42",
+        "request.id": "43",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.uncommitted": "\"leaveBehind\""
       },
@@ -1254,11 +1279,11 @@
     {
       "fields": {
         "capability": "fleet.snapshot.v1",
-        "reply.id": "43",
+        "reply.id": "44",
         "reply.settings.fleetSnapshotExcludes": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetSnapshotExcludes\":{\"excludes\":{\"excluded\":[\"dist\"],\"included\":[]},\"spaceID\":\"acme-web-space\"}}}}",
-        "request.id": "43",
+        "request.id": "44",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.snapshotExcludes": "{\"fleet.snapshotExcludes.acme-web-space\":{\"excluded\":[\"dist\"],\"included\":[]}}"
       },
@@ -1267,11 +1292,11 @@
     {
       "fields": {
         "capability": "fleet.check.v1",
-        "reply.id": "44",
+        "reply.id": "45",
         "reply.settings.fleetCheckIgnores": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\",\"check-b\"]}",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetCheckIgnore\":{\"hostID\":\"00000000-0000-4000-8000-0000000000A1\",\"ids\":[\"check-a\",\"check-b\"]}}}}",
-        "request.id": "44",
+        "request.id": "45",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.checkIgnores": "{\"fleet.checkIgnore.00000000-0000-4000-8000-0000000000a1\":[\"check-a\",\"check-b\"]}"
       },
@@ -1280,11 +1305,11 @@
     {
       "fields": {
         "capability": "fleet.dispatch.v1",
-        "reply.id": "45",
+        "reply.id": "46",
         "reply.settings.fleetAutoDispatch": "true",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetAutoDispatch\":{\"_0\":true}}}}",
-        "request.id": "45",
+        "request.id": "46",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.autoDispatch": "true"
       },
@@ -1293,11 +1318,11 @@
     {
       "fields": {
         "capability": "fleet.dispatch.v1",
-        "reply.id": "46",
+        "reply.id": "47",
         "reply.settings.fleetBatteryCountsHalf": "false",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"fleetBatteryCountsHalf\":{\"_0\":false}}}}",
-        "request.id": "46",
+        "request.id": "47",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.fleet.batteryCountsHalf": "false"
       },
@@ -1306,11 +1331,11 @@
     {
       "fields": {
         "capability": "experiments.designTool.v1",
-        "reply.id": "47",
+        "reply.id": "48",
         "reply.settings.designToolEnabled": "true",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"designToolEnabled\":{\"_0\":true}}}}",
-        "request.id": "47",
+        "request.id": "48",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.experiments.designTool": "true"
       },
@@ -1319,11 +1344,11 @@
     {
       "fields": {
         "capability": "hostSettings.subThreads.v1",
-        "reply.id": "48",
+        "reply.id": "49",
         "reply.settings.threadsStartThreads": "true",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"threadsStartThreads\":{\"_0\":true}}}}",
-        "request.id": "48",
+        "request.id": "49",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.agent.threadsStartThreads": "true"
       },
@@ -1332,11 +1357,11 @@
     {
       "fields": {
         "capability": "hostSettings.subThreads.v1",
-        "reply.id": "49",
+        "reply.id": "50",
         "reply.settings.subThreadPlace": "\"worktree\"",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"subThreadPlace\":{\"_0\":\"worktree\"}}}}",
-        "request.id": "49",
+        "request.id": "50",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.agent.subThreadPlace": "\"worktree\""
       },
@@ -1345,11 +1370,11 @@
     {
       "fields": {
         "capability": "experiments.computerUse.v1",
-        "reply.id": "50",
+        "reply.id": "51",
         "reply.settings.computerUseEnabled": "true",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"computerUseEnabled\":{\"_0\":true}}}}",
-        "request.id": "50",
+        "request.id": "51",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.experiments.computerUse": "true"
       },
@@ -1358,11 +1383,11 @@
     {
       "fields": {
         "capability": "hostSettings.v2",
-        "reply.id": "51",
+        "reply.id": "52",
         "reply.settings.subagentDefaults": "{\"concurrency\":8,\"context\":\"fork\",\"model\":\"acme/child\",\"thinking\":\"high\"}",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"subagentDefaults\":{\"_0\":{\"concurrency\":8,\"context\":\"fork\",\"model\":\"acme/child\",\"thinking\":\"high\"}}}}}",
-        "request.id": "51",
+        "request.id": "52",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.pi.children.concurrency": "8",
         "stored.shepherd.pi.children.context": "\"fork\"",
@@ -1374,11 +1399,11 @@
     {
       "fields": {
         "capability": "hostSettings.v2",
-        "reply.id": "52",
+        "reply.id": "53",
         "reply.settings.subagentDefaults": "{\"concurrency\":16,\"context\":\"fresh\"}",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"subagentDefaults\":{\"_0\":{\"concurrency\":99,\"context\":\"fresh\"}}}}}",
-        "request.id": "52",
+        "request.id": "53",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.pi.children.concurrency": "16",
         "stored.shepherd.pi.children.context": "\"fresh\"",
@@ -1390,11 +1415,11 @@
     {
       "fields": {
         "capability": "hostSettings.v2",
-        "reply.id": "53",
+        "reply.id": "54",
         "reply.settings.worktreeDeleteAction": "\"keepWorktree\"",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"worktreeDeleteAction\":{\"_0\":\"keepWorktree\"}}}}",
-        "request.id": "53",
+        "request.id": "54",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.worktree.deleteAction": "\"keepWorktree\""
       },
@@ -1403,11 +1428,11 @@
     {
       "fields": {
         "capability": "hostSettings.v2",
-        "reply.id": "54",
+        "reply.id": "55",
         "reply.settings.skillsInSlashMenu": "false",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"skillsInSlashMenu\":{\"_0\":false}}}}",
-        "request.id": "54",
+        "request.id": "55",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.skills.slashMenu": "false"
       },
@@ -1416,11 +1441,11 @@
     {
       "fields": {
         "capability": "hostSettings.v2",
-        "reply.id": "55",
+        "reply.id": "56",
         "reply.settings.mcpProjectConfig": "true",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"mcpProjectConfig\":{\"_0\":true}}}}",
-        "request.id": "55",
+        "request.id": "56",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.mcp.projectConfig": "true"
       },
@@ -1429,11 +1454,11 @@
     {
       "fields": {
         "capability": "hostSettings.v2",
-        "reply.id": "56",
+        "reply.id": "57",
         "reply.settings.hiddenSlashCommands": "[\"fix-tests\"]",
         "reply.type": "\"hostSettings\"",
         "request.body": "{\"change\":{\"_0\":{\"slashCommand\":{\"name\":\"fix-tests\",\"on\":false}}}}",
-        "request.id": "56",
+        "request.id": "57",
         "request.type": "\"hostSettings\"",
         "stored.shepherd.pi.slashCommands.hidden": "[\"fix-tests\"]"
       },
@@ -1443,11 +1468,11 @@
       "fields": {
         "capability": "hostSettings.v2",
         "reply.code": "\"settings_failed\"",
-        "reply.id": "57",
+        "reply.id": "58",
         "reply.message": "\"Not a slash command.\"",
         "reply.type": "\"error\"",
         "request.body": "{\"change\":{\"_0\":{\"slashCommand\":{\"name\":\"\",\"on\":false}}}}",
-        "request.id": "57",
+        "request.id": "58",
         "request.type": "\"hostSettings\""
       },
       "step": "wire.slashCommand.refused"
@@ -1725,6 +1750,7 @@
         "shepherd.pi.extension.panes": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[panes].on\"],\"b\":[\"bundledExtension.panes\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[panes].on\"]}",
         "shepherd.pi.extension.review": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[review].on\"],\"b\":[\"bundledExtension.review\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[review].on\"]}",
         "shepherd.pi.extension.subagents": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[subagents].on\"],\"b\":[\"bundledExtension.subagents\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[subagents].on\"]}",
+        "shepherd.pi.extension.usage": "{\"a\":\"followed\",\"aHostReplyFields\":[\"bundledExtensions[usage].on\"],\"b\":[\"bundledExtension.usage\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"bundledExtensions[usage].on\"]}",
         "shepherd.pi.slashCommands.hidden": "{\"a\":\"followed\",\"aHostReplyFields\":[\"hiddenSlashCommands\"],\"b\":[\"slashCommand\"],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"hiddenSlashCommands\"]}",
         "shepherd.remote.listener": "{\"a\":\"followed\",\"aHostReplyFields\":[\"listenerPort\"],\"b\":[],\"c\":[],\"deviceOnly\":\"no\",\"hostSettingsFields\":[\"listenerPort\"]}",
         "shepherd.remote.listenerPort": "{\"a\":\"not followed\",\"aHostReplyFields\":[],\"b\":[],\"c\":[],\"deviceOnly\":\"yes\",\"hostSettingsFields\":[]}",
@@ -1746,7 +1772,6 @@
       "step": "summary"
     }
   ],
-  "referenceRevision": "f15c12a59236237750362970a25b7caac832c1c2",
   "seed": {
     "hostID": "00000000-0000-4000-8000-0000000000A1",
     "otherHostID": "00000000-0000-4000-8000-0000000000B2",

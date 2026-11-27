@@ -123,14 +123,10 @@ struct CodemodeControlTests {
                 try window.press(label)
                 ListPerf.settle(window)
                 #expect(!window.controls().contains { $0.label == label && $0.value == "Expanded" })
-                if let arguments = call.arguments {
+                // GXExpanded lists a stretch's calls alone: a call's arguments are not a row of their own.
+                if call.arguments != nil {
                     let input = "\(call.name) arguments" + (call.detail.isEmpty ? "" : ", \(call.detail)")
-                    let pressed = try window.press(input)
-                    #expect(ControlPress.undersized([pressed], minimum: .desktop).isEmpty)
-                    ListPerf.settle(window)
-                    let details = AccessibilityNode.all(under: window.host).flatMap { [$0.label, $0.value].compactMap { $0 } }.joined(separator: "\n")
-                    #expect(details.contains(arguments))
-                    try window.press(input)
+                    #expect(!window.controls().contains { $0.label == input }, "\(call.id) has no arguments row")
                 }
             }
             try window.press(burst.accessibilityLabel)
