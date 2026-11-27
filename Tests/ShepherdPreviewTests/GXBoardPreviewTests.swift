@@ -64,4 +64,37 @@ struct GXBoardPreviewTests {
             .task { await fixture.store.run(request: fixture.request) }
         }
     }
+
+    // MARK: Live states: what a person sees on a fresh Mac, through the real view model
+
+    /// Fleet with only This Mac (FleetEmpty): the page invites the others; no list, no Auto line, no log.
+    @Test func fleetWithOneMac() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        try await workspace.seed(ShepherdState())
+        workspace.vm.fleet.onSnapshot = nil
+        workspace.vm.fleetPage.update(FleetSnapshot(
+            enabled: true, hostID: FleetPagePreviewTests.here, name: "MacBook Pro", addresses: ["192.168.1.40"], port: 7434, advertising: true, peers: [],
+            macs: [FleetMacState(hostID: FleetPagePreviewTests.here, sample: FleetPressureSample(cpuUtilization: 0.81, cpuCount: 12, totalMemoryBytes: 48 << 30,
+                                                                                                  availableMemoryBytes: 14 << 30, thermal: .nominal, activeAgents: 0),
+                                 sampleAge: 1, readiness: FleetReadinessReport(model: "MacBook Pro", chip: "M4 Max", repos: ["Shepherd"]))]))
+        workspace.vm.openDestination(.fleet)
+        #expect(workspace.vm.fleetPage.page.cards.count == 1)
+        try await Preview.render("gxb-fleet-one-mac", size: CGSize(width: 1440, height: 900)) { RootView(vm: workspace.vm) }
+    }
+
+    /// Designs with no designs (NavDesigns, SystemBuiltIn): the built-in Shepherd UI system is still there.
+    @Test func designsWithNone() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.settings.designToolEnabled = true
+        try await workspace.seed(ShepherdState())
+        workspace.vm.openDestination(.designs)
+        // The host registers Shepherd UI as it starts (`ShepherdHost.Services.configure`); the page reads it with the others.
+        await workspace.vm.loadDesignSystems()
+        try await eventuallyOnMain("the built-in system to load") {
+            workspace.vm.designSystems.summaries.contains { $0.namespace == "shepherd-design" }
+        }
+        try await Preview.render("gxb-designs-none", size: CGSize(width: 1440, height: 900)) { RootView(vm: workspace.vm) }
+    }
 }

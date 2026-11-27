@@ -87,6 +87,8 @@ struct RootView: View {
                     .padding(.top, AppLayout.toolbarTop)
                     .background(Color.sh.bgWindow)
                     .modifier(PaneReserve(vm: vm))
+                    // ...and 8pt in from the window's right edge while no pane's card ends the toolbar.
+                    .padding(.trailing, vm.sidePaneReserve > 0 ? 0 : AppLayout.toolbarTop)
                     // Over the workspace: the side-pane button's tip hangs below the toolbar.
                     .zIndex(1)
                 }
@@ -335,16 +337,23 @@ private struct DestinationLayer: View {
     var body: some View {
         switch vm.shownDestination {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
-        case .designs?: DesignsDestination(vm: vm, chrome: chrome)
+        case .designs?: DesignsDestination(vm: vm, chrome: chrome).inWindowPadding()
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
         case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)
         case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
         case .forge?: ForgeDestination(vm: vm, chrome: chrome)
-        case .fleet?: FleetDestination(vm: vm, chrome: chrome)
+        case .fleet?: FleetDestination(vm: vm, chrome: chrome).inWindowPadding()
         case .project?: LogicalProjectDestination(vm: vm, chrome: chrome)
         case .projectSettings?: LogicalProjectSettingsDestination(vm: vm, chrome: chrome)
         case nil: EmptyView()
         }
+    }
+}
+
+extension View {
+    /// A page drawn inside the boards' window padding: 8pt from the window's top, right and bottom, as the thread's toolbar is.
+    fileprivate func inWindowPadding() -> some View {
+        padding(EdgeInsets(top: AppLayout.toolbarTop, leading: 0, bottom: AppLayout.toolbarTop, trailing: AppLayout.toolbarTop))
     }
 }
 

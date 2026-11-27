@@ -414,6 +414,8 @@ public enum ShepherdHost {
 
         var configure: @MainActor (SessionServer) -> Void {
             { [self] server in
+                // Shepherd UI, the built-in system every Designs page lists (NavDesigns, SystemBuiltIn).
+                server.designSystems.register(BuiltInShepherdDesign.builtIn())
                 HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
                     self?.listener ?? (nil, nil)
                 }
