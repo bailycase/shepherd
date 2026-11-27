@@ -90,7 +90,7 @@ public struct SHSheetSubtitle: View {
 
     public var body: some View {
         Text(text)
-            .shText(size: SHPiSignInMetrics.sheetSubtitleSize, lineHeight: SHPiSignInMetrics.sheetSubtitleLine)
+            .shSheetText(size: SHPiSignInMetrics.sheetSubtitleSize, lineHeight: SHPiSignInMetrics.sheetSubtitleLine)
             .foregroundStyle(Color.sh.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
     }

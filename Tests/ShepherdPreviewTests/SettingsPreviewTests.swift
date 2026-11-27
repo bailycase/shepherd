@@ -416,30 +416,32 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// The OAuth sign-in sheet waiting in the browser, done, and failed.
+    /// The OAuth sign-in sheet waiting in the browser, done, and failed (SettingsToolsSignIn, SettingsToolsSignInFailed).
     @Test(arguments: ["waiting", "done", "failed"])
     func mcpSignIn(phase: String) async throws {
         var steps: [MCPSignInSheetModel.Step] = [
-            .init(id: "found", title: "Found Notion’s sign-in server", state: .done),
-            .init(id: "registered", title: "Registered Shepherd with Notion", state: .done),
+            .init(id: "found", title: "Found Linear’s sign-in server", state: .done),
+            .init(id: "registered", title: "Registered Shepherd with Linear", state: .done),
             .init(id: "browser", title: "Waiting for you in the browser",
-                  note: "pi opened the page; approve access on notion.com and this closes by itself.", state: .live),
+                  note: "pi opened the page; approve access on linear.app and this closes by itself.", state: .live),
         ]
         let model: MCPSignInSheetModel
         switch phase {
         case "done":
             steps[2] = .init(id: "browser", title: "Signed in", state: .done)
-            model = .init(title: "Sign in to Notion", subtitle: "notion is connected: 14 tools.", steps: steps, phase: .done)
+            model = .init(title: "Sign in to Linear", subtitle: "linear is connected: 14 tools.", steps: steps, phase: .done)
         case "failed":
             steps[2] = .init(id: "browser", title: "Signing in didn’t finish",
-                             note: "Sign-in to MCP server \"notion\" was cancelled or not completed within 300 seconds.", state: .failed)
-            model = .init(title: "Sign in to Notion", subtitle: "Nothing was saved.", steps: steps, phase: .failed,
-                          details: "Sign-in to MCP server \"notion\" was cancelled or not completed within 300 seconds.")
+                             note: "Timed out after 300 s waiting for the browser.", state: .failed)
+            model = .init(title: "Sign in to Linear", subtitle: "Nothing was saved.", steps: steps, phase: .failed,
+                          details: "$ pi mcp login linear --timeout 300\nhttps://mcp.linear.app/authorize?client_id=shep_7f2c…&redirect_uri=http://127.0.0.1:53682/callback\nWaiting for the redirect on 127.0.0.1:53682…\nError: Timed out after 300 s waiting for the browser.")
         default:
-            model = .init(title: "Sign in to Notion", subtitle: "Finish signing in on notion.com.", steps: steps, phase: .waiting)
+            model = .init(title: "Sign in to Linear", subtitle: "Finish signing in on linear.app.", steps: steps, phase: .waiting)
         }
-        try await Preview.renderMatrix("mcp-signin-\(phase)", size: CGSize(width: SHMCPMetrics.sheetWidth, height: 380)) {
-            MCPSignInSheet(model, actions: .none)
+        let width = SHMCPMetrics.sheetWidth
+        try await Preview.renderMatrix("mcp-signin-\(phase)", size: CGSize(width: width, height: 420)) {
+            MCPSignInSheet(model, actions: .none, detailsOpen: phase == "failed")
+                .frame(width: width, height: 420, alignment: .top).background(Color.sh.bgWindow)
         }
     }
 

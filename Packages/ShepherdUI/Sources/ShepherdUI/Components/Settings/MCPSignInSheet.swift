@@ -59,87 +59,52 @@ public struct MCPSignInSheet: View {
 
     let model: MCPSignInSheetModel
     let actions: Actions
-    @State private var showsDetails = false
+    @State private var showsDetails: Bool
 
-    public init(_ model: MCPSignInSheetModel, actions: Actions) {
+    /// `detailsOpen` starts a failed sign-in with its details showing.
+    public init(_ model: MCPSignInSheetModel, actions: Actions, detailsOpen: Bool = false) {
         self.model = model
         self.actions = actions
+        _showsDetails = State(initialValue: detailsOpen)
     }
 
     public var body: some View {
-        let sh = Color.sh
-        let M = SHMCPMetrics.self
-        VStack(alignment: .leading, spacing: SH.Space.xl) {
-            HStack(alignment: .center, spacing: SH.Space.l) {
-                Image(systemName: "powerplug")
-                    .font(.shSans(M.sheetTitleSize))
-                    .foregroundStyle(sh.textPrimary)
-                    .frame(width: M.sheetIconTile, height: M.sheetIconTile)
-                    .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text(model.title)
-                        .font(.shSans(M.sheetTitleSize, .semibold))
-                        .foregroundStyle(sh.textPrimary)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(model.subtitle)
-                        .font(.shSans(M.sheetSubtitleSize))
-                        .foregroundStyle(sh.textSecondary)
-                }
+        SHSettingsSheet(model.title, subtitle: model.subtitle, width: SHMCPMetrics.sheetWidth) {
+            SHSheetSteps {
+                ForEach(model.steps) { step in MCPSignInStepRow(step) }
             }
-            VStack(alignment: .leading, spacing: SH.Space.l + SH.Space.xxs) {
-                ForEach(model.steps) { step in
-                    MCPSignInStepRow(step)
-                }
-            }
-            .padding(SH.Space.l + SH.Space.xs)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-            .shBorder(sh.lineSubtle, radius: M.cardRadius)
             if showsDetails, let details = model.details {
-                Text(details)
-                    .font(.shMono(M.detailNoteSize))
-                    .foregroundStyle(sh.textSecondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                SHSheetPre(details)
             }
-            footer
-        }
-        .padding(SH.Space.xl + SH.Space.s)
-        .frame(width: M.sheetWidth, alignment: .leading)
-        .background(sh.bgWindow)
-        .shAnimation(.disclosure, value: model)
-    }
-
-    @ViewBuilder private var footer: some View {
-        HStack(spacing: SH.Space.m) {
+        } status: {
+            // The words at the foot's left: Copy link while it waits, Details after a failure.
             switch model.phase {
             case .waiting:
-                Button(action: actions.copyLink) { Label("Copy link", systemImage: "doc.on.doc") }
-                    .buttonStyle(.sh(.ghost))
-                Spacer(minLength: SH.Space.m)
-                Button("Cancel", action: actions.cancel).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
-                Button(action: actions.openBrowser) { Label("Open browser again", systemImage: "arrow.up.forward.square") }
-                    .buttonStyle(.sh(.secondary))
-            case .done:
-                Spacer(minLength: SH.Space.m)
-                Button("Done", action: actions.done).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+                Button("Copy link", action: actions.copyLink).buttonStyle(.sh(.ghost)).fixedSize()
             case .failed:
                 if model.details != nil {
-                    Button(showsDetails ? "Hide details" : "Details") { showsDetails.toggle() }.buttonStyle(.sh(.ghost))
+                    Button(showsDetails ? "Hide details" : "Details") { showsDetails.toggle() }.buttonStyle(.sh(.ghost)).fixedSize()
                 }
-                Spacer(minLength: SH.Space.m)
+            case .done:
+                EmptyView()
+            }
+        } actions: {
+            switch model.phase {
+            case .waiting:
+                Button("Cancel", action: actions.cancel).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
+                Button("Open browser again", action: actions.openBrowser).buttonStyle(.sh(.secondary))
+            case .done:
+                Button("Done", action: actions.done).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+            case .failed:
                 Button("Close", action: actions.cancel).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
-                Button(action: actions.tryAgain) { Label("Try again", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.sh(.primary))
-                    .keyboardShortcut(.defaultAction)
+                Button("Try again", action: actions.tryAgain).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             }
         }
+        .shAnimation(.disclosure, value: model)
     }
 }
 
-/// One step: a check when done, a live ring while it's happening, a cross when it failed, a
-/// faint ring while it waits its turn.
+/// One step: its title (a note under it) and its state in words at the right: Done, Now, Next, Failed.
 public struct MCPSignInStepRow: View {
     let step: MCPSignInSheetModel.Step
 
@@ -148,48 +113,12 @@ public struct MCPSignInStepRow: View {
     }
 
     public var body: some View {
-        let sh = Color.sh
-        let M = SHMCPMetrics.self
-        HStack(alignment: .top, spacing: M.sheetStepGap) {
-            mark.frame(width: M.sheetStepIcon, height: M.sheetStepIcon).padding(.top, 1)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(step.title)
-                    .font(.shSans(M.sheetStepTitleSize))
-                    .foregroundStyle(step.state == .pending ? sh.textTertiary : sh.textPrimary)
-                    .shShimmer(active: step.state == .live)
-                if let note = step.note {
-                    Text(note)
-                        .shText(size: M.sheetStepNoteSize, lineHeight: 1.4)
-                        .foregroundStyle(sh.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+        let (state, word): (SHSheetStep.State, String) = switch step.state {
+        case .done: (.done, "Done")
+        case .live: (.now, "Now")
+        case .pending: (.wait, "Next")
+        case .failed: (.failed, "Failed")
         }
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder private var mark: some View {
-        let sh = Color.sh
-        switch step.state {
-        case .done:
-            Image(systemName: "checkmark")
-                .font(.shSans(9, .bold))
-                .foregroundStyle(sh.done)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(sh.doneTint, in: Circle())
-        case .failed:
-            Image(systemName: "xmark")
-                .font(.shSans(9, .bold))
-                .foregroundStyle(sh.failed)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(sh.failedTint, in: Circle())
-        case .live:
-            ZStack {
-                Circle().strokeBorder(sh.running, lineWidth: 1.5)
-                Circle().fill(sh.running).padding(4)
-            }
-        case .pending:
-            Circle().strokeBorder(sh.lineStrong, lineWidth: 1.5)
-        }
+        SHSheetStep(step.title, note: step.note, word: word, state: state)
     }
 }

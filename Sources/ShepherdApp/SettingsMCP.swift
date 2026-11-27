@@ -178,10 +178,10 @@ struct MCPSettings<Extras: View>: View {
         SettingsGroup(title: "Config") {
             SettingsRow(title: row.name, subtitle: detail?.message ?? "In \(store.configPath)") {
                 HStack(spacing: AppLayout.settingsControlsSpacing) {
+                    Button("Copy JSON", action: actions.copyJSON).buttonStyle(.sh(.secondary, size: .s))
                     if let reconnect = actions.reconnect {
                         Button("Reconnect", action: reconnect).buttonStyle(.sh(.secondary, size: .s))
                     }
-                    Button("Copy JSON", action: actions.copyJSON).buttonStyle(.sh(.secondary, size: .s))
                     Button("Edit", action: actions.edit).buttonStyle(.sh(.secondary, size: .s)).accessibilityLabel("Edit…")
                 }
             }
@@ -418,33 +418,36 @@ struct MCPChooseToolsSheet: View {
     var body: some View {
         let entry = store.entry(name)
         let tools = entry.flatMap(store.toolNames(of:)) ?? []
-        DialogSheet(title: "Choose \(name)’s tools",
-                    subtitle: "The agent sees and calls only the tools you tick, searched or declared as the server’s tool exposure says.",
-                    width: AppLayout.mcpToolsSheetWidth,
-                    actions: [
-                        DialogAction("Cancel", kind: .cancel, action: close),
-                        DialogAction("Save", kind: .prominent, isEnabled: all || !chosen.isEmpty) {
-                            store.setTools(name, all ? nil : tools.filter(chosen.contains))
-                            close()
-                        },
-                    ]) {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                Toggle("All tools, including ones it adds later", isOn: $all).toggleStyle(.shCheckbox)
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: SH.Space.s) {
-                        ForEach(tools, id: \.self) { tool in
-                            Toggle(isOn: Binding(get: { all || chosen.contains(tool) }, set: { on in
-                                all = false
-                                if on { chosen.insert(tool) } else { chosen.remove(tool) }
-                            })) {
-                                Text(tool).font(.shMono(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textPrimary)
-                            }
-                            .toggleStyle(.shCheckbox)
+        SHSettingsSheet("Choose \(name)’s tools",
+                        subtitle: "The agent sees and calls only the tools you tick, searched or declared as the server’s tool exposure says.",
+                        width: AppLayout.mcpToolsSheetWidth) {
+            Toggle(isOn: $all) {
+                Text("All tools, including ones it adds later").font(.shSans(SHSettingsSheetMetrics.textSize)).foregroundStyle(Color.sh.textPrimary)
+            }
+            .toggleStyle(.shCheckbox)
+            SHSheetRule()
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: SH.Space.m) {
+                    ForEach(tools, id: \.self) { tool in
+                        Toggle(isOn: Binding(get: { all || chosen.contains(tool) }, set: { on in
+                            all = false
+                            if on { chosen.insert(tool) } else { chosen.remove(tool) }
+                        })) {
+                            Text(tool).font(.shMono(SHSettingsSheetMetrics.monoSize)).foregroundStyle(Color.sh.textPrimary)
                         }
+                        .toggleStyle(.shCheckbox)
                     }
                 }
-                .frame(maxHeight: AppLayout.mcpToolsSheetHeight)
             }
+            .frame(maxHeight: AppLayout.mcpToolsSheetHeight)
+        } actions: {
+            Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
+            Button("Save") {
+                store.setTools(name, all ? nil : tools.filter(chosen.contains))
+                close()
+            }
+            .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+            .disabled(!(all || !chosen.isEmpty))
         }
         .onAppear {
             let current = entry?.settings.tools

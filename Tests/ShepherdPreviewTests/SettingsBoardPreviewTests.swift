@@ -127,5 +127,17 @@ struct SettingsBoardPreviewTests {
             SettingsView(vm: workspace.vm)
         }
     }
+
+    /// Tools ▸ linear open (SettingsToolsServer), at its board's 680pt window.
+    @Test func toolsServer() async throws {
+        let store = try await MCPPreviewFixtures.boardStore()
+        let workspace = try PreviewWorkspace(mcp: store)
+        defer { workspace.stop() }
+        workspace.vm.mcpOpenServer = "linear"
+        workspace.vm.settingsSection = .tools
+        try await Preview.render("board-tools-server", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
 }
 
