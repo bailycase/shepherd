@@ -108,11 +108,8 @@ private struct FramedWindow: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             guard window_ == nil, let scene = window?.windowScene, let app else { return }
-            let bounds = scene.coordinateSpace.bounds
             let framed = UIWindow(windowScene: scene)
-            let edge = ProcessInfo.processInfo.environment["FIXTURE_FRAME_EDGE"]
-            let x = edge == "leading" ? 0 : edge == "trailing" ? bounds.width - width : (bounds.width - width) / 2
-            framed.frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
+            framed.frame = frame(in: scene)
             let host = UIHostingController(rootView: MobileRoot(app: app).environment(\.scenePhase, .active))
             // Split View and Slide Over's narrow windows are compact; a framed window keeps the scene's class unless told.
             if Double(ProcessInfo.processInfo.environment["FIXTURE_FRAME_WIDTH"] ?? "") != nil {
@@ -122,6 +119,21 @@ private struct FramedWindow: UIViewRepresentable {
             framed.makeKeyAndVisible()
             window_ = framed
             FixtureWindows.shared.framed = framed
+        }
+
+        /// The window's frame in the scene as it is now: a turn of the device moves the window with it.
+        private func frame(in scene: UIWindowScene) -> CGRect {
+            let bounds = scene.coordinateSpace.bounds
+            let edge = ProcessInfo.processInfo.environment["FIXTURE_FRAME_EDGE"]
+            let x = edge == "leading" ? 0 : edge == "trailing" ? bounds.width - width : (bounds.width - width) / 2
+            return CGRect(x: x, y: 0, width: width, height: bounds.height)
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let framed = window_, let scene = framed.windowScene else { return }
+            let target = frame(in: scene)
+            if framed.frame != target { framed.frame = target }
         }
     }
 }

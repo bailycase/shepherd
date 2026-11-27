@@ -51,6 +51,7 @@ public struct SHSidebarSectionHeader: View {
     /// A trailing text button that opens somewhere else ("Answer in Needs you" on the iPhone), set like Mark all seen.
     let textAction: (title: String, action: () -> Void)?
     @Environment(\.shDensity) private var density
+    @Environment(\.shSidebarRoomy) private var roomy
     @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(_ title: String, count: Int, isExpanded: Bool, attention: Bool = false, pulse: Bool = false,
@@ -161,6 +162,7 @@ public struct SHSidebarSectionHeader: View {
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
-        .padding(.top, density.sidebarHeaderTop)
+        .padding(.top, roomy ? SHSidebarMetrics.padHeaderTop : density.sidebarHeaderTop)
+        .padding(.bottom, roomy ? SH.Space.xs : 0)
     }
 }

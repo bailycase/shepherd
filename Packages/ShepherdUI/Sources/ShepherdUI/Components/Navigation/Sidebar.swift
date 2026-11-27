@@ -128,6 +128,12 @@ public enum SHSidebarMetrics {
     public static let touchFooterInset: CGFloat = 18
     public static let touchFooterGlyph: CGFloat = 18
 
+    /// The iPad board's roomier list (iPadSidebar): destinations 42pt, thread rows 38pt, a section's header 18pt under the row above and
+    /// 4pt over the one below. Set by the iPad's sidebar (`shSidebarRoomy`); the Mac and the iPhone Duo keep the measures above.
+    public static let padDestinationHeight: CGFloat = 42
+    public static let padRowHeight: CGFloat = 38
+    public static let padHeaderTop: CGFloat = 18
+
     /// A row's height: the density's; on a touch screen the boards' 40pt.
     @MainActor public static func rowHeight(_ density: SHDensity) -> CGFloat {
         #if os(iOS)
@@ -135,6 +141,17 @@ public enum SHSidebarMetrics {
         #else
         density.rowHeight
         #endif
+    }
+}
+
+private struct SHSidebarRoomyKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    /// The sidebar takes the iPad board's row heights and header margin (`SHSidebarMetrics.padRowHeight`), and sets the open thread's name
+    /// as any other row's, as iPadSidebar does.
+    public var shSidebarRoomy: Bool {
+        get { self[SHSidebarRoomyKey.self] }
+        set { self[SHSidebarRoomyKey.self] = newValue }
     }
 }
 
@@ -237,6 +254,7 @@ public struct SHSidebarDestination: View, Equatable {
     let trailing: Trailing
     let action: () -> Void
     @Environment(\.shDensity) private var density
+    @Environment(\.shSidebarRoomy) private var roomy
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var hovering = false
 
@@ -271,7 +289,7 @@ public struct SHSidebarDestination: View, Equatable {
             }
             .padding(.leading, child ? SHSidebarMetrics.destinationChildLeading : density.sidebarRowPadding)
             .padding(.trailing, density.sidebarRowPadding)
-            .frame(maxWidth: .infinity, minHeight: density.destinationHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: roomy ? SHSidebarMetrics.padDestinationHeight : density.destinationHeight, alignment: .leading)
             .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
             .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         }
@@ -337,6 +355,7 @@ public struct SHSidebarSection: View, Equatable {
 
     let kind: Kind
     @Environment(\.shDensity) private var density
+    @Environment(\.shSidebarRoomy) private var roomy
 
     public init(_ kind: Kind) { self.kind = kind }
 
@@ -366,7 +385,7 @@ public struct SHSidebarSection: View, Equatable {
                 EmptyView()
             }
         }
-        .padding(EdgeInsets(top: density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: SH.Space.xs,
+        .padding(EdgeInsets(top: roomy ? SHSidebarMetrics.padHeaderTop : density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: SH.Space.xs,
                             trailing: density.sidebarRowPadding))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -477,6 +496,7 @@ public struct SHSidebarRow: View, Equatable {
     let fold: Fold?
     let unseen: Bool
     @Environment(\.shDensity) private var density
+    @Environment(\.shSidebarRoomy) private var roomy
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var hovering = false
 
@@ -528,7 +548,7 @@ public struct SHSidebarRow: View, Equatable {
     /// The touch boards set the open thread's name in semibold (DuoOpenThread's `.sel .t`).
     private var boldsWhenSelected: Bool {
         #if os(iOS)
-        selected
+        selected && !roomy
         #else
         false
         #endif
@@ -570,7 +590,7 @@ public struct SHSidebarRow: View, Equatable {
         .padding(.leading, nested ? density.treeChildLeading : elbow ? SHSidebarMetrics.sentLeading : density.sidebarRowPadding)
         .padding(.trailing, density.sidebarRowPadding)
         .padding(.vertical, subtitle == nil ? 0 : SHSidebarMetrics.subtitleRowPadding)
-        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? SHSidebarMetrics.rowHeight(density) : SHSidebarMetrics.subtitleRowHeight,
+        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? (roomy ? SHSidebarMetrics.padRowHeight : SHSidebarMetrics.rowHeight(density)) : SHSidebarMetrics.subtitleRowHeight,
                alignment: subtitle == nil ? .leading : .topLeading)
         .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.s)
         .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
