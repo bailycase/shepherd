@@ -12,14 +12,24 @@ struct ForgePullRequestPage: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
     let chrome: PageHeaderChrome
-
     var body: some View {
         let detail = store.pullRequest
         VStack(spacing: 0) {
             ForgeHeaderBar(chrome: chrome, back: vm.leaveForge) {
                 ForgeTabs(store: store, detail: detail)
             } trailing: {
-                if let detail { ForgePullRequestActions(vm: vm, store: store, detail: detail) }
+                if let detail {
+                    ForgePullRequestActions(vm: vm, store: store, detail: detail, mergeMenu: $store.mergeMenuOpen)
+                } else if let ref = store.selection {
+                    // While it loads the capsule holds its place, the actions off.
+                    SHToolbarCapsule {
+                        ForgeItemButtons(store: store, ref: ref)
+                        SHBarDivider()
+                        Button("Review with agent") {}.buttonStyle(.shBar).disabled(true)
+                        Button("Submit review") {}.buttonStyle(.shBar).disabled(true)
+                        Button { } label: { Text("Merge").fontWeight(.semibold) }.buttonStyle(.shBar).disabled(true)
+                    }
+                }
             }
             ForgeBanners(vm: vm, store: store)
             if let detail {
@@ -31,7 +41,12 @@ struct ForgePullRequestPage: View {
                                                sending: false) { await vm.forgeAsk($0) }
                         }
                 case .changes: ForgeChangesTab(vm: vm, store: store, detail: detail)
-                case .checks: ForgeChecksTab(vm: vm, store: store, detail: detail)
+                case .checks:
+                    ForgePullRequestSummary(vm: vm, store: store, detail: detail, checksOnly: true)
+                        .overlay(alignment: .bottom) {
+                            ForgeFloatingField(placeholder: "Ask the agent about this pull request", sendTitle: nil,
+                                               sending: false) { await vm.forgeAsk($0) }
+                        }
                 }
             } else if let error = store.detailError {
                 ForgeDetailError(error: error) { Task { await store.loadDetail() } }
@@ -39,11 +54,24 @@ struct ForgePullRequestPage: View {
                 ForgeLoadingPage(number: ref.number)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if store.mergeMenuOpen, let detail, detail.state == .open {
+                ZStack(alignment: .topTrailing) {
+                    Color.clear.contentShape(Rectangle()).onTapGesture { store.mergeMenuOpen = false }
+                    ForgeMergeMenu(store: store, detail: detail) { store.mergeMenuOpen = false }
+                        .padding(.top, SHToolbarMetrics.height)
+                        .padding(.trailing, SH.Space.m)
+                        .onExitCommand { store.mergeMenuOpen = false }
+                }
+                .shTransition(.overlay, anchor: .topTrailing)
+            }
+        }
+        .shAnimation(.content, value: store.mergeMenuOpen)
     }
 }
 
-/// Summary | Changes +200 −8 | Checks •; in the side pane (PRPane) Overview | Files 5 +200 −8 | Checks •,
-/// clear of the pane's own Changes tab.
+/// Summary | Changes +200 −8 | Checks 1 failing, in a track (the boards' `.segc.gch-tabs`); in the side pane (PRPane)
+/// Overview | Files 5 +200 −8 | Checks •, clear of the pane's own Changes tab.
 struct ForgeTabs: View {
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail?
@@ -53,37 +81,53 @@ struct ForgeTabs: View {
         HStack(spacing: pane ? SH.Space.xs : SH.Space.xxs) {
             tab(.summary) { Text(pane ? "Overview" : "Summary") }
             tab(.changes) {
-                HStack(spacing: SH.Space.s) {
+                HStack(spacing: pane ? SH.Space.s : AppLayout.forgeTabGap) {
                     Text(pane ? "Files \(detail?.changedFiles ?? 0)" : "Changes")
-                    if let summary = detail?.summary { SHDiffStat(added: summary.additions, removed: summary.deletions, font: pane ? .sh(.caption) : .sh(.mono)) }
+                    if let summary = detail?.summary { SHDiffStat(added: summary.additions, removed: summary.deletions, font: pane ? .sh(.caption) : .sh(.caption, weight: .regular)) }
                 }
             }
             tab(.checks) {
-                HStack(spacing: SH.Space.s) {
+                HStack(spacing: pane ? SH.Space.s : AppLayout.forgeTabGap) {
                     Text("Checks")
-                    if let tone = detail.flatMap({ ForgePresentation.tone($0.summary.checks) }) { ForgeDot(tone: tone) }
+                    checks
                 }
             }
         }
-        // The pane's tabs are bare (GXPanePR `.seg2`); the page's sit in a sunken, outlined track.
+        // The pane's tabs are bare (GXPanePR `.seg2`); the page's sit in a track.
         .padding(pane ? 0 : SH.Space.xxs)
-        .background(pane ? Color.clear : Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-        .shBorder(pane ? .clear : Color.sh.lineSubtle, radius: SH.Radius.s)
+        .background(pane ? Color.clear : Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .fixedSize()
         .disabled(detail == nil)
     }
 
+    /// The Checks tab's word: "1 failing" in red, else the state's dot.
+    @ViewBuilder private var checks: some View {
+        if let detail, let tone = ForgePresentation.tone(detail.summary.checks) {
+            let failing = detail.checks.filter { $0.state == .failing }.count
+            if !pane, tone == .failed, failing > 0 {
+                Text("\(failing) failing").font(.sh(.caption, weight: .regular)).foregroundStyle(Color.sh.failed)
+            } else if !pane, tone == .done {
+                Text("\(detail.checks.filter { $0.state == .passed }.count) passed").font(.sh(.caption, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+            } else {
+                ForgeDot(tone: tone)
+            }
+        }
+    }
+
     private func tab<Label: View>(_ value: ForgeStore.Tab, @ViewBuilder label: () -> Label) -> some View {
         let selected = store.tab == value
+        let shape = RoundedRectangle(cornerRadius: pane ? SH.Radius.s : SH.Radius.s)
         return Button { store.tab = value } label: {
             label()
-                .font(.sh(.ui, weight: pane ? (selected ? .medium : .regular) : (selected ? .semibold : .medium)))
+                .font(.sh(.ui, weight: selected ? .medium : .regular))
                 .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
-                .padding(.horizontal, pane ? SH.Space.m + SH.Space.xxs : SH.Space.m)
-                .frame(height: pane ? AppLayout.prPaneTabHeight : SH.Height.controlS)
-                .background(selected ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: pane ? SH.Radius.s : SH.Radius.xs))
+                .padding(.horizontal, pane ? SH.Space.m + SH.Space.xxs : AppLayout.forgeTabPadding)
+                .frame(height: pane ? AppLayout.prPaneTabHeight : AppLayout.forgeTabHeight)
+                .background {
+                    if selected { pane ? AnyView(shape.fill(Color.sh.bgSelected)) : AnyView(Color.clear.shLift(shape)) }
+                }
                 .contentShape(Rectangle())
-                .shFocusRing(radius: SH.Radius.xs)
+                .shFocusRing(radius: SH.Radius.s)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -93,25 +137,26 @@ struct ForgeTabs: View {
 // MARK: Header actions
 
 /// Pin, link, GitHub; Review with agent; Submit review; then the state's own action: Merge and
-/// its menu, Ready for review, Reopen, or Remove worktree and Delete branch.
+/// its menu, Ready for review, Reopen, or Remove worktree and Delete branch. All in the header's
+/// capsule (the boards' `.cap`).
 private struct ForgePullRequestActions: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail
-    @State private var mergeMenu = false
+    @Binding var mergeMenu: Bool
     @State private var review = false
 
     var body: some View {
-        SHFlowLayout(spacing: SH.Space.m) {
+        SHToolbarCapsule {
             ForgeItemButtons(store: store, ref: detail.ref)
+            SHBarDivider()
             Button("Review with agent") { vm.forgeReviewWithAgent() }
-                .buttonStyle(.sh(.secondary))
+                .buttonStyle(.shBar)
                 .help("Start a thread that reviews this pull request and reports back")
             if detail.state == .open || detail.state == .draft {
-                Button { review = true } label: { Image(systemName: ForgeSymbol.review) }
-                    .buttonStyle(.shIcon(isOn: review))
+                Button("Submit review") { review = true }
+                    .buttonStyle(.shBar)
                     .help("Submit a review")
-                    .accessibilityLabel("Submit a review")
                     .popover(isPresented: $review, arrowEdge: .bottom) { ForgeReviewPopover(store: store, detail: detail) { review = false } }
             }
             primary
@@ -119,33 +164,32 @@ private struct ForgePullRequestActions: View {
         .disabled(store.working)
     }
 
+    private func strong(_ title: String) -> some View { Text(title).fontWeight(.semibold) }
+
     @ViewBuilder private var primary: some View {
         switch detail.state {
         case .open:
-            HStack(spacing: SH.Space.xxs) {
-                Button { vm.forgeMerge() } label: {
-                    Label("Merge", systemImage: ForgeSymbol.merge)
-                }
-                .buttonStyle(.sh(.strong))
-                .help(store.mergeOptions.whenReady ? "\(ForgePresentation.title(store.mergeOptions.method)) when reviews and checks allow"
-                      : ForgePresentation.title(store.mergeOptions.method))
-                Button { mergeMenu = true } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.sh(.strong))
+            HStack(spacing: 0) {
+                Button { vm.forgeMerge() } label: { strong("Merge") }
+                    .buttonStyle(.shBar)
+                    .help(store.mergeOptions.whenReady ? "\(ForgePresentation.title(store.mergeOptions.method)) when reviews and checks allow"
+                          : ForgePresentation.title(store.mergeOptions.method))
+                Button { mergeMenu.toggle() } label: { Image(systemName: "chevron.down").font(.shSans(AppLayout.forgeChevron, .semibold)).foregroundStyle(Color.sh.textTertiary) }
+                    .buttonStyle(.shBar)
+                    .padding(.leading, -SH.Space.s)
                     .accessibilityLabel("Merge options")
-                    .popover(isPresented: $mergeMenu, arrowEdge: .bottom) {
-                        ForgeMergeMenu(store: store, detail: detail) { mergeMenu = false }
-                    }
             }
+            .background(mergeMenu ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         case .draft:
-            Button("Ready for review") { Task { await store.perform(.setDraft(ref: detail.ref, draft: false)) } }.buttonStyle(.sh(.strong))
+            Button { Task { await store.perform(.setDraft(ref: detail.ref, draft: false)) } } label: { strong("Ready for review") }.buttonStyle(.shBar)
         case .closed:
-            Button("Reopen") { Task { await store.perform(.setOpen(ref: detail.ref, open: true)) } }.buttonStyle(.sh(.strong))
+            Button { Task { await store.perform(.setOpen(ref: detail.ref, open: true)) } } label: { strong("Reopen") }.buttonStyle(.shBar)
         case .merged:
             if detail.summary.thread?.worktreePath != nil {
-                Button("Remove worktree") { vm.forgeRemoveWorktree() }.buttonStyle(.sh(.secondary))
+                Button("Remove worktree") { vm.forgeRemoveWorktree() }.buttonStyle(.shBar)
             }
             if !detail.headBranchDeleted, !detail.deletesBranchOnMerge {
-                Button("Delete branch") { Task { await store.perform(.deleteBranch(ref: detail.ref)) } }.buttonStyle(.sh(.strong))
+                Button { Task { await store.perform(.deleteBranch(ref: detail.ref)) } } label: { strong("Delete branch") }.buttonStyle(.shBar)
             }
         }
     }
@@ -159,7 +203,7 @@ struct ForgeMergeMenu: View {
     let close: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+        SHPopMenu(width: AppLayout.forgeMergeMenuWidth) {
             if let sentence = ForgePresentation.blockerSentence(detail.blockers) {
                 HStack(alignment: .top, spacing: SH.Space.m) {
                     Image(systemName: "exclamationmark.circle").foregroundStyle(Color.sh.failed)
@@ -168,60 +212,55 @@ struct ForgeMergeMenu: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .font(.sh(.ui, weight: .regular))
-                .padding(SH.Space.m)
+                .padding(.horizontal, SH.Space.l - SH.Space.xxs)
+                .padding(.vertical, SH.Space.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.sh.failedTint, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                 .padding(.bottom, SH.Space.s)
             }
-            ForgeCaption("Method").padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.xs)
+            SHPopMenuHeader("Method")
             ForEach(detail.mergeMethods, id: \.self) { method in
-                row(ForgePresentation.title(method), checked: store.mergeOptions.method == method,
-                    note: method == detail.defaultMergeMethod ? "repo default" : nil) { store.mergeOptions.method = method }
+                SHPopMenuRow(ForgePresentation.title(method), lead: .check(store.mergeOptions.method == method),
+                             trailing: method == detail.defaultMergeMethod ? "repo default" : nil) { store.mergeOptions.method = method }
             }
-            SHHairline().padding(.vertical, SH.Space.xs)
-            row("Merge when ready", checked: store.mergeOptions.whenReady, note: "after review and checks") { store.mergeOptions.whenReady.toggle() }
+            SHPopMenuSeparator()
+            SHPopMenuRow("Merge when ready", lead: .check(store.mergeOptions.whenReady), trailing: "after review and checks") { store.mergeOptions.whenReady.toggle() }
             if !detail.deletesBranchOnMerge {
-                row("Delete the branch", checked: store.mergeOptions.deleteBranch) { store.mergeOptions.deleteBranch.toggle() }
+                SHPopMenuRow("Delete the branch", lead: .check(store.mergeOptions.deleteBranch)) { store.mergeOptions.deleteBranch.toggle() }
             }
             if detail.summary.thread?.worktreePath != nil {
-                row("Remove the worktree", checked: store.mergeOptions.removeWorktree, note: "this Mac") { store.mergeOptions.removeWorktree.toggle() }
+                SHPopMenuRow("Remove the worktree", lead: .check(store.mergeOptions.removeWorktree), trailing: "this Mac") { store.mergeOptions.removeWorktree.toggle() }
             }
-            SHHairline().padding(.vertical, SH.Space.xs)
-            action("Convert to draft", color: Color.sh.textPrimary) { await store.perform(.setDraft(ref: detail.ref, draft: true)) }
-            action("Close pull request", color: Color.sh.failed) { await store.perform(.setOpen(ref: detail.ref, open: false)) }
-        }
-        .padding(SH.Space.s)
-        .frame(width: AppLayout.forgeMergeMenuWidth)
-        .background(Color.sh.bgRaised)
-    }
-
-    private func row(_ title: String, checked: Bool, note: String? = nil, toggle: @escaping () -> Void) -> some View {
-        Button(action: toggle) {
-            HStack(spacing: SH.Space.m) {
-                Image(systemName: "checkmark").font(.sh(.caption)).opacity(checked ? 1 : 0).frame(width: SH.Space.l)
-                Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
-                Spacer(minLength: SH.Space.m)
-                if let note { Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+            SHPopMenuSeparator()
+            SHPopMenuRow("Convert to draft", lead: .check(false)) {
+                close()
+                Task { _ = await store.perform(.setDraft(ref: detail.ref, draft: true)) }
             }
-            .padding(.horizontal, SH.Space.m)
-            .frame(height: SH.Height.controlM)
-            .contentShape(Rectangle())
+            ForgeDestructiveMenuRow(title: "Close pull request") {
+                close()
+                Task { _ = await store.perform(.setOpen(ref: detail.ref, open: false)) }
+            }
         }
-        .buttonStyle(.shRow())
-        .accessibilityAddTraits(checked ? .isSelected : [])
     }
+}
 
-    private func action(_ title: String, color: Color, perform: @escaping () async -> Bool) -> some View {
-        Button {
-            close()
-            Task { _ = await perform() }
-        } label: {
-            Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(color)
-                .padding(.horizontal, SH.Space.m)
-                .frame(maxWidth: .infinity, minHeight: SH.Height.controlM, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.shRow())
+/// A menu row in `failed` (the boards' `.mi.red`), set like `SHPopMenuRow`'s.
+private struct ForgeDestructiveMenuRow: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Text(title)
+            .font(.sh(.ui))
+            .foregroundStyle(Color.sh.failed)
+            .padding(.leading, SHPopMenuMetrics.rowInset + SHPopMenuMetrics.checkWidth + SHPopMenuMetrics.rowSpacing)
+            .frame(maxWidth: .infinity, minHeight: SHPopMenuMetrics.rowHeight, alignment: .leading)
+            .background(hovering ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+            .onHover { hovering = $0 }
+            .onTapGesture(perform: action)
+            .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -277,6 +316,8 @@ private struct ForgePullRequestSummary: View {
     var vm: ShepherdViewModel
     @Bindable var store: ForgeStore
     let detail: PullRequestDetail
+    /// The Checks tab: the same head, then the checks and their logs; the rail keeps only Reviewers and Thread.
+    var checksOnly = false
 
     var body: some View {
         let summary = detail.summary
@@ -287,21 +328,24 @@ private struct ForgePullRequestSummary: View {
                 stateMenu(label: badge.label, tone: badge.tone)
                 Text("\(summary.ref.repoName) #\(summary.ref.number)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
             }
-            ForgeTitle(title: summary.title, editable: detail.state != .merged) { await store.perform(.editTitle(ref: summary.ref, title: $0)) }
-                .padding(.top, SH.Space.l)
-            ForgeByline(author: summary.author, you: isViewer(summary.author), verb: nil, age: ForgePresentation.ago(detail.createdAt, now: now),
+            ForgeTitle(title: summary.title, editable: detail.state != .merged, lineSpacing: AppLayout.forgeTitleLineSpacing) { await store.perform(.editTitle(ref: summary.ref, title: $0)) }
+                .padding(.top, SH.Space.l - SH.Space.xxs)
+            ForgeByline(author: summary.author, you: isViewer(summary.author), verb: "opened this", age: ForgePresentation.ago(detail.createdAt, now: now),
                         branches: (summary.headRef, summary.baseRef))
                 .padding(.top, SH.Space.m)
             if let note = ForgePresentation.stateNote(detail) {
                 ForgeStateNote(title: note.title, text: detail.state == .merged ? mergedNote : note.body, tone: badge.tone, closed: detail.state == .closed,
                                trailing: stateEvent(now: now))
-                    .padding(.top, SH.Space.l)
+                    .padding(.top, SH.Space.xl)
             }
-            if !store.bodyProse.isEmpty {
-                Prose(prose: store.bodyProse, maxWidth: AppLayout.forgeContentWidth).padding(.top, SH.Space.xl)
+            if checksOnly {
+                ForgeChecksBlock(vm: vm, store: store, detail: detail)
+            } else {
+                if !store.bodyProse.isEmpty {
+                    Prose(prose: store.bodyProse, maxWidth: AppLayout.forgeContentWidth).padding(.top, SH.Space.xl)
+                }
+                ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest)
             }
-            SHHairline().padding(.vertical, SH.Space.xl)
-            ForgeActivity(store: store, events: detail.events, viewer: detail.viewer, kind: .pullRequest)
         } rail: {
             if !detail.reviewers.isEmpty || detail.state == .open || detail.state == .draft {
                 ForgeRailSection(title: "Reviewers") {
@@ -311,8 +355,8 @@ private struct ForgePullRequestSummary: View {
                             ForgeAvatar(login: reviewer.login, you: isViewer(reviewer.login))
                             Text(reviewer.login).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
                             Spacer()
-                            Text(ForgePresentation.label(reviewer.state)).font(.sh(.caption))
-                                .foregroundStyle(ForgePresentation.tone(reviewer.state).textColor)
+                            Text(ForgePresentation.label(reviewer.state).forgeCapitalized).font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textTertiary)
                         }
                         .frame(height: AppLayout.forgeRailRow)
                         .accessibilityElement(children: .combine)
@@ -324,13 +368,13 @@ private struct ForgePullRequestSummary: View {
                     }
                 }
             }
-            if let assignees = detail.assignees, let labels = detail.labels {
+            if !checksOnly, let assignees = detail.assignees, let labels = detail.labels {
             ForgeRailSection(title: "Assignees") {
                 if assignees.isEmpty { Text("No one yet").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
                 ForEach(assignees, id: \.self) { login in
                     HStack(spacing: SH.Space.m) {
                         ForgeAvatar(login: login, you: isViewer(login))
-                        Text(isViewer(login) ? "you" : login).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
+                        Text(login).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
                     }
                     .frame(height: AppLayout.forgeRailRow)
                 }
@@ -343,11 +387,10 @@ private struct ForgePullRequestSummary: View {
                 ForgeEditMenu(store: store, field: .labels, repo: detail.ref.repo, current: labels.map(\.name))
             }
             }
-            if !detail.checks.isEmpty {
-                ForgeRailSection(title: ForgePresentation.checksTitle(detail.checks)) {
+            if !checksOnly, !detail.checks.isEmpty {
+                ForgeRailSection(title: ForgePresentation.checksTitle(detail.checks).replacingOccurrences(of: " · ", with: ", ")) {
                     ForEach(detail.checks) { check in
                         ForgeCheckLine(check: check, fix: check.state == .failing && detail.state != .merged ? { vm.forgeFixCheck(check) } : nil)
-                            .frame(height: AppLayout.forgeRailRow)
                     }
                 }
             }
@@ -378,7 +421,6 @@ private struct ForgePullRequestSummary: View {
             default: false
             }
         }
-        if detail.state == .draft { return "checks still run" }
         return event.map { "\(ForgePresentation.ago($0.at, now: now)) · \($0.actor)" }
     }
 
@@ -387,7 +429,7 @@ private struct ForgePullRequestSummary: View {
         let ref = detail.ref
         switch detail.state {
         case .merged:
-            ForgeStateTag(label: label, tone: tone, symbol: ForgeSymbol.merge)
+            ForgeStateTag(label: label, tone: tone, plain: true)
         default:
             Menu {
                 switch detail.state {
@@ -401,7 +443,7 @@ private struct ForgePullRequestSummary: View {
                     Button("Reopen Pull Request") { Task { await store.perform(.setOpen(ref: ref, open: true)) } }
                 }
             } label: {
-                ForgeStateTag(label: label, tone: tone, symbol: ForgeSymbol.pullRequest, chevron: true)
+                ForgeStateTag(label: label, tone: tone, chevron: true, plain: true)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -412,7 +454,8 @@ private struct ForgePullRequestSummary: View {
     }
 }
 
-/// The card under a draft, merged or closed pull request's title: its dot, what happened, who and when.
+/// The card under a draft, merged or closed pull request's title (the boards' `.gch-ban`): what happened in semibold and who
+/// and when at the trailing edge, then what it means.
 private struct ForgeStateNote: View {
     let title: String
     let text: String
@@ -421,37 +464,56 @@ private struct ForgeStateNote: View {
     let trailing: String?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
-            ForgeDot(tone: tone)
-            Text("\(Text(title + ".").fontWeight(.semibold)) \(text)").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: SH.Space.m)
-            if let trailing { Text(trailing).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                Spacer(minLength: SH.Space.m)
+                if let trailing { Text(trailing).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+            }
+            Text(text).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .background(closed ? Color.sh.failedTint : Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .padding(.horizontal, AppLayout.forgeBannerSide)
+        .padding(.top, AppLayout.forgeBannerTop)
+        .padding(.bottom, AppLayout.forgeBannerBottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(closed ? Color.sh.failedTint : Color.clear, in: shape)
+        .shLift(shape)
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.l)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A check's line: its glyph, name and duration; a failing one offers Fix with agent.
+/// A check's line (the boards' `.gch-ckr`): its glyph, name and duration, the failing one in `failed`; a failing one
+/// offers Fix with agent under it.
 struct ForgeCheckLine: View {
     let check: ForgeCheck
     let fix: (() -> Void)?
 
     var body: some View {
         let tone = ForgePresentation.tone(check.state)
-        HStack(spacing: SH.Space.m) {
-            if let state = tone.agentState { SHStateGlyph(state, size: SH.Space.l) }
-            Text(check.displayName).font(.sh(.ui, weight: .regular))
-                .foregroundStyle(check.state == .failing ? tone.textColor : Color.sh.textPrimary)
-                .lineLimit(1)
-            Spacer(minLength: SH.Space.s)
+        let failing = check.state == .failing
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SH.Space.m) {
+                Group {
+                    if let state = tone.agentState { SHStateGlyph(state, size: SH.Space.l) }
+                }
+                .frame(width: AppLayout.forgeAvatarSize - SH.Space.xxs)
+                Text(check.displayName).font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(failing ? tone.textColor : Color.sh.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: SH.Space.s)
+                if let duration = check.duration {
+                    Text(ForgePresentation.duration(duration)).font(.sh(.caption))
+                        .foregroundStyle(failing ? tone.textColor : Color.sh.textTertiary)
+                }
+            }
+            .frame(minHeight: AppLayout.forgeRailRow)
             if let fix {
-                Button("Fix with agent", action: fix).buttonStyle(.sh(.ghost, size: .s))
-            } else if let duration = check.duration {
-                Text(ForgePresentation.duration(duration)).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
+                Button("Fix with agent", action: fix)
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .medium)))
+                    .padding(.leading, AppLayout.forgeAvatarSize + SH.Space.xxs)
+                    .padding(.bottom, SH.Space.xxs)
             }
         }
         .accessibilityElement(children: .contain)
@@ -459,6 +521,89 @@ struct ForgeCheckLine: View {
 }
 
 // MARK: Checks
+
+/// The Checks tab's body (the boards' `.gch-ckh` and `.gch-cks`): the count and its workflow, then every check in a card, a
+/// failing one open on the end of its log with Fix with agent and Re-run failed.
+private struct ForgeChecksBlock: View {
+    var vm: ShepherdViewModel
+    let store: ForgeStore
+    let detail: PullRequestDetail
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        let workflows = detail.checks.compactMap(\.workflow).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(ForgePresentation.checksTitle(detail.checks).replacingOccurrences(of: " · ", with: ", "))
+                    .font(.sh(.body, weight: .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: SH.Space.m)
+                if !workflows.isEmpty {
+                    Text(workflows.joined(separator: ", ")).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+                }
+            }
+            .padding(.top, AppLayout.forgeChecksTop)
+            .padding(.bottom, SH.Space.m)
+            if detail.checks.isEmpty {
+                Text("This pull request has no checks.").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(detail.checks.enumerated()), id: \.element.id) { index, check in
+                        if index > 0 { SHHairline() }
+                        row(check)
+                        if check.state == .failing { log(check) }
+                    }
+                }
+                .padding(.vertical, SH.Space.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .shLift(shape)
+                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.l)
+            }
+        }
+    }
+
+    private func row(_ check: ForgeCheck) -> some View {
+        let tone = ForgePresentation.tone(check.state)
+        return HStack(spacing: AppLayout.forgeCheckGap) {
+            Group {
+                if let state = tone.agentState { SHStateGlyph(state, size: SH.Space.l) }
+            }
+            .frame(width: SH.Space.l)
+            Text(check.displayName).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Spacer(minLength: SH.Space.m)
+            if let duration = check.duration {
+                Text(ForgePresentation.duration(duration)).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+            }
+        }
+        .padding(.horizontal, AppLayout.forgeCheckInset)
+        .frame(height: AppLayout.forgeCheckRow)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func log(_ check: ForgeCheck) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForgeCheckLog(store: store, check: check)
+            HStack(spacing: SH.Space.xl) {
+                Button("Fix with agent") { vm.forgeFixCheck(check, store: store) }
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui, weight: .medium)))
+                if let runID = check.runID {
+                    Button("Re-run failed") { Task { await store.perform(.rerunFailed(repo: detail.ref.repo, runID: runID)) } }
+                        .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
+                        .disabled(store.working)
+                }
+                Spacer(minLength: SH.Space.m)
+                if check.jobID.flatMap({ store.logs[$0] }) != nil {
+                    Text("The end of the log").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                }
+            }
+            .padding(.top, SH.Space.l - SH.Space.xxs)
+        }
+        .padding(.leading, AppLayout.forgeCheckLogLeading)
+        .padding(.trailing, AppLayout.forgeCheckInset)
+        .padding(.bottom, SH.Space.l)
+    }
+}
 
 /// The Checks tab: every check, and under a failing one the end of its log, Fix with agent and Re-run failed.
 struct ForgeChecksTab: View {
@@ -514,15 +659,17 @@ private struct ForgeCheckLog: View {
             if let log {
                 ScrollView(.vertical) {
                     Text(log.isEmpty ? "The log is empty." : log)
-                        .font(.sh(.code))
-                        .foregroundStyle(Color.sh.textPrimary)
+                        .font(.shMono(SHTextStyle.caption.size))
+                        .lineSpacing(AppLayout.forgeLogLineSpacing)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(SH.Space.m)
+                        .padding(.vertical, SH.Space.m)
+                        .padding(.horizontal, SH.Space.l)
                 }
                 .frame(maxHeight: AppLayout.forgeLogMaxHeight)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
             } else if check.jobID == nil {
                 Text("GitHub keeps no log for this check here.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             } else {

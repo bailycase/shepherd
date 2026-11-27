@@ -24,22 +24,25 @@ struct ForgeFilterBar: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(spacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.xs) {
                 scope
-                filterMenu
                 Spacer(minLength: 0)
                 if store.browsing {
                     Button("Clear") { store.clearFilters() }
-                        .buttonStyle(.sh(.ghost, size: .s))
+                        .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
+                        .padding(.horizontal, SH.Space.s)
                         .help("Back to what's waiting on you")
                 }
+                filterMenu
             }
+            .frame(height: SH.Height.controlM)
             if !chips.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: SH.Space.xs) {
                         ForEach(chips, id: \.title) { chip in ForgeFilterChip(title: chip.title, remove: chip.remove) }
                     }
+                    .padding(.horizontal, SH.Space.s)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -62,7 +65,7 @@ struct ForgeFilterBar: View {
             }
             .pickerStyle(.inline)
         } label: {
-            SHPopupLabel(store.browsing ? "Everything" : "Waiting on me")
+            ForgeMenuLabel(title: store.browsing ? "Everything" : "Waiting on me", dim: false, weight: .medium)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -103,10 +106,10 @@ struct ForgeFilterBar: View {
             Divider()
             Toggle("Only involving me", isOn: edit(\.mine))
         } label: {
-            Image(systemName: "line.3.horizontal.decrease")
+            ForgeMenuLabel(title: "Filter")
         }
         .menuStyle(.button)
-        .buttonStyle(.shIcon(size: SH.Height.controlM))
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Filter")
@@ -170,15 +173,20 @@ private struct ForgeFilterChip: View {
 
     var body: some View {
         HStack(spacing: SH.Space.xs) {
-            Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-            Button(action: remove) { Image(systemName: "xmark").font(.sh(.micro)) }
+            Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Button(action: remove) {
+                Image(systemName: "xmark").font(.shSans(AppLayout.forgeChevron, .semibold))
+                    .frame(width: SH.Space.xl, height: SH.Space.xl)
+                    .contentShape(Rectangle())
+            }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.sh.textTertiary)
                 .accessibilityLabel("Remove \(title)")
         }
-        .padding(.horizontal, SH.Space.s)
-        .padding(.vertical, SH.Space.xxs)
-        .background(Color.sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+        .padding(.leading, SH.Space.m)
+        .padding(.trailing, SH.Space.xs)
+        .frame(height: SH.Height.controlS)
+        .background(Color.sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .fixedSize()
     }
 }
