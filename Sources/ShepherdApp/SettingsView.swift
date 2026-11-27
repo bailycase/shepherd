@@ -240,7 +240,8 @@ struct SettingsView: View {
 
     private var detail: some View {
         Group {
-            if vm.settingsSection == .projects && vm.projects.selected != nil {
+            // Spaces draws its own column, header and bar (the space pages), so it is never inside the shared scroll view.
+            if vm.settingsSection == .projects {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

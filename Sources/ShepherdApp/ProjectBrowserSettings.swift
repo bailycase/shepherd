@@ -68,37 +68,27 @@ struct ProjectBrowserSettings: View {
     }
 
     func confirmation(_ removal: ProjectCookiesModel.Removal) -> some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Color.sh.projectCookieShade
-            VStack(alignment: .leading, spacing: SH.Space.xl) {
-                HStack(alignment: .top, spacing: SH.Space.l) {
-                    Image(systemName: "exclamationmark.triangle").font(.shSans(AppLayout.projectCookieConfirmTitle)).foregroundStyle(Color.sh.failed)
-                        .accessibilityHidden(true)
-                    Text(removal == .all ? "Clear all space cookies?" : "Clear cookies for this site?")
-                        .font(.shSans(AppLayout.projectCookieConfirmTitle, .semibold)).foregroundStyle(Color.sh.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text("Browser tabs in this space's threads and worktrees may be signed out. Other spaces are unaffected. Local storage and cache remain unchanged.")
-                    .font(.shSans(AppLayout.projectsNameSize)).foregroundStyle(Color.sh.textSecondary)
-                    .lineSpacing(AppLayout.projectCookieConfirmLineExtra * ThemeStore.shared.textScale)
-                    .fixedSize(horizontal: false, vertical: true)
+            SpaceSheet(title: removal == .all ? "Clear all space cookies?" : "Clear cookies for this site?",
+                       caption: AnyView(SpaceSheetCaption(text: "Browser tabs in this space's threads and worktrees may be signed out. Other spaces are unaffected. Local storage and cache remain unchanged.")),
+                       width: AppLayout.spaceConfirmWidth) {
                 VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text(project.project.name).font(.shSans(SHSettingsNavMetrics.subTextSize, .medium))
-                    Text("This Mac only").font(.shSans(SHSettingsNavMetrics.subTextSize))
-                    if case .site(let site) = removal { Text(site).font(.shMono(AppLayout.projectFileSize)).lineLimit(2) }
-                }.foregroundStyle(Color.sh.textSecondary).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
-                    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-                HStack(spacing: SH.Space.m) {
-                    Spacer(minLength: 0)
-                    Button("Cancel") { model.pending = nil }.buttonStyle(SHSettingsActionStyle(.cancel)).keyboardShortcut(.cancelAction).disabled(model.clearing)
-                    Button(model.clearing ? "Clearing…" : "Clear cookies") { Task { await model.confirm(scope) } }.buttonStyle(SHSettingsActionStyle(.confirm)).disabled(model.clearing)
-                }.padding(.top, SH.Space.xs)
-            }.padding(SH.Space.xxl + SHSettingsNavMetrics.borderWidth).frame(maxWidth: AppLayout.projectCookieConfirmWidth)
-                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-                .shBorder(Color.sh.lineStrong, radius: SH.Radius.l, width: SHSettingsNavMetrics.borderWidth)
-                .shadow(color: Color.sh.bgBase, radius: SH.Space.xxxl, y: SH.Space.xl)
-                .padding(SH.Space.xxxl)
+                    Text(project.project.name).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                    Text("This Mac only").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    if case .site(let site) = removal { Text(site).font(.shMono(SHTextStyle.caption.size)).foregroundStyle(Color.sh.textSecondary).lineLimit(2) }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.l - SH.Space.xxs)
+                    .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m)).padding(.top, SH.Space.xl)
+            } actions: {
+                Button("Cancel") { model.pending = nil }.buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction).disabled(model.clearing)
+                Button(model.clearing ? "Clearing…" : "Clear cookies") { Task { await model.confirm(scope) } }
+                    .buttonStyle(SpaceBarStyle(kind: .danger)).disabled(model.clearing)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.xxl))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xxl)
+            .shPopover()
+            .padding(.top, AppLayout.spaceConfirmTop)
         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityLabel("Confirm cookie clearing")
     }
 }

@@ -28,6 +28,7 @@ extension AppLayout {
     static let spaceStepperValue: CGFloat = 28
     static let spaceFilterHeight: CGFloat = 44
     static let spaceSearchWidth: CGFloat = 200
+    static let spaceRowIndent: CGFloat = 24
     static let spaceSearchHeight: CGFloat = 26
     static let spaceTabHeight: CGFloat = 22
     static let spaceKindHeight: CGFloat = 24
@@ -378,6 +379,8 @@ struct SpaceKindTabs<Value: Hashable>: View {
     let label: String
     @Binding var selection: Value
     let options: [(Value, String)]
+    /// The sheets' segmented control: 22pt segments 10pt in.
+    var compact = false
 
     var body: some View {
         HStack(spacing: SH.Space.xxs) {
@@ -385,7 +388,8 @@ struct SpaceKindTabs<Value: Hashable>: View {
                 let on = option.0 == selection
                 Button { selection = option.0 } label: {
                     Text(option.1).font(.sh(.ui, weight: on ? .medium : .regular)).foregroundStyle(on ? Color.sh.textPrimary : Color.sh.textSecondary)
-                        .padding(.horizontal, SH.Space.l).frame(height: AppLayout.spaceKindHeight).fixedSize()
+                        .padding(.horizontal, compact ? AppLayout.spaceSegmentPadding : SH.Space.l)
+                        .frame(height: compact ? AppLayout.spaceSegmentHeight : AppLayout.spaceKindHeight).fixedSize()
                         .modifier(SpaceLiftedIf(on: on))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(option.1).accessibilityAddTraits(on ? .isSelected : [])
@@ -406,23 +410,27 @@ private struct SpaceLiftedIf: ViewModifier {
 
 /// A bar's actions (`gspc-b`): words, `strong` in medium, `quiet` in `textSecondary`; the primary one a filled pill.
 struct SpaceBarStyle: ButtonStyle {
-    enum Kind { case quiet, strong, primary }
+    enum Kind { case quiet, strong, primary, danger }
     var kind: Kind = .quiet
     @Environment(\.isEnabled) private var enabled
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         let primary = kind == .primary
+        let pill = primary || kind == .danger
         configuration.label
-            .font(.sh(.ui, weight: primary || kind == .strong ? .medium : .regular))
-            .foregroundStyle(primary ? Color.sh.textOnPrimary : !enabled ? Color.sh.textTertiary
+            .font(.sh(.ui, weight: kind == .danger ? .semibold : primary || kind == .strong ? .medium : .regular))
+            .foregroundStyle(primary ? Color.sh.textOnPrimary : kind == .danger ? Color.sh.failed : !enabled ? Color.sh.textTertiary
                              : kind == .strong || hovering ? Color.sh.textPrimary : Color.sh.textSecondary)
             .lineLimit(1).fixedSize()
-            .padding(.horizontal, primary ? SH.Space.l : 0)
-            .frame(height: primary ? AppLayout.spaceMenuHeight : nil)
-            .background { if primary { Capsule().fill(configuration.isPressed ? Color.sh.primaryPressed : hovering && enabled ? Color.sh.primaryHover : Color.sh.primary) } }
+            .padding(.horizontal, pill ? SH.Space.l : 0)
+            .frame(height: pill ? AppLayout.spaceMenuHeight : nil)
+            .background {
+                if primary { Capsule().fill(configuration.isPressed ? Color.sh.primaryPressed : hovering && enabled ? Color.sh.primaryHover : Color.sh.primary) }
+                else if kind == .danger { Capsule().fill(Color.sh.bgHover) }
+            }
             .offset(y: configuration.isPressed ? SHProjectSettingsMetrics.pressOffset : 0)
-            .opacity(enabled || !primary ? 1 : AppLayout.spaceBarOffOpacity)
+            .opacity(enabled || !pill ? 1 : AppLayout.spaceBarOffOpacity)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .shFocusRing(radius: SH.Radius.s)
@@ -506,4 +514,151 @@ struct SpaceEmpty<Action: View>: View {
 
 extension SpaceEmpty where Action == EmptyView {
     init(_ title: String, message: String? = nil) { self.init(title: title, message: message, action: { EmptyView() }) }
+}
+
+
+// MARK: Sheets
+
+/// A dialog (`gspcs-sh`): a 15pt title over a caption, a ✕, the content, and a foot with a note at its left and the actions at its right.
+struct SpaceSheet<Content: View, Actions: View>: View {
+    let title: String
+    /// Under the title: a space and its path, set by the caller (`SpaceSheetCaption`).
+    var caption: AnyView?
+    var width: CGFloat = AppLayout.spaceSheetWidth
+    var close: (() -> Void)?
+    var note: String?
+    var noteMono = false
+    var noteFailed = false
+    /// What stands at the foot's left in place of the note ("Don't ask again").
+    var footLeading: AnyView?
+    @ViewBuilder var content: Content
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: SH.Space.l) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    Text(title).shText(size: AppLayout.spaceSheetTitleSize, weight: .semibold, lineHeight: AppLayout.spaceSheetTitleLine)
+                        .foregroundStyle(Color.sh.textPrimary).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+                    if let caption { caption }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                if let close {
+                    Button(action: close) {
+                        Image(systemName: "xmark").font(.shSans(SHSettingsControlMetrics.popupChevronSize, .semibold)).foregroundStyle(Color.sh.textSecondary)
+                            .frame(width: AppLayout.spaceSheetClose, height: AppLayout.spaceSheetClose)
+                            .background(Color.sh.bgHover, in: Circle()).contentShape(Circle())
+                    }.buttonStyle(.plain).accessibilityLabel("Close").shHelp("Close")
+                }
+            }
+            content
+            HStack(spacing: SH.Space.xl) {
+                if let footLeading {
+                    footLeading.frame(maxWidth: .infinity, alignment: .leading)
+                } else if let note {
+                    Text(note).font(noteMono ? .shMono(SHTextStyle.caption.size) : .sh(.caption))
+                        .foregroundStyle(noteFailed ? Color.sh.failed : Color.sh.textTertiary)
+                        .lineLimit(noteFailed ? 3 : 1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
+                } else { Spacer(minLength: 0) }
+                HStack(spacing: SH.Space.xl) { actions }.fixedSize()
+            }.padding(.top, SHCardSheetMetrics.footTop)
+        }
+        .padding(EdgeInsets(top: SHCardSheetMetrics.padding.top, leading: SHCardSheetMetrics.padding.leading,
+                            bottom: SHCardSheetMetrics.padding.bottom, trailing: SHCardSheetMetrics.padding.trailing))
+        .frame(width: width).background(Color.sh.bgRaised)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension AppLayout {
+    static let spaceSheetWidth: CGFloat = 480
+    static let spaceChildWidth: CGFloat = 460
+    /// A page dialog hangs 28pt under the modal's top (`gspc-dlg`).
+    static let spaceDialogTop: CGFloat = 28
+    static let spaceConfirmWidth: CGFloat = 440
+    static let spaceConfirmTop: CGFloat = 152
+    static let spaceEditorSheetWidth: CGFloat = 600
+    static let spaceAgentSheetWidth: CGFloat = 620
+    static let spaceInstallSheetWidth: CGFloat = 560
+    static let spaceSkillNameWidth: CGFloat = 140
+    static let spaceSheetLabelWidth: CGFloat = 112
+    static let spaceSegmentHeight: CGFloat = 22
+    static let spaceSegmentPadding: CGFloat = 10
+    static let spaceSheetTitleSize: CGFloat = SHCardSheetMetrics.titleSize
+    static let spaceSheetTitleLine: CGFloat = SHCardSheetMetrics.titleLine / SHCardSheetMetrics.titleSize
+    static let spaceSheetClose: CGFloat = 22
+    static let spaceSheetFieldHeight: CGFloat = 30
+    static let spaceSheetLabelLine: CGFloat = 18
+    static let spaceSheetFieldSides: CGFloat = 10
+    static let spaceSheetCaptionLine: CGFloat = 19 / 13
+    static let spaceSheetNoteLine: CGFloat = 17 / 12
+}
+
+/// What sits under a sheet's title: a line in `textSecondary`, or a path in mono.
+struct SpaceSheetCaption: View {
+    let text: String
+    var mono = false
+
+    var body: some View {
+        Text(text).shText(size: mono ? SHTextStyle.caption.size : SHTextStyle.ui.size, mono: mono,
+                          lineHeight: mono ? AppLayout.spaceHintLine : AppLayout.spaceSheetCaptionLine)
+            .foregroundStyle(mono ? Color.sh.textTertiary : Color.sh.textSecondary)
+            .lineLimit(mono ? 2 : nil).truncationMode(.middle).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A label over a field (`gspcs-fl`): 12pt in `textSecondary`, 14 above and 6 below, a link or two at its end.
+struct SpaceSheetLabel<Trailing: View>: View {
+    let text: String
+    var count: String?
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: SH.Space.m) {
+            Text(text).foregroundStyle(count == nil ? Color.sh.textSecondary : Color.sh.textPrimary)
+                .font(.sh(count == nil ? .caption : .ui, weight: count == nil ? .regular : .medium))
+            if let count { Text(count).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
+            Spacer(minLength: 0)
+            trailing.font(.sh(.caption))
+        }.font(.sh(.caption)).frame(minHeight: AppLayout.spaceSheetLabelLine)
+            .padding(.top, SHCardSheetMetrics.labelTop).padding(.bottom, SHCardSheetMetrics.labelBottom)
+            .accessibilityElement(children: .contain)
+    }
+}
+
+extension SpaceSheetLabel where Trailing == EmptyView {
+    init(_ text: String, count: String? = nil) { self.init(text: text, count: count, trailing: { EmptyView() }) }
+}
+
+/// A one-line field in a sheet (`gspcs-fld`): 30pt, a 1pt line at radius 8, 10pt in; the focused one's line darkens.
+struct SpaceSheetField<Content: View>: View {
+    var focused = false
+    var readOnly = false
+    var dim = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: SH.Space.m) { content }
+            .padding(.horizontal, readOnly ? 0 : AppLayout.spaceSheetFieldSides)
+            .frame(maxWidth: .infinity, minHeight: AppLayout.spaceSheetFieldHeight, alignment: .leading)
+            .background(readOnly ? Color.clear : Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .overlay { if !readOnly { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(focused ? Color.sh.textSecondary : Color.sh.lineSubtle) } }
+            .shFocusRing(focused, radius: SH.Radius.m)
+            .opacity(dim ? SHMCPMetrics.offOpacity : 1)
+    }
+}
+
+/// A line of small print under a field (`gspcs-note`).
+struct SpaceSheetNote: View {
+    let text: String
+    var failed = false
+    /// In `textSecondary`, the paragraph that matters, rather than the small print.
+    var secondary = false
+    var emphasis = false
+
+    var body: some View {
+        Text(text).shText(size: emphasis ? SHTextStyle.ui.size : SHTextStyle.caption.size, weight: emphasis ? .medium : .regular,
+                          lineHeight: AppLayout.spaceSheetNoteLine)
+            .foregroundStyle(emphasis ? Color.sh.textPrimary : failed ? Color.sh.failed : secondary ? Color.sh.textSecondary : Color.sh.textTertiary)
+            .fixedSize(horizontal: false, vertical: true).padding(.top, emphasis ? SH.Space.xl + SH.Space.xxs : SH.Space.s)
+    }
 }

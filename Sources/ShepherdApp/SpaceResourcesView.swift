@@ -186,22 +186,23 @@ struct SpaceResourcesFooter: View {
     }
 }
 
-/// A centered dialog over the page (the boards' overlay dialogs).
+/// A centered dialog over the page (the boards' overlay dialogs): a card at radius 16 on a scrim.
 struct SpaceResourceDialog<Content: View>: View {
     let label: String
-    var width: CGFloat = AppLayout.projectCookieConfirmWidth
+    var width: CGFloat = AppLayout.spaceSheetWidth
     var height: CGFloat? = nil
     let close: () -> Void
     @ViewBuilder let content: Content
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Color.sh.scrim.ignoresSafeArea().onTapGesture(perform: close)
             content.frame(width: width, height: height, alignment: .topLeading)
-                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
-                .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
+                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.xxl))
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.xxl))
+                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xxl)
                 .shPopover()
+                .padding(.top, AppLayout.spaceDialogTop)
         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal).accessibilityLabel(label)
             .onExitCommand(perform: close)
     }
@@ -216,38 +217,31 @@ struct SpaceResourceDialogs: View {
     var body: some View {
         if let row = model.removing {
             SpaceResourceDialog(label: "Remove resource", close: { model.removing = nil }) {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
-                    Text("Remove \(row.resource.name)?").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary)
-                    Text("Removes only this space’s resource. Parent and sibling spaces are unchanged.").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                    Text(row.resource.path).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
-                    HStack(spacing: SH.Space.m) {
-                        Spacer(minLength: 0)
-                        Button("Cancel") { model.removing = nil }.buttonStyle(.sh(.ghost, size: .l)).keyboardShortcut(.cancelAction)
-                        Button("Remove") { model.confirmRemove() }.buttonStyle(.sh(.danger, size: .l))
-                    }
-                }.padding(SH.Space.xxl)
+                SpaceSheet(title: "Remove \(row.resource.name)?", caption: AnyView(VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    SpaceSheetCaption(text: "Removes only this space’s resource. Parent and sibling spaces are unchanged.")
+                    SpaceSheetCaption(text: row.resource.path, mono: true)
+                }), width: AppLayout.spaceConfirmWidth) { EmptyView() } actions: {
+                    Button("Cancel") { model.removing = nil }.buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+                    Button("Remove") { model.confirmRemove() }.buttonStyle(SpaceBarStyle(kind: .danger))
+                }
             }
         } else if model.confirmingDiscard || projects.pending != nil {
             SpaceResourceDialog(label: "Unsaved space changes", close: cancelLeave) {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
-                    Text("Discard unsaved changes?").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary)
-                    Text("Your changes to \(model.kind.title) have not been saved.").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                    HStack(spacing: SH.Space.m) {
-                        Spacer(minLength: 0)
-                        Button("Keep editing", action: cancelLeave).buttonStyle(.sh(.ghost, size: .l)).keyboardShortcut(.cancelAction)
-                        Button("Discard changes") {
-                            Task { if projects.pending != nil { await projects.discard() } else { await model.confirmDiscard() } }
-                        }.buttonStyle(.sh(.danger, size: .l)).disabled(model.saving || model.loading)
-                    }
-                }.padding(SH.Space.xxl)
+                SpaceSheet(title: "Discard unsaved changes?",
+                           caption: AnyView(SpaceSheetCaption(text: "Your changes to \(model.kind.title) have not been saved.")), width: AppLayout.spaceConfirmWidth) { EmptyView() } actions: {
+                    Button("Keep editing", action: cancelLeave).buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+                    Button("Discard changes") {
+                        Task { if projects.pending != nil { await projects.discard() } else { await model.confirmDiscard() } }
+                    }.buttonStyle(SpaceBarStyle(kind: .danger)).disabled(model.saving || model.loading)
+                }
             }
         } else if model.editor != nil {
-            SpaceResourceDialog(label: "Resource editor", width: AppLayout.resourceEditorWidth, height: AppLayout.resourceEditorHeight,
+            SpaceResourceDialog(label: "Resource editor", width: model.editor?.kind == .agent ? AppLayout.spaceAgentSheetWidth : AppLayout.spaceEditorSheetWidth,
                                 close: { model.editor = nil }) {
                 SpaceResourceEditorView(model: model, project: project, models: projects.formModels)
             }
         } else if model.install != nil {
-            SpaceResourceDialog(label: "Add skills to this space", width: AppLayout.resourceInstallWidth, close: { model.install = nil }) {
+            SpaceResourceDialog(label: "Add skills to this space", width: AppLayout.spaceInstallSheetWidth, close: { model.install = nil }) {
                 SpaceSkillInstallView(model: model, project: project)
             }
         }

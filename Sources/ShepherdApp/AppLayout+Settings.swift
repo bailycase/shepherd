@@ -285,8 +285,8 @@ extension AppLayout {
     /// A remote automation's details and runs, and how tall its run list grows before it scrolls.
     static let automationSheetWidth: CGFloat = 560
     static let automationRunsMaxHeight: CGFloat = 200
-    static let directoryPickerWidth: CGFloat = 480
-    static let directoryListHeight: CGFloat = 260
+    static let directoryPickerWidth: CGFloat = 520
+    static let directoryListHeight: CGFloat = 208
     static let promptEditorHeight: CGFloat = 96
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12

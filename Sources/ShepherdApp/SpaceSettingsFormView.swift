@@ -197,21 +197,17 @@ struct SpaceSettingsLeaveDialog: View {
         let reload = model.pending == .reload
         ZStack {
             Color.sh.scrim.ignoresSafeArea().onTapGesture { model.pending = nil }
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                Text(reload ? "Reload latest space settings?" : "Discard changes and leave?").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary)
-                Text(reload ? "Your local edits will be discarded only after the latest values load. Nothing will be overwritten."
-                            : "Unsaved space changes will be discarded. Global defaults will not change.")
-                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: SH.Space.m) {
-                    Spacer(minLength: 0)
-                    Button("Stay") { model.pending = nil }.buttonStyle(.sh(.secondary, size: .l)).keyboardShortcut(.cancelAction)
-                    Button(reload ? "Discard and reload" : "Discard and leave") { Task { await model.discard() } }
-                        .buttonStyle(.sh(.danger, size: .l)).disabled(model.saving)
-                }.padding(.top, SH.Space.xl)
-            }.padding(SH.Space.xxl).frame(width: AppLayout.projectCookieConfirmWidth)
-                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
-                .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
-                .shadow(color: Color.sh.scrim, radius: SH.Space.xxxl, y: SH.Space.xl)
+            SpaceSheet(title: reload ? "Reload latest space settings?" : "Discard changes and leave?",
+                       caption: AnyView(SpaceSheetCaption(text: reload ? "Your local edits will be discarded only after the latest values load. Nothing will be overwritten."
+                                                                       : "Unsaved space changes will be discarded. Global defaults will not change.")),
+                       width: AppLayout.spaceConfirmWidth) { EmptyView() } actions: {
+                Button("Stay") { model.pending = nil }.buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+                Button(reload ? "Discard and reload" : "Discard and leave") { Task { await model.discard() } }
+                    .buttonStyle(SpaceBarStyle(kind: .danger)).disabled(model.saving)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.xxl))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xxl)
+            .shPopover()
         }.accessibilityElement(children: .contain).accessibilityAddTraits(.isModal)
             .accessibilityLabel(reload ? "Confirm reload" : "Confirm leaving")
     }
