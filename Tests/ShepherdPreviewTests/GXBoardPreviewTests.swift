@@ -83,6 +83,18 @@ struct GXBoardPreviewTests {
         try await Preview.render("gxb-fleet-one-mac", size: CGSize(width: 1440, height: 900)) { RootView(vm: workspace.vm) }
     }
 
+    /// Fleet before any Mac has reported (not even this one): the same invitation, never an empty list.
+    @Test func fleetWithNoMac() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        try await workspace.seed(ShepherdState())
+        workspace.vm.fleet.onSnapshot = nil
+        workspace.vm.fleetPage.update(FleetSnapshot(enabled: true, hostID: FleetPagePreviewTests.here, name: "MacBook Pro", addresses: [], port: 7434,
+                                                    advertising: true, peers: [], macs: []))
+        workspace.vm.openDestination(.fleet)
+        try await Preview.render("gxb-fleet-no-mac", size: CGSize(width: 1440, height: 900)) { RootView(vm: workspace.vm) }
+    }
+
     /// Designs with no designs (NavDesigns, SystemBuiltIn): the built-in Shepherd UI system is still there.
     @Test func designsWithNone() async throws {
         let workspace = try PreviewWorkspace()
