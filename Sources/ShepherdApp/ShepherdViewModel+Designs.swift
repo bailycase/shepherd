@@ -407,9 +407,11 @@ final class NewDesignState {
     }
 
     /// The system a new design starts in: the most recently changed one built here, else the
-    /// first registered built-in, if a caller explicitly supplied one. The app bundles none.
+    /// first registered built-in, if a caller explicitly supplied one. Shepherd UI, which the app lists on the Designs page, is never the
+    /// default: without a system of the person's own a design starts on a blank canvas.
     static func defaultSystem(in systems: [DesignSystemSummary]) -> DesignSystemSummary? {
-        systems.filter { !$0.builtIn }.max { $0.info.updatedAt < $1.info.updatedAt } ?? systems.first(where: \.builtIn)
+        systems.filter { !$0.builtIn }.max { $0.info.updatedAt < $1.info.updatedAt }
+            ?? systems.first { $0.builtIn && $0.namespace != BuiltInShepherdDesign.namespace }
     }
 
     /// The card under "Design system & starting point" (DZStart): the system the design is

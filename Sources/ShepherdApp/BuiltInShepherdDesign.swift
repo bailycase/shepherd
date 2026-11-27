@@ -5,9 +5,12 @@ import ShepherdSessions
 import ShepherdUI
 
 /// Shepherd's own design system, built into the app (NavDesigns' "Shepherd UI · Built into Shepherd", SystemBuiltIn): generated from
-/// ShepherdUI's tokens, never stored, and registered with the host's design systems when it starts (`ShepherdHost.Services.configure`).
+/// ShepherdUI's tokens, never stored, and registered with the background host's design systems when it starts (`ShepherdHost.main`). It is listed, opened and referenced like
+/// any system, but never the one a new design starts in: with no system of the person's own, that stays a blank canvas.
 enum BuiltInShepherdDesign {
-    static let namespace = "shepherd-design"
+    /// Not "shepherd-design": a registered built-in hides a system folder of its name, and a system a person built from Shepherd's own
+    /// repo may be called anything near it.
+    static let namespace = "shepherd-built-in"
     static let title = "Shepherd UI"
 
     static func tokens(_ theme: ThemeDefinition = .shepherdDesign) -> DesignSystemTokens {

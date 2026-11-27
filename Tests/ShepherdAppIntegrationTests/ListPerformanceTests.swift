@@ -527,8 +527,7 @@ struct ListPerformanceTests {
         vm.designNetwork = .none
         try writeSystems(app, count: DesignSystemStore.maxSystems)
         await vm.loadDesignSystems()
-        // The store's 100 and Shepherd UI, which the host registers as it starts.
-        #expect(vm.designSystems.summaries.count == DesignSystemStore.maxSystems + 1)
+        #expect(vm.designSystems.summaries.count == DesignSystemStore.maxSystems)
         vm.openDestination(.designs)
         var window: OffscreenWindow!
         let counts = ListPerf.counting {

@@ -90,10 +90,11 @@ struct GXBoardPreviewTests {
         workspace.settings.designToolEnabled = true
         try await workspace.seed(ShepherdState())
         workspace.vm.openDestination(.designs)
-        // The host registers Shepherd UI as it starts (`ShepherdHost.Services.configure`); the page reads it with the others.
+        // `Shepherd --host` registers Shepherd UI as it starts; a preview's host does as the real one does.
+        workspace.server.designSystems.register(BuiltInShepherdDesign.builtIn())
         await workspace.vm.loadDesignSystems()
         try await eventuallyOnMain("the built-in system to load") {
-            workspace.vm.designSystems.summaries.contains { $0.namespace == "shepherd-design" }
+            workspace.vm.designSystems.summaries.contains { $0.namespace == BuiltInShepherdDesign.namespace }
         }
         try await Preview.render("gxb-designs-none", size: CGSize(width: 1440, height: 900)) { RootView(vm: workspace.vm) }
     }
