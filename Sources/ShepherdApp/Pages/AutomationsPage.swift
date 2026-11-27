@@ -72,10 +72,10 @@ struct AutomationsPage: View {
         .background(Color.sh.bgWindow)
     }
 
-    /// Pause all triggers: one menu with a toggle per host, a checked host is paused. Nothing while
-    /// no host has a trigger to pause.
+    /// Pause all triggers: one button on this Mac's while it is the only host with triggers (lit while paused), a menu with a toggle
+    /// per host once others have their own (a checked host is paused). Nothing while no host has a trigger to pause.
     @ViewBuilder private var pause: some View {
-        if !model.hostPauses.isEmpty || model.hasTriggers || model.allPaused {
+        if !model.hostPauses.isEmpty {
             Menu {
                 Section("Pause all triggers on") {
                     if model.hasTriggers || model.allPaused {
@@ -99,6 +99,16 @@ struct AutomationsPage: View {
             .accessibilityLabel("Pause all triggers")
             .accessibilityValue(model.pauseMenuTitle)
             .help("Stops every schedule and GitHub trigger on a host from starting runs. Run now still works.")
+            SHBarDivider()
+        } else if model.hasTriggers || model.allPaused {
+            Button { actions.setAllPaused(PageHost.localID, !model.allPaused) } label: {
+                Label("Pause all triggers", systemImage: model.allPaused ? "pause.fill" : "pause")
+            }
+            .buttonStyle(.shBar)
+            .background(model.allPaused ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .accessibilityValue(model.allPaused ? "on" : "off")
+            .accessibilityAddTraits(.isToggle)
+            .help("Stops every schedule and GitHub trigger on this Mac from starting runs. Run now still works.")
             SHBarDivider()
         }
     }

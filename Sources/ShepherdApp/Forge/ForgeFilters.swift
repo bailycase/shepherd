@@ -25,16 +25,11 @@ struct ForgeFilterBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xxs) {
-            HStack(spacing: SH.Space.xs) {
-                scope
-                Spacer(minLength: 0)
-                if store.browsing {
-                    Button("Clear") { store.clearFilters() }
-                        .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
-                        .padding(.horizontal, SH.Space.s)
-                        .help("Back to what's waiting on you")
-                }
-                filterMenu
+            // A narrow sidebar (or a larger text size) drops the words: Clear first, then the Filter menu's name.
+            ViewThatFits(in: .horizontal) {
+                showRow(clear: true, compact: false)
+                showRow(clear: false, compact: false)
+                showRow(clear: false, compact: true)
             }
             .frame(height: SH.Height.controlM)
             if !chips.isEmpty {
@@ -57,6 +52,20 @@ struct ForgeFilterBar: View {
         }
     }
 
+    private func showRow(clear: Bool, compact: Bool) -> some View {
+        HStack(spacing: SH.Space.xs) {
+            scope
+            Spacer(minLength: 0)
+            if clear, store.browsing {
+                Button("Clear") { store.clearFilters() }
+                    .buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
+                    .padding(.horizontal, SH.Space.s)
+                    .help("Back to what's waiting on you")
+            }
+            filterMenu(compact: compact)
+        }
+    }
+
     private var scope: some View {
         Menu {
             Picker("Show", selection: Binding(get: { store.browsing }, set: { if $0 { store.everything = true } else { store.clearFilters() } })) {
@@ -76,7 +85,7 @@ struct ForgeFilterBar: View {
         .accessibilityValue(store.browsing ? "Everything" : "Waiting on me")
     }
 
-    private var filterMenu: some View {
+    private func filterMenu(compact: Bool) -> some View {
         let kind = store.kind
         return Menu {
             Picker("State", selection: edit(\.state)) {
@@ -106,7 +115,13 @@ struct ForgeFilterBar: View {
             Divider()
             Toggle("Only involving me", isOn: edit(\.mine))
         } label: {
-            ForgeMenuLabel(title: "Filter")
+            if compact {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .frame(width: SH.Height.controlM, height: SH.Height.controlS)
+                    .foregroundStyle(Color.sh.textSecondary)
+            } else {
+                ForgeMenuLabel(title: "Filter")
+            }
         }
         .menuStyle(.button)
         .buttonStyle(.plain)

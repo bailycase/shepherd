@@ -513,7 +513,8 @@ private struct ReviewFileStrip: View {
     let touchedPaths: Set<String>
 
     var body: some View {
-        SHFileStrip(items, selection: model.currentFile) { model.select($0) }
+        // The current file's fill lands at once, for a key and a click alike.
+        SHFileStrip(items, selection: model.currentFile, animatesSelection: false) { model.select($0) }
     }
 
     private var items: [SHFileStrip.Item] {

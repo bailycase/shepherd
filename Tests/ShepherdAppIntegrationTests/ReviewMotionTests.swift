@@ -241,7 +241,7 @@ struct ReviewMotionTests {
     /// The file rows, under the toolbar and the compare row.
     private static let strip = CGRect(x: 0, y: 76, width: size.width, height: 120)
 
-    /// The current file's fill moves with no easing, for a key and for a click alike: the rows are a list, not a strip of chips.
+    /// The current file's fill moves with no easing, for a key and for a click alike: the chips land at once.
     @Test(arguments: [false, true])
     func theRowsSelectionFollowsAFileAtOnce(reduceMotion: Bool) async throws {
         let (model, window) = Self.pane((0..<3).map { Self.file("f\($0).txt", lines: 4) }, reduceMotion: reduceMotion)
