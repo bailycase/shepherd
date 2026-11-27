@@ -36,6 +36,14 @@ struct ThreadTailFlowTests {
     nonisolated static let tall = CGSize(width: 1400, height: 1100)
     nonisolated static let sizes = [short, tall]
 
+    /// How much more room the thread has above the redesign's one-line composer (64pt, a bottom inset of 88) than it had above the
+    /// card it replaced (a bottom inset of 134). A turn jump lands the turn's top at the top of the thread's room, so how far its
+    /// end then sits above the tail is the turn's height less that room, and "a turn just past the follower's 80pt band" is a
+    /// distance the cases were tuned to with the old room. The band is points of unread thread, and does not follow the composer:
+    /// a reader 76pt from the end is as near it with either. The tests of a jump that must leave the band take this much from the
+    /// window, which gives the thread the room they were tuned to.
+    nonisolated static let composerRoomGained: CGFloat = 46
+
     /// How much rows differ: every `every`th turn ends in an answer of `paragraphs` paragraphs
     /// and two code blocks, so a row can be taller than the window by many times. `tables` ends it
     /// in `paragraphs` small tables instead: chunks of a reply close at 16 KB of weight, which a

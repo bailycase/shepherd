@@ -99,33 +99,44 @@ struct ThreadHistoryRetentionTests {
     /// stay in memory for as long as the thread did. A reader at the tail has no use for them: the stack starts again
     /// (`ThreadHistoryBuilt`), and the rows it has built stay within a few turns' worth.
     @Test func aThreadThatGrowsTurnByTurnKeepsOnlyItsTailBuilt() async throws {
-        let thread = FakeThread(ThreadFixture.snapshot([]), tailGuard: makeGuard())
+        let guardrail = makeGuard()
+        let thread = FakeThread(ThreadFixture.snapshot([]), tailGuard: guardrail)
         try await thread.waitUntilReady()
         var messages: [NativeThreadMessage] = []
         var revision: UInt64 = 1
         var ends: [CGFloat] = []
-        func addTurns(_ range: Range<Int>) async {
+        func addTurns(_ range: Range<Int>) async throws {
             for i in range {
                 messages += [ThreadFixture.user("u\(i)", "Say hi \(i)"), ThreadFixture.assistant("a\(i)", "Hi there, number \(i).")]
                 revision += 1
                 await thread.serve(ThreadFixture.snapshot(messages, revision: revision))
                 ListPerf.settle(thread.window)
+                // The tail's landing follows the lazy stack's estimate of the history above it, which swings by hundreds of points as the
+                // stack starts again, and the view can land a few points to 20 short of its end in the frame it lands in (with the
+                // old row heights too: it is the row heights that decide which turns). The tail guard puts it back once things are quiet,
+                // so the end is read where the thread rests.
+                try await eventuallyOnMain("the thread to rest on its tail") {
+                    ListPerf.settle(thread.window)
+                    return guardrail.rests(quietFor: ThreadTailGuard.quiet)
+                }
                 if let scroll = thread.scrollView, let document = scroll.documentView { ends.append(document.bounds.height - scroll.contentView.bounds.maxY) }
             }
         }
         let warm = ThreadView.eagerRows
         let more = 60
-        await addTurns(0..<warm)
+        try await addTurns(0..<warm)
         let before = ThreadRowMemory.built(in: thread.store)
-        await addTurns(warm..<(warm + more))
+        try await addTurns(warm..<(warm + more))
         let after = ThreadRowMemory.built(in: thread.store)
         #expect(thread.store.rows.count == 2 * (warm + more), "every turn is a row of the thread")
         #expect(before > 0, "the thread's rows are counted")
         // Without the restarts every one of the turns' replies stays built: `more` of them.
         #expect(after - before <= ThreadHistoryBuilt.rows, "\(more) more turns left \(after - before) more rows built (\(before) before)")
-        // The restarts happen behind the reader: the end of the thread stays where it was through every turn.
+        // The restarts happen behind the reader: the end of the thread stays where it was through every turn, to within the
+        // follower's own tolerance of resting on its tail (`repinSlack`): the guard does not move a thread that close to it. A
+        // restart that moved the end would move it by the rows it dropped, hundreds of points.
         let steady = ends.suffix(more)
-        #expect(steady.count == more && (steady.max() ?? 0) - (steady.min() ?? 0) <= 1, "the thread's end moved: \(Array(steady))")
+        #expect(steady.count == more && (steady.max() ?? 0) - (steady.min() ?? 0) <= NativeScrollFollower.repinSlack, "the thread's end moved: \(Array(steady))")
         thread.close()
     }
 

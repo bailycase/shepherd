@@ -149,7 +149,9 @@ struct ThreadScrollAuditTests {
     /// The jump to latest (⌥⌘↓ past the last turn) from far above lands on the tail.
     @Test(arguments: cases)
     func theJumpToTheLatestLandsOnTheTail(_ c: Case) async throws {
-        try await T.withDeck(size: c.size, mix: c.mix, turns: 40, configure: S.likePi) { deck in
+        // The turns' heights are tuned so the last turn jump leaves the follower's band: see `T.composerRoomGained`.
+        let size = CGSize(width: c.size.width, height: c.size.height - T.composerRoomGained)
+        try await T.withDeck(size: size, mix: c.mix, turns: 40, configure: S.likePi) { deck in
             try await deck.open()
             for _ in 0..<4 {
                 deck.command(.previousTurn)
