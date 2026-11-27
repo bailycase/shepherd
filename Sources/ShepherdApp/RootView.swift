@@ -87,8 +87,6 @@ struct RootView: View {
                     .padding(.top, AppLayout.toolbarTop)
                     .background(Color.sh.bgWindow)
                     .modifier(PaneReserve(vm: vm))
-                    // ...and 8pt in from the window's right edge while no pane's card ends the toolbar.
-                    .padding(.trailing, vm.sidePaneReserve > 0 ? 0 : AppLayout.toolbarTop)
                     // Over the workspace: the side-pane button's tip hangs below the toolbar.
                     .zIndex(1)
                 }
@@ -484,5 +482,7 @@ struct WorkspaceHeaderView: View {
 private struct PaneReserve: ViewModifier {
     var vm: ShepherdViewModel
 
-    func body(content: Content) -> some View { content.padding(.trailing, vm.sidePaneReserve) }
+    /// The toolbar ends where a pane's card begins, else 8pt in from the window's right edge (the boards' window padding). Read here, not in
+    /// the shell's body: a divider drag moves the reserve every frame.
+    func body(content: Content) -> some View { content.padding(.trailing, vm.sidePaneReserve > 0 ? vm.sidePaneReserve : AppLayout.toolbarTop) }
 }
