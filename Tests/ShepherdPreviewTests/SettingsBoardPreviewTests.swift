@@ -23,7 +23,7 @@ struct SettingsBoardPreviewTests {
 
     @Test(arguments: SettingsSection.allCases)
     func page(section: SettingsSection) async throws {
-        let workspace = try PreviewWorkspace()
+        let workspace = try PreviewWorkspace(mcp: section == .tools ? try await MCPPreviewFixtures.boardStore() : nil)
         defer { workspace.stop() }
         let vm = workspace.vm
         vm.settingsSection = section
@@ -33,5 +33,23 @@ struct SettingsBoardPreviewTests {
         try await Preview.render("board-\(section.rawValue)", size: CGSize(width: AppLayout.settingsModalWidth, height: Self.boardHeight(section))) {
             SettingsView(vm: vm).environment(\.updatesPreviewAvailable, true)
         }
+    }
+
+    /// Spaces (SettingsSpaces): the list, and one space open (SettingsSpace).
+    @Test func spaces() async throws {
+        let world = try await ProjectsPreviewWorld()
+        defer { world.stop() }
+        world.vm.settingsSection = .projects
+        let size = CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)
+        try await Preview.render("board-spaces", size: size) { SettingsView(vm: world.vm) }
+    }
+
+    @Test func spaceOpen() async throws {
+        let world = try await ProjectsPreviewWorld(detail: true)
+        defer { world.stop() }
+        world.vm.settingsSection = .projects
+        let project = try #require(world.vm.projects.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
+        await world.vm.projects.open(project)
+        try await Preview.render("board-space", size: CGSize(width: AppLayout.settingsModalWidth, height: 860)) { SettingsView(vm: world.vm) }
     }
 }

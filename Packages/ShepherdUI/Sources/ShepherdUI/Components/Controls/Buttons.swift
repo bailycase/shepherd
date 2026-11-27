@@ -79,11 +79,14 @@ private struct SHStyledButton: View {
         case .l: (SH.Height.controlL, 14, 13)
         }
         #endif
-        let (height, padding, fontSize) = settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
+        // A Settings sheet's one action is an ink pill: 28pt, radius 14, 12.5.
+        let pill = settings && kind == .primary
+        let (height, padding, fontSize) = pill ? (M.pillHeight, M.pillPadding, M.segmentTextSize)
+            : settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
         #if os(iOS)
         let radius = settings ? M.radius : height / 2
         #else
-        let radius = settings ? M.radius : SH.Radius.s
+        let radius = pill ? M.pillRadius : settings ? M.radius : SH.Radius.s
         #endif
         let filled = kind == .primary || kind == .dangerFill || kind == .strong
         let shape = RoundedRectangle(cornerRadius: radius)

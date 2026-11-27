@@ -329,6 +329,11 @@ private struct SkillDetailPage: View {
                             Button("Show folder") { vm.showSkillFolder(skill.name) }.buttonStyle(.sh(.secondary, size: .s)).disabled(!here)
                         }
                     }
+                } else {
+                    // Another file or folder in the skill's folder, by name; a folder says how many files it holds.
+                    SettingsRow(title: entry.isDirectory ? entry.name + "/" : entry.name) {
+                        if entry.isDirectory { SettingsValue(text: entry.fileCount == 1 ? "1 file" : "\(entry.fileCount) files") }
+                    }
                 }
             }
         }

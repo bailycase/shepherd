@@ -92,14 +92,18 @@ struct ProjectSettingsDetail: View {
             Button {
                 Task { await model.stepBack() }
             } label: {
-                Text("‹ \(model.overview ? "Spaces" : project.project.name)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                    .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
+                HStack(spacing: SH.Space.xs) {
+                    Image(systemName: "chevron.left").font(.system(size: SHSettingsControlMetrics.popupChevronSize + 2, weight: .semibold))
+                    Text(model.overview ? "Spaces" : project.project.name).font(.shSans(SHSettingsControlMetrics.segmentTextSize))
+                }
+                .foregroundStyle(Color.sh.textSecondary)
+                .frame(height: AppLayout.settingsGroupHeaderHeight).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
             .accessibilityLabel(model.overview ? "Back to Spaces" : "Back to \(project.project.name)")
             .disabled(busy)
-            .padding(.vertical, -SH.Space.xs)
+            .padding(.top, -AppLayout.settingsUpLinkLift)
             if model.overview, let parent = model.rows.first(where: { $0.host.id == project.host.id && $0.project.directory == project.project.parent }) {
                 Button { Task { await model.navigate(.close); if model.selected == nil { await model.open(parent) } } } label: {
                     Text("Child of \(parent.project.name)").font(.sh(.caption)).foregroundStyle(Color.sh.running)
@@ -111,6 +115,8 @@ struct ProjectSettingsDetail: View {
             SettingsHeader(title: model.overview ? project.project.name : drillTitle,
                            subtitle: model.overview ? project.project.displayPath : project.project.name)
         }
+        // The board pulls the first group up under the title.
+        .padding(.bottom, -SH.Space.m)
         .disabled(cookies.clearing)
     }
 
@@ -121,7 +127,7 @@ struct ProjectSettingsDetail: View {
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 instructionsCard
                 SettingsGroup(title: "Pi settings") {
-                    SettingsDrillRow(title: "Settings", subtitle: ".shepherd/settings.json", mono: true,
+                    SettingsDrillRow(title: "Settings", subtitle: ".shepherd/settings.json",
                                      accessibilityName: "Space category Settings") {
                         Task { await model.navigate(.category(.pi)) }
                     }

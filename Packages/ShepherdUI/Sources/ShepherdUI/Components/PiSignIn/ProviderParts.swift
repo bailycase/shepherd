@@ -30,9 +30,25 @@ public enum SHPiSignInMetrics {
     public static let importWideWidth: CGFloat = 600
     public static let sheetTile: CGFloat = 38
     public static let sheetTileRadius: CGFloat = 10
-    public static let sheetTitleSize: CGFloat = 17
+    public static let sheetTitleSize: CGFloat = 15
+    public static let sheetTitleLine: CGFloat = 20
     public static let sheetSubtitleSize: CGFloat = 13
+    public static let sheetSubtitleLine: CGFloat = 19.0 / 13
+    public static let sheetTop: CGFloat = 20
     public static let sheetInset: CGFloat = 22
+    /// The foot: 56pt at least, its words 18 apart.
+    public static let footerHeight: CGFloat = 56
+    public static let footerGap: CGFloat = 18
+    /// A sign-in step: 10pt over and under, 16 before its state's word (12.5).
+    public static let stepVertical: CGFloat = 10
+    public static let stepGap: CGFloat = SH.Space.xl
+    public static let stepWordSize: CGFloat = 12.5
+    /// The device code's box and a failure's: radius 12 and 10, the failure's left bar 2pt.
+    public static let deviceCodeRadius: CGFloat = 12
+    public static let deviceCodeTop: CGFloat = 18
+    public static let deviceCodeBottom: CGFloat = 14
+    public static let failureRadius: CGFloat = 10
+    public static let failureBar: CGFloat = 2
     public static let sheetTrailing: CGFloat = 20
     public static let closeButton: CGFloat = 28
     public static let footerTop: CGFloat = 14

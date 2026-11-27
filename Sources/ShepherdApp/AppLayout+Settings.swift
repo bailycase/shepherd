@@ -256,6 +256,8 @@ extension AppLayout {
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.
+    /// The device code's Copy and Open links: 20pt apart.
+    static let signInCodeActionGap: CGFloat = 20
     static let signInAutoCloseDelay: Duration = .milliseconds(1200)
     /// How long a first launch's sheet shows its last step before it turns to what came over.
     static let importDoneBeat: Duration = .milliseconds(350)

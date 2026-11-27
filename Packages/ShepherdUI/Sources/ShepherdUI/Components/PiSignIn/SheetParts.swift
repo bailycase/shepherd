@@ -30,35 +30,24 @@ public struct SHSheetHeader<Subtitle: View>: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        HStack(alignment: .top, spacing: 14) {
-            tile
-            VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text(title)
-                    .font(.shSans(M.sheetTitleSize, .semibold))
-                    .foregroundStyle(sh.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                subtitle
-            }
-            .padding(.top, 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // The boards' sheet header: the title over its line, nothing beside them. Esc still closes.
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            Text(title)
+                .font(.shSans(M.sheetTitleSize, .semibold))
+                .foregroundStyle(sh.textPrimary)
+                .frame(minHeight: M.sheetTitleLine, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            subtitle
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, M.sheetTop)
+        .padding(.horizontal, M.sheetInset)
+        .background {
             if let close {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.shSans(12, .medium))
-                        .foregroundStyle(sh.textSecondary)
-                        .frame(width: M.closeButton, height: M.closeButton)
-                        .overlay(Circle().strokeBorder(sh.lineStrong, lineWidth: 1))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Close")
+                Button("Close", action: close).keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
             }
         }
-        .padding(.top, M.sheetInset)
-        .padding(.leading, M.sheetInset)
-        .padding(.trailing, M.sheetTrailing)
     }
 
     @ViewBuilder private var tile: some View {
@@ -101,13 +90,13 @@ public struct SHSheetSubtitle: View {
 
     public var body: some View {
         Text(text)
-            .shText(size: SHPiSignInMetrics.sheetSubtitleSize, lineHeight: 1.5)
+            .shText(size: SHPiSignInMetrics.sheetSubtitleSize, lineHeight: SHPiSignInMetrics.sheetSubtitleLine)
             .foregroundStyle(Color.sh.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// A sheet's footer: on `bgSunken` over a hairline, its leading part, then its actions trailing.
+/// A sheet's footer: over a rule, its leading words, then its actions trailing.
 public struct SHSheetFooter<Leading: View, Actions: View>: View {
     let leading: Leading
     let actions: Actions
@@ -119,18 +108,17 @@ public struct SHSheetFooter<Leading: View, Actions: View>: View {
 
     public var body: some View {
         let M = SHPiSignInMetrics.self
-        HStack(spacing: SH.Space.m) {
-            leading
+        // The boards' foot: words 18 apart (the leading ones left, the actions right), the way out dim, the one action an
+        // ink pill, over a rule, 56pt at least.
+        HStack(spacing: M.footerGap) {
+            HStack(spacing: M.footerGap) { leading }
             Spacer(minLength: SH.Space.l)
-            HStack(spacing: SH.Space.m) { actions }.fixedSize()
+            HStack(spacing: M.footerGap) { actions }.fixedSize()
         }
-        .padding(.top, M.footerTop)
-        .padding(.bottom, M.footerBottom)
-        .padding(.leading, M.sheetInset)
-        .padding(.trailing, M.footerTrailing)
-        .frame(maxWidth: .infinity)
-        .background(Color.sh.bgSunken)
-        .overlay(alignment: .top) { SHHairline() }
+        .shControlScale(.settings)
+        .padding(.horizontal, M.sheetInset)
+        .frame(maxWidth: .infinity, minHeight: M.footerHeight)
+        .overlay(alignment: .top) { SHHairline(color: Color.sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
     }
 }
 
@@ -140,7 +128,7 @@ extension SHSheetFooter where Leading == EmptyView {
     }
 }
 
-/// A card of rows: `bgSunken`, radius 10, a `lineSubtle` line, hairlines between.
+/// The boards' list of rows: a rule above it and a rule under each row.
 public struct SHSheetCard<Content: View>: View {
     let content: Content
 
@@ -149,17 +137,9 @@ public struct SHSheetCard<Content: View>: View {
     }
 
     public var body: some View {
-        let M = SHPiSignInMetrics.self
-        VStack(alignment: .leading, spacing: 0) {
-            Group(subviews: content) { rows in
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    if index > 0 { SHHairline() }
-                    row
-                }
-            }
-        }
-        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-        .shBorder(Color.sh.lineSubtle, radius: M.cardRadius)
+        VStack(alignment: .leading, spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .top) { SHHairline(color: Color.sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
     }
 }
 
@@ -200,8 +180,8 @@ public struct SHStepMark: View {
     }
 }
 
-/// One item of the first launch's copy (`PiImportStepRow(item, step)`): its mark, the title over
-/// its detail, and, once done, a count in mono trailing. Now shimmers; nothing spins.
+/// One item of the first launch's copy (`PiImportStepRow(item, step)`): the title over its detail, and at the right a
+/// count once it is done, "Copying" while it is the live one, "Not copied" when it failed. A pending one is dimmed.
 public struct SHImportStepRow: View, Equatable {
     let title: String
     let detail: String?
@@ -218,11 +198,10 @@ public struct SHImportStepRow: View, Equatable {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        HStack(spacing: M.rowGap) {
-            SHStepMark(state)
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(alignment: .center, spacing: SH.Space.xl) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.shSans(M.stepTitleSize, state == .now ? .medium : .regular))
+                    .font(.shSans(M.stepTitleSize))
                     .shShimmer(active: state == .now)
                     .foregroundStyle(state == .pending ? sh.textTertiary : sh.textPrimary)
                 if let detail {
@@ -234,20 +213,29 @@ public struct SHImportStepRow: View, Equatable {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let count {
-                Text(count)
-                    .font(.shMono(M.stepCountSize))
-                    .foregroundStyle(state == .done ? sh.textSecondary : sh.textTertiary)
+            if let word = right {
+                Text(word)
+                    .font(.shSans(M.stepTitleSize))
+                    .foregroundStyle(state == .failed ? sh.failed : state == .now ? sh.textPrimary : sh.textSecondary)
                     .lineLimit(1)
                     .fixedSize()
             }
         }
-        .padding(.vertical, SH.Space.s)
-        .padding(.horizontal, 14)
-        .frame(minHeight: M.stepMinHeight)
+        .padding(.vertical, M.stepVertical)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { SHHairline(color: sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
         .shAnimation(.content, value: state)
         .accessibilityElement(children: .combine)
         .accessibilityValue(Self.word(state))
+    }
+
+    private var right: String? {
+        switch state {
+        case .done: count
+        case .now: "Copying"
+        case .failed: "Not copied"
+        case .pending: nil
+        }
     }
 
     static func word(_ state: SHStepState) -> String {
@@ -337,10 +325,9 @@ public struct SHImportSignInRow: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        HStack(spacing: M.rowGap) {
-            SHProviderBadge(badge, size: M.badgeSmall)
+        HStack(spacing: SH.Space.xl) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(name).font(.shSans(M.nameSize, .medium)).foregroundStyle(sh.textPrimary)
+                Text(name).font(.shSans(M.stepTitleSize)).foregroundStyle(sh.textPrimary)
                 Text(signedIn ? "Signed in" : signingIn ? "Signing in…" : detail)
                     .font(.shSans(M.stepDetailSize))
                     .shShimmer(active: signingIn)
@@ -348,22 +335,23 @@ public struct SHImportSignInRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if signedIn {
-                SHStepMark(.done)
+                Text("Signed in").font(.shSans(M.stepTitleSize)).foregroundStyle(sh.textSecondary)
             } else {
                 Button("Sign in", action: signIn)
-                    .buttonStyle(.sh(.primary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .shControlScale(.settings)
                     .disabled(signingIn)
                     .accessibilityLabel("Sign in to \(name)")
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
+        .padding(.vertical, M.stepVertical)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { SHHairline(color: sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
         .shAnimation(.content, value: signedIn)
     }
 }
 
-/// A new user's choice (PiImportNew): a provider's badge (or a glyph), its name over its plan, and
-/// a chevron; the API-key tile is dashed.
+/// A new user's choice (PiImportNew): its name over its plan and a chevron, a row in the list.
 public struct SHSignInChoiceTile: View {
     let title: String
     let detail: String
@@ -381,36 +369,26 @@ public struct SHSignInChoiceTile: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        let dashed = badge == nil
-        HStack(spacing: M.rowGap) {
-            if let badge {
-                SHProviderBadge(badge)
-            } else {
-                Image(systemName: glyph ?? "key")
-                    .font(.shSans(13))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: M.badge, height: M.badge)
-                    .overlay(RoundedRectangle(cornerRadius: M.badgeRadius).strokeBorder(sh.lineStrong, lineWidth: 1))
-            }
+        HStack(spacing: SH.Space.xl) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(title).font(.shSans(M.nameSize, .medium)).foregroundStyle(sh.textPrimary)
+                Text(title).font(.shSans(M.stepTitleSize)).foregroundStyle(sh.textPrimary)
                 Text(detail).font(.shSans(M.stepDetailSize)).foregroundStyle(sh.textTertiary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right").font(.shSans(11, .medium)).foregroundStyle(sh.textTertiary)
         }
-        .padding(.vertical, 11)
-        .padding(.horizontal, SH.Space.l)
-        .background(dashed ? Color.clear : (hovering ? sh.bgHover : sh.bgSunken), in: RoundedRectangle(cornerRadius: M.cardRadius))
-        .shBorder(dashed ? sh.lineStrong : sh.lineSubtle, in: RoundedRectangle(cornerRadius: M.cardRadius), dash: dashed ? [4, 3] : [])
-        .contentShape(RoundedRectangle(cornerRadius: M.cardRadius))
+        .padding(.vertical, M.stepVertical)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(hovering ? sh.bgHover : Color.clear)
+        .overlay(alignment: .bottom) { SHHairline(color: sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
     }
 }
 
-/// One step of a sign-in (`SignInSheet`): its mark, its title (shimmering while it's the live one),
-/// and a note under it.
+/// One step of a sign-in (`SignInSheet`): its title (shimmering while it's the live one) with a note under it, and
+/// the step's state in a word at the right: Done, Now, Next, or Failed. Nothing spins, nothing ticks.
 public struct SHSignInStepRow: View {
     let title: String
     let note: String?
@@ -425,8 +403,7 @@ public struct SHSignInStepRow: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        HStack(alignment: .top, spacing: M.rowGap) {
-            SHStepMark(state)
+        HStack(alignment: .top, spacing: M.stepGap) {
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
                     .font(.shSans(M.stepTitleSize, state == .now ? .medium : .regular))
@@ -435,20 +412,36 @@ public struct SHSignInStepRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let note {
                     Text(note)
-                        .font(state == .failed ? .shMono(11.5) : .shSans(M.stepDetailSize))
+                        .font(state == .failed ? .shMono(M.stepDetailSize) : .shSans(M.stepDetailSize))
                         .foregroundStyle(state == .failed ? sh.failed : sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
             }
-            .padding(.top, 1)
             .frame(maxWidth: .infinity, alignment: .leading)
+            Text(Self.word(state))
+                .font(.shSans(M.stepWordSize, state == .now || state == .failed ? .medium : .regular))
+                .foregroundStyle(state == .now ? sh.textPrimary : state == .failed ? sh.failed : sh.textTertiary)
+                .fixedSize()
         }
+        .padding(.vertical, M.stepVertical)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { SHHairline(color: sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
         .accessibilityElement(children: .combine)
+        .accessibilityValue(Self.word(state))
+    }
+
+    static func word(_ state: SHStepState) -> String {
+        switch state {
+        case .done: "Done"
+        case .now: "Now"
+        case .pending: "Next"
+        case .failed: "Failed"
+        }
     }
 }
 
-/// The sign-in's steps in a card, 14 apart.
+/// The sign-in's steps: a rule above them, each step over its own rule.
 public struct SHSignInSteps<Content: View>: View {
     let content: Content
 
@@ -457,17 +450,13 @@ public struct SHSignInSteps<Content: View>: View {
     }
 
     public var body: some View {
-        let M = SHPiSignInMetrics.self
-        VStack(alignment: .leading, spacing: 14) { content }
-            .padding(.vertical, 14)
-            .padding(.horizontal, SH.Space.xl)
+        VStack(alignment: .leading, spacing: 0) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-            .shBorder(Color.sh.lineSubtle, radius: M.cardRadius)
+            .overlay(alignment: .top) { SHHairline(color: Color.sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
     }
 }
 
-/// A device sign-in's code, large: mono 26/600, tracked, centered in a `bgSunken` box.
+/// A device sign-in's code, large: mono 26/600, tracked.
 public struct SHDeviceCode: View {
     let code: String
     let dimmed: Bool
@@ -484,11 +473,23 @@ public struct SHDeviceCode: View {
             .tracking(M.deviceCodeSize * M.deviceCodeTracking)
             .foregroundStyle(dimmed ? Color.sh.textTertiary : Color.sh.textPrimary)
             .textSelection(.enabled)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, SH.Space.xl)
-            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-            .shBorder(Color.sh.lineSubtle, radius: M.cardRadius)
             .accessibilityLabel("Code \(code.map(String.init).joined(separator: " "))")
+    }
+}
+
+/// The box a device code sits in with its actions under it: `bgHover`, radius 12, the contents centered 10pt apart.
+public struct SHDeviceCodeBox<Content: View>: View {
+    let content: Content
+
+    public init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    public var body: some View {
+        let M = SHPiSignInMetrics.self
+        VStack(spacing: SH.Space.m + SH.Space.xxs) { content }
+            .frame(maxWidth: .infinity)
+            .padding(.top, M.deviceCodeTop)
+            .padding(.bottom, M.deviceCodeBottom)
+            .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: M.deviceCodeRadius))
     }
 }
 
@@ -510,14 +511,14 @@ public struct SHFailureBox: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        VStack(alignment: .leading, spacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
             Text(title)
-                .font(monoTitle ? .shMono(12) : .shSans(13, .medium))
+                .font(monoTitle ? .shMono(M.stepDetailSize) : .shSans(M.stepTitleSize, .medium))
                 .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             if let detail {
                 Text(detail)
-                    .font(monoDetail ? .shMono(11.5) : .shSans(12.5))
+                    .font(monoDetail ? .shMono(M.stepDetailSize) : .shSans(M.stepTitleSize))
                     .foregroundStyle(monoDetail ? sh.failed : sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -526,8 +527,9 @@ public struct SHFailureBox: View {
         .padding(.vertical, 10)
         .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(sh.failedTint.opacity(M.failureFillOpacity), in: RoundedRectangle(cornerRadius: 9))
-        .shBorder(sh.failed.opacity(M.failureLineOpacity), radius: 9)
+        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: M.failureRadius))
+        .overlay(alignment: .leading) { Rectangle().fill(sh.failed).frame(width: M.failureBar) }
+        .clipShape(RoundedRectangle(cornerRadius: M.failureRadius))
     }
 }
 

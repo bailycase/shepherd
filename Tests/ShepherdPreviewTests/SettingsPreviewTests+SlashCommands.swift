@@ -49,7 +49,7 @@ extension SettingsPreviewTests {
         workspace.vm.settingsSection = .piSlashCommands
         workspace.vm.slashCommands.catalog = catalog
         workspace.settings.hiddenSlashCommands = ["shepherd-child-pause", "fix-tests", "skill:sentry", "skill:linear", "skill:figma", "old-command"]
-        try await Preview.renderMatrix("settings-pi-slash-commands", size: CGSize(width: 1280, height: 2600)) {
+        try await Preview.renderMatrix("settings-pi-slash-commands", size: CGSize(width: AppLayout.settingsModalWidth, height: 1500)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -62,7 +62,7 @@ extension SettingsPreviewTests {
         workspace.vm.slashCommands.catalog = try Self.listedCommands()
         workspace.settings.hiddenSlashCommands = ["fix-tests"]
         workspace.vm.slashCommands.query = "test"
-        try await Preview.renderMatrix("settings-pi-slash-commands-search", size: CGSize(width: 1280, height: 900)) {
+        try await Preview.renderMatrix("settings-pi-slash-commands-search", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -72,12 +72,12 @@ extension SettingsPreviewTests {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         workspace.vm.settingsSection = .piSlashCommands
-        try await Preview.render("settings-pi-slash-commands-empty", size: CGSize(width: 1280, height: 700)) {
+        try await Preview.render("settings-pi-slash-commands-empty", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
         workspace.vm.slashCommands.catalog = try Self.listedCommands()
         workspace.vm.slashCommands.query = "zzz"
-        try await Preview.render("settings-pi-slash-commands-no-match", size: CGSize(width: 1280, height: 700)) {
+        try await Preview.render("settings-pi-slash-commands-no-match", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
             SettingsView(vm: workspace.vm)
         }
     }

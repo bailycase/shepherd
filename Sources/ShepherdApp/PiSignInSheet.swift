@@ -20,7 +20,7 @@ struct PiSignInSheet: View {
             footer
         }
         .frame(width: SHPiSignInMetrics.sheetWidth)
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .shAnimation(.disclosure, value: session.phase)
         .task(id: session.phase) {
             // One opened from /login or an agent's card closes by itself once it lands.
@@ -188,14 +188,15 @@ struct PiSignInSheet: View {
                     .shText(size: SHPiSignInMetrics.proseSize, lineHeight: SHPiSignInMetrics.proseLeading)
                     .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                VStack(spacing: SH.Space.m) {
+                SHDeviceCodeBox {
                     SHDeviceCode(code)
-                    HStack(spacing: SH.Space.m) {
-                        Button { session.copyCode() } label: { Label("Copy", systemImage: "doc.on.doc") }
-                            .buttonStyle(.sh(.ghost, size: .s))
-                        Button { session.openDevicePage() } label: { Label("Open \(site)", systemImage: "arrow.up.forward.square") }
+                    HStack(spacing: AppLayout.signInCodeActionGap) {
+                        Button("Copy") { session.copyCode() }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                        Button("Open \(site)") { session.openDevicePage() }
                             .buttonStyle(.sh(.secondary, size: .s))
                     }
+                    .shControlScale(.settings)
                 }
                 SHSignInSteps {
                     SHSignInStepRow("Waiting for you to enter the code",
@@ -304,13 +305,11 @@ struct PiSignInSheet: View {
             }
         case .failed(let reason):
             SHSheetFooter {
-                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reason, forType: .string) } label: {
-                    Label("Copy details", systemImage: "doc.on.doc")
-                }
+                Button("Copy details") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reason, forType: .string) }
                 .buttonStyle(.sh(.ghost))
             } actions: {
                 Button("Close", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
-                Button { session.tryAgain() } label: { Label("Try again", systemImage: "arrow.clockwise") }
+                Button("Try again") { session.tryAgain() }
                     .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             }
         case .prompt(let prompt):
@@ -324,19 +323,19 @@ struct PiSignInSheet: View {
         case .portBusy:
             SHSheetFooter {
                 Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
-                Button { session.tryAgain() } label: { Label("Try again", systemImage: "arrow.clockwise") }
+                Button("Try again") { session.tryAgain() }
                     .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             }
         default:
             switch session.flow {
             case .browser:
                 SHSheetFooter {
-                    Button { session.copyLink() } label: { Label("Copy link", systemImage: "doc.on.doc") }
+                    Button("Copy link") { session.copyLink() }
                         .buttonStyle(.sh(.ghost))
                         .disabled(session.authURL == nil)
                 } actions: {
                     Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
-                    Button { session.openBrowserAgain() } label: { Label("Open browser again", systemImage: "arrow.up.forward.square") }
+                    Button("Open browser again") { session.openBrowserAgain() }
                         .buttonStyle(.sh(.secondary))
                         .disabled(session.authURL == nil)
                 }
@@ -367,7 +366,7 @@ struct PiSignInSheet: View {
     private func linkLine(_ text: String, link: String, action: @escaping () -> Void) -> some View {
         HStack(spacing: SH.Space.xs) {
             Text(text).font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
-            Button(link, action: action).buttonStyle(.shLink(color: Color.sh.running))
+            Button(link, action: action).buttonStyle(.shLink(color: Color.sh.textPrimary)).font(.sh(.ui, weight: .medium))
         }
     }
 

@@ -298,6 +298,8 @@ struct SettingsDrillRow<Extra: View>: View {
     var subtitleTone: SHRowTone = .normal
     var value: String?
     var valueTone: SettingsValue.Tone = .plain
+    /// The value in mono (a model id).
+    var valueMono = false
     var dot: SHRowDot?
     var mono = false
     var indented = false
@@ -312,7 +314,7 @@ struct SettingsDrillRow<Extra: View>: View {
         // tap target with a button's accessibility, not a Button around a Button.
         SHCardRow(title, description: subtitle, descriptionTone: subtitleTone, style: .settings, dot: dot, monoTitle: mono, indented: indented) {
             HStack(spacing: SH.Space.m) {
-                if let value { SettingsValue(text: value, tone: valueTone) }
+                if let value { SettingsValue(text: value, tone: valueTone, mono: valueMono) }
                 extra
                 Image(systemName: "chevron.right")
                     .font(.sh(.caption))
@@ -330,9 +332,9 @@ struct SettingsDrillRow<Extra: View>: View {
 }
 
 extension SettingsDrillRow where Extra == EmptyView {
-    init(title: String, subtitle: String? = nil, subtitleTone: SHRowTone = .normal, value: String? = nil, dot: SHRowDot? = nil, mono: Bool = false,
+    init(title: String, subtitle: String? = nil, subtitleTone: SHRowTone = .normal, value: String? = nil, valueMono: Bool = false, dot: SHRowDot? = nil, mono: Bool = false,
          indented: Bool = false, accessibilityName: String? = nil, action: @escaping () -> Void) {
-        self.init(title: title, subtitle: subtitle, subtitleTone: subtitleTone, value: value, dot: dot, mono: mono, indented: indented,
+        self.init(title: title, subtitle: subtitle, subtitleTone: subtitleTone, value: value, valueMono: valueMono, dot: dot, mono: mono, indented: indented,
                   accessibilityName: accessibilityName, action: action, extra: { EmptyView() })
     }
 }

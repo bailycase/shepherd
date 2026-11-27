@@ -50,6 +50,9 @@ public enum SHSettingsControlMetrics {
     /// A row's controls: the `ui` size (13), the hints under it `caption`.
     public static let textSize: CGFloat = SHTextStyle.ui.size
     /// A button's hit area overhangs its words by this much; the words stay flush with the row's padding.
+    public static let pillHeight: CGFloat = 28
+    public static let pillPadding: CGFloat = 13
+    public static let pillRadius: CGFloat = 14
     public static let buttonOverhang: CGFloat = SH.Space.s
     public static let buttonPadding: CGFloat = SH.Space.m
     /// A popup: the value, 5pt, then a small up-and-down chevron.
