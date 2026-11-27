@@ -441,7 +441,7 @@ struct PiImportSheet: View {
         .padding(.horizontal, SHPiSignInMetrics.sheetInset)
         .padding(.bottom, SHPiSignInMetrics.sheetInset)
         SHSheetFooter {
-            Text("Change these any time in Settings ▸ Pi ▸ Sign-in.").font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary)
+            Text("Change these any time in Settings ▸ Models.").font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary)
         } actions: {
             Button("Skip", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
         }
