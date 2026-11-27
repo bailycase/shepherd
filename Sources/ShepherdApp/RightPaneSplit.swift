@@ -143,12 +143,10 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                         if floating { Color.clear.frame(width: SHSidePaneMetrics.cardGap) }
                         if card {
                             // The card: raised, rounded and lifted (the boards' `.pane`), the toolbar's row inside it.
-                            let shape = RoundedRectangle(cornerRadius: SH.Radius.xl)
                             pane()
                                 .frame(width: paneWidth, height: max(0, geo.size.height - cardTop - cardBottom))
                                 // The inspector's content stops short of the corners and scrolls: no rounded clip over it.
                                 .shCard(lift: true, roundsContent: !floating)
-                                .shFloatCardShadow(shape, floating: !docked && !covers)
                                 .padding(.top, cardTop)
                                 .padding(.bottom, cardBottom)
                                 .padding(.leading, covers ? SHSidePaneMetrics.cardGap : 0)
