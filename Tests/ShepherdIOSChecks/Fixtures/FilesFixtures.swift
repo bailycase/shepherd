@@ -241,23 +241,14 @@ enum FilesPadFixture {
         await model.open(checkout)
         model.setText(mine, for: checkout)
         if conflict { await model.save() }
-        // Until it holds: the split view may write its own columns back while it settles its first layout.
+        // Until it holds: the shell may write its own columns back while it settles its first layout.
         await FixtureCheck.wait("the thread without its sidebar", seconds: 10) {
-            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly }
-            return splitView()?.displayMode == .secondaryOnly && splitView()?.transitionCoordinator == nil
+            if app.navigator.padColumns != .detailOnly { app.navigator.padColumns = .detailOnly; return false }
+            return true
         }
         let edit = model.edits[checkout]
         let ok = edit?.isDirty == true && edit?.before == before && (conflict ? edit?.conflict == theirs : edit?.conflict == nil)
         FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): Checkout.tsx has unsaved edits over the agent's change\(conflict ? " and a conflict" : "")")
     }
 
-    static func splitView() -> UISplitViewController? {
-        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow
-        func find(_ controller: UIViewController?) -> UISplitViewController? {
-            guard let controller else { return nil }
-            if let split = controller as? UISplitViewController { return split }
-            return controller.children.lazy.compactMap(find).first ?? find(controller.presentedViewController)
-        }
-        return find(window?.rootViewController)
-    }
 }

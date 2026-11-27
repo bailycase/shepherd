@@ -66,6 +66,24 @@ public struct SHSidebarSectionHeader: View {
         self.textAction = textAction
     }
 
+    /// The touch boards' header: Needs you in `lanternText`, the others' titles in `textSecondary` over their counts in `textTertiary`
+    /// (DuoOpenOverview); the Mac's are `textTertiary`.
+    private var titleColor: Color {
+        #if os(iOS)
+        attention ? Color.sh.lanternText : Color.sh.textSecondary
+        #else
+        Color.sh.textTertiary
+        #endif
+    }
+
+    private var countColor: Color {
+        #if os(iOS)
+        attention ? Color.sh.lanternText : Color.sh.textTertiary
+        #else
+        Color.sh.textTertiary
+        #endif
+    }
+
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.header")
         HStack(spacing: SH.Space.s) {
@@ -73,12 +91,12 @@ public struct SHSidebarSectionHeader: View {
                 HStack(spacing: SH.Space.s) {
                     Text(title)
                         .font(.sh(.caption, weight: .medium))
-                        .foregroundStyle(Color.sh.textTertiary)
+                        .foregroundStyle(titleColor)
                         .lineLimit(1)
                         .fixedSize()
                     Text("\(count)")
                         .font(.sh(.caption))
-                        .foregroundStyle(Color.sh.textTertiary)
+                        .foregroundStyle(countColor)
                         .monospacedDigit()
                         .shContentTransition(.numeric())
                         .shAnimation(.content, value: count)
@@ -97,7 +115,11 @@ public struct SHSidebarSectionHeader: View {
                             .accessibilityHidden(true)
                     }
                 }
+                #if os(iOS)
+                .frame(maxWidth: .infinity, minHeight: SHSidebarMetrics.touchHeaderText)
+                #else
                 .frame(maxWidth: .infinity, minHeight: max(SHSidebarMetrics.rowHeight(density), SH.Height.controlS))
+                #endif
                 .contentShape(Rectangle())
             }
             .buttonStyle(SHPlainPressStyle())
