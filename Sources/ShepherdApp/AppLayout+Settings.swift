@@ -16,7 +16,8 @@ extension AppLayout {
     /// Between the controls at a row's end (a menu, then a button).
     static let settingsControlsSpacing: CGFloat = SHCardRowMetrics.settingsHorizontalPadding
     /// A sub-page's "‹ Parent" link sits this far above the column's top.
-    static let settingsUpLinkLift: CGFloat = SH.Space.xxl
+    static let settingsUpLinkLift: CGFloat = 23
+    static let settingsUpLinkDrop: CGFloat = 1
     static let settingsBottom: CGFloat = SH.Space.xxxl + SH.Space.xl
     /// Spaces keeps its full-width layout's bottom margin.
     static let settingsWideBottomSpaces: CGFloat = 48
@@ -32,6 +33,11 @@ extension AppLayout {
     static let settingsGroupSpacing: CGFloat = SH.Space.xxl + SH.Space.xs
     /// A page's title (18/600).
     static let settingsTitleSize: CGFloat = 18
+    /// An editor card's header (`gs-edh`): 40pt, 14pt in and between, "Edited" pulled 6pt toward the name.
+    static let settingsEditorHeaderHeight: CGFloat = 40
+    static let settingsEditorHeaderInset: CGFloat = 14
+    static let settingsEditorHeaderGap: CGFloat = 14
+    static let settingsEditorEditedPull: CGFloat = 6
     static let settingsTitleLine: CGFloat = 27
     /// A group's label line.
     static let settingsGroupHeaderHeight: CGFloat = 18
@@ -78,7 +84,7 @@ extension AppLayout {
     /// The editor: mono 12.5 on 21pt lines, 10pt above and below, a 34pt gutter of mono 10.5
     /// numbers 12pt before the text.
     static let instructionsEditorTextSize: CGFloat = 12.5
-    static let instructionsEditorLineHeight: CGFloat = 21
+    static let instructionsEditorLineHeight: CGFloat = 20
     static let instructionsEditorInset: CGFloat = 10
     static let instructionsGutterWidth: CGFloat = 34
     static let instructionsNumberSize: CGFloat = 10.5

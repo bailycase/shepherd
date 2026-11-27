@@ -171,7 +171,7 @@ struct SettingsView: View {
     /// The page: every Settings page is this host's own; Fleet shares the content that crosses hosts.
     @ViewBuilder private var page: some View {
         if let back = drill?.parent ?? vm.settingsSection.parent?.title {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
+            VStack(alignment: .leading, spacing: 0) {
                 Button { goBack() } label: {
                     HStack(spacing: SH.Space.xs) {
                         Image(systemName: "chevron.left").font(.system(size: SHSettingsControlMetrics.popupChevronSize + 2, weight: .semibold))
@@ -184,8 +184,11 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
                 .accessibilityLabel("Back to \(back)")
-                // The board lifts the link into the column's top margin and the page up under it.
-                .padding(.top, -AppLayout.settingsUpLinkLift)
+                // The board lifts the link into the column's top margin and the page up under it: the link draws
+                // `settingsUpLinkLift` above the column's top, and the page starts `settingsUpLinkDrop` below it.
+                // (A negative frame collapses to nothing, so the link keeps a little height and an offset does the lift.)
+                .padding(.bottom, -(AppLayout.settingsGroupHeaderHeight - AppLayout.settingsUpLinkDrop))
+                .offset(y: -AppLayout.settingsUpLinkLift)
                 localPage
             }
         } else {

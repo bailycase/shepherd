@@ -427,22 +427,23 @@ struct SettingsEditorCard<Actions: View, Content: View>: View {
 
     private var base: some View {
         VStack(spacing: 0) {
-            HStack(spacing: SH.Space.s) {
+            // The board's header: 40pt, 14pt in and between, the file's name in mono 12.5/500, "Edited" in lantern 8pt after it.
+            HStack(spacing: AppLayout.settingsEditorHeaderGap) {
                 Text(name)
-                    .font(.sh(.mono, weight: .medium))
+                    .font(.shMono(SHSettingsNavMetrics.subTextSize, .medium))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1).truncationMode(.middle)
                 if edited {
-                    Text("● edited").font(.sh(.caption)).foregroundStyle(Color.sh.lanternText).lineLimit(1).fixedSize()
+                    Text("Edited").font(.sh(.caption)).foregroundStyle(Color.sh.lanternText).lineLimit(1).fixedSize()
+                        .padding(.leading, -AppLayout.settingsEditorEditedPull)
                         .shTransition(.disclosure)
                 }
                 Spacer(minLength: SH.Space.m)
                 if let openIn { SettingsOpenIn(text: openIn, name: (name as NSString).lastPathComponent).id(name) }
                 actions
             }
-            .padding(.vertical, SH.Space.s)
-            .padding(.horizontal, SH.Space.l)
-            .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
+            .padding(.horizontal, AppLayout.settingsEditorHeaderInset)
+            .frame(height: AppLayout.settingsEditorHeaderHeight)
             SHHairline()
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }

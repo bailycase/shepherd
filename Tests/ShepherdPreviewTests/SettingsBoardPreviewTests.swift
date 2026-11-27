@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ShepherdSessions
+import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
 import Testing
@@ -52,4 +54,78 @@ struct SettingsBoardPreviewTests {
         await world.vm.projects.open(project)
         try await Preview.render("board-space", size: CGSize(width: AppLayout.settingsModalWidth, height: 860)) { SettingsView(vm: world.vm) }
     }
+
+    /// Agents ▸ Profiles (SettingsSubagents) and one profile open (SettingsSubagentEdit), from the board's four profiles.
+    @Test(arguments: ["list", "edit"])
+    func subagents(_ state: String) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = try SubagentFixtures.store(in: workspace.dir, populated: false)
+        let profiles: [(String, String, String, String, String)] = [
+            ("scout", "Find code and facts", "gpt-6-luna", "[read, grep, find, ls]", "Find code and facts. Report what you found with paths."),
+            ("reviewer", "Review for correctness and security.", "gpt-6.1-sol", "[read, grep, find, ls]",
+             "Review for correctness and security.\n\nReport actionable findings with paths and evidence.\n\nDo not edit files."),
+            ("planner", "A bounded plan before edits", "gpt-6-astra", "[read, grep, find, ls]", "Write a bounded plan before any edits."),
+            ("worker", "Implements one task", "claude-sonnet-5-5", "[read, grep, find, ls, bash, edit, write]", "Implement the assigned task.")]
+        for (name, description, model, tools, prompt) in profiles {
+            let text = "---\nname: \(name)\ndescription: \(description)\nmodel: \(model)\nthinking: high\ntools: \(tools)\n---\n\(prompt)\n"
+            try Data(text.utf8).write(to: store.directory.appendingPathComponent("\(name).md"))
+        }
+        let model = SubagentDefinitionsModel(store: store)
+        workspace.vm.madeSubagentDefinitions = model
+        workspace.vm.settingsSection = .subagents
+        await model.refresh()
+        if state == "edit" { await model.open(try #require(model.definitions.first { $0.file == "reviewer.md" })) }
+        try await Preview.render("board-subagents-\(state)", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight),
+                                 ready: { model.loaded && !model.busy }) {
+            SettingsView(vm: workspace.vm)
+        }
+        // The whole page, which the board's 680pt window cuts off under its extra rows.
+        if state == "edit" {
+            try await Preview.render("board-subagents-edit-tall", size: CGSize(width: AppLayout.settingsModalWidth, height: 1100),
+                                     ready: { model.loaded && !model.busy }) {
+                SettingsView(vm: workspace.vm)
+            }
+        }
+    }
+
+    /// Instructions ▸ AGENTS.md with an unsaved edit (SettingsInstructionsEdit).
+    @Test func instructionsEdit() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let text = """
+        # How I work
+
+        - Prefer pnpm over npm. Use nix, not venvs.
+        - Smallest change that solves the problem.
+        - Reuse local patterns before adding new ones.
+
+        ## UI work
+
+        - A board the user sends is the spec.
+        - Render light and dark before calling it done.
+
+        ## Git
+
+        - Branches: feat/… or fix/… off main.
+        - Conventional commits, no AI attribution.
+
+        ## Tests
+
+        - Protect real behavior, not coverage.
+        - Investigate a failing test before changing it.
+
+        """
+        try workspace.server.instructions.save(.agents, content: text)
+        try await workspace.seed(workspace.server.state)
+        let model = workspace.vm.instructions
+        await model.refresh()
+        model.setText(text.replacingOccurrences(of: "Smallest change", with: "The smallest change"), file: .agents)
+        workspace.vm.settingsSection = .instructions
+        model.editing = true
+        try await Preview.render("board-instructions-edit", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
 }
+

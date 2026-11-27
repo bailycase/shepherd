@@ -108,7 +108,7 @@ private struct InstructionsEditorCard: View {
     /// The open file's saves, each one restorable (a save another Mac made is there too).
     private var history: some View {
         Button("History") { showsHistory.toggle() }
-            .buttonStyle(.sh(.secondary, size: .s))
+            .buttonStyle(.sh(.ghost, size: .s))
             .disabled(model.local?.historyProblem != nil)
             .popover(isPresented: $showsHistory, arrowEdge: .bottom) {
                 ScrollView(.vertical) {
@@ -127,10 +127,10 @@ private struct InstructionsEditorCard: View {
     /// Revert and the primary Save; both wait for an edit.
     @ViewBuilder private var revertAndSave: some View {
         Button("Revert") { model.revert() }
-            .buttonStyle(.sh(.secondary, size: .s))
+            .buttonStyle(.sh(.ghost, size: .s))
             .disabled(!edited || model.busy)
         Button { Task { await model.save() } } label: { Text("Save") }
-        .buttonStyle(.sh(.primary, size: .s))
+        .buttonStyle(.sh(.bold, size: .s))
         .keyboardShortcut("s", modifiers: .command)
         .disabled(!model.canSave)
     }
