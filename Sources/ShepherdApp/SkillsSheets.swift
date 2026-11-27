@@ -33,33 +33,35 @@ struct SkillsDirectorySheet: View {
     @State private var selected: String?
     @State private var preview: SkillPreview?
     @State private var invocation: SkillInvocation = .automatic
+    /// Bumped by Try again so the list loads once more.
+    @State private var retry = 0
     @Environment(\.openURL) private var openURL
 
     enum Sort: String, CaseIterable { case installs, name }
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
-    private var listKey: String { "\(query)|\(ranking.rawValue)|\(topic ?? "")" }
+    private var listKey: String { "\(query)|\(ranking.rawValue)|\(topic ?? "")|\(retry)" }
 
     var body: some View {
         let hosts = vm.skillsHosts
         SkillsSheetFrame(title: "Browse skills.sh",
                          subtitle: "The open directory of agent skills. Anything you install goes to the whole fleet.", close: close) {
-            Button { openURL(SkillsDirectory.home) } label: { Label("Open skills.sh", systemImage: "arrow.up.right.square") }
-                .buttonStyle(.sh(.ghost, size: .s))
+            Button("Open skills.sh") { openURL(SkillsDirectory.home) }
+                .buttonStyle(SkillsLinkStyle())
         } content: {
             VStack(spacing: 0) {
                 SkillsSearchBar(text: $query)
-                    .padding(.horizontal, AppLayout.skillsSheetSides)
                 filters
-                    .padding(.horizontal, AppLayout.skillsSheetSides)
-                    .padding(.top, SH.Space.l)
-                    .padding(.bottom, SH.Space.l)
                 HStack(spacing: 0) {
-                    list(hosts)
-                        .frame(width: AppLayout.skillsBrowseListWidth)
-                    SHHairline(.vertical)
-                    detail(hosts)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    if let failure {
+                        SkillsDirectoryProblem(failure: failure) { retry += 1 }
+                    } else {
+                        list(hosts)
+                            .frame(width: AppLayout.skillsBrowseListWidth)
+                        SHHairline(.vertical)
+                        detail(hosts)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
                 }
                 .overlay(alignment: .top) { SHHairline() }
             }
@@ -72,55 +74,58 @@ struct SkillsDirectorySheet: View {
 
     @ViewBuilder private var filters: some View {
         let sh = Color.sh
-        if searching {
-            HStack(spacing: SH.Space.m + SH.Space.xxs) {
-                let term = Text("“\(query.trimmingCharacters(in: .whitespaces))”").foregroundStyle(sh.textPrimary)
-                Text("\(results.count) \(results.count == 1 ? "skill" : "skills") for \(term)")
-                    .font(.shSans(AppLayout.skillsSummarySize))
-                    .foregroundStyle(sh.textSecondary)
-                Spacer(minLength: SH.Space.m)
-                Menu {
-                    Picker("Sort", selection: $sort) {
-                        Text("Installs").tag(Sort.installs)
-                        Text("Name").tag(Sort.name)
+        Group {
+            if searching {
+                HStack(spacing: AppLayout.skillsFilterGap) {
+                    let term = Text("“\(query.trimmingCharacters(in: .whitespaces))”").foregroundStyle(sh.textPrimary)
+                    Text("\(results.count) \(results.count == 1 ? "skill" : "skills") for \(term)")
+                        .font(.shSans(AppLayout.skillsSummarySize))
+                        .foregroundStyle(sh.textSecondary)
+                    Spacer(minLength: SH.Space.m)
+                    Menu {
+                        Picker("Sort", selection: $sort) {
+                            Text("Installs").tag(Sort.installs)
+                            Text("Name").tag(Sort.name)
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Text("Sort: \(sort == .installs ? "Installs" : "Name")")
                     }
-                    .pickerStyle(.inline)
-                } label: {
-                    Text("Sort: \(sort == .installs ? "Installs" : "Name")")
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-            .frame(height: AppLayout.skillsTopicHeight)
-        } else {
-            HStack(spacing: SH.Space.m + SH.Space.xxs) {
-                SHSegmentedPicker("List", selection: Binding(get: { ranking }, set: { ranking = $0; topic = nil }),
-                                  options: DirectoryRanking.allCases.map { ($0, $0.title) })
-                SHHairline(.vertical).frame(height: AppLayout.skillsTopicHeight - SH.Space.m)
-                ScrollView(.horizontal) {
-                    HStack(spacing: SH.Space.s) {
-                        topicChip("All", selected: topic == nil) { topic = nil }
-                        ForEach(SkillsDirectory.topics, id: \.title) { item in
-                            topicChip(item.title, selected: topic == item.title) { topic = item.title }
+                .frame(height: AppLayout.skillsTopicHeight)
+            } else {
+                HStack(spacing: AppLayout.skillsFilterGap) {
+                    SHSegmentedPicker("List", selection: Binding(get: { ranking }, set: { ranking = $0; topic = nil }),
+                                      options: DirectoryRanking.allCases.map { ($0, $0.title) })
+                    SHHairline(.vertical).frame(height: AppLayout.skillsFilterRule)
+                    ScrollView(.horizontal) {
+                        HStack(spacing: SH.Space.xxs) {
+                            topicChip("All", selected: topic == nil) { topic = nil }
+                            ForEach(SkillsDirectory.topics, id: \.title) { item in
+                                topicChip(item.title, selected: topic == item.title) { topic = item.title }
+                            }
                         }
                     }
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
         }
+        .padding(.horizontal, AppLayout.skillsSheetSides)
+        .padding(.vertical, SH.Space.l)
     }
 
     private func topicChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         let sh = Color.sh
         return Button(action: action) {
             Text(title)
-                .font(.shSans(AppLayout.skillsNoteSize, selected ? .semibold : .regular))
+                .font(.shSans(AppLayout.skillsSummarySize, selected ? .medium : .regular))
                 .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
-                .padding(.horizontal, SH.Space.m + SH.Space.xxs)
+                .padding(.horizontal, AppLayout.skillsTopicPadding)
                 .frame(height: AppLayout.skillsTopicHeight)
-                .background(selected ? sh.bgSelected : Color.clear, in: Capsule())
-                .overlay { if !selected { Capsule().strokeBorder(sh.lineSubtle) } }
-                .contentShape(Capsule())
+                .background(selected ? sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -132,20 +137,20 @@ struct SkillsDirectorySheet: View {
         let sh = Color.sh
         let shown = sorted(results)
         return VStack(spacing: 0) {
-            if !searching && failure == nil {
-                HStack {
-                    Text(topic.map { "\($0) · \(ranking.title)" } ?? ranking.heading).shSettingsLabel(table: true)
+            if !searching {
+                HStack(spacing: SH.Space.l) {
+                    Text(topic.map { "\($0) · \(ranking.title)" } ?? ranking.heading)
                     Spacer()
-                    Text("Installs").shSettingsLabel(table: true)
+                    Text("Installs")
                 }
-                .padding(.leading, SH.Space.m + SH.Space.xxs)
-                .padding(.trailing, SH.Space.xl)
+                .font(.shSans(AppLayout.skillsNoteSize))
+                .foregroundStyle(sh.textTertiary)
+                .padding(.leading, AppLayout.skillsRowLeading)
+                .padding(.trailing, AppLayout.skillsRowTrailing)
                 .frame(height: AppLayout.skillsHeaderHeight)
                 .overlay(alignment: .bottom) { SHHairline() }
             }
-            if let failure {
-                SkillsDirectoryProblem(failure: failure)
-            } else if shown.isEmpty {
+            if shown.isEmpty {
                 Text(loading ? "Loading skills.sh…" : searching ? "No skills match." : "Nothing here yet.")
                     .font(.shSans(AppLayout.skillsSummarySize))
                     .foregroundStyle(sh.textTertiary)
@@ -183,34 +188,29 @@ struct SkillsDirectorySheet: View {
     @ViewBuilder private func detail(_ hosts: [SkillsHost]) -> some View {
         if let skill = results.first(where: { $0.id == selected }) {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
+                VStack(alignment: .leading, spacing: AppLayout.skillsDetailGap) {
                     SkillPreviewTitle(name: skill.name, source: skill.source, official: skill.official,
                                       meta: "\(DirectoryPresentation.installs(skill.installs)) installs")
                     actions(skill, hosts: hosts)
-                    if let install = model.installs[skill.id], install.isRunning || install.failure != nil {
-                        SkillInstallCard(install: install)
-                            .shTransition(.disclosure)
-                    }
                     if let preview, preview.skill == skill {
                         if let summary = preview.summary {
                             Text(summary)
-                                .shText(size: AppLayout.skillsPreviewTextSize, lineHeight: AppLayout.skillsRailLineHeight)
+                                .shText(size: AppLayout.skillsSummarySize + 0.5, lineHeight: AppLayout.skillsSummaryLine)
                                 .foregroundStyle(Color.sh.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         SkillPreviewCard(lines: preview.lines, tokens: preview.tokens,
-                                         height: searching ? AppLayout.skillsPreviewSearchHeight : AppLayout.skillsPreviewBrowseHeight)
+                                         height: AppLayout.skillsPreviewBrowseHeight)
                         SkillFilesBlock(entries: preview.entries, note: SkillsPresentation.scriptsNote(paths: preview.paths))
                         moreFrom(skill, hosts: hosts)
                     } else {
                         SHBusyLabel("Reading the skill…").frame(maxWidth: .infinity)
                     }
                 }
-                .padding(.vertical, SH.Space.xl + SH.Space.xxs)
+                .padding(.vertical, AppLayout.skillsSheetSides - SH.Space.xxs)
                 .padding(.horizontal, AppLayout.skillsSheetSides)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .shAnimation(.disclosure, value: model.installs[skill.id])
         } else {
             Text(failure == nil ? "Pick a skill to see what it does." : "")
                 .font(.shSans(AppLayout.skillsSummarySize))
@@ -221,38 +221,38 @@ struct SkillsDirectorySheet: View {
 
     private func actions(_ skill: DirectorySkill, hosts: [SkillsHost]) -> some View {
         let state = SkillResultState(skill, model: model, hosts: hosts)
+        let sh = Color.sh
+        let running = model.installs[skill.id]
         // A flow, not an HStack: a narrow detail pane wraps whole controls onto a second line
         // instead of squeezing their labels into fragments.
-        return SHFlowLayout(spacing: SH.Space.m) {
+        return SHFlowLayout(spacing: AppLayout.skillsActionGap) {
             switch state {
             case .installed:
-                Label("Installed", systemImage: "checkmark")
-                    .font(.shSans(AppLayout.skillsSummarySize, .medium))
-                    .foregroundStyle(Color.sh.done)
+                Text("Installed").skillsWord(sh.done)
             case .update:
-                Button { Task { await model.update(skill.slug, in: vm.skillsHosts) } } label: {
-                    Label("Update", systemImage: "arrow.down.to.line")
-                }
-                .buttonStyle(.sh(.primary))
-            case .install, .installing:
-                Button { install(skill) } label: { Label("Install", systemImage: "arrow.down.to.line") }
+                Button("Update") { Task { await model.update(skill.slug, in: vm.skillsHosts) } }
                     .buttonStyle(.sh(.primary))
-                    .disabled(state != .install)
+            case .install:
+                Button("Install") { install(skill) }
+                    .buttonStyle(.sh(.primary))
+                if let reason = running?.failure { Text(reason).skillsWord(sh.failed) }
+                SkillUsePicker(invocation: $invocation)
+            case .installing:
+                Text(hosts.count > 1 ? "Installing on \(hosts.count) Macs…" : "Installing…").skillsWord(sh.textPrimary)
+                    .shShimmer(active: true)
                 SkillUsePicker(invocation: $invocation)
             }
-            Button { openURL(SkillsDirectory.page(of: skill)) } label: {
-                Label("View on skills.sh", systemImage: "arrow.up.right.square")
-            }
-            .buttonStyle(.sh(.ghost, size: .s))
+            Button("View on skills.sh") { openURL(SkillsDirectory.page(of: skill)) }
+                .buttonStyle(SkillsLinkStyle(dim: true))
         }
     }
 
     /// The rest of the skill's repository that this list shows, and every skill in it.
     @ViewBuilder private func moreFrom(_ skill: DirectorySkill, hosts: [SkillsHost]) -> some View {
         let others = results.filter { $0.source == skill.source && $0.id != skill.id }
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            Text("More in \(skill.source)").shSettingsLabel(table: true)
-            SHFlowLayout(spacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            Text("More in \(skill.source)").skillsHeading()
+            SHFlowLayout(spacing: SH.Space.xl, lineSpacing: SH.Space.xs) {
                 ForEach(others) { other in
                     Button { selected = other.id } label: {
                         HStack(spacing: SH.Space.xs) {
@@ -261,18 +261,14 @@ struct SkillsDirectorySheet: View {
                                 Text("✓").foregroundStyle(Color.sh.done)
                             }
                         }
-                        .font(.shSans(AppLayout.skillsNoteSize))
+                        .font(.shSans(AppLayout.skillsSummarySize))
                         .foregroundStyle(Color.sh.textSecondary)
-                        .padding(.horizontal, SH.Space.m + SH.Space.xxs)
-                        .frame(height: AppLayout.skillsTopicHeight)
-                        .overlay { Capsule().strokeBorder(Color.sh.lineSubtle) }
-                        .contentShape(Capsule())
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
                 Button("Pick from the whole repo…") { openRepo(skill.source) }
-                    .buttonStyle(.shLink(font: .shSans(AppLayout.skillsNoteSize)))
-                    .frame(height: AppLayout.skillsTopicHeight)
+                    .buttonStyle(SkillsLinkStyle(size: AppLayout.skillsSummarySize))
             }
         }
     }
@@ -350,40 +346,42 @@ private struct SkillResultRow: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("skills.result")
         let sh = Color.sh
-        HStack(alignment: .center, spacing: SH.Space.m + SH.Space.xxs) {
+        HStack(alignment: .center, spacing: SH.Space.l) {
             if let rank {
                 Text("\(rank)")
-                    .font(.shMono(AppLayout.skillsMetaSize))
+                    .font(.shSans(AppLayout.skillsNoteSize))
                     .foregroundStyle(sh.textTertiary)
                     .frame(width: AppLayout.skillsResultRankWidth, alignment: .trailing)
             }
-            VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 HStack(spacing: SH.Space.s) {
                     Text(name)
-                        .font(.shMono(AppLayout.skillsNameSize, .semibold))
+                        .font(.shMono(AppLayout.skillsSummarySize, .semibold))
                         .lineLimit(1)
-                    if skill.official { SHOfficialSeal(size: AppLayout.skillsNameSize) }
+                    if skill.official {
+                        Text("Official").font(.shSans(AppLayout.skillsNoteSize)).foregroundStyle(sh.textTertiary).fixedSize()
+                    }
                 }
                 Text(skill.source)
-                    .font(.shMono(AppLayout.skillsMetaSize))
+                    .font(.shMono(AppLayout.skillsNoteSize))
                     .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: SH.Space.xs) {
+            VStack(alignment: .trailing, spacing: SH.Space.xxs + 1) {
                 Text(DirectoryPresentation.installs(skill.installs))
-                    .font(.shMono(AppLayout.skillsDetailTextSize))
+                    .font(.shMono(AppLayout.skillsNoteSize))
                     .foregroundStyle(sh.textPrimary)
                 status
             }
             .frame(width: AppLayout.skillsResultInstallsWidth, alignment: .trailing)
         }
         .padding(.vertical, SH.Space.m)
-        .padding(.leading, SH.Space.m + SH.Space.xxs)
-        .padding(.trailing, SH.Space.xl)
+        .padding(.leading, AppLayout.skillsRowLeading)
+        .padding(.trailing, AppLayout.skillsRowTrailing)
         .frame(minHeight: AppLayout.skillsResultMinHeight)
         .background(selected ? sh.bgSelected : hovering ? sh.bgHover : Color.clear)
-        .overlay(alignment: .top) { if !first { SHHairline() } }
+        .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
@@ -408,52 +406,40 @@ private struct SkillResultRow: View, Equatable {
         let sh = Color.sh
         switch state {
         case .install:
-            Button("Install", action: install).buttonStyle(.sh(.secondary, size: .s))
+            Button("Install", action: install).buttonStyle(.plain).skillsWord(sh.textPrimary, size: AppLayout.skillsNoteSize)
         case .installing:
-            HStack(spacing: SH.Space.s) {
-                Text("Installing")
-                    .font(.shSans(AppLayout.skillsMetaSize))
-                    .foregroundStyle(sh.textSecondary)
-                SkillInstallMeter()
-            }
+            Text("Installing…").skillsWord(sh.textSecondary, size: AppLayout.skillsNoteSize)
         case .installed:
-            Label("Installed", systemImage: "checkmark")
-                .font(.shSans(AppLayout.skillsNoteSize))
-                .foregroundStyle(sh.done)
+            Text("Installed").font(.shSans(AppLayout.skillsNoteSize)).foregroundStyle(sh.textTertiary)
         case .update:
-            SHUpdatePill()
+            Text("Update").skillsWord(sh.lanternText, size: AppLayout.skillsNoteSize)
         }
     }
 }
 
-/// An install's progress as a thin bar: done, on its way, waiting (SkillInstallState).
-private struct SkillInstallMeter: View {
-    var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SHSkillMetrics.budgetGap) {
-            ForEach([sh.done, sh.running, sh.lineStrong], id: \.self) { color in
-                RoundedRectangle(cornerRadius: SHSkillMetrics.budgetGap).fill(color)
-            }
-        }
-        .frame(width: AppLayout.skillsProgressWidth, height: AppLayout.skillsProgressHeight)
-        .accessibilityHidden(true)
-    }
-}
-
-/// Why the directory couldn't be reached.
+/// Why the directory couldn't be reached: the board's centered words, and Try again.
 struct SkillsDirectoryProblem: View {
     let failure: SkillsDirectoryError
+    var retry: () -> Void = {}
 
     var body: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.l) {
+        VStack(spacing: SH.Space.xxs) {
             Text(failure.description)
-                .shText(size: AppLayout.skillsSummarySize, lineHeight: AppLayout.skillsNoteLineHeight)
+                .font(.shSans(AppLayout.skillsSummarySize, .medium))
+                .foregroundStyle(sh.textPrimary)
+            Text("Your installed skills still work. Check your connection and try again.")
+                .font(.shSans(AppLayout.skillsSummarySize))
                 .foregroundStyle(sh.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again", action: retry)
+                .buttonStyle(SkillsLinkStyle(size: AppLayout.skillsSummarySize))
+                .padding(.top, SH.Space.m + SH.Space.xxs)
         }
-        .padding(AppLayout.skillsSheetSides)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, AppLayout.skillsSheetSides)
+        .padding(.top, AppLayout.skillsSheetSides)
+        .padding(.bottom, AppLayout.skillsEmptyLift)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -484,19 +470,19 @@ struct AddSkillsSheet: View {
         let hosts = vm.skillsHosts
         SkillsSheetFrame(title: "Add skills from a repo",
                          subtitle: "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies the skills you pick into "
-                             + "its own pi's skills, and the fleet carries them to every Mac.", close: close) {
+                             + "its own pi’s skills, and the fleet carries them to every Mac.", close: close) {
             EmptyView()
         } content: {
             VStack(spacing: 0) {
-                HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                HStack(spacing: AppLayout.skillsFilterGap + SH.Space.xxs) {
                     field
                     Button("Look up") { Task { await lookUp() } }
-                        .buttonStyle(.sh(.secondary, size: .l))
+                        .buttonStyle(SkillsLinkStyle())
                         .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || lookingUp)
                         .keyboardShortcut(.defaultAction)
                 }
                 .padding(.horizontal, AppLayout.skillsSheetSides)
-                .padding(.bottom, SH.Space.l)
+                .padding(.bottom, SH.Space.l + SH.Space.xxs)
                 if let problem {
                     SHInlineProblem(problem)
                         .padding(.horizontal, AppLayout.skillsSheetSides)
@@ -542,9 +528,8 @@ struct AddSkillsSheet: View {
             }
         }
         .padding(.horizontal, SH.Space.l)
-        .frame(height: AppLayout.skillsRepoFieldHeight)
-        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-        .shBorder(sh.lineStrong, radius: SH.Radius.m)
+        .frame(height: AppLayout.skillsSearchHeight)
+        .shBorder(sh.lineStrong, radius: AppLayout.skillsFieldRadius)
     }
 
     // MARK: The picker
@@ -564,12 +549,12 @@ struct AddSkillsSheet: View {
                         .foregroundStyle(sh.textPrimary)
                     Spacer()
                     Button("Select all new") { picked = Set(newPaths) }
-                        .buttonStyle(.shLink(color: sh.running, font: .shSans(AppLayout.skillsNoteSize)))
+                        .buttonStyle(SkillsLinkStyle(size: AppLayout.skillsNoteSize))
                         .disabled(newPaths.isEmpty || picked.count == newPaths.count)
                 }
-                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
-                .frame(height: AppLayout.skillsPreviewHeaderHeight)
-                .background(sh.bgSunken)
+                .padding(.leading, AppLayout.skillsRowLeading)
+                .padding(.trailing, AppLayout.skillsRowTrailing)
+                .frame(height: AppLayout.skillsHeaderHeight)
                 .overlay(alignment: .bottom) { SHHairline() }
                 ScrollView(.vertical) {
                     LazyVStack(spacing: 0) {
@@ -607,12 +592,12 @@ struct AddSkillsSheet: View {
     @ViewBuilder private var detail: some View {
         if let found, let skill = found.skills.first(where: { $0.path == selected }) {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: SH.Space.xl) {
+                VStack(alignment: .leading, spacing: AppLayout.skillsDetailGap) {
                     SkillPreviewTitle(name: skill.name, source: skill.path.isEmpty ? found.repo : "\(found.repo) › \(skill.path)",
                                       official: false, meta: nil)
                     if !skill.summary.isEmpty {
                         Text(skill.summary)
-                            .shText(size: AppLayout.skillsPreviewTextSize, lineHeight: AppLayout.skillsRailLineHeight)
+                            .shText(size: AppLayout.skillsSummarySize + 0.5, lineHeight: AppLayout.skillsSummaryLine)
                             .foregroundStyle(Color.sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -620,7 +605,7 @@ struct AddSkillsSheet: View {
                                      height: AppLayout.skillsPreviewRepoHeight)
                     SkillFilesBlock(entries: skill.files, note: SkillsPresentation.scriptsNote(entries: skill.files))
                 }
-                .padding(.vertical, SH.Space.xl + SH.Space.xxs)
+                .padding(.vertical, AppLayout.skillsSheetSides - SH.Space.xxs)
                 .padding(.horizontal, AppLayout.skillsSheetSides)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -634,10 +619,8 @@ struct AddSkillsSheet: View {
     private func footer(_ hosts: [SkillsHost]) -> some View {
         let sh = Color.sh
         let install = installKey.flatMap { model.installs[$0] }
-        return HStack(spacing: SH.Space.l) {
-            Text("Use them")
-                .font(.shSans(AppLayout.skillsSummarySize))
-                .foregroundStyle(sh.textSecondary)
+        return SHSheetFooter {
+            Text("Use them").foregroundStyle(sh.textSecondary)
             SHSegmentedPicker("Use them", selection: $invocation,
                               options: [(.automatic, "Automatically"), (.slashOnly, "Only with /skill")])
             if let install {
@@ -647,7 +630,7 @@ struct AddSkillsSheet: View {
                     .foregroundStyle(install.failure != nil ? sh.failed : sh.textSecondary)
                     .lineLimit(1)
             }
-            Spacer(minLength: SH.Space.m)
+        } actions: {
             Button("Cancel", action: close)
                 .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
@@ -655,11 +638,6 @@ struct AddSkillsSheet: View {
                 .buttonStyle(.sh(.primary))
                 .disabled(picked.isEmpty || install?.isRunning == true)
         }
-        .padding(.leading, AppLayout.skillsSheetSides)
-        .padding(.trailing, SH.Space.xl + SH.Space.xxs)
-        .frame(height: AppLayout.skillsFooterHeight)
-        .background(sh.bgSunken)
-        .overlay(alignment: .top) { SHHairline() }
     }
 
     // MARK: Looking up and installing
@@ -775,15 +753,16 @@ private struct SkillPickRow: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let installed {
                 Text(installed)
-                    .font(.shSans(AppLayout.skillsMetaSize))
+                    .font(.shSans(AppLayout.skillsNoteSize, installed == "Installed" ? .regular : .medium))
                     .foregroundStyle(installed == "Installed" ? sh.textTertiary : sh.lanternText)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+        .padding(.leading, AppLayout.skillsRowLeading)
+        .padding(.trailing, AppLayout.skillsRowTrailing)
         .frame(minHeight: AppLayout.skillsPickerRowHeight)
         .background(selected ? sh.bgSelected : Color.clear)
-        .overlay(alignment: .top) { if !first { SHHairline() } }
+        .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .accessibilityElement(children: .combine)
@@ -793,8 +772,37 @@ private struct SkillPickRow: View, Equatable {
 
 // MARK: Shared parts
 
-/// A skills sheet: its title and line under it, a trailing action and the close button, then
-/// its content.
+/// The boards' sheet words: a 500-weight link in primary ink (`dim`: the plain, secondary one).
+private struct SkillsLinkStyle: ButtonStyle {
+    var size: CGFloat = AppLayout.skillsSheetTextSize
+    var dim = false
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let sh = Color.sh
+        configuration.label
+            .font(.shSans(size, dim ? .regular : .medium))
+            .foregroundStyle(dim ? sh.textSecondary : sh.textPrimary)
+            .opacity(enabled ? configuration.isPressed ? 0.6 : 1 : 0.4)
+            .lineLimit(1)
+            .fixedSize()
+            .contentShape(Rectangle())
+    }
+}
+
+private extension View {
+    /// A state's word beside the actions: 500 weight.
+    @MainActor func skillsWord(_ color: Color, size: CGFloat = AppLayout.skillsSheetTextSize) -> some View {
+        font(.shSans(size, .medium)).foregroundStyle(color).lineLimit(1)
+    }
+
+    /// A block's heading in the preview: 12/600.
+    @MainActor func skillsHeading() -> some View {
+        font(.shSans(AppLayout.skillsNoteSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+    }
+}
+
+/// A skills sheet: its title and line under it, a trailing link, then its content. Esc closes.
 private struct SkillsSheetFrame<Trailing: View, Content: View>: View {
     let title: String
     let subtitle: String
@@ -803,55 +811,44 @@ private struct SkillsSheetFrame<Trailing: View, Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: SH.Space.l) {
-                VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
+            HStack(alignment: .top, spacing: SH.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     Text(title)
-                        .font(.shSans(AppLayout.skillsSheetTitleSize, .semibold))
-                        .foregroundStyle(sh.textPrimary)
+                        .font(.shSans(M.sheetTitleSize, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .frame(minHeight: M.sheetTitleLine, alignment: .leading)
                         .accessibilityAddTraits(.isHeader)
-                    Text(subtitle)
-                        .font(.shSans(AppLayout.skillsSummarySize))
-                        .foregroundStyle(sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SHSheetSubtitle(subtitle)
+                        .frame(maxWidth: AppLayout.skillsSubtitleWidth, alignment: .leading)
                 }
                 Spacer(minLength: SH.Space.l)
-                HStack(spacing: SH.Space.s) {
-                    trailing
-                    Button(action: close) {
-                        Image(systemName: "xmark")
-                            .font(.shSans(AppLayout.skillsMetaSize, .semibold))
-                            .foregroundStyle(sh.textSecondary)
-                            .frame(width: AppLayout.skillsSheetCloseSize, height: AppLayout.skillsSheetCloseSize)
-                            .overlay { Circle().strokeBorder(sh.lineStrong) }
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityLabel("Close")
-                }
+                trailing
             }
-            .padding(.top, SH.Space.xl + SH.Space.xxs)
+            .padding(.top, M.sheetTop)
             .padding(.bottom, SH.Space.l + SH.Space.xxs)
-            .padding(.leading, AppLayout.skillsSheetSides)
-            .padding(.trailing, SH.Space.xl + SH.Space.xxs)
+            .padding(.horizontal, M.sheetInset)
+            .background {
+                Button("Close", action: close).keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
+            }
             content
         }
         .frame(minWidth: AppLayout.skillsSheetMinWidth, idealWidth: AppLayout.skillsSheetWidth,
                minHeight: AppLayout.skillsSheetMinHeight, idealHeight: AppLayout.skillsSheetHeight)
-        .background(sh.bgWindow)
+        .background(Color.sh.bgRaised)
+        .shControlScale(.sheet)
     }
 }
 
-/// The directory's search field: 38pt, a glass, 14pt text, and a clear button once there's text.
+/// The directory's search field: 36pt on a hover fill, 14pt text, and a clear button once there's text.
 private struct SkillsSearchBar: View {
     @Binding var text: String
     @FocusState private var focused: Bool
 
     var body: some View {
         let sh = Color.sh
-        HStack(spacing: SH.Space.m + SH.Space.xxs) {
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "magnifyingglass")
                 .font(.shSans(AppLayout.skillsSearchTextSize))
                 .foregroundStyle(sh.textTertiary)
@@ -872,16 +869,15 @@ private struct SkillsSearchBar: View {
                 .accessibilityLabel("Clear")
             }
         }
-        .padding(.leading, SH.Space.l)
-        .padding(.trailing, SH.Space.m)
+        .padding(.horizontal, SH.Space.l)
         .frame(height: AppLayout.skillsSearchHeight)
-        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-        .shBorder(focused ? sh.lantern : sh.lineStrong, radius: SH.Radius.m)
+        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: AppLayout.skillsFieldRadius))
+        .padding(.horizontal, AppLayout.skillsSheetSides)
         .onAppear { focused = true }
     }
 }
 
-/// How the skill will be used, beside Install: "Use: Automatically ⌄".
+/// How the skill will be used, beside Install: "Use: Automatically ⌄", as words.
 private struct SkillUsePicker: View {
     @Binding var invocation: SkillInvocation
 
@@ -895,14 +891,15 @@ private struct SkillUsePicker: View {
         } label: {
             let use = Text("Use:").foregroundStyle(Color.sh.textTertiary)
             Text("\(use) \(invocation == .automatic ? "Automatically" : "Only with /skill")")
+                .font(.shSans(AppLayout.skillsSheetTextSize))
+                .foregroundStyle(Color.sh.textSecondary)
         }
-        .menuStyle(.button)
-        .buttonStyle(.sh(.secondary))
+        .menuStyle(.borderlessButton)
         .fixedSize()
     }
 }
 
-/// A previewed skill's name, where it's from, its seal, and a line about it.
+/// A previewed skill's name over where it's from, who vouches for it and how many installed it.
 private struct SkillPreviewTitle: View {
     let name: String
     let source: String
@@ -911,72 +908,42 @@ private struct SkillPreviewTitle: View {
 
     var body: some View {
         let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
             Text(name)
                 .font(.shMono(AppLayout.skillsPreviewNameSize, .semibold))
                 .foregroundStyle(sh.textPrimary)
+                .frame(minHeight: AppLayout.skillsPreviewNameLine, alignment: .leading)
                 .textSelection(.enabled)
-            HStack(spacing: SH.Space.m) {
-                Text(source)
-                    .font(.shMono(AppLayout.skillsNoteSize))
-                    .foregroundStyle(sh.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if official {
-                    Label("Official", systemImage: "checkmark.seal")
-                        .font(.shSans(AppLayout.skillsMetaSize - 0.5))
-                        .foregroundStyle(sh.running)
-                }
-                if let meta {
-                    Text("· \(meta)")
-                        .font(.shSans(AppLayout.skillsNoteSize))
-                        .foregroundStyle(sh.textTertiary)
-                        .lineLimit(1)
-                }
-            }
+            Text([source, official ? "Official" : nil, meta].compactMap(\.self).joined(separator: " · "))
+                .font(.shSans(AppLayout.skillsSummarySize))
+                .foregroundStyle(sh.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 }
 
-/// An install on its way: the line that shimmers while it runs.
-private struct SkillInstallCard: View {
-    let install: SkillInstall
-
-    var body: some View {
-        let sh = Color.sh
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack(spacing: SH.Space.m) {
-                Text(SkillsPresentation.installLine(install))
-                    .font(.shSans(AppLayout.skillsOptionTitleSize, .medium))
-                    .shShimmer(active: install.isRunning)
-                    .foregroundStyle(install.failure != nil ? sh.failed : sh.textPrimary)
-                Spacer(minLength: SH.Space.m)
-            }
-        }
-        .padding(.vertical, SH.Space.l)
-        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
-        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
-        .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
-    }
-}
-
-/// A skill's files and what its scripts are.
+/// A skill's files as mono words, and what its scripts are.
 private struct SkillFilesBlock: View {
     let entries: [SkillFileEntry]
     let note: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            Text("Files").shSettingsLabel(table: true)
-            SHFlowLayout(spacing: SH.Space.s) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            Text("Files").skillsHeading()
+            SHFlowLayout(spacing: SH.Space.xl, lineSpacing: SH.Space.xs) {
                 ForEach(entries) { entry in
-                    SHSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
-                                    kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
+                    HStack(spacing: SH.Space.xs) {
+                        Text(SkillsPresentation.chip(entry)).foregroundStyle(sh.textSecondary)
+                        if entry.isDirectory { Text("\(entry.fileCount)").foregroundStyle(sh.textTertiary) }
+                    }
+                    .font(.shMono(AppLayout.skillsNoteSize))
                 }
             }
             Text(note)
                 .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                .foregroundStyle(Color.sh.textTertiary)
+                .foregroundStyle(sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -992,54 +959,49 @@ private struct SkillPreviewCard: View {
     var body: some View {
         let sh = Color.sh
         VStack(spacing: 0) {
-            HStack(spacing: SH.Space.m) {
-                Image(systemName: SHGlyph.document.symbolName)
-                    .font(.shSans(AppLayout.skillsMetaSize))
-                    .foregroundStyle(sh.textTertiary)
-                    .accessibilityHidden(true)
+            HStack(spacing: SH.Space.m + SH.Space.xxs) {
                 Text("SKILL.md")
-                    .font(.shMono(AppLayout.skillsDetailTextSize))
-                    .foregroundStyle(sh.textSecondary)
+                    .font(.shMono(AppLayout.skillsSummarySize, .medium))
+                    .foregroundStyle(sh.textPrimary)
                 Spacer(minLength: SH.Space.m)
                 if tokens > 0 {
                     Text("\(SkillsText.tokenNote(tokens)) when used")
-                        .font(.shSans(AppLayout.skillsMetaSize))
+                        .font(.shSans(AppLayout.skillsNoteSize))
                         .foregroundStyle(sh.textTertiary)
                 }
             }
             .padding(.horizontal, SH.Space.l)
             .frame(height: AppLayout.skillsPreviewHeaderHeight)
-            .background(sh.bgSunken)
             .overlay(alignment: .bottom) { SHHairline() }
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(lines) { line in
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        HStack(alignment: .center, spacing: 0) {
                             Text("\(line.number)")
-                                .font(.shMono(AppLayout.skillsPreviewNumberSize))
+                                .font(.shMono(AppLayout.skillsNoteSize))
                                 .foregroundStyle(sh.textTertiary)
-                                .frame(width: AppLayout.skillsPreviewGutter - SH.Space.m, alignment: .trailing)
-                                .padding(.trailing, SH.Space.m)
+                                .frame(width: AppLayout.skillsPreviewGutter - SH.Space.l, alignment: .trailing)
+                                .padding(.trailing, SH.Space.l)
                             Text(line.text)
-                                .font(.shMono(AppLayout.skillsDetailTextSize))
+                                .font(.shMono(AppLayout.skillsNoteSize))
                                 .lineLimit(1)
                         }
-                        .frame(maxWidth: .infinity, minHeight: AppLayout.skillsPreviewLineHeight, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: AppLayout.skillsPreviewLineHeight)
                     }
                 }
                 .padding(.vertical, SH.Space.m)
                 .textSelection(.enabled)
             }
             .overlay(alignment: .bottom) {
-                LinearGradient(colors: [sh.bgWindow.opacity(0), sh.bgWindow], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [sh.bgRaised.opacity(0), sh.bgRaised], startPoint: .top, endPoint: .bottom)
                     .frame(height: AppLayout.skillsPreviewFade)
                     .allowsHitTesting(false)
             }
         }
         .frame(height: height)
-        .background(sh.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
-        .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
+        .shBorder(sh.lineStrong, radius: AppLayout.skillsCardRadius)
     }
 }
 
@@ -1067,7 +1029,7 @@ struct SkillPreviewLine: Identifiable, Equatable {
                 case .headingMarker: styled[lower..<upper].foregroundColor = sh.textTertiary
                 case .heading:
                     styled[lower..<upper].foregroundColor = sh.textPrimary
-                    styled[lower..<upper].font = .shMono(AppLayout.skillsDetailTextSize, .semibold)
+                    styled[lower..<upper].font = .shMono(AppLayout.skillsNoteSize, .semibold)
                 case .bullet: styled[lower..<upper].foregroundColor = sh.lanternText
                 case .code: styled[lower..<upper].foregroundColor = sh.synString
                 }

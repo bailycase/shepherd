@@ -109,7 +109,7 @@ extension AppLayout {
     static let skillsCardRadius: CGFloat = 10
     /// The list's columns: a switch, the skill, its source, how it's used, when it changed, and
     /// the disclosure chevron, 16pt apart; its header 30pt tall, a row at least 54.
-    static let skillsHeaderHeight: CGFloat = 30
+    static let skillsHeaderHeight: CGFloat = 32
     static let skillsRowMinHeight: CGFloat = 54
     static let skillsColumnGap: CGFloat = 16
     static let skillsSwitchColumn: CGFloat = 30
@@ -140,41 +140,53 @@ extension AppLayout {
     // Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch,
     // SettingsSkillsRepo): a 1200 × 860 sheet (860 × 600 at least); Add from repo's picker is
     // 560pt wide beside the preview.
-    static let skillsSheetWidth: CGFloat = 1200
-    static let skillsSheetHeight: CGFloat = 860
+    static let skillsSheetWidth: CGFloat = 920
+    static let skillsSheetHeight: CGFloat = 800
     static let skillsSheetMinWidth: CGFloat = 860
     static let skillsSheetMinHeight: CGFloat = 600
-    static let skillsSheetListWidth: CGFloat = 560
+    static let skillsSheetListWidth: CGFloat = 500
     // Browse's results stay narrower than Add from repo's picker so the selected skill keeps
     // the larger share: about 440pt of the 860pt minimum, 780pt of the 1200pt ideal.
-    static let skillsBrowseListWidth: CGFloat = 420
+    static let skillsBrowseListWidth: CGFloat = 380
     static let skillsSheetSides: CGFloat = 22
-    static let skillsSheetTitleSize: CGFloat = 17
+    static let skillsSheetTitleSize: CGFloat = 15
     static let skillsSheetCloseSize: CGFloat = 28
-    static let skillsSearchHeight: CGFloat = 38
+    static let skillsSearchHeight: CGFloat = 36
     static let skillsSearchTextSize: CGFloat = 14
-    static let skillsTopicHeight: CGFloat = 26
-    static let skillsResultMinHeight: CGFloat = 58
-    static let skillsResultRankWidth: CGFloat = 22
-    static let skillsResultInstallsWidth: CGFloat = 96
+    static let skillsTopicHeight: CGFloat = 24
+    static let skillsResultMinHeight: CGFloat = 54
+    static let skillsResultRankWidth: CGFloat = 18
+    static let skillsResultInstallsWidth: CGFloat = 84
     static let skillsProgressWidth: CGFloat = 64
     static let skillsProgressHeight: CGFloat = 3
     static let skillsPreviewNameSize: CGFloat = 18
     static let skillsPreviewTextSize: CGFloat = 13
     static let skillsPreviewHeaderHeight: CGFloat = 34
-    static let skillsPreviewLineHeight: CGFloat = 20
+    static let skillsPreviewLineHeight: CGFloat = 19
     static let skillsPreviewGutter: CGFloat = 34
     static let skillsPreviewNumberSize: CGFloat = 10.5
-    static let skillsPreviewFade: CGFloat = 56
+    static let skillsPreviewFade: CGFloat = 40
     /// The SKILL.md preview's height: Browse's, Search's, and Add from repo's.
-    static let skillsPreviewBrowseHeight: CGFloat = 240
-    static let skillsPreviewSearchHeight: CGFloat = 280
+    static let skillsPreviewBrowseHeight: CGFloat = 316
+    static let skillsPreviewSearchHeight: CGFloat = 316
     static let skillsPreviewRepoHeight: CGFloat = 340
-    static let skillsPickerRowHeight: CGFloat = 34
-    static let skillsPickerNameWidth: CGFloat = 168
-    static let skillsFooterHeight: CGFloat = 60
+    static let skillsPickerRowHeight: CGFloat = 40
+    static let skillsPickerNameWidth: CGFloat = 150
+    static let skillsSheetTextSize: CGFloat = 13
+    static let skillsPreviewNameLine: CGFloat = 24
+    static let skillsSubtitleWidth: CGFloat = 620
+    static let skillsFieldRadius: CGFloat = 10
+    static let skillsFilterGap: CGFloat = 14
+    static let skillsFilterRule: CGFloat = 16
+    static let skillsTopicPadding: CGFloat = 9
+    static let skillsRowLeading: CGFloat = 14
+    static let skillsRowTrailing: CGFloat = 16
+    static let skillsDetailGap: CGFloat = 16
+    static let skillsActionGap: CGFloat = 18
+    static let skillsSummaryLine: CGFloat = 20.0 / 13
+    static let skillsEmptyLift: CGFloat = 80
     static let skillsRepoFieldHeight: CGFloat = 38
-    static let skillsRepoFieldTextSize: CGFloat = 13.5
+    static let skillsRepoFieldTextSize: CGFloat = 13
 
     // Settings ▸ MCP servers (SettingsMCP): the servers beside the same 280pt rail as Skills.
     static let mcpExplanationWidth: CGFloat = 700
