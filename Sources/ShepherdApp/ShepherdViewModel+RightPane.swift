@@ -124,9 +124,11 @@ extension ShepherdViewModel {
     var isRightPaneOpen: Bool { rightPaneContent != nil }
 
     /// How much of the column's trailing side the thread's pane card takes, which the toolbar leaves it (GXSidePane): what the
-    /// layout on screen drew, or its saved width until it has.
+    /// layout on screen drew, or its saved width until it has. An inspected subagent's card sits under the toolbar (GXSubagents),
+    /// which keeps the column's whole width: its reserve is 0, never the saved width a drawn 0 would fall back to.
     var sidePaneReserve: CGFloat {
         guard isRightPaneOpen else { return 0 }
+        if case .inspector = rightPaneContent { return 0 }
         let state = subagentInspector
         return state.reserved > 0 ? state.reserved : (state.width > 0 ? state.width : state.defaultWidth) + AppLayout.paneCardEdge
     }
