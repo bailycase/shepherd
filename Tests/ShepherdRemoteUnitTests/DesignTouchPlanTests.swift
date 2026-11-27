@@ -12,6 +12,28 @@ struct DesignTouchPlanTests {
     private static func path(_ raw: String) -> DesignPath { DesignPath(raw)! }
     private static let paths = (0..<6).map { path("Board\($0).dc.html") }
 
+    // MARK: Web view budget
+
+    @Test func aCoolDeviceWithMemoryTakesFourWebViewsAndAnyStrainTwo() {
+        let memory: UInt64 = 8_000_000_000
+        #expect(DesignRenderBudget.webViews(memory: memory, heat: .nominal, lowPower: false, strained: false) == DesignRenderBudget.wide)
+        #expect(DesignRenderBudget.webViews(memory: memory, heat: .fair, lowPower: false, strained: false) == DesignRenderBudget.wide)
+        #expect(DesignRenderBudget.webViews(memory: memory, heat: .serious, lowPower: false, strained: false) == DesignRenderBudget.base)
+        #expect(DesignRenderBudget.webViews(memory: memory, heat: .nominal, lowPower: true, strained: false) == DesignRenderBudget.base)
+        #expect(DesignRenderBudget.webViews(memory: memory, heat: .nominal, lowPower: false, strained: true) == DesignRenderBudget.base)
+        // A 4 GB device reports about 3.8 GB, a 6 GB one about 5.7, an 8 GB one about 7.5.
+        #expect(DesignRenderBudget.webViews(memory: 3_800_000_000, heat: .nominal, lowPower: false, strained: false) == DesignRenderBudget.base)
+        #expect(DesignRenderBudget.webViews(memory: 5_700_000_000, heat: .nominal, lowPower: false, strained: false) == DesignRenderBudget.base)
+        #expect(DesignRenderBudget.webViews(memory: 7_500_000_000, heat: .nominal, lowPower: false, strained: false) == DesignRenderBudget.wide)
+    }
+
+    @Test func liveBoardsTakeFromTheRendersButOneAlwaysRuns() {
+        #expect(DesignRenderBudget.renders(webViews: 4, live: 0) == 4)
+        #expect(DesignRenderBudget.renders(webViews: 4, live: 1) == 3)
+        #expect(DesignRenderBudget.renders(webViews: 2, live: 1) == 1)
+        #expect(DesignRenderBudget.renders(webViews: 2, live: 5) == 1)
+    }
+
     // MARK: Live views
 
     @Test func oneBoardIsLiveTheSelectedOneBeforeTheVisibleOnes() {

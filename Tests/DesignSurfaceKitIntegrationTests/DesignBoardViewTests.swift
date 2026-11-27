@@ -274,6 +274,34 @@ struct DesignBoardViewTests {
         #expect(small.width == 100 * scale && small.height == 75 * scale)
     }
 
+    /// A web view that has drawn one board draws another (the iPhone and iPad renderers' reuse): a new document at the
+    /// new board's size, and the first board again after it, as a new web view would.
+    @Test func aViewRetargetedToAnotherBoardDrawsThatBoardAtItsSize() async throws {
+        let harness = try BoardHarness()
+        let main = try harness.source("Main.dc.html")
+        try harness.write("Second.dc.html", main.replacingOccurrences(of: "rgb(10, 20, 30)", with: "rgb(200, 100, 50)")
+            .replacingOccurrences(of: "width: 400px; height: 300px", with: "width: 300px; height: 200px"))
+        let view = try harness.view("Main.dc.html")
+        let first = try await view.load()
+        #expect(first == CGSize(width: 400, height: 300))
+
+        view.retarget(to: try #require(DesignPath("Second.dc.html")), size: CGSize(width: 300, height: 200))
+        #expect(view.board.rawValue == "Second.dc.html")
+        let second = try await view.load()
+        #expect(second == CGSize(width: 300, height: 200))
+        let image = try await view.snapshot()
+        let scale = image.width / 300
+        #expect(scale >= 1 && image.height == 200 * scale)
+        let pixel = try #require(Self.pixel(of: image, x: 295 * scale, y: 195 * scale))
+        #expect(abs(pixel.red - 200) <= 3 && abs(pixel.green - 100) <= 3 && abs(pixel.blue - 50) <= 3, "\(pixel)")
+
+        view.retarget(to: try #require(DesignPath("Main.dc.html")), size: CGSize(width: 400, height: 300))
+        _ = try await view.load()
+        let again = try await view.snapshot()
+        let back = try #require(Self.pixel(of: again, x: 395 * scale, y: 295 * scale))
+        #expect(again.width == 400 * scale && abs(back.red - 10) <= 3 && abs(back.green - 20) <= 3 && abs(back.blue - 30) <= 3, "\(back)")
+    }
+
     // MARK: Failures
 
     @Test func aMissingBoardFailsToLoad() async throws {

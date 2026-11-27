@@ -55,6 +55,30 @@ public enum DesignTouchLivePlan {
     }
 }
 
+/// How many web views the iOS Design tool holds at once, live board and off-screen renderers together. Two is the
+/// plan (the live board and one renderer); a device with 8 GB or more, cool, and not saving power, takes
+/// four, so a design of hundreds of boards fills in sooner. Any sign of strain (a memory warning, heat, Low Power
+/// Mode) is back to two: a web view is a process of its own, and the system ends the largest first.
+public enum DesignRenderBudget {
+    public static let base = 2
+    public static let wide = 4
+    /// Physical memory a device needs for `wide`: an 8 GB device (reports about 7.5 GB or more), not a 6 GB one (about 5.7 GB).
+    /// Each web view's process takes about 230 MB while it draws.
+    public static let wideMemory: UInt64 = 7_000_000_000
+
+    public enum Heat: Int, Comparable, Sendable {
+        case nominal, fair, serious, critical
+        public static func < (a: Heat, b: Heat) -> Bool { a.rawValue < b.rawValue }
+    }
+
+    public static func webViews(memory: UInt64, heat: Heat, lowPower: Bool, strained: Bool) -> Int {
+        memory >= wideMemory && heat <= .fair && !lowPower && !strained ? wide : base
+    }
+
+    /// Renders that may run at once beside `live` live boards: never fewer than one.
+    public static func renders(webViews cap: Int, live: Int) -> Int { max(1, cap - live) }
+}
+
 /// Split View's "Send to the thread" (iPadSplitView): the boards the viewer chose, as images for
 /// another thread's composer, and a line that carries none of the design's own text. Board
 /// titles, names and file names are the agent's (or an imported canvas's) words; the thread

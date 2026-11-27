@@ -606,6 +606,8 @@ final class PadDesignRasterizer {
         var keep: () -> Bool = { true }
         let wanted: () -> Bool
         let done: (CGImage?) -> Void
+        /// Draws tried and lost to the web view's process ending (the system takes it under memory pressure): one more is made.
+        var lost = 0
     }
 
     private var queue: [Job] = []
@@ -616,22 +618,37 @@ final class PadDesignRasterizer {
     /// Jobs reading or rendering now (by key and picture), so a plan that asks again doesn't draw twice.
     private var inFlight: Set<String> = []
     private var scheduled = false
-    /// The web views the plan allows on iOS (`DesignTouchLivePlan`), live boards and renders together.
-    static let webViewCap = 2
+    /// The web views the device allows (`DesignRenderBudget`), live boards and renders together.
+    static var webViewCap: Int {
+        let info = ProcessInfo.processInfo
+        let heat = DesignRenderBudget.Heat(rawValue: info.thermalState.rawValue) ?? .critical
+        let strained = strainedUntil.map { $0 > Date() } ?? false
+        return DesignRenderBudget.webViews(memory: info.physicalMemory, heat: heat, lowPower: info.isLowPowerModeEnabled, strained: strained)
+    }
+    /// A memory warning holds the budget at its base for a while.
+    private static var strainedUntil: Date?
     /// Web views alive besides this rasterizer's (the designs' live boards); set by `PadDesignRendering`.
     var liveViews: () -> Int = { 0 }
-    /// One render at a time while a live board holds a view; two while none does (a canvas zoomed far
-    /// out has no live board), so a design of hundreds of boards fills in twice as fast.
-    private var running: Bool { active >= max(1, Self.webViewCap - liveViews()) }
-    /// Its web view, while one renders.
+    /// Its web views, working or waiting for the next board.
     private(set) var webViews = 0
     /// Boards drawn in a web view and boards read back from disk since launch (fixtures measure them).
     private(set) var rendered = 0
     private(set) var restored = 0
 
+    init() {
+        NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                Self.strainedUntil = Date().addingTimeInterval(120)
+                self?.dismissIdle()
+            }
+        }
+    }
+
     func discard(surface: DesignSurface) {
         let removed = queue.filter { $0.surface === surface }
         queue.removeAll { $0.surface === surface }
+        for view in idle where view.surface === surface { view.removeFromSuperview(); webViews -= 1 }
+        idle.removeAll { $0.surface === surface }
         for job in removed { job.done(nil) }
     }
 
@@ -655,6 +672,7 @@ final class PadDesignRasterizer {
     /// Takes jobs in order that are still wanted: a board kept on disk is read back (no web view, however
     /// busy the renderers are), one not kept is drawn when a web view is free.
     private func run() {
+        let cap = DesignRenderBudget.renders(webViews: Self.webViewCap, live: liveViews())
         var index = 0
         while index < queue.count {
             let job = queue[index]
@@ -664,7 +682,7 @@ final class PadDesignRasterizer {
                 guard reading < Self.maxReads else { index += 1; continue }
                 queue.remove(at: index)
                 restore(job, picture)
-            } else if running {
+            } else if active >= cap {
                 index += 1
             } else {
                 queue.remove(at: index)
@@ -714,33 +732,78 @@ final class PadDesignRasterizer {
         }
     }
 
+    /// Web views a finished render left, drawn into again by the next job of the same design: a new web view
+    /// takes about ten times as long to boot a board as one that has drawn another (its process and the compiled runtime kept).
+    private var idle: [DesignBoardView] = []
+
     private func start(_ job: Job) {
         active += 1
         inFlight.insert(flightKey(job))
+        let reused = idle.firstIndex { $0.surface === job.surface }.map { idle.remove(at: $0) }
+        if reused == nil, let other = idle.first {
+            // A view of another design's makes room: the views alive stay within the budget.
+            idle.removeFirst()
+            other.removeFromSuperview()
+            webViews -= 1
+        }
+        let view = reused ?? DesignBoardView(surface: job.surface, board: job.path, size: job.size)
+        if reused != nil { view.retarget(to: job.path, size: job.size) } else { webViews += 1 }
+        view.isUserInteractionEnabled = false
+        PadDesignStage.shared.hold(view)
         Task { [weak self] in
-            let view = DesignBoardView(surface: job.surface, board: job.path, size: job.size)
-            view.isUserInteractionEnabled = false
-            PadDesignStage.shared.hold(view)
-            self?.webViews += 1
             var image: CGImage?
+            var lost = false
             do {
                 try await view.load()
                 image = try await view.snapshot(width: min(job.size.width, job.width))
+            } catch DesignBoardError.terminated {
+                lost = true
             } catch {
                 image = nil
             }
-            view.removeFromSuperview()
-            guard let self else { return }
-            self.webViews -= 1
+            guard let self else { view.removeFromSuperview(); return }
             self.active -= 1
             self.inFlight.remove(self.flightKey(job))
+            if image != nil, self.webViews <= Self.webViewCap {
+                self.idle.append(view)
+            } else {
+                view.removeFromSuperview()
+                self.webViews -= 1
+            }
+            if lost, job.lost == 0 {
+                // The process ended under the render: once more, in a web view of its own.
+                var again = job
+                again.lost += 1
+                self.enqueue(again)
+                self.run()
+                return
+            }
             if let image, let picture = job.picture {
                 self.rendered += 1
                 if job.keep() { DesignPictures.save(image, as: picture) }
             }
             job.done(image)
             self.run()
+            self.dismissIdleSoon()
         }
+    }
+
+    private var dismissing: Task<Void, Never>?
+
+    /// A moment after the last render, the web views left over are let go.
+    private func dismissIdleSoon() {
+        dismissing?.cancel()
+        guard !idle.isEmpty else { return }
+        dismissing = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled, self.active == 0, self.queue.isEmpty else { return }
+            self.dismissIdle()
+        }
+    }
+
+    private func dismissIdle() {
+        for view in idle { view.removeFromSuperview(); webViews -= 1 }
+        idle.removeAll()
     }
 }
 
