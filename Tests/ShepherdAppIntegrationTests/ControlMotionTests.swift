@@ -210,9 +210,12 @@ struct ControlMotionTests {
         let centroids = recording.inBetween.compactMap { $0.centroid(differingFrom: recording.before, minimumMass: 0.5) }
         #expect(!centroids.isEmpty, "caught arriving in \(recording.frames.count) frames")
         if reduceMotion {
-            // The redesign's toast casts a lift shadow, which fades up beside the card and wanders this column's centroid by a
-            // few points (5.5 at most); a rise from the bottom edge moves it by more than 15.
-            #expect(centroids.allSatisfy { abs($0 - rest) < 8 }, "it fades where it rests (\(rest)): \(centroids)")
+            // The toast's own fill, not the haze of its lift shadow around it.
+            let fill = recording.settled.fill(over: recording.before)
+            let rest = try #require(recording.settled.centroid(differingFrom: recording.before, within: fill))
+            let centroids = recording.inBetween.compactMap { $0.centroid(differingFrom: recording.before, minimumMass: 0.3, within: fill) }
+            #expect(!centroids.isEmpty, "caught fading in \(recording.frames.count) frames")
+            #expect(centroids.allSatisfy { abs($0 - rest) < 5 }, "it fades where it rests (\(rest)): \(centroids)")
         } else {
             #expect(centroids.contains { $0 > rest + 15 }, "it rises from below \(rest): \(centroids)")
         }
@@ -425,15 +428,30 @@ fileprivate extension MotionRecording.Frame {
 
     /// Along the strip, the middle of what differs from `other`, weighted by how much: a view
     /// fading in place keeps it still, one moving carries it along. Nil for too faint a change.
-    func centroid(differingFrom other: Self, minimumMass: Double = 0.05) -> Double? {
+    /// `within` limits it to those pixels of the strip.
+    func centroid(differingFrom other: Self, minimumMass: Double = 0.05, within: Range<Int>? = nil) -> Double? {
         let a = profile, b = other.profile
         var mass = 0.0, moment = 0.0
-        for index in a.indices {
+        for index in a.indices where within?.contains(index) ?? true {
             let difference = abs(a[index] - b[index])
             mass += difference
             moment += difference * Double(index)
         }
         return mass >= minimumMass ? moment / mass : nil
+    }
+
+    /// The pixels of the strip a card's own fill covers, once it has settled over `other`: the longest stretch where
+    /// what differs is one level. A lift shadow's haze is a ramp beside it, higher at the card's edge, that drags the
+    /// whole column's `centroid` toward it.
+    func fill(over other: Self) -> Range<Int> {
+        let difference = zip(profile, other.profile).map { abs($0 - $1) }
+        var best = 0..<0, start = 0
+        for index in 1...difference.count {
+            if index < difference.count, abs(difference[index] - difference[index - 1]) < 0.002 { continue }
+            if index - start > best.count, difference[start] > 0.002 { best = start..<index }
+            start = index
+        }
+        return best
     }
 
     /// The middle of what stands out from a switch's track on the strip: its knob. The redesign's track is light when on
