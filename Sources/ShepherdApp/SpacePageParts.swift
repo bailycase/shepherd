@@ -183,12 +183,14 @@ struct SpaceSection<Trailing: View, Content: View>: View {
     var footnote: String?
     /// Build only the rows near the screen: a list that can run to hundreds of rows.
     var lazy = false
+    /// Draws the header row (or not) whatever it holds: a header whose only link may be absent.
+    var showsHeader: Bool?
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.m) {
-            if !title.isEmpty || note != nil || Trailing.self != EmptyView.self {
+            if showsHeader ?? (!title.isEmpty || note != nil || Trailing.self != EmptyView.self) {
             HStack(alignment: .firstTextBaseline, spacing: SH.Space.l) {
                 Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).fixedSize()
                     .accessibilityAddTraits(.isHeader)

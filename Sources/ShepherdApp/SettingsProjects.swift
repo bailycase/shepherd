@@ -53,7 +53,8 @@ struct ProjectsSettings: View {
     private var list: some View {
         SpacePageFrame {
             SpacePageHeader(title: "Spaces")
-            SpaceSection(title: "", footnote: model.error ?? "Grouping changes only Shepherd. Instructions and settings follow folders on disk.", lazy: true) {
+            SpaceSection(title: "", footnote: model.error ?? "Grouping changes only Shepherd. Instructions and settings follow folders on disk.", lazy: true,
+                         showsHeader: !model.rows.isEmpty && model.addHost != nil && model.addHost?.unavailable == nil) {
                 if !model.rows.isEmpty, model.addHost != nil, model.addHost?.unavailable == nil {
                     Button("Add space") { adding = model.addHost.map { vm.addSpaceModel(host: $0) } }.buttonStyle(SpaceLinkStyle())
                 }
