@@ -154,6 +154,43 @@ struct DesignBoardActionsFlowTests {
         #expect(DesignViewRecord.strippingFence(from: prompt) == DesignScreenModel.variationsMessage, "the thread shows the words alone")
     }
 
+    /// "Ask for another direction" (the dashed tile after the last board), pressed, puts the words in
+    /// the design chat's composer and focuses it; nothing reaches the agent until the person sends.
+    @Test func theAnotherDirectionTilePutsItsWordsInTheComposerAndSendsNothing() async throws {
+        AccessibilityNode.enable()
+        let opened = try await open()
+        defer { opened.app.stop(); opened.window.close() }
+        let vm = opened.vm
+        _ = try await opened.app.readyThread(opened.agent.agent.id)
+        let screen = vm.designScreen(opened.design.id)
+        let store = vm.threadStores.store(for: opened.agent.agent.id)
+        let input = vm.threadStores.input(for: opened.agent.agent.id)
+        screen.paneTab = .comments
+        try await eventuallyOnMain("the tile after the last board") {
+            opened.window.layout()
+            return opened.window.controls().contains { $0.label == "Ask for another direction" }
+        }
+        let focusAsks = input.focusRequest
+        let tile = try opened.window.press("Ask for another direction")
+        #expect(ControlPress.undersized([tile], minimum: .desktop).isEmpty, "the tile's hit area is \(String(describing: tile.frame))")
+        #expect(store.draft == DesignScreenModel.anotherDirectionDraft && store.draft == "Draw another direction")
+        #expect(screen.paneTab == .chat, "the chat's tab shows its composer")
+        #expect(vm.focusedPaneID == opened.agent.agent.paneID && input.focusRequest == focusAsks + 1, "the composer takes the keyboard")
+        #expect(AppHarness.prompts(in: opened.log).isEmpty, "nothing is sent until the person sends it")
+    }
+
+    /// Words already drafted stay; the tile's words follow them.
+    @Test func theAnotherDirectionTileKeepsWhatIsAlreadyDrafted() async throws {
+        let opened = try await open()
+        defer { opened.app.stop(); opened.window.close() }
+        let vm = opened.vm
+        let screen = vm.designScreen(opened.design.id)
+        let store = vm.threadStores.store(for: opened.agent.agent.id)
+        store.draft = "Keep the header"
+        screen.draftAnotherDirection(store: store, input: vm.threadStores.input(for: opened.agent.agent.id)) {}
+        #expect(store.draft == "Keep the header\n\nDraw another direction")
+    }
+
     /// Present shows A focused in its own live view, which takes clicks: its link to B moves Play
     /// to B; on B, a link out of the design, and one to a board the design lacks, move nothing and
     /// navigate nowhere.

@@ -142,11 +142,12 @@ public struct SHTweakRow<Control: View>: View {
                 // A slider wider than the row leaves beside the label (the iPad's narrower pane)
                 // goes under it.
                 ViewThatFits(in: .horizontal) {
+                    // Leading, not a spacer after the control: a slider that takes the row's width (the Mac's) runs to its edge.
                     HStack(spacing: SHDesignMetrics.tweakRowSpacing) {
                         title
                         control
-                        Spacer(minLength: 0)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: SHDesignMetrics.tweakControlSpacing) {
                         title
                         control

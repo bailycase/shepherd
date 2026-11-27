@@ -18,7 +18,11 @@ struct DesignLayoutView: View {
     var body: some View {
         let _ = SHRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
-            DesignCanvasPane(screen: vm.designScreen(designID), vm: vm, designName: vm.design(designID)?.name ?? "")
+            DesignCanvasPane(screen: vm.designScreen(designID), vm: vm, designName: vm.design(designID)?.name ?? "",
+                             anotherDirection: { [vm, designID, agent = thread.agentID, pane = thread.paneID] in
+                                 vm.designScreen(designID).draftAnotherDirection(store: vm.threadStores.store(for: agent),
+                                                                                  input: vm.threadStores.input(for: agent)) { vm.focusedPaneID = pane }
+                             })
                 // The canvas's Git notices (Opened from Git, Pull paused) at its top center.
                 .overlay { DesignGitCanvasLayer(vm: vm, designID: designID, part: .notices) }
             DesignChatPane(vm: vm, screen: vm.designScreen(designID), model: model, thread: thread)
@@ -47,6 +51,9 @@ struct DesignCanvasPane: View {
     /// This Mac's view model, for the references' toast; nil for another host's design.
     var vm: ShepherdViewModel? = nil
     var designName = ""
+    /// "Ask for another direction" (the dashed tile after the last board): puts the words in the
+    /// design chat's composer. nil where the canvas has no chat beside it.
+    var anotherDirection: (() -> Void)?
 
     var body: some View {
         let host = screen.host
@@ -55,7 +62,7 @@ struct DesignCanvasPane: View {
         SHDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool,
                        selection: screen.selectionRings, hover: screen.hoverRing,
                        pins: screen.pins, openPin: { screen.openThread($0) }, popoverAnchor: screen.popoverAnchor,
-                       notes: screen.notes, actions: actions,
+                       notes: screen.notes, actions: actions, anotherDirection: screen.canAsk ? anotherDirection : nil,
                        move: { screen.move($0) },
                        contextMenu: referencing ? { [designName] pick in
                            await screen.contextMenu(for: pick, designName: designName, keys: KeybindingsStore.shared)
@@ -120,6 +127,17 @@ struct DesignCanvasPane: View {
             duplicate: { screen.duplicate(path) },
             play: screen.isInteractive(path) ? { screen.present(path) } : nil,
             implement: screen.referenceActions == nil ? nil : { screen.implementSelection(designName: designName) }))
+    }
+}
+
+extension DesignScreenModel {
+    /// "Ask for another direction": the chat's tab with "Draw another direction" in its composer
+    /// (after what is already drafted), which takes the keyboard. Nothing is sent until the person sends it.
+    func draftAnotherDirection(store: NativeThreadStore, input: ThreadInput, focus: () -> Void) {
+        store.draft = ComposerInsertion.inserting(Self.anotherDirectionDraft, into: store.draft)
+        paneTab = .chat
+        focus()
+        input.focus()
     }
 }
 
@@ -306,7 +324,7 @@ struct DesignToolbar: View, Equatable {
         SHDesignHeader(name, style: .toolbar, leadingInset: leadingInset, sidebar: showSidebar,
                        sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs,
                        center: jump.map { jump in
-                           AnyView(SHJumpField(shortcut: KeybindingsStore.shared.display(.commandPalette), isOpen: jumpOpen, action: jump))
+                           AnyView(SHJumpField(shortcut: KeybindingsStore.shared.display(.designJump), isOpen: jumpOpen, action: jump))
                        }) {
             if let screen, screen.pages.count > 1 {
                 SHPopupMenu(screen.pageName ?? "Pages") {

@@ -115,6 +115,7 @@ public struct SHDesignGitChip: View, Equatable {
     /// The label as "branch · state": the branch and the state, split once.
     private let branch: String?
     private let state: String
+    @State private var hovering = false
 
     public init(label: String, tone: SHGitTone, hint: String, isOpen: Bool = false, action: @escaping () -> Void) {
         self.label = label
@@ -137,7 +138,7 @@ public struct SHDesignGitChip: View, Equatable {
 
     public var body: some View {
         let sh = Color.sh
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
+        // Flat like the capsule's other chips: no border or fill of its own, only their hover (or open) round-ended fill.
         let amber = tone == .attention
         Button(action: action) {
             HStack(spacing: M.chipSpacing) {
@@ -155,10 +156,12 @@ public struct SHDesignGitChip: View, Equatable {
             }
             .padding(.horizontal, M.chipPadding)
             .frame(height: M.chipHeight)
-            .background(isOpen ? sh.bgSelected : .clear, in: shape)
-            .contentShape(shape)
+            .background(hovering || isOpen ? sh.bgHover : .clear, in: Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .shAnimation(.hover, value: hovering)
         .fixedSize()
         .help(hint)
         .accessibilityLabel("\(label). \(hint)")

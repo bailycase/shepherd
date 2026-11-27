@@ -75,11 +75,10 @@ struct DesignSystemReferencePage: View {
 
     // MARK: Header
 
-    /// The page's toolbar (DesignSystemPage): the name in 13 semibold with the Light | Dark switch after it, and in the
+    /// The page's toolbar (DesignSystemPage): the breadcrumb "Designs / name" (13) with the Light | Dark switch after it, and in the
     /// raised capsule Contents, Re-sync where the system has a project to read again, New design and ⋯.
     private var header: some View {
-        let M = SHDesignChrome.self
-        return HStack(spacing: SH.Space.m) {
+        HStack(spacing: SH.Space.m) {
             if let showSidebar = chrome.showSidebar {
                 Button(action: showSidebar) { Image(systemName: "sidebar.left") }
                     .buttonStyle(.shIcon)
@@ -87,17 +86,8 @@ struct DesignSystemReferencePage: View {
                     .accessibilityLabel("Show sidebar")
                     .padding(.trailing, SH.Space.l)
             }
-            Text(reference.title)
-                .font(.shSans(M.toolbarTextSize, .semibold))
-                .foregroundStyle(Color.sh.textPrimary)
-                .lineLimit(1)
-                .accessibilityAddTraits(.isHeader)
-            if let status = model.status {
-                Text(status.label)
-                    .font(.shSans(M.toolbarTextSize))
-                    .foregroundStyle(Color.sh.textTertiary)
-                    .shShimmer(active: status.state == .running)
-            }
+            // The design screen's breadcrumb: "Designs" goes back to the Designs page.
+            SHDesignBreadcrumb(reference.title, status: model.status) { vm.openDestination(.designs) }
             SHTweakSegmented("Appearance", selection: Binding(get: { scheme }, set: { appearance = $0 }),
                              options: [.init(ColorScheme.light, "Light"), .init(ColorScheme.dark, "Dark")])
                 .padding(.leading, SH.Space.m)

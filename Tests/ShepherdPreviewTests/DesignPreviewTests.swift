@@ -418,6 +418,30 @@ struct DesignPreviewTests {
                                   + "\"density\":{\"editor\":\"enum\",\"options\":[\"compact\",\"cozy\"],\"default\":\"cozy\",\"section\":\"Labels\"},")
     }
 
+    /// The Tweak pane's sliders and switches (DZTweak) at mid values, on and off, beside the same controls at the
+    /// Controls board's default look (the lower three), which is unchanged everywhere else.
+    @Test func designTweakControls() async throws {
+        try await Preview.renderMatrix("design-tweak-controls", size: CGSize(width: 420, height: 420)) {
+            VStack(spacing: 0) {
+                Group {
+                    SHTweakRow("Padding", layout: .slider) { SHValueSlider("Padding", value: .constant(24), in: 0...48, step: 1) { "\(Int($0))" } }
+                    SHTweakRow("Row height", layout: .slider) { SHValueSlider("Row height", value: .constant(46), in: 24...64, step: 1) { "\(Int($0))" } }
+                    SHTweakRow("Thickness", layout: .slider) { SHValueSlider("Thickness", value: .constant(48), in: 0...48, step: 1) { "\(Int($0))" } }
+                    SHTweakRow("Rounded") { Toggle("Rounded", isOn: .constant(true)).toggleStyle(.shSwitch).labelsHidden() }
+                    SHTweakRow("Shadow") { Toggle("Shadow", isOn: .constant(false)).toggleStyle(.shSwitch).labelsHidden() }
+                }
+                .shControlScale(.tweak)
+                Divider().padding(.vertical, SH.Space.l)
+                SHTweakRow("Padding", layout: .slider) { SHValueSlider("Padding", value: .constant(24), in: 0...48, step: 1) { "\(Int($0))" } }
+                SHTweakRow("Rounded") { Toggle("Rounded", isOn: .constant(true)).toggleStyle(.shSwitch).labelsHidden() }
+                SHTweakRow("Shadow") { Toggle("Shadow", isOn: .constant(false)).toggleStyle(.shSwitch).labelsHidden() }
+            }
+            .padding(SH.Space.xxl)
+            .frame(width: 420, height: 420, alignment: .top)
+            .background(Color.sh.bgRaised)
+        }
+    }
+
     /// Tweak (DZTweak) in each of its states: a card selected with every funnel card in scope, a
     /// board picked whole (its data-props alone), and nothing selected.
     @Test(arguments: ["element", "board", "empty"])

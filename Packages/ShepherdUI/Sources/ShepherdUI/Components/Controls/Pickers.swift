@@ -268,7 +268,8 @@ public struct SHValueSlider: View {
     }
 
     public var body: some View {
-        HStack(spacing: scale == .settings ? SHSettingsControlMetrics.sliderValueGap : SH.Space.l) {
+        let tweak = scale == .tweak
+        HStack(spacing: tweak ? SHTweakControlMetrics.sliderValueGap : scale == .settings ? SHSettingsControlMetrics.sliderValueGap : SH.Space.l) {
             SHSliderTrack(value: $value, range: range, step: step, editingChanged: editingChanged)
                 .accessibilityRepresentation {
                     Slider(value: $value, in: range, step: step) { Text(label) }
@@ -278,10 +279,10 @@ public struct SHValueSlider: View {
                         }
                 }
             Text(format(value))
-                .font(scale == .settings ? .sh(.caption) : .sh(.mono))
+                .font(tweak ? .shSans(SHTweakControlMetrics.valueSize) : scale == .settings ? .sh(.caption) : .sh(.mono))
                 .foregroundStyle(.sh.textSecondary)
                 .shContentTransition(.numeric())
-                .frame(minWidth: SHSliderMetrics.valueMinWidth, alignment: .trailing)
+                .frame(minWidth: tweak ? SHTweakControlMetrics.sliderValueWidth : SHSliderMetrics.valueMinWidth, alignment: .trailing)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { if let neutral { reset(to: neutral) } }
                 .help(neutral == nil ? "" : "Double-click to reset")
@@ -326,11 +327,14 @@ private struct SHSliderTrack: View {
     var body: some View {
         let sh = Color.sh
         // The Settings boards' slider: 180pt, a 4pt `lineSubtle` track, an 18pt knob in a 1px line.
-        let settings = scale == .settings
+        // The Tweak pane's (DZTweak) centers the knob on the value as the Settings boards do, and takes the row's width.
+        let tweak = scale == .tweak
+        let settings = scale == .settings || tweak
         let M = SHSettingsControlMetrics.self
-        let knob = settings ? M.sliderKnob : SHSliderMetrics.knob
-        let track = settings ? M.sliderTrack : SHSliderMetrics.track
-        let width = settings ? M.sliderWidth : SHSliderMetrics.width
+        let T = SHTweakControlMetrics.self
+        let knob = tweak ? T.sliderKnob : settings ? M.sliderKnob : SHSliderMetrics.knob
+        let track = tweak ? T.sliderTrack : settings ? M.sliderTrack : SHSliderMetrics.track
+        let width: CGFloat? = tweak ? nil : settings ? M.sliderWidth : SHSliderMetrics.width
         let height = max(SHSliderMetrics.height, knob)
         // The Controls board keeps the knob inside the track; the Settings boards center it on
         // the value, so it overhangs either end by half its width.
@@ -340,13 +344,13 @@ private struct SHSliderTrack: View {
             let x = CGFloat(fraction) * usable
             let filled = settings ? x : x + knob / 2
             ZStack(alignment: .leading) {
-                Capsule().fill(sh.lineStrong).frame(height: track)
-                Capsule().fill(sh.primary).frame(width: filled, height: track)
+                Capsule().fill(tweak ? sh.bgSelected : sh.lineStrong).frame(height: track)
+                Capsule().fill(tweak ? sh.textPrimary : sh.primary).frame(width: filled, height: track)
                 // A hairline ring outside the knob, as the board's 1px spread shadow draws.
                 Circle()
-                    .fill(settings ? sh.textPrimary : sh.knobOff)
-                    .background { Circle().fill(sh.lineStrong).padding(settings ? 0 : -SH.hairline(displayScale)) }
-                    .shadow(color: settings ? .clear : sh.knobShadow, radius: 1.5, y: 1)
+                    .fill(tweak ? sh.bgRaised : settings ? sh.textPrimary : sh.knobOff)
+                    .background { Circle().fill(tweak ? sh.lineSubtle : sh.lineStrong).padding(settings && !tweak ? 0 : -SH.hairline(displayScale)) }
+                    .shadow(color: tweak ? sh.liftNear : settings ? .clear : sh.knobShadow, radius: tweak ? 1 : 1.5, y: 1)
                     .frame(width: knob, height: knob)
                     .offset(x: settings ? x - knob / 2 : x)
             }
@@ -364,7 +368,8 @@ private struct SHSliderTrack: View {
                 editingChanged?(false)
             })
         }
-        .frame(width: width, height: height)
+        .frame(minWidth: width, maxWidth: width ?? .infinity)
+        .frame(height: height)
         .shEnabledOpacity(enabled)
         .shFocusRing(radius: height / 2)
         // Keyboard navigation only, like a native slider: a click must not take focus or ring it.
