@@ -449,7 +449,12 @@ private struct SHActivityCallRowView<Menu: View>: View {
                 #if os(macOS)
                 // The board's `.tl` (GXExpanded): the verb in words, the path or command in mono, then what came of it.
                 HStack(spacing: SH.Space.s) {
-                    Text(row.label).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
+                    // A tool's own name can be long: a verb keeps its words; a name past the cap truncates there, and reads before the detail.
+                    let longName = row.label.count > SHThreadMetrics.callLabelMaxCharacters
+                    Text(row.label).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                        .fixedSize(horizontal: !longName, vertical: false)
+                        .frame(maxWidth: longName ? SHThreadMetrics.callVerbMaxWidth * ThemeStore.shared.textScale : nil, alignment: .leading)
+                        .layoutPriority(1)
                     Text(row.detail).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1)
                         .truncationMode(row.isPath ? .head : .tail)
                         .padding(.trailing, openInWidth > 0 ? openInWidth + SH.Space.m : 0)
@@ -499,14 +504,20 @@ private struct SHActivityCallRowView<Menu: View>: View {
                         Button { onShowAll(row.id) } label: {
                             Text("… \(row.moreLines) more line\(row.moreLines == 1 ? "" : "s")")
                                 .frame(minHeight: SHThreadMetrics.callRowHeight, alignment: .leading)
+                                .padding(.vertical, SHThreadMetrics.callRowPress)
                         }
                         .buttonStyle(.shLink(font: .shMono(11)))
+                        // Pressed over the call rows' 24pt, drawn and laid out at the board's 20.
+                        .padding(.vertical, -SHThreadMetrics.callRowPress)
                     } else if row.truncated {
                         Button { onShowAll(row.id) } label: {
                             Text("Output truncated · open")
                                 .frame(minHeight: SHThreadMetrics.callRowHeight, alignment: .leading)
+                                .padding(.vertical, SHThreadMetrics.callRowPress)
                         }
                         .buttonStyle(.shLink(font: .shMono(11)))
+                        // Pressed over the call rows' 24pt, drawn and laid out at the board's 20.
+                        .padding(.vertical, -SHThreadMetrics.callRowPress)
                     }
                 }
                 .padding(.vertical, SH.Space.m)

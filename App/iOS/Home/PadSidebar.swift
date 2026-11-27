@@ -13,12 +13,15 @@ import ShepherdSidebar
 struct PadSidebar: View {
     /// Sliding over the thread: the card is opaque there, since the thread shows through its glass.
     var overlays = false
+    /// What the system's status bar takes at the window's top (an iPad's): the card starts at the edge under it, its buttons below it
+    /// (iPadSidebar, iPadThread). Nothing on iPhone Duo's inner display.
+    var topInset: CGFloat = 0
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
-        SHSidebar(topBar: PadSidebarTopBar()) {
+        SHSidebar(topBar: PadSidebarTopBar().padding(.top, topInset)) {
             ScrollView {
                 SidebarContent()
             }
@@ -28,33 +31,34 @@ struct PadSidebar: View {
                 await feed.refresh()
             }
         } footer: {
-            SidebarFooterBar()
+            SidebarFooterBar().overlay(alignment: .top) { SHHairline() }
         }
         .task { await feed.watch() }
-        .background(overlays ? Color.sh.bgBase : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xl))
+        .background(overlays ? Color.sh.bgBase : Color.clear, in: RoundedRectangle(cornerRadius: SHSidebarMetrics.panelRadius))
         .padding(SHSidebarMetrics.panelInset)
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
 
-/// The 44pt top bar (the Mac's `SHSidebarTopBar`, with the touch client's own buttons): Search, More (Stop all working threads) and Hide
+/// The 52pt top bar (the Mac's `SHSidebarTopBar`, with the touch boards' 40pt buttons): Search, More (Stop all working threads) and Hide
 /// sidebar.
 private struct PadSidebarTopBar: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        HStack(spacing: SHSidebarMetrics.topBarButtonGap) {
+        HStack(spacing: SH.Space.xxs) {
             Spacer(minLength: 0)
             Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
             StopAllWorkingMenu()
             Button("Hide sidebar", systemImage: "sidebar.left") { withSHAnimation(.pane) { navigator.padColumns = .detailOnly } }
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(.shIcon(size: SH.Height.touch))
+        .buttonStyle(.shIcon(size: SHSidebarMetrics.touchBarButton))
         .font(.sh(.ui))
         .imageScale(.large)
         .foregroundStyle(Color.sh.textSecondary)
-        .padding(.trailing, SHSidebarMetrics.topBarTrailing)
-        .frame(height: SH.Height.touch)
+        .padding(.trailing, SHSidebarMetrics.panelInset)
+        .frame(height: SHSidebarMetrics.touchBarHeight)
     }
 }
 
@@ -229,5 +233,25 @@ extension ForgeStore {
             return SidebarForgePin(entry.item, viewer: viewers[entry.host])
         }
         return (pins, lookup)
+    }
+}
+
+/// Show sidebar, while the card is away (DuoOpenSidePane, iPadThread): a screen at the detail's root offers it, in its bar or by its title.
+/// The split view's own was dropped with the split view (it left an empty column behind the card).
+struct PadSidebarButton: View {
+    /// A bar's item, which the bar styles; else a glass circle by the title.
+    var inBar = false
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let button = Button("Show sidebar", systemImage: "sidebar.left") { withSHAnimation(.pane) { navigator.padColumns = .all } }
+            .tint(Color.sh.textPrimary)
+        if inBar {
+            button
+        } else {
+            // The board's 40pt circle (DuoOpenSidePane), not the large control's.
+            button.labelStyle(.iconOnly).buttonStyle(.glass).buttonBorderShape(.circle)
+                .frame(width: MobileLayout.padHeaderButton, height: MobileLayout.padHeaderButton)
+        }
     }
 }

@@ -10,6 +10,7 @@ import ShepherdRemote
 struct ThreadWithSidePane: View {
     let ref: AgentRef
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(\.horizontalSizeClass) private var sizeClass
     /// False for a thread kept mounted behind the selected one (`PadDetailRoot`): the pane is the
     /// selected thread's alone, and its thread keeps its place in the view.
     @Environment(\.threadDetailActive) private var active
@@ -42,8 +43,8 @@ struct ThreadWithSidePane: View {
                     }
                 }
                 .environment(\.threadTitleMaxWidth, open && !alone ? threadWidth : nil)
-                // Beside the pane, the thread's title leads instead of centering across both.
-                .toolbarRole(open && !alone ? .editor : .automatic)
+                // The thread's title leads its bar instead of centering across it (iPadThread, DuoOpenSidePane).
+                .toolbarRole(sizeClass == .regular ? .editor : .automatic)
                 .shAnimation(.pane, value: open)
             }
         }

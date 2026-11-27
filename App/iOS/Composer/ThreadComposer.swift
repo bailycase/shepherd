@@ -41,6 +41,8 @@ struct ThreadComposer: View {
     @State private var dropTargeted = false
     /// The pill is narrower than `MobileLayout.narrowPillWidth`.
     @State private var narrow = false
+    /// The pill is narrower than `MobileLayout.thinkingPillWidth`.
+    @State private var compact = false
 
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
 
@@ -264,13 +266,15 @@ struct ThreadComposer: View {
             : "Follow up, or / for commands…"
         let offersCommands = !store.commands.isEmpty && !designChat
         let offersImages = acceptsImages(store)
-        // A narrow column (iPhone Duo's, beside its rail) gives a typed draft the chip's room.
+        // A narrow column (iPhone Duo's, beside its rail, or beside its side pane) keeps the model's name whole and drops the thinking level
+        // (DuoOpenSidePane's "claude-opus"), and gives a typed draft the chip's room.
         let showsModel = !(narrow && store.hasDraft)
         // A command draft shows in mono while its list is open (iPadPortrait).
         let fieldView = field(store: store, state: state, live: live, placeholder: placeholder, command: state.matches != nil)
         let trailingView = HStack(spacing: 0) {
             if showsModel, store.model != nil || store.supportedActions.contains("setModel") {
-                ModelChip(model: store.model, thinking: wide ? store.thinking.map(NativeThinkingLevel.title) : nil,
+                // The thinking level shows where the pill has room (480pt and wider), in a design's chat too (iPadDesign).
+                ModelChip(model: store.model, thinking: wide && !compact ? store.thinking.map(NativeThinkingLevel.title) : nil,
                           canChange: live && store.supportedActions.contains("setModel")) {
                     presentation.choosingModel = true
                 }
@@ -294,6 +298,7 @@ struct ThreadComposer: View {
             }
         }
         .onGeometryChange(for: Bool.self) { $0.size.width < MobileLayout.narrowPillWidth } action: { narrow = $0 }
+        .onGeometryChange(for: Bool.self) { $0.size.width < MobileLayout.thinkingPillWidth } action: { compact = $0 }
         .overlay {
             Capsule().strokeBorder(Color.sh.textTertiary, lineWidth: 1).opacity(dropTargeted ? 1 : 0)
                 .allowsHitTesting(false)

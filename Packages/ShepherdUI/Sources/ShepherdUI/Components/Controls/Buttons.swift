@@ -199,9 +199,12 @@ public struct SHIconButtonStyle: ButtonStyle {
     let hoverFill: Color?
     /// A circle rather than the rounded square (the composer's attach plus).
     let round: Bool
+    /// The least the button is pressed over, when its drawing is smaller: the press grows, the drawing and the room it takes do not.
+    let pressSize: CGFloat
 
     public init(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil, hoverFill: Color? = nil,
-                round: Bool = false) {
+                round: Bool = false, pressSize: CGFloat = 0) {
+        self.pressSize = pressSize
         self.round = round
         self.bordered = bordered
         self.isOn = isOn
@@ -220,8 +223,8 @@ extension ButtonStyle where Self == SHIconButtonStyle {
     public static var shIcon: SHIconButtonStyle { SHIconButtonStyle() }
 
     public static func shIcon(bordered: Bool = false, isOn: Bool = false, size: CGFloat = SH.Height.controlM, tint: Color? = nil,
-                              hoverFill: Color? = nil, round: Bool = false) -> SHIconButtonStyle {
-        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill, round: round)
+                              hoverFill: Color? = nil, round: Bool = false, pressSize: CGFloat = 0) -> SHIconButtonStyle {
+        SHIconButtonStyle(bordered: bordered, isOn: isOn, size: size, tint: tint, hoverFill: hoverFill, round: round, pressSize: pressSize)
     }
 }
 
@@ -251,6 +254,7 @@ private struct SHIconButton: View {
         // The boards' icon button: a rounded square (radius 7), not a circle, but in the toolbar's capsule.
         let round = style.round || roundHere
         let shape = RoundedRectangle(cornerRadius: round ? side / 2 : SH.Radius.s)
+        let slop = max(0, (style.pressSize - side) / 2)
         configuration.label
             .font(.system(size: 14, weight: .regular))
             .symbolRenderingMode(.monochrome)
@@ -265,6 +269,9 @@ private struct SHIconButton: View {
             // A pane toggle lights up however its pane opened (a menu, a shortcut, an agent).
             .shComponentAnimation(.hover, value: style.isOn)
             .shFocusRing(radius: round ? side / 2 : SH.Radius.s)
+            .padding(slop)
+            .contentShape(shape)
+            .padding(-slop)
     }
 }
 

@@ -57,8 +57,10 @@ public struct SHCapsuleComposer<Leading: View, Field: View, Trailing: View, Acti
                 .padding(.vertical, (M.capsuleHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
                 .padding(.leading, leading == nil ? SH.Space.xl - M.leadingPadding : 0)
                 .frame(minHeight: M.capsuleHeight, alignment: .leading)
+            // The model's name is read whole; the words give way to it.
             trailing
                 .frame(minHeight: M.capsuleHeight)
+                .layoutPriority(1)
             action
                 .frame(minHeight: M.capsuleHeight)
         }

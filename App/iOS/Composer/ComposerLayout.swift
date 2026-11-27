@@ -10,6 +10,9 @@ extension MobileLayout {
     /// A pill narrower than this (iPhone Duo's column beside its rail: about 349pt; an iPhone's is 358) lets a typed draft have the model
     /// chip's room (DuoClosedQueue).
     static let narrowPillWidth: CGFloat = 352
+    /// A pill narrower than this keeps the model's name and leaves the thinking level out of its chip: the thread column beside an open side
+    /// pane is "claude-opus", the one with room "claude-opus Medium" (DuoOpenSidePane, DuoOpenThread).
+    static let thinkingPillWidth: CGFloat = 480
     /// The composer's padding under the field.
     static let composerBottom: CGFloat = SH.Space.m
     /// The Up next rows' most height before they scroll: three rows (a steering one included)

@@ -92,10 +92,46 @@ struct SidePanePreviewTests {
     /// GXSubagents in the whole window: the real shell (sidebar, toolbar, workspace) with a thread whose store a fixture feeds, a tray row clicked
     /// (`toggleSubagentInspector`, which the row calls), and the inspector a card under the toolbar beside the thread.
     @Test func gxSubagentInspectorInTheWindow() async throws {
+        _ = try await renderInspectorWindow("gx-subagent-inspector-window", width: 1440)
+    }
+
+    /// The toolbar's pill (side-pane button and •••) stays at the window's top right while the inspector card is open, as GXSubagents
+    /// draws it: as far from the window's trailing edge as with no pane at all, at every width, with the sidebar shown or hidden, the
+    /// branch card shown or hidden, and the side pane open under the inspector too.
+    @Test func theToolbarPillStaysAtTheWindowsTopRightWithTheInspectorOpen() async throws {
+        for width in [AppLayout.windowMinWidth, 1440, 1715] {
+            for sidebar in [true, false] {
+                for branch in [false, true] {
+                    let name = "pill-\(Int(width))\(sidebar ? "" : "-nosidebar")\(branch ? "-branch" : "")"
+                    let rest = try await renderInspectorWindow("\(name)-closed", width: width, sidebar: sidebar, branch: branch, inspector: false)
+                    let open = try await renderInspectorWindow("\(name)-inspector", width: width, sidebar: sidebar, branch: branch)
+                    for (closed, inspected) in zip(rest, open) {
+                        #expect(closed.1 > 0 && closed.1 < 80, "\(name) \(closed.0): the pill is found at the window's right edge, \(closed.1)pt in")
+                        #expect(abs(inspected.1 - closed.1) < 1, "\(name) \(inspected.0): with the inspector open the pill ends \(inspected.1)pt from the window's right edge, not \(closed.1)pt")
+                    }
+                }
+            }
+        }
+        let sideAlone = try await renderInspectorWindow("pill-1715-sidepane", width: 1715, branch: true, inspector: false, sidePane: true)
+        let both = try await renderInspectorWindow("pill-1715-sidepane-inspector", width: 1715, branch: true, sidePane: true)
+        let rest = try await renderInspectorWindow("pill-1715-branch-closed", width: 1715, branch: true, inspector: false)
+        for (alone, inspected, closed) in zip(zip(sideAlone, both), rest).map({ ($0.0.0, $0.0.1, $0.1) }) {
+            #expect(alone.1 > closed.1, "\(alone.0): the side pane alone keeps the pill left of its card")
+            #expect(abs(inspected.1 - closed.1) < 1, "\(inspected.0): inspector over the side pane, the pill is \(inspected.1)pt in, not \(closed.1)pt")
+        }
+    }
+
+    enum Appearance: String { case light, dark }
+
+    /// The real shell with a thread's subagent inspector open (`sidePane` also opens its tabs underneath), at `width`; returns, per appearance, how far
+    /// the toolbar's pill ends from the window's trailing edge.
+    private func renderInspectorWindow(_ name: String, width: CGFloat, sidebar: Bool = true, branch: Bool = false,
+                                       inspector: Bool = true, sidePane: Bool = false) async throws -> [(Appearance, CGFloat)] {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         let space = Space(name: "Shepherd", path: workspace.dir.path)
         var agent = Agent(name: "Investigate SwiftUI live preview capabilities", spaceID: space.id, tabID: TabID(), status: .working, nameIsFinal: true)
+        if branch { agent.worktreeBranch = "pi/restyle-native-ui" }
         let pane = LeafPane(cwd: space.path, agentID: agent.id)
         let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
         agent.tabID = tab.id
@@ -103,12 +139,15 @@ struct SidePanePreviewTests {
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         let vm = workspace.vm
         vm.selectAgent(agent.id)
+        if !sidebar { vm.toggleSidebar() }
+        if sidePane { vm.showSidePane(.local(agent.id)) }
         let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
         fixture.transcripts["native-worker"] = Threads.workerTranscript
         defer { fixture.store.stop() }
         let store = vm.threadStores.store(for: agent.id)
         var pass: (began: Date, fed: Date?)?
-        try await Preview.render("gx-subagent-inspector-window", size: CGSize(width: 1440, height: 900), ready: {
+        var gaps: [(Appearance, CGFloat)] = []
+        try await Preview.render(name, size: CGSize(width: width, height: 900), ready: {
             // Each pass mounts the thread again, and its own request (nothing to say in a scratch app) takes the store: once it has,
             // the fixture's takes it back, and the pass is ready when that has held for a moment.
             let now = Date()
@@ -123,12 +162,32 @@ struct SidePanePreviewTests {
                 pass = (began, nil)
                 return false
             }
+            guard inspector else { pass = nil; return true }
             if vm.subagentInspector.runByAgent[agent.id] == nil { vm.toggleSubagentInspector(agentID: agent.id, runID: "native-worker") }
             guard vm.subagentInspector.runByAgent[agent.id] == "native-worker" else { return false }
             pass = nil
             return true
+        }, afterReady: {
+            // The preview's window sits off screen. The toolbar is the band across the window's top: the pill is the rightmost thing
+            // drawn in it, so its trailing edge is the last column, scanning in from the right, that differs from the window's fill.
+            guard let host = NSApplication.shared.windows.first(where: { $0.frame.origin.x <= -29_000 && $0.contentView != nil })?.contentView,
+                  let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                gaps.append((gaps.count % 2 == 0 ? .light : .dark, .nan))
+                return
+            }
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let fill = bitmap.colorAt(x: bitmap.pixelsWide - 1, y: 0)?.usingColorSpace(.deviceRGB)
+            func differs(_ x: Int) -> Bool {
+                (0..<Int(AppLayout.toolbarTop + AppLayout.headerHeight)).contains { y in
+                    guard let c = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), let fill else { return false }
+                    return abs(c.redComponent - fill.redComponent) + abs(c.greenComponent - fill.greenComponent) + abs(c.blueComponent - fill.blueComponent) > 0.02
+                }
+            }
+            let edge = (0..<bitmap.pixelsWide).reversed().first(where: differs)
+            gaps.append((gaps.count % 2 == 0 ? .light : .dark, edge.map { CGFloat(bitmap.pixelsWide - 1 - $0) } ?? .nan))
         }) {
             RootView(vm: vm)
         }
+        return gaps
     }
 }

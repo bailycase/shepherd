@@ -76,12 +76,12 @@ struct ThreadScreen: View {
         // thread's column, level with the side pane's tabs (DuoOpenThread, DuoOpenSidePane); else
         // it is the bar's.
         let inlineTitle = verticalBars && sizeClass == .regular
-        // The pane open beside the thread has sent the sidebar away (iPhone Duo; `PadShell`), and
-        // the system's toggle with it: the thread offers it back.
+        // The sidebar card away (the thread alone, or the pane open beside it on the Duo): the thread's own bar offers it back, as the
+        // thread is the detail's root. A thread pushed over another screen has Back there instead.
         // The side pane open beside the thread on an iPad: the bar's right side belongs to the pane's card, so the thread's buttons move.
         let besidePane = titleMaxWidth != nil && !verticalBars && sizeClass == .regular && !arranged
-        let sidebarHidden = navigator.layout == .pad && navigator.sidePane.isOpen && navigator.padSidebarOverlays
-            && navigator.padColumns == .detailOnly && navigator.sidePane.arranged != ref
+        let sidebarHidden = navigator.layout == .pad && navigator.padColumns == .detailOnly && navigator.padPath.isEmpty
+            && navigator.sidePane.arranged != ref
         Group {
             if arranged {
                 // The laptop pose (DuoLaptop): the transcript, or the terminal, above the fold; the composer under it.
@@ -100,7 +100,7 @@ struct ThreadScreen: View {
                         if agent != nil {
                             composer
                                 // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
-                                .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
+                                .frame(maxWidth: sizeClass == .regular ? MobileLayout.padThreadColumn + 2 * MobileLayout.padThreadGutter : .infinity)
                                 .frame(maxWidth: .infinity)
                                 .background(Color.sh.bgWindow)
                         }
@@ -110,7 +110,7 @@ struct ThreadScreen: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if inlineTitle {
                 HStack(spacing: SH.Space.m) {
-                    if sidebarHidden { ThreadSidebarButton() }
+                    if sidebarHidden { PadSidebarButton() }
                     title
                 }
                 .padding(.horizontal, MobileLayout.padThreadGutter)
@@ -119,6 +119,8 @@ struct ThreadScreen: View {
                 .accessibilityAddTraits(.isHeader)
             }
         }
+        // The bar has nothing at the top where it runs down the side: the head starts at the top edge (DuoOpenThread).
+        .ignoresSafeArea(.container, edges: inlineTitle ? .top : [])
         .background(Color.sh.bgWindow)
         // Thread links in its prose and its @ picker resolve on its own host (ThreadLinkA).
         .environment(\.shThreadLinks, threadLinks)
@@ -138,7 +140,7 @@ struct ThreadScreen: View {
             // A thread kept mounted behind the selected one adds nothing to the bar.
             if detailActive {
                 if sidebarHidden, !inlineTitle {
-                    ToolbarItem(placement: .topBarLeading) { ThreadSidebarButton(inBar: true) }
+                    ToolbarItem(placement: .topBarLeading) { PadSidebarButton(inBar: true) }
                 }
                 if !inlineTitle {
                     ToolbarItem(placement: .principal) {
@@ -384,7 +386,7 @@ struct ThreadTranscript: View {
                         }
                         .accessibilityHidden(true)
                 }
-                .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
+                .frame(maxWidth: sizeClass == .regular ? MobileLayout.padThreadColumn : .infinity)
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 .padding(.vertical, tailGap)
                 // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
@@ -784,25 +786,6 @@ private struct ThreadGoalHeader: View {
 extension EnvironmentValues {
     /// The thread's column beside an open side pane, which its title keeps to; nil is the bar's width.
     @Entry var threadTitleMaxWidth: CGFloat? = nil
-}
-
-/// Show sidebar, while the open side pane has sent the sidebar away (DuoOpenSidePane): it slides back over the thread.
-private struct ThreadSidebarButton: View {
-    /// A bar's item, which the bar styles; else a glass circle by the title.
-    var inBar = false
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        let button = Button("Show sidebar", systemImage: "sidebar.left") { withSHAnimation(.pane) { navigator.padColumns = .all } }
-            .tint(Color.sh.textPrimary)
-        if inBar {
-            button
-        } else {
-            // The board's 40pt circle (DuoOpenSidePane), not the large control's.
-            button.labelStyle(.iconOnly).buttonStyle(.glass).buttonBorderShape(.circle)
-                .frame(width: MobileLayout.padHeaderButton, height: MobileLayout.padHeaderButton)
-        }
-    }
 }
 
 /// The header's one side-pane button (DuoOpenThread, DuoOpenSidePane; the Mac's `SHSidePaneButton`): Show side pane opens it on the

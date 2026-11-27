@@ -10,8 +10,9 @@ import ShepherdRemote
 /// pose) the card takes the display on the fold's left and the thread the right. In the laptop pose the thread takes the window as an
 /// arrangement (DuoLaptop, `PadArrangedThread`).
 ///
-/// The card is ours, not the split view's system sidebar: the split view keeps only the detail column (its bar, back button and the
-/// system's Show sidebar, which brings the card back), and `navigator.padColumns` says whether the card shows (`.detailOnly` hides it).
+/// The card is ours, not a split view's system sidebar (which left an empty blurred column behind the card when its own Show sidebar
+/// was pressed): the detail is one stack, its root offers Show sidebar (`PadSidebarButton`), and `navigator.padColumns` says whether
+/// the card shows (`.detailOnly` hides it).
 struct PadShell: View {
     @Environment(MobileNavigator.self) private var navigator
 
@@ -28,34 +29,27 @@ struct PadShell: View {
         GeometryReader { proxy in
             // The sidebar slides over the thread in portrait, and beside an open pane that leaves
             // the thread too little (iPhone Duo's inner display).
+            // A device with a hinge is an iPhone Duo, whose flat display has a narrower column than an iPad's.
+            let docked = navigator.hingeClosed == nil ? MobileLayout.sidebarWidth : MobileLayout.duoSidebarWidth
             let crowded = navigator.sidePane.isOpen && navigator.padSelection != nil
-                && !PadSplitLayout.sidebarFitsBesidePane(window: proxy.size.width, sidebar: MobileLayout.sidebarWidth)
+                && !PadSplitLayout.sidebarFitsBesidePane(window: proxy.size.width, sidebar: docked)
             let overlays = PadSplitLayout.sidebarOverlays(window: proxy.size) || crowded
             let laptop = proxy.horizontalFold != nil
             let fold = proxy.verticalFold
             // Half open (iPhone Duo): the card fills the display on the fold's left and the thread starts on its right.
-            let column = fold?.lowerBound ?? (overlays ? MobileLayout.sidebarOverlayWidth : MobileLayout.sidebarWidth)
+            let column = fold?.lowerBound ?? (overlays ? MobileLayout.sidebarOverlayWidth : docked)
             let detailLeading = fold?.upperBound ?? column
             let shown = navigator.padColumns != .detailOnly
-            let docked = shown && !overlays
+            let beside = shown && !overlays
             Group {
                 if let arranged = navigator.sidePane.arranged, arranged == navigator.padSelection {
                     PadArrangedThread(ref: arranged)
                 } else {
                     ZStack(alignment: .leading) {
-                        // The split view's sidebar column never shows: the system's Show sidebar asks for it, and the card answers.
-                        NavigationSplitView(columnVisibility: Binding(
-                            get: { .detailOnly },
-                            set: { if $0 != .detailOnly { withSHAnimation(.pane) { navigator.padColumns = .all } } })) {
-                            // The card has its own Hide sidebar; the system's returns while the card is away.
-                            Color.clear.toolbar(removing: shown ? .sidebarToggle : nil)
-                        } detail: {
-                            NavigationStack(path: $navigator.padPath) {
-                                PadDetailRoot().mobileDestinations()
-                            }
+                        NavigationStack(path: $navigator.padPath) {
+                            PadDetailRoot().modifier(DuoTopEdge()).mobileDestinations()
                         }
-                        .navigationSplitViewStyle(.prominentDetail)
-                        .padding(.leading, docked ? detailLeading : 0)
+                        .padding(.leading, beside ? detailLeading : 0)
                         if overlays, shown {
                             Color.sh.scrim
                                 .ignoresSafeArea()
@@ -63,7 +57,7 @@ struct PadShell: View {
                                 .accessibilityHidden(true)
                                 .transition(.opacity)
                         }
-                        PadSidebar(overlays: overlays)
+                        PadSidebar(overlays: overlays, topInset: proxy.safeAreaInsets.top)
                             .frame(width: column)
                             .offset(x: shown ? 0 : -(column + SHSidebarMetrics.panelInset * 2))
                             .allowsHitTesting(shown)

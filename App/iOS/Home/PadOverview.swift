@@ -15,8 +15,13 @@ struct PadOverview: View {
     private static let sideBySideWidth = MobileLayout.overviewColumnMinWidth * 3 + MobileLayout.blockSpacing * 2
 
     var body: some View {
+        VerticalBars { inline in content(inline: inline) }
+    }
+
+    @ViewBuilder private func content(inline: Bool) -> some View {
         let feed = HomeFeed.of(hosts)
         let model = feed.model
+        let sidebarHidden = navigator.padColumns == .detailOnly && navigator.padPath.isEmpty
         Group {
             if hosts.hosts.isEmpty {
                 NoHostsState().frame(maxHeight: .infinity)
@@ -67,32 +72,60 @@ struct PadOverview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.sh.bgWindow)
         .task { await feed.watch() }
+        // Where the bar runs down the side (iPhone Duo's inner display) the head sits at the top edge, "Overview" with its summary
+        // beside it (DuoOpenOverview); else the bar's leading is the title over its summary (iPadOverview).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if inline {
+                HStack(spacing: SH.Space.m) {
+                    if sidebarHidden { PadSidebarButton() }
+                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                        Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        if !model.hosts.isEmpty {
+                            Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, MobileLayout.padThreadGutter)
+                .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.duoHeadHeight, alignment: .leading)
+                .background(Color.sh.bgWindow)
+            }
+        }
         .navigationTitle("Overview")
         .navigationBarTitleDisplayMode(.inline)
-        // The board's head: "Overview" leading, the summary beside it.
         .toolbar(removing: .title)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                // The board's head: "Overview" over its summary.
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
-                    if !model.hosts.isEmpty {
-                        Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-                    }
-                }
-                .fixedSize()
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isHeader)
+            if sidebarHidden, !inline {
+                ToolbarItem(placement: .topBarLeading) { PadSidebarButton(inBar: true) }
             }
-            .sharedBackgroundVisibility(.hidden)
+            if !inline {
+                ToolbarItem(placement: .topBarLeading) {
+                    // The board's head: "Overview" over its summary.
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Overview").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                        if !model.hosts.isEmpty {
+                            Text(model.summary).font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                        }
+                    }
+                    .fixedSize()
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+            // Search and More in one capsule, New thread beside it (DuoOpenOverview, iPadOverview).
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+                StopAllWorkingMenu()
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
                     .buttonStyle(.glassProminent)
                     .tint(Color.sh.primary)
                     .accessibilityIdentifier("overview-toolbar-new-thread")
                     .disabled(model.hosts.isEmpty)
-                StopAllWorkingMenu()
             }
         }
     }

@@ -196,8 +196,9 @@ struct RootView: View {
                     .accessibilityHidden(true)
                 SidebarView(vm: vm)
                     .frame(width: width)
-                    // The panel floats on the popover's shadow, cast by a fill under it.
-                    .background { RoundedRectangle(cornerRadius: SH.Radius.xl).fill(Color.sh.bgWindow).shFloatShadow() }
+                    // The panel floats on the boards' lift, as the side pane and inspector cards do: the popover's heavier shadow
+                    // belongs to menus and sheets only.
+                    .shLift(RoundedRectangle(cornerRadius: SH.Radius.xl), fill: .sh.bgWindow)
                     .padding([.leading, .vertical], SHSidebarMetrics.panelInset)
                     .shTransition(.pane, edge: .leading)
             }
