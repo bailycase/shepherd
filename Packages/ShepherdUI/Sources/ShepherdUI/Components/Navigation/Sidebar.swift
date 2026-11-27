@@ -237,6 +237,7 @@ public struct SHSidebarDestination: View, Equatable {
     let trailing: Trailing
     let action: () -> Void
     @Environment(\.shDensity) private var density
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var hovering = false
 
     /// `child` indents one of More's rows.
@@ -263,7 +264,8 @@ public struct SHSidebarDestination: View, Equatable {
                 Text(title)
                     .font(density.destinationFont(weight: .regular))
                     .foregroundStyle(.sh.textPrimary)
-                    .lineLimit(1)
+                    // From the accessibility sizes the name wraps rather than losing its end to the chord beside it.
+                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 Spacer(minLength: SH.Space.xs)
                 trailingView
             }
@@ -726,40 +728,12 @@ public struct SHSidebarFooter: View, Equatable {
 
     public var body: some View {
         #if os(iOS)
-        // The touch boards' footer (DuoOpenOverview, iPadSidebar): Settings leads, the Fleet line ends it.
-        // From the accessibility sizes the Fleet line goes under Settings, each whole.
-        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.l, stackedSpacing: 0)
-        adaptive {
-            if let updateVersion {
-                SHUpdateButton(version: updateVersion, action: update)
-            } else {
-                Button(action: settings) {
-                    HStack(spacing: SH.Space.l) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: SHSidebarMetrics.touchFooterGlyph))
-                            .foregroundStyle(.sh.textSecondary)
-                            .frame(width: SHSidebarMetrics.touchFooterGlyph)
-                        Text("Settings").font(.sh(.ui)).foregroundStyle(.sh.textPrimary).lineLimit(1)
-                    }
-                    .frame(minHeight: SHSidebarMetrics.footerHeight)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Settings")
-            }
-            if !typeSize.isAccessibilitySize { Spacer(minLength: SH.Space.m) }
-            if detail.isEmpty {
-                EmptyView()
-            } else if let openDetail {
-                Button(action: openDetail) { line }
-                    .buttonStyle(.plain)
-            } else {
-                line
-            }
+        // The touch boards' footer (DuoOpenOverview, iPadSidebar): Settings leads, the Fleet line ends it. Where the two do not fit on one
+        // line (a large text size, the iPhone Duo's narrow card) the Fleet line goes under Settings, each whole.
+        ViewThatFits(in: .horizontal) {
+            touchFooter(stacked: false)
+            touchFooter(stacked: true)
         }
-        .padding(.horizontal, SHSidebarMetrics.touchFooterInset)
-        .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, minHeight: SHSidebarMetrics.footerHeight, alignment: .leading)
-        .frame(height: typeSize.isAccessibilitySize ? nil : SHSidebarMetrics.footerHeight)
         #else
         HStack(spacing: SH.Space.m) {
             if detail.isEmpty {
@@ -783,6 +757,45 @@ public struct SHSidebarFooter: View, Equatable {
         .padding(.leading, SHSidebarMetrics.footerLeading)
         .padding(.trailing, SHSidebarMetrics.topBarTrailing)
         .frame(height: SHSidebarMetrics.footerHeight)
+        #endif
+    }
+}
+
+extension SHSidebarFooter {
+    @ViewBuilder fileprivate func touchFooter(stacked: Bool) -> some View {
+        #if os(iOS)
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: SH.Space.l))
+        layout {
+            if let updateVersion {
+                SHUpdateButton(version: updateVersion, action: update)
+            } else {
+                Button(action: settings) {
+                    HStack(spacing: SH.Space.l) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: SHSidebarMetrics.touchFooterGlyph))
+                            .foregroundStyle(.sh.textSecondary)
+                            .frame(width: SHSidebarMetrics.touchFooterGlyph)
+                        Text("Settings").font(.sh(.ui)).foregroundStyle(.sh.textPrimary).lineLimit(1)
+                    }
+                    .frame(minHeight: SHSidebarMetrics.footerHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
+            }
+            if !stacked { Spacer(minLength: SH.Space.m) }
+            if detail.isEmpty {
+                EmptyView()
+            } else if let openDetail {
+                Button(action: openDetail) { line }
+                    .buttonStyle(.plain)
+            } else {
+                line
+            }
+        }
+        .padding(.horizontal, SHSidebarMetrics.touchFooterInset)
+        .frame(maxWidth: stacked ? .infinity : nil, minHeight: SHSidebarMetrics.footerHeight, alignment: .leading)
+        .frame(height: stacked ? nil : SHSidebarMetrics.footerHeight)
         #endif
     }
 }
