@@ -19,9 +19,10 @@ public enum SHTerminalMetrics {
     public static let contentPadding = EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
     #endif
     /// Where the card sits in the room under the thread: 28pt in from the thread's side, 16pt from the
-    /// other, 8pt from the thread and from the window's edge. Zero on iOS, where the panel fills its room.
+    /// other, 8pt from the thread. The room already ends 8pt above the window's bottom and left of its right edge (the boards' window
+    /// padding, `RightPaneSplit`). Zero on iOS, where the panel fills its room.
     #if os(macOS)
-    public static let cardInsets = EdgeInsets(top: 8, leading: 28, bottom: 8, trailing: 16)
+    public static let cardInsets = EdgeInsets(top: 8, leading: 28, bottom: 0, trailing: 16)
     public static let cardRadius: CGFloat = SH.Radius.xl
     #else
     public static let cardInsets = EdgeInsets()

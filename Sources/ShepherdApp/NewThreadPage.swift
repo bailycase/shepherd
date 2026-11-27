@@ -96,7 +96,10 @@ struct NewThreadPage: View {
         let query = commandQuery
         let _ = slash.update(query: query, commands: menuCommands)
         VStack(spacing: 0) {
+            // The boards' toolbar row: 44pt under the window's 8pt padding, its title 28pt in (the page header is 52pt and 24 in).
             DestinationPageHeader(title: "New thread", chrome: chrome, rule: false)
+                .frame(height: SHToolbarMetrics.height)
+                .padding(.leading, chrome.showSidebar == nil ? SHToolbarMetrics.leadingPadding - SHPageMetrics.headerLeading : 0)
             // The boards' `.hero`: the composer and the suggestions under it, centred a little above the middle.
             VStack(spacing: AppLayout.newThreadGap) {
                 VStack(spacing: SH.Space.l) {
@@ -311,7 +314,8 @@ struct NewThreadPage: View {
         let fleet = draft.fleetPicker(vm)
         let withMac = !fleet.options.isEmpty
         let host = withMac ? fleet.chip : chip.host
-        return HStack(spacing: SH.Space.xxs) {
+        // The boards' `.line`: the attach button's 30pt, 10pt, then the chip's own 8pt inset.
+        return HStack(spacing: SH.Space.m) {
             Button { picking = true } label: { Image(systemName: "plus").font(.system(size: SHComposerMetrics.sendGlyph + 2)) }
                 .buttonStyle(.shIcon(size: SHComposerMetrics.actionSize, round: true))
                 .disabled(draft.attachments.isFull)

@@ -97,4 +97,43 @@ struct GXBoardPreviewTests {
         }
         try await Preview.render("gxb-designs-none", size: CGSize(width: 1440, height: 900)) { RootView(vm: workspace.vm) }
     }
+
+    // MARK: Whole window: New thread and the palette, through the real shell
+
+    private static let window = CGSize(width: 1440, height: 900)
+
+    /// A workspace with the boards' sidebar rows: projects, working, done.
+    private func boardWorkspace() async throws -> PreviewWorkspace {
+        let workspace = try PreviewWorkspace()
+        let space = Space(name: "shepherd", path: workspace.dir.path)
+        var rows: [(Agent, ShepherdCore.Tab)] = []
+        for (index, (name, status)) in [("Investigate SwiftUI live previews", AgentStatus.working), ("Plan the Shepherd extension", .working),
+                                        ("Add refund events", .working), ("Fix pay button jump", .done), ("Payments metrics audit", .done),
+                                        ("Checkout funnel retention", .blocked)].enumerated() {
+            var (agent, tab) = try await workspace.agent(name, in: space, order: index, status: status)
+            agent.lastActiveAt = Date().timeIntervalSince1970 * 1000 - Double(index) * 120_000
+            rows.append((agent, tab))
+        }
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: rows.map(\.1), agents: rows.map(\.0)))
+        workspace.vm.statusSince[rows[0].0.id] = Date().addingTimeInterval(-42 * 60)
+        return workspace
+    }
+
+    /// GXNew: the page with the project, This Mac, the Continue and Start a design suggestions.
+    @Test func newThread() async throws {
+        let workspace = try await boardWorkspace()
+        defer { workspace.stop() }
+        workspace.settings.designToolEnabled = true
+        workspace.vm.openNewThread()
+        try await Preview.render("gxb-new-thread", size: Self.window, ready: { workspace.vm.newThread.place != nil }) { RootView(vm: workspace.vm) }
+    }
+
+    /// GXPalette: the palette as it opens, over the window.
+    @Test func palette() async throws {
+        let workspace = try await boardWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.selectAgent(workspace.vm.state.agents[0].id)
+        workspace.vm.showCommandPalette = true
+        try await Preview.render("gxb-palette", size: Self.window) { RootView(vm: workspace.vm) }
+    }
 }
