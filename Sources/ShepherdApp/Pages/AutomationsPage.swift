@@ -102,7 +102,7 @@ struct AutomationsPage: View {
             SHBarDivider()
         } else if model.hasTriggers || model.allPaused {
             Button { actions.setAllPaused(PageHost.localID, !model.allPaused) } label: {
-                Label("Pause all triggers", systemImage: model.allPaused ? "pause.fill" : "pause")
+                Label("Pause all triggers", systemImage: "pause")
             }
             .buttonStyle(.shBar)
             .background(model.allPaused ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
