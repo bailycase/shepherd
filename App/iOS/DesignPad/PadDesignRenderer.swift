@@ -594,14 +594,18 @@ final class PadDesignRasterizer {
     private func start(_ job: Job) {
         active += 1
         Task { [weak self] in
+            let t0 = Date()
             let view = DesignBoardView(surface: job.surface, board: job.path, size: job.size)
             view.isUserInteractionEnabled = false
             PadDesignStage.shared.hold(view)
             self?.webViews += 1
             var image: CGImage?
             do {
+                let t1 = Date()
                 try await view.load()
+                let t2 = Date()
                 image = try await view.snapshot(width: min(job.size.width, Self.snapshotWidth))
+                print("TIMING make=\(Int(t1.timeIntervalSince(t0)*1000)) load=\(Int(t2.timeIntervalSince(t1)*1000)) snap=\(Int(Date().timeIntervalSince(t2)*1000))")
             } catch {
                 image = nil
             }

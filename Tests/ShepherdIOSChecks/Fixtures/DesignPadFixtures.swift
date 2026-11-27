@@ -100,6 +100,11 @@ extension FixtureCatalog {
                                   !canvas.visibleBoards.isEmpty && canvas.host.isDrawn(Array(canvas.visibleBoards.prefix(12)))
                               }
                           }),
+            // The wall, timed: how long until every board on screen at the fitted view has a picture, and
+            // what the app weighs then. Run it twice on one device (FIXTURE_KEEP_DATA=1) for the second open.
+            FixtureScreen(name: "design-pad-wall-timed", hosts: DesignPadFixtures.hosts(wall: true),
+                          routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
+                          prepare: { app in await DesignPadFixtures.timeWall(app) }),
             // The Designs list the sidebar's row opens.
             FixtureScreen(name: "designs-pad", hosts: DesignPadFixtures.hosts(), routes: [.padDesign(.list)],
                           prepare: { _ in
@@ -247,6 +252,28 @@ enum DesignPadFixtures {
         await FixtureWindows.wait("design agent snapshot", seconds: 10) { app.threads.store(for: agent).snapshot != nil }
         FixtureCheck.report("FIXTURE CHECK \(canvas.isDrawn ? "ok" : "FAILED: the boards on screen never drew") design")
         return canvas
+    }
+
+    /// Times the wall's pictures: the first 12, half, and all of the boards on screen.
+    @MainActor static func timeWall(_ app: MobileApp) async {
+        let canvas = PadDesigns.of(app.hosts).canvas(largeRef)
+        await FixtureWindows.wait("wall canvas snapshot", seconds: 30) { canvas.snapshot != nil }
+        await FixtureWindows.wait("wall boards on screen", seconds: 30) { !canvas.visibleBoards.isEmpty }
+        let start = Date()
+        let total = canvas.visibleBoards.count
+        var marks: [String] = []
+        var seen: Set<Int> = []
+        let steps = [(12, "12"), (total / 2, "half"), (total, "all")]
+        while seen.count < steps.count {
+            let drawn = canvas.visibleBoards.filter { canvas.host.hasCurrentSnapshot($0) }.count
+            for (index, step) in steps.enumerated() where drawn >= step.0 && !seen.contains(index) {
+                seen.insert(index)
+                marks.append("\(step.1)=\(String(format: "%.1f", Date().timeIntervalSince(start)))s")
+            }
+            if Date().timeIntervalSince(start) > 1_500 { FixtureCheck.fail("wall pictures: \(drawn)/\(total) after 1500 s") }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        FixtureCheck.report("FIXTURE CHECK ok wall \(total) boards: \(marks.joined(separator: " ")) footprint=\(String(format: "%.0f", TailFixture.footprintMB()))MB")
     }
 
     /// Taps a board as a finger would with Select, and waits for its element's ring.

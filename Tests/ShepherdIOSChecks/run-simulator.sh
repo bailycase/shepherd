@@ -236,7 +236,8 @@ for screen in "${screens[@]}"; do
         # Every case starts with fresh fixture scenes. Duo rejects UIKit's iPad-only scene
         # destruction request, so a window from the previous case must not be restored.
         "${simctl[@]}" terminate "$device" com.shepherd.ios-fixture >/dev/null 2>&1 || true
-        "${simctl[@]}" uninstall "$device" com.shepherd.ios-fixture >/dev/null 2>&1 || true
+        # FIXTURE_KEEP_DATA=1 keeps the app's container (its caches) from the last run, to measure a second open.
+        [[ -n "${FIXTURE_KEEP_DATA:-}" ]] || "${simctl[@]}" uninstall "$device" com.shepherd.ios-fixture >/dev/null 2>&1 || true
         "${simctl[@]}" install "$device" "$app"
         "${simctl[@]}" ui "$device" appearance "$scheme"
         SIMCTL_CHILD_FIXTURE_SCREEN="$screen" SIMCTL_CHILD_FIXTURE_SCHEME="$scheme" \
@@ -281,7 +282,7 @@ for screen in "${screens[@]}"; do
         # Whether the window offers a new window (iPhone Duo: only open and upright).
         [[ -n "$pose" ]] && { grep "^FIXTURE WINDOWS AVAILABLE" "$log" | tail -1 | sed "s/^/$screen ($scheme): /" || true; }
         # A screen that measures what it shows prints "FIXTURE CHECK ok|FAILED: …".
-        grep "^FIXTURE CHECK" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
+        grep "^FIXTURE CHECK\|^TIMING" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
         if [[ "$screen" == tail-frames && "${FIXTURE_SCROLL_LEDGER:-}" == 1 ]]; then
             container=$("${simctl[@]}" get_app_container "$device" com.shepherd.ios-fixture data)
             if [[ -f "$container/tmp/scroll-frames.json" ]]; then
