@@ -44,7 +44,6 @@ enum DesignRuleAllowlist {
         .init(.rawColor, "Sources/ShepherdApp/DesignSystemPageModel.swift", 1, "A design system that names no background draws on white, as its boards do: the design's content, not chrome."),
         .init(.rawColor, "Sources/ShepherdApp/ShepherdApp.swift", 2, "The Debug build's DEV badge, drawn into the Dock icon at runtime: not shipped UI."),
         // Status colors tinted by an alpha.
-        .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/AgentAuthParts.swift", 2, tint),
         // Shared glyphs named as raw symbols.
         .init(.rawGlyphName, "App/iOS/Review/DiffScreen.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Search/AgentActionSheets.swift", 1, resolved),
@@ -90,7 +89,6 @@ enum DesignRuleAllowlist {
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsExperiments.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SkillsSheets.swift", 1, unanimated("the typed source; the sheet animates the skill detail, not the field")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/TerminalPanelViews.swift", 1, unanimated("the terminal panel's maximized state, which lands at once")),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/HookRows.swift", 1, "Follows a hook test's outcome; the file's one animation is the row's disclosure, which does not change it."),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/QueueStack.swift", 1, menu),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/ThreadHeaderApps.swift", 1, menu),
         // Literal font sizes.
@@ -128,7 +126,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/FileStrip.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/InlineComment.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/ReviewComposer.swift", 1, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/MCPSignInSheet.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Status/Feedback.swift", 6, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Status/StateIndicators.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Terminal/TerminalPanel.swift", 4, font),

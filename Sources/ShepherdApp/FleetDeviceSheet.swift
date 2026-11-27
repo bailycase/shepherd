@@ -65,8 +65,7 @@ struct FleetQRCode: View {
                     .frame(width: CGFloat(image.width) / Self.pixelsPerPoint, height: CGFloat(image.height) / Self.pixelsPerPoint)
             }
         }
-        .padding(AppLayout.fleetQRPadding)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: AppLayout.fleetQRRadius))
+        .clipShape(RoundedRectangle(cornerRadius: AppLayout.fleetQRRadius))
         .overlay { RoundedRectangle(cornerRadius: AppLayout.fleetQRRadius).strokeBorder(Color.sh.lineStrong, lineWidth: SHSettingsNavMetrics.borderWidth) }
         .accessibilityLabel("QR code of the pairing code")
     }
@@ -80,7 +79,7 @@ struct FleetQRCode: View {
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"
         guard let code = filter.outputImage else { return nil }
-        let quiet: CGFloat = 0
+        let quiet: CGFloat = 4
         let canvas = code.extent.insetBy(dx: -quiet, dy: -quiet)
         let scale = (AppLayout.fleetQRSize * pixelsPerPoint / canvas.width).rounded(.down).clamped(min: 1)
         let page = CIImage(color: .white).cropped(to: canvas)

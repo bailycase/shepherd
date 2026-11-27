@@ -23,9 +23,8 @@ extension AppLayout {
     static let fleetJoinCodeSize: CGFloat = 28
     static let fleetJoinCodeTracking: CGFloat = 2.2
     /// Add a device: the QR of the same code, a square this many points a side.
-    static let fleetQRSize: CGFloat = 140
-    /// Its own white margin round the modules, and the corner.
-    static let fleetQRPadding: CGFloat = 16
+    static let fleetQRSize: CGFloat = 171
+    /// The corner.
     static let fleetQRRadius: CGFloat = 10
     /// A Macs row's status dot.
     static let fleetDotSize: CGFloat = 6
