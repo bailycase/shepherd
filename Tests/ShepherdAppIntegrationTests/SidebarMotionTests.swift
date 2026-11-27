@@ -16,6 +16,12 @@ import Testing
 @Suite("Sidebar motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct SidebarMotionTests {
+    /// One pixel row through the middle of the first destination, under the top bar of the inset panel, where its words are.
+    private static func firstDestination(width: CGFloat) -> CGRect {
+        CGRect(x: 0, y: SHSidebarMetrics.panelInset + SHSidebarMetrics.topBarHeight + SHSidebarMetrics.destinationsPadding + 14,
+               width: width, height: 1)
+    }
+
     /// ⇧⌘S with the sidebar hidden: it slides in from the leading edge while the main column
     /// takes its new frame at once (every mounted layout would otherwise reflow each frame).
     @Test func theDockedSidebarSlidesInWhileTheMainColumnSnaps() async throws {
@@ -28,16 +34,17 @@ struct SidebarMotionTests {
         let size = CGSize(width: 1280, height: 600)
         let window = OffscreenWindow(size: size, dark: false, RootView(vm: vm))
         defer { window.close() }
-        // Through the first destination, under the window controls.
-        let row = CGRect(x: 0, y: 62, width: size.width, height: 1)
+        let row = Self.firstDestination(width: size.width)
         _ = await MotionProbe.record(window, region: row, timeout: 0.5) {}
 
         let recording = await MotionProbe.record(window, region: row) { vm.toggleSidebar() }
 
-        let edge = Int(app.settings.sidebarWidth) + 1
+        // The panel stands in from the window's edge, and its soft shadow reaches about twice its radius past it.
+        let docked = ShellLayout.sidebar(windowWidth: size.width, preferredWidth: CGFloat(app.settings.sidebarWidth), userHidden: false, overlayShown: false)
+        let edge = Int(docked.width + AppLayout.sidebarGutter + 2 * SHSidebarMetrics.panelShadowRadius) + 1
         #expect(!recording.inBetween.isEmpty, "the sidebar slides in")
         let reach = recording.inBetween.compactMap { $0.lastColumn(differingFrom: recording.settled) }
-        #expect(reach.allSatisfy { $0 < edge }, "the main column is already where it settles: \(reach)")
+        #expect(reach.allSatisfy { $0 < edge }, "the main column is already where it settles (past \(edge)): \(reach)")
         let sidebarEdges = recording.inBetween.compactMap { $0.firstColumn(differingFrom: recording.settled) }
         #expect(!sidebarEdges.isEmpty, "caught mid-slide")
     }
@@ -56,7 +63,7 @@ struct SidebarMotionTests {
                                      RootView(vm: vm).environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         try await eventuallyOnMain("the narrow window to hide the sidebar") { vm.sidebarAutoHidden }
-        let row = CGRect(x: 0, y: 62, width: size.width, height: 1)
+        let row = Self.firstDestination(width: size.width)
         _ = await MotionProbe.record(window, region: row, timeout: 0.5) {}
 
         let recording = await MotionProbe.record(window, region: row) { vm.toggleSidebar() }

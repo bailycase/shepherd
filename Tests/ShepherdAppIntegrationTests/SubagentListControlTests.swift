@@ -108,7 +108,7 @@ struct SubagentListControlTests {
 
     // MARK: Rows
 
-    /// Every run is one button as tall as the board's 52pt, pressing it opens that run alone, and the list offers no
+    /// Every run is one button as tall as the redesign's 50pt, pressing it opens that run alone, and the list offers no
     /// other control: no Steer, Reply, Pause, Stop or Re-run, in the tree or as an action on a row.
     @MainActor
     static func pressingRows() async throws {
@@ -126,7 +126,8 @@ struct SubagentListControlTests {
         let rows = window.controls()
         #expect(rows.count == 4, "one button per run, and nothing else: \(rows)")
         #expect(ControlPress.undersized(rows, minimum: .desktop).isEmpty, "every row has a desktop hit area: \(rows)")
-        #expect(rows.allSatisfy { $0.frame.height >= SHSubagentListMetrics.rowHeight - 1 }, "and is as tall as the board's: \(rows.map(\.frame))")
+        // The redesign's page (`.sa`): rows padded 8 inside the pane's 14pt page, 50pt tall.
+        #expect(rows.allSatisfy { abs($0.frame.height - 50) < 1.5 }, "and is as tall as the board's: \(rows.map(\.frame))")
 
         for run in runs {
             let label = try #require(rows.first { $0.label?.contains(nativeRunNames(run).name) == true }?.label, "a row for \(run.runID): \(rows)")

@@ -108,8 +108,8 @@ extension PreviewTests {
             WorktreeDeleteDialog(agent: agent, path: shownPath, settings: vm.settings, probe: dialog.probe, cancel: {}, delete: { _ in })
         }
         try expectBaseline("this-mac-new-thread")
-        // The space's folder is a scratch repo, its name random each run.
-        try expectBaseline("this-mac-new-thread-places", masking: [CGRect(x: 220, y: 452, width: 200, height: 22)])
+        // The menu's search field draws its placeholder 3pt apart from one run to the other, as the field takes focus.
+        try expectBaseline("this-mac-new-thread-places", masking: [CGRect(x: 168, y: 384, width: 112, height: 22)])
         try expectBaseline("this-mac-delete-worktree")
     }
 }
@@ -182,7 +182,7 @@ extension PreviewTests {
         vm.automationsPageSelection = AutomationKey(host: PageHost.localID, automation: automations[0].id)
         try await Preview.render("this-mac-automation-runs", size: pageSize) { AutomationsDestination(vm: vm) }
         // A run's row reads the date and time the host logged it, and its result moves with that text's width.
-        let runRow = CGRect(x: 875, y: 356, width: 190, height: 26)
+        let runRow = CGRect(x: 860, y: 352, width: 170, height: 22)
         try expectBaseline("this-mac-automations-page", masking: [runRow])
         try expectBaseline("this-mac-automation-runs", masking: [runRow])
         try expectBaseline("this-mac-automations-sidebar")

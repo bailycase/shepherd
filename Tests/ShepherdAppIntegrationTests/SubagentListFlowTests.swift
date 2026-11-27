@@ -69,10 +69,10 @@ struct SubagentListFlowTests {
         #expect(vm.subagentInspector.run(for: owner) == nil)
 
         // Open the running worker. The thread's own tray draws a row for it too, so the list's is the one in the pane:
-        // 600pt wide and as tall as the board's 52pt.
+        // 603pt wide (the pane less the redesign's page padding) and as tall as the redesign's 50pt.
         func listRows() -> [Control] {
-            window.controls().filter { $0.label?.contains("Opens the run") != true && abs($0.frame.height - SHSubagentListMetrics.rowHeight) < 1.5
-                && abs($0.frame.width - 600) < 1.5 && $0.label?.contains("worker") == true }
+            window.controls().filter { $0.label?.contains("Opens the run") != true && abs($0.frame.height - 50) < 1.5
+                && abs($0.frame.width - 603) < 1.5 && $0.label?.contains("worker") == true }
         }
         let rows = listRows()
         #expect(rows.count == 1, "one list row for the worker: \(window.controls())")

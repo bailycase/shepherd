@@ -218,7 +218,10 @@ struct ComposerActionAndDismissTests {
         #expect(thread.window.element("Model, thinking and speed") != nil, "a click inside the popover leaves it open")
 
         // The chip toggles its own popover, so the watcher must leave that click to it.
-        dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 60, y: thread.size.height - AppLayout.composerBottom - 14)))
+        // The redesign's card sets the chip at the end of its control row, so the click goes where it draws.
+        let chip = try #require(thread.window.controls().first { $0.label == Self.chip }, "the chip is drawn")
+        let chipFrame = thread.window.host.convert(thread.window.window.convertFromScreen(chip.frame), from: nil)
+        dismissal.handle(thread.click(at: CGPoint(x: chipFrame.midX, y: chipFrame.midY)))
         try await thread.settle()
         #expect(thread.window.element("Model, thinking and speed") != nil, "a click on the chip is the chip's own")
 
