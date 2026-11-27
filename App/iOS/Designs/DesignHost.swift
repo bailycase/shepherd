@@ -423,20 +423,25 @@ struct DesignBoardImage: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack(alignment: alignment) {
-            if let image {
-                Color(uiColor: DesignRendering.edgeColor(image))
-                Image(uiImage: image).resizable().interpolation(.high)
-                    .frame(width: shown.width, height: shown.height)
+        // The tile's own size, whatever the board's: a phone board taller than its tile keeps its top, the rest cut off.
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: alignment) {
+                ZStack(alignment: alignment) {
+                    if let image {
+                        Color(uiColor: DesignRendering.edgeColor(image))
+                        Image(uiImage: image).resizable().interpolation(.high)
+                            .frame(width: shown.width, height: shown.height)
+                    }
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .task(id: sha256 + "/\(Int(shown.width))") {
-            guard let source, size.width > 0, size.height > 0 else { return }
-            image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: sha256, size: size,
-                                                       width: shown.width)
-        }
-        .accessibilityHidden(true)
+            .clipped()
+            .task(id: sha256 + "/\(Int(shown.width))") {
+                guard let source, size.width > 0, size.height > 0 else { return }
+                image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: sha256, size: size,
+                                                           width: shown.width)
+            }
+            .accessibilityHidden(true)
     }
 }
 

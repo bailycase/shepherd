@@ -59,18 +59,16 @@ public struct SHBoardLabel: View {
     }
 
     public var body: some View {
-        if let usage {
-            // The count is the first thing a narrow label gives up: the name and size stay.
-            ViewThatFits(in: .horizontal) {
-                row(usage)
-                row(nil)
-            }
-        } else {
-            row(nil)
+        // The size is the first thing a narrow label gives up (a fitted canvas of hundreds of
+        // boards), after the usage: the name, cut with an ellipsis, stays.
+        ViewThatFits(in: .horizontal) {
+            if let usage { row(usage, showingSize: true) }
+            row(nil, showingSize: true)
+            row(nil, showingSize: false)
         }
     }
 
-    private func row(_ usage: String?) -> some View {
+    private func row(_ usage: String?, showingSize: Bool) -> some View {
         #if os(macOS)
         // DZCanvas: the name in 12 medium `textPrimary`, its size and use in 12 `textTertiary`.
         let nameFont = Font.shSans(SHDesignChrome.labelTextSize, .medium)
@@ -88,11 +86,13 @@ public struct SHBoardLabel: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
-            Text(size)
-                .font(sizeFont)
-                .foregroundStyle(Color.sh.textTertiary)
-                .lineLimit(1)
-                .fixedSize()
+            if showingSize {
+                Text(size)
+                    .font(sizeFont)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
             if let usage {
                 Text(usage)
                     .font(.shSans(SHDesignMetrics.labelSizeTextSize))
@@ -104,7 +104,7 @@ public struct SHBoardLabel: View {
     }
 }
 
-/// The board's page in its frame: clipped to radius 4 with a hairline, casting the popover's
+/// The board's page in its frame: clipped to radius 12 (the iPad and phone boards') with a hairline, casting the popover's
 /// shadow, and ringed while selected. Its fill shows until the slot draws. On the Mac (DZCanvas) it is
 /// radius 6 on the cards' `lift`, with a 1.5pt ink ring while selected.
 public struct SHBoardSurface<Slot: View>: View {
@@ -138,15 +138,17 @@ public struct SHBoardSurface<Slot: View>: View {
                 }
             }
         #else
-        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.frameRadius)
+        // A fitted canvas of hundreds of boards draws them a few dozen points wide: their corners shrink with them.
+        let radius = Swift.min(SHDesignMetrics.frameRadius, Swift.max(SH.Space.xxs, Swift.min(size.width, size.height) / 8))
+        let shape = RoundedRectangle(cornerRadius: radius)
         slot
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background { shape.fill(Color.sh.bgRaised).shadow(color: .sh.popoverShadow, radius: SHDesignMetrics.frameShadowRadius, y: SHDesignMetrics.frameShadowY) }
             .clipShape(shape)
-            .shBorder(Color.sh.lineStrong, radius: SHDesignMetrics.frameRadius)
+            .shBorder(Color.sh.lineSubtle, radius: radius)
             .overlay {
                 if selected {
-                    RoundedRectangle(cornerRadius: SHDesignMetrics.frameRadius + SHDesignMetrics.ringWidth)
+                    RoundedRectangle(cornerRadius: radius + SHDesignMetrics.ringWidth)
                         .inset(by: -SHDesignMetrics.ringWidth)
                         .strokeBorder(Color.sh.running, lineWidth: SHDesignMetrics.ringWidth)
                         .allowsHitTesting(false)

@@ -54,9 +54,10 @@ public enum SHRowClock: Equatable, Sendable {
 /// optional trailing count (15/400, tertiary) or action.
 public struct SHListHeader<Trailing: View>: View {
     /// A list's head (the phone boards': 15/600 in `textPrimary`), or the iPad sidebar's
-    /// quieter one (iPadSidebar: 13/600 in `textTertiary`).
+    /// quieter one (iPadSidebar: 13/600 in `textTertiary`), or the Designs lists' (MobileDesigns,
+    /// DuoOpenDesigns: 13/500 in `textSecondary`).
     public enum Style: Sendable {
-        case list, sidebar
+        case list, sidebar, quiet
     }
 
     let title: String
@@ -73,10 +74,11 @@ public struct SHListHeader<Trailing: View>: View {
 
     public var body: some View {
         let sidebar = style == .sidebar
+        let small = style != .list
         HStack(spacing: SH.Space.m) {
             Text(title)
-                .font(.shSans(sidebar ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, .semibold))
-                .foregroundStyle(attention ? Color.sh.lanternText : sidebar ? Color.sh.textTertiary : Color.sh.textPrimary)
+                .font(.shSans(small ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, style == .quiet ? .medium : .semibold))
+                .foregroundStyle(attention ? Color.sh.lanternText : sidebar ? Color.sh.textTertiary : style == .quiet ? Color.sh.textSecondary : Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: SH.Space.xs)
             trailing()
@@ -89,7 +91,7 @@ extension SHListHeader where Trailing == Text? {
     public init(_ title: String, attention: Bool = false, count: Int? = nil, style: Style = .list) {
         self.init(title, attention: attention, style: style) {
             count.map {
-                Text("\($0)").font(.shSans(style == .sidebar ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, .regular))
+                Text("\($0)").font(.shSans(style != .list ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, .regular))
                     .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
             }
         }

@@ -89,6 +89,17 @@ extension FixtureCatalog {
             FixtureScreen(name: "design-pad-pan", hosts: DesignPadFixtures.hosts(large: true),
                           routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
                           prepare: { app in await DesignPadFixtures.pan(app) }),
+            // A design with hundreds of boards, as it opens: fitted, every board a few percent wide.
+            FixtureScreen(name: "design-pad-wall", hosts: DesignPadFixtures.hosts(wall: true),
+                          routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
+                          prepare: { app in
+                              let canvas = PadDesigns.of(app.hosts).canvas(DesignPadFixtures.largeRef)
+                              await FixtureWindows.wait("wall canvas snapshot", seconds: 15) { canvas.snapshot != nil }
+                              // The boards nearest the middle draw first; the rest of the 537 follow.
+                              await FixtureWindows.wait("the middle boards drawn", seconds: 60) {
+                                  !canvas.visibleBoards.isEmpty && canvas.host.isDrawn(Array(canvas.visibleBoards.prefix(12)))
+                              }
+                          }),
             // The Designs list the sidebar's row opens.
             FixtureScreen(name: "designs-pad", hosts: DesignPadFixtures.hosts(), routes: [.padDesign(.list)],
                           prepare: { _ in
@@ -108,7 +119,7 @@ enum DesignPadFixtures {
     /// The fixture hosts with Studio serving the design: its Design tool on, the design and its
     /// agent in its state, the agent's chat among its threads. `split` gives the agent the reply
     /// iPadSplitView draws.
-    static func hosts(split: Bool = false, large: Bool = false, damagedOrigins: Bool = false, damagedNotes: Bool = false) -> [FixtureHostData] {
+    static func hosts(split: Bool = false, large: Bool = false, wall: Bool = false, damagedOrigins: Bool = false, damagedNotes: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
         let design = Design(id: designID, name: "Checkout funnel dashboard", agentID: agentID,
@@ -125,11 +136,12 @@ enum DesignPadFixtures {
         var item = checkout(design)
         if damagedNotes { item.threadNotesWarning = FixtureDesigns.notesWarning }
         hosts[index].designs = FixtureDesigns(designs: [item, empty(settings)], systems: [acmeWeb])
-        if large {
-            let wall = Design(id: largeID, name: "Every checkout screen", systemNamespace: "acme-web", createdAt: FixtureData.start,
-                              lastActiveAt: FixtureData.start, boardCount: largeColumns * largeRows)
-            hosts[index].state.designs.append(wall)
-            hosts[index].designs?.designs.append(largeCanvas(wall))
+        if large || wall {
+            let count = wall ? wallBoards : largeColumns * largeRows
+            let design = Design(id: largeID, name: "Every checkout screen", systemNamespace: "acme-web", createdAt: FixtureData.start,
+                                lastActiveAt: FixtureData.start, boardCount: count)
+            hosts[index].state.designs.append(design)
+            hosts[index].designs?.designs.append(largeCanvas(design, count: count, columns: wall ? wallColumns : largeColumns))
         }
         return hosts
     }
@@ -140,24 +152,25 @@ enum DesignPadFixtures {
     static let largeRef = PadDesignRef(host: FixtureData.studio, design: largeID)
     static let largeColumns = 8
     static let largeRows = 8
+    /// A design as large as a real one (a design system's 537 boards): its canvas opens fitted, at a few percent.
+    static let wallBoards = 537
+    static let wallColumns = 24
 
     /// 64 boards on an 8 × 8 grid, the four checkout boards over and over, each its own file.
-    static func largeCanvas(_ design: Design) -> FixtureDesigns.Item {
+    static func largeCanvas(_ design: Design, count: Int = largeColumns * largeRows, columns: Int = largeColumns) -> FixtureDesigns.Item {
         let sources = [DesignPadBoards.funnel, DesignPadBoards.steps, DesignPadBoards.trend, DesignPadBoards.phone]
         var files: [String: Data] = [:]
         var boards: [DesignPath: DesignIndex.Board] = [:]
         var order: [DesignPath] = []
-        for row in 0..<largeRows {
-            for column in 0..<largeColumns {
-                let number = row * largeColumns + column
-                let raw = "Screen\(number).dc.html"
-                let path = DesignPath(raw)!
-                let phone = number % sources.count == 3
-                files[raw] = Data(sources[number % sources.count].utf8)
-                boards[path] = .init(x: Double(column) * 1400, y: Double(row) * 1000, w: phone ? 390 : 1280, h: phone ? 844 : 800,
-                                     title: "Screen \(number + 1)")
-                order.append(path)
-            }
+        for number in 0..<count {
+            let row = number / columns, column = number % columns
+            let raw = "Screen\(number).dc.html"
+            let path = DesignPath(raw)!
+            let phone = number % sources.count == 3
+            files[raw] = Data(sources[number % sources.count].utf8)
+            boards[path] = .init(x: Double(column) * 1400, y: Double(row) * 1000, w: phone ? 390 : 1280, h: phone ? 844 : 800,
+                                 title: "Screen \(number + 1)")
+            order.append(path)
         }
         return FixtureDesigns.Item(design: design, revision: 1, index: DesignIndex(title: design.name, boards: boards, order: order),
                                    files: files, comments: DesignComments())
@@ -375,12 +388,15 @@ struct FixtureDesigns: Sendable {
         case .boards(let id, let paths, let known):
             return item(id).map { item in
                 var changed: [RemoteDesignFile] = [], unchanged: [String] = [], missing: [String] = []
+                // A reply carries at most a chunk of files inline, as a host's does; the rest are read in pieces.
+                var budget = RemoteProtocol.designChunkBytes
                 for path in paths ?? item.files.keys.sorted() {
                     guard let data = item.files[path] else { missing.append(path); continue }
                     let sha = Self.sha256(data)
                     if known[path] == sha { unchanged.append(path); continue }
-                    changed.append(RemoteDesignFile(path: path, sha256: sha, size: data.count,
-                                                    data: data.count <= RemoteProtocol.designChunkBytes ? data : nil))
+                    let inline = data.count <= budget
+                    if inline { budget -= data.count }
+                    changed.append(RemoteDesignFile(path: path, sha256: sha, size: data.count, data: inline ? data : nil))
                 }
                 return .files(RemoteDesignFiles(designID: id, revision: item.revision, changed: changed, unchanged: unchanged, missing: missing))
             }

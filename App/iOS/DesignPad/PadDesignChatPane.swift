@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -113,12 +114,15 @@ private struct PadDesignChat: View {
                 if agent != nil {
                     VStack(spacing: SH.Space.xs) {
                         ThreadComposer(ref: ref)
-                        Text(MobileLayout.padDesignScribbleHint)
-                            .font(.shSans(MobileLayout.padDesignSubtitle))
-                            .foregroundStyle(Color.sh.textTertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, MobileLayout.padDesignCommentsPadding)
-                            .padding(.bottom, SH.Space.s)
+                        // Scribble is the iPad's with a Pencil: the iPhone and iPhone Duo have no such line.
+                        if UIDevice.current.userInterfaceIdiom == .pad {
+                            Text(MobileLayout.padDesignScribbleHint)
+                                .font(.shSans(MobileLayout.padDesignSubtitle))
+                                .foregroundStyle(Color.sh.textTertiary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, MobileLayout.padDesignCommentsPadding)
+                                .padding(.bottom, SH.Space.s)
+                        }
                     }
                 }
             }

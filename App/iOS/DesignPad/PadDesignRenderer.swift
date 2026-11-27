@@ -11,8 +11,8 @@ import ShepherdRemote
 // Boards render on this device from the files the host serves, never
 // on the host. A design on screen keeps at most `DesignTouchLivePlan.liveCap` live web view (the
 // selected board, else the board nearest the middle of the canvas), and one off-screen view
-// (`PadDesignRasterizer`) draws every other board's snapshot, one at a time: two web views at
-// most, the plan's iOS cap, however large the canvas and however many designs are on screen (a
+// (`PadDesignRasterizer`) draws every other board's snapshot, one at a time (two while no board
+// is live, as a canvas zoomed far out has none): two web views at most, the plan's iOS cap, however large the canvas and however many designs are on screen (a
 // design taking its live view takes it from the others). A hidden design gives its live view up
 // and keeps its snapshots.
 
@@ -62,6 +62,10 @@ final class PadDesignRendering {
     let rasterizer = PadDesignRasterizer()
     private var hosts: [PadDesignRef: PadDesignHost] = [:]
     private var forgottenHosts: Set<UUID> = []
+
+    init() {
+        rasterizer.liveViews = { [weak self] in self?.hosts.values.reduce(0) { $0 + $1.liveCount } ?? 0 }
+    }
 
     /// A design's renderer, over `source` (its files, fetched by hash and cached here).
     func host(for ref: PadDesignRef, source: @autoclosure () -> any DesignFileSource) -> PadDesignHost {
@@ -538,8 +542,8 @@ struct PadDesignImageCache {
 
 // MARK: Rasterizer
 
-/// Renders boards to snapshots one at a time, in a view of its own on the stage: every board on
-/// screen that has no live view.
+/// Renders boards to snapshots, nearest the middle first, each in a view of its own on the stage
+/// (one at a time, or two with no live board): every board on screen that has no live view.
 @MainActor
 final class PadDesignRasterizer {
     /// Snapshots are at most this many points wide (twice as many pixels): enough for a board at
@@ -556,7 +560,14 @@ final class PadDesignRasterizer {
     }
 
     private var queue: [Job] = []
-    private var running = false
+    private var active = 0
+    /// The web views the plan allows on iOS (`DesignTouchLivePlan`), live boards and renders together.
+    static let webViewCap = 2
+    /// Web views alive besides this rasterizer's (the designs' live boards); set by `PadDesignRendering`.
+    var liveViews: () -> Int = { 0 }
+    /// One render at a time while a live board holds a view; two while none does (a canvas zoomed far
+    /// out has no live board), so a design of hundreds of boards fills in twice as fast.
+    private var running: Bool { active >= max(1, Self.webViewCap - liveViews()) }
     /// Its web view, while one renders.
     private(set) var webViews = 0
 
@@ -573,16 +584,20 @@ final class PadDesignRasterizer {
     }
 
     private func run() {
-        guard !running else { return }
-        while let job = queue.first, !job.wanted() { queue.removeFirst() }
-        guard !queue.isEmpty else { return }
-        let job = queue.removeFirst()
-        running = true
+        while !running {
+            while let job = queue.first, !job.wanted() { queue.removeFirst() }
+            guard !queue.isEmpty else { return }
+            start(queue.removeFirst())
+        }
+    }
+
+    private func start(_ job: Job) {
+        active += 1
         Task { [weak self] in
             let view = DesignBoardView(surface: job.surface, board: job.path, size: job.size)
             view.isUserInteractionEnabled = false
             PadDesignStage.shared.hold(view)
-            self?.webViews = 1
+            self?.webViews += 1
             var image: CGImage?
             do {
                 try await view.load()
@@ -592,8 +607,8 @@ final class PadDesignRasterizer {
             }
             view.removeFromSuperview()
             guard let self else { return }
-            self.webViews = 0
-            self.running = false
+            self.webViews -= 1
+            self.active -= 1
             job.done(image)
             self.run()
         }

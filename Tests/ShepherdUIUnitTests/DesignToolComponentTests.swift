@@ -125,6 +125,15 @@ struct DesignToolComponentTests {
         #expect(room.layout(width: 390, zoom: 1).width == 390)
     }
 
+    /// A canvas of hundreds of boards fitted at a few percent leaves each label a sliver before the next
+    /// board: it isn't drawn, rather than cut to a letter or two beside its neighbours' sizes.
+    @Test func aLabelTheNextBoardLeavesASliverIsNotDrawn() {
+        let room = SHLabelRoom(above: nil, along: 1400)
+        #expect(!room.layout(width: 1280 * 0.03, zoom: 0.03).shown, "42 - 12 = 30pt")
+        #expect(room.layout(width: 1280 * 0.05, zoom: 0.05).shown, "70 - 12 = 58pt")
+        #expect(SHLabelRoom.open.layout(width: 1280 * 0.03, zoom: 0.03).shown, "no board along: the label's own room")
+    }
+
     @Test func aPickNamesTheBoardThePointOnItOrItsLabel() {
         let rooms = SHLabelRoom.rooms(Self.grid)
         let boards = Self.grid.keys.sorted().map { id in
