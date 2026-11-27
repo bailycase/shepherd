@@ -45,7 +45,6 @@ enum DesignRuleAllowlist {
         .init(.rawColor, "Sources/ShepherdApp/ShepherdApp.swift", 2, "The Debug build's DEV badge, drawn into the Dock icon at runtime: not shipped UI."),
         // Status colors tinted by an alpha.
         .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/AgentAuthParts.swift", 2, tint),
-        .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/SheetParts.swift", 2, tint),
         // Shared glyphs named as raw symbols.
         .init(.rawGlyphName, "App/iOS/Review/DiffScreen.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Search/AgentActionSheets.swift", 1, resolved),

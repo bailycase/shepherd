@@ -254,7 +254,7 @@ public struct SHPopupLabel: View {
                     .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: M.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                SHGlyph.popupChevrons.image.font(.system(size: M.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
             }
             .padding(.horizontal, M.sheetFieldPadding)
             .frame(maxWidth: .infinity, minHeight: M.sheetFieldHeight)
@@ -269,7 +269,7 @@ public struct SHPopupLabel: View {
                     .font(mono ? .shMono(M.textSize) : .shSans(M.textSize))
                     .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: M.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                SHGlyph.popupChevrons.image.font(.system(size: M.popupChevronSize, weight: .semibold)).foregroundStyle(sh.textTertiary)
             }
             .frame(height: M.controlHeight)
             .contentShape(Rectangle())

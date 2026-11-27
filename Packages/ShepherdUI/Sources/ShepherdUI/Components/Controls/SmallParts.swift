@@ -40,7 +40,7 @@ public struct SHKeycap: View {
         HStack(spacing: 3) {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
-                    .font(.shMono(10.5))
+                    .font(.shMono(SHSettingsControlMetrics.keycapTextSize))
                     .foregroundStyle(sh.textSecondary)
                     .padding(.horizontal, SH.Space.xs)
                     .frame(minWidth: side, minHeight: side)

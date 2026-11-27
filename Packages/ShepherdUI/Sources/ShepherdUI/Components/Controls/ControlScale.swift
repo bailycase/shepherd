@@ -111,7 +111,8 @@ public enum SHSettingsControlMetrics {
     public static let keycapVerticalPadding: CGFloat = SH.Space.xxs
     public static let keycapPadding: CGFloat = SH.Space.s
     public static let keycapRadius: CGFloat = SH.Radius.xs
-    public static let keycapTextSize: CGFloat = SHTextStyle.caption.size
+    /// A keycap's mono (outside Settings): 10.5.
+    public static let keycapTextSize: CGFloat = 10.5
     public static let keycapSpacing: CGFloat = SH.Space.xs
     /// A written shortcut's letter spacing (.04em at 13).
     public static let keycapTracking: CGFloat = 0.5
