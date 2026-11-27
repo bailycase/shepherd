@@ -552,9 +552,9 @@ private struct PadFullReview: View {
                 .tint(Color.sh.textPrimary)
                 .accessibilityLabel("Back to the thread")
             }
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 PadReviewTitle(store: store)
-            }
+            }.shBarTitleType() }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 PadCommitButton(store: store, inBar: true)
                 Button("Close review", systemImage: "arrow.down.right.and.arrow.up.left", action: close)

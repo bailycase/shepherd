@@ -152,3 +152,32 @@ struct DuoTopEdge: ViewModifier {
         }
     }
 }
+
+// MARK: The bars' column
+
+extension MobileLayout {
+    /// A glyph in the column iPhone Duo's bars make at its side. The system draws the glass (a 48pt-wide pill of 44pt buttons) and
+    /// nothing in it can be resized; the boards' glyphs are lighter and smaller than the system's 17pt (DuoOpenOverview, DuoOpenThread).
+    static let stripGlyph: CGFloat = 15
+}
+
+extension View {
+    /// A bar button's icon, drawn at the boards' size where the bars run down the side (iPhone Duo); the system's size elsewhere.
+    func duoStripIcon() -> some View { labelStyle(DuoStripLabelStyle()) }
+}
+
+struct DuoStripLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        DuoStripIcon(label: Label(configuration).labelStyle(.iconOnly))
+    }
+}
+
+private struct DuoStripIcon<Content: View>: View {
+    let label: Content
+
+    var body: some View {
+        VerticalBars { bars in
+            if bars { label.font(.system(size: MobileLayout.stripGlyph)) } else { label }
+        }
+    }
+}

@@ -75,9 +75,9 @@ struct ChangesScreen: View {
         .navigationTitle("Changes")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 ChangesTitle(store: store) { store.pickingBase = true }
-            }
+            }.shBarTitleType() }
             // The system's ••• menu, which overflows with the bar where it runs down the side.
             ToolbarOverflowMenu {
                 ReviewOptionsItems(store: store,

@@ -21,7 +21,7 @@ struct SubagentRunScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
-                ToolbarItem(placement: .principal) { SubagentRunTitle(run: run) }
+                ToolbarItem(placement: .principal) { Group { SubagentRunTitle(run: run) }.shBarTitleType() }
                 // The run's controls in the system's ••• menu, which overflows with the bar where it
                 // runs down the side (iPhone Duo).
                 if let run {

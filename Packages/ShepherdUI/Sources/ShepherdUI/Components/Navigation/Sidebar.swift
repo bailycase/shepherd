@@ -475,6 +475,7 @@ public struct SHSidebarRow: View, Equatable {
     let fold: Fold?
     let unseen: Bool
     @Environment(\.shDensity) private var density
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var hovering = false
 
     /// `nested` is a thread inside a project of the project tree: its title sits under the
@@ -511,6 +512,17 @@ public struct SHSidebarRow: View, Equatable {
             && a.subtitle == b.subtitle && a.fold == b.fold && a.unseen == b.unseen
     }
 
+    /// The goal glyph, the badge and the accessory at a row's trailing end (under its title from the accessibility sizes).
+    @ViewBuilder private var accessories: some View {
+        if hasGoal { SHGoalGlyph().foregroundStyle(Color.sh.textTertiary) }
+        if let badge {
+            Text(badge.text).font(.sh(.caption)).foregroundStyle(badge.color).monospacedDigit().lineLimit(1).fixedSize()
+                .shAnimation(.content, value: badge)
+        }
+        SHSidebarAccessoryView(accessory: accessory)
+            .shAnimation(.content, value: accessory.motionKey)
+    }
+
     /// The touch boards set the open thread's name in semibold (DuoOpenThread's `.sel .t`).
     private var boldsWhenSelected: Bool {
         #if os(iOS)
@@ -524,25 +536,22 @@ public struct SHSidebarRow: View, Equatable {
         let _ = SHRenderProbe.tick("sidebar.row")
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
+        let stacked = typeSize.isAccessibilitySize
         HStack(spacing: density.sidebarRowGap) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(density.rowTitleFont(weight: unseen || boldsWhenSelected ? .semibold : .regular))
                     .foregroundStyle(.sh.textPrimary)
-                    .lineLimit(1)
+                    // From the accessibility sizes the title wraps and its accessory goes under it, so neither is cut.
+                    .lineLimit(stacked ? 3 : 1)
                     .truncationMode(.tail)
                     .shContentTransition(.crossFade)
                     .shAnimation(.content, value: title)
                 if let subtitle { SHSidebarSubtitleView(subtitle: subtitle) }
+                if stacked { HStack(spacing: density.sidebarRowGap) { accessories } }
             }
             Spacer(minLength: SH.Space.xs)
-            if hasGoal { SHGoalGlyph().foregroundStyle(Color.sh.textTertiary) }
-            if let badge {
-                Text(badge.text).font(.sh(.caption)).foregroundStyle(badge.color).monospacedDigit().lineLimit(1).fixedSize()
-                    .shAnimation(.content, value: badge)
-            }
-            SHSidebarAccessoryView(accessory: accessory)
-                .shAnimation(.content, value: accessory.motionKey)
+            if !stacked { accessories }
             // An open sender's chevron shows while the pointer is over it, so its title keeps its room.
             if let fold, !fold.open || hovering || SHPlatform.showsHoverDetails {
                 Button(action: fold.toggle) {
@@ -693,6 +702,7 @@ public struct SHSidebarFooter: View, Equatable {
     let update: () -> Void
     /// The detail line as a button (the iPhone and iPad's Fleet line opens Fleet); the Mac's is plain text.
     let openDetail: (() -> Void)?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(name: String, detail: String, settingsShortcut: String? = nil, updateVersion: String? = nil,
                 openDetail: (() -> Void)? = nil, settings: @escaping () -> Void, update: @escaping () -> Void = {}) {
@@ -717,7 +727,8 @@ public struct SHSidebarFooter: View, Equatable {
     public var body: some View {
         #if os(iOS)
         // The touch boards' footer (DuoOpenOverview, iPadSidebar): Settings leads, the Fleet line ends it.
-        HStack(spacing: SH.Space.l) {
+        // From the accessibility sizes the Fleet line goes under Settings, each whole.
+        typeSize.shAdaptiveLayout(spacing: SH.Space.l, stackedSpacing: 0) {
             if let updateVersion {
                 SHUpdateButton(version: updateVersion, action: update)
             } else {
@@ -735,7 +746,7 @@ public struct SHSidebarFooter: View, Equatable {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Settings")
             }
-            Spacer(minLength: SH.Space.m)
+            if !typeSize.isAccessibilitySize { Spacer(minLength: SH.Space.m) }
             if detail.isEmpty {
                 EmptyView()
             } else if let openDetail {
@@ -746,7 +757,8 @@ public struct SHSidebarFooter: View, Equatable {
             }
         }
         .padding(.horizontal, SHSidebarMetrics.touchFooterInset)
-        .frame(height: SHSidebarMetrics.footerHeight)
+        .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, minHeight: SHSidebarMetrics.footerHeight, alignment: .leading)
+        .frame(height: typeSize.isAccessibilitySize ? nil : SHSidebarMetrics.footerHeight)
         #else
         HStack(spacing: SH.Space.m) {
             if detail.isEmpty {
@@ -783,7 +795,7 @@ extension SHSidebarFooter {
                 .foregroundStyle(.sh.textSecondary)
                 .frame(width: SHSidebarMetrics.footerGlyph)
                 .accessibilityHidden(true)
-            Text(detail).font(.sh(.caption)).foregroundStyle(.sh.textSecondary).lineLimit(1)
+            Text(detail).font(.sh(.caption)).foregroundStyle(.sh.textSecondary).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 .accessibilityLabel(name.isEmpty ? detail : "\(name), \(detail)")
         }
         .frame(minHeight: SHSidebarMetrics.footerHeight)

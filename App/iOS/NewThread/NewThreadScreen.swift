@@ -66,6 +66,7 @@ private struct NewThreadForm: View {
     @FocusState private var promptFocused: Bool
     /// Popovers widen with the text size, so a host's name still fits at accessibility sizes.
     @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ScrollView {
@@ -136,12 +137,13 @@ private struct NewThreadForm: View {
         .shLift(shape)
     }
 
-    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first.
+    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first. From the accessibility
+    /// sizes they stack, each whole: three chips beside each other were cut to their first letters.
     private var row: some View {
-        HStack(spacing: SH.Space.s) {
+        typeSize.shAdaptiveLayout(spacing: SH.Space.s, stackedSpacing: 0) {
             NewThreadAttachButton(model: model)
             workplace
-            Spacer(minLength: SH.Space.s)
+            if !typeSize.isAccessibilitySize { Spacer(minLength: SH.Space.s) }
             modelChip
         }
         .padding(.horizontal, -SH.Space.m)
@@ -154,7 +156,7 @@ private struct NewThreadForm: View {
     @ViewBuilder private var workplace: some View {
         let repo = model.repoName ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
-        HStack(spacing: SH.Space.xs) {
+        typeSize.shAdaptiveLayout(spacing: SH.Space.xs, stackedSpacing: 0) {
             Button { open(pad ? .repo : .workspace) } label: {
                 HStack(spacing: SH.Space.s) {
                     Image(systemName: SHGlyph.repository.symbolName).font(.sh(.ui, weight: .regular)).accessibilityHidden(true)

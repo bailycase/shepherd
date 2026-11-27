@@ -58,9 +58,9 @@ struct DiffScreen: View {
         .navigationTitle(summary?.name ?? reviewPathParts(path).name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 DiffTitle(summary: summary, position: entry.flatMap { store.index(of: $0.id) }, count: store.entries.count)
-            }
+            }.shBarTitleType() }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if let entry {
                     let viewed = store.viewed.contains(entry.id)

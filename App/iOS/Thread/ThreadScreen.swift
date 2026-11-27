@@ -143,7 +143,7 @@ struct ThreadScreen: View {
                     ToolbarItem(placement: .topBarLeading) { PadSidebarButton(inBar: true) }
                 }
                 if !inlineTitle {
-                    ToolbarItem(placement: .principal) {
+                    ToolbarItem(placement: .principal) { Group {
                         // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`), and the column's own
                         // buttons end its row (iPadReview, iPadThread) instead of sitting at the window's edge above the pane.
                         HStack(spacing: SH.Space.m) {
@@ -165,7 +165,7 @@ struct ThreadScreen: View {
                         // The bar sizes the title to what it holds, so the column's width is asked for to carry the buttons to its end.
                         .frame(minWidth: besidePane ? titleMaxWidth.map { $0 - 2 * MobileLayout.padThreadGutter } : nil,
                                maxWidth: titleMaxWidth ?? (sizeClass == .regular ? .infinity : nil), alignment: .leading)
-                    }
+                    }.shBarTitleType() }
                 }
                 if !besidePane || inlineTitle {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -797,6 +797,7 @@ private struct ThreadSidePaneButton: View {
     var body: some View {
         let label = isOn ? "Hide side pane" : "Show side pane"
         Button(label, systemImage: "sidebar.right", action: action)
+            .duoStripIcon()
             .tint(isOn ? Color.sh.lantern : Color.sh.textPrimary)
             .accessibilityAddTraits(isOn ? .isSelected : [])
     }

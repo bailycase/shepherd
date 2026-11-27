@@ -99,7 +99,7 @@ struct ForgePullRequestContent: View {
         .toolbar(removing: layout.verticalBars || layout.isPad ? .title : nil)
         .toolbar {
             if !layout.isPad, !layout.verticalBars {
-                ToolbarItem(placement: .principal) { ForgeTitle(title: title, subtitle: subtitle) }
+                ToolbarItem(placement: .principal) { Group { ForgeTitle(title: title, subtitle: subtitle) }.shBarTitleType() }
             }
             if !layout.isPad || layout.verticalBars {
                 ToolbarOverflowMenu { menu(store, model) }

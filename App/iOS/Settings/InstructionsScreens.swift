@@ -217,7 +217,7 @@ struct InstructionsEditorScreen: View {
         .background(Color.sh.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 VStack(spacing: SH.Space.xxs / 2) {
                     Text(file.fileName)
                         .font(.shMono(SHTextStyle.ui.size, .semibold))
@@ -227,7 +227,7 @@ struct InstructionsEditorScreen: View {
                         .foregroundStyle(Color.sh.textSecondary)
                 }
                 .accessibilityElement(children: .combine)
-            }
+            }.shBarTitleType() }
             ToolbarItem(placement: .confirmationAction) {
                 if model.busy {
                     SHBusyLabel("Saving…")

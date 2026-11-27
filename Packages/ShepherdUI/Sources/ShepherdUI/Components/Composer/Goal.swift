@@ -121,6 +121,7 @@ public struct SHGoalCard: View {
     let confirmedByUser: Bool
     let clockStart: Date?
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1
+    @Environment(\.dynamicTypeSize) private var typeSize
     let pause: () -> Void
     let resume: () -> Void
     let edit: () -> Void
@@ -161,7 +162,7 @@ public struct SHGoalCard: View {
                     .help(text)
                     .font(.shSans(size.textFont))
                     .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(size.textLines)
+                    .lineLimit(typeSize.isAccessibilitySize ? 6 : size.textLines)
                     .truncationMode(.tail)
                     .padding(.top, max(SH.Space.m * scale, size.hitTarget - size.headerHeight * scale))
                     .padding(.bottom, SH.Space.m * scale)
@@ -242,7 +243,8 @@ private struct SHGoalCardHeader: View {
                     if size == .desktop { metadata } else { Spacer(minLength: 0) }
                     actions
                 }
-                .frame(height: size.headerHeight * scale, alignment: .top)
+                // The heading above has already grown with the text size: the actions' row is one touch target, not another header.
+                .frame(minHeight: size == .desktop ? size.headerHeight * scale : size.hitTarget, alignment: .top)
             }
         }
         .padding(.leading, size.leadingInset)

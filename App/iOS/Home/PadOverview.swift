@@ -110,6 +110,7 @@ struct PadOverview: View {
                         }
                     }
                     .fixedSize()
+                    .shBarTitleType()
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isHeader)
                 }
@@ -118,10 +119,12 @@ struct PadOverview: View {
             // Search and More in one capsule, New thread beside it (DuoOpenOverview, iPadOverview).
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+                    .duoStripIcon()
                 StopAllWorkingMenu()
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
+                    .duoStripIcon()
                     .buttonStyle(.glassProminent)
                     .tint(Color.sh.primary)
                     .accessibilityIdentifier("overview-toolbar-new-thread")

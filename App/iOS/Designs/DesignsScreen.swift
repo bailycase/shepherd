@@ -71,11 +71,13 @@ struct DesignsScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+                    .duoStripIcon()
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             // New design is the ink circle (MobileDesigns).
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New design", systemImage: "plus") { DesignsHooks.create(navigator: navigator) }
+                    .duoStripIcon()
                     .buttonStyle(.glassProminent)
                     .disabled(designs.serving.isEmpty)
             }

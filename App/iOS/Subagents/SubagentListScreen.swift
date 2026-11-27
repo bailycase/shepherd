@@ -23,7 +23,7 @@ struct SubagentListScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
-            ToolbarItem(placement: .principal) { SubagentListTitle(store: store) }
+            ToolbarItem(placement: .principal) { Group { SubagentListTitle(store: store) }.shBarTitleType() }
         }
         .keepsThreadLive(ref)
     }

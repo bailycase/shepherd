@@ -77,10 +77,12 @@ struct PadDesignsScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+                    .duoStripIcon()
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New design", systemImage: "plus") { DesignsHooks.create(navigator: navigator) }
+                    .duoStripIcon()
                     .buttonStyle(.glassProminent)
                     .disabled(!designs.available)
             }

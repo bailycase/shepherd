@@ -37,6 +37,7 @@ public struct SHCapsuleComposer<Leading: View, Field: View, Trailing: View, Acti
     let field: Field
     let trailing: Trailing
     let action: Action
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(@ViewBuilder leading: () -> Leading, @ViewBuilder field: () -> Field, @ViewBuilder trailing: () -> Trailing,
                 @ViewBuilder action: () -> Action) {
@@ -49,20 +50,44 @@ public struct SHCapsuleComposer<Leading: View, Field: View, Trailing: View, Acti
     public var body: some View {
         let M = SHTouchComposerMetrics.self
         let shape = RoundedRectangle(cornerRadius: M.capsuleHeight / 2)
-        HStack(alignment: .bottom, spacing: M.gap) {
-            if let leading {
-                leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
+        Group {
+            if typeSize.isAccessibilitySize {
+                // From the accessibility sizes the words take the pill's whole width and the buttons sit in a row under them: beside
+                // the model's name the field was a few letters wide.
+                VStack(alignment: .leading, spacing: 0) {
+                    field
+                        .padding(.vertical, SH.Space.m)
+                        .padding(.horizontal, SH.Space.xl - M.leadingPadding)
+                        .frame(maxWidth: .infinity, minHeight: M.capsuleHeight, alignment: .leading)
+                    HStack(alignment: .center, spacing: M.gap) {
+                        if let leading {
+                            leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
+                        }
+                        Spacer(minLength: 0)
+                        trailing
+                            .frame(minHeight: M.capsuleHeight)
+                            .layoutPriority(1)
+                        action
+                            .frame(minHeight: M.capsuleHeight)
+                    }
+                }
+            } else {
+                HStack(alignment: .bottom, spacing: M.gap) {
+                    if let leading {
+                        leading.frame(minWidth: M.attachSize, minHeight: M.capsuleHeight)
+                    }
+                    field
+                        .padding(.vertical, (M.capsuleHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
+                        .padding(.leading, leading == nil ? SH.Space.xl - M.leadingPadding : 0)
+                        .frame(minHeight: M.capsuleHeight, alignment: .leading)
+                    // The model's name is read whole; the words give way to it.
+                    trailing
+                        .frame(minHeight: M.capsuleHeight)
+                        .layoutPriority(1)
+                    action
+                        .frame(minHeight: M.capsuleHeight)
+                }
             }
-            field
-                .padding(.vertical, (M.capsuleHeight - SHTextStyle.body.size * SHTextStyle.body.lineHeight) / 2)
-                .padding(.leading, leading == nil ? SH.Space.xl - M.leadingPadding : 0)
-                .frame(minHeight: M.capsuleHeight, alignment: .leading)
-            // The model's name is read whole; the words give way to it.
-            trailing
-                .frame(minHeight: M.capsuleHeight)
-                .layoutPriority(1)
-            action
-                .frame(minHeight: M.capsuleHeight)
         }
         .padding(.leading, M.leadingPadding)
         .padding(.trailing, M.trailingPadding)

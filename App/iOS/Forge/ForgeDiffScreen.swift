@@ -36,7 +36,7 @@ struct ForgeDiffScreen: View {
         .navigationTitle(parts.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 VStack(spacing: SH.Space.xxs) {
                     Text(parts.name)
                         .font(.shMono(MobileLayout.touchBodyFont - 1, .semibold))
@@ -52,7 +52,7 @@ struct ForgeDiffScreen: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
-            }
+            }.shBarTitleType() }
             ToolbarItem(placement: .topBarTrailing) {
                 let viewed = summary?.viewed == true
                 Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : SHGlyph.resolved.symbolName) {
