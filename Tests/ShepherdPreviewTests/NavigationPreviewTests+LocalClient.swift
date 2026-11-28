@@ -181,8 +181,8 @@ extension PreviewTests {
         try await Preview.render("this-mac-automations-page", size: pageSize) { AutomationsDestination(vm: vm) }
         vm.automationsPageSelection = AutomationKey(host: PageHost.localID, automation: automations[0].id)
         try await Preview.render("this-mac-automation-runs", size: pageSize) { AutomationsDestination(vm: vm) }
-        // A run's row reads the date and time the host logged it, and its result moves with that text's width.
-        let runRow = CGRect(x: 860, y: 352, width: 170, height: 22)
+        // A run's row reads the date and time the host logged it; the redesigned page sets the row under its heading, with the result in its own column.
+        let runRow = CGRect(x: 800, y: 316, width: 112, height: 22)
         try expectBaseline("this-mac-automations-page", masking: [runRow])
         try expectBaseline("this-mac-automation-runs", masking: [runRow])
         try expectBaseline("this-mac-automations-sidebar")
