@@ -14,8 +14,14 @@ struct ChangesScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
+        VerticalBars { verticalBars in content(inline: verticalBars && sizeClass == .regular) }
+    }
+
+    /// `inline`: the bars run down the side (iPhone Duo's inner display), so the head starts at the top edge (DuoBookChanges).
+    @ViewBuilder private func content(inline: Bool) -> some View {
         let store = ReviewStores.shared.store(for: ref)
         let host = hosts.host(ref.host)
         let agent = host?.agent(ref.agent)
@@ -71,13 +77,26 @@ struct ChangesScreen: View {
                 if sent { finishReview() }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if inline {
+                ChangesTitle(store: store, pickBase: { store.pickingBase = true }, alignment: .leading)
+                    .shBarTitleType()
+                    .padding(.horizontal, MobileLayout.padThreadGutter)
+                    .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.duoHeadHeight, alignment: .leading)
+                    .background(Color.sh.bgWindow)
+            }
+        }
+        .ignoresSafeArea(.container, edges: inline ? .top : [])
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Changes")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: inline ? .title : nil)
         .toolbar {
-            ToolbarItem(placement: .principal) { Group {
-                ChangesTitle(store: store) { store.pickingBase = true }
-            }.shBarTitleType() }
+            if !inline {
+                ToolbarItem(placement: .principal) { Group {
+                    ChangesTitle(store: store) { store.pickingBase = true }
+                }.shBarTitleType() }
+            }
             // The system's ••• menu, which overflows with the bar where it runs down the side.
             ToolbarOverflowMenu {
                 ReviewOptionsItems(store: store,

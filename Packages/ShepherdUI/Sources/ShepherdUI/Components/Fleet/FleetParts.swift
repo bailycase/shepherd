@@ -63,12 +63,15 @@ public struct SHListHeader<Trailing: View>: View {
     let title: String
     let attention: Bool
     let style: Style
+    /// A count follows the title (iPadOverview's "Needs you 3"); other trailing views sit at the row's end.
+    let follows: Bool
     @ViewBuilder let trailing: () -> Trailing
 
-    public init(_ title: String, attention: Bool = false, style: Style = .list, @ViewBuilder trailing: @escaping () -> Trailing) {
+    public init(_ title: String, attention: Bool = false, style: Style = .list, follows: Bool = false, @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
         self.attention = attention
         self.style = style
+        self.follows = follows
         self.trailing = trailing
     }
 
@@ -80,8 +83,13 @@ public struct SHListHeader<Trailing: View>: View {
                 .font(.shSans(small ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, style == .quiet ? .medium : .semibold))
                 .foregroundStyle(attention ? Color.sh.lanternText : sidebar ? Color.sh.textTertiary : style == .quiet ? Color.sh.textSecondary : Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: SH.Space.xs)
-            trailing()
+            if follows {
+                trailing()
+                Spacer(minLength: SH.Space.xs)
+            } else {
+                Spacer(minLength: SH.Space.xs)
+                trailing()
+            }
         }
         .padding(.horizontal, SH.Space.xs)
     }
@@ -89,7 +97,7 @@ public struct SHListHeader<Trailing: View>: View {
 
 extension SHListHeader where Trailing == Text? {
     public init(_ title: String, attention: Bool = false, count: Int? = nil, style: Style = .list) {
-        self.init(title, attention: attention, style: style) {
+        self.init(title, attention: attention, style: style, follows: true) {
             count.map {
                 Text("\($0)").font(.shSans(style != .list ? SHListMetrics.sidebarHeadSize : SHListMetrics.headSize, .regular))
                     .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)

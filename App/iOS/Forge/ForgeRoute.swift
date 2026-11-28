@@ -55,7 +55,9 @@ extension MobileLayout {
     /// A pull request beside its diff (iPadPRChanges).
     static let forgeDetailBesideDiffWidth: CGFloat = 420
     /// The detail's readable measure on iPad.
-    static let forgeDetailMaxWidth: CGFloat = 640
+    static let forgeDetailMaxWidth: CGFloat = 720
+    /// An iPad detail's page inset and its head's leading space (iPadIPReview: 32).
+    static let forgePadInset: CGFloat = SH.Space.xxxl
     /// The review and comment sheets' text box before it grows.
     static let forgeEditorMinHeight: CGFloat = 120
     /// The list's title on the phone (the boards' 28pt).

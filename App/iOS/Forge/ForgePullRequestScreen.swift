@@ -80,7 +80,7 @@ struct ForgePullRequestContent: View {
                         ForgeFetching(number: key.ref.number)
                     }
                 }
-                .padding(.horizontal, layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter)
+                .padding(.horizontal, layout.isPad ? MobileLayout.forgePadInset : MobileLayout.gutter)
                 .padding(.bottom, MobileLayout.sectionSpacing)
                 .frame(maxWidth: MobileLayout.forgeDetailMaxWidth)
                 .frame(maxWidth: .infinity)
@@ -174,7 +174,7 @@ struct ForgePullRequestContent: View {
                     .font(.shSans(MobileLayout.touchDetailFont)).foregroundStyle(sh.textSecondary)
             }
         }
-        .padding(.horizontal, SH.Space.xs)
+        .padding(.horizontal, layout.isPad ? 0 : SH.Space.xs)
     }
 
     /// "1 failed", "running", or how many ran: what follows Checks in the switch.
@@ -194,7 +194,7 @@ struct ForgePullRequestContent: View {
                 .font(.shSans(MobileLayout.touchDetailFont))
                 .foregroundStyle(sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, SH.Space.xs)
+                .padding(.horizontal, layout.isPad ? 0 : SH.Space.xs)
         }
         if model.detail.state != .closed, !model.status.isEmpty {
             ReviewCard {
@@ -240,7 +240,7 @@ struct ForgePullRequestContent: View {
         if model.body.isEmpty {
             Text("No description.").shText(.caption).foregroundStyle(sh.textTertiary).padding(.horizontal, SH.Space.xs)
         } else {
-            ProseView(prose: model.body).equatable().padding(.horizontal, SH.Space.xs)
+            ProseView(prose: model.body).equatable().padding(.horizontal, layout.isPad ? 0 : SH.Space.xs)
         }
         if !model.activity.isEmpty {
             ReviewSectionHead(title: "Activity")
@@ -260,7 +260,7 @@ struct ForgePullRequestContent: View {
 
     @ViewBuilder private func bar(_ store: ForgeStore, _ model: ForgePullRequestModel?) -> some View {
         let busy = store.busy.contains(key) || handing
-        ReviewGlassBar(horizontalInset: layout.isPad ? MobileLayout.padThreadGutter - SH.Space.s : MobileLayout.gutter) {
+        ReviewGlassBar(horizontalInset: layout.isPad ? MobileLayout.forgePadInset : MobileLayout.gutter) {
             ReviewGlassBarItem(title: "Ask agent") { asking = true }
             // A merged or closed pull request takes no review.
             if model.map({ $0.detail.state == .open || $0.detail.state == .draft }) ?? true {

@@ -116,10 +116,12 @@ struct ChangesScopeMenu<Label: View>: View {
 struct ChangesTitle: View {
     let store: ReviewStore
     let pickBase: () -> Void
+    /// Leading where the head starts a column (DuoBookChanges); centred in a bar.
+    var alignment: HorizontalAlignment = .center
 
     var body: some View {
         ChangesScopeMenu(store: store, pickBase: pickBase) {
-            VStack(spacing: SH.Space.xxs) {
+            VStack(alignment: alignment, spacing: SH.Space.xxs) {
                 Text("Changes").font(.shBar(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                 HStack(spacing: SH.Space.xs) {
                     Text(store.scopeTitle).lineLimit(1).truncationMode(.middle)

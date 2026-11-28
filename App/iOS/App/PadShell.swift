@@ -86,7 +86,11 @@ struct PadShell: View {
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
             }
-            .onChange(of: proxy.verticalFold != nil, initial: true) { _, folded in navigator.padFolded = folded }
+            .onChange(of: proxy.verticalFold != nil, initial: true) { _, folded in
+                navigator.padFolded = folded
+                // Laid flat, what half open pushed over the thread is the pane's tab again.
+                if !folded { navigator.takePaneScreens() }
+            }
             .onChange(of: navigator.padShowsForgeWide) { _, _ in
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
