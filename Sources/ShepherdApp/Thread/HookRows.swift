@@ -91,7 +91,7 @@ struct HookEventRow: View, Equatable {
                 HStack(spacing: SH.Space.m) {
                     row.kind.glyph.font(.shSans(AppLayout.hookGlyphSize - SH.Space.xxs, .medium)).foregroundStyle(row.kind.color)
                         .frame(width: AppLayout.hookGlyphSize, height: AppLayout.hookGlyphSize)
-                    Text(row.verb).font(.sh(.ui, weight: .regular)).foregroundStyle(row.kind == .failed ? Color.sh.failed : Color.sh.textPrimary)
+                    Text(row.verb).font(.sh(.ui, weight: .regular)).foregroundStyle(row.kind == .failed && row.verb == "A hook failed" ? Color.sh.failed : Color.sh.textPrimary)
                         .lineLimit(1).layoutPriority(1)
                     if !row.detail.isEmpty {
                         Text(row.detail).font(.sh(.code)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.tail)
