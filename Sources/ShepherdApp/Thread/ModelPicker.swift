@@ -17,7 +17,7 @@ struct ModelCatalog: Sendable {
         let title: String
         let context: String?
         let reasoning: Bool
-        /// The row's second line: the levels the model takes ("Off · Minimal · Low · Medium ·
+        /// The row's second line: the levels the model takes ("Off, Minimal, Low, Medium,
         /// High", or "No thinking"; `NativeModelChoices.thinkingLines`).
         let thinking: String
         /// The levels the model takes (pi's spellings; none without reasoning): what a Project's reasoning menu offers before its

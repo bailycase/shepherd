@@ -58,7 +58,7 @@ struct NewThreadComposerTests {
         try await eventuallyOnMain("creation capabilities to load") { !draft.loadingDefaults }
         #expect(draft.thinkingLevels(vm) == [.off, .low, .medium, .high, .xhigh, .max])
         #expect(draft.serviceTiers(vm) == [.standard, .fast] && draft.serviceTier == .fast)
-        #expect(draft.catalog?.model("openai/gpt-5")?.thinking == "Off · Low · Medium · High · Extra high · Max")
+        #expect(draft.catalog?.model("openai/gpt-5")?.thinking == "Off, Low, Medium, High, Extra high, Max")
         #expect(draft.catalog?.model("openai/gpt-5")?.context == "400K")
         draft.setModel("fixture/plain")
         #expect(draft.thinkingLevels(vm).isEmpty && draft.serviceTiers(vm).isEmpty)
