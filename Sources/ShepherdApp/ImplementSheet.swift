@@ -231,7 +231,7 @@ struct ImplementSheetOverlay: View {
                     .accessibilityHidden(true)
                     .shTransition(.content)
                 ImplementSheetView(vm: vm, model: model)
-                    .padding(.top, AppLayout.designSheetTop)
+                    .designSheetPlaced()
                     .shTransition(.overlay, anchor: .top)
             }
         }

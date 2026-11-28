@@ -375,15 +375,14 @@ struct DesignGitSheetsOverlay: View {
                 DesignGitShareSheetHost(model: model, close: { if !model.working { vm.designGitShare = nil } },
                                         share: { vm.runDesignGitShare(model) })
                     // Never taller than the window: its middle scrolls instead.
-                    .padding(.top, AppLayout.designSheetTop)
-                    .padding(.bottom, SH.Space.xl)
                     .accessibilityAddTraits(.isModal)
+                    .designSheetPlaced()
                     .shTransition(.overlay, anchor: .top)
             } else if let model = vm.designGitOpen {
                 DesignGitOpenSheetHost(model: model, close: { if !model.working { vm.designGitOpen = nil } },
                                        clone: { vm.runDesignGitOpen(model) })
-                    .padding(.top, AppLayout.designSheetTop)
                     .accessibilityAddTraits(.isModal)
+                    .designSheetPlaced()
                     .shTransition(.overlay, anchor: .top)
             } else if let id = vm.designGitMergeDialog, let merge = vm.designGitStates[id]?.state?.merge,
                       let status = vm.designGitStates[id]?.state?.status {
@@ -397,8 +396,8 @@ struct DesignGitSheetsOverlay: View {
                                  failure: vm.designGitStates[id]?.failure ?? merge.reason,
                                  keepLocal: { vm.keepDesignGitLocal(id) }, resolve: { vm.resolveDesignGitMerge(id) },
                                  drop: { vm.dropDesignGitMerge(id) })
-                    .padding(.top, AppLayout.designSheetTop)
                     .accessibilityAddTraits(.isModal)
+                    .designSheetPlaced()
                     .shTransition(.overlay, anchor: .top)
                     .onExitCommand { vm.designGitMergeDialog = nil }
             }

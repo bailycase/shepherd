@@ -87,7 +87,7 @@ struct DesignExportSheet: View {
     }
 
     private var share: some View {
-        VStack(alignment: .leading, spacing: SH.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.xl + SH.Space.xs) {
             HStack(spacing: SHDesignMetrics.exportShareSpacing) {
                 // Which thread is not drawn: the button lists them.
                 Menu {
@@ -111,6 +111,7 @@ struct DesignExportSheet: View {
             Text("Attached boards arrive as HTML plus a note of the tokens they use.")
                 .font(.shSans(SHDesignChrome.paneCountSize))
                 .foregroundStyle(Color.sh.textTertiary)
+                .frame(minHeight: SHDesignChrome.exportLine)
         }
     }
 }
@@ -129,7 +130,7 @@ struct DesignExportOverlay: View {
                     .accessibilityHidden(true)
                     .shTransition(.content)
                 DesignExportSheet(vm: vm, model: model)
-                    .padding(.top, AppLayout.designSheetTop)
+                    .designSheetPlaced()
                     .shTransition(.overlay, anchor: .top)
             }
         }
