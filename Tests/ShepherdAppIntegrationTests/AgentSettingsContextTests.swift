@@ -57,7 +57,7 @@ struct AgentSettingsContextTests {
 
         let control = try window.press(trim, role: ControlRole.checkBox)
         #expect(!settings.trimToolOutput, "the press turned it off")
-        #expect(control.isEnabled && control.frame.width >= 30 && control.frame.height >= 18, "the switch is as big as it is drawn: \(control)")
+        #expect(control.isEnabled && control.frame.width >= 26 && control.frame.height >= 16, "the switch is as big as it is drawn: \(control)")
         try window.press(trim, role: ControlRole.checkBox)
         #expect(settings.trimToolOutput, "and the next press back on")
     }
@@ -75,7 +75,7 @@ struct AgentSettingsContextTests {
         let control = try window.press(defers, role: ControlRole.checkBox)
         #expect(!settings.deferTools, "the press turned it off")
         #expect(settings.trimToolOutput, "and left the trim switch alone")
-        #expect(control.isEnabled && control.frame.width >= 30 && control.frame.height >= 18, "the switch is as big as it is drawn: \(control)")
+        #expect(control.isEnabled && control.frame.width >= 26 && control.frame.height >= 16, "the switch is as big as it is drawn: \(control)")
         #expect(AppSettings(store: store).deferTools == false, "the choice is kept for the next launch")
         try window.press(defers, role: ControlRole.checkBox)
         #expect(settings.deferTools, "and the next press back on")

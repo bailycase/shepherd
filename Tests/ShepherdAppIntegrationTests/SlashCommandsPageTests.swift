@@ -40,9 +40,9 @@ struct SlashCommandsPageTests {
         #expect(switches.compactMap(\.label) == ["/session-name", "/fix-tests", "/release-notes"], "one switch per command, grouped and by name: \(window.controls())")
         #expect(switches.allSatisfy { $0.role == ControlRole.checkBox && $0.isEnabled }, "each is an enabled switch: \(switches)")
         #expect(settings.hiddenSlashCommands.isEmpty, "every command starts on")
-        // The shared switch is the board's 30×18pt capsule, under the desktop 24pt a control should be: it is the
-        // component every Settings page uses and is left as it is (the PR names it).
-        #expect(switches.allSatisfy { $0.frame.width >= 30 && $0.frame.height >= 18 }, "the whole capsule answers a click: \(switches)")
+        // The Settings switch is the redesign boards' 26×16pt capsule (as the Tweak pane's), under the desktop 24pt a control should be: it is the
+        // component every Settings page uses and is left as it is.
+        #expect(switches.allSatisfy { $0.frame.width >= 26 && $0.frame.height >= 16 }, "the whole capsule answers a click: \(switches)")
 
         try window.press("/fix-tests", role: ControlRole.checkBox)
         try await eventuallyOnMain("the server to be told") { handed == [["fix-tests"]] }

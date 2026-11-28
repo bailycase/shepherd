@@ -323,13 +323,13 @@ struct MCPSettingsControlTests {
         #expect(window.controls().compactMap(\.label).contains { $0.hasPrefix("Add") })
         try window.press("OAuth · found", role: ControlRole.radioButton)
         try window.press("Advanced: client ID, scopes, extra headers, timeout", role: "AXDisclosureTriangle")
-        try window.press("Close")
+        // The board draws no ✕ here: Escape closes it (a hidden Close), Cancel is the visible way out.
         try window.press("Cancel")
-        #expect(closed == 2 && store.entry("notion") == nil, "Close and Cancel save nothing")
+        #expect(closed == 1 && store.entry("notion") == nil, "Cancel saves nothing")
 
         try window.press("Add and sign in")
         try await eventuallyOnMain("the server to be saved") { store.entry("notion")?.url == "https://mcp.notion.com/mcp" }
-        #expect(closed == 3)
+        #expect(closed == 2)
         try await eventuallyOnMain("pi's login to start for it") { cli.calls.contains(["login", "notion", "--timeout", "300"]) }
         #expect(store.signIn?.server == "notion")
         let text = try String(contentsOf: store.dependencies.file.url, encoding: .utf8)
