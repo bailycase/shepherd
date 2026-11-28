@@ -82,6 +82,8 @@ extension DesignPreviewTests {
         let card = try stepCard()
         screen.setSelection([.init(board: card.board, element: card)])
         #expect(screen.actionsBoard == card.board, "an element's board wears the actions")
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-ref-menu", size: Self.referenceWindow, ready: {
             if screen.snapshot != nil, screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
             return screen.viewport == Self.closeOnA && screen.isDrawn
@@ -116,6 +118,8 @@ extension DesignPreviewTests {
         let model = try #require(vm.implementSheet)
         model.message = "Build this in the checkout page. Keep our existing table component for the steps."
         model.opensThread = true
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-ref-sheet", size: Self.referenceWindow, ready: {
             if screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
             return model.prepared != nil && screen.isDrawn
@@ -139,6 +143,8 @@ extension DesignPreviewTests {
         let model = try #require(vm.implementSheet)
         model.mode = .new
         model.opensThread = false
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-ref-sheet-board", size: Self.referenceWindow, ready: {
             model.prepared != nil && screen.isDrawn
         }) {
@@ -173,6 +179,8 @@ extension DesignPreviewTests {
         try await eventuallyOnMain("the send", timeout: .seconds(60)) { vm.implementSheet == nil && vm.referenceToast != nil }
         #expect(vm.selectedAgentID == checkout.agentID, "the canvas stays")
         #expect(!vm.settings.implementOpensThread, "the choice is remembered")
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-ref-sent", size: Self.referenceWindow, ready: {
             if screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
             return screen.isDrawn
@@ -199,6 +207,8 @@ extension DesignPreviewTests {
         screen.copySelectionReference(designName: checkout.name)
         try await eventuallyOnMain("the toast") { vm.referenceToast != nil }
         #expect(copied.count == 1 && DesignReference(string: copied[0])?.element == card.id)
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-ref-copied", size: Self.referenceWindow, ready: {
             if screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
             return screen.isDrawn
@@ -217,6 +227,8 @@ extension DesignPreviewTests {
         vm.selectSidebarRow(.design(checkout.id))
         let screen = vm.designScreen(checkout.id)
         await screen.refresh()
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-thread-notes-damage", size: Self.referenceWindow, ready: {
             screen.isDrawn && screen.snapshot?.threadNotesWarning?.contains(file.path) == true
         }) {
@@ -252,6 +264,8 @@ extension DesignPreviewTests {
         screen.openThread(DesignScreenModel.notePinID(note.id))
         #expect(screen.openThreadNote?.id == note.id)
         #expect(screen.pins.contains { $0.style == .threadNote(thread.name) })
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render("app-window-design-ref-note", size: Self.referenceWindow, ready: {
             if screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
             return screen.isDrawn

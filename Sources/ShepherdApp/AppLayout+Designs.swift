@@ -30,9 +30,11 @@ extension AppLayout {
     /// The headline over its line, the line (a 520pt column) under it, and the composer 28pt on.
     static let newDesignSubtitleSpacing: CGFloat = SH.Space.m
     static let newDesignSubtitleWidth: CGFloat = 520
+    static let newDesignHeadingLine: CGFloat = 32
     static let newDesignComposerGap: CGFloat = 28
     static let newDesignComposerWidth: CGFloat = 860
-    static let newDesignFieldMinHeight: CGFloat = 72
+    /// The board's field is 72pt with its padding; the composer pads it 16pt above, so the words get the rest.
+    static let newDesignFieldMinHeight: CGFloat = 56
     /// The starting points: 26pt under the composer, their label 10pt over them, 10pt apart, three
     /// to a row.
     static let newDesignCardsTop: CGFloat = 26

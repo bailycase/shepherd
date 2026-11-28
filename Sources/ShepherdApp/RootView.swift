@@ -339,8 +339,8 @@ private struct DestinationLayer: View {
         switch vm.shownDestination {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome).inWindowPadding()
         case .designs?: DesignsDestination(vm: vm, chrome: chrome).inWindowPadding()
-        case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
-        case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)
+        case .newDesign?: NewDesignPage(vm: vm, chrome: chrome).inWindowPadding()
+        case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome).inWindowPadding()
         case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
         case .forge?: ForgeDestination(vm: vm, chrome: chrome)
         case .fleet?: FleetDestination(vm: vm, chrome: chrome).inWindowPadding()

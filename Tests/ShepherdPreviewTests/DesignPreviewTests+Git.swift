@@ -99,6 +99,8 @@ extension DesignPreviewTests {
             vm.selectDesignGitFile(checkout.id, path: "project/A-phone.dc.html")
         default: break
         }
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.renderMatrix("app-window-design-git-\(state)", size: Self.windowSizeForJump,
                                        scales: state == "changes" ? [1, 1.3] : [1], ready: {
             screen.isDrawn && (state != "changes" || git.preview != nil)

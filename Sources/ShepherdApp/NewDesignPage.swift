@@ -44,6 +44,8 @@ struct NewDesignPage: View {
                         .tracking(AppLayout.newThreadHeadingTracking)
                         .foregroundStyle(Color.sh.textPrimary)
                         .multilineTextAlignment(.center)
+                        // The board's line box: 32 on the headline.
+                        .frame(minHeight: AppLayout.newDesignHeadingLine)
                         .accessibilityAddTraits(.isHeader)
                     Text("Describe the page or flow. The design agent draws it as HTML boards in your design system, "
                          + "and you refine it on the canvas.")
@@ -53,6 +55,8 @@ struct NewDesignPage: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: AppLayout.newDesignSubtitleWidth)
                         .fixedSize(horizontal: false, vertical: true)
+                        // Two 20pt line boxes: each line's 2pt of leading above and below, which `lineSpacing` leaves out at the ends.
+                        .padding(.vertical, SH.Space.xxs)
                 }
                 VStack(alignment: .leading, spacing: SH.Space.m) {
                     composer
@@ -226,6 +230,7 @@ struct NewDesignPage: View {
             Text("Design system & starting point")
                 .font(.sh(.headline))
                 .foregroundStyle(Color.sh.textPrimary)
+                .frame(minHeight: SHTextStyle.headline.size * SHTextStyle.headline.lineHeight)
                 .padding(.leading, SH.Space.xxs)
                 .accessibilityAddTraits(.isHeader)
             Grid(horizontalSpacing: gap, verticalSpacing: gap) {

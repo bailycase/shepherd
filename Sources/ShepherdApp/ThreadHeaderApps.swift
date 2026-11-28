@@ -4,7 +4,7 @@ import ShepherdUI
 
 /// The thread header's app chip (GXAppsRun, GXAppsRunning boards), in the toolbar's trailing capsule: ▶ and
 /// the space's first quick action, or while an app runs its name, port and ■ (a click stops it); with ▾
-/// listing every quick action in the space, each app's output while it runs, then Add or edit apps….
+/// listing every quick action in the space, each app's output while it runs, then Edit apps….
 /// A rule separates it from the capsule's buttons.
 struct ThreadAppsButton: View {
     let apps: QuickApps
@@ -61,7 +61,7 @@ struct ThreadAppsButton: View {
 
     private var menu: some View {
         Menu {
-            Section("Apps in \(apps.space)") {
+            Section("Run in \(apps.space)") {
                 ForEach(apps.items) { item in
                     Button {
                         switch item.status {
@@ -88,7 +88,7 @@ struct ThreadAppsButton: View {
                 }
             }
             Divider()
-            Button("Add or edit apps…", action: edit)
+            Button("Edit apps…", action: edit)
         } label: {
             Image(systemName: "chevron.down").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
                 .padding(.horizontal, SH.Space.xs)
@@ -99,7 +99,7 @@ struct ThreadAppsButton: View {
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .fixedSize()
-        .accessibilityLabel("Apps in \(apps.space)")
+        .accessibilityLabel("Run in \(apps.space)")
     }
 }
 
