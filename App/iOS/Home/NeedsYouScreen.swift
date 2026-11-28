@@ -8,8 +8,6 @@ import ShepherdRemote
 struct NeedsYouScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
-    /// The list and detail don't fit side by side (iPhone Duo): the cards carry the board's big title instead of the bar.
-    @State private var single = false
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
@@ -21,7 +19,7 @@ struct NeedsYouScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if sizeClass == .regular {
-                NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures, single: $single)
+                NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures)
             } else {
                 NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures, showsTitle: true)
             }
@@ -30,26 +28,6 @@ struct NeedsYouScreen: View {
         .task { await feed.watch() }
         .navigationTitle("Needs you")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // On a wide iPad the trailing corner shares the status bar's space.
-            if sizeClass == .regular {
-                ToolbarItem(placement: .topBarLeading) {
-                    // The board's head: "Needs you" over "2 waiting".
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Needs you").font(.shSans(MobileLayout.barTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
-                        if !items.isEmpty {
-                            Text("\(items.count) waiting").font(.shSans(MobileLayout.barSubtitleSize)).foregroundStyle(Color.sh.textSecondary)
-                        }
-                    }
-                    .fixedSize()
-                    .opacity(single ? 0 : 1)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityHidden(single)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
-        }
         .toolbar(removing: .title)
     }
 
@@ -96,25 +74,30 @@ private struct NeedsYouSplit: View {
     let items: [FleetAttention]
     let answering: Set<String>
     let failures: [String: String]
-    @Binding var single: Bool
     @State private var chosen: String?
 
     var body: some View {
         let current = items.first { $0.id == chosen } ?? items[0]
         PadListDetail(listWidth: MobileLayout.inboxListWidth) {
-            ScrollView {
-                // Flat items, 2pt apart, the chosen one filled (iPadInbox).
-                LazyVStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    ForEach(items) { item in
-                        Button { chosen = item.id } label: {
-                            AttentionCard(item: item, busy: answering.contains(item.id), failure: nil,
-                                          selected: item.id == current.id, answers: false)
+            VStack(spacing: 0) {
+                // "Needs you" over "2 waiting", each column under its own bar (iPadInbox).
+                PadColumnBar("Needs you", subtitle: "\(items.count) waiting", inset: SH.Space.xl)
+                ScrollView {
+                    // Flat items, 2pt apart, the chosen one filled.
+                    LazyVStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        ForEach(items) { item in
+                            Button { chosen = item.id } label: {
+                                AttentionCard(item: item, busy: answering.contains(item.id), failure: nil,
+                                              selected: item.id == current.id, answers: false)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(item.id == current.id ? .isSelected : [])
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(item.id == current.id ? .isSelected : [])
                     }
+                    // The board's list sits flush under its bar, 16pt from each edge.
+                    .padding(.horizontal, SH.Space.xl)
+                    .padding(.bottom, SH.Space.m)
                 }
-                .padding(SH.Space.m)
             }
         } detail: {
             NeedsYouDetail(item: current, busy: answering.contains(current.id), failure: failures[current.id])
@@ -122,85 +105,139 @@ private struct NeedsYouSplit: View {
         } single: {
             // Too narrow for both (iPhone Duo): the phone's cards, answered in place.
             NeedsYouCards(items: items, answering: answering, failures: failures, showsTitle: true)
-                .onAppear { single = true }
-                .onDisappear { single = false }
         }
     }
 }
 
-/// One item on iPad: the question at reading size, where it came from, and its answers.
+/// One item on iPad (iPadInbox): its bar, the question as a card of radio answers with Open thread and Answer, and where it came from.
 private struct NeedsYouDetail: View {
     let item: FleetAttention
     let busy: Bool
     let failure: String?
     @Environment(MobileNavigator.self) private var navigator
     @Environment(MobileProjects.self) private var projects
+    @Environment(MobileHosts.self) private var hosts
+    /// The asker's pick (the first) is chosen until another is; nothing is answered until Answer.
+    @State private var picked = 1
 
     var body: some View {
         let sh = Color.sh
         VStack(spacing: 0) {
+            bar
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    // "Dock review pane" over "Needs you · 13m": how long it has waited.
-                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                        Text(item.title).font(.shSans(MobileLayout.detailTitleSize, .semibold)).foregroundStyle(sh.textPrimary)
-                        if let since = item.since.map(Date.init(milliseconds:)) {
-                            TimelineView(SHElapsedSchedule(start: since)) { context in
-                                Text("\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))")
-                                    .font(.sh(.caption)).foregroundStyle(AgentState.attention.textColor)
-                            }
-                        } else {
-                            Text(AgentState.attention.label).font(.sh(.caption)).foregroundStyle(AgentState.attention.textColor)
-                        }
-                    }
-                    Text(item.question).shText(.body).foregroundStyle(sh.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                    if let message = item.message {
-                        Text(message).shText(.code).foregroundStyle(sh.textSecondary)
+                    switch item.reply {
+                    case .choose, .confirm:
+                        card
+                    case .open:
+                        Text(item.question).shText(.body).foregroundStyle(sh.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
-                            .padding(SH.Space.l)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .shCard(radius: SHListMetrics.cardRadius, fill: sh.bgSunken)
-                    }
-                    if item.reply == .open {
+                        if let message = item.message { messageBox(message) }
                         Text(item.dialogID == nil
                              ? "Open the thread to see what it is waiting for."
                              : "Answer this one in the thread.")
                             .shText(.caption).foregroundStyle(sh.textTertiary)
+                        Button("Open thread") { open() }
+                            .buttonStyle(.sh(.primary, size: .l))
+                    }
+                    if let failure {
+                        Text(failure).font(.sh(.caption)).foregroundStyle(sh.failed).lineLimit(2)
                     }
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                         Text("Where it came from").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
                             .padding(.horizontal, SH.Space.xs)
                             .accessibilityAddTraits(.isHeader)
                         SHListCard {
-                            SHListRow(item.thread, subtitle: item.kind, subtitleMono: false,
-                                      clock: item.since.map { .ago(Date(milliseconds: $0)) }, leading: item.leading,
-                                      trailing: .host(item.hostName), chevron: false)
+                            Button { open() } label: {
+                                SHListRow(item.thread, subtitle: origin, subtitleMono: false)
+                            }
+                            .buttonStyle(.shRow(radius: 0))
                         }
                     }
-                    .padding(.top, SH.Space.m)
+                    .padding(.top, SH.Space.xs)
                 }
-                .padding(MobileLayout.gutter)
-                .frame(maxWidth: MobileLayout.threadMaxWidth, alignment: .leading)
+                .padding(.horizontal, MobileLayout.forgePadInset)
+                // The board's card sits 10pt under its bar (iPadInbox, measured).
+                .padding(.top, SH.Space.m + SH.Space.xxs)
+                .padding(.bottom, MobileLayout.gutter)
+                .frame(maxWidth: MobileLayout.forgeDetailMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            SHHairline()
-            HStack(spacing: SH.Space.m) {
-                Button("Open thread") { navigator.open(projects.route(item)) }
-                    .buttonStyle(.sh(item.reply == .open ? .primary : .ghost, size: .l))
-                Spacer(minLength: SH.Space.m)
-                if let failure {
-                    Text(failure).font(.sh(.caption)).foregroundStyle(sh.failed).lineLimit(2)
-                }
-                SHWrapStack(spacing: SH.Space.m) {
-                    AttentionReplies(item: item, busy: busy, size: .l, pickLast: true)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, MobileLayout.gutter)
-            .padding(.vertical, SH.Space.m)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// "Dock review pane" over "Needs you · 13m": how long it has waited.
+    @ViewBuilder private var bar: some View {
+        if let since = item.since.map(Date.init(milliseconds:)) {
+            TimelineView(SHElapsedSchedule(start: since)) { context in
+                PadColumnBar(title: item.title, subtitle: "\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))",
+                             subtitleColor: AgentState.attention.textColor, inset: MobileLayout.forgePadInset) { EmptyView() }
+            }
+        } else {
+            PadColumnBar(title: item.title, subtitle: AgentState.attention.label, subtitleColor: AgentState.attention.textColor,
+                         inset: MobileLayout.forgePadInset) { EmptyView() }
+        }
+    }
+
+    /// "A thread · 13m ago · Studio".
+    private var origin: String {
+        let ago = item.since.map { SHDuration.text(Date().timeIntervalSince(Date(milliseconds: $0))) + " ago" }
+        return [item.kind, ago, item.hostName].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private var options: [String] {
+        switch item.reply {
+        case .choose(let options): options
+        case .confirm: ["Yes", "No"]
+        case .open: []
+        }
+    }
+
+    private var card: some View {
+        let sh = Color.sh
+        return SHQuestionCard(question: item.question) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                if let message = item.message { messageBox(message).padding(.horizontal, SHTouchQuestionMetrics.headInset) }
+                VStack(spacing: SH.Space.xxs) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                        SHQuestionRadioRow(SHQuestionDockOption(number: index + 1, title: option, detail: nil, recommended: false),
+                                           picked: picked == index + 1, showsNumber: false) { picked = index + 1 }
+                    }
+                }
+            }
+            .disabled(busy)
+            HStack(spacing: SHTouchQuestionMetrics.footerSpacing) {
+                Spacer(minLength: 0)
+                Button("Open thread") { open() }
+                    .font(.sh(.ui)).foregroundStyle(sh.textSecondary).buttonStyle(.plain)
+                Button("Answer") { Task { await answer() } }
+                    .buttonStyle(.sh(.primary, size: .m))
+                    .disabled(busy)
+            }
+            .padding(.horizontal, SHTouchQuestionMetrics.headInset)
+            .padding(.top, SHTouchQuestionMetrics.footerTop - SH.Space.l)
+        }
+    }
+
+    private func messageBox(_ message: String) -> some View {
+        Text(message).shText(.code).foregroundStyle(Color.sh.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .padding(SH.Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .shCard(radius: SHListMetrics.cardRadius, fill: Color.sh.bgSunken)
+    }
+
+    private func open() { navigator.open(projects.route(item)) }
+
+    private func answer() async {
+        let feed = HomeFeed.of(hosts)
+        switch item.reply {
+        case .choose(let options): if options.indices.contains(picked - 1) { await feed.choose(item, options[picked - 1]) }
+        case .confirm: await feed.answer(item, .confirm(value: picked == 1))
+        case .open: break
+        }
     }
 }

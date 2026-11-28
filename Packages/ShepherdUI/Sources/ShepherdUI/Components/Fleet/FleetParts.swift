@@ -645,9 +645,9 @@ public struct SHAttentionCard<Actions: View>: View {
             stamp
         }
         Text(question).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(2)
-            .padding(.top, SH.Space.xxs)
+            .padding(.top, SH.Space.xs)
         Text(origin).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
-            .padding(.top, SH.Space.xxs)
+            .padding(.top, SH.Space.xs)
     }
 
     @ViewBuilder private var stamp: some View {

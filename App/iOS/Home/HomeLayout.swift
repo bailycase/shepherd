@@ -10,7 +10,7 @@ extension MobileLayout {
     /// An iPad overview column at its narrowest; narrower windows stack the columns.
     static let overviewColumnMinWidth: CGFloat = 256
     /// The iPad inbox's list beside the chosen item.
-    static let inboxListWidth: CGFloat = 360
+    static let inboxListWidth: CGFloat = 340
     /// The iPad bar's head and the line under it (iPadOverview, iPadInbox: 18/600 over 12), and a detail's title (22/600).
     static let barTitleSize: CGFloat = 18
     static let barSubtitleSize: CGFloat = 12
