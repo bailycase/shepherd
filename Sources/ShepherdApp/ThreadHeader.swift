@@ -17,7 +17,7 @@ import ShepherdSidebar
 struct ThreadHeader: View, Equatable {
     static func == (a: ThreadHeader, b: ThreadHeader) -> Bool {
         a.store === b.store && a.project == b.project && a.title == b.title && a.leadingInset == b.leadingInset
-            && (a.showSidebar == nil) == (b.showSidebar == nil) && (a.newThread == nil) == (b.newThread == nil) && a.branch == b.branch && a.directory == b.directory
+            && (a.showSidebar == nil) == (b.showSidebar == nil) && a.branch == b.branch && a.directory == b.directory
             && a.paneOpen == b.paneOpen && a.paneNews == b.paneNews && a.paneShortcut == b.paneShortcut
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
             && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
@@ -30,8 +30,6 @@ struct ThreadHeader: View, Equatable {
     let title: String
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
-    /// New thread beside Show sidebar (GXSidebarHidden).
-    var newThread: (() -> Void)?
     /// Where the agent works; nil draws no chip.
     var branch: AgentBranchLabel?
     /// The checkout's directory, for the chip's tooltip and menu (local agents only).
@@ -79,7 +77,7 @@ struct ThreadHeader: View, Equatable {
         let shownParent = remoteHost == nil ? parent : nil
         let crumbs = [project, parent, title].compactMap { $0 }.joined(separator: " / ")
         SHThreadToolbar(title, project: project, titleHelp: crumbs, parent: shownParent, openParent: shownParent == nil ? nil : openSender,
-                        leadingInset: leadingInset, sidebar: showSidebar, newThread: newThread) {
+                        leadingInset: leadingInset, sidebar: showSidebar) {
             if let remoteHost {
                 SHHostChip(host: remoteHost) { hostMenu = true }
                     .popover(isPresented: $hostMenu, arrowEdge: .bottom) {

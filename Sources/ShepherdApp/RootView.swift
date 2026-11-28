@@ -463,7 +463,7 @@ struct WorkspaceHeaderView: View {
         let muted = vm.pushMuted(row)
         let pane = vm.sidePaneButton(for: owner)
         return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
-                            newThread: showSidebar == nil ? nil : { vm.openNewThread() }, branch: branch, directory: directory,
+                            branch: branch, directory: directory,
                             paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
                             togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename,
                             pinned: pin.map { vm.isPinned($0) }, togglePin: pin.map { row in { vm.togglePin(row) } },

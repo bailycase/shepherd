@@ -32,15 +32,12 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
-    /// New thread, beside Show sidebar while the sidebar is out (GXSidebarHidden's compose button).
-    let newThread: (() -> Void)?
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let trailing: () -> Trailing
 
     public init(_ title: String, project: String? = nil, titleHelp: String? = nil,
                 parent: String? = nil, openParent: (() -> Void)? = nil,
                 leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
-                newThread: (() -> Void)? = nil,
                 @ViewBuilder accessory: @escaping () -> Accessory,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
@@ -51,7 +48,6 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
         self.leadingInset = leadingInset
         self.sidebar = sidebar
         self.sidebarLabel = sidebarLabel
-        self.newThread = newThread
         self.accessory = accessory
         self.trailing = trailing
     }
@@ -60,19 +56,11 @@ public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
         let _ = SHRenderProbe.tick("toolbar.thread")
         HStack(spacing: SH.Space.m) {
             if let sidebar {
-                HStack(spacing: SH.Space.xs) {
-                    Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                        .buttonStyle(.shIcon)
-                        .shHelp(sidebarLabel)
-                        .accessibilityLabel(sidebarLabel)
-                    if let newThread {
-                        Button(action: newThread) { Image(systemName: "square.and.pencil") }
-                            .buttonStyle(.shIcon)
-                            .shHelp("New thread")
-                            .accessibilityLabel("New thread")
-                    }
-                }
-                .padding(.trailing, SH.Space.l)
+                Button(action: sidebar) { Image(systemName: "sidebar.left") }
+                    .buttonStyle(.shIcon)
+                    .shHelp(sidebarLabel)
+                    .accessibilityLabel(sidebarLabel)
+                    .padding(.trailing, SH.Space.l)
             }
             // The space gives way first: it shows only while everything fits at full length.
             ViewThatFits(in: .horizontal) {
