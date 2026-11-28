@@ -225,7 +225,7 @@ struct ImplementSheetOverlay: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let model = vm.implementSheet {
-                Color.sh.sheetScrim
+                Color.sh.modalScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)

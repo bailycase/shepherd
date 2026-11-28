@@ -365,7 +365,7 @@ struct DesignGitSheetsOverlay: View {
     var body: some View {
         ZStack(alignment: .top) {
             if vm.designGitShare != nil || vm.designGitOpen != nil {
-                Color.sh.sheetScrim
+                Color.sh.modalScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
@@ -387,7 +387,7 @@ struct DesignGitSheetsOverlay: View {
                     .shTransition(.overlay, anchor: .top)
             } else if let id = vm.designGitMergeDialog, let merge = vm.designGitStates[id]?.state?.merge,
                       let status = vm.designGitStates[id]?.state?.status {
-                Color.sh.sheetScrim
+                Color.sh.modalScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
