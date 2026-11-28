@@ -99,7 +99,7 @@ struct SidePaneView: View {
         switch owner {
         case .local(let agentID):
             if let model = vm.fileTree(for: agentID) {
-                FilesTab(model: model, agentPath: vm.threadStores.existing(for: agentID)?.editingPath)
+                FilesTab(model: model, agentPath: vm.threadStores.existing(for: agentID)?.editingPath, changes: review?.fileChanges())
                     .id(model.rootPath)
             } else {
                 Text("Loading files…")
@@ -110,7 +110,8 @@ struct SidePaneView: View {
             }
         case .remote(let ref):
             if let model = vm.fileTree(for: ref) {
-                FilesTab(model: model, agentPath: vm.remoteThreadStores.existing(for: ref)?.editingPath)
+                FilesTab(model: model, agentPath: vm.remoteThreadStores.existing(for: ref)?.editingPath,
+                         changes: review?.fileChanges(host: vm.remoteHosts.allConnections.first { $0.id == ref.hostID }?.config.name ?? "the host"))
                     .id(model.rootPath)
                     .task { vm.ensureFileTree(owner) }
             } else {

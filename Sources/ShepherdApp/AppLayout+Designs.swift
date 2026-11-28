@@ -4,9 +4,12 @@ import ShepherdUI
 /// The Design tool's screens (NavDesigns, DZStart, DZCanvas). The canvas's, the cards' and the
 /// header's own measures are `SHDesignMetrics`.
 extension AppLayout {
-    /// The design tool's sheets (Export, Implement, Git) hang 96pt from the window's top edge, as the boards' `.sheet` does (the
-    /// boards' windows differ by a few points either way: the merge dialog's lands at 110, Implement's at 75).
-    static let designSheetTop: CGFloat = 96
+    /// The design tool's sheets (Export, Implement, Git) sit with their middle a third of the way down the window: the boards'
+    /// `.gdz-sheet` tops (72 for Export and Implement, 64 for Git's Share, 110 for the merge dialog) put their middles at 316 to
+    /// 349 in a 1000pt window. Never nearer the top than 24pt, nor lower than 16pt above the foot.
+    static let designSheetMiddle: CGFloat = 1.0 / 3
+    static let designSheetMinTop: CGFloat = 24
+    static let designSheetBottom: CGFloat = 16
 
     // The Designs page: its measures are `SHDesignsHomeMetrics`
     /// A card's thumbnail is kept this many pixels wide (its board draws at most 200pt).
@@ -30,9 +33,11 @@ extension AppLayout {
     /// The headline over its line, the line (a 520pt column) under it, and the composer 28pt on.
     static let newDesignSubtitleSpacing: CGFloat = SH.Space.m
     static let newDesignSubtitleWidth: CGFloat = 520
+    static let newDesignHeadingLine: CGFloat = 32
     static let newDesignComposerGap: CGFloat = 28
     static let newDesignComposerWidth: CGFloat = 860
-    static let newDesignFieldMinHeight: CGFloat = 72
+    /// The board's field is 72pt with its padding; the composer pads it 16pt above, so the words get the rest.
+    static let newDesignFieldMinHeight: CGFloat = 56
     /// The starting points: 26pt under the composer, their label 10pt over them, 10pt apart, three
     /// to a row.
     static let newDesignCardsTop: CGFloat = 26

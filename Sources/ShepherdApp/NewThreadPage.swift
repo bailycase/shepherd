@@ -658,7 +658,8 @@ struct NewThreadPage: View {
     private func openModels() {
         guard menu != .models else { menu = nil; return }
         picker = ModelPickerState(catalog: draft.catalog, recent: RecentModels.load().map(\.id),
-                                  current: draft.model.isEmpty ? nil : draft.model)
+                                  current: draft.model.isEmpty ? nil : draft.model,
+                                  currentLevel: draft.thinkingLevel(vm).rawValue)
         menu = .models
         Task {
             await draft.refreshModels(vm)

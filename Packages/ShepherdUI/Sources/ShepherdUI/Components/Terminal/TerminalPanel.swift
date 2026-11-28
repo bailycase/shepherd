@@ -11,8 +11,9 @@ public enum SHTerminalMetrics {
     public static let buttonSize: CGFloat = 34
     public static let contentPadding = EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
     #else
-    /// The panel is a raised card (GXTerminal's `.term`): 300pt tall with 8pt above and below it.
-    public static let panelHeight: CGFloat = 316
+    /// The panel is a raised card (GXTerminal's `.term`): 300pt tall with 8pt above it. The room under the thread already
+    /// ends 8pt above the window's bottom, so the card has no inset below it.
+    public static let panelHeight: CGFloat = 308
     public static let tabBarHeight: CGFloat = 38
     public static let tabHeight: CGFloat = 26
     public static let buttonSize: CGFloat = SH.Height.controlM

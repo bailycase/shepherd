@@ -62,7 +62,7 @@ public struct SHMenuHeader: View {
 struct SHMenuRow<Label: View>: View {
     let highlighted: Bool
     /// 10pt between parts; the slash menu's columns sit 12pt apart.
-    var spacing: CGFloat = 10
+    var spacing: CGFloat = SHComposerMetrics.menuPartSpacing
     /// Two-line rows (the Send menu's) align their parts to the top.
     var alignment: VerticalAlignment = .center
     var padding = EdgeInsets(top: 0, leading: SH.Space.m, bottom: 0, trailing: SH.Space.m)
@@ -397,8 +397,12 @@ public struct SHModelOption: Identifiable, Equatable, Sendable {
     /// The model offers a raised service tier (Fast): the picker tags its row "fast", and the
     /// model-settings popover marks it with a bolt.
     public var fast: Bool
+    /// The thinking level in use ("Medium") when this is the current model: the Mac's row sets it in bold in its levels.
+    public var currentLevel: String?
 
-    public init(id: String, title: String, subtitle: String? = nil, note: String? = nil, isCurrent: Bool = false, fast: Bool = false) {
+    public init(id: String, title: String, subtitle: String? = nil, note: String? = nil, isCurrent: Bool = false, fast: Bool = false,
+                currentLevel: String? = nil) {
+        self.currentLevel = currentLevel
         self.id = id
         self.title = title
         self.subtitle = subtitle
@@ -432,6 +436,8 @@ public struct SHModelList: Equatable, Sendable {
         /// Unique in the list: a model can be in Recent and in its provider's section.
         public let id: String
         public let kind: Kind
+        /// What the row takes in the list.
+        public var height: CGFloat = 0
 
         /// The model's position among the list's models; nil for a header.
         public var position: Int? {
@@ -445,18 +451,23 @@ public struct SHModelList: Equatable, Sendable {
     public let options: [SHModelOption]
     /// The row of each model in `options`.
     private let optionRows: [String]
-    /// Every row at its fixed height: headers 24pt with 4pt above, models 40pt.
+    /// Every row at its height: headers 24pt with 4pt above; models 40pt, or on the Mac as their content sets it (`rowHeight`).
     public let height: CGFloat
 
     public init(sections: [SHModelSection]) {
         var rows: [Row] = []
         var options: [SHModelOption] = []
         var optionRows: [String] = []
+        var total: CGFloat = 0
         for section in sections where !section.options.isEmpty {
-            rows.append(Row(id: "#" + section.title, kind: .header(section.title)))
+            let header = SHComposerMetrics.menuHeaderHeight + SHComposerMetrics.modelSectionGap
+            rows.append(Row(id: "#" + section.title, kind: .header(section.title), height: header))
+            total += header
             for option in section.options {
                 let id = section.title + "/" + option.id
-                rows.append(Row(id: id, kind: .option(option, position: options.count)))
+                let height = Self.rowHeight(option)
+                total += height
+                rows.append(Row(id: id, kind: .option(option, position: options.count), height: height))
                 options.append(option)
                 optionRows.append(id)
             }
@@ -464,10 +475,47 @@ public struct SHModelList: Equatable, Sendable {
         self.rows = rows
         self.options = options
         self.optionRows = optionRows
-        let headers = rows.count - options.count
-        height = CGFloat(headers) * (SHComposerMetrics.menuHeaderHeight + SHComposerMetrics.modelSectionGap)
-            + CGFloat(options.count) * SHComposerMetrics.modelRowHeight
+        height = total
     }
+
+    /// A model's row: 40pt on iOS. On the Mac the board's `.mi.two` sizes to its content: 7pt over and under the id
+    /// (mono 12.5 on 1.5) and its levels (12 on 17, as many lines as they wrap to), 2pt between; a row with no levels is
+    /// the id alone, at least 30pt.
+    static func rowHeight(_ option: SHModelOption) -> CGFloat {
+        #if os(macOS)
+        let id = SHComposerMetrics.modelIdSize * SHComposerMetrics.modelIdLineHeight
+        let padding = 2 * SHComposerMetrics.modelRowPadding
+        guard option.subtitle != nil else { return max(SHComposerMetrics.modelRowMinHeight, padding + id) }
+        let line = SHTextStyle.caption.size * SHTextStyle.caption.lineHeight
+        return padding + id + SH.Space.xxs + CGFloat(levelLines(option)) * line
+        #else
+        return SHComposerMetrics.modelRowHeight
+        #endif
+    }
+
+    #if os(macOS)
+    private static let wraps = NSCache<NSString, NSNumber>()
+
+    /// How many lines the option's levels take beside its check and its trailing tags.
+    static func levelLines(_ option: SHModelOption) -> Int {
+        guard let levels = option.subtitle else { return 0 }
+        // Nothing under about 28 characters comes near the row's width.
+        guard levels.count > 28 else { return 1 }
+        let font = SHFonts.platform(mono: false, weight: .regular, size: SHTextStyle.caption.size)
+        func width(_ text: String) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
+        let tags = [option.fast ? "fast" : nil, option.note].compactMap { $0 }
+        let spacing = SHComposerMetrics.menuPartSpacing
+        let available = SHComposerMetrics.modelPickerWidth - 2 * SH.Space.s - 2 * SH.Space.m - SHComposerMetrics.modelCheckWidth - spacing
+            - tags.reduce(0) { $0 + spacing + width($1) }
+        let key = "\(Int(available))|\(option.currentLevel ?? "")|\(levels)" as NSString
+        if let known = wraps.object(forKey: key) { return known.intValue }
+        let text = SHModelLevelsLabel.attributed(levels, current: option.currentLevel, color: .black)
+        let height = text.boundingRect(with: NSSize(width: available, height: CGFloat.greatestFiniteMagnitude), options: [.usesLineFragmentOrigin]).height
+        let lines = max(1, Int((height / SHModelLevelsLabel.lineHeight).rounded()))
+        wraps.setObject(NSNumber(value: lines), forKey: key)
+        return lines
+    }
+    #endif
 
     /// The row that shows `options[position]`.
     public func rowID(ofOption position: Int) -> String? {
@@ -648,6 +696,18 @@ struct SHModelListRow: View, Equatable {
 
     static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.highlighted == b.highlighted }
 
+    /// The levels in one run, the one in use bold (GXModel: "Off, Minimal, Low, **Medium**, High").
+    private static func levels(_ line: String, current: String?) -> AttributedString {
+        var text = AttributedString()
+        for (index, level) in line.components(separatedBy: ", ").enumerated() {
+            if index > 0 { text += AttributedString(", ") }
+            var part = AttributedString(level)
+            if level == current { part.font = .sh(.caption, weight: .semibold) }
+            text += part
+        }
+        return text
+    }
+
     var body: some View {
         let sh = Color.sh
         VStack(spacing: 0) {
@@ -659,18 +719,27 @@ struct SHModelListRow: View, Equatable {
                 #if os(macOS)
                 // The boards' `.mi.two`: a 14pt ink check, the id in mono over its levels (`textSecondary`), the context size
                 // in 12 `textTertiary` at the trailing top; 7pt over 8, radius 7. A level list that runs long truncates.
-                SHMenuRow(highlighted: highlighted, alignment: .top, padding: EdgeInsets(top: 7, leading: SH.Space.m, bottom: 7, trailing: SH.Space.m),
-                          height: SHComposerMetrics.modelRowHeight, action: { choose(option) }, onHover: { hover(position) }) {
+                SHMenuRow(highlighted: highlighted, alignment: .top,
+                          padding: EdgeInsets(top: SHComposerMetrics.modelRowPadding, leading: SH.Space.m, bottom: SHComposerMetrics.modelRowPadding, trailing: SH.Space.m),
+                          height: SHComposerMetrics.modelRowMinHeight, action: { choose(option) }, onHover: { hover(position) }) {
                     Image(systemName: "checkmark").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textPrimary)
-                        .frame(width: 14)
+                        .frame(width: SHComposerMetrics.modelCheckWidth)
                         .opacity(option.isCurrent ? 1 : 0)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                        Text(option.title).font(.shMono(SHComposerMetrics.modelIdSize)).foregroundStyle(sh.textPrimary)
+                        Text(option.title).shText(size: SHComposerMetrics.modelIdSize, mono: true, lineHeight: SHComposerMetrics.modelIdLineHeight)
+                            .foregroundStyle(sh.textPrimary)
                             .lineLimit(1).truncationMode(.middle)
+                            .frame(minHeight: SHComposerMetrics.modelIdSize * SHComposerMetrics.modelIdLineHeight)
                         if let subtitle = option.subtitle {
-                            Text(subtitle).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
-                                .lineLimit(1).truncationMode(.tail)
+                            if SHModelList.levelLines(option) > 1 {
+                                // Levels that wrap break as the board's CSS does, filling each line (SwiftUI's Text pushes a lone last word up).
+                                SHModelLevelsLabel(levels: subtitle, current: option.currentLevel)
+                            } else {
+                                Text(Self.levels(subtitle, current: option.currentLevel)).shText(.caption).foregroundStyle(sh.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(minHeight: SHModelLevelsLabel.lineHeight)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -748,3 +817,51 @@ public struct SHSpeedOption: Identifiable, Equatable, Sendable {
         self.boosted = boosted
     }
 }
+
+#if os(macOS)
+/// A model's levels over more than one line, set by the text system with no line-break strategy (see `SHPlainParagraph`): each line
+/// fills as the board's CSS fills it. The one in use is semibold; the line height is the caption's 17.
+struct SHModelLevelsLabel: NSViewRepresentable {
+    let levels: String
+    let current: String?
+    @Environment(\.self) private var environment
+
+    nonisolated static var lineHeight: CGFloat { SHTextStyle.caption.size * SHTextStyle.caption.lineHeight }
+
+    nonisolated static func attributed(_ levels: String, current: String?, color: NSColor) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakStrategy = []
+        style.minimumLineHeight = lineHeight
+        style.maximumLineHeight = lineHeight
+        let regular = SHFonts.platform(mono: false, weight: .regular, size: SHTextStyle.caption.size)
+        let bold = SHFonts.platform(mono: false, weight: .semibold, size: SHTextStyle.caption.size)
+        let text = NSMutableAttributedString()
+        for (index, level) in levels.components(separatedBy: ", ").enumerated() {
+            if index > 0 { text.append(NSAttributedString(string: ", ", attributes: [.font: regular, .foregroundColor: color, .paragraphStyle: style])) }
+            text.append(NSAttributedString(string: level, attributes: [.font: level == current ? bold : regular, .foregroundColor: color,
+                                                                        .paragraphStyle: style]))
+        }
+        return text
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.drawsBackground = false
+        label.isSelectable = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }
+
+    func updateNSView(_ label: NSTextField, context: Context) {
+        let color = Color.sh.textSecondary.resolve(in: environment)
+        let attributed = Self.attributed(levels, current: current, color: NSColor(cgColor: color.cgColor) ?? .secondaryLabelColor)
+        if label.attributedStringValue != attributed { label.attributedStringValue = attributed }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView label: NSTextField, context: Context) -> CGSize? {
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let fitted = label.sizeThatFits(NSSize(width: width ?? CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
+        return CGSize(width: width ?? fitted.width.rounded(.up), height: fitted.height.rounded(.up))
+    }
+}
+#endif

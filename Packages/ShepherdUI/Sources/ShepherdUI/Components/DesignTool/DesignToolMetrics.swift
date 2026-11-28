@@ -500,6 +500,8 @@ public enum SHDesignChrome {
     public static let exportSectionTop: CGFloat = SH.Space.xl
     public static let exportFooterTop: CGFloat = 18
     public static let exportRowHeight: CGFloat = 34
+    /// The sheet's line box (DZExport's `.gdz-sheet` sets 19): a label, a format's name and the note each sit in one.
+    public static let exportLine: CGFloat = 19
     public static let exportFormatTop: CGFloat = 9
     public static let exportFormatBottom: CGFloat = 10
     public static let exportFormatLine: CGFloat = 1.4

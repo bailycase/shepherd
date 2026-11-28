@@ -240,7 +240,7 @@ struct ComposerMenuPerformanceTests {
             model.selection = position
             window.layout()
             let top = Self.top(ofOption: position)
-            if clip.bounds.minY > top + 1 || top + SHComposerMetrics.modelRowHeight > clip.bounds.maxY + 1 { hidden.append(position) }
+            if clip.bounds.minY > top + 1 || top + Self.height(ofOption: position) > clip.bounds.maxY + 1 { hidden.append(position) }
         }
         #expect(hidden.isEmpty, "highlighted models out of view: \(hidden)")
     }
@@ -420,34 +420,32 @@ struct ComposerMenuPerformanceTests {
         return order.map { SHModelSection(title: $0, options: byProvider[$0] ?? []) }
     }()
 
-    /// A section header's height with the gap above it.
-    static let header = SHComposerMetrics.menuHeaderHeight + SHComposerMetrics.modelSectionGap
+    /// The list as the picker draws it: rows take the height their content sets (`SHModelList.Row.height`).
+    static let list = SHModelList(sections: sections)
 
     /// The model at `y` down the list.
     static func option(at y: CGFloat) -> Int {
-        var top: CGFloat = 0, position = 0
-        for section in sections {
-            top += header
-            if y < top { return position }
-            for _ in section.options {
-                top += SHComposerMetrics.modelRowHeight
-                if y < top { return position }
-                position += 1
-            }
+        var top: CGFloat = 0
+        for row in list.rows {
+            top += row.height
+            if y < top, let position = row.position { return position }
         }
-        return position - 1
+        return list.options.count - 1
     }
 
     /// How far down the list the model at `position` starts.
     static func top(ofOption position: Int) -> CGFloat {
-        var top: CGFloat = 0, seen = 0
-        for section in sections {
-            top += header
-            if position < seen + section.options.count { return top + CGFloat(position - seen) * SHComposerMetrics.modelRowHeight }
-            top += CGFloat(section.options.count) * SHComposerMetrics.modelRowHeight
-            seen += section.options.count
+        var top: CGFloat = 0
+        for row in list.rows {
+            if row.position == position { return top }
+            top += row.height
         }
         return top
+    }
+
+    /// The height of the row of the model at `position`.
+    static func height(ofOption position: Int) -> CGFloat {
+        list.rows.first { $0.position == position }?.height ?? 0
     }
 
     static func menuScroll(in window: OffscreenWindow) -> NSScrollView? {

@@ -40,6 +40,8 @@ extension DesignPreviewTests {
         default: break
         }
         await vm.loadDesignThumbnails()
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.renderMatrix(state == "open" ? "app-window-design-jump" : "app-window-design-jump-\(state)",
                                        size: Self.windowSizeForJump, scales: state == "open" ? [1, 1.3] : [1], ready: {
             // Every row's small picture drawn (the canvas's own drawing can stand in earlier, but
@@ -67,6 +69,8 @@ extension DesignPreviewTests {
         let screen = vm.designScreen(checkout.id)
         await screen.refresh()
         screen.select("A.dc.html")
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.renderMatrix("app-window-design-jump-landed", size: Self.windowSizeForJump, scales: [1], ready: {
             // The jump runs once the canvas has its size, as a person's would.
             if screen.jumpBack == nil, screen.focusBoard == DesignPath("A.dc.html"), screen.isDrawn {

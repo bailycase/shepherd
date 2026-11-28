@@ -76,6 +76,7 @@ public struct SHExportSection<Content: View>: View {
                 Text(title)
                     .font(.shSans(SHDesignChrome.toolbarTextSize, .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
+                    .frame(minHeight: SHDesignChrome.exportLine)
                 if let detail {
                     Text(detail)
                         .font(.shSans(SHDesignChrome.paneCountSize))
@@ -154,6 +155,7 @@ public struct SHExportFormatCard: View {
                 Text(title)
                     .font(.shSans(SHDesignChrome.toolbarTextSize, .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
+                    .frame(minHeight: SHDesignChrome.exportLine)
                 Text(line)
                     .shText(size: SHDesignChrome.paneCountSize, lineHeight: SHDesignChrome.exportFormatLine)
                     .foregroundStyle(Color.sh.textSecondary)

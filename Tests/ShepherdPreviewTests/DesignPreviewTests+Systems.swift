@@ -156,7 +156,9 @@ extension DesignPreviewTests {
         await vm.loadDesignSpecimens("acme-web")
         let specimens = vm.designRendering.specimens
         let store = vm.threadStores.store(for: agent.id)
-        try await Preview.render("app-window-design-system", size: Self.systemWindowSize, ready: {
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
+        try await Preview.render("app-window-design-system", size: CGSize(width: 1600, height: 1000), ready: {
             (0..<6).allSatisfy { specimens.image("acme-web", $0) != nil } && !store.rows.isEmpty && !store.running
         }) {
             RootView(vm: vm)

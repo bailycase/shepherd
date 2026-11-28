@@ -20,6 +20,8 @@ struct DesignPreviewTests {
     /// The main column beside a docked sidebar in the boards' 1440×900 window.
     private static let pageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
     private static let windowSize = CGSize(width: 1440, height: 900)
+    /// The DZ boards' window (DZCanvas, DZStart, DZTweak, DZExport, DesignToolbarMenu): 1600 by 1000.
+    private static let dzWindowSize = CGSize(width: 1600, height: 1000)
 
     /// A workspace with the Design tool on, two projects, a plain thread, and two designs: the
     /// checkout funnel (three directions and a phone) drawn by a live stub agent in the reserved
@@ -78,7 +80,7 @@ struct DesignPreviewTests {
         #expect(vm.shownDestination == .newDesign)
         #expect(vm.newDesign.blocker(vm) == "Describe the design first.", "no project to pick")
         #expect(vm.newDesign.systemToInstall(vm) == nil, "with no user systems, start on a blank canvas")
-        try await Preview.render("app-window-new-design", size: Self.windowSize) {
+        try await Preview.render("app-window-new-design", size: Self.dzWindowSize) {
             RootView(vm: vm)
         }
     }
@@ -93,7 +95,9 @@ struct DesignPreviewTests {
         #expect(vm.selectedSidebarRow == .design(checkout.id))
         let screen = vm.designScreen(checkout.id)
         screen.select("A.dc.html")
-        try await Preview.render("app-window-design", size: Self.windowSize, ready: { screen.isDrawn }) {
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
+        try await Preview.render("app-window-design", size: Self.dzWindowSize, ready: { screen.isDrawn }) {
             RootView(vm: vm)
         }
     }
@@ -146,8 +150,10 @@ struct DesignPreviewTests {
         default: break
         }
         #expect(model.selection.count == (state == "zip" ? 4 : 2))
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
         try await Preview.render(state == "html" ? "app-window-design-export" : "app-window-design-export-\(state)",
-                                 size: Self.windowSize, ready: { screen.isDrawn }) {
+                                 size: Self.dzWindowSize, ready: { screen.isDrawn }) {
             RootView(vm: vm)
         }
     }
@@ -471,7 +477,9 @@ struct DesignPreviewTests {
         screen.paneTab = .tweak
         _ = phone
         let close = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop), zoom: 0.55)
-        try await Preview.render("app-window-design-tweak-\(state)", size: Self.windowSize, ready: {
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
+        try await Preview.render("app-window-design-tweak-\(state)", size: Self.dzWindowSize, ready: {
             if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
             let loaded = state == "empty" ? tweak.presentation.isEmpty
                 : !tweak.presentation.groups.isEmpty && (state != "element" || tweak.presentation.scopeNote?.contains("A · phone") == true)
@@ -682,7 +690,9 @@ struct DesignPreviewTests {
         let vm = workspace.vm
         vm.selectSidebarRow(.design(checkout.id))
         let screen = vm.designScreen(checkout.id)
-        try await Preview.render("app-window-design-toolbar", size: Self.windowSize, ready: { screen.isDrawn }) {
+        // The board is drawn with the sidebar hidden (its toolbar carries the window controls).
+        vm.sidebarHidden = true
+        try await Preview.render("app-window-design-toolbar", size: Self.dzWindowSize, ready: { screen.isDrawn }) {
             RootView(vm: vm)
         }
     }

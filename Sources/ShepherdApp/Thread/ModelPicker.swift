@@ -75,8 +75,8 @@ struct ModelCatalog: Sendable {
     /// query, even ones the catalog lacks), then one section per provider in catalog order,
     /// without the recent models. Each row's second line lists the levels its model takes: pi's
     /// own for the `current` model when the thread reports them (`currentLevels`), else the
-    /// catalog's.
-    func list(query: String, recent: [String], current: String?, currentLevels: [String]? = nil) -> SHModelList {
+    /// catalog's. `currentLevel` (pi's id for it) is the level in use, set bold in the current model's row.
+    func list(query: String, recent: [String], current: String?, currentLevels: [String]? = nil, currentLevel: String? = nil) -> SHModelList {
         // Each word typed must appear in the id: ids join words with hyphens, people type spaces.
         let words = query.lowercased().split(separator: " ").map(String.init)
         func matches(_ key: String) -> Bool { words.allSatisfy { key.contains($0) } }
@@ -84,9 +84,10 @@ struct ModelCatalog: Sendable {
         func subtitle(_ id: String, catalog: String?) -> String? {
             id == current ? currentLine ?? catalog : catalog
         }
+        let currentTitle = currentLevel.map(NativeThinkingLevel.title)
         func option(_ model: Model) -> SHModelOption {
             SHModelOption(id: model.id, title: model.title, subtitle: subtitle(model.id, catalog: model.thinking), note: model.context,
-                          isCurrent: model.id == current, fast: model.fast)
+                          isCurrent: model.id == current, fast: model.fast, currentLevel: model.id == current ? currentTitle : nil)
         }
         var sections: [SHModelSection] = []
         // Recent has no provider header: a name two providers offer is spelled out.
@@ -98,7 +99,8 @@ struct ModelCatalog: Sendable {
                 return row
             }
             return words.isEmpty
-                ? SHModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
+                ? SHModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current,
+                               currentLevel: id == current ? currentTitle : nil)
                 : nil
         }
         if !recentOptions.isEmpty { sections.append(SHModelSection(title: "Recent", options: recentOptions)) }
@@ -174,15 +176,17 @@ final class ModelPickerState {
     @ObservationIgnored private let recent: [String]
     @ObservationIgnored private let current: String?
     @ObservationIgnored private let currentLevels: [String]?
+    @ObservationIgnored private let currentLevel: String?
 
-    /// `currentLevels`: the levels pi reports for the thread's `current` model (the snapshot's),
+    /// `currentLevel`: the thinking level the thread (or the draft) uses now, bold in its model's row. `currentLevels`: the levels pi reports for the thread's `current` model (the snapshot's),
     /// nil from a host that does not say.
-    init(catalog: ModelCatalog?, recent: [String], current: String?, currentLevels: [String]? = nil) {
+    init(catalog: ModelCatalog?, recent: [String], current: String?, currentLevels: [String]? = nil, currentLevel: String? = nil) {
+        self.currentLevel = currentLevel
         self.catalog = catalog ?? .empty
         self.recent = recent
         self.current = current
         self.currentLevels = currentLevels
-        list = self.catalog.list(query: "", recent: recent, current: current, currentLevels: currentLevels)
+        list = self.catalog.list(query: "", recent: recent, current: current, currentLevels: currentLevels, currentLevel: currentLevel)
         loading = self.catalog.isEmpty
     }
 
@@ -193,7 +197,7 @@ final class ModelPickerState {
     }
 
     private func rebuild() {
-        list = catalog.list(query: query, recent: recent, current: current, currentLevels: currentLevels)
+        list = catalog.list(query: query, recent: recent, current: current, currentLevels: currentLevels, currentLevel: currentLevel)
         loading = catalog.isEmpty
     }
 }
