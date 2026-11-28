@@ -90,36 +90,36 @@ struct ModelPickerTests {
                                             "openrouter/openai/gpt-5-mini": ["off", "low", "medium", "high", "xhigh"]])
         let list = catalog.list(query: "", recent: ["openai/gpt-5", "gone/model-x"], current: nil)
         let subtitles = Dictionary(uniqueKeysWithValues: list.options.map { ($0.id, $0.subtitle) })
-        #expect(subtitles["anthropic/claude-opus-4-5"] == "Off · Minimal · Low · Medium · High")
-        #expect(subtitles["openai/gpt-5"] == "Off · Minimal · Low · Medium · High · Extra high · Max")
-        #expect(subtitles["openrouter/openai/gpt-5-mini"] == "Off · Low · Medium · High · Extra high")
+        #expect(subtitles["anthropic/claude-opus-4-5"] == "Off, Minimal, Low, Medium, High")
+        #expect(subtitles["openai/gpt-5"] == "Off, Minimal, Low, Medium, High, Extra high, Max")
+        #expect(subtitles["openrouter/openai/gpt-5-mini"] == "Off, Low, Medium, High, Extra high")
         #expect(subtitles["anthropic/claude-haiku-4-5"] == "No thinking")
         #expect(subtitles["gone/model-x"] == .some(nil), "a model the catalog lacks has no second line")
     }
 
     /// The thread's current model shows the levels pi reports for it, which are live; without
     /// them, the catalog's.
-    @Test(arguments: [(["off", "low", "medium", "high", "xhigh"], "Off · Low · Medium · High · Extra high"),
+    @Test(arguments: [(["off", "low", "medium", "high", "xhigh"], "Off, Low, Medium, High, Extra high"),
                       (["off"], "No thinking"),
-                      (nil, "Off · Minimal · Low · Medium · High"),
-                      ([], "Off · Minimal · Low · Medium · High")] as [([String]?, String)])
+                      (nil, "Off, Minimal, Low, Medium, High"),
+                      ([], "Off, Minimal, Low, Medium, High")] as [([String]?, String)])
     func theCurrentModelListsTheLevelsPiReports(_ reported: [String]?, _ line: String) {
         let list = Self.catalog.list(query: "", recent: [], current: "anthropic/claude-opus-4-5", currentLevels: reported)
         #expect(list.options.first { $0.id == "anthropic/claude-opus-4-5" }?.subtitle == line)
-        #expect(list.options.first { $0.id == "openai/gpt-5" }?.subtitle == "Off · Minimal · Low · Medium · High")
+        #expect(list.options.first { $0.id == "openai/gpt-5" }?.subtitle == "Off, Minimal, Low, Medium, High")
     }
 
     /// A current model the catalog lacks still shows pi's levels.
     @Test func aCurrentModelTheCatalogLacksShowsPisLevels() {
         let list = Self.catalog.list(query: "", recent: ["gone/model-x"], current: "gone/model-x", currentLevels: ["off", "high"])
-        #expect(list.options.first?.subtitle == "Off · High")
+        #expect(list.options.first?.subtitle == "Off, High")
     }
 
     /// A host before `thinking.levels.v1` takes Off to High only, so that is what its rows list.
     @Test func anOlderHostsModelsListOffToHigh() {
         let catalog = ModelCatalog([PiModelCatalog.Entry(id: "a/one"), PiModelCatalog.Entry(id: "a/two", reasoning: false)],
                                    levels: ["a/one": ["off", "minimal", "low", "medium", "high", "max"]], hostTakesAllLevels: false)
-        #expect(catalog.model("a/one")?.thinking == "Off · Low · Medium · High")
+        #expect(catalog.model("a/one")?.thinking == "Off, Low, Medium, High")
         #expect(catalog.model("a/two")?.thinking == "No thinking")
     }
 

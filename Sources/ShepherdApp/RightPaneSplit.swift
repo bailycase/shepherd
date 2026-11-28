@@ -128,7 +128,10 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             ZStack(alignment: .topLeading) {
                 content()
                     .padding(.top, card ? topInset : 0)
-                    .frame(width: contentWidth, height: geo.size.height)
+                    // The boards' window padding: the thread keeps 8pt from the window's bottom, and from its right edge while no pane is beside it.
+                    .padding(.bottom, card && !floating ? SHSidePaneMetrics.cardInset : 0)
+                    .frame(width: contentWidth - (card && !(showPane && docked && !covers) ? SHSidePaneMetrics.cardInset : 0),
+                           height: geo.size.height, alignment: .topLeading)
                     // Maximized, the thread is hidden, never unmounted: restoring is a flip.
                     .opacity(covers ? 0 : 1)
                     .allowsHitTesting(!covers)

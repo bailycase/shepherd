@@ -133,13 +133,13 @@ struct ForgePresentationTests {
     // MARK: The side pane's Pull request tab
 
     @Test func thePanesFooterSaysWhatBlocksItOrWhatIsLeft() {
-        #expect(ForgePresentation.paneStatus(Self.detail()) == ("Changes requested · 1 check failing", .failed))
+        #expect(ForgePresentation.paneStatus(Self.detail()) == ("Changes requested, 1 check failing", .failed))
         var ready = Self.detail()
         ready.reviewers = []
         ready.checks = []
         #expect(ForgePresentation.paneStatus(ready) == ("Ready to merge", .done))
         #expect(ForgePresentation.paneStatus(Self.detail(.merged, thread: Self.thread))
-            == ("Merged into main · the worktree for agent/refund-events is still on disk", .merged))
+            == ("Merged into main. The worktree for agent/refund-events is still on disk.", .merged))
         #expect(ForgePresentation.paneStatus(Self.detail(.merged)).text == "Merged into main")
     }
 

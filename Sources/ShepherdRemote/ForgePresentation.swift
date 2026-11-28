@@ -368,7 +368,7 @@ public enum ForgePresentation {
         switch detail.state {
         case .merged:
             guard detail.summary.thread?.worktreePath != nil else { return ("Merged into \(base)", .merged) }
-            return ("Merged into \(base) · the worktree for \(detail.summary.headRef) is still on disk", .merged)
+            return ("Merged into \(base). The worktree for \(detail.summary.headRef) is still on disk.", .merged)
         case .closed: return ("Closed without merging", .failed)
         case .open, .draft:
             var parts: [String] = []
@@ -381,7 +381,7 @@ public enum ForgePresentation {
                 parts.append("Needs an approving review")
             }
             if parts.isEmpty { return ("Ready to merge", .done) }
-            return (parts.joined(separator: " · "), .failed)
+            return (parts.joined(separator: ", "), .failed)
         }
     }
 

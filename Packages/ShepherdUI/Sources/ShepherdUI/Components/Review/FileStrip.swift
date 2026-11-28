@@ -8,7 +8,13 @@ import SwiftUI
 /// scrolls it into view; with `animatesSelection` false (keyboard navigation) both land at once.
 public struct SHFileStrip: View {
     static let chipHeight: CGFloat = 26
+    #if os(macOS)
+    /// The Mac pane's strip (`.gch-strip`): 36pt between two lines, chips 8pt in at radius 7.
+    static let chipPadding: CGFloat = SH.Space.m
+    static let stripHeight: CGFloat = 36
+    #else
     static let chipPadding: CGFloat = 9
+    #endif
 
     public struct Item: Identifiable, Equatable, Sendable {
         public let id: String
@@ -73,8 +79,13 @@ public struct SHFileStrip: View {
                                                 removal: .identity))
                     }
                 }
+                #if os(macOS)
+                .padding(.horizontal, SH.Space.m)
+                .frame(height: SHFileStrip.stripHeight)
+                #else
                 .padding(.horizontal, SH.Space.m)
                 .padding(.vertical, SH.Space.s)
+                #endif
                 // Files arriving or leaving (a reload, a revert) move the chips aside.
                 .shAnimation(.list, value: items.map(\.id))
                 .animation(animatesSelection ? SH.Motion.content.animation(reduceMotion: reduceMotion) : nil, value: selection)
@@ -93,7 +104,13 @@ public struct SHFileStrip: View {
                 }
             }
         }
+        #if os(macOS)
+        .background(SHPaneSurface.fill)
+        .overlay(alignment: .top) { SHHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
+        #else
         .background(Color.sh.bgBase)
+        #endif
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Changed files")
     }
@@ -114,16 +131,7 @@ private struct SHFileChip: View, Equatable {
         let _ = SHRenderProbe.tick("review.fileChip")
         let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: SH.Space.s) {
-                Text(item.status.letter).font(.shMono(10.5, .bold)).foregroundStyle(item.status.color)
-                Text(item.name).font(.sh(.mono)).foregroundStyle(nameColor(sh)).lineLimit(1)
-                if item.showsStat { SHDiffStat(added: item.added, removed: item.removed, font: .shMono(10.5)) }
-                if item.isViewed {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(sh.done)
-                        .shTransition(.content)
-                }
-                if item.isTouched { SHStatusDot(.running).shTransition(.content) }
-            }
+            chipContent(sh)
             .padding(.horizontal, SHFileStrip.chipPadding)
             .frame(minHeight: SHFileStrip.chipHeight)
             .background {
@@ -138,6 +146,28 @@ private struct SHFileChip: View, Equatable {
         .help(item.path)
         .accessibilityLabel(item.accessibilityText)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    @ViewBuilder private func chipContent(_ sh: SHPalette) -> some View {
+        #if os(macOS)
+        // The boards' `.gch-sf`: the name in 12.5 (500 selected) and its stat; a viewed file's name dims.
+        HStack(spacing: SH.Space.s) {
+            Text(item.name).font(.sh(.ui, weight: selected ? .medium : .regular)).foregroundStyle(nameColor(sh)).lineLimit(1)
+            if item.showsStat { SHDiffStat(added: item.added, removed: item.removed, font: .sh(.caption, weight: .regular), hidesZero: true) }
+            if item.isTouched { SHStatusDot(.running).shTransition(.content) }
+        }
+        #else
+        HStack(spacing: SH.Space.s) {
+            Text(item.status.letter).font(.shMono(10.5, .bold)).foregroundStyle(item.status.color)
+            Text(item.name).font(.sh(.mono)).foregroundStyle(nameColor(sh)).lineLimit(1)
+            if item.showsStat { SHDiffStat(added: item.added, removed: item.removed, font: .shMono(10.5)) }
+            if item.isViewed {
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(sh.done)
+                    .shTransition(.content)
+            }
+            if item.isTouched { SHStatusDot(.running).shTransition(.content) }
+        }
+        #endif
     }
 
     private func nameColor(_ sh: SHPalette) -> Color {

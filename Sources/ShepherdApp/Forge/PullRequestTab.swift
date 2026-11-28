@@ -78,7 +78,7 @@ private struct PullRequestHeader: View {
     var body: some View {
         let summary = detail.summary
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            ForgeTitle(title: summary.title, editable: detail.state != .merged, font: .shSans(AppLayout.prPaneTitleSize, .semibold)) {
+            ForgeTitle(title: summary.title, editable: detail.state != .merged, pencil: false, font: .shSans(AppLayout.prPaneTitleSize, .semibold)) {
                 await store.perform(.editTitle(ref: summary.ref, title: $0))
             }
             byline
@@ -238,20 +238,20 @@ private struct PullRequestRail: View {
         }
     }
 
-    /// Approved a check, changes requested a bubble, pending a ring.
+    /// The state in words at the rail's edge (GXPanePR `.rr .v`): Approved, Changes, Pending.
     @ViewBuilder private func verdict(_ state: ForgeReviewState) -> some View {
-        let tone = ForgePresentation.tone(state)
-        Group {
-            switch state {
-            case .approved: Image(systemName: "checkmark").foregroundStyle(tone.color)
-            case .changesRequested: Image(systemName: ForgeSymbol.comment).foregroundStyle(tone.color)
-            case .pending: Image(systemName: "circle").foregroundStyle(ForgeTone.attention.color)
-            case .commented, .dismissed: Image(systemName: ForgeSymbol.comment).foregroundStyle(Color.sh.textTertiary)
-            }
+        let word = switch state {
+        case .approved: "Approved"
+        case .changesRequested: "Changes"
+        case .pending: "Pending"
+        case .commented: "Commented"
+        case .dismissed: "Dismissed"
         }
-        .font(.sh(.caption))
-        .help(ForgePresentation.label(state))
-        .accessibilityLabel(ForgePresentation.label(state))
+        Text(word)
+            .font(.sh(.caption))
+            .foregroundStyle(Color.sh.textTertiary)
+            .help(ForgePresentation.label(state))
+            .accessibilityLabel(ForgePresentation.label(state))
     }
 
     private func isViewer(_ login: String) -> Bool { detail.viewer.map { $0.caseInsensitiveCompare(login) == .orderedSame } ?? false }

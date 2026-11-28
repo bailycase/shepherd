@@ -360,6 +360,7 @@ public enum ShepherdHost {
             // The host is the service: it says so from launchd's own status of its job.
             let service = BackgroundService.app(bundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             let services = Services(settings: settings, mcpStore: mcpStore, notifications: notifications) { service.status().keepsAgentsRunning }
+            services.registersBuiltIns = true
             Self.services = services
             SessionHost.run(supervised: CommandLine.arguments.contains(supervisedArgument), respawn: services.respawn,
                             configure: services.configure, threads: services.threads, automations: services.automations,
@@ -375,6 +376,8 @@ public enum ShepherdHost {
         let mcpStore: MCPStore
         let notifications: AgentNotifications
         let keepsAgentsRunning: @MainActor () -> Bool?
+        /// Serve the built-in design system (`BuiltInShepherdDesign`): `Shepherd --host` does; a test's host starts with none.
+        var registersBuiltIns = false
         let mcp: AgentSpawn.MCP
         /// The shell a client's terminal starts.
         var shell: () -> SessionCommand
@@ -414,6 +417,8 @@ public enum ShepherdHost {
 
         var configure: @MainActor (SessionServer) -> Void {
             { [self] server in
+                // Shepherd UI, the built-in system every Designs page lists (NavDesigns, SystemBuiltIn): the host's own, not a test host's.
+                if registersBuiltIns { server.designSystems.register(BuiltInShepherdDesign.builtIn()) }
                 HostSettingsMapping.serve(on: server, settings: settings, backgroundService: keepsAgentsRunning) { [weak self] in
                     self?.listener ?? (nil, nil)
                 }

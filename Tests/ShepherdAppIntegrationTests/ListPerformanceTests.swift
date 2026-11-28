@@ -2430,10 +2430,10 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        // The file rows show the first few; the rest wait behind "Show 297 more".
-        #expect(rows["review.fileRow", default: 0] > 0, "\(rows)")
+        // The strip's chips are lazy: only those in the pane's width, and a few ahead, are built.
+        #expect(rows["review.fileChip", default: 0] > 0, "\(rows)")
         #expect(rows["diff.line", default: 0] > 0, "\(rows)")
-        #expect(rows["review.fileRow", default: 0] <= 2 * SHFileRows.Metrics.collapsed, "\(rows)")
+        #expect(rows["review.fileChip", default: 0] <= 40, "\(rows)")
         #expect(rows["diff.line", default: 0] <= 2 * Int(800 / SHDiffMetrics.lineHeight), "\(rows)")
     }
 

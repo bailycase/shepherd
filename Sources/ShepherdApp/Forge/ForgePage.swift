@@ -28,13 +28,16 @@ struct ForgeDestination: View {
                 ForgeEmptyPage(store: store)
             }
         }
+        // The boards' window padding: the page sits inside the 8pt the sidebar's card leaves.
+        .padding([.top, .trailing, .bottom], AppLayout.toolbarTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.sh.bgWindow)
     }
 }
 
-/// The page's header: the tabs or the item's place leading, its actions trailing. Narrow headers
-/// stack their controls; while the sidebar is not docked, show sidebar and return actions.
+/// The page's header (the boards' `.gch-ptb`): 44pt, no rule, the tabs or the item's place leading, its
+/// actions trailing. Narrow headers stack their controls; while the sidebar is not docked, show
+/// sidebar and return actions.
 struct ForgeHeaderBar<Leading: View, Trailing: View>: View {
     let chrome: PageHeaderChrome
     var back: (() -> Void)? = nil
@@ -61,12 +64,11 @@ struct ForgeHeaderBar<Leading: View, Trailing: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.leading, SH.Space.l + chrome.leadingInset)
-        .padding(.trailing, SH.Space.l)
-        .frame(minHeight: SHPageMetrics.headerHeight)
+        .padding(.leading, (chrome.showSidebar == nil ? SHToolbarMetrics.leadingPadding : SH.Space.xxl) + chrome.leadingInset)
+        .padding(.trailing, SHToolbarMetrics.trailingPadding)
+        .frame(minHeight: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
         .background(Color.sh.bgWindow)
-        .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
     }
@@ -118,33 +120,25 @@ struct ForgeEmptyPage: View {
     let store: ForgeStore
 
     var body: some View {
-        ForgeCentered {
-            if let error = store.error {
-                SHEmptyState(Text(Self.title(error)), message: error.message, showsMark: false) {
-                    if error.code == .ghMissing, let url = URL(string: "https://cli.github.com") {
-                        Button("Get the GitHub CLI") { NSWorkspace.shared.open(url) }.buttonStyle(.sh(.secondary))
-                    }
-                    Button("Try again") { Task { await store.refresh() } }.buttonStyle(.sh(.secondary))
+        if let error = store.error {
+            ForgeEmptyBlock(title: Self.title(error), message: error.message) {
+                if error.code == .ghMissing, let url = URL(string: "https://cli.github.com") {
+                    Button("Get the GitHub CLI") { NSWorkspace.shared.open(url) }.buttonStyle(.shLink(color: Color.sh.textPrimary, font: ForgeEmptyLink.font))
                 }
-            } else if !store.loadingKinds.isEmpty || !store.reposLoaded {
-                SHBusyLabel("Loading…", font: .sh(.ui))
-            } else {
-                let noun = store.kind == .pullRequest ? "pull requests" : "issues"
-                empty(Text(store.repo == nil ? "No open \(noun) waiting on you" : "No open \(noun) in \(store.repoName)"),
-                      store.kind == .pullRequest
-                        ? "Paste a link to open one from another repository, or let a thread open one when its work is ready."
-                        : "Paste a link to open one from another repository.")
+                Button("Try again") { Task { await store.refresh() } }.buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
             }
-        }
-    }
-
-    private func empty(_ title: Text, _ message: String) -> some View {
-        VStack(spacing: SH.Space.m) {
-            Image(systemName: ForgeSymbol.kind(store.kind)).font(.sh(.display)).foregroundStyle(Color.sh.textTertiary)
-                .accessibilityHidden(true)
-            SHEmptyState(title, message: message, showsMark: false) {
-                Button("Paste a link") { Task { await store.pasteLink() } }.buttonStyle(.sh(.secondary))
-                Button("Show closed") { Task { await store.toggleSection(.closed) } }.buttonStyle(.sh(.secondary))
+        } else if !store.loadingKinds.isEmpty || !store.reposLoaded {
+            SHBusyLabel("Loading…", font: .sh(.ui))
+                .padding(.leading, AppLayout.forgePageLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            let noun = store.kind == .pullRequest ? "pull requests" : "issues"
+            ForgeEmptyBlock(title: store.repo == nil ? "No open \(noun) waiting on you" : "No open \(noun) in \(store.repoName)",
+                            message: store.kind == .pullRequest
+                                ? "Paste a link to open one from another repository, or let a thread open one when its work is ready."
+                                : "Paste a link to open one from another repository.") {
+                Button("Paste a link") { Task { await store.pasteLink() } }.buttonStyle(.shLink(color: Color.sh.textPrimary, font: ForgeEmptyLink.font))
+                Button("Show closed") { Task { await store.toggleSection(.closed) } }.buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
             }
         }
     }
@@ -219,7 +213,7 @@ struct ForgeLoadingPage: View {
 
     private func bar(_ fraction: CGFloat, _ height: CGFloat) -> some View {
         GeometryReader { geo in
-            RoundedRectangle(cornerRadius: SH.Radius.xs).fill(Color.sh.bgSelected).frame(width: geo.size.width * fraction)
+            RoundedRectangle(cornerRadius: SH.Radius.s).fill(Color.sh.bgHover).frame(width: geo.size.width * fraction)
         }
         .frame(height: height)
     }
@@ -231,33 +225,48 @@ struct ForgeDetailError: View {
     let retry: () -> Void
 
     var body: some View {
-        ForgeCentered {
-            SHEmptyState(Text(ForgeEmptyPage.title(error)), message: error.message, showsMark: false) {
-                Button("Try again", action: retry).buttonStyle(.sh(.secondary))
-            }
+        ForgeEmptyBlock(title: ForgeEmptyPage.title(error), message: error.message) {
+            Button("Try again", action: retry).buttonStyle(.shLink(color: Color.sh.textSecondary, font: .sh(.ui, weight: .regular)))
         }
     }
 }
 
-/// An empty, error or loading page's content, centred in the space left under the header. It
-/// scrolls when that space is shorter than the content, and it takes the space it is given:
-/// wrapped message text never sets the window's minimum size (a `Spacer` sandwich let it).
-private struct ForgeCentered<Content: View>: View {
-    @ViewBuilder let content: () -> Content
+/// The main link of an empty page.
+enum ForgeEmptyLink {
+    @MainActor static var font: Font { .sh(.ui, weight: .medium) }
+}
+
+/// An empty or error page's words (the boards' `.gch-empb`): left-aligned 28pt in, a little above the
+/// middle; the title in 15 semibold, its words in `textSecondary`, then plain-word links.
+struct ForgeEmptyBlock<Actions: View>: View {
+    let title: String
+    let message: String
+    @ViewBuilder let actions: () -> Actions
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.vertical) {
-                VStack(content: content)
-                    .padding(.horizontal, SH.Space.xl)
-                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
-            }
-            .scrollBounceBehavior(.basedOnSize)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.shSans(AppLayout.forgeEmptyTitleSize, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Text(message)
+                .shText(.ui)
+                .foregroundStyle(Color.sh.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, SH.Space.s)
+            HStack(spacing: AppLayout.forgeEmptyActionGap, content: actions)
+                .padding(.top, SH.Space.xl - SH.Space.xxs)
         }
+        .frame(width: AppLayout.forgeEmptyWidth, alignment: .leading)
+        .padding(.horizontal, AppLayout.forgePageLeading)
+        .padding(.bottom, AppLayout.forgeEmptyBottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
-/// The page's two columns: the reading column and the rail, centered, scrolling together.
+/// The page's two columns (the boards' `.gch-cols`): the reading column from the leading edge, up to 720
+/// wide, and the rail (272) at the trailing edge, scrolling together. Narrower, the rail goes under the
+/// column. The page fades into the window under where the dock floats.
 struct ForgeColumns<Content: View, Rail: View>: View {
     @ViewBuilder let content: () -> Content
     @ViewBuilder let rail: () -> Rail
@@ -265,22 +274,43 @@ struct ForgeColumns<Content: View, Rail: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= AppLayout.forgeTwoColumnMinWidth
-            let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: AppLayout.forgeColumnGap))
-                              : AnyLayout(VStackLayout(alignment: .leading, spacing: AppLayout.forgeColumnGap))
             ScrollView(.vertical) {
-                layout {
-                    VStack(alignment: .leading, spacing: 0, content: content)
-                        .frame(maxWidth: AppLayout.forgeContentWidth, alignment: .leading)
-                    VStack(alignment: .leading, spacing: SH.Space.l, content: rail)
-                        .frame(width: wide ? AppLayout.forgeRailWidth : nil, alignment: .leading)
-                        .frame(maxWidth: wide ? nil : AppLayout.forgeContentWidth, alignment: .leading)
+                Group {
+                    if wide {
+                        HStack(alignment: .top, spacing: AppLayout.forgeColumnGap) {
+                            reading
+                            Spacer(minLength: 0)
+                            railColumn.frame(width: AppLayout.forgeRailWidth).padding(.top, AppLayout.forgeRailTop)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: AppLayout.forgeColumnGap) {
+                            reading
+                            railColumn.frame(maxWidth: AppLayout.forgeContentWidth, alignment: .leading)
+                        }
+                    }
                 }
                 .padding(.top, AppLayout.forgeTopPadding)
                 .padding(.bottom, AppLayout.forgeBottomPadding)
-                .padding(.horizontal, SH.Space.xxl)
+                .padding(.leading, AppLayout.forgePageLeading)
+                .padding(.trailing, AppLayout.forgePageTrailing)
                 .frame(maxWidth: .infinity)
             }
+            .overlay(alignment: .bottom) {
+                LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: Color.sh.bgWindow, location: 0.7)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: AppLayout.forgeFadeHeight)
+                    .allowsHitTesting(false)
+            }
         }
+    }
+
+    private var reading: some View {
+        VStack(alignment: .leading, spacing: 0, content: content)
+            .frame(maxWidth: AppLayout.forgeContentWidth, alignment: .leading)
+    }
+
+    private var railColumn: some View {
+        VStack(alignment: .leading, spacing: 0, content: rail)
     }
 }
 
@@ -288,7 +318,11 @@ struct ForgeColumns<Content: View, Rail: View>: View {
 struct ForgeTitle: View {
     let title: String
     let editable: Bool
-    var font: Font = .sh(.display)
+    /// The pane draws no pencil (GXPanePR): a double click edits the title there.
+    var pencil = true
+    var font: Font = .shSans(AppLayout.forgeTitleSize, .semibold)
+    var tracking: CGFloat = AppLayout.forgeTitleTracking
+    var lineSpacing: CGFloat = 0
     let save: (String) async -> Bool
     @State private var draft: String?
     @FocusState private var focused: Bool
@@ -298,6 +332,7 @@ struct ForgeTitle: View {
             TextField("Title", text: Binding(get: { current }, set: { draft = $0 }))
                 .textFieldStyle(.plain)
                 .font(font)
+                .tracking(tracking)
                 .foregroundStyle(Color.sh.textPrimary)
                 .focused($focused)
                 .onAppear { focused = true }
@@ -311,13 +346,17 @@ struct ForgeTitle: View {
             HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
                 Text(title)
                     .font(font)
+                    .tracking(tracking)
+                    .lineSpacing(lineSpacing)
                     .foregroundStyle(Color.sh.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                if editable {
+                    .onTapGesture(count: 2) { if editable { draft = title } }
+                if editable, pencil {
                     Button { draft = title } label: { Image(systemName: ForgeSymbol.edit) }
                         .buttonStyle(.shIcon(size: SH.Height.controlS))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .help("Edit title")
                         .accessibilityLabel("Edit title")
                 }
@@ -326,7 +365,8 @@ struct ForgeTitle: View {
     }
 }
 
-/// A rail section: its caption (and an optional trailing word), its rows, a hairline under it.
+/// A rail section (the boards' `.gch-rs`): its caption (and an optional edit menu) in `caption`, its
+/// rows, a hairline 14 under it and 14 more before the next.
 struct ForgeRailSection<Content: View, Accessory: View>: View {
     let title: String
     var divider = true
@@ -335,15 +375,19 @@ struct ForgeRailSection<Content: View, Accessory: View>: View {
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            HStack {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SH.Space.s) {
                 ForgeCaption(title)
                 Spacer(minLength: SH.Space.s)
                 accessory()
             }
+            .frame(height: AppLayout.forgeRailHead)
+            .padding(.bottom, SH.Space.xs)
             content()
-            if divider { SHHairline().padding(.top, SH.Space.s) }
         }
+        .padding(.bottom, divider ? AppLayout.forgeRailGap : 0)
+        .overlay(alignment: .bottom) { if divider { SHHairline() } }
+        .padding(.bottom, divider ? AppLayout.forgeRailGap : 0)
     }
 }
 
@@ -353,23 +397,20 @@ extension ForgeRailSection where Accessory == EmptyView {
     }
 }
 
-/// An item's labels: each a tag in its color's words.
+/// An item's labels (`.gch-lbl`): their names in a line of words.
 struct ForgeLabelsLine: View {
     let labels: [ForgeLabel]
 
     var body: some View {
-        if labels.isEmpty {
-            Text("None yet").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-        } else {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: SH.Space.xs) { ForEach(labels, id: \.name) { SHTag($0.name) } }
-                VStack(alignment: .leading, spacing: SH.Space.xs) { ForEach(labels, id: \.name) { SHTag($0.name) } }
-            }
-        }
+        Text(labels.isEmpty ? "None yet" : labels.map(\.name).joined(separator: ", "))
+            .font(.sh(.ui, weight: .regular))
+            .foregroundStyle(labels.isEmpty ? Color.sh.textTertiary : Color.sh.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: AppLayout.forgeRailHead, alignment: .leading)
     }
 }
 
-/// "M mara opened 1h ago · head → base".
+/// "M baily opened this 2h ago, agent/refund-events into main" (`.gch-by`).
 struct ForgeByline: View {
     let author: String
     let you: Bool
@@ -378,22 +419,25 @@ struct ForgeByline: View {
     var branches: (head: String, base: String)? = nil
 
     var body: some View {
-        HStack(spacing: SH.Space.s) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             ForgeAvatar(login: author, you: you)
-            Text(author).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-            Text([verb, age].compactMap { $0 }.joined(separator: " ")).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-            if let branches {
-                Text("·").foregroundStyle(Color.sh.textTertiary)
-                Text(branches.head).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "arrow.right").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
-                Text(branches.base).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
-            }
+            (Text(author).fontWeight(.medium).foregroundStyle(sh.textPrimary)
+                + Text(" " + [verb, age].compactMap { $0 }.joined(separator: " ")).foregroundStyle(sh.textSecondary)
+                + Text(branches == nil ? "" : ", ").foregroundStyle(sh.textSecondary)
+                + Text(branches?.head ?? "").font(.shMono(SHTextStyle.caption.size)).foregroundStyle(sh.textSecondary)
+                + Text(branches == nil ? "" : " into ").foregroundStyle(sh.textSecondary)
+                + Text(branches?.base ?? "").font(.shMono(SHTextStyle.caption.size)).foregroundStyle(sh.textSecondary))
+                .font(.sh(.ui, weight: .regular))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Activity: its header with the filter, and one card per event.
+/// Activity: its header with the filter, and one row per event. On the page the header (the boards' `.gch-acth`) has a
+/// line over it and rows run one under another; the pane's are cards.
 struct ForgeActivity: View {
     @Bindable var store: ForgeStore
     let events: [ForgeEvent]
@@ -407,29 +451,48 @@ struct ForgeActivity: View {
     var body: some View {
         let shown = store.commentsOnly ? events.filter { ForgeActivityRow.words($0) != nil } : events
         let now = store.now()
-        VStack(alignment: .leading, spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: pane ? SH.Space.m : 0) {
             HStack {
-                Text("Activity").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
+                Text("Activity")
+                    .font(pane ? .sh(.headline) : .sh(.body, weight: .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Menu {
-                    Picker("Show", selection: $store.commentsOnly) {
-                        Text("All Activity").tag(false)
-                        Text("Comments and Reviews").tag(true)
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Label(store.commentsOnly ? "Comments" : "All activity", systemImage: ForgeSymbol.filter)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.sh(.ghost, size: .s))
-                .menuIndicator(.hidden)
-                .fixedSize()
+                filter
             }
-            LazyVStack(alignment: .leading, spacing: pane ? SH.Space.xxs : SH.Space.m) {
+            .padding(.top, pane ? 0 : AppLayout.forgeActivityHeadTop)
+            .overlay(alignment: .top) { if !pane { SHHairline() } }
+            .padding(.top, pane ? 0 : AppLayout.forgeActivityTop)
+            .padding(.bottom, pane ? 0 : SH.Space.s)
+            LazyVStack(alignment: .leading, spacing: pane ? SH.Space.xxs : 0) {
                 ForEach(shown) { event in
-                    ForgeActivityRow(event: event, viewer: viewer, kind: kind, now: now, lineComments: lineComments, pane: pane).equatable()
+                    ForgeActivityRow(event: event, viewer: viewer, kind: kind, now: now, lineComments: lineComments || !pane, pane: pane).equatable()
                 }
             }
+        }
+    }
+
+    @ViewBuilder private var filter: some View {
+        let menu = Menu {
+            Picker("Show", selection: $store.commentsOnly) {
+                Text("All Activity").tag(false)
+                Text("Comments and Reviews").tag(true)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            if pane {
+                Label(store.commentsOnly ? "Comments" : "All activity", systemImage: ForgeSymbol.filter)
+            } else {
+                ForgeMenuLabel(title: store.commentsOnly ? "Comments" : "All activity")
+            }
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        if pane {
+            menu.buttonStyle(.sh(.ghost, size: .s))
+        } else {
+            menu.buttonStyle(.plain)
         }
     }
 }

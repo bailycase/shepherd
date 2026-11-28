@@ -127,8 +127,20 @@ public struct HookEntry: Hashable, Codable, Sendable, Identifiable {
     /// The name a thread row shows: `statusMessage`, else the command's first word, else the tool.
     public var name: String {
         if let message = handler.statusMessage, !message.isEmpty { return message }
-        if let word = handler.command?.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).first { return String(word) }
+        if let command = handler.command, let word = Self.commandWord(command) { return word }
         return handler.tool ?? handler.type
+    }
+
+    /// The command's own first word. A leading shell test (`[ -x run.sh ] && run.sh`, `[[ … ]] || …`, `test -f x && …`) guards the
+    /// command and names nothing, so the word is the one it guards; a word with no letter or digit in it is no name.
+    public static func commandWord(_ command: String) -> String? {
+        var text = Substring(command.trimmingCharacters(in: .whitespacesAndNewlines))
+        if let guarded = text.range(of: #"^(?:\[\[?\s[^\]]*\]\]?|test\s[^&|;]*)\s*(?:&&|\|\||;)\s*"#, options: .regularExpression) {
+            text = text[guarded.upperBound...]
+        }
+        guard let word = text.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).first,
+              word.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        return String(word)
     }
 }
 

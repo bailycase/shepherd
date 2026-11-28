@@ -4,6 +4,10 @@ import ShepherdUI
 /// The Design tool's screens (NavDesigns, DZStart, DZCanvas). The canvas's, the cards' and the
 /// header's own measures are `SHDesignMetrics`.
 extension AppLayout {
+    /// The design tool's sheets (Export, Implement, Git) hang 96pt from the window's top edge, as the boards' `.sheet` does (the
+    /// boards' windows differ by a few points either way: the merge dialog's lands at 110, Implement's at 75).
+    static let designSheetTop: CGFloat = 96
+
     // The Designs page: its measures are `SHDesignsHomeMetrics`
     /// A card's thumbnail is kept this many pixels wide (its board draws at most 200pt).
     static let designThumbnailPixelWidth: CGFloat = 512

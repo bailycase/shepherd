@@ -18,8 +18,8 @@ struct AutomationsPageRow: Identifiable, Equatable {
     /// Its switch works: the host is connected and serves automations, and no change is on its way.
     var canToggle: Bool
     var host: String
-    /// The Trigger column: "manual", "schedule", "GitHub", and its glyph.
-    var trigger: String = "manual"
+    /// The Trigger column: what starts a run ("By hand", "Daily at 09:00"), and its glyph.
+    var trigger: String = "By hand"
     var triggerGlyph: String = AutomationsPageModel.manualGlyph
     /// How its trigger stands, under the name ("Paused · gh isn't signed in"); nil for manual.
     var note: String?
@@ -141,7 +141,7 @@ struct AutomationsPageModel: Equatable {
     var pauseMenuTitle: String {
         let paused = (allPaused ? [PageHost.localName] : []) + hostPauses.filter(\.paused).map(\.name)
         switch paused.count {
-        case 0: return "Pause triggers"
+        case 0: return "Pause all triggers"
         case 1: return "Paused on \(paused[0])"
         default: return "Paused on \(paused.count) hosts"
         }
@@ -188,7 +188,9 @@ struct AutomationsPageModel: Equatable {
                 canEdit: row.abilities.edit && !busy, disabledReason: row.abilities.edit ? (busy ? "Working…" : nil) : row.abilities.readOnlyReason)
             if let automation = saved[row.key] {
                 (page.trigger, page.triggerGlyph) = Self.triggerKind(automation.trigger)
-                if let note = Self.note(automation, status: triggers[row.key], allPaused: allPaused, now: now, timeZone: timeZone, locale: locale) {
+                // The row says only what is wrong or waiting; Next run and the day's count are in the detail.
+                if let note = Self.note(automation, status: triggers[row.key], allPaused: allPaused, now: now, timeZone: timeZone, locale: locale),
+                   note.1 != nil || note.0.hasPrefix("Paused") || note.0.contains("waiting") {
                     (page.note, page.noteState) = note
                 }
                 page.unread = runs[row.key]?.filter(\.unread).count ?? 0
@@ -218,12 +220,12 @@ struct AutomationsPageModel: Equatable {
 
     // MARK: Triggers
 
-    /// The Trigger column's word and glyph.
+    /// The Trigger column's phrase ("Daily at 09:00", "By hand") and glyph.
     static func triggerKind(_ trigger: AutomationTrigger) -> (String, String) {
         switch trigger {
-        case .manual: ("manual", manualGlyph)
-        case .schedule: ("schedule", scheduleGlyph)
-        case .github: ("GitHub", SHGlyph.repository.symbolName)
+        case .manual: (whenPhrase(trigger), manualGlyph)
+        case .schedule: (whenPhrase(trigger), scheduleGlyph)
+        case .github: (whenPhrase(trigger), SHGlyph.repository.symbolName)
         }
     }
 
@@ -304,7 +306,7 @@ struct AutomationsPageModel: Equatable {
         }
     }
 
-    /// The table's Last run: the run's word, lowercase as the board has it, with its time.
+    /// The table's Last run: the run's word with its time ("Finished, 6h ago").
     static func lastRun(_ row: AutomationListRow, runsKnown: Bool) -> SHRunOutcome? {
         // Until the runs are read, a row without a run knows only whether it is on.
         guard runsKnown || row.run != nil || row.offline else { return nil }
@@ -313,7 +315,7 @@ struct AutomationsPageModel: Equatable {
         case .ago(let at)?: .ago(at)
         case nil: nil
         }
-        return SHRunOutcome(row.status.lowercasedFirst, state: state(row.tone), clock: clock)
+        return SHRunOutcome(row.status, state: state(row.tone), clock: clock)
     }
 
     /// A tone as the page colors it: stopped and off are quiet (a hollow dot).
@@ -327,22 +329,28 @@ struct AutomationsPageModel: Equatable {
         }
     }
 
+    /// "Sep 24 02:00" as the board writes it: "Sep 24, 02:00".
+    static func comma(_ stamp: String) -> String {
+        guard let space = stamp.lastIndex(of: " "), stamp[stamp.index(after: space)...].contains(":") else { return stamp }
+        return stamp[..<space] + "," + stamp[space...]
+    }
+
     static func detail(_ detail: AutomationDetail, host: AutomationHost?, busy: Bool) -> AutomationsPageDetail {
         let row = detail.row
         let local = row.key.host == PageHost.localID
         let place = local ? "this Mac" : row.hostName
         var facts = [
             AutomationsPageDetail.Fact(label: "When", value: row.when, mono: false),
-            .init(label: "Host", value: row.hostName, mono: true),
+            .init(label: "Host", value: row.hostName, mono: false),
             .init(label: "Folder", value: local ? (row.cwd as NSString).abbreviatingWithTildeInPath : row.cwd, mono: true),
         ]
         // The model its run's thread uses, where the host says.
         let runAgent = row.run.flatMap { run in host?.state.agents.first { $0.id == run.agent } }
         if let model = runAgent?.model, !model.isEmpty {
-            facts.append(.init(label: "Model", value: model, mono: true))
+            facts.append(.init(label: "Model", value: model, mono: false))
         }
         let runs = detail.runs.map { run in
-            AutomationsPageRun(id: run.id, started: run.started, word: run.word, state: state(run.tone),
+            AutomationsPageRun(id: run.id, started: Self.comma(run.started), word: run.word, state: state(run.tone),
                                duration: run.duration, thread: run.agent)
         }
         let note: String? = if detail.runsProblem != nil {
@@ -404,7 +412,7 @@ extension AutomationsPageDetail {
             let pins = [automation.model ?? "default", automation.thinking.map { "thinking " + $0.title.lowercased() },
                         automation.serviceTier.map { "speed " + $0.title.lowercased() }].compactMap { $0 }
             facts.removeAll { $0.label == "Model" }
-            trigger.append(.init(label: "Model", value: pins.joined(separator: " · "), mono: true))
+            trigger.append(.init(label: "Model", value: pins.joined(separator: " · "), mono: false))
         }
         facts.removeAll { $0.label == "When" }
         facts = trigger + facts
@@ -454,8 +462,4 @@ extension AutomationsPageDetail {
         }
         paused = status.state == .paused
     }
-}
-
-private extension String {
-    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }

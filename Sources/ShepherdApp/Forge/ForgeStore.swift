@@ -62,6 +62,8 @@ final class ForgeStore {
     // MARK: The page
 
     private(set) var selection: ForgeItemRef?
+    /// The header's merge menu is open (PRReviewMerge).
+    var mergeMenuOpen = false
     var tab: Tab = .summary { didSet { if tab == .changes, files == nil { loadFiles() } } }
     private(set) var pullRequest: PullRequestDetail?
     private(set) var issue: IssueDetail?
@@ -602,7 +604,11 @@ struct ForgeRow: Equatable, Identifiable {
     let word: String
     /// The author is the signed-in gh user (the avatar is lantern).
     let viewerIsAuthor: Bool
+    /// How the word reads in the list (the boards' `.gch-fw`): asking, failing, going, or quiet.
+    let wordTone: WordTone
     var selected = false
+
+    enum WordTone: Equatable { case quiet, secondary, attention, failed }
 
     var id: String { ref.id }
 
@@ -614,6 +620,12 @@ struct ForgeRow: Equatable, Identifiable {
         byline = (showsRepo ? "\(pull.ref.repoName) · " : "") + ForgePresentation.byline(author: pull.author, updatedAt: pull.updatedAt, now: now)
         tone = state.tone
         word = state.label
+        wordTone = switch state {
+        case .changesRequested: .attention
+        case .failing, .closed: .failed
+        case .running: .secondary
+        case .merged, .draft, .passed, .open: .quiet
+        }
         viewerIsAuthor = viewer.map { $0.caseInsensitiveCompare(pull.author) == .orderedSame } ?? false
     }
 
@@ -625,6 +637,11 @@ struct ForgeRow: Equatable, Identifiable {
             + ForgePresentation.byline(author: issue.author, updatedAt: issue.updatedAt, automation: issue.automationName, now: now)
         tone = ForgePresentation.tone(issue.progress)
         word = ForgePresentation.label(issue.progress)
+        wordTone = switch issue.progress {
+        case .new: .attention
+        case .running: .secondary
+        case .open, .inPullRequest, .closed: .quiet
+        }
         viewerIsAuthor = viewer.map { $0.caseInsensitiveCompare(issue.author) == .orderedSame } ?? false
     }
 }

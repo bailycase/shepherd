@@ -44,51 +44,78 @@ struct AutomationsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DestinationPageHeader(title: "Automations", chrome: chrome) {
-                if !model.hostPauses.isEmpty {
-                    // Hosts have their own Pause all: one menu, a checked host is paused.
-                    SHPopupMenu(model.pauseMenuTitle, minWidth: 0) {
-                        Section("Pause all triggers on") {
-                            if model.hasTriggers || model.allPaused {
-                                Toggle(PageHost.localName, isOn: Binding(get: { model.allPaused },
-                                                                         set: { actions.setAllPaused(PageHost.localID, $0) }))
-                            }
-                            ForEach(model.hostPauses) { host in
-                                Toggle(host.name, isOn: Binding(get: { host.paused }, set: { actions.setAllPaused(host.id, $0) }))
-                            }
-                        }
-                    }
-                    .accessibilityLabel("Pause all triggers")
-                    .help("Stops every schedule and GitHub trigger on a host from starting runs. Run now still works.")
-                } else if model.hasTriggers || model.allPaused {
-                    Toggle(isOn: Binding(get: { model.allPaused }, set: { actions.setAllPaused(PageHost.localID, $0) })) {
-                        Text("Pause all triggers").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                    }
-                    .toggleStyle(.shSwitch)
-                    .help("Stops every schedule and GitHub trigger on this Mac from starting runs. Run now still works.")
+            SHDesignsBar("Automations", leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
+                         sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar)) {
+                SHDesignsFilterField("Filter automations", text: Binding(get: { model.filter }, set: actions.setFilter))
+                SHToolbarCapsule {
+                    pause
+                    Button("New automation", systemImage: "plus", action: actions.create)
+                        .buttonStyle(.shBar)
                 }
-                SHPageFilterField("Filter automations", text: Binding(get: { model.filter }, set: actions.setFilter))
-                Button("New automation", systemImage: "plus", action: actions.create)
-                    .buttonStyle(.sh(.primary))
             }
-            HStack(spacing: 0) {
+            HStack(alignment: .top, spacing: AppLayout.automationPageGap) {
                 table
                 if let detail = model.detail {
                     AutomationDetailPane(detail: detail, actions: actions)
                         .equatable()
-                        .frame(width: AppLayout.automationDetailWidth)
-                        .overlay(alignment: .leading) { SHHairline(.vertical) }
+                        .frame(width: SHAutomationDetailMetrics.width)
                 }
             }
+            .padding(.leading, SHDesignsHomeMetrics.inset)
+            .padding(.trailing, SH.Space.xl)
+            .padding(.top, SH.Space.l)
+            .padding(.bottom, SH.Space.xl)
             .frame(maxHeight: .infinity)
         }
+        // The boards' window padding: the page sits inside the 8pt the sidebar's card leaves.
+        .padding([.top, .trailing, .bottom], AppLayout.toolbarTop)
         .background(Color.sh.bgWindow)
+    }
+
+    /// Pause all triggers: one button on this Mac's while it is the only host with triggers (lit while paused), a menu with a toggle
+    /// per host once others have their own (a checked host is paused). Nothing while no host has a trigger to pause.
+    @ViewBuilder private var pause: some View {
+        if !model.hostPauses.isEmpty {
+            Menu {
+                Section("Pause all triggers on") {
+                    if model.hasTriggers || model.allPaused {
+                        Toggle(PageHost.localName, isOn: Binding(get: { model.allPaused },
+                                                                 set: { actions.setAllPaused(PageHost.localID, $0) }))
+                    }
+                    ForEach(model.hostPauses) { host in
+                        Toggle(host.name, isOn: Binding(get: { host.paused }, set: { actions.setAllPaused(host.id, $0) }))
+                    }
+                }
+            } label: {
+                HStack(spacing: SH.Space.s) {
+                    Text(model.pauseMenuTitle)
+                    Image(systemName: "chevron.down").font(.shSans(SHAutomationDetailMetrics.chevron, .semibold)).foregroundStyle(Color.sh.textTertiary)
+                }
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.shBar)
+            .fixedSize()
+            .accessibilityLabel("Pause all triggers")
+            .accessibilityValue(model.pauseMenuTitle)
+            .help("Stops every schedule and GitHub trigger on a host from starting runs. Run now still works.")
+            SHBarDivider()
+        } else if model.hasTriggers || model.allPaused {
+            Button { actions.setAllPaused(PageHost.localID, !model.allPaused) } label: {
+                Label("Pause all triggers", systemImage: "pause")
+            }
+            .buttonStyle(.shBar)
+            .background(model.allPaused ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .accessibilityValue(model.allPaused ? "on" : "off")
+            .accessibilityAddTraits(.isToggle)
+            .help("Stops every schedule and GitHub trigger on this Mac from starting runs. Run now still works.")
+            SHBarDivider()
+        }
     }
 
     @ViewBuilder private var table: some View {
         VStack(spacing: 0) {
-            SHTableHead(["Automation", "Trigger", "Host", "Last run"], columns: AppLayout.automationColumns)
-                .padding(.top, AppLayout.automationTableTop)
+            SHAutomationHead(["", "Automation", "Trigger", "Host", "Last run"], columns: SHAutomationTableMetrics.columns)
             if let empty = model.emptyText {
                 Text(empty)
                     .shText(.caption)
@@ -125,7 +152,7 @@ struct AutomationTableRowView: View, Equatable {
         SHAutomationTableRow(row.name, isOn: row.enabled, switchEnabled: row.canToggle, starts: row.trigger,
                              startsGlyph: row.triggerGlyph, note: row.note, noteState: row.noteState, unread: row.unread,
                              host: row.host, outcome: row.lastRun,
-                             selected: row.selected, columns: AppLayout.automationColumns,
+                             selected: row.selected,
                              toggle: { actions.setEnabled(key, $0) }, select: { actions.select(key) })
             .contextMenu {
                 if let run = row.run {
@@ -147,8 +174,9 @@ struct AutomationTableRowView: View, Equatable {
     }
 }
 
-/// The selected automation beside the table: its name and what it starts, its prompt, its facts,
-/// its recent runs, and a footer with Run now (Stop while a run is live) and Edit.
+/// The selected automation beside the table, as a card (NavAutomations' `.dcard`): its name and
+/// what it starts, its prompt, its facts, its recent runs, and Run now (Stop while a run is
+/// live) with Pause or Resume and Edit. The card hugs its content and scrolls past the page's height.
 struct AutomationDetailPane: View, Equatable {
     let detail: AutomationsPageDetail
     let actions: AutomationsPageActions
@@ -156,93 +184,134 @@ struct AutomationDetailPane: View, Equatable {
     nonisolated static func == (a: AutomationDetailPane, b: AutomationDetailPane) -> Bool { a.detail == b.detail }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                    if let banner = detail.banner {
+        let M = SHAutomationDetailMetrics.self
+        ViewThatFits(in: .vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                content
+                footer
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ScrollView { content }
+                footer
+            }
+        }
+        .padding(.bottom, M.cardBottom)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .shCard(radius: M.radius, lift: true)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var content: some View {
+        let M = SHAutomationDetailMetrics.self
+        return VStack(alignment: .leading, spacing: 0) {
+            header
+            if let banner = detail.banner {
+                let key = detail.key
+                SHBanner(banner.state, title: banner.title, message: banner.message) {
+                    if banner.canResume {
+                        Button("Resume") { actions.resume(key) }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .disabled(!detail.canEdit)
+                    } else if banner.resumesAll {
+                        Button("Resume all") { actions.setAllPaused(key.host, false) }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .disabled(!detail.canEdit)
+                    }
+                }
+                .padding(.horizontal, M.side)
+                .padding(.top, M.labelTop)
+            }
+            if !detail.pending.isEmpty {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    label("Waiting · \(detail.pending.count)")
+                    Text("Each waits for a free run. Run now starts it past the limits.")
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, M.side)
+                    ForEach(detail.pending) { event in
                         let key = detail.key
-                        SHBanner(banner.state, title: banner.title, message: banner.message) {
-                            if banner.canResume {
-                                Button("Resume") { actions.resume(key) }
-                                    .buttonStyle(.sh(.secondary, size: .s))
-                                    .disabled(!detail.canEdit)
-                            } else if banner.resumesAll {
-                                Button("Resume all") { actions.setAllPaused(key.host, false) }
-                                    .buttonStyle(.sh(.secondary, size: .s))
-                                    .disabled(!detail.canEdit)
-                            }
-                        }
-                        .padding(.horizontal, AppLayout.automationDetailSide)
-                        .padding(.top, AppLayout.automationDetailSectionVertical)
+                        SHAutomationPendingEvent(event.title, waited: event.waited, enabled: detail.canRun,
+                                                 run: { actions.runEvent(key, event.id) },
+                                                 dismiss: { actions.dismissEvent(key, event.id) })
+                            .padding(.horizontal, M.side)
                     }
-                    if !detail.pending.isEmpty {
-                        section {
-                            SHPageSectionLabel("Waiting · \(detail.pending.count)")
-                            Text("Each waits for a free run. Run now starts it past the limits.")
-                                .font(.sh(.caption))
-                                .foregroundStyle(Color.sh.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            ForEach(detail.pending) { event in
-                                let key = detail.key
-                                SHAutomationPendingEvent(event.title, waited: event.waited, enabled: detail.canRun,
-                                                         run: { actions.runEvent(key, event.id) },
-                                                         dismiss: { actions.dismissEvent(key, event.id) })
-                            }
-                        }
-                    }
-                    // A triggered automation is an inbox: its runs lead, its definition follows.
-                    if detail.triggered { runs.overlay(alignment: .bottom) { SHHairline() } }
-                    section {
-                        SHPageSectionLabel("Prompt")
-                        SHPageQuote(detail.prompt)
-                    }
-                    section {
-                        VStack(alignment: .leading, spacing: AppLayout.automationFactSpacing) {
-                            ForEach(detail.facts) { fact in
-                                SHPageFact(fact.label, value: fact.value, mono: fact.mono,
-                                           labelWidth: AppLayout.automationFactLabelWidth, style: .detail)
-                            }
-                        }
-                    }
-                    if !detail.triggered { runs }
                 }
             }
-            footer
+            // A triggered automation is an inbox: its runs lead, its definition follows.
+            if detail.triggered { runs }
+            label("Prompt")
+            Text(detail.prompt)
+                .font(.sh(.ui, weight: .regular))
+                .lineSpacing(M.promptLineSpacing)
+                .foregroundStyle(Color.sh.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, M.promptVertical)
+                .padding(.horizontal, M.promptHorizontal)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: M.promptRadius))
+                .padding(.horizontal, M.side)
+            VStack(alignment: .leading, spacing: M.factGap) {
+                ForEach(detail.facts) { fact in
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(fact.label)
+                            .font(.sh(.ui, weight: .regular))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .frame(width: M.factLabel, alignment: .leading)
+                        Text(fact.value)
+                            .font(fact.mono ? .shMono(SHTextStyle.ui.size) : .sh(.ui, weight: .regular))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .lineLimit(3)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .padding(.top, M.labelTop)
+            .padding(.horizontal, M.side)
+            if !detail.triggered { runs }
         }
     }
 
+    private func label(_ title: String) -> some View {
+        let M = SHAutomationDetailMetrics.self
+        return Text(title)
+            .font(.sh(.caption))
+            .foregroundStyle(Color.sh.textTertiary)
+            .padding(.top, M.labelTop)
+            .padding(.bottom, M.labelBottom)
+            .padding(.horizontal, M.side)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     private var header: some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
+        let M = SHAutomationDetailMetrics.self
+        return VStack(alignment: .leading, spacing: SH.Space.xxs) {
             Text(detail.name)
-                .font(.sh(.title))
+                .font(.shSans(M.titleSize, .semibold))
                 .foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(detail.summary)
-                .font(.shSans(12))
-                .foregroundStyle(Color.sh.textTertiary)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(Color.sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, AppLayout.automationDetailHeaderVertical)
-        .padding(.horizontal, AppLayout.automationDetailSide)
+        .padding(.top, M.headerTop)
+        .padding(.bottom, M.headerBottom)
+        .padding(.horizontal, M.side)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) { SHHairline() }
-    }
-
-    private func section<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) { content() }
-            .padding(.vertical, AppLayout.automationDetailSectionVertical)
-            .padding(.horizontal, AppLayout.automationDetailSide)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private var runs: some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            SHPageSectionLabel(detail.triggered ? "Runs" : "Recent runs")
+        VStack(alignment: .leading, spacing: 0) {
+            label(detail.triggered ? "Runs" : "Recent runs")
             if let note = detail.runsNote {
-                Text(note).shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, SHAutomationDetailMetrics.side)
             } else if detail.triggered {
                 VStack(spacing: 0) {
                     ForEach(detail.runs) { run in
@@ -252,6 +321,7 @@ struct AutomationDetailPane: View, Equatable {
                                              openPullRequest: run.pullRequest.map { url in { actions.openURL(url) } })
                     }
                 }
+                .padding(.horizontal, SH.Space.m)
             } else {
                 VStack(spacing: 0) {
                     ForEach(detail.runs) { run in
@@ -261,49 +331,52 @@ struct AutomationDetailPane: View, Equatable {
                 }
             }
         }
-        .padding(.vertical, AppLayout.automationDetailSectionVertical)
-        .padding(.horizontal, AppLayout.automationDetailSide)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Run now, Pause and Edit as the board's plain words: the main one in `textPrimary`, the rest quiet.
     private var footer: some View {
+        let M = SHAutomationDetailMetrics.self
         let key = detail.key
-        return HStack(spacing: SH.Space.m) {
+        return HStack(spacing: M.actionGap) {
             if detail.triggered {
-                Button("Run now", systemImage: "play.fill") { actions.run(key) }
-                    .buttonStyle(.sh(.secondary, size: .s))
+                action("Run now", "play.fill", main: true) { actions.run(key) }
                     .disabled(!detail.canRun)
                     .help("Starts one run now, outside the trigger and its limits")
                 // A paused trigger's banner holds Resume.
                 if let paused = detail.paused, !(paused && detail.banner?.canResume == true) {
-                    Button(paused ? "Resume" : "Pause", systemImage: paused ? "play.circle" : "pause") {
-                        paused ? actions.resume(key) : actions.pause(key)
-                    }
-                    .buttonStyle(.sh(.ghost, size: .s))
-                    .disabled(!detail.canEdit)
+                    action(paused ? "Resume" : "Pause", nil, main: false) { paused ? actions.resume(key) : actions.pause(key) }
+                        .disabled(!detail.canEdit)
                 }
             } else if detail.live {
-                Button("Stop", systemImage: "stop.fill") { actions.stop(key) }
-                    .buttonStyle(.sh(.secondary, size: .s))
+                action("Stop", "stop.fill", main: true) { actions.stop(key) }
                     .disabled(!detail.canStop)
             } else {
-                Button("Run now", systemImage: "play.fill") { actions.run(key) }
-                    .buttonStyle(.sh(.secondary, size: .s))
+                action("Run now", "play.fill", main: true) { actions.run(key) }
                     .disabled(!detail.canRun)
             }
+            action("Edit", nil, main: false) { actions.edit(key) }
+                .disabled(!detail.canEdit)
             if let reason = detail.readOnlyReason {
                 Text(reason)
                     .font(.sh(.caption))
                     .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(2)
             }
-            Spacer(minLength: SH.Space.s)
-            Button("Edit") { actions.edit(key) }
-                .buttonStyle(.sh(.ghost, size: .s))
-                .disabled(!detail.canEdit)
         }
-        .padding(.vertical, AppLayout.automationFooterVertical)
-        .padding(.horizontal, AppLayout.automationFooterSide)
-        .overlay(alignment: .top) { SHHairline() }
+        .padding(.top, M.actionTop)
+        .padding(.bottom, M.actionBottom)
+        .padding(.horizontal, M.side)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func action(_ title: String, _ symbol: String?, main: Bool, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            HStack(spacing: SH.Space.s) {
+                if let symbol { Image(systemName: symbol).font(.shSans(SHAutomationDetailMetrics.actionGlyph - SH.Space.xxs)).accessibilityHidden(true) }
+                Text(title)
+            }
+        }
+        .buttonStyle(.shLink(color: main ? Color.sh.textPrimary : Color.sh.textSecondary,
+                             font: .sh(.ui, weight: main ? .medium : .regular)))
     }
 }

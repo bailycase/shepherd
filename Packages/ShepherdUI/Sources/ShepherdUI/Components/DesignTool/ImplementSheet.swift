@@ -70,7 +70,7 @@ public enum SHImplementMode: Hashable, Sendable {
 /// The sheet (ImplementInThreadSheet): the piece's picture with "Implement <piece>" and where it
 /// is (design › board · v23), a close button; Existing thread | New thread; what `content` holds
 /// for the mode; then the footer: what gets sent, Cancel and Send. 560pt at radius 16 on the
-/// raised fill with the popover's line and shadow. Center it over `Color.sh.sheetScrim`.
+/// raised fill with the popover's line and shadow. Center it over `Color.sh.modalScrim`.
 public struct SHImplementSheet<Content: View>: View {
     let picture: SHReferenceImage?
     let title: String

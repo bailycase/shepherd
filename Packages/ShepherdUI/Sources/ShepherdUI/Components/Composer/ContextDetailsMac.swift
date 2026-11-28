@@ -40,6 +40,13 @@ enum SHContextMacMetrics {
 }
 
 extension SHContextDetails {
+    /// What the split shows: the model's own, or past 85% the breakdown behind Details once it is open (GXContextFull).
+    var split: (rows: [SHContextDetailsModel.Row], free: String?, items: [SHContextDetailsModel.Item], footnote: String?) {
+        guard model.variant == .almostFull else { return (model.rows, model.free, model.items, model.footnote) }
+        guard detailsOpen, let more = model.breakdown else { return ([], nil, [], nil) }
+        return (more.rows, more.free, more.items, more.footnote)
+    }
+
     /// The Mac's details: the board's popover, where the total, the bar and the rows sit as plain
     /// text on the card and the actions are words, not buttons.
     var macBody: some View {
@@ -57,9 +64,10 @@ extension SHContextDetails {
                         .padding(.top, SHContextMacMetrics.noteTop)
                 }
                 if let note = model.note { macNote(note) }
-                if !model.rows.isEmpty { macRows }
-                if !model.items.isEmpty { macLargest }
-                if let footnote = model.footnote {
+                let split = split
+                if !split.rows.isEmpty { macRows }
+                if !split.items.isEmpty { macLargest }
+                if let footnote = split.footnote {
                     Text(footnote).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, SHContextMacMetrics.footnoteTop)
@@ -159,7 +167,7 @@ extension SHContextDetails {
     private var macRows: some View {
         let sh = Color.sh
         return VStack(spacing: 0) {
-            ForEach(model.rows) { row in
+            ForEach(split.rows) { row in
                 HStack(spacing: SHContextMacMetrics.rowGap) {
                     RoundedRectangle(cornerRadius: 2).fill(Self.macColor(row.part, sh))
                         .frame(width: SHContextMetrics.swatch, height: SHContextMetrics.swatch)
@@ -186,7 +194,7 @@ extension SHContextDetails {
                     .accessibilityLabel("\(child.label), \(child.value) tokens")
                 }
             }
-            if let free = model.free {
+            if let free = split.free {
                 HStack(spacing: SHContextMacMetrics.rowGap) {
                     Color.clear.frame(width: SHContextMetrics.swatch, height: SHContextMetrics.swatch)
                     Text("Free").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
@@ -209,7 +217,7 @@ extension SHContextDetails {
             .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             .frame(height: SHContextMacMetrics.largestHeight)
             .padding(.top, SHContextMacMetrics.largestTop)
-            ForEach(model.items) { item in
+            ForEach(split.items) { item in
                 SHContextMacItemRow(item: item) { actions.find(item.id) }
             }
         }
@@ -223,7 +231,7 @@ extension SHContextDetails {
             EmptyView()
         case .almostFull:
             macKeepField
-            macActionBar { macPill }
+            macActionBar(leading: model.breakdown == nil ? nil : macLink(detailsOpen ? "Hide details" : "Details", dim: true) { detailsOpen.toggle() }) { macPill }
         case .simple, .split:
             if composing {
                 macKeepField
@@ -241,9 +249,10 @@ extension SHContextDetails {
     }
 
     /// The row under the card's content: a hairline over words at its trailing edge.
-    private func macActionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    private func macActionBar<Content: View>(leading: (some View)? = Optional<EmptyView>.none, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: SH.Space.m) {
+                if let leading { leading }
                 Spacer(minLength: 0)
                 content()
             }
@@ -253,9 +262,9 @@ extension SHContextDetails {
         .padding(.top, SHContextMacMetrics.actionsTop)
     }
 
-    private func macLink(_ title: String, action: @escaping () -> Void) -> some View {
+    private func macLink(_ title: String, dim: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) { Text(title) }
-            .buttonStyle(SHContextLinkStyle())
+            .buttonStyle(SHContextLinkStyle(dim: dim))
     }
 
     private var macPill: some View {
@@ -354,15 +363,19 @@ private struct SHContextMacItemRow: View {
 
 /// Words as the action (Compact now…, Show summary): `textPrimary` in medium, fading when disabled.
 private struct SHContextLinkStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { LinkBody(configuration: configuration) }
+    /// The board's `.lk.dim`: `textSecondary` in regular weight.
+    var dim = false
+
+    func makeBody(configuration: Configuration) -> some View { LinkBody(configuration: configuration, dim: dim) }
 
     private struct LinkBody: View {
         let configuration: Configuration
+        let dim: Bool
         @Environment(\.isEnabled) private var enabled
 
         var body: some View {
             configuration.label
-                .font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                .font(.sh(.ui, weight: dim ? .regular : .medium)).foregroundStyle(dim ? Color.sh.textSecondary : Color.sh.textPrimary)
                 .padding(.horizontal, SH.Space.xs)
                 // A taller press area than the words, without taller layout.
                 .padding(.vertical, SH.Space.xs)

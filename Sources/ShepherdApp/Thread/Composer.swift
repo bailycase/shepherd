@@ -839,8 +839,8 @@ struct Composer: View, Equatable {
         if designChat { return "Describe a change, or click something on the canvas to comment…" }
         // As the iPhone and iPad say it: "$" opens the skills where pi has any.
         let skills = store.commands.contains { $0.source == "skill" }
-        if !hasTurns { return skills ? "Describe the task, / for commands, $ for skills…" : "Describe the task, or / for commands…" }
-        return commands.isEmpty ? "Follow up…" : skills ? "Follow up, / for commands, $ for skills…" : "Follow up, or / for commands…"
+        if !hasTurns { return skills ? "Describe the task, / for commands, $ for skills" : "Describe the task, or / for commands" }
+        return commands.isEmpty ? "Follow up" : skills ? "Follow up, / for commands, $ for skills" : "Follow up, or / for commands"
     }
 
     private var field: some View {

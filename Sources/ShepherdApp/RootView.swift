@@ -334,17 +334,24 @@ private struct DestinationLayer: View {
 
     var body: some View {
         switch vm.shownDestination {
-        case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
-        case .designs?: DesignsDestination(vm: vm, chrome: chrome)
+        case .newThread?: NewThreadPage(vm: vm, chrome: chrome).inWindowPadding()
+        case .designs?: DesignsDestination(vm: vm, chrome: chrome).inWindowPadding()
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
         case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)
         case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
         case .forge?: ForgeDestination(vm: vm, chrome: chrome)
-        case .fleet?: FleetDestination(vm: vm, chrome: chrome)
+        case .fleet?: FleetDestination(vm: vm, chrome: chrome).inWindowPadding()
         case .project?: LogicalProjectDestination(vm: vm, chrome: chrome)
         case .projectSettings?: LogicalProjectSettingsDestination(vm: vm, chrome: chrome)
         case nil: EmptyView()
         }
+    }
+}
+
+extension View {
+    /// A page drawn inside the boards' window padding: 8pt from the window's top, right and bottom, as the thread's toolbar is.
+    fileprivate func inWindowPadding() -> some View {
+        padding(EdgeInsets(top: AppLayout.toolbarTop, leading: 0, bottom: AppLayout.toolbarTop, trailing: AppLayout.toolbarTop))
     }
 }
 
@@ -475,5 +482,7 @@ struct WorkspaceHeaderView: View {
 private struct PaneReserve: ViewModifier {
     var vm: ShepherdViewModel
 
-    func body(content: Content) -> some View { content.padding(.trailing, vm.sidePaneReserve) }
+    /// The toolbar ends where a pane's card begins, else 8pt in from the window's right edge (the boards' window padding). Read here, not in
+    /// the shell's body: a divider drag moves the reserve every frame.
+    func body(content: Content) -> some View { content.padding(.trailing, vm.sidePaneReserve > 0 ? vm.sidePaneReserve : AppLayout.toolbarTop) }
 }

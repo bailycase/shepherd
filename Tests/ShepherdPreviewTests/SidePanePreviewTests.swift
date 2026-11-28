@@ -67,7 +67,7 @@ struct SidePanePreviewTests {
             PaneWindow(fixture: fixture) {
                 VStack(spacing: 0) {
                     tabs(.changes)
-                    ReviewPane(session: session, actions: Reviews.actions)
+                    ReviewPane(session: session, actions: Reviews.actions, compact: true)
                 }
             }
             .task { await fixture.store.run(request: fixture.request) }
@@ -116,7 +116,9 @@ struct SidePanePreviewTests {
         let both = try await renderInspectorWindow("pill-1715-sidepane-inspector", width: 1715, branch: true, sidePane: true)
         let rest = try await renderInspectorWindow("pill-1715-branch-closed", width: 1715, branch: true, inspector: false)
         for (alone, inspected, closed) in zip(zip(sideAlone, both), rest).map({ ($0.0.0, $0.0.1, $0.1) }) {
-            #expect(alone.1 > closed.1, "\(alone.0): the side pane alone keeps the pill left of its card")
+            // With the card alone beside the toolbar, the last column that differs is the card's own (and its lift's), nearer the window's edge
+            // than the pill, which stands 8pt in from the edge with no pane (the boards' window padding) and ends left of the card.
+            #expect(alone.1 < closed.1, "\(alone.0): the side pane alone ends \(alone.1)pt from the window's right edge, the pill \(closed.1)pt with no pane")
             #expect(abs(inspected.1 - closed.1) < 1, "\(inspected.0): inspector over the side pane, the pill is \(inspected.1)pt in, not \(closed.1)pt")
         }
     }

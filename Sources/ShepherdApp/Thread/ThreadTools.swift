@@ -117,7 +117,8 @@ struct ActivityLineView: View, Equatable {
             // A call the model is still writing says how much of its arguments came (ResponseVisibility › A).
             SHActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil, received: burst.received)
+                           action: burst.expandable ? toggle : nil, received: burst.received,
+                           worked: burst.summary.map { SHActivityLine.Worked(duration: burst.duration, summary: $0) })
             if expanded {
                 // The mounted disclosure state, not the initializer's seed, owns preparation.
                 ActivityCallDetails(calls: burst.calls, review: review, expandedCalls: $expandedCalls,

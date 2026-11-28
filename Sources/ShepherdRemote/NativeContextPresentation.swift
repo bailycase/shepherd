@@ -143,6 +143,14 @@ public struct NativeContextDetails: Equatable, Sendable {
         public var id: String { label }
     }
 
+    /// What the split shows, when the popover leads with something else.
+    public struct Breakdown: Equatable, Sendable {
+        public var rows: [Row]
+        public var free: String?
+        public var largest: [Largest]
+        public var footnote: String
+    }
+
     public struct Largest: Equatable, Sendable, Identifiable {
         public var entryID: String
         public var kind: NativeContextItem.Kind
@@ -177,6 +185,8 @@ public struct NativeContextDetails: Equatable, Sendable {
     /// The part of `note` the board sets in mono: the size being summarized.
     public var emphasis: String?
     public var footnote: String?
+    /// Past 85% the rows stay empty, the problem first; what the context is made of waits here for the Mac's Details.
+    public var breakdown: Breakdown?
     /// The latest compaction's summary in the thread (Show summary).
     public var summaryEntryID: String?
     /// Compact now is offered (not while compacting).
@@ -212,6 +222,7 @@ public struct NativeContextDetails: Equatable, Sendable {
         note = nil
         emphasis = nil
         footnote = nil
+        breakdown = nil
         summaryEntryID = context.summaryEntryID
         compactOffered = context.compacting == nil
 
@@ -258,12 +269,12 @@ public struct NativeContextDetails: Equatable, Sendable {
         } else {
             segments = [Segment(part: nil, fraction: fraction(tokens))]
         }
-        if percent > 85 {
+        let full = percent > 85
+        if full {
             variant = .almostFull
             title = "Context almost full"
             meta = nil
             note = Self.almostFullNote(split: split, autoCompact: context.autoCompact ?? false, at: context.autoCompactAt)
-            return
         }
         guard let split else { return }
         let files = split.instructionFiles
@@ -273,18 +284,26 @@ public struct NativeContextDetails: Equatable, Sendable {
         func children(_ parts: [NativeContextPart]) -> [Child] {
             parts.prefix(Self.childLimit).map { Child(label: $0.label, value: nativePreciseTokens($0.tokens)) }
         }
-        rows = [Row(part: .system, label: "System prompt and tools", value: nativePreciseTokens(split.system), children: children(split.systemParts)),
+        var built = [Row(part: .system, label: "System prompt and tools", value: nativePreciseTokens(split.system), children: children(split.systemParts)),
                 Row(part: .instructions, label: instructions, value: nativePreciseTokens(split.instructions), children: children(split.instructionParts)),
                 Row(part: .messages, label: "Messages", value: nativePreciseTokens(split.messages)),
                 Row(part: .toolResults, label: "Tool results", value: nativePreciseTokens(split.toolResults))]
         // What a thread's reasoning, written files and screenshots cost is a row of its own when it is more than a rounding.
         for (part, label, value) in [(Part.toolCalls, "Tool call contents", split.toolCalls), (.reasoning, "Reasoning", split.reasoning),
                                      (.images, "Images", split.images), (.other, "Other", split.other)] where value >= Self.smallestExtraRow {
-            rows.append(Row(part: part, label: label, value: nativePreciseTokens(value)))
+            built.append(Row(part: part, label: label, value: nativePreciseTokens(value)))
         }
-        free = nativePreciseTokens(max(0, window - tokens))
-        largest = context.largest.map { Largest(entryID: $0.entryID, kind: $0.kind, label: $0.label, value: nativePreciseTokens($0.tokens)) }
-        footnote = split.other >= Self.smallestExtraRow ? Self.footnoteWithOtherText : Self.footnoteText
+        let freeText = nativePreciseTokens(max(0, window - tokens))
+        let items = context.largest.map { Largest(entryID: $0.entryID, kind: $0.kind, label: $0.label, value: nativePreciseTokens($0.tokens)) }
+        let footnoteText = split.other >= Self.smallestExtraRow ? Self.footnoteWithOtherText : Self.footnoteText
+        if full {
+            breakdown = Breakdown(rows: built, free: freeText, largest: items, footnote: footnoteText)
+        } else {
+            rows = built
+            free = freeText
+            largest = items
+            footnote = footnoteText
+        }
     }
 
     /// "Tool results are 138k of it. The agent will compact on its own at 184k, before its next

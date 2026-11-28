@@ -4,8 +4,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-/// A synthetic built-in system for reference-page tests and previews only.
-/// The app no longer ships or registers a Shepherd Design design system.
+/// A built-in system for reference-page tests and previews that serve without the app's host (the app registers its own, `BuiltInShepherdDesign`).
 public enum ShepherdDesignSystem {
     public static let namespace = "shepherd-design"
     public static let title = "Shepherd Design"

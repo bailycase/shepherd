@@ -34,12 +34,22 @@ public struct SHActivityLine: View {
     let action: (() -> Void)?
     /// A call the model is still writing: "18 KB received" of its arguments, before its clock.
     var received: String?
+    /// A finished stretch in the boards' words (GXThread): the chevron first, "Worked for 2m 12s" and, after it in `textTertiary`, what the
+    /// stretch did. Nil keeps the glyph and meta of every other line.
+    var worked: Worked?
+
+    public struct Worked: Equatable, Sendable {
+        public var duration: String?
+        public var summary: String
+        public init(duration: String?, summary: String) { self.duration = duration; self.summary = summary }
+        var title: String { duration.map { "Worked for \($0)" } ?? "Worked" }
+    }
     /// At the accessibility text sizes (iOS) the label wraps rather than widening the thread.
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `action` toggles the calls; nil for a line with nothing behind it.
     public init(kind: Kind, label: String, meta: String, status: Status = .done, isExpanded: Bool = false,
-                accessibilityLabel: String? = nil, action: (() -> Void)? = nil, received: String? = nil) {
+                accessibilityLabel: String? = nil, action: (() -> Void)? = nil, received: String? = nil, worked: Worked? = nil) {
         self.kind = kind
         self.label = label
         self.meta = meta
@@ -49,6 +59,7 @@ public struct SHActivityLine: View {
         self.accessibilityText = received.map { text + ", " + $0 } ?? text
         self.action = action
         self.received = received
+        self.worked = worked
     }
 
     /// What "18 KB received" means, on hover.
@@ -112,7 +123,36 @@ public struct SHActivityLine: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var finishedLabel: some View {
+    /// The boards' finished line: a thinking row's twin, its chevron at the left, "Worked for 2m 12s" in `textSecondary` and the summary after it.
+    private func workedLabel(_ worked: Worked) -> some View {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.s) {
+            SHThreadChevron(isExpanded: isExpanded, shown: action != nil).foregroundStyle(sh.textTertiary)
+            SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
+                Text(worked.title)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(sh.textSecondary)
+                    .lineLimit(1)
+                    .shContentTransition(.numeric())
+                Text(worked.summary)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .shContentTransition(.numeric())
+            }
+        }
+        .shAnimation(.content, value: [worked.title, worked.summary])
+        .padding(.leading, SH.Space.xs)
+        .padding(.trailing, SH.Space.m)
+        .frame(minHeight: SHThreadMetrics.activityHeight)
+    }
+
+    @ViewBuilder private var finishedLabel: some View {
+        if status == .done, let worked { workedLabel(worked) } else { plainFinishedLabel }
+    }
+
+    private var plainFinishedLabel: some View {
         let sh = Color.sh
         let failed = status == .failed
         return HStack(spacing: SH.Space.m) {
@@ -178,6 +218,26 @@ public struct SHActivityLine: View {
         .accessibilityLabel(accessibilityText)
     }
 
+    #if os(macOS)
+    /// The running call's last output lines (GXRunning `.out`): a `bgHover` well the column's width, 12pt mono in `textSecondary`.
+    private func liveTail(_ tail: [String]) -> some View {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SHThreadMetrics.tailLineSpacing) {
+            ForEach(Array(tail.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.shMono(12))
+                    .foregroundStyle(sh.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .accessibilityHidden(true)
+    }
+    #else
     private func liveTail(_ tail: [String]) -> some View {
         let sh = Color.sh
         return VStack(alignment: .leading, spacing: SHThreadMetrics.tailLineSpacing) {
@@ -192,6 +252,7 @@ public struct SHActivityLine: View {
         .padding(.leading, SHThreadMetrics.liveTailIndent)
         .accessibilityHidden(true)
     }
+    #endif
 }
 
 /// An activity line's words: the label, then the meta (when there is one) 8pt after it. The label

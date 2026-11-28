@@ -440,11 +440,11 @@ public struct NativeThinkingLevel: Equatable, Identifiable, Sendable {
     }
 
     /// A model picker row's second line: the levels a model takes (pi's spellings, in pi's
-    /// order), titled as the thinking menu titles them ("Off · Minimal · Low · Medium · High"),
+    /// order), titled as the thinking menu titles them ("Off, Minimal, Low, Medium, High", GXModel),
     /// or "No thinking" when it takes none but Off.
     public static func line(_ levels: [String]) -> String {
         guard levels.contains(where: { $0 != "off" }) else { return "No thinking" }
-        return levels.map(title).joined(separator: " · ")
+        return levels.map(title).joined(separator: ", ")
     }
 
     /// Whether a menu of `levels` offers any thinking: pi reports only Off for a model without

@@ -238,8 +238,8 @@ struct DiffDrawingTests {
         var red = 0, blue = 0, leaking = 0
         let codeStart = Int(SHDiffMetrics.barWidth + SHDiffMetrics.numberWidth * (split ? 1 : 2)
                             + (split ? 0 : SHDiffMetrics.signWidth))
-        // The comment slot reserves 18pt plus two 6pt side gaps.
-        let codeEnd = Int(size.width - 30)
+        // The line keeps its comment slot clear at its end.
+        let codeEnd = Int(size.width - SHDiffMetrics.commentSlotWidth)
         for y in 0..<capture.height {
             for x in 0..<capture.width {
                 let offset = y * capture.bytesPerRow + x * 4

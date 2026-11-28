@@ -13,6 +13,8 @@ import ShepherdUI
 /// The thread with its branch card (BranchCard board): wide enough, the card takes a column at the
 /// right and the transcript centers in the rest; narrower, the card folds to one row over the corner.
 struct BranchCardDock: ViewModifier {
+    /// The side pane carries the card in its Changes tab (GXSidePane), so the thread keeps no card of its own beside it.
+    @Environment(\.sidePaneOpen) private var paneOpen
     let store: BranchCardStore?
     let branch: String?
     /// The checkout's changed-file count, for a layout whose model carries it (a remote page's):
@@ -25,11 +27,11 @@ struct BranchCardDock: ViewModifier {
     @State private var wide = true
 
     func body(content: Content) -> some View {
-        let docked = wide && store?.card != nil
+        let docked = wide && store?.card != nil && !paneOpen
         content
             .padding(.trailing, docked ? AppLayout.branchCardColumn : 0)
             .overlay(alignment: .topTrailing) {
-                if let store, let branch {
+                if let store, let branch, !paneOpen {
                     BranchCardOverlay(store: store, branch: branch, active: active, wide: wide, runsOn: runsOn)
                 }
             }
@@ -56,6 +58,11 @@ struct BranchCardDock: ViewModifier {
     }
 }
 
+extension EnvironmentValues {
+    /// The thread's side pane (or its subagent inspector) is open beside it.
+    @Entry var sidePaneOpen = false
+}
+
 struct BranchCardOverlay: View {
     let store: BranchCardStore
     let branch: String
@@ -64,6 +71,8 @@ struct BranchCardOverlay: View {
     let wide: Bool
     /// A thread on another Mac: the card names that Mac and offers only what this Mac can do (`BranchCardView.runsOn`).
     var runsOn: String?
+    /// The card as the side pane's Changes tab draws it (GXSidePane): the pane's width, flat, never folded.
+    var inPane = false
     @State private var hovering = false
     @State private var pinnedOpen = false
     /// Switch branch and Change base open the Branch picker under the card's branch.
@@ -72,12 +81,13 @@ struct BranchCardOverlay: View {
     enum Picking { case branch, base }
 
     /// `picking` opens the card with a picker already out (previews).
-    init(store: BranchCardStore, branch: String, active: Bool, wide: Bool, runsOn: String? = nil, picking: Picking? = nil) {
+    init(store: BranchCardStore, branch: String, active: Bool, wide: Bool, runsOn: String? = nil, inPane: Bool = false, picking: Picking? = nil) {
         self.store = store
         self.branch = branch
         self.active = active
         self.wide = wide
         self.runsOn = runsOn
+        self.inPane = inPane
         _picking = State(initialValue: picking)
     }
 
@@ -87,7 +97,7 @@ struct BranchCardOverlay: View {
                 if wide || hovering || pinnedOpen || picking != nil {
                     // The picker opens under the card's branch row, over the rest of the card (GXBranchPicker).
                     ZStack(alignment: .topTrailing) {
-                        BranchCardView(card: card, status: runsOn == nil ? store.status : nil, runsOn: runsOn) { action in
+                        BranchCardView(card: card, status: runsOn == nil ? store.status : nil, runsOn: runsOn, fills: inPane) { action in
                             switch action {
                             case .pickBranch: picking = picking == .branch ? nil : .branch
                             case .pickBase: picking = .base
@@ -96,7 +106,7 @@ struct BranchCardOverlay: View {
                                 store.handle.perform(action)
                             }
                         }
-                        .shCard(lift: true)
+                        .modifier(CardChrome(inPane: inPane))
                         if let picking {
                             picker(picking, card: card)
                                 .padding(.top, AppLayout.branchCardHeaderHeight)
@@ -115,11 +125,34 @@ struct BranchCardOverlay: View {
         }
         .onExitCommand { picking = nil }
         .padding(.top, AppLayout.branchCardTop)
-        .padding(.trailing, SH.Space.xl)
+        .padding(.trailing, inPane ? AppLayout.branchCardInset : SH.Space.xl)
+        .padding(.leading, inPane ? AppLayout.branchCardInset : 0)
         .focusable(false)
         .shAnimation(.content, value: wide || hovering || pinnedOpen || picking != nil)
         // The pane's width decides the form; only crossing the line redraws it.
         .frame(maxWidth: .infinity, alignment: .topTrailing)
+    }
+}
+
+/// The card's surface: it lifts over a thread, and sits flat in the pane.
+private struct CardChrome: ViewModifier {
+    let inPane: Bool
+    func body(content: Content) -> some View {
+        if inPane { content.shCard() } else { content.shCard(lift: true) }
+    }
+}
+
+/// The branch card at the top of the side pane's Changes tab (GXSidePane): the same card, the pane's width, above the files.
+struct BranchCardPaneHost: View {
+    let store: BranchCardStore
+    var runsOn: String?
+
+    var body: some View {
+        if let card = store.card {
+            BranchCardOverlay(store: store, branch: card.branch, active: true, wide: true, runsOn: runsOn, inPane: true)
+                // The board's `.pbody` pads its card 12pt from the tabs; the rows or the diff below add their own 12.
+                .padding(.top, SH.Space.l)
+        }
     }
 }
 
@@ -182,6 +215,8 @@ struct BranchCardView: View {
     let status: BranchCardStatus?
     /// The Mac the thread runs on, when it is not this one (GXRemote's "Runs on mini").
     var runsOn: String?
+    /// In the side pane the card takes the pane's width; over a thread it is the boards' 324pt.
+    var fills = false
     let perform: (BranchCardAction) -> Void
     @State private var othersOpen = false
 
@@ -281,7 +316,8 @@ struct BranchCardView: View {
             }
         }
         .padding(.bottom, SH.Space.s)
-        .frame(width: AppLayout.branchCardWidth)
+        .frame(width: fills ? nil : AppLayout.branchCardWidth)
+        .frame(maxWidth: fills ? .infinity : nil, alignment: .leading)
     }
 
     @ViewBuilder private var menu: some View {
