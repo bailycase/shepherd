@@ -16,7 +16,7 @@ struct ForgeServiceTests {
 
     /// A service on the fake gh, recording every command it ran.
     static func service(_ seen: Locked<[ForgeCommand]> = Locked([]), now: @escaping @Sendable () -> Date = { Date() },
-                        answer: @escaping @Sendable ([String]) -> (output: String, status: Int32, errors: String) = ForgeFixtures.answer)
+                        answer: @escaping @Sendable ([String]) -> (output: String, status: Int32, errors: String) = { ForgeFixtures.answer($0) })
         throws -> ForgeService {
         let pins = try makeScratchDirectory("forge").appendingPathComponent("forge-pins.json")
         return ForgeService(pinsURL: pins, runner: { command in
