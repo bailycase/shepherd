@@ -231,7 +231,7 @@ extension SHContextDetails {
             EmptyView()
         case .almostFull:
             macKeepField
-            macActionBar(leading: model.breakdown == nil ? nil : macLink(detailsOpen ? "Hide details" : "Details") { detailsOpen.toggle() }) { macPill }
+            macActionBar(leading: model.breakdown == nil ? nil : macLink(detailsOpen ? "Hide details" : "Details", dim: true) { detailsOpen.toggle() }) { macPill }
         case .simple, .split:
             if composing {
                 macKeepField
@@ -262,9 +262,9 @@ extension SHContextDetails {
         .padding(.top, SHContextMacMetrics.actionsTop)
     }
 
-    private func macLink(_ title: String, action: @escaping () -> Void) -> some View {
+    private func macLink(_ title: String, dim: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) { Text(title) }
-            .buttonStyle(SHContextLinkStyle())
+            .buttonStyle(SHContextLinkStyle(dim: dim))
     }
 
     private var macPill: some View {
@@ -363,15 +363,19 @@ private struct SHContextMacItemRow: View {
 
 /// Words as the action (Compact now…, Show summary): `textPrimary` in medium, fading when disabled.
 private struct SHContextLinkStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { LinkBody(configuration: configuration) }
+    /// The board's `.lk.dim`: `textSecondary` in regular weight.
+    var dim = false
+
+    func makeBody(configuration: Configuration) -> some View { LinkBody(configuration: configuration, dim: dim) }
 
     private struct LinkBody: View {
         let configuration: Configuration
+        let dim: Bool
         @Environment(\.isEnabled) private var enabled
 
         var body: some View {
             configuration.label
-                .font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                .font(.sh(.ui, weight: dim ? .regular : .medium)).foregroundStyle(dim ? Color.sh.textSecondary : Color.sh.textPrimary)
                 .padding(.horizontal, SH.Space.xs)
                 // A taller press area than the words, without taller layout.
                 .padding(.vertical, SH.Space.xs)
