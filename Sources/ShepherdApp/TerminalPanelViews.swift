@@ -77,7 +77,7 @@ extension View {
 }
 
 /// The panel's top edge: drag it (it snaps at a third, half and two-thirds of the layout), or
-/// double-click it to go back to 330pt. While it is dragged it draws as a 3pt lantern line
+/// double-click it to go back to its default height. While it is dragged it draws as a 3pt lantern line
 /// (TerminalStates › Divider). Adjustable with VoiceOver.
 struct TerminalPanelDivider: View {
     var vm: ShepherdViewModel

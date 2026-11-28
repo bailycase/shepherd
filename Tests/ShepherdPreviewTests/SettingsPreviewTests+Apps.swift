@@ -107,7 +107,9 @@ extension SettingsPreviewTests {
         let key = AppKey(scope: .space(fixture.space.id), name: "Web app")
         let vm = fixture.vm
         try await eventuallyAsync("its output") { await vm.appOutput(key, tail: 20).count >= 8 }
-        try await Preview.render("apps-running", size: CGSize(width: 1600, height: 900), ready: { store.ready }) {
+        // The AppsRunning board's window: 1440 by 900. The panel's height persists in the test process's defaults: start from the default.
+        vm.terminalPanels.height = AppLayout.terminalPanelHeight
+        try await Preview.render("apps-running", size: CGSize(width: 1440, height: 900), ready: { store.ready }) {
             RootView(vm: fixture.vm)
         }
     }

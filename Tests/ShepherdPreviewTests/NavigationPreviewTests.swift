@@ -565,6 +565,8 @@ extension PreviewTests {
         _ = try await workspace.server.startTerminal(second.id, inTab: panel.id, shell: try #require(workspace.host).shell())
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
+        // The panel's height persists in the test process's defaults: start from the default, as a fresh install does.
+        vm.terminalPanels.height = AppLayout.terminalPanelHeight
         vm.terminalPanels.update(key) {
             $0.shown = true
             $0.chosenTab = shell.id
@@ -598,6 +600,8 @@ extension PreviewTests {
         _ = try await workspace.server.startTerminal(dev.id, inTab: panel.id, shell: try #require(workspace.host).shell())
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
+        // The panel's height persists in the test process's defaults: start from the default, as a fresh install does.
+        vm.terminalPanels.height = AppLayout.terminalPanelHeight
         vm.terminalPanels.update(key) {
             $0.shown = true
             $0.chosenTab = shell.id
@@ -630,6 +634,8 @@ extension PreviewTests {
         _ = try await workspace.server.startTerminal(logs.id, inTab: panel.id, shell: try #require(workspace.host).shell())
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
+        // The panel's height persists in the test process's defaults: start from the default, as a fresh install does.
+        vm.terminalPanels.height = AppLayout.terminalPanelHeight
         vm.terminalPanels.update(key) {
             $0.shown = true
             $0.chosenTab = shell.id

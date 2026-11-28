@@ -145,7 +145,12 @@ public struct SHImageViewer: View {
         Button(action: run) {
             Image(systemName: symbol).font(.system(size: SHImageViewerMetrics.glyph, weight: .medium))
         }
+        #if os(macOS)
+        // The board's `.ib`: a 28pt round button, 4pt from the next.
+        .buttonStyle(.shIcon)
+        #else
         .buttonStyle(.sh(.ghost, size: .m))
+        #endif
         .accessibilityLabel(title)
         .shHelp(title)
     }
@@ -221,8 +226,12 @@ public struct SHImageViewer: View {
 public enum SHImageViewerMetrics {
     /// The thread left showing round the picture and its pill.
     public static let margin: CGFloat = 64
-    /// The pill under the picture.
+    /// The pill under the picture: the Mac's glass capsule is 40pt, the popover pill 44.
+    #if os(macOS)
+    public static let pill: CGFloat = 40
+    #else
     public static let pill: CGFloat = 44
+    #endif
     /// The close circle and the round ‹ › buttons: 28 and 36. Glyphs in the pill and beside the picture are 14; the close ✕ is 12.
     public static let close: CGFloat = 28
     public static let arrow: CGFloat = 36
