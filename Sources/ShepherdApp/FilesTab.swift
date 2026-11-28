@@ -3,6 +3,7 @@ import AppKit
 import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
+import ShepherdProtocol
 import ImageIO
 
 // MARK: - Files tab (side pane)
@@ -15,6 +16,8 @@ struct FilesTab: View {
     let model: FileTreeModel
     /// The file the thread's agent is editing now (absolute), for the tab and tree shimmer.
     let agentPath: String?
+    /// The thread's changed files (the Changes pane's list), for the tree's status letters, the line under the path and the green lines; nil outside a thread.
+    let changes: FileChanges?
     @State private var showTree = true
     @State private var treeWidth: CGFloat = AppLayout.Files.treeWidth
     @State private var liveTreeWidth: CGFloat?
@@ -23,8 +26,9 @@ struct FilesTab: View {
     private let coordSpace = "files-panel-resize"
 
     /// `agentPath` as the agent's edit call names it: relative to the thread's folder, or absolute.
-    init(model: FileTreeModel, agentPath: String? = nil, treeVisible: Bool = true) {
+    init(model: FileTreeModel, agentPath: String? = nil, changes: FileChanges? = nil, treeVisible: Bool = true) {
         self.model = model
+        self.changes = changes
         self.agentPath = agentPath.map {
             ($0.hasPrefix("/") ? $0 : (model.rootPath as NSString).appendingPathComponent($0) as String)
         }.map { ($0 as NSString).standardizingPath }
@@ -38,7 +42,7 @@ struct FilesTab: View {
 
             HStack(spacing: 0) {
                 if showTree {
-                    FileTreeContent(model: model, showHidden: Bindable(model).showHidden, agentPath: agentPath,
+                    FileTreeContent(model: model, showHidden: Bindable(model).showHidden, agentPath: agentPath, changes: changes,
                                     hideTree: { showTree = false })
                         .frame(width: clampedTree)
                     treeResizeHandle(maxTree: maxTree)
@@ -125,7 +129,7 @@ struct FilesTab: View {
             }
             // Content
             if let path = model.selectedPath {
-                FileViewerContent(model: model, path: path, showTree: showTree, toggleTree: { showTree.toggle() })
+                FileViewerContent(model: model, path: path, changes: changes, showTree: showTree, toggleTree: { showTree.toggle() })
             } else {
                 emptyState
             }
@@ -234,6 +238,7 @@ private struct FileTabView: View {
 private struct FileViewerContent: View {
     let model: FileTreeModel
     let path: String
+    let changes: FileChanges?
     let showTree: Bool
     let toggleTree: () -> Void
     @Bindable private var settings = AppSettings.shared
@@ -255,6 +260,7 @@ private struct FileViewerContent: View {
     var body: some View {
         VStack(spacing: 0) {
             fileHeader
+            if let subtitle { subtitleLine(subtitle) }
             if let conflict = edit?.conflict, editable {
                 conflictBanner(conflict)
             } else if let error = model.saveError, editable {
@@ -266,6 +272,35 @@ private struct FileViewerContent: View {
                 statusBar
             }
         }
+    }
+
+    /// The thread's change to this file, if it has one.
+    private var change: DiffFile? { changes?.file(at: path, root: model.rootPath) }
+
+    /// The lines the diff added, while the text is the file as the diff saw it.
+    private var addedLines: Set<Int> {
+        guard let change, edit?.isDirty != true, case .text = model.selectedContent else { return [] }
+        return FileChanges.addedLines(of: change)
+    }
+
+    /// "Added by this thread, 25 lines, Go. Green lines changed in the last turn." (GXPaneFiles `.fvs`).
+    private var subtitle: String? {
+        // Unsaved edits take the line away (GXPaneFilesEdit): the diff no longer describes the text.
+        guard let changes, let change, edit?.isDirty != true, case .text(let lines, _) = model.selectedContent else { return nil }
+        let count = lines.last == "" ? lines.count - 1 : lines.count
+        return changes.subtitle(for: change, lines: count, language: languageName(path), marksLines: !addedLines.isEmpty)
+    }
+
+    private func subtitleLine(_ text: String) -> some View {
+        Text(text)
+            .font(.sh(.caption))
+            .foregroundStyle(Color.sh.textTertiary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, SH.Space.xl)
+            .padding(.trailing, SH.Space.xl)
+            .padding(.bottom, SH.Space.s)
+            .background(Color.sh.bgRaised)
     }
 
     private func conflictBanner(_ disk: String) -> some View {
@@ -385,7 +420,7 @@ private struct FileViewerContent: View {
             }
             Spacer()
             HStack(spacing: SH.Space.l) {
-                ForEach([cursor.label, fileExtension(path)?.uppercased(), edit?.indentation].compactMap { $0 }, id: \.self) { Text($0) }
+                ForEach([cursor.label, languageName(path), edit?.indentation].compactMap { $0 }, id: \.self) { Text($0) }
             }
             .lineLimit(1)
         }
@@ -429,6 +464,7 @@ private struct FileViewerContent: View {
                         .id(path)
                 } else {
                     CodeTextView(text: edit?.text ?? lines.joined(separator: "\n"), saved: editable ? edit?.saved : nil, before: edit?.before,
+                                 added: addedLines,
                                  path: path, editable: editable, wordWrap: settings.filesWordWrap,
                                  revision: model.textRevision, refreshGeneration: model.refreshGeneration,
                                  theme: ThemeStore.shared.theme, textScale: ThemeStore.shared.textScale,
@@ -469,6 +505,8 @@ private struct CodeTextView: NSViewRepresentable {
     let saved: String?
     /// The version before the agent's last change on disk, for the agent's marks.
     let before: String?
+    /// The lines (from 1) the thread's diff added: a green wash and bar.
+    let added: Set<Int>
     let path: String
     let editable: Bool
     let wordWrap: Bool
@@ -541,6 +579,7 @@ private struct CodeTextView: NSViewRepresentable {
         guard let text = coordinator.textView else { return }
         text.onSave = editable ? onSave : nil
         text.isEditable = editable
+        text.setAdded(added)
         let scale = textScale
         let wrap = wordWrap
         let key = ContentKey(path: path, revision: revision, generation: refreshGeneration,
@@ -765,6 +804,8 @@ private final class FilesTextView: NSTextView {
     private var gutterFont: NSFont?
     private var unsavedLines: Set<Int> = []
     private var agentLines: Set<Int> = []
+    /// The lines (from 0) the thread's diff added.
+    private var addedLines: Set<Int> = []
     /// Save, while the file edits.
     var onSave: (() -> Void)?
     // A window's shared undo stack outlives an editor whose file changes under it.
@@ -794,6 +835,14 @@ private final class FilesTextView: NSTextView {
         guard unsaved != unsavedLines || agent != agentLines else { return }
         unsavedLines = unsaved
         agentLines = agent
+        needsDisplay = true
+    }
+
+    /// `lines` counts from 1, as the diff's do.
+    func setAdded(_ lines: Set<Int>) {
+        let zeroBased = Set(lines.lazy.map { $0 - 1 })
+        guard zeroBased != addedLines else { return }
+        addedLines = zeroBased
         needsDisplay = true
     }
 
@@ -844,9 +893,14 @@ private final class FilesTextView: NSTextView {
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard !unsavedLines.isEmpty else { return }
+        guard !unsavedLines.isEmpty || !addedLines.isEmpty else { return }
+        let lines = visibleLines()
+        NSColor(Color.sh.doneTint).setFill()
+        for line in lines where addedLines.contains(line.index) {
+            NSRect(x: visibleRect.minX, y: line.rect.minY, width: visibleRect.width, height: line.rect.height).fill()
+        }
         NSColor(Color.sh.bgHover).setFill()
-        for line in visibleLines() where unsavedLines.contains(line.index) {
+        for line in lines where unsavedLines.contains(line.index) {
             NSRect(x: visibleRect.minX, y: line.rect.minY, width: visibleRect.width, height: line.rect.height).fill()
         }
     }
@@ -863,9 +917,14 @@ private final class FilesTextView: NSTextView {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSBezierPath(rect: gutter.intersection(dirtyRect)).addClip()
-        if !unsavedLines.isEmpty {
+        if !unsavedLines.isEmpty || !addedLines.isEmpty {
+            let lines = visibleLines()
+            NSColor(Color.sh.doneTint).setFill()
+            for line in lines where addedLines.contains(line.index) {
+                NSRect(x: gutter.minX, y: line.rect.minY, width: gutter.width, height: line.rect.height).fill()
+            }
             NSColor(Color.sh.bgHover).setFill()
-            for line in visibleLines() where unsavedLines.contains(line.index) {
+            for line in lines where unsavedLines.contains(line.index) {
                 NSRect(x: gutter.minX, y: line.rect.minY, width: gutter.width, height: line.rect.height).fill()
             }
         }
@@ -875,7 +934,8 @@ private final class FilesTextView: NSTextView {
             let size = number.size(withAttributes: attributes)
             number.draw(at: NSPoint(x: gutter.maxX - size.width - SH.Space.s, y: line.rect.minY), withAttributes: attributes)
             let mark: Color? = unsavedLines.contains(line.index) ? Color.sh.textPrimary
-                : agentLines.contains(line.index) ? Color.sh.textTertiary : nil
+                : agentLines.contains(line.index) ? Color.sh.textTertiary
+                : addedLines.contains(line.index) ? Color.sh.done : nil
             if let mark {
                 NSColor(mark).setFill()
                 NSRect(x: gutter.maxX - AppLayout.Files.markWidth, y: line.rect.minY,
@@ -1003,6 +1063,7 @@ private struct FileTreeContent: View {
     @Binding var showHidden: Bool
     /// The file the agent is editing now: its name shimmers.
     let agentPath: String?
+    let changes: FileChanges?
     let hideTree: () -> Void
 
     var body: some View {
@@ -1093,6 +1154,7 @@ private struct FileTreeContent: View {
                             depth: item.depth,
                             isSelected: model.selectedPath == item.node.id,
                             agentWorking: agentPath == item.node.id,
+                            letter: item.node.isDirectory ? nil : changes?.letter(at: item.node.id, root: model.rootPath),
                             action: {
                                 if item.node.isDirectory {
                                     Task { await model.toggle(path: item.node.id) }
@@ -1111,12 +1173,14 @@ private struct FileTreeContent: View {
     }
 
     private var treeFooter: some View {
-        HStack(spacing: SH.Space.s) {
+        HStack(alignment: .top, spacing: SH.Space.s) {
             Text(footerText)
                 .font(.sh(.caption))
                 .foregroundStyle(Color.sh.textTertiary)
-                .lineLimit(1)
-            Spacer()
+                .lineLimit(changes == nil ? 1 : nil)
+                .lineSpacing(SH.Space.xxs)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
             Button {
                 showHidden.toggle()
             } label: {
@@ -1141,14 +1205,17 @@ private struct FileTreeContent: View {
             .help("Refresh")
             .accessibilityLabel("Refresh file tree")
         }
-        .frame(height: AppLayout.Files.footerHeight)
-        .padding(.horizontal, SH.Space.xl)
+        .frame(minHeight: AppLayout.Files.footerHeight)
+        .padding(.horizontal, SH.Space.s + SH.Space.m)
+        .padding(.top, changes == nil ? 0 : SH.Space.m)
+        .padding(.bottom, changes == nil ? 0 : SH.Space.l)
         .overlay(alignment: .top) {
-            Color.sh.lineSubtle.frame(height: 1)
+            Color.sh.lineSubtle.frame(height: 1).padding(.horizontal, SH.Space.m)
         }
     }
 
     private var footerText: String {
+        if let changes, !model.root.isLoading { return changes.note(agentFile: agentPath) }
         let nodes = model.visibleNodes()
         let files = nodes.filter { !$0.node.isDirectory }.count
         let dirs = nodes.filter { $0.node.isDirectory }.count
@@ -1164,11 +1231,13 @@ private struct FileTreeRow: View, Equatable {
     let depth: Int
     let isSelected: Bool
     let agentWorking: Bool
+    /// The thread's change to the file: A or M beside its name.
+    let letter: ReviewFileStatus?
     let action: () -> Void
 
     /// A selection change redraws the two rows it touches, not every realized row.
     static func == (a: FileTreeRow, b: FileTreeRow) -> Bool {
-        a.node == b.node && a.depth == b.depth && a.isSelected == b.isSelected && a.agentWorking == b.agentWorking
+        a.node == b.node && a.depth == b.depth && a.isSelected == b.isSelected && a.agentWorking == b.agentWorking && a.letter == b.letter
     }
 
     var body: some View {
@@ -1206,6 +1275,13 @@ private struct FileTreeRow: View, Equatable {
 
                 Spacer()
 
+                if let letter {
+                    Text(letter.letter)
+                        .font(.sh(.caption))
+                        .foregroundStyle(letter == .added ? Color.sh.done : Color.sh.textTertiary)
+                        .accessibilityLabel(letter.word)
+                }
+
                 if node.isSymlink {
                     Image(systemName: "link")
                         .font(.system(size: AppLayout.Files.symlinkIconSize))
@@ -1229,7 +1305,7 @@ private struct FileTreeRow: View, Equatable {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(node.name)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityValue(node.error ?? (node.isDirectory ? (node.isExpanded ? "expanded" : "collapsed") : agentWorking ? "the agent is editing it" : ""))
+        .accessibilityValue(node.error ?? (node.isDirectory ? (node.isExpanded ? "expanded" : "collapsed") : agentWorking ? "the agent is editing it" : letter.map { "\($0.word) by this thread" } ?? ""))
         .help(node.error ?? node.id)
     }
 }
@@ -1277,9 +1353,25 @@ private func abbreviatedPath(_ path: String) -> String {
     return path
 }
 
-private func fileExtension(_ path: String) -> String? {
+/// A file's language as the status bar and the line under its path say it ("Go"); the extension, uppercased, for one with no grammar.
+private func languageName(_ path: String) -> String? {
     let ext = (path as NSString).pathExtension
-    return ext.isEmpty ? nil : ext
+    if ext.isEmpty { return nil }
+    return switch ext.lowercased() {
+    case "swift": "Swift"
+    case "py": "Python"
+    case "go": "Go"
+    case "rs": "Rust"
+    case "js", "mjs", "cjs", "jsx": "JavaScript"
+    case "ts": "TypeScript"
+    case "tsx": "TSX"
+    case "c", "h": "C"
+    case "cpp", "cc", "hpp": "C++"
+    case "sh", "bash", "zsh": "Shell"
+    case "rb": "Ruby"
+    case "json": "JSON"
+    default: ext.uppercased()
+    }
 }
 
 private func fileIcon(for name: String) -> String {

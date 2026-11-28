@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import ShepherdUI
+import ShepherdProtocol
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
@@ -197,21 +198,94 @@ struct FilesPreviewTests {
             .background(Color.sh.bgWindow)
     }
 
+    private func changedFile(_ path: String, isNew: Bool) -> DiffFile {
+        DiffFile(oldPath: isNew ? nil : path, newPath: path, displayPath: path, isNew: isNew, isDeleted: false, isRenamed: false,
+                 isBinary: false, hunks: [DiffHunk(header: "@@", lines: [DiffLine(kind: .added, text: "", oldLine: nil, newLine: 1, id: 1)])])
+    }
+
     @Test func paneFilesEditing() async throws {
         let (root, model, _) = try await editingFixture()
         defer { try? FileManager.default.removeItem(at: root) }
         try await Preview.render("files-editing", size: CGSize(width: 736, height: 900),
                                  ready: { highlightingReady(prefix: "export function") }) {
-            paneCard { FilesTab(model: model, agentPath: "src/components/PromoField.tsx") }
+            paneCard {
+                FilesTab(model: model, agentPath: "src/components/PromoField.tsx", changes: FileChanges(files: [
+                    "src/components/Checkout.tsx": changedFile("src/components/Checkout.tsx", isNew: false),
+                    "src/components/PromoField.tsx": changedFile("src/components/PromoField.tsx", isNew: true),
+                ], isLastTurn: true))
+            }
         }
     }
 
-    /// GXPaneFiles: the tree and a file the thread added, its changed lines marked.
+    /// GXPaneFiles's data: a made-up payments worktree, five files the thread changed, codec.go added with its lines 8-18 changed in the last turn.
+    private func boardFixture() async throws -> (URL, FileTreeModel, FileChanges) {
+        let root = try makeScratchDirectory().appendingPathComponent("payments")
+        for folder in ["cmd", "ledger", "migrations", "payments", "internal"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        let codec = """
+        package ledger
+
+        import (
+        \t"encoding/json"
+        \t"fmt"
+        )
+
+        // Codec turns refund events into outbox rows and back.
+        type Codec struct{ version int }
+
+        func NewCodec() *Codec { return &Codec{version: 2} }
+
+        func (c *Codec) Encode(e RefundEvent) ([]byte, error) {
+        \tif e.Amount <= 0 {
+        \t\treturn nil, fmt.Errorf("refund %s: amount must be positive", e.ID)
+        \t}
+        \treturn json.Marshal(e)
+        }
+
+        func (c *Codec) Decode(row []byte) (RefundEvent, error) {
+        \tvar e RefundEvent
+        \terr := json.Unmarshal(row, &e)
+        \treturn e, err
+        }
+
+        """
+        let ledger = root.appendingPathComponent("ledger")
+        try codec.write(to: ledger.appendingPathComponent("codec.go"), atomically: true, encoding: .utf8)
+        for name in ["outbox.go", "outbox_test.go", "refund.go", "refund_test.go"] {
+            try "package ledger\n".write(to: ledger.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        try "create table refund_events ();\n".write(to: root.appendingPathComponent("migrations/0042_refund_events.sql"), atomically: true, encoding: .utf8)
+        for name in ["AGENTS.md", "go.mod", "go.sum"] {
+            try "x\n".write(to: root.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        let model = FileTreeModel(rootPath: root.path)
+        await model.loadRoot()
+        await model.expand(path: ledger.path)
+        await model.expand(path: root.appendingPathComponent("migrations").path)
+        await model.select(path: ledger.appendingPathComponent("codec.go").path)
+
+        func file(_ path: String, isNew: Bool, added: ClosedRange<Int>) -> DiffFile {
+            let lines = added.map { DiffLine(kind: .added, text: "", oldLine: nil, newLine: $0, id: $0) }
+            return DiffFile(oldPath: isNew ? nil : path, newPath: path, displayPath: path, isNew: isNew, isDeleted: false,
+                            isRenamed: false, isBinary: false, hunks: [DiffHunk(header: "@@", lines: lines)])
+        }
+        let changes = FileChanges(files: [
+            "ledger/codec.go": file("ledger/codec.go", isNew: true, added: 8...18),
+            "ledger/outbox.go": file("ledger/outbox.go", isNew: false, added: 30...32),
+            "ledger/refund.go": file("ledger/refund.go", isNew: true, added: 1...2),
+            "ledger/refund_test.go": file("ledger/refund_test.go", isNew: true, added: 1...2),
+            "migrations/0042_refund_events.sql": file("migrations/0042_refund_events.sql", isNew: true, added: 1...1),
+        ], isLastTurn: true)
+        return (root.deletingLastPathComponent(), model, changes)
+    }
+
+    /// GXPaneFiles: the tree with its A and M letters and the thread's note, and a file the thread added, its changed lines washed green.
     @Test func paneFilesReading() async throws {
-        let (root, model) = try await fixture()
+        let (root, model, changes) = try await boardFixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        try await Preview.render("files-pane", size: CGSize(width: 736, height: 900), ready: { highlightingReady() }) {
-            paneCard { FilesTab(model: model) }
+        try await Preview.render("files-pane", size: CGSize(width: 736, height: 900), ready: { highlightingReady(prefix: "package ledger") }) {
+            paneCard { FilesTab(model: model, changes: changes) }
         }
     }
 

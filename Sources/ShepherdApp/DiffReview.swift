@@ -67,6 +67,8 @@ final class ReviewSession: Identifiable {
     }
     /// Bumped whenever `files` is set, so per-file caches check freshness without comparing lines.
     private(set) var filesVersion = 0
+    /// `files` by path, for the Files tab (`changedFilesByPath`).
+    @ObservationIgnored var changesCache: (version: Int, files: [String: DiffFile])?
     /// Whether `files` hold the PR diff (legacy reviews). Follows `isPRMode` only once that side's
     /// files land, so the pane swaps one whole diff for the other rather than the old files for a
     /// loading line.
