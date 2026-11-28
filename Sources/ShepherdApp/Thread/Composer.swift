@@ -1043,7 +1043,8 @@ struct Composer: View, Equatable {
         guard modelSettable else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
         picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(modelDefaults).map(\.id), current: modelID,
-                                  currentLevels: projectSettingsOnly ? nil : store.snapshot?.thinkingLevels)
+                                  currentLevels: projectSettingsOnly ? nil : store.snapshot?.thinkingLevels,
+                                  currentLevel: projectSettingsOnly ? projectSend?.model?.thinking : store.thinking)
         dismissCommands()
         menu = .models
         // The shared catalog caches unchanged files. Re-read on opening so connections added

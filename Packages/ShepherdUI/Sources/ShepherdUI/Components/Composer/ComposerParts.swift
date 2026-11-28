@@ -64,6 +64,11 @@ public enum SHComposerMetrics {
     public static let modelListInset: CGFloat = SH.Space.s
     /// The model id in mono (the board's 12.5).
     public static let modelIdSize: CGFloat = 12.5
+    /// The row sizes to its content (`.mi.two`): at least 30pt, 7pt over and under, the id on 1.5, a 14pt check column.
+    public static let modelRowMinHeight: CGFloat = 30
+    public static let modelRowPadding: CGFloat = 7
+    public static let modelIdLineHeight: CGFloat = 1.5
+    public static let modelCheckWidth: CGFloat = 14
     #else
     public static let modelPickerWidth: CGFloat = 380
     public static let modelRowHeight: CGFloat = 40
@@ -73,6 +78,8 @@ public enum SHComposerMetrics {
     public static let modelIdSize: CGFloat = 12.5
     #endif
     public static let modelPickerMaxHeight: CGFloat = 360
+    /// The gap between a menu row's parts (a check, the words, a trailing tag).
+    public static let menuPartSpacing: CGFloat = 10
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
     /// A chip's glyph (the Fast bolt, `SHFastBolt`).
