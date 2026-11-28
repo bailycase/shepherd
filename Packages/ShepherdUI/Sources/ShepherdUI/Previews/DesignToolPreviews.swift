@@ -324,7 +324,7 @@ private let previewActions = SHBoardActions.Actions(comment: {}, tweak: {}, vari
             }
         }
         .padding(SH.Space.xxl)
-        .background(Color.sh.sheetScrim)
+        .background(Color.sh.modalScrim)
     }
 }
 

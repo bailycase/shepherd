@@ -142,8 +142,9 @@ final class MobileNavigator {
             }
         case .pad:
             // A thread's Changes, Terminal, Subagents, Files or Browser opens as the pane's tab
-            // beside the thread, never as a screen over it.
-            if let tab = route.sidePaneTab, let thread = route.thread {
+            // beside the thread, never as a screen over it; half open (iPhone Duo) it is pushed over
+            // the thread, the sidebar kept on the fold's left (DuoBookChanges).
+            if !padFolded, let tab = route.sidePaneTab, let thread = route.thread {
                 // Beside the thread on screen: the selection, or one pushed over the stack.
                 if padPath.last != .thread(thread) {
                     if padSelection != thread { padSelection = thread }

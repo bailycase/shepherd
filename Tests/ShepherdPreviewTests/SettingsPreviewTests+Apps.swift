@@ -75,7 +75,7 @@ extension SettingsPreviewTests {
         try await fixture.run("Postgres", scope: .mac)
         try await fixture.run("Web app", scope: .space(fixture.space.id))
         fixture.vm.settingsSection = .apps
-        try await Preview.render("settings-apps", size: CGSize(width: 1440, height: 900)) { SettingsView(vm: fixture.vm) }
+        try await Preview.render("settings-apps-list", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: fixture.vm) }
 
         // Add app, as the board fills it in.
         fixture.vm.apps.add(scope: .space(fixture.space.id))
@@ -126,7 +126,7 @@ extension SettingsPreviewTests {
             RootView(vm: fixture.vm)
         }
         fixture.vm.settingsSection = .apps
-        try await Preview.render("settings-apps-exited", size: CGSize(width: 1440, height: 900)) { SettingsView(vm: fixture.vm) }
+        try await Preview.render("settings-apps-exited", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: fixture.vm) }
     }
 
     @Test func newThreadApps() async throws {

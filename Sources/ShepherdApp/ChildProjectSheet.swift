@@ -57,36 +57,32 @@ struct ChildProjectSheet: View {
     private enum Field: Hashable { case folder, name }
 
     var body: some View {
-        SHDialog("Add child space", message: "\(model.parentName)\n\(model.parentPath)") {
-            SheetRow("Folder source") {
-                SHSegmentedPicker("Folder source", selection: $model.create,
-                                  options: [(true, "New folder"), (false, "Existing folder")])
+        SHSettingsSheet("Add child space", subtitle: model.parentName, detail: model.parentPath, width: AppLayout.spaceChildWidth) {
+            HStack(spacing: AppLayout.spaceChildSegGap) {
+                Text("Folder source").foregroundStyle(Color.sh.textSecondary)
+                SHSegmentedPicker("Folder source", selection: $model.create, options: [(true, "New folder"), (false, "Existing folder")])
+                    .fixedSize()
             }
-            SheetRow(model.create ? "Folder name" : "Folder path") {
-                HStack(spacing: SH.Space.s) {
+            .font(.shSans(SHSettingsSheetMetrics.textSize))
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel(model.create ? "Folder name" : "Folder path")
+                SHSheetField(focused: focused == .folder) {
                     TextField(model.create ? "Folder name" : "Folder path", text: $model.folder)
-                        .shField(focused: focused == .folder, mono: true)
-                        .focused($focused, equals: .folder)
+                        .textFieldStyle(.plain).font(.shMono(SHSettingsSheetMetrics.monoSize)).focused($focused, equals: .folder)
                     if !model.create {
                         Button("Browse…") { model.browsing = true }.buttonStyle(.sh(.secondary))
                     }
                 }
             }
-            SheetRow("Display name") {
-                TextField("Display name", text: $model.displayName, prompt: Text("Defaults to folder name"))
-                    .shField(focused: focused == .name)
-                    .focused($focused, equals: .name)
+            VStack(alignment: .leading, spacing: 0) {
+                SHSheetFieldLabel("Display name")
+                SHSheetField(focused: focused == .name) {
+                    TextField("Display name", text: $model.displayName, prompt: Text("Defaults to folder name").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shSans(SHSettingsSheetMetrics.textSize)).focused($focused, equals: .name)
+                }
             }
-            Text(model.status)
-                .font(.sh(.caption))
-                .foregroundStyle(model.error == nil ? Color.sh.textSecondary : Color.sh.failed)
-                .fixedSize(horizontal: false, vertical: true)
+            SHSheetParagraph(model.status, style: .small).foregroundStyle(model.error != nil ? Color.sh.failed : Color.sh.textTertiary)
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, SHDialogMetrics.inset)
-                .padding(.vertical, SH.Space.m)
-        } status: {
-            EmptyView()
         } actions: {
             Button("Cancel", action: dismiss).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button(model.actionTitle) {

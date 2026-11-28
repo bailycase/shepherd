@@ -16,7 +16,8 @@ import Testing
 /// its Speed pin) and GitHub sections, and run threads folded under their automation in the space
 /// tree and in Activity.
 extension PreviewTests {
-    private static let triggerPageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
+    /// The main column in the boards' 1440×900 window: right of the sidebar card and its 8pt inset.
+    private static let triggerPageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth - SHSidebarMetrics.panelInset, height: 900)
 
     private struct TriggerFixture {
         let workspace: PreviewWorkspace

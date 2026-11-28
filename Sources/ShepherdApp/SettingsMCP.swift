@@ -62,7 +62,7 @@ struct MCPSettings<Extras: View>: View {
                             SettingsRow(title: query.isEmpty ? emptyMessage : "No servers match") { EmptyView() }
                         }
                         ForEach(rows) { row in
-                            MCPListRow(row: row, hint: hint(row), dot: dot(row), actions: rowActions(row.name)).equatable()
+                            MCPListRow(row: row, hint: hint(row), tone: tone(row), actions: rowActions(row.name)).equatable()
                         }
                     }
                     SettingsGroup(title: "How the agent uses them", trailing: store.configPath) {
@@ -125,13 +125,13 @@ struct MCPSettings<Extras: View>: View {
         .shToast(item: $toast)
     }
 
-    private func dot(_ row: MCPServerRowModel) -> SHRowDot {
-        guard row.enabled else { return .off }
+    /// The hint's color: lantern while it wants you or starts, failed when it broke.
+    private func tone(_ row: MCPServerRowModel) -> SHRowTone {
+        guard row.enabled else { return .normal }
         switch row.status {
-        case .connected: return .on
         case .needsYou, .starting: return .warn
         case .error: return .bad
-        case .idle, .off: return .off
+        case .connected, .idle, .off: return .normal
         }
     }
 
@@ -157,11 +157,14 @@ struct MCPSettings<Extras: View>: View {
             SettingsRow(title: "On") {
                 SettingsSwitch(label: "On", isOn: Binding(get: { row.enabled }, set: { rowActions.toggle($0) }))
             }
+            if let entry = store.entry(row.name), let kind = Self.kindLine(entry) {
+                SettingsRow(title: "Kind") { SettingsValue(text: kind) }
+            }
             if let detail {
                 signInRow(detail, actions: actions)
                 if let direct = detail.direct {
                     SettingsRow(title: "Tools", subtitle: direct ? detail.directCost : detail.searchCost) {
-                        HStack(spacing: SH.Space.s) {
+                        HStack(spacing: AppLayout.settingsControlsSpacing) {
                             SHSegmentedPicker("Tools", selection: Binding(get: { direct }, set: { actions.setDirect?($0) }),
                                               options: [(false, "Search"), (true, "Direct")])
                             if let choose = actions.chooseTools {
@@ -173,13 +176,13 @@ struct MCPSettings<Extras: View>: View {
             }
         }
         SettingsGroup(title: "Config") {
-            SettingsRow(title: "\(row.name).json", subtitle: detail?.message, mono: true) {
-                HStack(spacing: SH.Space.s) {
+            SettingsRow(title: row.name, subtitle: detail?.message ?? "In \(store.configPath)") {
+                HStack(spacing: AppLayout.settingsControlsSpacing) {
+                    Button("Copy JSON", action: actions.copyJSON).buttonStyle(.sh(.secondary, size: .s))
                     if let reconnect = actions.reconnect {
                         Button("Reconnect", action: reconnect).buttonStyle(.sh(.secondary, size: .s))
                     }
-                    Button("Copy JSON", action: actions.copyJSON).buttonStyle(.sh(.secondary, size: .s))
-                    Button("Edit", action: actions.edit).buttonStyle(.sh(.secondary, size: .s)).accessibilityLabel("Edit…")
+                    Button("Edit…", action: actions.edit).buttonStyle(.sh(.secondary, size: .s))
                 }
             }
         }
@@ -193,20 +196,25 @@ struct MCPSettings<Extras: View>: View {
     @ViewBuilder private func signInRow(_ detail: MCPServerDetailModel, actions: MCPServerDetail.Actions) -> some View {
         switch detail.signIn {
         case .signedIn(let account, _, let note, let title):
-            SettingsRow(title: "Sign-in", subtitle: [title, account, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "), dot: .on) {
-                HStack(spacing: SH.Space.s) {
+            SettingsRow(title: "Sign-in", subtitle: [title, account, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")) {
+                HStack(spacing: AppLayout.settingsControlsSpacing) {
                     Button("Sign in again", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
                     Button("Sign out", action: actions.signOut).buttonStyle(.sh(.secondary, size: .s))
                 }
             }
         case .needsSignIn(let title, let note, let again):
-            SettingsRow(title: "Sign-in", subtitle: [title, note].filter { !$0.isEmpty }.joined(separator: " · "), dot: .warn) {
-                Button(again ? "Sign in again" : "Sign in", action: actions.signIn).buttonStyle(.sh(.primary, size: .s))
+            SettingsRow(title: "Sign-in", subtitle: [title, note].filter { !$0.isEmpty }.joined(separator: " · "), subtitleTone: .warn) {
+                Button(again ? "Sign in again" : "Sign in", action: actions.signIn).buttonStyle(.sh(.bold, size: .s))
             }
         // A header, secrets or an unverified sign-in: nothing to do here.
         case .header, .secrets, .unverified, .none:
             EmptyView()
         }
+    }
+
+    /// "Remote · https://mcp.linear.app/sse", "Local · npx -y @acme/server".
+    private static func kindLine(_ entry: MCPServerEntry) -> String? {
+        entry.endpoint.isEmpty ? nil : "\(entry.kind == .remote ? "Remote" : "Local") · \(entry.endpoint)"
     }
 
     private var emptyMessage: String {
@@ -268,17 +276,17 @@ struct MCPSettings<Extras: View>: View {
 private struct MCPListRow: View, Equatable {
     let row: MCPServerRowModel
     let hint: String
-    let dot: SHRowDot
+    let tone: SHRowTone
     let actions: MCPServerRow.Actions
 
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.hint == b.hint && a.dot == b.dot }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.hint == b.hint && a.tone == b.tone }
 
     var body: some View {
         let _ = SHRenderProbe.tick("mcp.row")
         let needsSignIn: Bool = switch row.signIn { case .signIn, .expired, .moreAccess: true; default: false }
-        SettingsDrillRow(title: row.name, subtitle: hint, dot: dot, mono: true, action: actions.open) {
+        SettingsDrillRow(title: row.name, subtitle: hint, subtitleTone: tone, action: actions.open) {
             if needsSignIn {
-                Button("Sign in", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
+                Button("Sign in", action: actions.signIn).buttonStyle(.sh(.bold, size: .s))
             } else {
                 SettingsValue(text: row.enabled ? row.status.label : "Off")
             }
@@ -410,33 +418,36 @@ struct MCPChooseToolsSheet: View {
     var body: some View {
         let entry = store.entry(name)
         let tools = entry.flatMap(store.toolNames(of:)) ?? []
-        DialogSheet(title: "Choose \(name)’s tools",
-                    subtitle: "The agent sees and calls only the tools you tick, searched or declared as the server’s tool exposure says.",
-                    width: AppLayout.mcpToolsSheetWidth,
-                    actions: [
-                        DialogAction("Cancel", kind: .cancel, action: close),
-                        DialogAction("Save", kind: .prominent, isEnabled: all || !chosen.isEmpty) {
-                            store.setTools(name, all ? nil : tools.filter(chosen.contains))
-                            close()
-                        },
-                    ]) {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
-                Toggle("All tools, including ones it adds later", isOn: $all).toggleStyle(.shCheckbox)
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: SH.Space.s) {
-                        ForEach(tools, id: \.self) { tool in
-                            Toggle(isOn: Binding(get: { all || chosen.contains(tool) }, set: { on in
-                                all = false
-                                if on { chosen.insert(tool) } else { chosen.remove(tool) }
-                            })) {
-                                Text(tool).font(.shMono(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textPrimary)
-                            }
-                            .toggleStyle(.shCheckbox)
+        SHSettingsSheet("Choose \(name)’s tools",
+                        subtitle: "The agent sees and calls only the tools you tick, searched or declared as the server’s tool exposure says.",
+                        width: AppLayout.mcpToolsSheetWidth) {
+            Toggle(isOn: $all) {
+                Text("All tools, including ones it adds later").font(.shSans(SHSettingsSheetMetrics.textSize)).foregroundStyle(Color.sh.textPrimary)
+            }
+            .toggleStyle(.shCheckbox)
+            SHSheetRule()
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: SH.Space.m) {
+                    ForEach(tools, id: \.self) { tool in
+                        Toggle(isOn: Binding(get: { all || chosen.contains(tool) }, set: { on in
+                            all = false
+                            if on { chosen.insert(tool) } else { chosen.remove(tool) }
+                        })) {
+                            Text(tool).font(.shMono(SHSettingsSheetMetrics.monoSize)).foregroundStyle(Color.sh.textPrimary)
                         }
+                        .toggleStyle(.shCheckbox)
                     }
                 }
-                .frame(maxHeight: AppLayout.mcpToolsSheetHeight)
             }
+            .frame(maxHeight: AppLayout.mcpToolsSheetHeight)
+        } actions: {
+            Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
+            Button("Save") {
+                store.setTools(name, all ? nil : tools.filter(chosen.contains))
+                close()
+            }
+            .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
+            .disabled(!(all || !chosen.isEmpty))
         }
         .onAppear {
             let current = entry?.settings.tools

@@ -51,7 +51,9 @@ struct SettingsModalTests {
                 }
                 let page = try #require(content(), "\(section.title) content has an accessibility container")
                 let frame = window.host.convert(window.window.convertFromScreen(page.frame), from: nil)
-                #expect(abs(frame.width - 620) <= 1, "\(section.title) is one 620pt column: \(frame)")
+                // The Spaces page is its own frame (SpacePageFrame): the detail less 40pt either side; every other page is one 620pt column.
+                let column = section == .projects ? AppLayout.settingsModalWidth - 220 - 2 * AppLayout.spacePageSides : 620
+                #expect(abs(frame.width - column) <= 1, "\(section.title) is one \(column)pt column: \(frame)")
                 // The 980pt modal is centered in the window; the column in the detail beside its 220pt nav.
                 let modal = (width - AppLayout.settingsModalWidth) / 2
                 #expect(abs(frame.midX - (modal + 220 + (AppLayout.settingsModalWidth - 220) / 2)) <= 1, "\(section.title) is centered in the modal's detail: \(frame)")

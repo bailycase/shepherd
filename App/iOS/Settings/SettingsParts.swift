@@ -533,6 +533,8 @@ struct SettingsHeading: View {
 struct PadColumnBar<Actions: View>: View {
     let title: String
     let subtitle: String?
+    /// A state's color (Needs you · 13m); the page's secondary text otherwise.
+    var subtitleColor: Color = Color.sh.textSecondary
     /// The detail's bar sits further in than the list's.
     var inset = MobileLayout.settingsPadBarInset
     @ViewBuilder let actions: () -> Actions
@@ -548,7 +550,7 @@ struct PadColumnBar<Actions: View>: View {
                 if let subtitle {
                     Text(subtitle)
                         .font(.shSans(SHTextStyle.caption.size))
-                        .foregroundStyle(Color.sh.textSecondary)
+                        .foregroundStyle(subtitleColor)
                         .lineLimit(1)
                 }
             }
@@ -578,7 +580,7 @@ struct PadBarButton: View {
     var body: some View {
         Button(action: action) {
             if let systemImage {
-                Label(title, systemImage: systemImage).labelStyle(.iconOnly)
+                DuoStripLabel(title, systemImage: systemImage)
             } else {
                 Text(title)
             }

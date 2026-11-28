@@ -75,6 +75,8 @@ public enum SHGoalSize: Equatable, Sendable {
 
 /// Goal card, MobileGoal and iPadGoal: shared anatomy that grows with text size.
 public enum SHGoalMetrics {
+    /// The most the card's header height follows the text size.
+    public static let headerScaleLimit: CGFloat = 1.6
     public static let desktopHeight: CGFloat = 70
     public static let touchHeight: CGFloat = 92
     public static let desktopHeaderHeight: CGFloat = 32
@@ -121,6 +123,7 @@ public struct SHGoalCard: View {
     let confirmedByUser: Bool
     let clockStart: Date?
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1
+    @Environment(\.dynamicTypeSize) private var typeSize
     let pause: () -> Void
     let resume: () -> Void
     let edit: () -> Void
@@ -151,7 +154,8 @@ public struct SHGoalCard: View {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("goal.card")
-        let scale = max(1, ThemeStore.shared.textScale * dynamicScale)
+        // The header's height follows the text up to 1.6x; past it the wrapped words grow the card on their own.
+        let scale = min(max(1, ThemeStore.shared.textScale * dynamicScale), SHGoalMetrics.headerScaleLimit)
         VStack(spacing: 0) {
             SHGoalCardHeader(state: state, time: time, meta: meta, size: size, scale: scale,
                              resumeEnabled: resumeEnabled, confirmationRequired: confirmationRequired,
@@ -161,7 +165,7 @@ public struct SHGoalCard: View {
                     .help(text)
                     .font(.shSans(size.textFont))
                     .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(size.textLines)
+                    .lineLimit(typeSize.isAccessibilitySize ? 6 : size.textLines)
                     .truncationMode(.tail)
                     .padding(.top, max(SH.Space.m * scale, size.hitTarget - size.headerHeight * scale))
                     .padding(.bottom, SH.Space.m * scale)
@@ -242,7 +246,8 @@ private struct SHGoalCardHeader: View {
                     if size == .desktop { metadata } else { Spacer(minLength: 0) }
                     actions
                 }
-                .frame(height: size.headerHeight * scale, alignment: .top)
+                // The heading above has already grown with the text size: the actions' row is one touch target, not another header.
+                .frame(minHeight: size == .desktop ? size.headerHeight * scale : size.hitTarget, alignment: .top)
             }
         }
         .padding(.leading, size.leadingInset)

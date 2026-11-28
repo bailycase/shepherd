@@ -236,6 +236,8 @@ public struct SHCompactionSummary: View {
                     .lineSpacing(SHCompactionMetrics.macTextSpacing)
                     .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    // The board's 19pt line box also holds a one-line section: the gap `lineSpacing` leaves under only the lines above it.
+                    .padding(.bottom, SHCompactionMetrics.macTextSpacing)
                     .textSelection(.enabled)
                 }
                 .padding(.top, SHCompactionMetrics.macSectionTop)

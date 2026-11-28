@@ -265,7 +265,7 @@ struct PiImportSheet: View {
             }
         }
         .frame(width: state.stage == .newUser ? SHPiSignInMetrics.importWideWidth : SHPiSignInMetrics.importWidth)
-        .background(Color.sh.bgWindow)
+        .background(Color.sh.bgRaised)
         .shAnimation(.disclosure, value: state.stage)
         .interactiveDismissDisabled(state.stage == .progress)
     }
@@ -319,8 +319,7 @@ struct PiImportSheet: View {
             problems
         }
         .padding(.top, SH.Space.xl)
-        .padding(.leading, SHPiSignInMetrics.sheetInset + SHPiSignInMetrics.sheetTile + SHPiSignInMetrics.bodyGap)
-        .padding(.trailing, SHPiSignInMetrics.sheetInset)
+        .padding(.horizontal, SHPiSignInMetrics.sheetInset)
         .padding(.bottom, SHPiSignInMetrics.bodyBottom)
         SHSheetFooter {
             Button("Done", action: close).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
@@ -376,7 +375,7 @@ struct PiImportSheet: View {
                     HStack(spacing: SHPiSignInMetrics.rowGap) {
                         VStack(alignment: .leading, spacing: SH.Space.xxs) {
                             Text("Default model · \(NativeModelChoices.shortName(model))")
-                                .font(.shSans(SHPiSignInMetrics.nameSize, .medium)).foregroundStyle(Color.sh.textPrimary)
+                                .font(.shSans(SHPiSignInMetrics.stepTitleSize)).foregroundStyle(Color.sh.textPrimary)
                             Text(PiImportSheetState.unresolvedDetail(model))
                                 .font(.shSans(SHPiSignInMetrics.stepDetailSize)).foregroundStyle(Color.sh.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -389,8 +388,8 @@ struct PiImportSheet: View {
                         }
                         .accessibilityLabel("Choose another default model")
                     }
-                    .padding(.vertical, SHPiSignInMetrics.rowVertical)
-                    .padding(.horizontal, SHPiSignInMetrics.rowSides)
+                    .padding(.vertical, SHPiSignInMetrics.stepVertical)
+                    .overlay(alignment: .bottom) { SHHairline(color: Color.sh.lineStrong, width: SHSettingsNavMetrics.borderWidth) }
                 }
                 ForEach(state.missing) { item in
                     SHImportSignInRow(PiSignInCatalog.name(item.id), badge: PiSignInCatalog.badge(item.id), detail: item.detail,
@@ -408,7 +407,7 @@ struct PiImportSheet: View {
         .padding(.horizontal, SHPiSignInMetrics.sheetInset)
         .padding(.bottom, SHPiSignInMetrics.bodyBottom)
         SHSheetFooter {
-            Button("Skip for now", action: close).buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
+            Button("Skip for now", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button("Done", action: close).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
                 .disabled(!state.allSignedIn)
         }
@@ -418,7 +417,7 @@ struct PiImportSheet: View {
         SHSheetHeader("Sign in to a model provider",
                       subtitle: "There’s no pi on this Mac, so there’s nothing to bring over. Use a subscription you already pay for, or an API key.",
                       leading: .glyph("person.badge.key", .neutral))
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: SH.Space.m), GridItem(.flexible())], spacing: SH.Space.m) {
+        SHSheetCard {
             ForEach(PiSignInCatalog.subscriptions) { subscription in
                 Button { signIn(subscription.id, false) } label: {
                     SHSignInChoiceTile(subscription.name, detail: subscription.plan, badge: PiSignInCatalog.badge(subscription.id))
@@ -442,7 +441,7 @@ struct PiImportSheet: View {
         .padding(.horizontal, SHPiSignInMetrics.sheetInset)
         .padding(.bottom, SHPiSignInMetrics.sheetInset)
         SHSheetFooter {
-            Text("Change these any time in Settings ▸ Pi ▸ Sign-in.").font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary)
+            Text("Change these any time in Settings ▸ Models.").font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary)
         } actions: {
             Button("Skip", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
         }

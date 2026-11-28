@@ -552,9 +552,9 @@ private struct PadFullReview: View {
                 .tint(Color.sh.textPrimary)
                 .accessibilityLabel("Back to the thread")
             }
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 PadReviewTitle(store: store)
-            }
+            }.shBarTitleType() }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 PadCommitButton(store: store, inBar: true)
                 Button("Close review", systemImage: "arrow.down.right.and.arrow.up.left", action: close)
@@ -574,8 +574,8 @@ private struct PadReviewTitle: View {
     var body: some View {
         let sh = Color.sh
         VStack(spacing: SH.Space.xxs) {
-            Text("Review").font(.sh(.title)).foregroundStyle(sh.textPrimary)
-            Text(subtitle).font(.sh(.caption)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+            Text("Review").font(.shBar(.title)).foregroundStyle(sh.textPrimary)
+            Text(subtitle).font(.shBar(.caption)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)

@@ -748,6 +748,10 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     public var meta: String
     /// "Explored 7 files, read 5, search 2, 0.9s, done"
     public var accessibilityLabel: String
+    /// A finished line's wall time ("2m 12s"; nil when the host stamped none, or it was instant): the Mac's "Worked for 2m 12s".
+    public var duration: String?
+    /// What the finished stretch did, in the boards' short words ("Explored 7 files, edited 5, ran 3 commands, 47 tests passed").
+    public var summary: String?
 
     /// The call that is running now, when one is.
     public var runningCall: NativeActivityCall? { state == .running ? calls.last(where: \.running) : nil }
@@ -837,9 +841,49 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
     case .failed: "failed"
     case .running: "running"
     }
-    return NativeActivityBurst(id: first.id, kind: kind, state: state, calls: calls, label: label,
-                               meta: meta.joined(separator: " · "),
-                               accessibilityLabel: ([label] + meta + [word]).joined(separator: ", "))
+    var burst = NativeActivityBurst(id: first.id, kind: kind, state: state, calls: calls, label: label,
+                                    meta: meta.joined(separator: " · "),
+                                    accessibilityLabel: ([label] + meta + [word]).joined(separator: ", "))
+    if state == .done, !last.stopped {
+        burst.duration = wallSeconds(calls).map { nativeDurationText($0) }
+        burst.summary = workedSummary(calls) ?? label
+    }
+    return burst
+}
+
+/// A finished stretch of reading, editing and commands in the boards' words: "Explored 7 files, edited 5, ran 3 commands, 47 tests
+/// passed". The first part names what it counted ("Edited 1 file, ran 1 command"), the others keep to a number for edits. Nil when the
+/// stretch did anything else (a board, a browser, subagents), whose own words say it.
+func workedSummary(_ calls: [NativeActivityCall]) -> String? {
+    let finished = calls.filter { !$0.failed && !$0.stopped }
+    guard !finished.isEmpty, finished.allSatisfy({ [.explore, .edit, .run].contains($0.kind) }) else { return nil }
+    var parts: [String] = []
+    func add(_ text: String) { parts.append(parts.isEmpty ? capitalizedFirst(text) : text) }
+    let explores = finished.filter { $0.kind == .explore }
+    if !explores.isEmpty {
+        let reads = Set(explores.filter { $0.explore == .read }.map(\.detail)).count
+        add("explored " + nativeCount(reads + explores.count { $0.explore != .read }, "file"))
+    }
+    let edits = finished.filter { $0.kind == .edit }
+    if !edits.isEmpty {
+        let files = Set(edits.map { $0.path ?? $0.detail }).count
+        add(parts.isEmpty ? "edited " + nativeCount(files, "file") : "edited \(files)")
+    }
+    let runs = finished.filter { $0.kind == .run }
+    if !runs.isEmpty {
+        let classes = Set(runs.flatMap(\.commandClasses))
+        let commands = runs.count { $0.commandClasses.contains { $0 == .tests || $0 == .build || $0 == .other } || $0.commandClasses.isEmpty }
+        if commands > 0 { add("ran " + (commands == 1 ? "a command" : "\(commands) commands")) }
+        if classes.contains(.commit) { add("committed") }
+        if classes.contains(.push) { add("pushed") }
+        if classes.contains(.tests) {
+            let passed = runs.compactMap(\.testsPassed).reduce(0, +)
+            add(passed > 0 ? nativeCount(passed, "test") + " passed" : "tests passed")
+        }
+    }
+    let failures = calls.count { $0.failed || $0.stopped }
+    if failures > 0 { parts.append("\(failures) failed") }
+    return parts.joined(separator: ", ")
 }
 
 /// A finished stretch: each kind of work it did in the order it began, joined ("Explored 3 files and edited 2 files"); one kind

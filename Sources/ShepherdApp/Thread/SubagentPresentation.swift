@@ -59,7 +59,8 @@ enum SubagentPresentation {
     /// The store's tray as the tray's rows and header draw it.
     static func tray(_ tray: NativeSubagentTray) -> (summary: SHSubagentTraySummary, rows: [SHSubagentTrayRun]) {
         let summary = SHSubagentTraySummary(title: tray.title, cells: tray.cells.map(state),
-                                            tally: tray.tally.map { SHSubagentTraySummary.Part($0.text, state: $0.phase.map(state)) })
+                                            // The Mac's header opens its tally with a capital when it is words alone ("All done", GXSubagentsDone).
+                                            tally: tray.tally.map { SHSubagentTraySummary.Part($0.text.prefix(1).uppercased() + $0.text.dropFirst(), state: $0.phase.map(state)) })
         return (summary, tray.rows.map(row))
     }
 

@@ -184,6 +184,16 @@ public struct SHContextDetailsModel: Equatable, Sendable {
         public init(part: Part?, fraction: Double) { self.part = part; self.fraction = fraction }
     }
 
+    public struct Breakdown: Equatable, Sendable {
+        public var rows: [Row]
+        public var free: String?
+        public var items: [Item]
+        public var footnote: String?
+        public init(rows: [Row], free: String? = nil, items: [Item] = [], footnote: String? = nil) {
+            self.rows = rows; self.free = free; self.items = items; self.footnote = footnote
+        }
+    }
+
     public struct Row: Equatable, Sendable, Identifiable {
         public var part: Part
         public var label: String
@@ -233,6 +243,8 @@ public struct SHContextDetailsModel: Equatable, Sendable {
     /// A part of `note` set in mono (the size being summarized).
     public var emphasis: String?
     public var footnote: String?
+    /// What the split shows when the popover leads with the problem (past 85%): the Mac's Details opens it.
+    public var breakdown: Breakdown?
     /// Show summary is offered (just compacted).
     public var showsSummary: Bool
     public var compactOffered: Bool
@@ -256,6 +268,7 @@ public struct SHContextDetailsModel: Equatable, Sendable {
         self.note = note
         self.emphasis = emphasis
         self.footnote = footnote
+        self.breakdown = nil
         self.showsSummary = showsSummary
         self.compactOffered = compactOffered
     }
@@ -307,6 +320,8 @@ public struct SHContextDetails: View {
     let presentation: Presentation
     /// Compact now… opens the field for what to keep.
     @State var composing = false
+    /// Past 85% the Mac keeps the breakdown behind Details.
+    @State var detailsOpen = false
     @State var keep = ""
     @FocusState var keepFocused: Bool
 

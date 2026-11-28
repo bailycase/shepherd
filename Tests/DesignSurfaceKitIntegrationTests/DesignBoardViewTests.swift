@@ -274,6 +274,34 @@ struct DesignBoardViewTests {
         #expect(small.width == 100 * scale && small.height == 75 * scale)
     }
 
+    /// A web view that has drawn one board draws another (the iPhone and iPad renderers' reuse): a new document at the
+    /// new board's size, and the first board again after it, as a new web view would.
+    @Test func aViewRetargetedToAnotherBoardDrawsThatBoardAtItsSize() async throws {
+        let harness = try BoardHarness()
+        let main = try harness.source("Main.dc.html")
+        try harness.write("Second.dc.html", main.replacingOccurrences(of: "rgb(10, 20, 30)", with: "rgb(200, 100, 50)")
+            .replacingOccurrences(of: "width: 400px; height: 300px", with: "width: 300px; height: 200px"))
+        let probe = "const r = document.getElementById('root'); const b = r.getBoundingClientRect(); return getComputedStyle(r).backgroundColor + ' ' + b.width + 'x' + b.height;"
+        let view = try harness.view("Main.dc.html")
+        let first = try await view.load()
+        #expect(first == CGSize(width: 400, height: 300))
+        #expect(try await harness.text(view, probe) == "rgb(10, 20, 30) 400x300")
+
+        view.retarget(to: try #require(DesignPath("Second.dc.html")), size: CGSize(width: 300, height: 200))
+        #expect(view.board.rawValue == "Second.dc.html")
+        let second = try await view.load()
+        #expect(second == CGSize(width: 300, height: 200))
+        #expect(try await harness.text(view, probe) == "rgb(200, 100, 50) 300x200")
+        let image = try await view.snapshot()
+        let scale = image.width / 300
+        #expect(scale >= 1 && image.height == 200 * scale)
+
+        view.retarget(to: try #require(DesignPath("Main.dc.html")), size: CGSize(width: 400, height: 300))
+        _ = try await view.load()
+        #expect(try await harness.text(view, probe) == "rgb(10, 20, 30) 400x300")
+        #expect(try await view.snapshot().width == 400 * scale)
+    }
+
     // MARK: Failures
 
     @Test func aMissingBoardFailsToLoad() async throws {

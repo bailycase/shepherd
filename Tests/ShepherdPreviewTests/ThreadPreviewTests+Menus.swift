@@ -17,11 +17,11 @@ extension ThreadPreviewTests {
     /// The ModelPicker board's list, each row's second line the levels its model takes.
     static let boardModels = [
         SHModelSection(title: "Recent", options: [
-            SHModelOption(id: "anthropic/claude-opus", title: "claude-opus", subtitle: "Off · Low · Medium · High", note: "200K", isCurrent: true),
-            SHModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "200K"),
+            SHModelOption(id: "anthropic/claude-opus", title: "claude-opus", subtitle: "Off, Low, Medium, High", note: "200K", isCurrent: true),
+            SHModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Off, Minimal, Low, Medium, High, Extra high, Max", note: "200K"),
         ]),
         SHModelSection(title: "anthropic", options: [
-            SHModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off · Minimal · Low · Medium · High", note: "200K", fast: true),
+            SHModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off, Minimal, Low, Medium, High", note: "200K", fast: true),
             SHModelOption(id: "anthropic/claude-haiku", title: "claude-haiku", subtitle: "No thinking", note: "200K"),
         ]),
     ]
@@ -47,16 +47,16 @@ extension ThreadPreviewTests {
         let opus = [
             SHModelSection(title: "Recent", options: [
                 SHModelOption(id: "cpa/~anthropic/claude-opus-4-8-thinking-max", title: "~anthropic/claude-opus-4-8-thinking-max",
-                              subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "1M", isCurrent: true),
+                              subtitle: "Off, Minimal, Low, Medium, High, Extra high, Max", note: "1M", isCurrent: true),
             ]),
             SHModelSection(title: "AG", options: [
                 SHModelOption(id: "AG/claude-opus-4-6-thinking-extended-context", title: "claude-opus-4-6-thinking-extended-context",
-                              subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
-                SHModelOption(id: "AG/claude-opus-4-6", title: "claude-opus-4-6", subtitle: "Off · Minimal · Low · Medium · High · Extra high", note: "200K"),
+                              subtitle: "Off, Minimal, Low, Medium, High", note: "200K"),
+                SHModelOption(id: "AG/claude-opus-4-6", title: "claude-opus-4-6", subtitle: "Off, Minimal, Low, Medium, High, Extra high", note: "200K"),
             ]),
             SHModelSection(title: "cpa", options: [
                 SHModelOption(id: "cpa/~anthropic/claude-opus-4-5-20251101", title: "~anthropic/claude-opus-4-5-20251101",
-                              subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
+                              subtitle: "Off, Minimal, Low, Medium, High", note: "200K"),
                 SHModelOption(id: "cpa/~openrouter/anthropic/claude-opus-4.1", title: "~openrouter/anthropic/claude-opus-4.1",
                               subtitle: "No thinking", note: "200K"),
             ]),

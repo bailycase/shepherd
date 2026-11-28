@@ -34,7 +34,7 @@ struct QueueSection: View {
                              paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                              resume: !running && enabled && !queued.isEmpty ? { Task { await store.sendQueuedNow(queued) } } : nil,
                              framed: framed, afterGoalCheck: store.hasGoal, collapsed: collapsed,
-                             onToggle: store.hasGoal ? { withSHAnimation(.disclosure) { collapsed.toggle() } } : nil) {
+                             onToggle: { withSHAnimation(.disclosure) { collapsed.toggle() } }) {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),

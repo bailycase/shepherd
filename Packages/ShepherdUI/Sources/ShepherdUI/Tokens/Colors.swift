@@ -238,9 +238,10 @@ public final class SHPalette: Sendable {
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
         scrim = Color(light: scrimBlack, dark: scrimBlack)
         paletteScrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.06), dark: scrimBlack)
-        let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
+        // The boards' veils: a viewer over the window dims it 42% (GXImageViewer `.veil2`), a sheet 16% light, 40% dark (`.veil3`).
+        let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.42)
         sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
-        modalScrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.18), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.45))
+        modalScrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.16), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.4))
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
         islandText = Color(light: "#f4f5f7", dark: "#f4f5f7")
         let islandWhite = { (alpha: Double) in HexColor(red: 1, green: 1, blue: 1, alpha: alpha) }

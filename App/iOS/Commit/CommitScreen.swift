@@ -38,6 +38,8 @@ struct CommitScreen: View {
             }
             .disabled(store.info?.blocked != nil && store.stage == .form)
             .padding(.horizontal, MobileLayout.gutter)
+            // The board draws the sheet's grabber (MobileCommit).
+            .presentationDragIndicator(.visible)
             .padding(.bottom, MobileLayout.gutter)
         }
         .scrollDismissesKeyboard(.interactively)

@@ -21,7 +21,7 @@ struct SubagentRunScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
-                ToolbarItem(placement: .principal) { SubagentRunTitle(run: run) }
+                ToolbarItem(placement: .principal) { Group { SubagentRunTitle(run: run) }.shBarTitleType() }
                 // The run's controls in the system's ••• menu, which overflows with the bar where it
                 // runs down the side (iPhone Duo).
                 if let run {
@@ -43,7 +43,7 @@ struct SubagentRunTitle: View {
         let phase = run.map(nativeRunPhase)
         let timing = run.map(nativeTrayRow)
         VStack(spacing: SH.Space.xxs) {
-            Text(run.map(nativeRunAgentName) ?? "Subagent").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
+            Text(run.map(nativeRunAgentName) ?? "Subagent").font(.shBar(.headline)).foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
             HStack(spacing: SH.Space.s) {
                 Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed")
@@ -52,7 +52,7 @@ struct SubagentRunTitle: View {
                     SHElapsedText(since: SubagentValues.date(started)!, until: SubagentValues.date(timing?.until))
                 }
             }
-            .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            .font(.shBar(.caption)).foregroundStyle(Color.sh.textTertiary)
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)

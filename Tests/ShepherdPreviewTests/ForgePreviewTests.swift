@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSidebar
 import ShepherdSessions
 import ShepherdTestKit
 import ShepherdTestSupport
@@ -15,7 +16,8 @@ import Testing
 /// read from a real server whose gh is the recorded fake (`ForgeFixtures`): the store, the
 /// server's parsing and linking, and the views all run as in the app.
 extension PreviewTests {
-    private static let forgeWindow = CGSize(width: 1440, height: 900)
+    /// The boards' window.
+    private static let forgeWindow = CGSize(width: 1600, height: 900)
     /// The boards' sidebar (the user can resize it there).
     private static let forgeSidebar: CGFloat = 280
     /// Two hours after the fixtures' last update.
@@ -24,7 +26,7 @@ extension PreviewTests {
     /// The fake gh, with `edit` rewriting an answer (a draft, merged or closed #31; an empty list).
     private static func forgeRunner(_ edit: @escaping @Sendable (String, String) -> String = { $1 }) -> ForgeService.Runner {
         { command in
-            let (output, status, errors) = ForgeFixtures.answer(command.arguments)
+            let (output, status, errors) = ForgeFixtures.answer(command.arguments, board: true)
             return ForgeOutput(output: Data(edit(command.arguments.joined(separator: " "), output).utf8), errors: errors, status: status)
         }
     }
@@ -68,6 +70,7 @@ extension PreviewTests {
 
     private func openForge(_ vm: ShepherdViewModel, _ kind: ForgeKind, _ number: Int) async {
         let ref = ForgeItemRef(kind: kind, repo: ForgeFixtures.repo, number: number)
+        vm.openDestination(.forge)
         await vm.forgeStore.start(opening: ref)
         await vm.forgeStore.open(ref)
     }
@@ -78,7 +81,7 @@ extension PreviewTests {
         let vm = workspace.vm
         await openForge(vm, .pullRequest, 31)
         try await Preview.render("forge-pr", size: Self.forgeWindow, ready: { vm.forgeStore.pullRequest != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -89,7 +92,7 @@ extension PreviewTests {
         await openForge(vm, .pullRequest, 31)
         await vm.forgeStore.toggleSection(.teamReview)
         try await Preview.render("forge-pr-team", size: Self.forgeWindow, ready: { vm.forgeStore.pullRequest != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -109,7 +112,7 @@ extension PreviewTests {
         vm.forgeStore.filter = ForgeFilter(state: .all, author: "baily", sort: .created)
         await vm.forgeStore.browseTask?.value
         try await Preview.render("forge-filtered", size: Self.forgeWindow, ready: { vm.forgeStore.results != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -118,9 +121,9 @@ extension PreviewTests {
         defer { workspace.stop() }
         let vm = workspace.vm
         await openForge(vm, .pullRequest, 31)
-        let detail = try #require(vm.forgeStore.pullRequest)
-        try await Preview.render("forge-pr-merge-menu", size: CGSize(width: 360, height: 420)) {
-            ForgeMergeMenu(store: vm.forgeStore, detail: detail) {}.padding(SH.Space.l).background(Color.sh.bgWindow)
+        vm.forgeStore.mergeMenuOpen = true
+        try await Preview.render("forge-pr-merge-menu", size: Self.forgeWindow, ready: { vm.forgeStore.pullRequest != nil }) {
+            RootView(vm: vm)
         }
     }
 
@@ -131,7 +134,7 @@ extension PreviewTests {
         await openForge(vm, .pullRequest, 31)
         vm.forgeStore.tab = .changes
         try await Preview.render("forge-pr-changes", size: Self.forgeWindow, ready: { vm.forgeStore.files != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -142,7 +145,7 @@ extension PreviewTests {
         await openForge(vm, .pullRequest, 31)
         vm.forgeStore.tab = .checks
         try await Preview.render("forge-pr-checks", size: Self.forgeWindow, ready: { !vm.forgeStore.logs.isEmpty }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -164,7 +167,7 @@ extension PreviewTests {
         let vm = workspace.vm
         await openForge(vm, .pullRequest, 31)
         try await Preview.render("forge-pr-\(name)", size: Self.forgeWindow, ready: { vm.forgeStore.pullRequest != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -189,9 +192,10 @@ extension PreviewTests {
         let workspace = try await forgeWorkspace(runner)
         defer { workspace.stop() }
         let vm = workspace.vm
+        vm.openDestination(.forge)
         await vm.forgeStore.start()
         try await Preview.render("forge-empty", size: Self.forgeWindow, ready: { vm.forgeStore.loadingKinds.isEmpty }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -243,9 +247,10 @@ extension PreviewTests {
         }
         defer { workspace.stop() }
         let vm = workspace.vm
+        vm.openDestination(.forge)
         await vm.forgeStore.start()
         try await Preview.render("forge-gh-missing", size: Self.forgeWindow, ready: { vm.forgeStore.error != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -257,7 +262,7 @@ extension PreviewTests {
         await openForge(vm, .issue, 34)
         try await Preview.render(started ? "forge-issue-started" : "forge-issue", size: Self.forgeWindow,
                                  ready: { vm.forgeStore.issue != nil }) {
-            forgeWindow(vm) { ForgeDestination(vm: vm) }
+            RootView(vm: vm)
         }
     }
 
@@ -270,9 +275,14 @@ extension PreviewTests {
         await vm.forgeStore.perform(.setPinned(ref: ref, title: "Add refund events to the ledger outbox", pinned: true))
         await vm.forgeStore.loadSidebar()
         vm.selectAgent(try #require(vm.state.agents.first).id)
-        try await Preview.render("forge-sidebar-pinned", size: CGSize(width: Self.forgeSidebar, height: 600),
+        try await Preview.render("forge-sidebar-pinned", size: Self.forgeWindow,
                                  ready: { vm.forgeStore.sidebar?.pins.first?.pullRequest != nil }) {
-            SidebarView(vm: vm).frame(width: Self.forgeSidebar)
+            RootView(vm: vm)
+        }
+        // The hover card the pin opens.
+        let pin = try #require(vm.forgeStore.sidebar?.pins.first)
+        try await Preview.render("forge-pin-preview", size: CGSize(width: AppLayout.forgePinPreviewWidth, height: 190)) {
+            SidebarForgePinPreview(pin: SidebarForgePin(pin, viewer: "baily"))
         }
     }
 

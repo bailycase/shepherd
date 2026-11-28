@@ -64,6 +64,9 @@ private struct NewThreadForm: View {
     @Bindable var model: NewThreadModel
     let pad: Bool
     @FocusState private var promptFocused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// The row's width, which says whether its chips fit on one line.
+    @State private var rowWidth: CGFloat = .infinity
     /// Popovers widen with the text size, so a host's name still fits at accessibility sizes.
     @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
 
@@ -136,25 +139,35 @@ private struct NewThreadForm: View {
         .shLift(shape)
     }
 
-    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first.
+    /// Attach, the repo on its host, and the model: one line that never wraps, the host's name giving way first. They stack, each whole,
+    /// where one line cannot hold them: from xxxLarge, and in a window as narrow as Slide Over's (three chips beside each other were
+    /// cut to their first letters).
     private var row: some View {
-        HStack(spacing: SH.Space.s) {
+        let stacked = typeSize >= .xxxLarge || rowWidth < MobileLayout.newThreadRowStackWidth
+        return rowParts(stacked: stacked)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
+            .padding(.horizontal, -SH.Space.m)
+            .frame(minHeight: SH.Height.touch)
+            .disabled(model.starting)
+            .buttonStyle(.plain)
+    }
+
+    @ViewBuilder private func rowParts(stacked: Bool) -> some View {
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: SH.Space.s))
+        layout {
             NewThreadAttachButton(model: model)
-            workplace
-            Spacer(minLength: SH.Space.s)
+            workplace(stacked: stacked)
+            if !stacked { Spacer(minLength: SH.Space.s) }
             modelChip
         }
-        .padding(.horizontal, -SH.Space.m)
-        .frame(minHeight: SH.Height.touch)
-        .disabled(model.starting)
-        .buttonStyle(.plain)
     }
 
     /// "shepherd on Studio ⌄". On iPhone one button opens Where it runs; on iPad the repo and the host each open a popover.
-    @ViewBuilder private var workplace: some View {
+    @ViewBuilder private func workplace(stacked: Bool) -> some View {
         let repo = model.repoName ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
-        HStack(spacing: SH.Space.xs) {
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: SH.Space.xs))
+        layout {
             Button { open(pad ? .repo : .workspace) } label: {
                 HStack(spacing: SH.Space.s) {
                     Image(systemName: SHGlyph.repository.symbolName).font(.sh(.ui, weight: .regular)).accessibilityHidden(true)
@@ -163,6 +176,8 @@ private struct NewThreadForm: View {
                 .frame(minHeight: SH.Height.touch)
                 .contentShape(Rectangle())
             }
+            // The host's name gives way first, as the row's note says: the repo is what the thread is about.
+            .layoutPriority(1)
             .accessibilityLabel("Repo, \(repo)")
             .popover(isPresented: pad ? panel(.repo) : .constant(false), arrowEdge: .top) { repoPopover }
             Button { open(pad ? .host : .workspace) } label: {

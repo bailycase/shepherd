@@ -552,7 +552,7 @@ private struct DesignBoardContent: View {
         // The board's own toolbar takes the bottom edge (MobileDesignBoard).
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 // With pages, the title is the page menu (the grid's title menu, kept with the dots).
                 if model.designs.hasPages(model.ref) {
                     Menu { DesignPagePicker(ref: model.ref) } label: {
@@ -570,7 +570,7 @@ private struct DesignBoardContent: View {
                 } else {
                     boardTitle
                 }
-            }
+            }.shBarTitleType() }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Share", systemImage: "square.and.arrow.up") { Task { await model.export(.png) } }
@@ -612,7 +612,7 @@ private struct DesignBoardContent: View {
     private var boardTitle: some View {
         VStack(spacing: SH.Space.xxs) {
             Text(model.current == nil ? model.pageName ?? "" : model.label)
-                .font(.shSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
+                .font(.shBarSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
             if model.boards.count > 1, let current = model.current {

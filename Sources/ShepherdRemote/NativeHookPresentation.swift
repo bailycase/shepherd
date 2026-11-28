@@ -36,7 +36,9 @@ public struct NativeHookRow: Equatable, Hashable, Sendable {
     /// The row a record draws.
     public init(_ record: NativeHookRecord) {
         let kind = Kind(rawValue: record.kind) ?? .ran
-        let parts = [record.event, record.detail ?? record.name].compactMap { $0 }.filter { !$0.isEmpty }
+        // A name that is only punctuation (an older host's "[" from `[ -x run.sh ] && run.sh`) says nothing.
+        let named = record.detail ?? (record.name.contains { $0.isLetter || $0.isNumber } ? record.name : nil)
+        let parts = [record.event, named].compactMap { $0 }.filter { !$0.isEmpty }
         let link: Link? = switch kind {
         case .denied, .failed, .added, .sentBack, .context: record.hash.map { .openHook(hash: $0) }
         case .ran, .asked, .systemMessage: nil

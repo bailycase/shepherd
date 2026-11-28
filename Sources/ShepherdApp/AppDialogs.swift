@@ -13,7 +13,7 @@ struct AppDialogs: ViewModifier {
         content
             // The first launch's sheet; closing it, whichever way, starts restored agents. A sign-in
             // it opens shows over it.
-            .sheet(item: Binding(get: { vm.yourPi.importSheet }, set: { if $0 == nil { vm.finishImport() } }),
+            .sheet(item: Binding(get: { vm.onboarding.isActive ? nil : vm.yourPi.importSheet }, set: { if $0 == nil { vm.finishImport() } }),
                    onDismiss: { vm.finishImport() }) { sheet in
                 PiImportSheet(state: vm.yourPi.importSheet ?? sheet,
                               signIn: { provider, key in vm.piAuth.signIn(provider, key: key, origin: .firstLaunch) },
@@ -32,7 +32,7 @@ struct AppDialogs: ViewModifier {
                     }
             }
             // Sign in to <provider>: over Settings or the thread.
-            .sheet(item: Binding(get: { vm.yourPi.importSheet == nil ? vm.piAuth.session : nil }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
+            .sheet(item: Binding(get: { vm.yourPi.importSheet == nil || vm.onboarding.isActive ? vm.piAuth.session : nil }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
                 PiSignInSheet(session: session) { vm.piAuth.closeSheet() }
                     .dialogSheetFrame()
             }

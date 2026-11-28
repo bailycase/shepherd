@@ -68,8 +68,11 @@ public enum DesignSystemPresentation {
         let colors = tokens.colors.filter { Swatch($0) != nil }
         var picked: [DesignSystemTokens.Color] = []
         for role in roles {
-            guard let found = colors.filter({ color in !picked.contains(color) && role.contains { words(color.name).contains($0) } })
-                .min(by: { $0.name.count < $1.name.count }) else { continue }
+            // The role's words in order of preference: a token that says "accent" stands for it before one that says "primary".
+            guard let found = role.lazy.compactMap({ word in
+                colors.filter { color in !picked.contains(color) && words(color.name).contains(word) }
+                    .min(by: { $0.name.count < $1.name.count })
+            }).first else { continue }
             picked.append(found)
         }
         picked += colors.filter { !picked.contains($0) }
@@ -88,7 +91,7 @@ public enum DesignSystemPresentation {
 
     /// Accent, text, background, status: the words a token's name says its role in.
     private static let roles: [[String]] = [
-        ["accent", "primary", "brand", "lantern"],
+        ["accent", "brand", "lantern", "primary"],
         ["text", "fg", "foreground", "ink"],
         ["bg", "background", "canvas", "base", "surface", "page"],
         ["success", "running", "positive", "info", "link"],

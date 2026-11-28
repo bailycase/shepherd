@@ -319,7 +319,8 @@ struct SHSlashRow: View, Equatable {
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             #if os(macOS)
-            if let tag = command.tag { Text(tag).font(.sh(.caption)).foregroundStyle(sh.textTertiary).fixedSize() }
+            // The board writes the kind as a word: "Prompt".
+            if let tag = command.tag { Text(tag.prefix(1).uppercased() + tag.dropFirst()).font(.sh(.caption)).foregroundStyle(sh.textTertiary).fixedSize() }
             #else
             if let tag = command.tag { SHTag(tag) }
             #endif
@@ -368,7 +369,7 @@ struct SHSlashRow: View, Equatable {
         let sh = Color.sh
         if let lead = command.lead {
             // An argument row: "/login" quiet, then the argument with what's typed in semibold.
-            let head = Text(lead + " ").foregroundStyle(sh.textSecondary)
+            let head = Text(lead + " ").foregroundStyle(sh.textTertiary)
             let typedPart = Text(String(command.name.prefix(typed))).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
             let rest = Text(String(command.name.dropFirst(typed))).foregroundStyle(sh.textPrimary)
             return Text("\(head)\(typedPart)\(rest)").font(.shMono(12.5))
@@ -387,8 +388,8 @@ public struct SHModelOption: Identifiable, Equatable, Sendable {
     public var id: String
     /// The name the row shows ("claude-opus"), truncated in the middle when long.
     public var title: String
-    /// The row's second line, truncated at its end: the model's thinking levels ("Off · Low ·
-    /// Medium · High", "No thinking").
+    /// The row's second line, truncated at its end: the model's thinking levels ("Off, Low,
+    /// Medium, High", "No thinking").
     public var subtitle: String?
     /// A trailing note in mono 11 (the context size, "200K").
     public var note: String?

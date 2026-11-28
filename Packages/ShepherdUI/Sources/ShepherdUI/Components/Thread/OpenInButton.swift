@@ -78,22 +78,24 @@ public struct SHOpenInButton: View {
     public var body: some View {
         let sh = Color.sh
         let target = actions.target(url)
-        HStack(spacing: 0) {
+        // Beside a Settings input the boards write it as words, "Open in Zed ⌄", with no box or icon.
+        let written = size == .settings
+        HStack(spacing: written ? SHSettingsControlMetrics.popupGap : 0) {
             Button { actions.open(url, nil) } label: {
                 HStack(spacing: SH.Space.xs) {
-                    icon(target.app)
+                    if !written { icon(target.app) }
                     Text("Open in \(target.app.name)").lineLimit(1)
                 }
-                .font(.sh(.caption, weight: .medium))
-                .foregroundStyle(sh.textPrimary)
-                .padding(.horizontal, SH.Space.m)
+                .font(written ? .shSans(SHSettingsControlMetrics.textSize) : .sh(.caption, weight: .medium))
+                .foregroundStyle(written ? sh.textSecondary : sh.textPrimary)
+                .padding(.horizontal, written ? 0 : SH.Space.m)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(url.path)
             .accessibilityLabel("Open \(url.lastPathComponent) in \(target.app.name)")
-            SHHairline(.vertical, color: sh.lineStrong)
+            if !written { SHHairline(.vertical, color: sh.lineStrong) }
             Menu {
                 Section("Open \(url.lastPathComponent) in") {
                     ForEach(actions.choices(url)) { app in
@@ -108,9 +110,9 @@ public struct SHOpenInButton: View {
                 Text("Your pick opens the file and becomes the default for \(target.scope).")
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.sh(.micro, weight: .semibold))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: SHOpenInMetrics.chevronWidth)
+                    .font(written ? .system(size: SHSettingsControlMetrics.popupChevronSize, weight: .semibold) : .sh(.micro, weight: .semibold))
+                    .foregroundStyle(written ? sh.textTertiary : sh.textSecondary)
+                    .frame(width: written ? nil : SHOpenInMetrics.chevronWidth)
                     .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
@@ -121,8 +123,8 @@ public struct SHOpenInButton: View {
             .accessibilityLabel("Choose an app for \(url.lastPathComponent)")
         }
         .frame(height: height)
-        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-        .shBorder(sh.lineStrong, radius: SH.Radius.s)
+        .background(written ? Color.clear : sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(written ? .clear : sh.lineStrong, radius: SH.Radius.s)
         .fixedSize()
     }
 

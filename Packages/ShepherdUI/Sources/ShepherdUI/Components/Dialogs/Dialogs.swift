@@ -247,7 +247,7 @@ public struct SHSettingsNavRow: View {
             HStack(spacing: SH.Space.m) {
                 Text(title)
                     .font(.shSans(SHSettingsNavMetrics.textSize, selected ? .medium : .regular))
-                    .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if attention {
@@ -259,7 +259,7 @@ public struct SHSettingsNavRow: View {
             .frame(minHeight: SH.Height.scaled(SHSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.shRow(selected: selected, radius: SH.Radius.m, selectedFill: Color.sh.settingsNavSelected, focusColor: .sh.running))
+        .buttonStyle(.shRow(selected: selected, radius: SHSettingsControlMetrics.searchRadius, selectedFill: Color.sh.bgSelected, focusColor: .sh.running))
         .accessibilityLabel(attention ? "\(title), needs you" : title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -271,8 +271,13 @@ public enum SHSettingsNavMetrics {
     public static let rowHeight: CGFloat = 28
     /// 8pt in from the row's sides.
     public static let rowPadding: CGFloat = SH.Space.m
-    /// The nav's own sides: 8pt.
-    public static let sidePadding: CGFloat = SH.Space.m
+    /// The nav's own sides: 10pt, and 14pt above its search field.
+    public static let sidePadding: CGFloat = 10
+    public static let topPadding: CGFloat = 14
+    /// A run's label: 30pt tall with the words 6pt off its bottom; 8pt between runs.
+    public static let groupHeaderHeight: CGFloat = 30
+    public static let groupHeaderBottom: CGFloat = SH.Space.s
+    public static let groupGap: CGFloat = SH.Space.m
     /// The point size Settings' bundled symbols are drawn at.
     public static let glyphSize: CGFloat = 13
     /// The page names (`ui`).

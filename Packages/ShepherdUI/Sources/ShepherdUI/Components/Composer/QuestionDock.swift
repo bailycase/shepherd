@@ -94,6 +94,9 @@ public enum SHQuestionBoardMetrics {
     public static let chip: CGFloat = 20
     public static let chipRadius: CGFloat = SH.Radius.s - 1
     public static let chipSize: CGFloat = 11
+    /// The description under a title: 12.5 on an 18pt line (GXQuestion `.d`).
+    public static let descriptionSize: CGFloat = 12.5
+    public static let descriptionLineSpacing: CGFloat = 3
     /// The title's 1pt drop and the "Recommended" tag's 8pt lead.
     public static let bodyTop: CGFloat = 1
     public static let recommendedLead: CGFloat = SH.Space.m
@@ -645,7 +648,7 @@ public struct SHQuestionRadioRow: View {
 
     #if os(macOS)
     /// The redesign's row: a 20pt key chip, the title in 14 with "Recommended" after it in 12
-    /// `textTertiary`, the description under it in 12 `textSecondary`. Picked lights the row
+    /// `textTertiary`, the description under it in 12.5 `textSecondary`. Picked lights the row
     /// `bgSelected` and fills the chip with ink; the pointer lights it `bgHover`.
     private var macRow: some View {
         let sh = Color.sh
@@ -654,10 +657,11 @@ public struct SHQuestionRadioRow: View {
         return Button(action: pick) {
             HStack(alignment: .top, spacing: B.rowSpacing) {
                 SHQuestionKeyChip(number: option.number, on: picked)
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     macTitle.fixedSize(horizontal: false, vertical: true)
                     if let detail = option.detail {
-                        Text(detail).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                        // The board's description: 12.5 on an 18pt line.
+                        Text(detail).font(.shSans(B.descriptionSize)).lineSpacing(B.descriptionLineSpacing).foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

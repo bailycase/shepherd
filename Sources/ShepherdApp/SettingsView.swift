@@ -74,18 +74,18 @@ struct SettingsView: View {
             SHSettingsSearchField("Search", text: $searchText, placement: .navigation)
                 .focused($searchFocused)
                 .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
-                .padding(.top, SH.Space.xl)
+                .padding(.top, SHSettingsNavMetrics.topPadding)
                 .padding(.bottom, SH.Space.m)
 
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
+                VStack(alignment: .leading, spacing: SHSettingsNavMetrics.groupGap) {
                     ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                         VStack(alignment: .leading, spacing: 0) {
                             if let title = group.title {
                                 SHSectionHeader(title, style: .settingsNav)
-                                    .padding(.top, SH.Space.l)
                                     .padding(.horizontal, SH.Space.m)
-                                    .padding(.bottom, SH.Space.xs)
+                                    .padding(.bottom, SHSettingsNavMetrics.groupHeaderBottom)
+                                    .frame(height: SHSettingsNavMetrics.groupHeaderHeight, alignment: .bottomLeading)
                             }
                             ForEach(group.sections) { section in
                                 SHSettingsNavRow(section.title, selected: vm.settingsSection.navSelection == section,
@@ -122,7 +122,7 @@ struct SettingsView: View {
         .accessibilityHidden((vm.settingsSection == .projects && vm.projectCookies.pending != nil) ||
                              (vm.settingsSection == .subagents && vm.subagentDefinitions.confirmation != nil))
         .frame(width: SHSettingsNavMetrics.width - SHSettingsNavMetrics.borderWidth)
-        .background(Color.sh.bgBase.ignoresSafeArea())
+        .background(Color.sh.bgGlass.ignoresSafeArea())
     }
 
     private func navigate(to section: SettingsSection) {
@@ -171,13 +171,24 @@ struct SettingsView: View {
     /// The page: every Settings page is this host's own; Fleet shares the content that crosses hosts.
     @ViewBuilder private var page: some View {
         if let back = drill?.parent ?? vm.settingsSection.parent?.title {
-            VStack(alignment: .leading, spacing: SH.Space.m) {
+            VStack(alignment: .leading, spacing: 0) {
                 Button { goBack() } label: {
-                    Text("‹ \(back)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    HStack(spacing: SH.Space.xs) {
+                        Image(systemName: "chevron.left").font(.system(size: SHSettingsControlMetrics.popupChevronSize + 2, weight: .semibold))
+                        Text(back).font(.shSans(SHSettingsControlMetrics.segmentTextSize))
+                    }
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .frame(height: AppLayout.settingsGroupHeaderHeight)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
                 .accessibilityLabel("Back to \(back)")
+                // The board lifts the link into the column's top margin and the page up under it: the link draws
+                // `settingsUpLinkLift` above the column's top, and the page starts `settingsUpLinkDrop` below it.
+                // (A negative frame collapses to nothing, so the link keeps a little height and an offset does the lift.)
+                .padding(.bottom, -(AppLayout.settingsGroupHeaderHeight - AppLayout.settingsUpLinkDrop))
+                .offset(y: -AppLayout.settingsUpLinkLift)
                 localPage
             }
         } else {
@@ -240,7 +251,8 @@ struct SettingsView: View {
 
     private var detail: some View {
         Group {
-            if vm.settingsSection == .projects && vm.projects.selected != nil {
+            // Spaces draws its own column, header and bar (the space pages), so it is never inside the shared scroll view.
+            if vm.settingsSection == .projects {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -253,7 +265,7 @@ struct SettingsView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("SettingsPageContent")
                         .padding(.top, AppLayout.settingsTop)
-                        .padding(.bottom, SH.Space.xxxl)
+                        .padding(.bottom, AppLayout.settingsBottom)
                         .padding(.horizontal, SH.Space.xxxl)
                         // The one column, centered; a page picked in the nav cross-fades in place and
                         // search switches pages at once.
@@ -261,6 +273,13 @@ struct SettingsView: View {
                         .shAnimation(.content, value: vm.settingsSection)
                 }
                 .scrollContentBackground(.hidden)
+                .overlay(alignment: .bottom) {
+                    // The page fades into the modal's foot (the board's 32pt `gs-scroll` shade).
+                    LinearGradient(colors: [Color.sh.bgWindow.opacity(0), Color.sh.bgWindow], startPoint: .top, endPoint: .bottom)
+                        .frame(height: AppLayout.settingsFadeHeight)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 .shTransition(.content)
                 // A link into another page's group (Sign-in's Add a provider): after the page lays out.
                 .task(id: vm.settingsScrollTarget) {
@@ -301,7 +320,7 @@ struct SettingsOverlay: View {
                     let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
                     SettingsView(vm: vm)
                         .clipShape(shape)
-                        .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
+                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.l)
                         .shFloatBackground(shape.fill(Color.sh.bgWindow))
                         .overlay(alignment: .topTrailing) {
                             Button { SettingsView.close(vm) } label: {

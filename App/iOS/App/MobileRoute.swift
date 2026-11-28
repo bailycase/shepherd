@@ -32,7 +32,8 @@ struct PresentedRoute: Identifiable, Hashable {
 
 extension View {
     /// Resolves pushed routes in a navigation stack. Every stack in the app applies it once.
-    func mobileDestinations() -> some View {
-        navigationDestination(for: MobileRoute.self) { $0.destination.modifier(DuoTopEdge()) }
+    /// `hidesBack`: the iPad's first pushed screen beside its sidebar, which the boards draw without a Back.
+    func mobileDestinations(hidesBack: Bool = false) -> some View {
+        navigationDestination(for: MobileRoute.self) { $0.destination.modifier(DuoTopEdge()).navigationBarBackButtonHidden(hidesBack) }
     }
 }

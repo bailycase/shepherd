@@ -218,20 +218,21 @@ struct ImplementSheetView: View {
     }
 }
 
-/// The sheet centered over the window on its scrim, as Export's is.
+/// The sheet over the window on its scrim, hung from the top as Export's is.
 struct ImplementSheetOverlay: View {
     var vm: ShepherdViewModel
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             if let model = vm.implementSheet {
-                Color.sh.sheetScrim
+                Color.sh.modalScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
                     .shTransition(.content)
                 ImplementSheetView(vm: vm, model: model)
-                    .shTransition(.overlay, anchor: .center)
+                    .padding(.top, AppLayout.designSheetTop)
+                    .shTransition(.overlay, anchor: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -140,7 +140,8 @@ struct AddMCPServerSheet: View {
         }
         .frame(width: kind == .local ? AppLayout.mcpSheetLocalWidth : AppLayout.mcpSheetWidth)
         .frame(minHeight: AppLayout.mcpSheetMinHeight)
-        .background(sh.bgWindow)
+        .background(sh.bgRaised)
+        .shControlScale(.sheet)
         .disabled(submitting)
         .interactiveDismissDisabled(submitting)
         .onAppear(perform: load)
@@ -153,56 +154,38 @@ struct AddMCPServerSheet: View {
     // MARK: Chrome
 
     private var header: some View {
-        let sh = Color.sh
-        return HStack(alignment: .top, spacing: SH.Space.l) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
-                Text(isEditing ? "Edit \(editing?.name ?? "")" : "Add an MCP server")
-                    .font(.shSans(AppLayout.mcpSheetTitleSize, .semibold))
-                    .foregroundStyle(sh.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Text(project == nil ? "Remote servers need a URL. Local servers run a command on this Mac."
-                     : "Remote servers need a URL. Local commands run on \(hostName).")
-                    .font(.shSans(AppLayout.mcpSheetTextSize))
-                    .foregroundStyle(sh.textSecondary)
-            }
-            Spacer(minLength: SH.Space.l)
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(.shSans(AppLayout.mcpNoteSize, .semibold))
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: AppLayout.mcpSheetCloseSize, height: AppLayout.mcpSheetCloseSize)
-                    .overlay { Circle().strokeBorder(sh.lineStrong) }
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("Close")
+        // The boards' sheet header: the title over its line, nothing beside them. Esc closes.
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            Text(isEditing ? "Edit \(editing?.name ?? "")" : "Add an MCP server")
+                .font(.shSans(SHPiSignInMetrics.sheetTitleSize, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .frame(minHeight: SHPiSignInMetrics.sheetTitleLine, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+            SHSheetSubtitle(project == nil ? "Remote servers need a URL. Local servers run a command on this Mac."
+                            : "Remote servers need a URL. Local commands run on \(hostName).")
         }
-        .padding(.top, SH.Space.xl + SH.Space.xxs)
-        .padding(.bottom, SH.Space.l + SH.Space.xxs)
-        .padding(.leading, AppLayout.mcpSheetSides)
-        .padding(.trailing, SH.Space.xl + SH.Space.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, SHPiSignInMetrics.sheetTop)
+        .padding(.bottom, SHPiSignInMetrics.bodyTop - SH.Space.xs)
+        .padding(.horizontal, AppLayout.mcpSheetSides)
+        .background {
+            Button("Close", action: close).keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
+        }
     }
 
     private var footer: some View {
-        let sh = Color.sh
-        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
+        SHSheetFooter {
             Text(footnote)
                 .font(.shSans(AppLayout.mcpNoteSize))
-                .foregroundStyle(sh.textTertiary)
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
-            Spacer(minLength: SH.Space.m)
+        } actions: {
             Button("Cancel", action: close).buttonStyle(.sh(.ghost))
             Button(primaryTitle, action: submit)
                 .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSubmit)
         }
-        .padding(.leading, AppLayout.mcpSheetSides)
-        .padding(.trailing, SH.Space.xl + SH.Space.xxs)
-        .frame(height: AppLayout.mcpSheetFooterHeight)
-        .background(sh.bgSunken)
-        .overlay(alignment: .top) { SHHairline() }
     }
 
     private var footnote: String {

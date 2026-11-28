@@ -91,7 +91,7 @@ enum DesignRenderLimits {
 @MainActor
 public final class DesignBoardView: DesignPlatformView {
     public let surface: DesignSurface
-    public let board: DesignPath
+    public private(set) var board: DesignPath
     /// Everything the board reports, on the main actor.
     public var onEvent: ((DesignBoardEvent) -> Void)?
     /// What the board drew, once it booted.
@@ -182,6 +182,13 @@ public final class DesignBoardView: DesignPlatformView {
         #endif
         addSubview(webView)
         layOutPage()
+    }
+
+    /// Points the view at another board of its design, so its `load()` draws that one in this same web view (its content
+    /// process and the runtime it has compiled kept) rather than in a new one. Not while a load is running.
+    public func retarget(to board: DesignPath, size: CGSize) {
+        self.board = board
+        boardSize = size
     }
 
     #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))

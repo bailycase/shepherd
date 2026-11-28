@@ -412,7 +412,17 @@ const mcpToolName = (server, tool) => `mcp__${String(server).replace(/[^A-Za-z0-
 export function hookName(handler) {
   if (handler.statusMessage) return String(handler.statusMessage);
   if (handler.type === "mcp_tool") return mcpToolName(handler.server, handler.tool);
-  return String(handler.command ?? "").trim().split(/\s+/)[0] || "hook";
+  return commandWord(handler.command);
+}
+
+/**
+ * The command's own first word. A leading shell test (`[ -x run.sh ] && run.sh`, `[[ … ]] || …`, `test -f x && …`)
+ * guards the command and names nothing, so the word is the one it guards; a word with no letter in it is no name.
+ */
+export function commandWord(command) {
+  const text = String(command ?? "").trim().replace(/^(?:\[\[?\s[^\]]*\]\]?|test\s[^&|;]*)\s*(?:&&|\|\||;)\s*/, "");
+  const word = text.split(/\s+/)[0] ?? "";
+  return /[\p{L}\p{N}]/u.test(word) ? word : "hook";
 }
 
 function timeoutFor(event, handler) {

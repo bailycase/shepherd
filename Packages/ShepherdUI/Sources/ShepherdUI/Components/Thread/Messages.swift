@@ -15,8 +15,8 @@ enum SHMessageDetails {
     }
 }
 
-/// A user bubble's measure and inset: the Mac's (and the phone's) at most 560pt with 9×15
-/// inside, or the iPad boards' 520pt with 12×16 (iPadThread).
+/// A user bubble's measure and inset: the Mac's at most 560pt with 9×15 inside; the phone's 300pt and the iPad's 480pt, 10×14
+/// inside (MobileThread, iPadThread).
 public struct SHUserBubbleMetrics: Equatable, Sendable {
     public var maxWidth: CGFloat
     public var vertical: CGFloat
@@ -31,11 +31,12 @@ public struct SHUserBubbleMetrics: Equatable, Sendable {
     #if os(macOS)
     public static let standard = SHUserBubbleMetrics(maxWidth: SHThreadMetrics.bubbleMaxWidth, vertical: 9, horizontal: 15)
     #else
-    public static let standard = SHUserBubbleMetrics(maxWidth: SHThreadMetrics.bubbleMaxWidth, vertical: 10, horizontal: 14)
+    /// The boards' `.gt-you`: 300pt at most, 10×14 inside (MobileThread, DuoOpenThread).
+    public static let standard = SHUserBubbleMetrics(maxWidth: 300, vertical: 10, horizontal: 14)
     #endif
     /// The Project conversation's bubble (ProjectLead-Started): a 520pt measure inside 12 / 16 padding and a 1pt border (554pt), caption overlaid. The 2.25pt is the half-leading CSS puts above and below a 20.25pt line that SwiftUI's first and last lines lack.
     public static let lead = SHUserBubbleMetrics(maxWidth: 554, vertical: SH.Space.l + 2.25, horizontal: SH.Space.xl, overlaysCaption: true, leadingAdjustment: -2)
-    public static let pad = SHUserBubbleMetrics(maxWidth: 520, vertical: SH.Space.l, horizontal: SH.Space.xl)
+    public static let pad = SHUserBubbleMetrics(maxWidth: 480, vertical: 10, horizontal: 14)
 }
 
 extension SHUserBubbleMetrics {
@@ -44,8 +45,8 @@ extension SHUserBubbleMetrics {
     static let radius = SH.Radius.bubble
     @MainActor static var line: Color { .clear }
     #else
-    static let radius = SH.Radius.m
-    @MainActor static var line: Color { .sh.lineStrong }
+    static let radius = SH.Radius.touchBubble
+    @MainActor static var line: Color { .clear }
     #endif
 }
 

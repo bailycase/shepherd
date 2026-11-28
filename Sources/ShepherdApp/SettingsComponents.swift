@@ -27,7 +27,8 @@ struct SettingsPage<Content: View, Accessory: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 accessory.fixedSize()
             }
-            .padding(.bottom, SH.Space.xs)
+            // The board pulls the first group 8pt up under the title.
+            .padding(.bottom, -SH.Space.m)
             content
         }
         .shControlScale(.settings)
@@ -40,13 +41,13 @@ extension SettingsPage where Accessory == EmptyView {
     }
 }
 
-/// A page's title, in `title` style (15/600), and the line under it that says what it is for
+/// A page's title (18/600 on a 24pt line, 4pt in), the caption after it, and the line under it that says what it is for
 /// where a page still has one (a space's resources).
 struct SettingsHeader: View {
     let title: String
     var subtitle: String?
     var explanation: String?
-    var titleSize = SHTextStyle.title.size
+    var titleSize = AppLayout.settingsTitleSize
     var explanationSize = SHTextStyle.body.size
 
     var body: some View {
@@ -55,9 +56,12 @@ struct SettingsHeader: View {
                 Text(title)
                     .font(.shSans(titleSize, .semibold))
                     .foregroundStyle(Color.sh.textPrimary)
+                    .padding(.horizontal, SH.Space.xs)
+                    // The board's title block: 27pt tall (a 24pt line and 3pt under it), the words centered in it.
+                    .frame(minHeight: AppLayout.settingsTitleLine)
                     .accessibilityAddTraits(.isHeader)
                 if let subtitle {
-                    Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                    Text(subtitle).font(.shSans(SHSettingsControlMetrics.segmentTextSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                 }
             }
             if let explanation {
@@ -84,14 +88,11 @@ struct SettingsGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             if !title.isEmpty || !links.isEmpty || trailing != nil {
-            HStack(alignment: .firstTextBaseline) {
-                if links.isEmpty {
-                    SHSectionHeader(title, style: .settings)
-                } else {
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
                     SHSectionHeader(title, style: .settings) {
-                        HStack(spacing: SH.Space.l) {
+                        HStack(spacing: SH.Space.xl) {
                             ForEach(links) { link in
                                 if link.menu.isEmpty {
                                     SHSectionLink(title: link.title, action: link.action).disabled(!link.isEnabled).accessibilityLabel(link.label ?? link.title).help(link.help ?? "")
@@ -99,23 +100,25 @@ struct SettingsGroup<Content: View>: View {
                                     Menu {
                                         ForEach(link.menu) { item in Button(item.title, action: item.action) }
                                     } label: {
-                                        Text(link.title).font(.sh(.caption)).foregroundStyle(Color.sh.running)
+                                        Text(link.title).font(.shSans(SHSettingsControlMetrics.segmentTextSize, .medium)).foregroundStyle(Color.sh.textSecondary)
                                     }
                                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                                 }
                             }
                         }
                     }
+                    .fixedSize(horizontal: links.isEmpty, vertical: false)
+                    if let trailing, links.isEmpty {
+                        // The file the group edits, in mono after its name.
+                        Text(trailing).font(.shMono(AppLayout.settingsAddressSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                            .help(trailing)
+                        Spacer(minLength: 0)
+                    }
                 }
-                if let trailing, links.isEmpty {
-                    Spacer(minLength: SH.Space.l)
-                    Text(trailing).font(.shMono(SHTextStyle.caption.size)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
-                        .help(trailing)
-                }
+                .padding(.horizontal, SH.Space.xs)
+                .frame(minHeight: AppLayout.settingsGroupHeaderHeight)
             }
-            .padding(.horizontal, SH.Space.xs)
-            }
-            SHGroupCard(radius: SHCardRowMetrics.settingsCardRadius, lazy: lazy) { content }
+            SHGroupCard(radius: SHCardRowMetrics.settingsCardRadius, lazy: lazy, lift: true, rule: Color.sh.lineStrong) { content }
             if let footnote {
                 SettingsNote(text: footnote).padding(.horizontal, SH.Space.xs)
             }
@@ -156,6 +159,7 @@ struct SettingsLink: Identifiable {
 struct SettingsRow<Control: View>: View {
     let title: String
     var subtitle: String?
+    var subtitleTone: SHRowTone = .normal
     var problem: String?
     var problemHelp: String?
     /// A status dot before the title.
@@ -166,7 +170,7 @@ struct SettingsRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        SHCardRow(title, description: subtitle, problem: problem, problemHelp: problemHelp, style: .settings,
+        SHCardRow(title, description: subtitle, descriptionTone: subtitleTone, problem: problem, problemHelp: problemHelp, style: .settings,
                   dot: dot, monoTitle: mono, indented: indented) { control }
             .accessibilityElement(children: .contain)
     }
@@ -293,8 +297,11 @@ struct SettingsValue: View {
 struct SettingsDrillRow<Extra: View>: View {
     let title: String
     var subtitle: String?
+    var subtitleTone: SHRowTone = .normal
     var value: String?
     var valueTone: SettingsValue.Tone = .plain
+    /// The value in mono (a model id).
+    var valueMono = false
     var dot: SHRowDot?
     var mono = false
     var indented = false
@@ -307,9 +314,9 @@ struct SettingsDrillRow<Extra: View>: View {
     var body: some View {
         // The row opens its page on a click anywhere but its own controls (a switch), so it is a
         // tap target with a button's accessibility, not a Button around a Button.
-        SHCardRow(title, description: subtitle, style: .settings, dot: dot, monoTitle: mono, indented: indented) {
+        SHCardRow(title, description: subtitle, descriptionTone: subtitleTone, style: .settings, dot: dot, monoTitle: mono, indented: indented) {
             HStack(spacing: SH.Space.m) {
-                if let value { SettingsValue(text: value, tone: valueTone) }
+                if let value { SettingsValue(text: value, tone: valueTone, mono: valueMono) }
                 extra
                 Image(systemName: "chevron.right")
                     .font(.sh(.caption))
@@ -327,35 +334,46 @@ struct SettingsDrillRow<Extra: View>: View {
 }
 
 extension SettingsDrillRow where Extra == EmptyView {
-    init(title: String, subtitle: String? = nil, value: String? = nil, dot: SHRowDot? = nil, mono: Bool = false,
+    init(title: String, subtitle: String? = nil, subtitleTone: SHRowTone = .normal, value: String? = nil, valueMono: Bool = false, dot: SHRowDot? = nil, mono: Bool = false,
          indented: Bool = false, accessibilityName: String? = nil, action: @escaping () -> Void) {
-        self.init(title: title, subtitle: subtitle, value: value, dot: dot, mono: mono, indented: indented,
+        self.init(title: title, subtitle: subtitle, subtitleTone: subtitleTone, value: value, valueMono: valueMono, dot: dot, mono: mono, indented: indented,
                   accessibilityName: accessibilityName, action: action, extra: { EmptyView() })
     }
 }
 
-/// A filter row inside a card: a segmented filter, a note, and an optional button.
+/// A filter row inside a card (the boards' `gs-filter`): an optional search field, filter tabs, then a note and a
+/// strong word of action at the right.
 struct SettingsFilterRow<Value: Hashable>: View {
     let label: String
     @Binding var selection: Value
     let options: [(Value, String)]
+    /// The filter field before the tabs; nil draws none.
+    var search: Binding<String>?
+    var searchPrompt = "Filter"
     var note: String?
     var buttonTitle: String?
     var button: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: SH.Space.m) {
-            SHSegmentedPicker(label, selection: $selection, options: options)
+        HStack(spacing: SH.Space.l) {
+            if let search {
+                SHSearchField(searchPrompt, text: search).frame(width: AppLayout.settingsFilterWidth)
+            }
+            SHFilterTabs(label, selection: $selection, options: options)
+            Spacer(minLength: 0)
             if let note {
                 Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             }
-            Spacer(minLength: 0)
             if let buttonTitle {
-                Button(buttonTitle, action: button).buttonStyle(.sh(.secondary, size: .s))
+                Button(action: button) {
+                    Text(buttonTitle).font(.shSans(SHSettingsControlMetrics.textSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
+                }
+                .buttonStyle(.plain)
+                .shFocusRing(radius: SHSettingsControlMetrics.radius)
             }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.s)
+        .padding(.horizontal, SHCardRowMetrics.settingsHorizontalPadding)
+        .padding(.vertical, SH.Space.m)
         .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
     }
 }
@@ -367,15 +385,15 @@ struct SettingsSearchRow: View {
     var note: String?
 
     var body: some View {
-        HStack(spacing: SH.Space.m) {
+        HStack(spacing: SH.Space.l) {
             SHSearchField(prompt, text: $text).frame(width: AppLayout.settingsFilterWidth)
             Spacer(minLength: 0)
             if let note {
-                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             }
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.s)
+        .padding(.horizontal, SHCardRowMetrics.settingsHorizontalPadding)
+        .padding(.vertical, SH.Space.m)
         .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
     }
 }
@@ -409,22 +427,23 @@ struct SettingsEditorCard<Actions: View, Content: View>: View {
 
     private var base: some View {
         VStack(spacing: 0) {
-            HStack(spacing: SH.Space.s) {
+            // The board's header: 40pt, 14pt in and between, the file's name in mono 12.5/500, "Edited" in lantern 8pt after it.
+            HStack(spacing: AppLayout.settingsEditorHeaderGap) {
                 Text(name)
-                    .font(.sh(.mono, weight: .medium))
+                    .font(.shMono(SHSettingsNavMetrics.subTextSize, .medium))
                     .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1).truncationMode(.middle)
                 if edited {
-                    Text("● edited").font(.sh(.caption)).foregroundStyle(Color.sh.lanternText).lineLimit(1).fixedSize()
+                    Text("Edited").font(.sh(.caption)).foregroundStyle(Color.sh.lanternText).lineLimit(1).fixedSize()
+                        .padding(.leading, -AppLayout.settingsEditorEditedPull)
                         .shTransition(.disclosure)
                 }
                 Spacer(minLength: SH.Space.m)
                 if let openIn { SettingsOpenIn(text: openIn, name: (name as NSString).lastPathComponent).id(name) }
                 actions
             }
-            .padding(.vertical, SH.Space.s)
-            .padding(.horizontal, SH.Space.l)
-            .frame(minHeight: SH.Height.scaled(SHCardRowMetrics.settingsMinHeight))
+            .padding(.horizontal, AppLayout.settingsEditorHeaderInset)
+            .frame(height: AppLayout.settingsEditorHeaderHeight)
             SHHairline()
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -446,7 +465,7 @@ struct SettingsSheetLabel: View {
 
     var body: some View {
         HStack(spacing: SH.Space.s) {
-            Text(title).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+            Text(title).font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.textSecondary)
             Spacer(minLength: 0)
             if let openIn { SettingsOpenIn(text: openIn, name: file).id(scope) }
         }

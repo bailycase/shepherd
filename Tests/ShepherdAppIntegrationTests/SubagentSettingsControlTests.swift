@@ -49,8 +49,8 @@ struct SubagentSettingsControlTests {
         #expect(try String(contentsOf: editorURL, encoding: .utf8) == files.open("reviewer-strict.md").text, "the native editor opens the verified file's real contents")
         #expect(model.loadProblem?.contains("Unsupported agent fields: runner") == true, "the form says why the profile does not load")
         try await setEditor(to: model.form.body + "\nMore review instructions.\n", under: window.host)
-        window.layout(); try window.press("Revert")
-        #expect(try !model.dirty && model.draft == files.open("reviewer-strict.md").text, "Revert puts the file's own text back")
+        window.layout(); try window.press("Cancel")
+        #expect(try !model.dirty && model.draft == files.open("reviewer-strict.md").text, "Cancel (the model's revert) puts the file's own text back")
         try await setEditor(to: model.form.body + "\nMore review instructions.\n", under: window.host)
         window.layout(); try window.press("Save")
         try await eventuallyOnMain("invalid save refused") { !model.busy && model.problem != nil }

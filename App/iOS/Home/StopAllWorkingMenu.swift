@@ -42,7 +42,7 @@ struct StopAllWorkingMenu: View {
             }
             .disabled(working.isEmpty)
         } label: {
-            Label("More", systemImage: "ellipsis")
+            DuoStripLabel("More", systemImage: "ellipsis")
         }
     }
 }

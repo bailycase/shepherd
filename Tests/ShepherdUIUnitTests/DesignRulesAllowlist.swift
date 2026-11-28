@@ -44,8 +44,6 @@ enum DesignRuleAllowlist {
         .init(.rawColor, "Sources/ShepherdApp/DesignSystemPageModel.swift", 1, "A design system that names no background draws on white, as its boards do: the design's content, not chrome."),
         .init(.rawColor, "Sources/ShepherdApp/ShepherdApp.swift", 2, "The Debug build's DEV badge, drawn into the Dock icon at runtime: not shipped UI."),
         // Status colors tinted by an alpha.
-        .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/AgentAuthParts.swift", 2, tint),
-        .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/SheetParts.swift", 2, tint),
         // Shared glyphs named as raw symbols.
         .init(.rawGlyphName, "App/iOS/Review/DiffScreen.swift", 1, resolved),
         .init(.rawGlyphName, "App/iOS/Search/AgentActionSheets.swift", 1, resolved),
@@ -87,19 +85,15 @@ enum DesignRuleAllowlist {
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/FilesTab.swift", 2, unanimated("the tree's hidden-files toggle and a folder's open state; the file tree model changes with no animation")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Forge/ForgePage.swift", 1, unanimated("whether the page is pinned; the page animates its notices, not the pin")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/MCP/AddMCPServerSheet.swift", 1, unanimated("whether a variable is secret; the sheet animates its check and advanced sections, not this")),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, unanimated("Pause and Resume; nothing in the page animates it")),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/RemoteDirectoryPicker.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SettingsExperiments.swift", 1, kind),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/SkillsSheets.swift", 1, unanimated("the typed source; the sheet animates the skill detail, not the field")),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/TerminalPanelViews.swift", 1, unanimated("the terminal panel's maximized state, which lands at once")),
-        .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/HookRows.swift", 1, "Follows a hook test's outcome; the file's one animation is the row's disclosure, which does not change it."),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/Thread/QueueStack.swift", 1, menu),
         .init(.symbolRenameUnderAnimation, "Sources/ShepherdApp/ThreadHeaderApps.swift", 1, menu),
         // Literal font sizes.
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/AgentParts.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/Inspector.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/SubagentTray.swift", 5, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/AutomationTable.swift", 7, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Browser/Browser.swift", 18, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ComposerParts.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ContextMeter.swift", 19, font),
@@ -130,7 +124,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/FileStrip.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/InlineComment.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/ReviewComposer.swift", 1, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/MCPSignInSheet.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Status/Feedback.swift", 6, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Status/StateIndicators.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Terminal/TerminalPanel.swift", 4, font),
@@ -142,7 +135,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/TurnChangesCard.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/TurnError.swift", 5, font),
         .init(.rawFontSize, "Sources/ShepherdApp/ChangesMenus.swift", 2, font),
-        .init(.rawFontSize, "Sources/ShepherdApp/Pages/AutomationsPage.swift", 1, font),
         .init(.rawFontSize, "Sources/ShepherdApp/Thread/SubagentInspector.swift", 9, font),
     ]
 }

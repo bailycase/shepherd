@@ -50,6 +50,9 @@ extension AppLayout {
     static let subagentEditPathPadding: CGFloat = 7
     /// Fields and popups: 32 high, radius 8, 13 type, 10 in. The description is 58 high from 8 below its top.
     static let subagentEditFieldHeight: CGFloat = 32
+    /// A profile's text fields: 200pt, and the description 320.
+    static let subagentEditFieldWidth: CGFloat = 200
+    static let subagentEditWideFieldWidth: CGFloat = 320
     static let subagentEditFieldRadius: CGFloat = 8
     static let subagentEditFieldSize: CGFloat = 13
     static let subagentEditFieldPadding: CGFloat = 10
@@ -59,10 +62,10 @@ extension AppLayout {
     static let subagentEditPopupGap: CGFloat = 12
     static let subagentEditPopupChevron: CGFloat = 11
     /// Tool chips: 26 high, radius 6, mono 12, 10 in, 6 apart.
-    static let subagentEditChipHeight: CGFloat = 26
+    static let subagentEditChipHeight: CGFloat = 24
     static let subagentEditChipRadius: CGFloat = 6
     static let subagentEditChipSize: CGFloat = 12
-    static let subagentEditChipPadding: CGFloat = 10
+    static let subagentEditChipPadding: CGFloat = 8
     static let subagentEditChipGap: CGFloat = 6
     /// Switches: 32 × 18, a 14pt knob 2 in, 10 before the label (12.5) and its note (11.5).
     static let subagentEditSwitchWidth: CGFloat = 32

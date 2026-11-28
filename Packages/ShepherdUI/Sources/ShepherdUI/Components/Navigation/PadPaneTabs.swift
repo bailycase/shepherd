@@ -70,9 +70,10 @@ public struct SHPadPaneHead<Options: View>: View {
                                 }
                             }
                         if selected {
-                            Text(tab.title).font(.shSans(SHPadPaneMetrics.tabFont, .medium)).lineLimit(1).fixedSize()
+                            // The head is a fixed bar: its label stops growing at xxxLarge (`Font.shBar`), as a navigation bar's title does.
+                            Text(tab.title).font(.shBarSans(SHPadPaneMetrics.tabFont, .medium)).lineLimit(1).fixedSize()
                             if let count = tab.count {
-                                Text("\(count)").font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
+                                Text("\(count)").font(.shBar(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
                                     .shContentTransition(.numeric())
                             }
                         }

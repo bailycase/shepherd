@@ -24,6 +24,64 @@ public struct SHInlineComment: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The boards' `.gch-nb`: a card at radius 10 on the `lift` shadow; a 18pt avatar, the author in 600, "line 103 · just now" in
+    /// `caption`, Edit and Delete as small words at the end; then the comment in 13 at 19.
+    @ViewBuilder private var macBody: some View {
+        let _ = SHRenderProbe.tick("review.comment")
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SHInlineComment.macRadius)
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            HStack(spacing: SH.Space.m - SH.Space.xxs) {
+                Text(initial)
+                    .font(.shSans(SHInlineComment.macAvatarFont, .semibold))
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: SHInlineComment.macAvatar, height: SHInlineComment.macAvatar)
+                    .background(sh.bgSelected, in: Circle())
+                    .accessibilityHidden(true)
+                Text(author).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
+                Text(meta).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                HStack(spacing: SH.Space.xxs) {
+                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.shBar).font(.sh(.caption)) }
+                    if let onDelete { Button("Delete", action: onDelete).buttonStyle(.shBar).font(.sh(.caption)) }
+                }
+                .accessibilityHidden(true)
+            }
+            Text(text)
+                .shText(.ui)
+                .foregroundStyle(sh.textPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.m)
+        .padding(.top, SH.Space.m)
+        .padding(.bottom, SH.Space.l - SH.Space.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shLift(shape)
+        .shBorder(sh.lineSubtle, radius: SHInlineComment.macRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(author), \(meta), \(text)")
+        .accessibilityActions {
+            if let onEdit { Button("Edit", action: onEdit) }
+            if let onDelete { Button("Delete", action: onDelete) }
+        }
+    }
+
+    static let macRadius: CGFloat = 10
+    static let macAvatar: CGFloat = 18
+    static let macAvatarFont: CGFloat = 10
+    #endif
+
+    @ViewBuilder private var touchBody: some View {
         let _ = SHRenderProbe.tick("review.comment")
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.s) {
@@ -104,6 +162,57 @@ public struct SHCommentEditor: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        touchBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The boards' `.gch-ed`: the comment's card with a `textTertiary` line and no ring; the field in 13, then "On line 103" and
+    /// Cancel and Add comment as plain words.
+    @ViewBuilder private var macBody: some View {
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SHInlineComment.macRadius)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(sh.textTertiary), axis: .vertical)
+                .lineLimit(1...8)
+                .textFieldStyle(.plain)
+                .shText(.ui)
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
+                .focused(isFocused)
+                .frame(minHeight: SHCommentEditor.macFieldMinHeight, alignment: .topLeading)
+                .onKeyPress(.return, phases: .down) { press in
+                    if let result = SHReturnKey.lineBreak(for: press) { return result }
+                    onSave()
+                    return .handled
+                }
+                .onKeyPress(.escape) { onCancel(); return .handled }
+            HStack(spacing: SH.Space.xs) {
+                if let context {
+                    Text(context).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button("Cancel", action: onCancel).buttonStyle(.shBar).foregroundStyle(sh.textSecondary)
+                Button(action: onSave) { Text("Add comment").fontWeight(.semibold) }.buttonStyle(.shBar)
+            }
+        }
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.m)
+        .padding(.top, SH.Space.m)
+        .padding(.bottom, SH.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shLift(shape)
+        .shBorder(sh.textTertiary, radius: SHInlineComment.macRadius)
+        .onAppear { isFocused.wrappedValue = true }
+    }
+
+    static let macFieldMinHeight: CGFloat = 38
+    #endif
+
+    @ViewBuilder private var touchBody: some View {
         let sh = Color.sh
         VStack(alignment: .leading, spacing: SH.Space.m) {
             TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(sh.textTertiary), axis: .vertical)

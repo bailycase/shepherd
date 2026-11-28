@@ -97,7 +97,7 @@ struct SearchPalette: View {
     }
 }
 
-/// The board's card: 820 by 560, which the system narrows to fit a smaller window.
+/// The board's card: 880 by 560, which the system narrows to fit a smaller window.
 private struct PaletteSizing: PresentationSizing {
     func proposedSize(for root: PresentationSizingRoot, context: PresentationSizingContext) -> ProposedViewSize {
         ProposedViewSize(width: MobileLayout.paletteWidth, height: MobileLayout.paletteHeight)

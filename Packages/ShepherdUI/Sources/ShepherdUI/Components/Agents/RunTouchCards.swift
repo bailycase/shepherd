@@ -19,6 +19,13 @@ public enum SHRunTouchMetrics {
     public static let ring: CGFloat = 3
     /// The tabs between sibling runs.
     public static let tabHeight: CGFloat = 32
+    /// A run card's padding (MobileSubagents' `.gt-card.pad`: 14 by 16) and its context bar's height.
+    public static let cardVertical: CGFloat = 14
+    public static let barHeight: CGFloat = 4
+    /// The card's small words (the boards' 13).
+    public static let captionSize: CGFloat = 13
+    /// A run's name (the boards' 14).
+    public static let nameSize: CGFloat = 14
 }
 
 /// Everything a run card shows, as values.
@@ -150,7 +157,7 @@ public struct SHRunCard: View, Equatable {
 
     public var body: some View {
         let sh = Color.sh
-        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.xxl)
         VStack(alignment: .leading, spacing: SH.Space.m) {
             if let open {
                 Button(action: open) { summary }
@@ -171,13 +178,14 @@ public struct SHRunCard: View, Equatable {
                     .accessibilityLabel("Re-run \(run.name)")
             }
         }
-        .padding(SH.Space.l)
+        .padding(.vertical, SHRunTouchMetrics.cardVertical)
+        .padding(.horizontal, SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(sh.bgRaised, in: shape)
-        .shBorder(isSelected ? sh.running : sh.lineSubtle, radius: SH.Radius.l)
+        .shBorder(isSelected ? sh.running : sh.lineSubtle, radius: SH.Radius.xxl)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: SH.Radius.l + SHRunTouchMetrics.ring).fill(sh.runningTint)
+                RoundedRectangle(cornerRadius: SH.Radius.xxl + SHRunTouchMetrics.ring).fill(sh.runningTint)
                     .padding(-SHRunTouchMetrics.ring)
             }
         }
@@ -212,22 +220,19 @@ public struct SHRunCard: View, Equatable {
         return VStack(alignment: .leading, spacing: SH.Space.m) {
             // At accessibility sizes the header stacks: the name keeps its line, the tags and
             // the pill take the next.
+            // The board's head: the name, its tags, then the state in words at the end, with no glyph or pill.
             if dynamicType.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: SH.Space.s) {
-                    HStack(spacing: SH.Space.m) {
-                        SHBranchGlyph(run.state, size: SHRunTouchMetrics.glyph)
-                        name
-                    }
-                    pillView
+                    name
+                    statusView
                     if let tags = run.tags { tagsText(tags).lineLimit(2) }
                 }
             } else {
-                HStack(spacing: SH.Space.m) {
-                    SHBranchGlyph(run.state, size: SHRunTouchMetrics.glyph)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
                     name.layoutPriority(2)
                     if let tags = run.tags { tagsText(tags).lineLimit(1).layoutPriority(0) }
                     Spacer(minLength: SH.Space.s)
-                    pillView.layoutPriority(3)
+                    statusView.layoutPriority(3)
                 }
             }
             switch run.state {
@@ -235,31 +240,29 @@ public struct SHRunCard: View, Equatable {
                 if dynamicType.isAccessibilitySize, run.step != nil || run.progress != nil || run.tokens != nil {
                     VStack(alignment: .leading, spacing: SH.Space.s) {
                         HStack(spacing: SH.Space.m) {
-                            if let step = run.step { Text(step) }
+                            if let step = run.step { Text(Self.sentence(step)) }
                             Spacer(minLength: SH.Space.s)
                             if let tokens = run.tokens { Text(tokens) }
                         }
                         if let progress = run.progress {
-                            ProgressView(value: progress).progressViewStyle(.shBar)
-                                .accessibilityLabel(run.progressLabel ?? "Progress")
+                            SHRunBar(progress).accessibilityLabel(run.progressLabel ?? "Progress")
                         }
                     }
-                    .font(.sh(.mono))
-                    .foregroundStyle(sh.textTertiary)
+                    .font(.shSans(SHRunTouchMetrics.captionSize))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                 } else if run.step != nil || run.progress != nil || run.tokens != nil {
                     HStack(spacing: SH.Space.m) {
-                        if let step = run.step { Text(step) }
+                        if let step = run.step { Text(Self.sentence(step)) }
                         if let progress = run.progress {
-                            ProgressView(value: progress).progressViewStyle(.shBar)
-                                .accessibilityLabel(run.progressLabel ?? "Progress")
+                            SHRunBar(progress).accessibilityLabel(run.progressLabel ?? "Progress")
                         } else {
                             Spacer(minLength: 0)
                         }
-                        if let tokens = run.tokens { Text(tokens) }
+                        if let tokens = run.tokens { Text(tokens).foregroundStyle(sh.textTertiary) }
                     }
-                    .font(.sh(.mono))
-                    .foregroundStyle(sh.textTertiary)
+                    .font(.shSans(SHRunTouchMetrics.captionSize))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                 }
                 detailLine
@@ -279,21 +282,64 @@ public struct SHRunCard: View, Equatable {
     }
 
     private var name: some View {
-        Text(run.name).font(.shMono(SHTextStyle.ui.size, .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+        Text(run.name).font(.shMono(SHRunTouchMetrics.nameSize, .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
     }
 
     private func tagsText(_ tags: String) -> Text {
-        Text(tags).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+        Text(tags).font(.shSans(SHRunTouchMetrics.captionSize)).foregroundStyle(Color.sh.textTertiary)
     }
 
-    private var pillView: some View {
+    /// "step 1 of 3" begins a sentence.
+    private static func sentence(_ text: String) -> String { text.prefix(1).uppercased() + text.dropFirst() }
+
+    /// "Running, 37m", "Waiting on parent · 2m", "Done, 4m 02s": the state's word and its time, in the state's tone (MobileSubagents).
+    private var statusView: some View {
         let pill = pill
-        return SHRunPill(run.state, label: pill.label, since: pill.since, until: pill.until)
+        let label = pill.label ?? run.state.label
+        let waiting = run.state == .attention || run.state == .queued
+        let tone: Color = switch run.state {
+        case .attention: Color.sh.lanternText
+        case .done: Color.sh.textTertiary
+        case .failed: Color.sh.failed
+        default: Color.sh.textSecondary
+        }
+        return HStack(spacing: 0) {
+            Text(label)
+            if let since = pill.since {
+                Text(waiting ? " · " : ", ")
+                SHElapsedText(since: since, until: pill.until, style: pill.until == nil ? .short : .long)
+            }
+        }
+        .font(.shSans(SHRunTouchMetrics.captionSize, run.state == .attention ? .medium : .regular))
+        .foregroundStyle(tone)
+        .lineLimit(1)
+        .monospacedDigit()
+        .fixedSize()
+        .accessibilityHidden(true)
     }
 
     private var detailLine: some View {
-        Text(run.detail).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
+        Text(run.detail).font(.shMono(SHRunTouchMetrics.captionSize)).foregroundStyle(Color.sh.textSecondary)
             .lineLimit(dynamicType.isAccessibilitySize ? 3 : 1).truncationMode(.middle)
+    }
+}
+
+/// The card's context bar (the boards' `.gt-bar`): 4pt, a quiet track under a `textSecondary` fill.
+struct SHRunBar: View {
+    let progress: Double
+
+    init(_ progress: Double) { self.progress = progress }
+
+    var body: some View {
+        let sh = Color.sh
+        Capsule().fill(sh.bgSelected)
+            .frame(height: SHRunTouchMetrics.barHeight)
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Capsule().fill(sh.textSecondary).frame(width: proxy.size.width * min(max(progress, 0), 1))
+                }
+            }
+            .frame(maxWidth: .infinity)
     }
 }
 

@@ -18,6 +18,8 @@ public struct SHButtonStyle: ButtonStyle {
         case danger
         /// Failed fill: a confirmed destructive action (Delete).
         case dangerFill
+        /// A row's main word (Settings): 600 text with no box; outside Settings it is a secondary button.
+        case bold
         /// Text-colored fill on the window's color: a page header's state action beside its
         /// secondary buttons (PRReview's Merge, IssueReview's Start a thread).
         case strong
@@ -60,7 +62,7 @@ private struct SHStyledButton: View {
 
     var body: some View {
         let sh = Color.sh
-        let settings = scale == .settings
+        let settings = scale.isSettings
         let M = SHSettingsControlMetrics.self
         // A Settings page draws every size as its one button: 26pt at radius `s`, `caption`.
         #if os(iOS)
@@ -77,14 +79,48 @@ private struct SHStyledButton: View {
         case .l: (SH.Height.controlL, 14, 13)
         }
         #endif
-        let (height, padding, fontSize) = settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
+        // A Settings sheet's one action is an ink pill: 28pt, radius 14, 12.5.
+        let pill = settings && kind == .primary
+        let (height, padding, fontSize) = pill ? (M.pillHeight, M.pillPadding, M.segmentTextSize)
+            : settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
         #if os(iOS)
         let radius = settings ? M.radius : height / 2
         #else
-        let radius = settings ? M.radius : SH.Radius.s
+        let radius = pill ? M.pillRadius : settings ? M.radius : SH.Radius.s
         #endif
         let filled = kind == .primary || kind == .dangerFill || kind == .strong
         let shape = RoundedRectangle(cornerRadius: radius)
+        #if os(macOS)
+        if settings && !filled {
+            // The Settings boards write a row's action as plain words (500, 400 for a quiet one) with no box;
+            // the hit area overhangs them so a 26pt target keeps the words flush with the row's padding.
+            let overhang = M.buttonOverhang
+            configuration.label
+                .font(.shSans(M.textSize, kind == .ghost ? .regular : kind == .bold ? .semibold : .medium))
+                .labelStyle(SHButtonLabelStyle())
+                .lineLimit(1)
+                .foregroundStyle(foreground(sh))
+                .padding(.horizontal, overhang)
+                .frame(minHeight: height)
+                .background(active ? sh.bgHover : Color.clear, in: shape)
+                .contentShape(shape)
+                .padding(.horizontal, -overhang)
+                .offset(y: configuration.isPressed ? 0.5 : 0)
+                .shEnabledOpacity(enabled)
+                .onHover { hovering = $0 }
+                .shAnimation(.hover, value: hovering)
+                .shFocusRing(radius: radius)
+                .shTouchTarget(height: height)
+        } else {
+            styled(configuration, sh: sh, height: height, padding: padding, fontSize: fontSize, radius: radius, filled: filled, shape: shape)
+        }
+        #else
+        styled(configuration, sh: sh, height: height, padding: padding, fontSize: fontSize, radius: radius, filled: filled, shape: shape)
+        #endif
+    }
+
+    private func styled(_ configuration: ButtonStyleConfiguration, sh: SHPalette, height: CGFloat, padding: CGFloat, fontSize: CGFloat,
+                        radius: CGFloat, filled: Bool, shape: RoundedRectangle) -> some View {
         configuration.label
             .font(.shSans(fontSize, filled ? .semibold : .medium))
             .labelStyle(SHButtonLabelStyle())
@@ -108,16 +144,16 @@ private struct SHStyledButton: View {
     /// The Mac's secondary buttons carry a line; the phone boards' pills are a plain `bgSelected` fill.
     private var bordered: Bool {
         #if os(iOS)
-        kind == .raised || kind == .danger || (kind == .secondary && scale == .settings)
+        kind == .raised || kind == .danger || (kind == .secondary && scale.isSettings)
         #else
-        kind == .secondary || kind == .raised || kind == .danger
+        kind == .secondary || kind == .raised || kind == .danger || kind == .bold
         #endif
     }
 
     private func foreground(_ sh: SHPalette) -> Color {
         switch kind {
         case .primary: sh.textOnPrimary
-        case .secondary, .raised: tint ?? sh.textPrimary
+        case .secondary, .raised, .bold: tint ?? sh.textPrimary
         case .ghost: tint ?? (hovering && enabled && !configuration.isPressed ? sh.textPrimary : sh.textSecondary)
         case .danger: sh.failed
         case .dangerFill: sh.textOnFailed
@@ -136,12 +172,12 @@ private struct SHStyledButton: View {
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.failedPressed : sh.failed)
         case .strong:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.textSecondary : sh.textPrimary)
-        case .secondary:
+        case .secondary, .bold:
             // The Settings buttons are unfilled.
             #if os(iOS)
-            return AnyShapeStyle(scale == .settings && !active ? Color.clear : sh.bgSelected)
+            return AnyShapeStyle(scale.isSettings && !active ? Color.clear : sh.bgSelected)
             #else
-            return AnyShapeStyle(active ? sh.bgSelected : scale == .settings ? Color.clear : sh.bgRaised)
+            return AnyShapeStyle(active ? sh.bgSelected : scale.isSettings ? Color.clear : sh.bgRaised)
             #endif
         case .raised:
             return AnyShapeStyle(active ? sh.bgSelected : sh.bgRaised)
@@ -149,7 +185,7 @@ private struct SHStyledButton: View {
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.bgHover : Color.clear)
         case .danger:
             return AnyShapeStyle(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.failedTint
-                : scale == .settings ? Color.clear : sh.bgRaised)
+                : scale.isSettings ? Color.clear : sh.bgRaised)
         }
     }
 }

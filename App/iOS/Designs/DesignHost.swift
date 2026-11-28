@@ -62,6 +62,8 @@ final class DesignRendering {
     private var images: [String: UIImage] = [:]
     private var imageOrder: [String] = []
     private var busy = false
+    private var idle: DesignBoardView?
+    private var idleTimer: Task<Void, Never>?
     private var waiting: [CheckedContinuation<Void, Never>] = []
     private lazy var stage = RenderStage()
 
@@ -88,6 +90,7 @@ final class DesignRendering {
 
     func forget(host: UUID) {
         forgottenHosts.insert(host)
+        dismissIdle()
         surfaces = surfaces.filter { $0.key.host != host }
         images = images.filter { !$0.key.hasPrefix(host.uuidString + "/") }
         imageOrder.removeAll { $0.hasPrefix(host.uuidString + "/") }
@@ -97,6 +100,7 @@ final class DesignRendering {
     /// Forgets the sandboxes and images of designs no host lists any more.
     func prune(keeping live: Set<HostDesignRef>) {
         for ref in surfaces.keys where !live.contains(ref) { surfaces[ref] = nil }
+        if let view = idle, !surfaces.values.contains(where: { $0 === view.surface }) { dismissIdle() }
     }
 
     fileprivate func opened() { liveViews += 1 }
@@ -130,9 +134,11 @@ final class DesignRendering {
             #if DEBUG
             if let drawForTesting = self.drawForTesting { return await drawForTesting(ref, path, sha256) }
             #endif
-            let view = self.makeView(ref, source: source, path: path, size: size)
-            defer { self.release(view) }
+            let view = self.takeView(ref, source: source, path: path, size: size)
+            var drew = false
+            defer { drew ? self.park(view) : self.release(view) }
             guard (try? await Self.load(view)) != nil, let image = try? await view.snapshot(width: min(width, size.width)) else { return nil }
+            drew = true
             // Kept only if the files it read are the ones its key names (a design that changed meanwhile draws again).
             if let picture, source.index?.snapshot.revision == synced { DesignPictures.save(image, as: picture) }
             return UIImage(cgImage: image, scale: max(1, image.width > 0 ? CGFloat(image.width) / min(width, size.width) : 1),
@@ -148,6 +154,7 @@ final class DesignRendering {
                 format: DesignExportFormat) async throws -> URL {
         let size = CGSize(width: board.w, height: board.h)
         let data: Data = try await exclusivelyThrowing {
+            self.dismissIdle()
             let view = self.makeView(ref, source: source, path: path, size: size)
             defer { self.release(view) }
             try await Self.load(view)
@@ -178,6 +185,37 @@ final class DesignRendering {
     private func release(_ view: DesignBoardView) {
         view.removeFromSuperview()
         closed()
+    }
+
+    /// The web view the last render left, if it is of this design (it draws the next board without a new web view
+    /// to boot: about ten times as fast), else a new one.
+    private func takeView(_ ref: HostDesignRef, source: RemoteDesignSource, path: DesignPath, size: CGSize) -> DesignBoardView {
+        let surface = surface(ref, source: source)
+        if let view = idle, view.surface === surface {
+            idle = nil
+            view.retarget(to: path, size: size)
+            return view
+        }
+        dismissIdle()
+        return makeView(ref, source: source, path: path, size: size)
+    }
+
+    /// Keeps a web view that drew for the next board; a moment after the last it is let go.
+    private func park(_ view: DesignBoardView) {
+        if let old = idle, old !== view { release(old) }
+        idle = view
+        idleTimer?.cancel()
+        idleTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self, !self.busy else { return }
+            self.dismissIdle()
+        }
+    }
+
+    private func dismissIdle() {
+        idleTimer?.cancel()
+        idleTimer = nil
+        if let view = idle { idle = nil; release(view) }
     }
 
     /// Loads a board, giving up after a while: a board that never draws leaves its tile blank.

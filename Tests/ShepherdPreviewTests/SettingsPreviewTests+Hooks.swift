@@ -19,17 +19,17 @@ extension SettingsPreviewTests {
         defer { workspace.stop() }
         try await hooks.load()
         workspace.vm.settingsSection = .hooks
-        try await Preview.render("settings-hooks", size: CGSize(width: 1440, height: 1100)) { SettingsView(vm: workspace.vm) }
+        try await Preview.render("settings-hooks-yours", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: workspace.vm) }
         hooks.model.filter = "PreToolUse"
-        try await Preview.render("settings-hooks-filtered", size: CGSize(width: 1440, height: 700)) { SettingsView(vm: workspace.vm) }
+        try await Preview.render("settings-hooks-filtered", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: workspace.vm) }
         hooks.model.filter = nil
         hooks.model.tab = .sources
-        try await Preview.render("settings-hooks-sources", size: CGSize(width: 1440, height: 1000)) { SettingsView(vm: workspace.vm) }
+        try await Preview.render("settings-hooks-sources", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: workspace.vm) }
         // A reader switched off: its files say so and dim.
         hooks.model.setReader(.claude, false)
         let model = hooks.model
         try await eventuallyOnMain("the Claude Code reader to be off") { !model.readers.claude && !model.loading }
-        try await Preview.render("settings-hooks-sources-reader-off", size: CGSize(width: 1440, height: 1000)) { SettingsView(vm: workspace.vm) }
+        try await Preview.render("settings-hooks-sources-reader-off", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: workspace.vm) }
     }
 
     @Test func settingsHooksEmpty() async throws {
@@ -39,7 +39,7 @@ extension SettingsPreviewTests {
         defer { workspace.stop() }
         try await hooks.load()
         workspace.vm.settingsSection = .hooks
-        try await Preview.render("settings-hooks-empty", size: CGSize(width: 1440, height: 600)) { SettingsView(vm: workspace.vm) }
+        try await Preview.render("settings-hooks-empty", size: CGSize(width: AppLayout.settingsModalWidth, height: AppLayout.settingsModalHeight)) { SettingsView(vm: workspace.vm) }
     }
 
     @Test func settingsHooksEdit() async throws {
@@ -53,18 +53,18 @@ extension SettingsPreviewTests {
         editor.test(with: hooks.model)
         try await eventuallyOnMain("the test to finish", timeout: .seconds(20)) { editor.testResult != nil }
         #expect(editor.testResult?.outcome == .blocked(reason: "No edits to .env files."))
-        try await Preview.render("settings-hooks-edit-form", size: CGSize(width: 640, height: 840)) {
+        try await Preview.render("settings-hooks-edit-form", size: CGSize(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)) {
             HookEditSheet(editor: editor, model: hooks.model) {}
         }
         editor.pane = .json
-        try await Preview.render("settings-hooks-edit-json", size: CGSize(width: 640, height: 840)) {
+        try await Preview.render("settings-hooks-edit-json", size: CGSize(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)) {
             HookEditSheet(editor: editor, model: hooks.model) {}
         }
         // Add, with a matcher that isn't an expression.
         hooks.model.add()
         let adding = try #require(hooks.model.editor)
         adding.matcher = "Edit|("
-        try await Preview.render("settings-hooks-add-invalid", size: CGSize(width: 640, height: 840)) {
+        try await Preview.render("settings-hooks-add-invalid", size: CGSize(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)) {
             HookEditSheet(editor: adding, model: hooks.model) {}
         }
     }

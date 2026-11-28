@@ -76,6 +76,17 @@ struct DialogSheet<Content: View>: View {
     }
 
     var body: some View {
+        if Content.self == EmptyView.self {
+            // A confirmation with nothing but words is the boards' sheet (SpacesRemove): the pill foot, "Don't ask again" at its left.
+            SpaceSheet(title: title, caption: subtitle.map { AnyView(SpaceSheetCaption(text: $0)) }, width: width, note: status,
+                       footLeading: dontAskAgain == nil ? nil : AnyView(
+                           Toggle("Don't ask again", isOn: $remember).toggleStyle(.shCheckbox).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                               .help(DontAskAgainToggle(isOn: .constant(false)).caption))) {
+                EmptyView()
+            } actions: {
+                ForEach(actions) { sheetButton(for: $0) }
+            }
+        } else {
         SHDialog(title, message: subtitle, width: width) {
             content()
             if dontAskAgain != nil { DontAskAgainToggle(isOn: $remember).dialogInset() }
@@ -83,6 +94,22 @@ struct DialogSheet<Content: View>: View {
             if let status { SHDialogStatus(status) }
         } actions: {
             ForEach(actions) { button(for: $0) }
+        }
+        }
+    }
+
+    @ViewBuilder
+    private func sheetButton(for action: DialogAction) -> some View {
+        let button = Button(action.label) {
+            if action.kind != .cancel, remember, let dontAskAgain { (settings ?? .shared).skip(dontAskAgain, with: action.label) }
+            action.action()
+        }
+        .disabled(!action.isEnabled).help(action.help ?? "")
+        switch action.kind {
+        case .cancel: button.buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+        case .normal: button.buttonStyle(SpaceBarStyle(kind: .strong))
+        case .prominent: button.buttonStyle(SpaceBarStyle(kind: .primary)).keyboardShortcut(.defaultAction)
+        case .destructive: button.buttonStyle(SpaceBarStyle(kind: .danger))
         }
     }
 

@@ -20,14 +20,15 @@ struct FleetPairSheet: View {
     @State private var picked: String?
     @State private var code: String
 
-    init(model: FleetSettingsModel, candidate: FoundMac? = nil, code: String = "", showsOtherWays: Bool = false, onAdded: @escaping () -> Void = {},
-         dismiss: @escaping () -> Void) {
+    init(model: FleetSettingsModel, candidate: FoundMac? = nil, code: String = "", picked: String? = nil, showsOtherWays: Bool = false,
+         onAdded: @escaping () -> Void = {}, dismiss: @escaping () -> Void) {
         self.model = model
         self.candidate = candidate
         self.showsOtherWays = showsOtherWays
         self.onAdded = onAdded
         self.dismiss = dismiss
         _code = State(initialValue: code)
+        _picked = State(initialValue: picked)
     }
 
     /// The Mac a link or an SSH find named, else the one picked from the Macs found.
@@ -43,31 +44,26 @@ struct FleetPairSheet: View {
     private var offersOtherWays: Bool { showsOtherWays || (model.found.isEmpty && candidate == nil) || target != nil || !model.linkText.isEmpty || !model.sshTarget.isEmpty }
 
     var body: some View {
-        SHDialog("Add a Mac to your fleet",
-                 message: "Open Shepherd on the other Mac and choose Join a fleet.",
-                 width: AppLayout.fleetPairWidth) {
-            VStack(alignment: .leading, spacing: 0) {
-                section("1 · Find the Mac", first: true) {
-                    macs
-                    if offersOtherWays {
-                        linkWay
-                        sshWay
-                    }
-                }
-                SHHairline()
-                section("2 · Enter the code it shows") {
-                    FleetCodeField(code: $code)
-                        .disabled(model.pairing == .working)
-                }
-                SHHairline()
-                section("What \(target?.name ?? mac?.name ?? "it") gets") { gets }
-                SHHairline()
+        SHSettingsSheet("Add a Mac to your fleet", subtitle: "Open Shepherd on the other Mac and choose Join a fleet.",
+                        width: AppLayout.fleetPairWidth) {
+            SHSheetHeading("Find the Mac")
+            macs
+            if offersOtherWays {
+                linkWay
+                sshWay
             }
+            SHSheetRule()
+            SHSheetHeading("Enter the code it shows")
+            FleetCodeField(code: $code)
+                .disabled(model.pairing == .working)
+            SHSheetRule()
+            SHSheetHeading("What \(target?.name ?? mac?.name ?? "it") gets")
+            gets
         } status: {
             switch model.pairing {
-            case .failed(let message): SHDialogStatus(message, isError: true)
-            case .working: SHDialogStatus(mac == nil && target == nil ? "Looking for the Mac…" : "Adding \(theirName)…")
-            case .idle: SHDialogStatus("The code proves it's your Mac, whichever way you found it.")
+            case .failed(let message): SHSheetStatus(message, tone: .failed)
+            case .working: SHSheetStatus(mac == nil && target == nil ? "Looking for the Mac…" : "Adding \(theirName)…", tone: .now)
+            case .idle: SHSheetStatus("The code proves it’s your Mac, whichever way you found it.")
             }
         } actions: {
             Button("Cancel") { dismiss() }
@@ -105,23 +101,16 @@ struct FleetPairSheet: View {
         model.readLink(text)
     }
 
-    private func section<Content: View>(_ title: String, first: Bool = false, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.m) {
-            Text(title).shSectionLabel()
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: first ? 0 : SH.Space.l, leading: SHDialogMetrics.inset, bottom: SH.Space.l, trailing: SHDialogMetrics.inset))
-    }
-
     @ViewBuilder private var macs: some View {
         if let candidate {
             FleetFoundRow(mac: candidate, selected: mac?.id == candidate.id) {}
         } else if model.found.isEmpty {
             FleetNothingNearby(findsByCode: model.findsByCode)
         } else {
-            ForEach(model.found) { found in
-                FleetFoundRow(mac: found, selected: mac?.id == found.id) { picked = found.id }
+            VStack(spacing: SHSettingsSheetMetrics.pickRowGap) {
+                ForEach(model.found) { found in
+                    FleetFoundRow(mac: found, selected: mac?.id == found.id) { picked = found.id }
+                }
             }
         }
     }
@@ -129,20 +118,22 @@ struct FleetPairSheet: View {
     /// Open a pairing link: the field and Paste. A link the other Mac shared fills in where it is and its code.
     private var linkWay: some View {
         let link = Binding(get: { model.linkText }, set: { model.readLink($0) })
-        return FleetWayBox(glyph: Image(systemName: "link"), title: "Open a pairing link",
-                           detail: "The other Mac's Join screen can send one by AirDrop or Messages. Opening it fills in where to find it and its code.",
+        return FleetWayBox(title: "Open a pairing link",
+                           detail: "The other Mac’s Join screen can send one by AirDrop or Messages. Opening it fills in where to find it and its code.",
                            on: model.link != nil) {
-            HStack(spacing: SH.Space.s) {
-                TextField("shepherd://fleet/join?…", text: link)
-                    .textFieldStyle(.sh(mono: true, error: model.linkProblem != nil))
-                    .disabled(model.pairing == .working)
-                    .accessibilityLabel("Pairing link")
+            HStack(spacing: SHSettingsSheetMetrics.rowGap) {
+                SHSheetField(failed: model.linkProblem != nil) {
+                    TextField("", text: link, prompt: Text("shepherd://fleet/join?…").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain)
+                        .font(.shMono(SHSettingsSheetMetrics.monoSize))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .disabled(model.pairing == .working)
+                        .accessibilityLabel("Pairing link")
+                }
                 Button("Paste") { if let text = NSPasteboard.general.string(forType: .string) { model.readLink(text) } }
                     .buttonStyle(.sh(.secondary))
             }
-            if let problem = model.linkProblem {
-                Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed).fixedSize(horizontal: false, vertical: true)
-            }
+            if let problem = model.linkProblem { SHSheetFieldNote(problem, tone: .failed) }
         }
     }
 
@@ -153,15 +144,20 @@ struct FleetPairSheet: View {
 
     /// Connect over SSH: `user@host`, and Find. Finds only; the code still pairs.
     private var sshWay: some View {
-        FleetWayBox(glyph: SHGlyph.Settings.terminal.image, title: "Connect over SSH",
+        FleetWayBox(title: "Connect over SSH",
                     detail: "For a Mac you already reach with ssh. Shepherd asks it where it listens, then you enter its code.",
                     on: sshFound) {
-            HStack(spacing: SH.Space.s) {
-                TextField("user@host", text: Binding(get: { model.sshTarget }, set: { model.sshTarget = $0 }))
-                    .textFieldStyle(.sh(mono: true))
-                    .autocorrectionDisabled()
-                    .onSubmit { Task { await model.findOverSSH() } }
-                    .accessibilityLabel("ssh address")
+            HStack(spacing: SHSettingsSheetMetrics.rowGap) {
+                SHSheetField {
+                    TextField("", text: Binding(get: { model.sshTarget }, set: { model.sshTarget = $0 }),
+                              prompt: Text("user@host").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain)
+                        .font(.shMono(SHSettingsSheetMetrics.monoSize))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .autocorrectionDisabled()
+                        .onSubmit { Task { await model.findOverSSH() } }
+                        .accessibilityLabel("ssh address")
+                }
                 Button("Find") { Task { await model.findOverSSH() } }
                     .buttonStyle(.sh(.secondary))
                     .disabled(!model.canFindOverSSH)
@@ -169,43 +165,23 @@ struct FleetPairSheet: View {
             switch model.ssh {
             case .idle: EmptyView()
             case .finding:
-                Text("Asking over ssh…").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                SHSheetFieldNote("Asking over ssh…", tone: .now)
             case .found(let found):
-                HStack(spacing: SH.Space.s) {
-                    Image(systemName: "checkmark").font(.shSans(AppLayout.fleetResultTick, .semibold)).accessibilityHidden(true)
-                    Text("Found " + ([found.name, found.address] + [found.version].compactMap { $0 }).joined(separator: " · "))
-                }
-                .font(.sh(.caption))
-                .foregroundStyle(Color.sh.done)
+                Text("Found " + ([found.name, found.address] + [found.version].compactMap { $0 }).joined(separator: " · "))
+                    .font(.shSans(SHSettingsSheetMetrics.smallSize, .medium))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .padding(.top, SH.Space.s)
             case .failed(let message):
-                Text(message).font(.sh(.caption)).foregroundStyle(Color.sh.failed).fixedSize(horizontal: false, vertical: true)
+                SHSheetFieldNote(message, tone: .failed)
             }
         }
     }
 
+    /// What the new Mac gets, and what it doesn't: three plain lines.
     private var gets: some View {
-        let sh = Color.sh
-        return Grid(alignment: .topLeading, horizontalSpacing: SH.Space.m, verticalSpacing: SH.Space.s) {
-            row(true, "The fleet's settings, instructions, skills, extensions, MCP servers and model sign-ins")
-            row(true, "Threads from any Mac, and work the fleet sends it")
-            row(false, "Not your checkouts. Each Mac keeps its own repos, and work runs in a new worktree there.")
-        }
-        .font(.sh(.ui))
-        .foregroundStyle(sh.textSecondary)
-    }
-
-    private func row(_ yes: Bool, _ text: String) -> some View {
-        GridRow(alignment: .firstTextBaseline) {
-            Group {
-                if yes { Image(systemName: "checkmark").foregroundStyle(Color.sh.done) }
-                else { Image(systemName: "xmark").foregroundStyle(Color.sh.textTertiary) }
-            }
-                .font(.shSans(AppLayout.fleetGetsGlyphSize, .semibold))
-                .frame(width: AppLayout.fleetGetsColumn)
-                .accessibilityHidden(true)
-            Text(text).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .accessibilityElement(children: .combine)
+        SHSheetLines(["The fleet’s settings, instructions, skills, extensions, MCP servers and model sign-ins",
+                      "Threads from any Mac, and work the fleet sends it",
+                      "Not your checkouts. Each Mac keeps its own repos, and work runs in a new worktree there."])
     }
 }
 
@@ -214,58 +190,30 @@ struct FleetNothingNearby: View {
     var findsByCode = false
 
     var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SH.Space.m) {
-            SHGlyph.Settings.search.image
-                .foregroundStyle(sh.textTertiary)
-                .frame(width: AppLayout.fleetFoundGlyphSize)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text("No Macs found nearby").font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary)
-                Text("Still looking on this network. If the other Mac is on another network, VPN or VLAN, use one of these."
-                     + (findsByCode ? " Or enter its code and Shepherd looks through your iCloud." : ""))
-                    .font(.sh(.caption))
-                    .foregroundStyle(sh.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            Text("No Macs found nearby").font(.shSans(SHSettingsSheetMetrics.textSize, .medium)).foregroundStyle(Color.sh.textPrimary)
+            SHSheetParagraph(Text("Still looking on this network. If the other Mac is on another network, VPN or VLAN, use one of these."
+                                  + (findsByCode ? " Or enter its code and Shepherd looks through your iCloud." : "")), style: .small)
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(sh.lineStrong, style: StrokeStyle(lineWidth: 1, dash: AppLayout.fleetFromDash)) }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// One way to find a Mac that Bonjour can't (a pairing link, SSH): a glyph, its name and what it does, and its controls. Outlined in
-/// `running` while it is the one in use.
+/// One way to find a Mac that Bonjour can't (a pairing link, SSH): its name over what it does, and its controls, on a quiet tile
+/// while it is the one in use.
 struct FleetWayBox<Content: View>: View {
-    let glyph: Image
     let title: String
     let detail: String
     let on: Bool
     @ViewBuilder var content: Content
 
     var body: some View {
-        let sh = Color.sh
-        HStack(alignment: .top, spacing: SH.Space.l) {
-            glyph
-                .foregroundStyle(sh.textSecondary)
-                .frame(width: AppLayout.fleetFoundGlyphSize)
-                .padding(.top, SH.Space.xxs)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: SH.Space.s) {
-                Text(title).font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary)
-                Text(detail).font(.sh(.caption)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
-                content
-            }
+        SHSheetGroup(on: on) {
+            Text(title).font(.shSans(SHSettingsSheetMetrics.textSize, .medium)).foregroundStyle(Color.sh.textPrimary)
+            SHSheetParagraph(detail, style: .small)
+                .padding(.top, SH.Space.xxs).padding(.bottom, AppLayout.fleetWayGap)
+            content
         }
-        .padding(.horizontal, SH.Space.l)
-        .padding(.vertical, SH.Space.m)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(on ? sh.runningTint : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-        .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(on ? sh.running : sh.lineSubtle) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
     }
@@ -279,27 +227,30 @@ struct FleetFoundRow: View {
 
     var body: some View {
         let sh = Color.sh
+        let M = SHSettingsSheetMetrics.self
         Button(action: pick) {
-            HStack(spacing: SH.Space.l) {
+            HStack(spacing: M.pickGap) {
                 SHGlyph.Settings.computer.image
-                    .foregroundStyle(sh.textSecondary)
-                    .frame(width: AppLayout.fleetFoundGlyphSize)
+                    .foregroundStyle(sh.textPrimary)
+                    .frame(width: M.pickGlyph)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                    Text(mac.name).font(.sh(.ui)).foregroundStyle(sh.textPrimary)
-                    Text(mac.address ?? "").font(.sh(.micro)).foregroundStyle(sh.textTertiary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(mac.name).font(.shSans(M.textSize, selected ? .medium : .regular)).foregroundStyle(sh.textPrimary)
+                        .frame(minHeight: M.baseLine)
+                    Text(mac.address ?? "").font(.shSans(M.smallSize)).foregroundStyle(sh.textTertiary)
+                        .frame(minHeight: M.baseLine)
                 }
                 Spacer(minLength: SH.Space.l)
                 if let version = mac.version {
-                    Text("Shepherd \(version)").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    Text("Shepherd \(version)").font(.shSans(M.smallSize)).foregroundStyle(sh.textTertiary)
                 }
             }
-            .padding(.horizontal, SH.Space.l)
-            .padding(.vertical, SH.Space.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selected ? sh.runningTint : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
-            .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(selected ? sh.running : sh.lineSubtle) }
-            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+            .padding(.horizontal, M.pickSides)
+            .padding(.vertical, SH.Space.s)
+            .frame(maxWidth: .infinity, minHeight: M.pickHeight, alignment: .leading)
+            .background(selected ? sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: M.pickRadius))
+            .padding(.horizontal, -M.pickSides)
+            .contentShape(RoundedRectangle(cornerRadius: M.pickRadius))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(mac.name), \(mac.address ?? "")")
@@ -315,20 +266,27 @@ struct FleetCodeField: View {
 
     var body: some View {
         let sh = Color.sh
-        ZStack {
-            HStack(spacing: SH.Space.s) {
+        ZStack(alignment: .leading) {
+            HStack(spacing: SH.Space.m) {
                 ForEach(0..<FleetProtocol.codeLength, id: \.self) { index in
                     let digit = Array(code).indices.contains(index) ? String(Array(code)[index]) : ""
+                    let current = focused && index == min(code.count, FleetProtocol.codeLength - 1)
                     Text(digit)
-                        .font(.shMono(SHTextStyle.display.size))
+                        .font(.shMono(AppLayout.fleetDigitSize, .medium))
                         .foregroundStyle(sh.textPrimary)
                         .frame(width: AppLayout.fleetDigitWidth, height: AppLayout.fleetDigitHeight)
-                        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                        .background(sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                         .overlay {
                             RoundedRectangle(cornerRadius: SH.Radius.m)
-                                .strokeBorder(focused && index == min(code.count, FleetProtocol.codeLength - 1) ? sh.running : sh.lineStrong)
+                                .strokeBorder(current ? sh.textTertiary : sh.lineStrong, lineWidth: SHSettingsNavMetrics.borderWidth)
                         }
-                        .padding(.trailing, index == FleetProtocol.codeLength / 2 - 1 ? AppLayout.fleetDigitGroupGap - SH.Space.s : 0)
+                        .background {
+                            if current {
+                                RoundedRectangle(cornerRadius: SH.Radius.m + SHSettingsSheetMetrics.focusRing).fill(sh.bgSelected)
+                                    .padding(-SHSettingsSheetMetrics.focusRing)
+                            }
+                        }
+                        .padding(.leading, index == FleetProtocol.codeLength / 2 ? AppLayout.fleetDigitGroupGap : 0)
                 }
             }
             .accessibilityHidden(true)

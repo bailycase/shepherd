@@ -835,6 +835,25 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// GXQuestion and GXQuestionAsk: the card at the thread column's width (718pt, 59pt in), the first option picked and Answer ready, then
+    /// nothing picked and Answer quiet.
+    @Test func questionBoardCards() async throws {
+        let select = NativeThreadDialog(id: "handle", kind: .input, title: "How should I handle Horizon’s uncommitted edits?", options: [
+            "Compare, keep what’s unique, then go through GitHub (Recommended)\nDiff the 11 files against current master. Anything not merged yet goes on a new branch and PR. Nothing on Horizon is overwritten.",
+            "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits as they are. The deploy runs from a fresh clone of master beside it.",
+        ], placeholder: "Something else…")
+        for (name, picks) in [("gxb-question", NativeQuestionPicks(picked: 1)), ("gxb-question-ask", nil)] {
+            try await Preview.render(name, size: CGSize(width: 1184, height: 360)) {
+                Self.dock(NativeQuestionPrompt(dialog: select), picks: picks)
+                    .frame(width: 718)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.leading, 59)
+                    .padding(.top, 20)
+                    .background(Color.sh.bgWindow)
+            }
+        }
+    }
+
     /// QuestionStates › Kinds of question from pi: a confirm (a yes or a no, with its message), a
     /// short select side by side, an input and an editor (open questions), and a question that
     /// cannot be answered here.

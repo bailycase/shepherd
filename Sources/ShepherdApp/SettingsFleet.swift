@@ -208,21 +208,24 @@ struct FleetServe {
     var problemDetail: String?
 }
 
-/// One device of the list: its dot, its name over what it is, and Revoke.
+/// One device of the list: its name over what it is, whether it is connected, and Revoke.
 struct FleetDeviceRowView: View {
     let row: FleetDeviceRow
     let revoke: () -> Void
 
     var body: some View {
-        SettingsRow(title: row.title, subtitle: row.detail, dot: row.connected ? .on : .off) {
-            Button("Revoke", action: revoke)
-                .buttonStyle(.sh(.secondary, size: .s))
-                .accessibilityLabel("Revoke \(row.title)")
+        SettingsRow(title: row.title, subtitle: row.detail) {
+            HStack(spacing: SH.Space.xl) {
+                if row.connected { SettingsValue(text: "Connected") }
+                Button("Revoke", action: revoke)
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .accessibilityLabel("Revoke \(row.title)")
+            }
         }
     }
 }
 
-/// One Mac of the list: its dot, its name over where it is, and Remove for the Macs paired with this one.
+/// One Mac of the list: its name over where it is, where its link stands, and Remove for the Macs paired with this one.
 struct FleetMacRowView: View {
     let row: FleetMacRow
     let remove: () -> Void
@@ -231,8 +234,9 @@ struct FleetMacRowView: View {
     var dismiss: (() -> Void)?
 
     var body: some View {
-        SettingsRow(title: row.title, subtitle: row.detail, dot: dot) {
-            HStack(spacing: SH.Space.s) {
+        SettingsRow(title: row.title, subtitle: row.detail) {
+            HStack(spacing: SH.Space.xl) {
+                if let state { SettingsValue(text: state) }
                 if let add, let dismiss {
                     Button("Add to fleet…", action: add)
                         .buttonStyle(.sh(.secondary, size: .s))
@@ -249,11 +253,13 @@ struct FleetMacRowView: View {
         }
     }
 
-    private var dot: SHRowDot {
+    /// Where the link stands, in words where the board has no dot; This Mac and a Mac not yet in the fleet say nothing.
+    private var state: String? {
         switch row.state {
-        case .thisMac, .connected: .on
-        case .connecting: .warn
-        case .offline, .notInFleet: .off
+        case .connected: "Connected"
+        case .connecting: "Connecting…"
+        case .offline: "Offline"
+        case .thisMac, .notInFleet: nil
         }
     }
 }

@@ -412,29 +412,17 @@ enum ForgeDetailLayout: Equatable {
     }
 }
 
-/// The iPad detail's head (iPadIPReview): Back, "#31" over "payments · Open", and the item's menu
-/// in a glass circle. Where the bars run down the side (iPhone Duo) Back and ••• are the bar's, and
+/// The iPad detail's head (iPadIPReview): "#31" over "payments · Open" at the page's 32pt inset, and the item's menu
+/// in a glass circle (no Back: the list stands beside it). Where the bars run down the side (iPhone Duo) Back and ••• are the bar's, and
 /// the head is only the title (DuoBookPR).
 struct ForgePadHead<Items: View>: View {
     let title: String
     let subtitle: String?
     let verticalBars: Bool
     @ViewBuilder let menu: () -> Items
-    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         HStack(spacing: SH.Space.m) {
-            if !verticalBars {
-                Button { navigator.close(.forge(.list)) } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.sh(.headline))
-                        .foregroundStyle(Color.sh.textPrimary)
-                        .frame(width: SH.Height.touch, height: SH.Height.touch)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-            }
             ForgeTitle(title: title, subtitle: subtitle, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if !verticalBars {
@@ -449,7 +437,7 @@ struct ForgePadHead<Items: View>: View {
                 .accessibilityLabel("More")
             }
         }
-        .padding(.horizontal, SH.Space.s)
+        .padding(.leading, verticalBars ? SH.Space.s : MobileLayout.forgePadInset).padding(.trailing, SH.Space.s)
         .frame(minHeight: SH.Height.touch + SH.Space.m)
         .background(Color.sh.bgWindow)
     }
@@ -463,9 +451,9 @@ struct ForgeTitle: View {
 
     var body: some View {
         VStack(alignment: alignment, spacing: SH.Space.xxs) {
-            Text(title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+            Text(title).font(.shBar(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let subtitle {
-                Text(subtitle).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                Text(subtitle).font(.shBar(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)

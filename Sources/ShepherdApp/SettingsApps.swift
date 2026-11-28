@@ -217,44 +217,38 @@ struct AppEditSheet: View {
     let close: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: SH.Space.l) {
-                Text(editor.title).shText(.title).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
-                HookSheetClose(action: close)
-            }
-            .padding(.leading, SH.Space.xxl)
-            .padding(.trailing, SH.Space.l)
-            .padding(.vertical, SH.Space.l)
-            SHHairline()
-            ScrollView {
-                form
-                    .padding(.horizontal, SH.Space.xxl)
-                    .padding(.vertical, SH.Space.xl)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            SHHairline()
-            HStack(spacing: SH.Space.m) {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(editor.title)
+                .font(.shSans(SHPiSignInMetrics.sheetTitleSize, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
+                .frame(minHeight: SHPiSignInMetrics.sheetTitleLine, alignment: .leading)
+                .padding(.top, SHPiSignInMetrics.sheetTop)
+                .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+                .accessibilityAddTraits(.isHeader)
+            form
+                .padding(.top, SHPiSignInMetrics.bodyTop)
+                .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+                .padding(.bottom, SHPiSignInMetrics.bodyBottom)
+            SHSheetFooter {
                 if let problem = editor.problem {
                     Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed).lineLimit(2)
                 }
-                Spacer(minLength: 0)
+            } actions: {
                 Button("Cancel", action: close)
-                    .buttonStyle(.sh(.secondary, size: .m))
+                    .buttonStyle(.sh(.ghost))
                     .keyboardShortcut(.cancelAction)
                 Button(editor.original == nil ? "Add app" : "Save") {
                     Task { if await editor.save() { close() } }
                 }
-                .buttonStyle(.sh(.primary, size: .m))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(editor.invalid != nil || editor.saving)
                 .help(editor.invalid ?? "")
             }
-            .padding(.horizontal, SH.Space.xxl)
-            .padding(.vertical, SH.Space.l)
         }
-        .frame(width: AppLayout.appsSheetWidth, height: AppLayout.appsSheetHeight)
+        .frame(width: AppLayout.appsSheetWidth)
         .background(Color.sh.bgRaised)
+        .shControlScale(.sheet)
         .disabled(editor.saving)
     }
 
@@ -268,25 +262,27 @@ struct AppEditSheet: View {
                 TextField("Command", text: $editor.command, prompt: Text("npm run dev").foregroundStyle(Color.sh.textTertiary))
                     .textFieldStyle(.sh(mono: true))
             }
-            HStack(alignment: .top, spacing: SH.Space.xxl) {
+            HStack(alignment: .top, spacing: SH.Space.xl) {
                 HookField("Folder") {
                     if editor.spaceName != nil {
-                        Picker("Folder", selection: $editor.folder) {
-                            ForEach(editor.folders, id: \.self) { Text(editor.folderLabel($0)).tag($0) }
+                        SHPopupMenu(editor.folderLabel(editor.folder), minWidth: 0) {
+                            ForEach(editor.folders, id: \.self) { folder in
+                                Button(editor.folderLabel(folder)) { editor.folder = folder }
+                            }
                         }
-                        .labelsHidden()
-                        .fixedSize()
+                        .accessibilityLabel("Folder")
                     } else {
                         TextField("Folder", text: $editor.folder, prompt: Text("~").foregroundStyle(Color.sh.textTertiary))
                             .textFieldStyle(.sh(mono: true))
                     }
                 }
                 HookField("Available in") {
-                    Picker("Available in", selection: $editor.scope) {
-                        ForEach(editor.scopes, id: \.scope) { Text($0.label).tag($0.scope) }
+                    SHPopupMenu(editor.scopes.first { $0.scope == editor.scope }?.label ?? "", minWidth: 0) {
+                        ForEach(editor.scopes, id: \.scope) { choice in
+                            Button(choice.label) { editor.scope = choice.scope }
+                        }
                     }
-                    .labelsHidden()
-                    .fixedSize()
+                    .accessibilityLabel("Available in")
                 }
             }
             HookField("Opens in", help: editor.opensHelp) {

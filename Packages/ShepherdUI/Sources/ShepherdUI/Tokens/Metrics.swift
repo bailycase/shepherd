@@ -29,6 +29,8 @@ public enum SH {
         public static let xxl: CGFloat = 16
         /// The user's message bubble.
         public static let bubble: CGFloat = 18
+        /// The touch boards' message bubble (MobileThread, iPadThread).
+        public static let touchBubble: CGFloat = 20
     }
 
     /// Row heights scale with Settings ▸ Appearance ▸ Density (rounded to whole points); control

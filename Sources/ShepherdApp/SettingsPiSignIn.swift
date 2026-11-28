@@ -105,9 +105,8 @@ struct PiSignInSettings: View {
     /// sign-in button and a ⋯ menu for the rest.
     private func providerRow(_ row: ProviderRowModel) -> some View {
         let list = row.accounts.flatMap { $0.accounts.count > 1 ? $0 : nil }
-        return SettingsRow(title: row.name, subtitle: hint(row, list: list), problem: row.problem,
-                           dot: Self.dot(PiSignInWords.status(row.auth).dot), mono: row.custom) {
-            HStack(spacing: SH.Space.s) {
+        return SettingsRow(title: row.name, subtitle: hint(row, list: list), problem: row.problem) {
+            HStack(spacing: AppLayout.settingsControlsSpacing) {
                 if let list {
                     SHPopupMenu(list.accounts.first { $0.id == list.active }?.title ?? "Account", minWidth: 0) {
                         ForEach(list.accounts) { account in
@@ -160,19 +159,19 @@ struct PiSignInSettings: View {
         switch row.auth {
         case .signedIn:
             Button("Sign out") { Task { await auth.signOut(row.id) } }
-                .buttonStyle(.sh(.ghost, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .disabled(auth.signingOut.contains(row.id))
                 .accessibilityLabel("Sign out of \(row.name)")
                 .help((row.accounts?.accounts.count ?? 0) > 1 ? "Signs out of every saved \(row.name) account." : "")
         case .expired:
             Button("Sign in again") { auth.signIn(row.id) }
                 .disabled(!row.signInAvailable)
-                .buttonStyle(.sh(.primary, size: .s))
+                .buttonStyle(.sh(.bold, size: .s))
                 .accessibilityLabel("Sign in to \(row.name) again")
         case .notSignedIn:
             Button("Sign in") { auth.signIn(row.id) }
                 .disabled(!row.signInAvailable)
-                .buttonStyle(.sh(.secondary, size: .s))
+                .buttonStyle(.sh(.bold, size: .s))
                 .accessibilityLabel("Sign in to \(row.name)")
         case .signingIn:
             Button("Cancel") { auth.closeSheet() }

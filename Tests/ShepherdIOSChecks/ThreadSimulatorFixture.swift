@@ -13,6 +13,8 @@ import ShepherdUI
 //   FIXTURE_SCHEME       light or dark (default dark)
 //   FIXTURE_ORIENTATION  portrait (default) or landscape
 //   FIXTURE_SIDEBAR      "shown" opens the iPad sidebar over a portrait thread
+//   FIXTURE_FRAME_WIDTH  the app's window width in points, as Split View and Slide Over give it (compact below 600)
+//   FIXTURE_FRAME_EDGE   leading or trailing: the side of the scene that window takes (default: centred)
 // A screen may open more windows (`FixtureWindows.open`); windows left from an earlier run close.
 // It prints "FIXTURE READY <screen>" once the screen has settled, and
 // "FIXTURE REQUESTS <host> <kinds>" for every host.
@@ -106,13 +108,32 @@ private struct FramedWindow: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             guard window_ == nil, let scene = window?.windowScene, let app else { return }
-            let bounds = scene.coordinateSpace.bounds
             let framed = UIWindow(windowScene: scene)
-            framed.frame = CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: bounds.height)
-            framed.rootViewController = UIHostingController(rootView: MobileRoot(app: app).environment(\.scenePhase, .active))
+            framed.frame = frame(in: scene)
+            let host = UIHostingController(rootView: MobileRoot(app: app).environment(\.scenePhase, .active))
+            // Split View and Slide Over's narrow windows are compact; a framed window keeps the scene's class unless told.
+            if Double(ProcessInfo.processInfo.environment["FIXTURE_FRAME_WIDTH"] ?? "") != nil {
+                host.traitOverrides.horizontalSizeClass = width < 600 ? .compact : .regular
+            }
+            framed.rootViewController = host
             framed.makeKeyAndVisible()
             window_ = framed
             FixtureWindows.shared.framed = framed
+        }
+
+        /// The window's frame in the scene as it is now: a turn of the device moves the window with it.
+        private func frame(in scene: UIWindowScene) -> CGRect {
+            let bounds = scene.coordinateSpace.bounds
+            let edge = ProcessInfo.processInfo.environment["FIXTURE_FRAME_EDGE"]
+            let x = edge == "leading" ? 0 : edge == "trailing" ? bounds.width - width : (bounds.width - width) / 2
+            return CGRect(x: x, y: 0, width: width, height: bounds.height)
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let framed = window_, let scene = framed.windowScene else { return }
+            let target = frame(in: scene)
+            if framed.frame != target { framed.frame = target }
         }
     }
 }
@@ -223,7 +244,7 @@ final class FixtureRunner {
             print("FIXTURE FAILED \(failure!)")
             return
         }
-        FixtureWindows.shared.frameWidth = screen.frameWidth
+        FixtureWindows.shared.frameWidth = ProcessInfo.processInfo.environment["FIXTURE_FRAME_WIDTH"].flatMap { Double($0) }.map { CGFloat($0) } ?? screen.frameWidth
         do {
             hosts = try screen.hosts.map { data in
                 let host = FixtureHost(data)

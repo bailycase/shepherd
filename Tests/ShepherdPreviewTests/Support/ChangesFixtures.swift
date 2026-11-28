@@ -15,7 +15,7 @@ enum ChangesBoard {
     index 1111111..2222222 100644
     --- a/ledger/outbox.go
     +++ b/ledger/outbox.go
-    @@ -1,7 +1,10 @@
+    @@ -1,7 +1,8 @@
      package ledger
     \u{20}
      import (
@@ -23,18 +23,13 @@ enum ChangesBoard {
      \t"database/sql"
     +\t"fmt"
      \t"time"
-    +
-    +\t"github.com/acme/payments/events"
      )
-    @@ -36,5 +39,6 @@
-     // Outbox writes events in the same transaction as the ledger change.
+    @@ -36,3 +37,4 @@
      type Outbox struct {
      \tdb    *sql.DB
-    -\tnow func() time.Time
-    +\tnow   func() time.Time
     +\tcodec events.Codec
      }
-    @@ -96,9 +100,14 @@
+    @@ -98,8 +100,8 @@
      func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, e Event) error {
     -\tpayload, err := json.Marshal(e.Payload)
     +\tpayload, err := o.codec.Encode(e.Kind, e.Payload)
@@ -45,11 +40,6 @@ enum ChangesBoard {
      \t_, err = tx.ExecContext(ctx, insertEvent, e.Kind, payload, o.now())
      \treturn err
      }
-    \u{20}
-    +// AppendRefund records refund.created in the same transaction as the refund.
-    +func (o *Outbox) AppendRefund(ctx context.Context, tx *sql.Tx, r Refund) error {
-    +\treturn o.Append(ctx, tx, Event{Kind: events.RefundCreated, Payload: r})
-    +}
     """
 
     static func added(_ path: String, _ lines: [String]) -> String {
@@ -104,11 +94,13 @@ enum ChangesBoard {
 
     static var files: [DiffFile] { GitDiff.parse(diff) }
 
-    static func listed(_ files: [DiffFile], scope: ChangesScope, comparison: ChangesComparison) -> ChangesList {
+    static func listed(_ files: [DiffFile], scope: ChangesScope, comparison: ChangesComparison, board: Bool = true) -> ChangesList {
         ChangesList(scope: scope, revision: ChangesRevision(old: "3f2a91c", new: "a1c9f2e"), comparison: comparison,
                     files: files.map { file in
-                        ChangesFile(path: file.displayPath, status: file.isNew ? .added : file.isDeleted ? .deleted : .modified,
-                                    added: file.addedCount, removed: file.removedCount)
+                        // The board's own counts for outbox.go (its hunks show only the lines in view).
+                        let counts = board && file.displayPath == "ledger/outbox.go" ? (added: 21, removed: 8) : (added: file.addedCount, removed: file.removedCount)
+                        return ChangesFile(path: file.displayPath, status: file.isNew ? .added : file.isDeleted ? .deleted : .modified,
+                                           added: counts.added, removed: counts.removed)
                     })
     }
 
@@ -124,7 +116,7 @@ enum ChangesBoard {
     ]
 
     static let lastTurn = ChangesTurn(messageTimestamp: 1, prompt: "Wrap errors with context", startedAt: clock(15, 7), endedAt: clock(15, 11),
-                                      state: .ready, files: [], fileCount: 2, added: 12, removed: 3, canUndo: true)
+                                      state: .ready, files: [], fileCount: 1, added: 4, removed: 2, canUndo: true)
 
     /// Today at `hour`:`minute`, in ms.
     static func clock(_ hour: Int, _ minute: Int) -> Double {
@@ -136,7 +128,7 @@ enum ChangesBoard {
         repository: "/Users/alex/payments", branch: "agent/refund-events", head: "a1c9f2e", defaultScope: .branch(base: nil),
         defaultBase: "origin/main",
         entries: [
-            .init(scope: .lastTurn, files: 2, added: 12, removed: 3),
+            .init(scope: .lastTurn, files: 1, added: 4, removed: 2),
             .init(scope: .uncommitted, files: 3, added: 33, removed: 11),
             .init(scope: .unstaged, files: 2, added: 21, removed: 8),
             .init(scope: .staged, files: 1, added: 12, removed: 3),
@@ -179,7 +171,7 @@ enum ChangesBoard {
         session.overview = overview
         session.branches = branches
         session.files = files
-        session.viewed = ["ledger/refund.go", "migrations/0042_refund_events.sql"]
+        session.viewed = ["ledger/refund.go", "go.mod"]
         if comment { session.comments = [commentOn103(files)] }
         return session
     }
@@ -188,33 +180,14 @@ enum ChangesBoard {
         let outbox = files[0]
         let line = outbox.hunks.flatMap(\.lines).first { $0.newLine == 103 }!
         return ReviewComment(fileID: outbox.id, lineID: line.id, filePath: outbox.displayPath, lineNumber: 103, marker: "+",
-                             content: line.text, text: "Wrap the error with the refund id too — the on-call runbook greps for it.")
+                             content: line.text, text: "Keep the event kind in the error so failed encodes are traceable.")
     }
 
     /// Just the agent's last turn (ChangesLastTurn): outbox.go's third hunk and refund.go's first lines.
     static func lastTurnSession() -> ReviewSession {
-        let outbox = """
-        diff --git a/ledger/outbox.go b/ledger/outbox.go
-        index 1111111..2222222 100644
-        --- a/ledger/outbox.go
-        +++ b/ledger/outbox.go
-        @@ -96,9 +100,10 @@
-         func (o *Outbox) Append(ctx context.Context, tx *sql.Tx, e Event) error {
-        -\tpayload, err := json.Marshal(e.Payload)
-        +\tpayload, err := o.codec.Encode(e.Kind, e.Payload)
-         \tif err != nil {
-        -\t\treturn err
-        +\t\treturn fmt.Errorf("outbox: encode %s: %w", e.Kind, err)
-         \t}
-         \t_, err = tx.ExecContext(ctx, insertEvent, e.Kind, payload, o.now())
-         \treturn err
-         }
-        \u{20}
-        +// AppendRefund records refund.created in the same transaction as the refund.
-        """
-        let files = GitDiff.parse([outbox, added("ledger/refund.go", Array(refund.prefix(3)))].joined(separator: "\n"))
+        let files = GitDiff.parse(outbox)
         let list = listed(files, scope: .lastTurn,
-                          comparison: ChangesComparison(head: "End of turn", base: "Start of turn", turn: lastTurn))
+                          comparison: ChangesComparison(head: "End of turn", base: "Start of turn", turn: lastTurn), board: false)
         let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/Users/alex/payments", reference: nil)
         session.engine = engine(files, list: list)
         session.scope = .lastTurn

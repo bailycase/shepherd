@@ -58,9 +58,9 @@ struct DiffScreen: View {
         .navigationTitle(summary?.name ?? reviewPathParts(path).name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .principal) { Group {
                 DiffTitle(summary: summary, position: entry.flatMap { store.index(of: $0.id) }, count: store.entries.count)
-            }
+            }.shBarTitleType() }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if let entry {
                     let viewed = store.viewed.contains(entry.id)
@@ -106,13 +106,13 @@ private struct DiffTitle: View {
     var body: some View {
         VStack(spacing: SH.Space.xxs) {
             Text(summary?.name ?? "Diff")
-                .font(.shMono(MobileLayout.touchBodyFont - 1, .semibold))
+                .font(.shBarMono(MobileLayout.touchBodyFont - 1, .semibold))
                 .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let summary {
                 Text(subtitle(summary))
-                    .font(.sh(.caption))
+                    .font(.shBar(.caption))
                     .foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.head)

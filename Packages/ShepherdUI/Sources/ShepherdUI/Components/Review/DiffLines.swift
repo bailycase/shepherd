@@ -32,27 +32,68 @@ public enum SHDiffLineKind: Sendable, Hashable {
 /// line-number gutters (two in unified, one per side in split), a 16pt sign column in unified,
 /// then the code. Comments sit 40pt in, under their line.
 public enum SHDiffMetrics {
+    #if os(macOS)
+    /// The Mac's diff (the boards' `.gch-c`, `.gch-ul`): no gutter bar, 42pt number columns with the number 12 in from their
+    /// edge, an 18pt sign column, lines 20 tall.
+    public static let barWidth: CGFloat = 0
+    public static let numberWidth: CGFloat = 42
+    public static let numberTrailing: CGFloat = SH.Space.l
+    #else
     public static let barWidth: CGFloat = 3
     public static let numberWidth: CGFloat = 34
+    public static let numberTrailing: CGFloat = SH.Space.m
+    #endif
     public static let commentButtonSize: CGFloat = 18
+    #if os(macOS)
+    /// What a line keeps clear at its end (`.gch-code`'s 8): the comment button floats over the code while the line is hovered.
+    public static let commentSlotWidth: CGFloat = SH.Space.m
+    #else
     public static let commentSlotWidth: CGFloat = commentButtonSize + 2 * SH.Space.s
+    #endif
+    #if os(macOS)
+    public static let signWidth: CGFloat = 18
+    #else
     public static let signWidth: CGFloat = 16
+    #endif
     /// Where the unified code column starts.
     public static let codeLeading: CGFloat = barWidth + numberWidth * 2 + signWidth
     /// Where a split side's code starts.
     public static let splitCodeLeading: CGFloat = barWidth + numberWidth
     /// Notices ("Binary file") and comments.
+    #if os(macOS)
+    /// A unified comment sits 12 past the code's start (`.gch-note.gch-u`); a split one 12 into its half.
+    public static let annotationLeading: CGFloat = barWidth + numberWidth * 2 + signWidth + SH.Space.l
+    public static let splitAnnotationLeading: CGFloat = SH.Space.l
+    #else
     public static let annotationLeading: CGFloat = 40
+    public static let splitAnnotationLeading: CGFloat = 40
+    #endif
     /// Around a line's comment or comment editor.
+    #if os(macOS)
+    public static let annotationInsets = EdgeInsets(top: SH.Space.s, leading: annotationLeading, bottom: SH.Space.m + SH.Space.xxs, trailing: SH.Space.l)
+    #else
     public static let annotationInsets = EdgeInsets(top: SH.Space.s, leading: annotationLeading, bottom: SH.Space.m, trailing: SH.Space.l)
+    #endif
     /// The fold row's reveal column.
     public static let foldControlWidth: CGFloat = 37
+    /// The Mac fold's glyph and the room it takes.
+    public static let foldGlyph: CGFloat = 9
+    public static let foldGlyphSlot: CGFloat = 14
     /// The gap between the hatching's diagonal lines.
+    #if os(macOS)
+    /// The Mac's hatching: 1pt lines 6pt apart along their 135° gradient, 8.5pt across.
+    public static let hatchSpacing: CGFloat = 8.5
+    /// A line; density-scaled.
+    @MainActor public static var lineHeight: CGFloat { SH.Height.scaled(20) }
+    /// A fold row, a little taller than a line; density-scaled.
+    @MainActor public static var foldHeight: CGFloat { SH.Height.scaled(28) }
+    #else
     public static let hatchSpacing: CGFloat = 7
     /// A line; density-scaled.
     @MainActor public static var lineHeight: CGFloat { SH.Height.scaled(21) }
     /// A fold row, a little taller than a line; density-scaled.
     @MainActor public static var foldHeight: CGFloat { SH.Height.scaled(26) }
+    #endif
 }
 
 /// One line of a diff, ready to draw: the text arrives already syntax colored (and with its word
@@ -330,11 +371,18 @@ private struct SHDiffLineDrawing: View {
         #endif
         for (index, value) in numbers.enumerated() {
             if let value {
+                #if os(macOS)
+                // The number in the code's own size; on a change it leans toward the change's color (`.gch-a .gch-ln`).
+                let numberColor = line.kind == .added ? sh.done.mix(with: sh.textTertiary, by: 0.3)
+                    : line.kind == .removed ? sh.failed.mix(with: sh.textTertiary, by: 0.3) : sh.textTertiary
+                let text = context.resolve(Text(String(value)).font(.sh(.code)).foregroundStyle(numberColor))
+                #else
                 let text = context.resolve(Text(String(value)).font(.shMono(10.5)).foregroundStyle(sh.textTertiary))
+                #endif
                 let width = text.measure(in: CGSize(width: .infinity, height: size.height)).width
-                let scale = max(0.6, min(1, (number - SH.Space.m) / max(1, width)))
+                let scale = max(0.6, min(1, (number - SHDiffMetrics.numberTrailing) / max(1, width)))
                 var gutter = context
-                gutter.translateBy(x: bar + number * CGFloat(index + 1) - SH.Space.m, y: midY)
+                gutter.translateBy(x: bar + number * CGFloat(index + 1) - SHDiffMetrics.numberTrailing, y: midY)
                 gutter.scaleBy(x: scale, y: scale)
                 gutter.draw(text, at: .zero, anchor: .trailing)
             }
@@ -383,7 +431,11 @@ public struct SHDiffHatch: View {
     public init() {}
 
     public var body: some View {
+        #if os(macOS)
+        let color = Color.sh.bgHover
+        #else
         let color = Color.sh.lineSubtle
+        #endif
         Canvas { context, size in
             var path = Path()
             var x = -size.height
@@ -434,6 +486,59 @@ public struct SHDiffFoldRow: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        macBody
+        #else
+        iosBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The boards' `.gch-fold`: 28pt on `bgHover`, the reveal glyph (its top half shows the 20 lines above, its bottom half those
+    /// below; the row itself shows all) and "28 unmodified lines" in `caption`.
+    private var macBody: some View {
+        let _ = SHRenderProbe.tick("diff.fold")
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
+            VStack(spacing: 0) {
+                Color.clear.frame(height: SHDiffMetrics.foldHeight / 2).contentShape(Rectangle())
+                    .onTapGesture { if fold.revealsUp { reveal(.up) } else { reveal(.all) } }
+                    .help(fold.revealsUp ? "Show 20 lines above" : "Show all \(fold.label)")
+                Color.clear.frame(height: SHDiffMetrics.foldHeight / 2).contentShape(Rectangle())
+                    .onTapGesture { if fold.revealsDown { reveal(.down) } else { reveal(.all) } }
+                    .help(fold.revealsDown ? "Show 20 lines below" : "Show all \(fold.label)")
+            }
+            .frame(width: SHDiffMetrics.foldGlyphSlot)
+            .overlay {
+                Image(systemName: "arrow.up.and.down").font(.system(size: SHDiffMetrics.foldGlyph, weight: .regular))
+                    .foregroundStyle(sh.textTertiary).allowsHitTesting(false)
+            }
+            Text(fold.label)
+                .font(.sh(.caption))
+                .foregroundStyle(hovering ? sh.textSecondary : sh.textTertiary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .onTapGesture { reveal(.all) }
+                .shAnimation(.hover, value: hovering)
+                .help("Show all \(fold.label)")
+        }
+        .padding(.leading, SH.Space.l)
+        .frame(height: SHDiffMetrics.foldHeight)
+        .background(sh.bgHover)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(fold.label)
+        .accessibilityHint("Shows the unmodified lines")
+        .accessibilityAction { reveal(.all) }
+        .accessibilityActions {
+            if fold.revealsUp { Button("Show 20 lines above") { reveal(.up) } }
+            if fold.revealsDown { Button("Show 20 lines below") { reveal(.down) } }
+        }
+    }
+    #endif
+
+    @ViewBuilder private var iosBody: some View {
         let _ = SHRenderProbe.tick("diff.fold")
         let sh = Color.sh
         HStack(spacing: 0) {
@@ -569,13 +674,41 @@ private struct SHDiffRowView<Note: Equatable, Annotation: View>: View, Equatable
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(notes, id: \.line.id) { slot in
+                #if os(macOS)
+                // The boards' `.gch-note`: a card with no lines over it, in the right half of a split row (the left for a removed
+                // line's) and 12 past the code's start in a unified one.
+                if case .pair(_, let old, _) = row {
+                    HStack(spacing: 0) {
+                        if old?.id == slot.line.id {
+                            note(slot).padding(.leading, SHDiffMetrics.splitAnnotationLeading).frame(maxWidth: .infinity)
+                            Color.clear.frame(maxWidth: .infinity)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity)
+                            note(slot).padding(.leading, SHDiffMetrics.splitAnnotationLeading).frame(maxWidth: .infinity)
+                        }
+                    }
+                } else {
+                    note(slot).padding(.leading, SHDiffMetrics.annotationLeading)
+                }
+                #else
                 annotation(slot.line, slot.note)
                     .padding(SHDiffMetrics.annotationInsets)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .top) { SHHairline() }
                     .overlay(alignment: .bottom) { SHHairline() }
+                #endif
             }
         }
         .background(SHPaneSurface.fill)
     }
+
+    #if os(macOS)
+    private func note(_ slot: NoteSlot<Note>) -> some View {
+        annotation(slot.line, slot.note)
+            .padding(.top, SH.Space.s)
+            .padding(.bottom, SH.Space.m + SH.Space.xxs)
+            .padding(.trailing, SH.Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    #endif
 }

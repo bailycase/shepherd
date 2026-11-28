@@ -51,6 +51,8 @@ public struct SHSidebarSectionHeader: View {
     /// A trailing text button that opens somewhere else ("Answer in Needs you" on the iPhone), set like Mark all seen.
     let textAction: (title: String, action: () -> Void)?
     @Environment(\.shDensity) private var density
+    @Environment(\.shSidebarRoomy) private var roomy
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(_ title: String, count: Int, isExpanded: Bool, attention: Bool = false, pulse: Bool = false,
                 toggle: @escaping () -> Void, markAllSeen: (() -> Void)? = nil, chip: (title: String, action: () -> Void)? = nil,
@@ -86,7 +88,9 @@ public struct SHSidebarSectionHeader: View {
 
     public var body: some View {
         let _ = SHRenderProbe.tick("sidebar.header")
-        HStack(spacing: SH.Space.s) {
+        // From the accessibility sizes the header's actions go under its title instead of off the edge.
+        let adaptive = typeSize.shAdaptiveLayout(spacing: SH.Space.s)
+        adaptive {
             Button(action: toggle) {
                 HStack(spacing: SH.Space.s) {
                     Text(title)
@@ -158,6 +162,7 @@ public struct SHSidebarSectionHeader: View {
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
-        .padding(.top, density.sidebarHeaderTop)
+        .padding(.top, roomy ? SHSidebarMetrics.padHeaderTop : density.sidebarHeaderTop)
+        .padding(.bottom, roomy ? SH.Space.xs : 0)
     }
 }

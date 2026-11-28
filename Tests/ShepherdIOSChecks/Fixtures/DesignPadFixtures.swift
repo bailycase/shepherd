@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import DesignSurfaceKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -89,6 +90,10 @@ extension FixtureCatalog {
             FixtureScreen(name: "design-pad-pan", hosts: DesignPadFixtures.hosts(large: true),
                           routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
                           prepare: { app in await DesignPadFixtures.pan(app) }),
+            // One web view drawing board after board (the renderer's pool) draws each as a new web view does.
+            FixtureScreen(name: "design-pad-pooled-pictures", hosts: DesignPadFixtures.hosts(),
+                          routes: [.padDesign(.list), .padDesign(.design(design))],
+                          prepare: { app in await DesignPadFixtures.checkPooledPictures(app) }),
             // A design with hundreds of boards, as it opens: fitted, every board a few percent wide.
             FixtureScreen(name: "design-pad-wall", hosts: DesignPadFixtures.hosts(wall: true),
                           routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
@@ -223,7 +228,7 @@ enum DesignPadFixtures {
         await FixtureWindows.wait("ending pan boards drawn", seconds: 30) { !canvas.visibleBoards.isEmpty && canvas.isDrawn }
         most.sampling = false
         await sampler.value
-        let cap = 2 // Documented iOS budget: one live board and one rasterizer.
+        let cap = PadDesignRasterizer.webViewCap // The device's budget (`DesignRenderBudget`): live board and renders together.
         let live = PadDesignRendering.shared.webViews
         let ok = most.renderer <= cap && most.window <= cap && live >= 1
             && !canvas.visibleBoards.isEmpty && canvas.isDrawn
@@ -288,6 +293,60 @@ enum DesignPadFixtures {
         let times = ["12", "half", "all"].map { "\($0)=\(String(format: "%.1f", marks[$0] ?? 0))s" }.joined(separator: " ")
         let rasterizer = PadDesignRendering.shared.rasterizer
         FixtureCheck.report("FIXTURE CHECK ok wall \(total) boards: \(times) footprint=\(String(format: "%.0f", TailFixture.footprintMB()))MB pictures=\(canvas.host.imageBytes / 1_048_576)MB drawn=\(rasterizer.rendered) read=\(rasterizer.restored) disk=\(DesignPictures.cache.count)/\(DesignPictures.cache.bytes / 1024)KB")
+    }
+
+    /// Draws the checkout boards each in a web view of its own, then one after another in a single web view (as the
+    /// renderer's pool does), and compares the pictures pixel by pixel.
+    @MainActor static func checkPooledPictures(_ app: MobileApp) async {
+        let canvas = await settle(app)
+        let surface = canvas.host.surface
+        let boards: [(String, CGSize)] = [("A.dc.html", CGSize(width: 1280, height: 800)), ("A-phone.dc.html", CGSize(width: 390, height: 844)),
+                                          ("B.dc.html", CGSize(width: 1280, height: 800)), ("C.dc.html", CGSize(width: 1280, height: 800))]
+        func draw(_ view: DesignBoardView, _ size: CGSize) async -> CGImage? {
+            guard (try? await view.load()) != nil else { return nil }
+            return try? await view.snapshot(width: min(size.width, 320))
+        }
+        var fresh: [String: CGImage] = [:]
+        for (raw, size) in boards {
+            let view = DesignBoardView(surface: surface, board: DesignPath(raw)!, size: size)
+            PadDesignStage.shared.hold(view)
+            if let image = await draw(view, size) { fresh[raw] = image }
+            view.removeFromSuperview()
+        }
+        let order = [0, 1, 2, 3, 0, 1, 3, 2]
+        let view = DesignBoardView(surface: surface, board: DesignPath(boards[0].0)!, size: boards[0].1)
+        PadDesignStage.shared.hold(view)
+        var worst = 0
+        var failures = 0
+        for index in order {
+            let (raw, size) = boards[index]
+            view.retarget(to: DesignPath(raw)!, size: size)
+            guard let image = await draw(view, size), let expected = fresh[raw] else { failures += 1; continue }
+            let difference = pixelDifference(image, expected)
+            worst = max(worst, difference ?? Int.max)
+            if difference == nil || difference! > 2 { failures += 1 }
+        }
+        view.removeFromSuperview()
+        FixtureCheck.report("FIXTURE CHECK \(failures == 0 && fresh.count == boards.count ? "ok" : "FAILED:") pooled pictures: \(order.count) boards drawn one after another in one web view, \(failures) differ from a new web view's (largest pixel difference \(worst))")
+    }
+
+    /// The largest difference of any channel of any pixel; nil when the sizes differ.
+    static func pixelDifference(_ a: CGImage, _ b: CGImage) -> Int? {
+        guard a.width == b.width, a.height == b.height else { return nil }
+        func bytes(_ image: CGImage) -> [UInt8] {
+            var data = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            data.withUnsafeMutableBytes { buffer in
+                let context = CGContext(data: buffer.baseAddress, width: image.width, height: image.height, bitsPerComponent: 8,
+                                        bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                context?.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            }
+            return data
+        }
+        let left = bytes(a), right = bytes(b)
+        var worst = 0
+        for index in 0..<left.count { worst = max(worst, abs(Int(left[index]) - Int(right[index]))) }
+        return worst
     }
 
     /// Times the iPhone's tiles: until 1, 4 and 8 boards have pictures (a screenful), then what the app weighs.

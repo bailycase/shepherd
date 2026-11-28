@@ -53,6 +53,9 @@ final class ReviewSession: Identifiable {
     var reference: String?
     /// A legacy review showing its PR diff.
     var isPRMode: Bool = false
+    /// A pull request's head branch and its note ("#31 · 3 commits") for the compare row, where the engine has no comparison to name them.
+    var pullRequestHead: String?
+    var pullRequestNote: String?
     /// A GitHub pull request's diff (Issues & PRs' Changes tab): no working tree to switch to.
     var pullRequestOnly = false
     var files: [DiffFile] {
@@ -671,6 +674,12 @@ final class ReviewPaneModel {
         session.focusFile = fileID
         session.focusRequest = UUID()
         keyFocusRequest = byKey ? session.focusRequest : nil
+    }
+
+    /// The compact pane's row: that file's diff is the one on show. A file already viewed stays viewed.
+    func show(_ fileID: String) {
+        movedByKey = false
+        currentFile = fileID
     }
 
     /// A click on a file's header makes it current.

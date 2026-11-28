@@ -18,6 +18,8 @@ struct InstructionsEditor: NSViewRepresentable {
     /// A project editor without the gutter: text in the primary color on the board's 1.65 line
     /// (the subagent form's Instructions pane).
     var plain = false
+    /// The text in `textSecondary` rather than primary ink (the subagent profile's prompt).
+    var quiet = false
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -56,7 +58,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.drawsBackground = true
         textView.project = project
         textView.plain = plain
-        textView.backgroundColor = NSColor(project ? Color.sh.projectEditorBackground : Color.sh.bgRaised)
+        textView.backgroundColor = NSColor(Color.sh.bgRaised)
         textView.insertionPointColor = NSColor(Color.sh.lantern)
         textView.textContainerInset = NSSize(width: 0, height: project ? AppLayout.projectEditorInset : AppLayout.instructionsEditorInset)
         textView.textContainer?.lineFragmentPadding = 0
@@ -135,7 +137,7 @@ struct InstructionsEditor: NSViewRepresentable {
             let scale = ThemeStore.shared.textScale
             let markdown = parent.markdown
             if !textView.hasMarkedText(), styled.map({ $0.text != text || $0.scale != scale || $0.markdown != markdown }) ?? true {
-                let styles = InstructionsEditorStyles(scale: scale, project: parent.project, plain: parent.plain)
+                let styles = InstructionsEditorStyles(scale: scale, project: parent.project, plain: parent.plain, quiet: parent.quiet)
                 let full = NSRange(location: 0, length: storage.length)
                 // Only typing restyles part of the text; anything else (first styling, text size) restyles it all.
                 let sameStyles = styled.map { $0.scale == scale && $0.markdown == markdown } ?? false
@@ -233,7 +235,7 @@ struct InstructionsEditorStyles {
 
     static var current: InstructionsEditorStyles { InstructionsEditorStyles(scale: ThemeStore.shared.textScale) }
 
-    init(scale: CGFloat, project: Bool = false, plain: Bool = false) {
+    init(scale: CGFloat, project: Bool = false, plain: Bool = false, quiet: Bool = false) {
         let size = (project ? AppLayout.projectsHostSize : AppLayout.instructionsEditorTextSize) * scale
         let font = SHFonts.platform(mono: true, weight: .regular, size: size)
         let bold = SHFonts.platform(mono: true, weight: .semibold, size: size)
@@ -245,7 +247,7 @@ struct InstructionsEditorStyles {
         let offset = max(0, (lineHeight - (font.ascender - font.descender)) / 2)
         base = [
             .font: font,
-            .foregroundColor: NSColor(plain ? Color.sh.textPrimary : project ? Color.sh.projectInstructionText : Color.sh.textSecondary),
+            .foregroundColor: NSColor(plain ? Color.sh.textPrimary : project ? Color.sh.projectInstructionText : quiet ? Color.sh.textSecondary : Color.sh.textPrimary),
             .paragraphStyle: paragraph,
             .baselineOffset: offset,
         ]
@@ -305,7 +307,7 @@ final class InstructionsTextView: NSTextView {
         guard let layoutManager else { return }
         let styles = InstructionsEditorStyles(scale: ThemeStore.shared.textScale, project: project, plain: plain)
         if project, !plain {
-            NSColor(Color.sh.projectEditorBackground).setFill()
+            NSColor(Color.sh.bgRaised).setFill()
             NSRect(x: 0, y: rect.minY, width: gutter, height: rect.height).fill()
         }
         let origin = textContainerOrigin

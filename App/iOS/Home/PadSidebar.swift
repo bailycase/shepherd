@@ -34,6 +34,8 @@ struct PadSidebar: View {
             SidebarFooterBar().overlay(alignment: .top) { SHHairline() }
         }
         .task { await feed.watch() }
+        // The iPad board's row heights; the Duo's inner display keeps its own (DuoOpenOverview).
+        .environment(\.shSidebarRoomy, navigator.hingeClosed == nil)
         .background(overlays ? Color.sh.bgBase : Color.clear, in: RoundedRectangle(cornerRadius: SHSidebarMetrics.panelRadius))
         .padding(SHSidebarMetrics.panelInset)
         .ignoresSafeArea(.container, edges: .top)
@@ -46,17 +48,22 @@ private struct PadSidebarTopBar: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        HStack(spacing: SH.Space.xxs) {
+        HStack(spacing: 0) {
             Spacer(minLength: 0)
-            Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
-            StopAllWorkingMenu()
-            Button("Hide sidebar", systemImage: "sidebar.left") { withSHAnimation(.pane) { navigator.padColumns = .detailOnly } }
+            // The boards' one glass capsule round the three buttons (iPadThread), their glyphs in the primary ink.
+            HStack(spacing: 0) {
+                Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
+                StopAllWorkingMenu()
+                Button("Hide sidebar", systemImage: "sidebar.left") { withSHAnimation(.pane) { navigator.padColumns = .detailOnly } }
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.shIcon(size: SHSidebarMetrics.touchBarButton))
+            .font(.sh(.ui))
+            .imageScale(.large)
+            .foregroundStyle(Color.sh.textPrimary)
+            .padding(.horizontal, SH.Space.xxs)
+            .glassEffect(.regular, in: Capsule())
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.shIcon(size: SHSidebarMetrics.touchBarButton))
-        .font(.sh(.ui))
-        .imageScale(.large)
-        .foregroundStyle(Color.sh.textSecondary)
         .padding(.trailing, SHSidebarMetrics.panelInset)
         .frame(height: SHSidebarMetrics.touchBarHeight)
     }
