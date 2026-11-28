@@ -123,22 +123,21 @@ struct RemoteDirectoryPicker: View {
 
     var body: some View {
         let visible = visibleDirs
-        SHDialog("\(title) on \(hostName)", width: AppLayout.directoryPickerWidth) {
+        SpaceSheet(title: "\(title) on \(hostName == "This Mac" ? "this Mac" : hostName)", width: AppLayout.directoryPickerWidth,
+                   note: errorText ?? (loading ? "Loading…" : "\(visible.count) directories"), noteFailed: errorText != nil) {
             // The path is editable: typing filters the listing to what's
             // under the typed path, and ⏎ chooses it in one go.
-            TextField("Path", text: $pathDraft)
-                .focused($pathFocused)
-                .shField(focused: pathFocused, mono: true)
-                .onChange(of: pathDraft) { draftChanged() }
-                .onSubmit { submit() }
-                .onKeyPress(.tab) {
-                    completePath()
-                    return .handled
-                }
-                .padding(.horizontal, SHDialogMetrics.inset)
-                .padding(.bottom, SH.Space.l)
-
-            SHHairline()
+            SpaceSheetField(focused: pathFocused) {
+                TextField("Path", text: $pathDraft)
+                    .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize))
+                    .focused($pathFocused)
+                    .onChange(of: pathDraft) { draftChanged() }
+                    .onSubmit { submit() }
+                    .onKeyPress(.tab) {
+                        completePath()
+                        return .handled
+                    }
+            }.padding(.top, SH.Space.l)
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let parent {
@@ -161,7 +160,7 @@ struct RemoteDirectoryPicker: View {
                             .padding(SH.Space.l)
                     }
                 }
-                .padding(SH.Space.s)
+                .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.s)
                 // A new directory's listing (or the hidden ones) replaces the old as one
                 // cross-fade, never row by row; the filter you type narrows it at once.
                 .id(Listing(path: path, showHidden: showHidden))
@@ -169,21 +168,21 @@ struct RemoteDirectoryPicker: View {
             }
             .shAnimation(.content, value: Listing(path: path, showHidden: showHidden))
             .frame(height: AppLayout.directoryListHeight)
-            .background(Color.sh.bgSunken)
-            SHHairline()
-        } status: {
-            SHDialogStatus(errorText ?? (loading ? "Loading…" : "\(visible.count) directories"), isError: errorText != nil)
+            .background(Color.sh.bgHover)
+            .overlay(alignment: .top) { SHHairline() }
+            .overlay(alignment: .bottom) { SHHairline() }
+            // The list runs edge to edge: the sheet's 20pt sides give way to it.
+            .padding(.horizontal, -SHCardSheetMetrics.padding.leading).padding(.top, SH.Space.l)
         } actions: {
             Toggle("Show hidden", isOn: $showHidden)
                 .toggleStyle(.shSwitch)
                 .font(.sh(.caption))
                 .foregroundStyle(Color.sh.textSecondary)
-                .padding(.trailing, SH.Space.s)
             Button("Cancel", action: cancel)
-                .buttonStyle(.sh(.ghost))
+                .buttonStyle(SpaceBarStyle())
                 .keyboardShortcut(.cancelAction)
             Button(actionTitle) { submit() }
-                .buttonStyle(.sh(.primary))
+                .buttonStyle(SpaceBarStyle(kind: .primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(path.isEmpty || loading)
         }
@@ -273,33 +272,39 @@ struct RemoteDirectoryPicker: View {
     }
 }
 
-/// A directory in the listing: a real button, so it carries button traits and takes Space.
+/// A directory in the listing (`gspcs-dir`): 28pt, a name and a chevron, or the way up; a real button, so it carries button traits and takes Space.
 private struct RemoteDirRow: View {
     let label: String
     let isUp: Bool
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         let _ = SHRenderProbe.tick("directory.row")
         Button(action: action) {
             HStack(spacing: SH.Space.m) {
-                Image(systemName: isUp ? "arrow.turn.left.up" : "folder")
-                    .font(.sh(.ui))
-                    .foregroundStyle(isUp ? Color.sh.textTertiary : Color.sh.textSecondary)
-                    .frame(width: SH.Space.xl)
-                    .accessibilityHidden(true)
+                if isUp {
+                    Image(systemName: "chevron.left").font(.shSans(SHSettingsControlMetrics.popupChevronSize, .medium)).foregroundStyle(Color.sh.textTertiary)
+                        .accessibilityHidden(true)
+                }
                 Text(label)
                     .font(.sh(.ui))
                     .foregroundStyle(isUp ? Color.sh.textSecondary : Color.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
+                if !isUp {
+                    Image(systemName: "chevron.right").font(.shSans(SHSettingsControlMetrics.popupChevronSize, .medium)).foregroundStyle(Color.sh.textTertiary)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, SH.Space.m)
             .frame(minHeight: SH.Height.row)
+            .background(hovering ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.shRow())
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .accessibilityLabel(isUp ? "Parent directory" : label)
     }
 }

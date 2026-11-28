@@ -93,25 +93,26 @@ private struct SHFieldChrome: ViewModifier {
         let sh = Color.sh
         // The Settings boards' fields: 30pt at radius 7, 10pt in, 12.5 whether mono or not; their
         // search field is 34pt at radius 8 in Geist 13.
-        let settings = scale == .settings
+        let settings = scale.isSettings
+        let sheet = scale == .sheet
         let M = SHSettingsControlMetrics.self
-        let radius = settings ? (search ? M.segmentTrackRadius : M.radius) : SH.Radius.s
+        let radius = sheet && !search ? M.sheetFieldRadius : settings ? (search ? M.searchRadius : M.radius) : SH.Radius.s
         let shape = RoundedRectangle(cornerRadius: radius)
         content
             .textFieldStyle(.plain)
-            .font(settings ? (mono ? .shMono(M.fieldTextSize) : .shSans(search ? M.textSize : M.fieldTextSize))
+            .font(settings ? (mono ? .shMono(M.sheetMonoSize) : .shSans(M.fieldTextSize))
                   : mono ? .shMono(12) : .shSans(12.5))
             .foregroundStyle(sh.textPrimary)
             .tint(sh.lantern)
-            .padding(.horizontal, settings ? M.fieldPadding : SH.Space.m)
-            .padding(.vertical, SH.Space.xs)
-            .frame(minHeight: settings ? (search ? M.fieldHeight + SH.Space.xs : M.fieldHeight) : SH.Height.controlM)
-            .background(sh.bgRaised, in: shape)
+            .padding(.horizontal, sheet ? M.sheetFieldPadding : settings ? M.fieldPadding : SH.Space.m)
+            .padding(.vertical, settings ? 0 : SH.Space.xs)
+            .frame(minHeight: sheet && !search ? M.sheetFieldHeight : settings ? M.fieldHeight : SH.Height.controlM)
+            .background(sheet && !search ? sh.bgRaised : settings ? (search ? sh.bgHover : Color.clear) : sh.bgRaised, in: shape)
             .overlay {
                 // The line and the ring fade on their own layer, so focusing a field or
                 // flagging it never animates the text inside.
                 Color.clear
-                    .shBorder(error ? sh.failed : sh.lineStrong, radius: radius)
+                    .shBorder(error ? sh.failed : settings && search ? .clear : sh.lineStrong, radius: radius)
                     .shFocusRing(focused, radius: radius)
                     .shComponentAnimation(.hover, value: focused)
                     .shComponentAnimation(.hover, value: error)
@@ -128,7 +129,7 @@ private struct SHSearchGlyph: View {
     var body: some View {
         Image(systemName: "magnifyingglass")
             .font(.system(size: size - 1, weight: .medium))
-            .foregroundStyle(scale == .settings ? Color.sh.settingsMuted : Color.sh.textTertiary)
+            .foregroundStyle(scale.isSettings ? Color.sh.settingsMuted : Color.sh.textTertiary)
             .accessibilityHidden(true)
     }
 }
@@ -151,7 +152,7 @@ public struct SHSearchField: View {
     }
 
     public var body: some View {
-        let settings = scale == .settings && !large
+        let settings = scale.isSettings && !large
         let row = HStack(spacing: large || settings ? SH.Space.m : SH.Space.s) {
             SHSearchGlyph(size: large ? 16 : 13)
             TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(settings ? Color.sh.settingsMuted : Color.sh.textTertiary))
@@ -165,7 +166,7 @@ public struct SHSearchField: View {
                 if let shortcut {
                     // The Settings boards write the hint as plain mono text ("⌘F").
                     if settings {
-                        Text(shortcut).font(.shMono(11)).foregroundStyle(.sh.textTertiary).accessibilityHidden(true)
+                        Text(shortcut).font(.shSans(SHTextStyle.caption.size)).foregroundStyle(.sh.textTertiary).accessibilityHidden(true)
                     } else {
                         SHKeycap(shortcut)
                     }

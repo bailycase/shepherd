@@ -229,7 +229,7 @@ struct ChildProjectTests {
         model.folder = "child"
         #expect(!dismissed)
         window.layout()
-        let existing = try window.press("Existing folder", role: ControlRole.radioButton)
+        let existing = try window.press("Existing folder")
         #expect(ControlPress.undersized([existing], minimum: .desktop).isEmpty)
         #expect(!model.create)
         window.layout()
@@ -260,7 +260,7 @@ struct ChildProjectTests {
         #expect(vm.state.spaces.count == 2)
         dismissed = false
         window.layout()
-        try window.press("New folder", role: ControlRole.radioButton)
+        try window.press("New folder")
         #expect(model.create)
         model.folder = "not-created"
         window.layout()

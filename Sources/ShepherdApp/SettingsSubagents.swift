@@ -54,7 +54,7 @@ struct SubagentsSettings: View {
             .disabled(model.busy)
             SettingsGroup(title: "") {
                 SettingsRow(title: "Where they live", subtitle: "One Markdown file each") {
-                    HStack(spacing: SH.Space.m) {
+                    HStack(spacing: AppLayout.settingsControlsSpacing) {
                         SettingsValue(text: "Shepherd/pi/agents", mono: true).help(model.directory.path)
                         Button("Reveal") { model.revealFolder() }
                             .buttonStyle(.sh(.secondary, size: .s))
@@ -93,7 +93,7 @@ private struct SubagentProfileRow: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("settings.subagent.row")
         SettingsDrillRow(title: definition.name, subtitle: definition.diagnostic ?? definition.description,
-                         value: definition.diagnostic != nil ? definition.file : definition.capability, mono: true,
+                         value: definition.diagnostic != nil ? definition.file : definition.capability, valueMono: true,
                          accessibilityName: "Open \(definition.name)", action: open)
     }
 }

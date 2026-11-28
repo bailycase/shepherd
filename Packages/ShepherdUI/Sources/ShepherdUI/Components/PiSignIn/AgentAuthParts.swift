@@ -41,8 +41,8 @@ public struct SHAgentWaitingLine: View, Equatable {
     }
 }
 
-/// "Not signed in to Anthropic" (`AgentNotSignedInCard(provider:)`): a lantern card at the end of
-/// the thread with Sign in to <provider> and Use another model.
+/// "Not signed in to Anthropic" (`AgentNotSignedInCard(provider:)`): a raised card at the end of
+/// the thread with Use another model and Sign in to <provider> as words.
 public struct SHAgentNotSignedInCard<Models: View>: View {
     let provider: String
     let model: String?
@@ -67,40 +67,31 @@ public struct SHAgentNotSignedInCard<Models: View>: View {
     public var body: some View {
         let sh = Color.sh
         let M = SHPiSignInMetrics.self
-        VStack(alignment: .leading, spacing: SH.Space.l) {
-            HStack(alignment: .top, spacing: SH.Space.l) {
-                Image(systemName: "key")
-                    .font(.shSans(M.cardGlyph - 3, .medium))
-                    .foregroundStyle(sh.lanternText)
-                    .frame(width: M.cardTile, height: M.cardTile)
-                    .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: M.cardRadius))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: M.lineGap) {
-                    Text("Not signed in to \(provider)")
-                        .font(.shSans(M.cardTitleSize, .semibold))
-                        .foregroundStyle(sh.textPrimary)
-                    message
-                        .shText(size: 13, lineHeight: 1.5)
-                        .foregroundStyle(sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                }
-                .padding(.top, SH.Space.xxs)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // The board's card (`gss-card`): a raised, lifted card at radius 14, 14 over and 16 in; the title, a line under it, and the
+        // two actions as words at the right.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.l) {
+                Text("Not signed in to \(provider)")
+                    .font(.shSans(M.noticeTitleSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if let time {
                     Text(time).font(.shMono(M.timeSize)).foregroundStyle(sh.textTertiary).fixedSize()
                 }
             }
-            HStack(spacing: SH.Space.m) {
-                Button(action: signIn) { Label("Sign in to \(provider)", systemImage: "key") }
-                    .buttonStyle(.sh(.primary, size: .s))
+            message
+                .shText(size: M.noticeTitleSize, lineHeight: M.noticeLine)
+                .foregroundStyle(sh.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(.top, M.noticeGap)
+            HStack(spacing: M.footerGap) {
+                Spacer(minLength: 0)
                 if let models {
                     Menu { models } label: {
-                        Label("Use another model", systemImage: "arrow.triangle.swap")
-                            .font(.shSans(12, .medium))
+                        Text("Use another model")
+                            .font(.shSans(M.noticeTitleSize))
                             .foregroundStyle(sh.textSecondary)
-                            .padding(.horizontal, SH.Space.m)
-                            .frame(height: SH.Height.controlS)
                             .contentShape(Rectangle())
                     }
                     .menuStyle(.button)
@@ -108,18 +99,23 @@ public struct SHAgentNotSignedInCard<Models: View>: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                 }
+                Button(action: signIn) {
+                    Text("Sign in to \(provider)").font(.shSans(M.noticeTitleSize, .medium)).foregroundStyle(sh.textPrimary)
+                }
+                .buttonStyle(.plain)
             }
-            .padding(.leading, M.cardTile + SH.Space.l)
+            .padding(.top, M.noticeActionsTop)
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, SH.Space.xl)
-        .background(sh.lantern.opacity(M.cardFillOpacity), in: RoundedRectangle(cornerRadius: M.cardRadius))
-        .shBorder(sh.lantern.opacity(M.cardLineOpacity), radius: M.cardRadius)
+        .padding(.vertical, M.noticeVertical)
+        .padding(.horizontal, M.noticeHorizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shCard(radius: M.noticeRadius, lift: true)
+        .accessibilityElement(children: .contain)
     }
 
     private var message: Text {
         guard let model else { return Text(reason) }
-        return Text("This agent uses ") + Text(model).font(.shMono(12.5)).foregroundColor(Color.sh.textPrimary) + Text(". ") + Text(reason)
+        return Text("This agent uses ") + Text(model).font(.shMono(SHPiSignInMetrics.noticeMonoSize)).foregroundColor(Color.sh.textPrimary) + Text(". ") + Text(reason)
     }
 }
 

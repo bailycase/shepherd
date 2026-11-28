@@ -33,7 +33,7 @@ extension AppLayout {
     static let spaceFormResetWidth: CGFloat = 124
     static let spaceFormStepperMax = 99
     /// ProjectAdd's dialog: a 552pt field inside its insets.
-    static let spaceAddWidth: CGFloat = 600
+    static let spaceAddWidth: CGFloat = 560
     /// ProjectResourceManager: the list's FROM, STATUS and remove columns, the 272pt search, the
     /// 20pt row glyph and 32pt empty glyph, the editor dialog (760×680) and Add from repo (680).
     static let resourceFromWidth: CGFloat = 160
@@ -46,9 +46,9 @@ extension AppLayout {
     static let resourceEditorWidth: CGFloat = 760
     static let resourceEditorHeight: CGFloat = 680
     static let resourceInstallWidth: CGFloat = 680
-    static let resourceDescriptionHeight: CGFloat = 58
-    static let resourceBodyHeight: CGFloat = 190
-    static let resourceAgentBodyHeight: CGFloat = 160
+    static let resourceDescriptionHeight: CGFloat = 56
+    static let resourceBodyHeight: CGFloat = 150
+    static let resourceAgentBodyHeight: CGFloat = 84
     static let resourceToolWidth: CGFloat = 94
     static let projectNarrowWidth: CGFloat = 720
     static let projectNarrowEditorHeight: CGFloat = 500
@@ -108,9 +108,9 @@ extension AppLayout {
     static let projectEditorHeaderHeight: CGFloat = 34
     static let projectEditorFooterHeight: CGFloat = 40
     static let projectEditorButtonHeight: CGFloat = 30
-    static let projectEditorLineHeight: CGFloat = 21.25
-    static let projectEditorGutter: CGFloat = 44
-    static let projectEditorInset: CGFloat = 12
+    static let projectEditorLineHeight: CGFloat = 20
+    static let projectEditorGutter: CGFloat = 36
+    static let projectEditorInset: CGFloat = 10
     static let projectSideGap: CGFloat = 14
     static let projectDotSize: CGFloat = 6
     static let projectReadRowHeight: CGFloat = 46

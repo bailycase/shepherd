@@ -131,7 +131,7 @@ struct ProjectsControlTests {
                 try await saveResources("the removal saved")
                 #expect(!FileManager.default.fileExists(atPath: skills.path))
                 window.layout()
-                try ControlPress.press("Slash commands", role: ControlRole.radioButton, under: window.host)
+                try ControlPress.press("Slash commands", under: window.host)
                 window.layout()
                 try ControlPress.press("New command", under: window.host)
                 try await eventuallyOnMain("the editor") { resources.editor != nil }

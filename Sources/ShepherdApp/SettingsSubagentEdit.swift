@@ -39,28 +39,31 @@ struct SubagentEditForm: View {
                     SettingsRow(title: "File name", subtitle: "pi/agents/") {
                         TextField("Subagent filename", text: $model.filename)
                             .textFieldStyle(.sh(mono: true))
-                            .frame(width: AppLayout.settingsFieldWidth)
+                            .frame(width: AppLayout.subagentEditFieldWidth)
                     }
                 }
                 SettingsRow(title: "Name") {
-                    SubagentTextField(label: "Subagent name", text: stringBinding("name"), mono: true)
-                        .frame(width: AppLayout.settingsFieldWidth)
+                    TextField("", text: stringBinding("name"))
+                        .textFieldStyle(.sh)
+                        .frame(width: AppLayout.subagentEditFieldWidth)
+                        .accessibilityLabel("Subagent name")
                 }
-                SettingsRow(title: "Description", subtitle: "The parent reads this to decide when to use it") {
-                    VStack(alignment: .trailing, spacing: SH.Space.s) {
+                SettingsRow(title: "Description", subtitle: nil) {
+                    HStack(spacing: AppLayout.settingsControlsSpacing) {
                         SettingsOpenIn(text: stringBinding("description"), name: "description.txt")
-                        SubagentTextField(label: "Subagent description", text: stringBinding("description"), multiline: true)
+                        // One line that grows to four: the parent reads it to decide when to use the profile.
+                        TextField("", text: stringBinding("description"), axis: .vertical)
+                            .lineLimit(1...4)
+                            .textFieldStyle(.sh)
+                            .frame(width: AppLayout.subagentEditWideFieldWidth)
+                            .accessibilityLabel("Subagent description")
+                            .accessibilityHint("The parent reads this to decide when to use it")
                     }
-                    .frame(width: AppLayout.settingsFieldWidth)
                 }
                 SettingsRow(title: "Model") { modelMenu }
                 SettingsRow(title: "Thinking") { thinkingMenu }
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Tools").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-                        Text("Never more than the parent has").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                    }
-                    SHFlowLayout(spacing: AppLayout.subagentEditChipGap) {
+                SettingsRow(title: "Tools") {
+                    HStack(spacing: AppLayout.subagentEditChipGap) {
                         ForEach(Self.tools, id: \.self) { tool in
                             let on = enabledTools.contains(tool)
                             Button { toggle(tool) } label: {
@@ -69,15 +72,14 @@ struct SubagentEditForm: View {
                                     .padding(.horizontal, AppLayout.subagentEditChipPadding)
                                     .frame(height: AppLayout.subagentEditChipHeight)
                                     .background(on ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-                                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
                                     .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
                             }.buttonStyle(.plain).shFocusRing(radius: SH.Radius.s, color: .sh.running)
                                 .accessibilityLabel(tool).accessibilityValue(on ? "on" : "off").accessibilityAddTraits(on ? .isSelected : [])
                         }
                     }
+                    .fixedSize()
+                    .shHelp("Never more than the parent has")
                 }
-                .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.l)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 SettingsRow(title: "Starts with") {
                     SubagentSegments(label: "Starts with", selection: stringBinding("defaultContext", fallback: inheritedContext, also: "context"),
                                      options: [("fresh", "Fresh context"), ("fork", "A copy of the thread")])
@@ -132,11 +134,12 @@ struct SubagentEditForm: View {
     private var thinkingMenu: some View {
         // `thinking: false` is how a file says off.
         let current = model.form.scalar("thinking").map { $0 == "false" ? "off" : $0 }
-        return SubagentPopup(label: "Thinking", title: current.flatMap { ThinkingLevel(rawValue: $0)?.title } ?? current ?? "Inherit from the thread", mono: false) {
+        return SHPopupMenu(current.flatMap { ThinkingLevel(rawValue: $0)?.title } ?? current ?? "Inherit from the thread", minWidth: 0) {
             Button("Inherit from the thread") { model.form.set("thinking", scalar: nil) }
             Divider()
             ForEach(ThinkingLevel.allCases, id: \.self) { level in Button(level.title) { model.form.set("thinking", scalar: level.rawValue) } }
         }
+        .accessibilityLabel("Thinking")
     }
 
     // MARK: Prompt
@@ -152,11 +155,11 @@ struct SubagentEditForm: View {
             .padding(.horizontal, SH.Space.xs)
             SettingsEditorCard(name: model.filename.isEmpty ? "profile.md" : model.filename, edited: model.dirty,
                                openIn: Binding(get: { model.form.body }, set: { model.form.body = $0 })) {
-                Button("Revert") { model.revert() }.buttonStyle(.sh(.secondary, size: .s)).disabled(!model.dirty)
-                Button("Save") { Task { await model.save() } }.buttonStyle(.sh(.primary, size: .s)).disabled(!model.canSave)
+                Button("Cancel") { model.revert() }.buttonStyle(.sh(.ghost, size: .s)).disabled(!model.dirty)
+                Button("Save") { Task { await model.save() } }.buttonStyle(.sh(.bold, size: .s)).disabled(!model.canSave)
             } content: {
                 InstructionsEditor(text: Binding(get: { model.form.body }, set: { model.form.body = $0 }), saved: model.form.body,
-                                   accessibilityLabel: "Subagent instructions")
+                                   accessibilityLabel: "Subagent instructions", quiet: true)
             }
         }
         .shControlScale(.settings)
@@ -187,69 +190,6 @@ struct SubagentEditForm: View {
 
 // MARK: Controls
 
-private struct SubagentTextField: View {
-    let label: String
-    @Binding var text: String
-    var mono = false
-    var multiline = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        Group {
-            if multiline { TextField("", text: $text, axis: .vertical) } else { TextField("", text: $text) }
-        }
-            .textFieldStyle(.plain).focused($focused)
-            .font(mono ? .shMono(AppLayout.subagentEditFieldSize) : .shSans(AppLayout.subagentEditFieldSize))
-            .foregroundStyle(Color.sh.textPrimary).tint(Color.sh.lantern)
-            .lineSpacing(multiline ? AppLayout.subagentEditDescriptionLineExtra : 0)
-            .padding(.horizontal, AppLayout.subagentEditFieldPadding)
-            .padding(.top, multiline ? AppLayout.subagentEditDescriptionTop : 0)
-            .frame(maxWidth: .infinity, minHeight: multiline ? AppLayout.subagentEditDescriptionHeight : AppLayout.subagentEditFieldHeight,
-                   alignment: multiline ? .topLeading : .leading)
-            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-            .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditFieldRadius)
-            .shFocusRing(focused, radius: AppLayout.subagentEditFieldRadius)
-            .contentShape(Rectangle()).onTapGesture { focused = true }
-            .accessibilityLabel(label)
-    }
-}
-
-/// A popup drawn full width with the board's chevron, on a native menu.
-private struct SubagentPopup<Items: View>: View {
-    let label: String
-    let title: String
-    let mono: Bool
-    @ViewBuilder let items: () -> Items
-
-    var body: some View {
-        Menu(content: items) { SubagentPopupLabel(title: title, mono: mono) }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-            .shFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .sh.running)
-            .accessibilityLabel(label).accessibilityValue(title)
-    }
-}
-
-private struct SubagentPopupLabel: View {
-    let title: String
-    let mono: Bool
-
-    var body: some View {
-        HStack(spacing: SH.Space.m) {
-            Text(title).font(mono ? .shMono(AppLayout.subagentEditChipSize) : .shSans(AppLayout.subagentEditFieldSize))
-                .foregroundStyle(Color.sh.textPrimary).lineLimit(mono ? 1 : 2).truncationMode(.middle)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.down").font(.system(size: AppLayout.subagentEditPopupChevron, weight: .semibold))
-                .foregroundStyle(Color.sh.settingsMuted)
-        }
-        .padding(.horizontal, AppLayout.subagentEditFieldPadding).padding(.vertical, SH.Space.xs)
-        .frame(maxWidth: .infinity, minHeight: AppLayout.subagentEditFieldHeight)
-        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-        .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditFieldRadius)
-        .contentShape(Rectangle())
-    }
-}
-
 /// The model field: the popup's look, opening the composer's searchable model picker, because a
 /// custom provider lists hundreds of models. Typing filters by substring of the id.
 struct SubagentModelField: View {
@@ -263,9 +203,9 @@ struct SubagentModelField: View {
     static let inherit = "Inherit from the thread"
 
     var body: some View {
-        Button { open = true } label: { SubagentPopupLabel(title: current ?? Self.inherit, mono: current != nil) }
+        Button { open = true } label: { SHPopupLabel(current ?? Self.inherit, mono: current != nil) }
             .buttonStyle(.plain)
-            .shFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .sh.running)
+            .shFocusRing(radius: SH.Radius.xs, color: .sh.running)
             .accessibilityLabel("Model").accessibilityValue(current ?? Self.inherit)
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 SHModelPicker(query: $query, sections: Self.sections(choices: choices, query: query, current: current), selection: $selection, onChoose: {

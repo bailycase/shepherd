@@ -27,7 +27,7 @@ struct SkillsSettings: View {
         initiallyOpen = open
     }
 
-    private var query: String { "" }
+    @State private var query = ""
 
     var body: some View {
         let hosts = vm.skillsHosts
@@ -59,8 +59,8 @@ struct SkillsSettings: View {
     }
 
     private func list(_ hosts: [SkillsHost]) -> some View {
-        let rows = model.rows(in: hosts, filter: filter, query: "")
-        let groups = model.piGroups(in: hosts, filter: filter, query: "")
+        let rows = model.rows(in: hosts, filter: filter, query: query)
+        let groups = model.piGroups(in: hosts, filter: filter, query: query)
         let updates = model.count(.updates, in: hosts)
         return SettingsPage(title: "Skills") {
             if let problem = model.recordsProblem(in: hosts) {
@@ -75,7 +75,7 @@ struct SkillsSettings: View {
                         (.all, "All \(model.count(.all, in: hosts))"),
                         (.on, "On \(model.count(.on, in: hosts))"),
                         (.updates, "Updates \(updates)"),
-                    ], note: SkillsPresentation.checkedLine(model.checkedAt(in: hosts), now: context.date),
+                    ], search: $query, searchPrompt: "Filter skills", note: SkillsPresentation.checkedLine(model.checkedAt(in: hosts), now: context.date),
                                       buttonTitle: updates > 0 ? "Update \(updates)" : nil) {
                         Task { await model.updateAll(in: vm.skillsHosts) }
                     }
@@ -244,7 +244,7 @@ private struct SkillListRow: View, Equatable {
         let _ = SHRenderProbe.tick("skills.row")
         SettingsDrillRow(title: row.skill.name, subtitle: row.skill.summary,
                          value: row.isUpdating ? "Updating" : row.skill.update != nil ? "Update" : nil,
-                         valueTone: .note, mono: true, action: open) {
+                         valueTone: .note, action: open) {
             Toggle(row.skill.name, isOn: Binding(get: { row.skill.isOn }, set: toggle))
                 .toggleStyle(.shSwitch).labelsHidden()
         }
@@ -262,7 +262,7 @@ private struct PiSkillListRow: View, Equatable {
 
     var body: some View {
         let _ = SHRenderProbe.tick("skills.row")
-        SettingsRow(title: row.skill.name, subtitle: row.skill.shadowedBy.map(SkillsPresentation.shadowNote) ?? row.skill.summary, mono: true) {
+        SettingsRow(title: row.skill.name, subtitle: row.skill.shadowedBy.map(SkillsPresentation.shadowNote) ?? row.skill.summary) {
             SettingsValue(text: "Read-only")
         }
     }
@@ -294,16 +294,22 @@ private struct SkillDetailPage: View {
                                                                set: { model.setInvocation(skill.name, $0, in: vm.skillsHosts) }),
                                   options: [(.automatic, "Automatically"), (.slashOnly, SkillsPresentation.slashOption(skill.name))])
             }
+            SettingsRow(title: "Source") {
+                SettingsValue(text: SkillsPresentation.source(skill, recordsUnavailable: model.recordsProblem(in: hosts) != nil))
+            }
             if let source = skill.source {
+                SettingsRow(title: "Installed") {
+                    SettingsValue(text: ([String(source.commit.prefix(7))] + (source.committedAt.map { [SkillsPresentation.date($0)] } ?? [])).joined(separator: " · "))
+                }
                 if let update = skill.update {
                     let newer = SkillsPresentation.newer(update)
                     SettingsRow(title: "New \(newer.commit)", subtitle: newer.detail) {
-                        HStack(spacing: SH.Space.s) {
+                        HStack(spacing: AppLayout.settingsControlsSpacing) {
                             if let compare = SkillsText.compareURL(repo: source.repo, from: source.commit, to: update.commit) {
                                 Button("What changed") { openURL(compare) }.buttonStyle(.sh(.secondary, size: .s))
                             }
                             Button("Update") { Task { await model.update(skill.name, in: vm.skillsHosts) } }
-                                .buttonStyle(.sh(.primary, size: .s))
+                                .buttonStyle(.sh(.secondary, size: .s))
                                 .disabled(row.isUpdating)
                         }
                     }
@@ -313,8 +319,8 @@ private struct SkillDetailPage: View {
         SettingsGroup(title: "Files") {
             ForEach(skill.files) { entry in
                 if entry.name == "SKILL.md" {
-                    SettingsRow(title: "SKILL.md", subtitle: nil, mono: true) {
-                        HStack(spacing: SH.Space.s) {
+                    SettingsRow(title: "SKILL.md", subtitle: nil) {
+                        HStack(spacing: AppLayout.settingsControlsSpacing) {
                             // A skill has no in-app draft: its SKILL.md is the file, edited where it lives.
                             if let folder = vm.skillFolder(skill.name), here {
                                 SHOpenInButton(url: folder.appendingPathComponent("SKILL.md"), actions: .app, size: .settings)
@@ -322,6 +328,11 @@ private struct SkillDetailPage: View {
                             Button("Open") { vm.openSkillFile(skill.name) }.buttonStyle(.sh(.secondary, size: .s)).disabled(!here)
                             Button("Show folder") { vm.showSkillFolder(skill.name) }.buttonStyle(.sh(.secondary, size: .s)).disabled(!here)
                         }
+                    }
+                } else {
+                    // Another file or folder in the skill's folder, by name; a folder says how many files it holds.
+                    SettingsRow(title: entry.isDirectory ? entry.name + "/" : entry.name) {
+                        if entry.isDirectory { SettingsValue(text: entry.fileCount == 1 ? "1 file" : "\(entry.fileCount) files") }
                     }
                 }
             }

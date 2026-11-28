@@ -53,7 +53,10 @@ struct AdvancedSettings: View {
 /// app updates.
 struct GeneralSettings: View {
     var vm: ShepherdViewModel
+    /// Previews draw the Updates rows where Sparkle is not running.
+    @Environment(\.updatesPreviewAvailable) private var previewAvailable
     private var updater: AppUpdater { .shared }
+    private var updatesAvailable: Bool { previewAvailable ?? updater.available }
 
     private var version: String {
         let info = Bundle.main.infoDictionary
@@ -84,7 +87,7 @@ struct GeneralSettings: View {
                     get: { updater.channel },
                     set: { updater.select($0) }
                 ))
-                if updater.available {
+                if updatesAvailable {
                     SettingsRow(title: "Check automatically") {
                         SettingsSwitch(label: "Check automatically", isOn: Binding(
                             get: { updater.automaticallyChecks },
@@ -93,7 +96,7 @@ struct GeneralSettings: View {
                     }
                     .shTransition(.disclosure)
                 }
-                if updater.available {
+                if updatesAvailable {
                     SettingsRow(title: "Version \(version)", subtitle: vm.pi.engine.version.map { "agent \($0)" }) {
                         Button("Check now") { updater.checkForUpdates() }
                             .buttonStyle(.sh(.secondary, size: .s))
@@ -102,7 +105,7 @@ struct GeneralSettings: View {
             }
         }
         // Sparkle reports whether it can update once it has started.
-        .shAnimation(.disclosure, value: updater.available)
+        .shAnimation(.disclosure, value: updatesAvailable)
         // Login Items may have changed while the window was elsewhere.
         .onAppear { if let service = vm.backgroundService { vm.backgroundServiceStatus = service.status() } }
     }
@@ -222,4 +225,9 @@ struct ResetSettingsDialog: View {
             ]
         )
     }
+}
+
+extension EnvironmentValues {
+    /// Previews only: whether Settings ▸ General draws the update rows (`AppUpdater.available` is false outside the signed apps).
+    @Entry var updatesPreviewAvailable: Bool? = nil
 }

@@ -19,51 +19,36 @@ struct SpaceResourceEditorView: View {
     var body: some View {
         if let editor = model.editor {
             let kind = editor.kind
-            VStack(spacing: 0) {
-                HStack(spacing: SH.Space.l) {
-                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                        Text("\(editor.isNew ? "New" : "Edit") \(kind.singular)").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary)
-                            .accessibilityAddTraits(.isHeader)
-                        Text("\(project.project.name) · This space only").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            SpaceSheet(title: "\(editor.isNew ? "New" : "Edit") \(kind.singular)",
+                       caption: AnyView(SpaceSheetCaption(text: "\(project.project.name) · This space only", mono: true)),
+                       width: kind == .agent ? AppLayout.spaceAgentSheetWidth : AppLayout.spaceEditorSheetWidth,
+                       close: { model.editor = nil }, note: editor.destination, noteMono: true) {
+                if kind == .extension { extensionFields } else { commonFields(editor) }
+                if kind == .agent { agentFields(editor) }
+                if kind != .extension {
+                    field(kind == .prompt ? "Prompt" : "Instructions", openIn: binding(\.body), file: kind == .prompt ? "prompt.md" : "instructions.md") {
+                        SpaceResourceTextArea(label: kind == .prompt ? "Prompt" : "Instructions", text: binding(\.body), mono: true,
+                                              height: kind == .agent ? AppLayout.resourceAgentBodyHeight : AppLayout.resourceBodyHeight)
                     }
-                    Spacer(minLength: 0)
-                    SpaceResourceCloseButton(label: "Close resource editor") { model.editor = nil }
-                }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.xl)
-                SHHairline(color: Color.sh.lineSubtle)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: SH.Space.xl) {
-                        if kind == .extension { extensionFields } else { commonFields(editor) }
-                        if kind == .agent { agentFields(editor) }
-                        if kind != .extension {
-                            field(kind == .prompt ? "Prompt" : "Instructions", openIn: binding(\.body), file: kind == .prompt ? "prompt.md" : "instructions.md") {
-                                SpaceResourceTextArea(label: kind == .prompt ? "Prompt" : "Instructions", text: binding(\.body), mono: true,
-                                                      height: kind == .agent ? AppLayout.resourceAgentBodyHeight : AppLayout.resourceBodyHeight)
-                            }
+                }
+                if kind == .skill {
+                    HStack(spacing: SH.Space.xl) {
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            Text("Use automatically").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+                            Text("When off, load this skill only with its slash command.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                         }
-                        if kind == .skill {
-                            HStack(spacing: SH.Space.l) {
-                                VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                                    Text("Use automatically").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                                    Text("When off, load this skill only with its slash command.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                                }
-                                Spacer(minLength: 0)
-                                Toggle("Use this skill automatically", isOn: binding(\.automatic)).toggleStyle(.shSwitch).labelsHidden()
-                            }
-                        }
-                        if kind == .agent { agentOptions(editor) }
-                        if let error = editor.error {
-                            Text(error).font(.sh(.ui)).foregroundStyle(Color.sh.failed).accessibilityAddTraits(.isStaticText)
-                        }
-                    }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.xl)
-                }.scrollIndicators(.automatic)
-                SHHairline(color: Color.sh.lineSubtle)
-                HStack(spacing: SH.Space.m) {
-                    Text(editor.destination).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Cancel") { model.editor = nil }.buttonStyle(.sh(.ghost, size: .l)).keyboardShortcut(.cancelAction)
-                    Button(editor.isNew ? "Create \(kind.singular)" : "Save changes") { model.saveEditor() }
-                        .buttonStyle(.sh(.primary, size: .l)).keyboardShortcut(.defaultAction)
-                }.padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
+                        Spacer(minLength: 0)
+                        Toggle("Use this skill automatically", isOn: binding(\.automatic)).toggleStyle(.shSwitch).labelsHidden()
+                    }.padding(.top, SH.Space.xl)
+                }
+                if kind == .agent { agentOptions(editor) }
+                if let error = editor.error {
+                    SpaceSheetNote(text: error, failed: true).accessibilityAddTraits(.isStaticText)
+                }
+            } actions: {
+                Button("Cancel") { model.editor = nil }.buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+                Button(editor.isNew ? "Create \(kind.singular)" : "Save changes") { model.saveEditor() }
+                    .buttonStyle(SpaceBarStyle(kind: .primary)).keyboardShortcut(.defaultAction)
             }
         }
     }
@@ -74,33 +59,43 @@ struct SpaceResourceEditorView: View {
 
     private func field<Content: View>(_ label: String, openIn: Binding<String>? = nil, file: String = "draft.txt",
                                       @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.xs) {
-            HStack(spacing: SH.Space.s) {
-                Text(label).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 0) {
+            SpaceSheetLabel(text: label, count: nil) {
                 if let openIn { SettingsOpenIn(text: openIn, name: file) }
             }
             content()
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Two fields side by side (`gspcs-two`).
+    private func two<A: View, B: View>(@ViewBuilder _ first: () -> A, @ViewBuilder _ second: () -> B) -> some View {
+        HStack(alignment: .top, spacing: SH.Space.xl - SH.Space.xxs) { first(); second() }
+    }
+
     @ViewBuilder private func commonFields(_ editor: SpaceResourcesModel.Editor) -> some View {
         let prompt = editor.kind == .prompt
-        HStack(alignment: .top, spacing: SH.Space.xl) {
+        two {
             field(prompt ? "Command name" : "Name") {
                 // An existing resource keeps its name (its file is named after it): the field reads, never edits.
-                TextField(prompt ? "Command name" : "Name", text: Binding(get: { model.editor?.name ?? "" }, set: { name in
-                    guard model.editor?.isNew == true else { return }
-                    model.editor?.name = name; model.editor?.error = nil
-                }), prompt: Text(verbatim: prompt ? "review" : "ledger-review"))
-                    .textFieldStyle(.sh(mono: true))
+                SpaceSheetField {
+                    TextField(prompt ? "Command name" : "Name", text: Binding(get: { model.editor?.name ?? "" }, set: { name in
+                        guard model.editor?.isNew == true else { return }
+                        model.editor?.name = name; model.editor?.error = nil
+                    }), prompt: Text(verbatim: prompt ? "review" : "ledger-review").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize)).accessibilityLabel(prompt ? "Command name" : "Name")
+                }
             }
+        } _: {
             field(prompt ? "Arguments" : "Saved in") {
                 if prompt {
-                    TextField("Argument hint", text: binding(\.arguments), prompt: Text(verbatim: "[focus]")).textFieldStyle(.sh(mono: true))
+                    SpaceSheetField {
+                        TextField("Argument hint", text: binding(\.arguments), prompt: Text(verbatim: "[focus]").foregroundStyle(Color.sh.textTertiary))
+                            .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize))
+                    }
                 } else {
-                    Text(editor.destination).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
-                        .frame(minHeight: SH.Height.controlL, alignment: .leading)
+                    SpaceSheetField(readOnly: true) {
+                        Text(editor.destination).font(.shMono(SHCardSheetMetrics.codeSize)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                    }
                 }
             }
         }
@@ -110,56 +105,59 @@ struct SpaceResourceEditorView: View {
     }
 
     @ViewBuilder private func agentFields(_ editor: SpaceResourcesModel.Editor) -> some View {
-        HStack(alignment: .top, spacing: SH.Space.xl) {
+        two {
             field("Model") {
                 SpaceResourceDropdown(label: "Subagent model", value: binding(\.model),
                                       options: [("", "Use the parent model")] + Array(Set(models + [editor.model].filter { !$0.isEmpty })).sorted().map { ($0, $0) })
             }
+        } _: {
             field("Thinking") { SpaceResourceDropdown(label: "Subagent thinking level", value: binding(\.thinking), options: Self.thinking) }
         }
         field("Tools") {
-            HStack(spacing: SH.Space.xs) {
+            HStack(spacing: AppLayout.spaceToolsGap) {
                 ForEach(SpaceResourcesModel.tools, id: \.self) { tool in
-                    Toggle(tool, isOn: Binding(get: { model.editor?.tools.contains(tool) == true }, set: { on in
+                    Toggle(isOn: Binding(get: { model.editor?.tools.contains(tool) == true }, set: { on in
                         guard var tools = model.editor?.tools else { return }
                         tools.removeAll { $0 == tool }
                         if on { tools = SpaceResourcesModel.tools.filter { tools.contains($0) || $0 == tool } + tools.filter { !SpaceResourcesModel.tools.contains($0) } }
                         model.editor?.tools = tools
-                    })).toggleStyle(.shCheckbox).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
-                        .frame(width: AppLayout.resourceToolWidth, height: SH.Height.controlL, alignment: .leading)
+                    })) { Text(tool).font(.shMono(SHCardSheetMetrics.codeSize)).foregroundStyle(Color.sh.textPrimary) }.toggleStyle(.shCheckbox)
                 }
-            }.accessibilityElement(children: .contain).accessibilityLabel("Tools")
-            Text("Never more permissions than the parent agent.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                Spacer(minLength: 0)
+            }.frame(minHeight: AppLayout.spaceSheetFieldHeight).accessibilityElement(children: .contain).accessibilityLabel("Tools")
+            SpaceSheetNote(text: "Never more permissions than the parent agent.").padding(.top, -SH.Space.xs)
         }
     }
 
     @ViewBuilder private func agentOptions(_ editor: SpaceResourcesModel.Editor) -> some View {
-        HStack(alignment: .top, spacing: SH.Space.xl) {
+        two {
             field("Starts with") {
                 SpaceResourceDropdown(label: "Subagent starting context", value: binding(\.context),
                                       options: [("fresh", "Fresh context"), ("fork", "Copy of the parent thread")])
             }
+        } _: {
             field("System instructions") {
                 SpaceResourceDropdown(label: "Subagent system prompt mode", value: binding(\.promptMode),
                                       options: [("append", "Add to the default system prompt"), ("replace", "Replace the system prompt")])
             }
         }
         HStack {
-            Text("Read the space's instructions").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+            Text("Read the space's instructions").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
             Spacer(minLength: 0)
             Toggle("Read the space's instructions", isOn: binding(\.inheritContext)).toggleStyle(.shSwitch).labelsHidden()
-        }
+        }.padding(.top, SH.Space.xl)
     }
 
     @ViewBuilder private var extensionFields: some View {
         field("Extension file") {
             HStack(spacing: SH.Space.m) {
-                TextField("Extension file", text: binding(\.file), prompt: Text(verbatim: "extensions/outbox-guard.ts"))
-                    .textFieldStyle(.sh(mono: true)).disabled(true)
-                Button("Choose file") { choose() }.buttonStyle(.sh(.secondary, size: .l))
+                SpaceSheetField(dim: true) {
+                    TextField("Extension file", text: binding(\.file), prompt: Text(verbatim: "extensions/outbox-guard.ts").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize)).disabled(true)
+                }
+                Button("Choose file") { choose() }.buttonStyle(SpaceLinkStyle(tone: .strong))
             }
-            Text("Paths are relative to the project's .pi folder. Extensions execute code on the space's host.")
-                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            SpaceSheetNote(text: "Paths are relative to the project's .pi folder. Extensions execute code on the space's host.")
         }
     }
 
@@ -184,15 +182,14 @@ struct SpaceResourceCloseButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
-                .frame(width: SH.Height.controlL, height: SH.Height.controlL)
-                .background(Color.sh.bgWindow, in: Circle()).overlay(Circle().stroke(Color.sh.lineStrong))
-                .contentShape(Circle())
-        }.buttonStyle(.plain).shFocusRing(radius: SH.Height.controlL / 2, color: .sh.running).accessibilityLabel(label)
+            Image(systemName: "xmark").font(.shSans(SHSettingsControlMetrics.popupChevronSize, .semibold)).foregroundStyle(Color.sh.textSecondary)
+                .frame(width: AppLayout.spaceSheetClose, height: AppLayout.spaceSheetClose)
+                .background(Color.sh.bgHover, in: Circle()).contentShape(Circle())
+        }.buttonStyle(.plain).shFocusRing(radius: AppLayout.spaceSheetClose / 2, color: .sh.running).accessibilityLabel(label)
     }
 }
 
-/// A multi-line field drawn as the boards' settings field.
+/// A multi-line field (`gspcs-area`): a 1pt line at radius 8, 8pt over 10pt inside.
 struct SpaceResourceTextArea: View {
     let label: String
     @Binding var text: String
@@ -202,18 +199,18 @@ struct SpaceResourceTextArea: View {
 
     var body: some View {
         TextEditor(text: $text)
-            .font(mono ? .sh(.code) : .sh(.body)).foregroundStyle(Color.sh.textPrimary)
+            .font(mono ? .shMono(SHTextStyle.caption.size) : .sh(.ui)).foregroundStyle(Color.sh.textPrimary)
             .scrollContentBackground(.hidden).focused($focused)
-            .padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.m)
+            .padding(.horizontal, AppLayout.spaceSheetFieldSides - SH.Space.xs).padding(.vertical, SH.Space.xs)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
-            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-            .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
-            .shFocusRing(focused, radius: SH.Radius.s)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(focused ? Color.sh.textSecondary : Color.sh.lineSubtle) }
+            .shFocusRing(focused, radius: SH.Radius.m)
             .accessibilityLabel(label)
     }
 }
 
-/// The boards' dropdown on a native menu.
+/// A menu field in a sheet (`gspcs-fld` with chevrons) on a native menu.
 struct SpaceResourceDropdown: View {
     let label: String
     @Binding var value: String
@@ -224,14 +221,10 @@ struct SpaceResourceDropdown: View {
         Menu {
             ForEach(options, id: \.0) { option in Button(option.1) { value = option.0 } }
         } label: {
-            HStack(spacing: SH.Space.m) {
-                Text(title).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
-                Spacer(minLength: 0)
-                SHGlyph.popupChevrons.image.font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
-            }.padding(.horizontal, SH.Space.l).frame(maxWidth: .infinity, minHeight: SHSettingsControlMetrics.controlHeight)
-                .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SHSettingsControlMetrics.radius))
-                .shBorder(Color.sh.lineStrong, radius: SHSettingsControlMetrics.radius)
-                .contentShape(Rectangle())
+            SpaceSheetField {
+                Text(title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                SHGlyph.popupChevrons.image.font(.shSans(SHSettingsControlMetrics.popupChevronSize)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+            }.contentShape(Rectangle())
         }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
             .accessibilityLabel(label).accessibilityValue(title)
     }
@@ -244,48 +237,48 @@ struct SpaceSkillInstallView: View {
 
     var body: some View {
         if let state = model.install {
-            VStack(alignment: .leading, spacing: SH.Space.xl) {
-                HStack(spacing: SH.Space.l) {
-                    Text("Add skills to \(project.project.name)").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    SpaceResourceCloseButton(label: "Cancel skill install") { model.install = nil }
-                }
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    Text("Repository URL").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+            SpaceSheet(title: "Add skills to \(project.project.name)", width: AppLayout.spaceInstallSheetWidth, close: { model.install = nil },
+                       note: "Global Skills stays unchanged.") {
+                SpaceSheetLabel("Repository URL")
+                SpaceSheetField {
                     TextField("Skills repository URL", text: Binding(get: { state.repository }, set: {
                         model.install?.repository = $0; model.install?.candidates = nil; model.install?.selected = []; model.install?.error = nil
-                    }), prompt: Text(verbatim: "https://github.com/owner/skills")).textFieldStyle(.sh(mono: true))
+                    }), prompt: Text(verbatim: "https://github.com/owner/skills").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize))
                 }
-                HStack(alignment: .bottom, spacing: SH.Space.xl) {
-                    VStack(alignment: .leading, spacing: SH.Space.xs) {
-                        Text("Revision").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                        TextField("Skills repository revision", text: Binding(get: { state.revision }, set: { model.install?.revision = $0 }),
-                                  prompt: Text(verbatim: "Branch, tag or commit")).textFieldStyle(.sh(mono: true))
-                    }.frame(maxWidth: .infinity)
-                    Button("Preview skills") { Task { await model.preview() } }.buttonStyle(.sh(.secondary, size: .l))
+                SpaceSheetLabel("Revision")
+                SpaceSheetField {
+                    TextField("Skills repository revision", text: Binding(get: { state.revision }, set: { model.install?.revision = $0 }),
+                              prompt: Text(verbatim: "Branch, tag or commit").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.plain).font(.shMono(SHCardSheetMetrics.codeSize))
+                }
+                SpaceSheetLabel(text: "Preview skills", count: state.candidates.map { "\($0.count) skill\($0.count == 1 ? "" : "s") found" ?? "" }) {
+                    Button(state.busy ? "Looking…" : "Look up") { Task { await model.preview() } }.buttonStyle(SpaceLinkStyle(tone: .strong, caption: true)).accessibilityLabel("Preview skills")
                         .disabled(state.busy || state.repository.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let candidates = state.candidates, !candidates.isEmpty {
-                    VStack(alignment: .leading, spacing: SH.Space.m) {
+                    VStack(spacing: 0) {
                         ForEach(candidates) { skill in
-                            HStack(spacing: SH.Space.l) {
+                            HStack(spacing: SH.Space.l - SH.Space.xxs) {
                                 Toggle(skill.name, isOn: Binding(get: { model.install?.selected.contains(skill.path) == true }, set: { on in
                                     if on { model.install?.selected.insert(skill.path) } else { model.install?.selected.remove(skill.path) }
-                                })).toggleStyle(.shCheckbox).font(.sh(.body)).frame(width: AppLayout.resourceFromWidth + SH.Space.xxxl + SH.Space.m, alignment: .leading)
-                                Text(skill.summary).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
-                            }
+                                })).toggleStyle(.shCheckbox).font(.sh(.ui, weight: .medium)).frame(width: AppLayout.spaceSkillNameWidth, alignment: .leading)
+                                Text(skill.summary).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.tail)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }.frame(minHeight: AppLayout.spaceSheetFieldHeight + SH.Space.xxs)
+                            if skill.id != candidates.last?.id { SHHairline() }
                         }
-                    }.padding(SH.Space.l).shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+                    }.padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.xs)
+                        .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(Color.sh.lineSubtle) }
                 }
-                if let error = state.error { Text(error).font(.sh(.ui)).foregroundStyle(Color.sh.failed) }
-                Text("Destination · \(project.project.displayPath)/.pi/skills").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
-                HStack(spacing: SH.Space.m) {
-                    Text("Global Skills stays unchanged.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Cancel") { model.install = nil }.buttonStyle(.sh(.ghost, size: .l)).keyboardShortcut(.cancelAction)
-                    Button(state.busy ? "Adding…" : "Add \(state.selected.count) skill\(state.selected.count == 1 ? "" : "s")") { Task { await model.installSelected() } }
-                        .buttonStyle(.sh(.primary, size: .l)).disabled(state.busy || state.selected.isEmpty)
-                }
-            }.padding(SH.Space.xxl)
+                if let error = state.error { SpaceSheetNote(text: error, failed: true) }
+                Text("Destination · \(project.project.displayPath)/.pi/skills").font(.shMono(SHTextStyle.caption.size)).foregroundStyle(Color.sh.textTertiary)
+                    .padding(.top, SH.Space.xl)
+            } actions: {
+                Button("Cancel") { model.install = nil }.buttonStyle(SpaceBarStyle()).keyboardShortcut(.cancelAction)
+                Button(state.busy ? "Adding…" : "Add \(state.selected.count) skill\(state.selected.count == 1 ? "" : "s")") { Task { await model.installSelected() } }
+                    .buttonStyle(SpaceBarStyle(kind: .primary)).disabled(state.busy || state.selected.isEmpty)
+            }
         }
     }
 }

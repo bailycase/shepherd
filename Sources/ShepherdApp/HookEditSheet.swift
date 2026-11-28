@@ -171,37 +171,39 @@ struct HookEditSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            SHHairline()
             ScrollView {
                 Group {
                     if editor.pane == .form { form } else { jsonPane }
                 }
-                .padding(.horizontal, SH.Space.xxl)
-                .padding(.vertical, SH.Space.xl)
+                .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+                .padding(.top, SHPiSignInMetrics.bodyTop)
+                .padding(.bottom, SHPiSignInMetrics.bodyBottom)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            SHHairline()
             footer
         }
         .frame(width: AppLayout.hooksSheetWidth, height: AppLayout.hooksSheetHeight)
         .background(Color.sh.bgRaised)
+        .shControlScale(.sheet)
         .disabled(editor.saving)
     }
 
     private var header: some View {
-        HStack(spacing: SH.Space.l) {
-            VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                Text(editor.title).shText(.title).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
-                Text(editor.event.effect).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+        HStack(alignment: .top, spacing: SH.Space.xl) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                Text(editor.title)
+                    .font(.shSans(SHPiSignInMetrics.sheetTitleSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .frame(minHeight: SHPiSignInMetrics.sheetTitleLine, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
+                SHSheetSubtitle(editor.event.effect)
             }
             Spacer(minLength: 0)
-            SHSegmentedPicker("Edit as", selection: $editor.pane, options: [(.form, "Form"), (.json, "JSON")], size: .s)
+            SHSegmentedPicker("Edit as", selection: $editor.pane, options: [(.form, "Form"), (.json, "JSON")])
                 .fixedSize()
-            HookSheetClose(action: close)
         }
-        .padding(.leading, SH.Space.xxl)
-        .padding(.trailing, SH.Space.l)
-        .padding(.vertical, SH.Space.l)
+        .padding(.top, SHPiSignInMetrics.sheetTop)
+        .padding(.horizontal, SHPiSignInMetrics.sheetInset)
     }
 
     // MARK: Form
@@ -213,21 +215,21 @@ struct HookEditSheet: View {
             }
             HStack(alignment: .top, spacing: SH.Space.l) {
                 HookField("When", help: editor.event.effect) {
-                    Picker("When", selection: $editor.event) {
+                    SHPopupMenu("\(editor.event.label) · \(editor.event.rawValue)", minWidth: 0) {
                         ForEach(HookEvent.allCases, id: \.self) { event in
-                            Text("\(event.label) · \(event.rawValue)").tag(event)
+                            Button("\(event.label) · \(event.rawValue)") { editor.event = event }
                         }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("When")
                 }
                 HookField("Saved in", help: editor.targetRoot == nil ? "Hooks on this Mac run in every space."
                                                     : "Space hooks travel with the repo and run in its threads.") {
-                    Picker("Saved in", selection: $editor.target) {
-                        ForEach(editor.targets, id: \.path) { Text($0.label).tag($0.path) }
+                    SHPopupMenu(editor.targets.first { $0.path == editor.target }?.label ?? "", minWidth: 0) {
+                        ForEach(editor.targets, id: \.path) { target in
+                            Button(target.label) { editor.target = target.path }
+                        }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Saved in")
                 }
             }
             .disabled(editor.readOnly)
@@ -328,7 +330,7 @@ struct HookEditSheet: View {
     // MARK: Footer
 
     private var footer: some View {
-        HStack(spacing: SH.Space.m) {
+        SHSheetFooter {
             if editor.entry != nil, !editor.readOnly {
                 Button(editor.confirmingDelete ? "Delete this hook" : "Delete") {
                     if editor.confirmingDelete {
@@ -337,7 +339,7 @@ struct HookEditSheet: View {
                         editor.confirmingDelete = true
                     }
                 }
-                .buttonStyle(.sh(editor.confirmingDelete ? .dangerFill : .danger, size: .m))
+                .buttonStyle(.sh(.danger))
             }
             if let problem = editor.problem {
                 Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed).lineLimit(2).textSelection(.enabled)
@@ -346,20 +348,18 @@ struct HookEditSheet: View {
                         .help("Read the hooks again and open this hook as its file has it now")
                 }
             }
-            Spacer(minLength: SH.Space.l)
+        } actions: {
             Button(editor.readOnly ? "Close" : "Cancel", action: close)
-                .buttonStyle(.sh(.secondary, size: .m))
+                .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
             if editor.readOnly {
-                Button("Open file") { model.open(editor.target) }.buttonStyle(.sh(.primary, size: .m))
+                Button("Open file") { model.open(editor.target) }.buttonStyle(.sh(.primary))
             } else {
                 Button("Save") { Task { if await editor.save(with: model) { close() } } }
-                    .buttonStyle(.sh(.primary, size: .m))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(.horizontal, SH.Space.xxl)
-        .padding(.vertical, SH.Space.l)
     }
 }
 

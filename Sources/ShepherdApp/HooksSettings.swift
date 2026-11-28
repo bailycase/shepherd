@@ -38,9 +38,8 @@ struct HooksSettings: View {
                     }
                     ForEach(model.groups) { group in
                         ForEach(group.rows) { row in
-                            SettingsRow(title: row.command, subtitle: "\(group.label) · \(row.matcherIsAny ? "any tool" : row.matcher)",
-                                        dot: row.on ? .on : .off, mono: true) {
-                                HStack(spacing: SH.Space.m) {
+                            SettingsRow(title: row.command, subtitle: "\(group.label) · \(row.matcherIsAny ? "any tool" : row.matcher)") {
+                                HStack(spacing: AppLayout.settingsControlsSpacing) {
                                     SettingsValue(text: row.source)
                                     Toggle(row.on ? "Turn off \(row.command)" : "Turn on \(row.command)",
                                            isOn: Binding(get: { row.on }, set: { model.setOn(row, $0) }))
@@ -66,7 +65,7 @@ struct HooksSettings: View {
                     ForEach(model.sections) { section in
                         ForEach(section.files) { file in
                             SettingsRow(title: file.shownPath, subtitle: [file.format, file.count, file.state].joined(separator: " · "),
-                                        dot: file.tone == .ok ? .on : file.tone == .failed ? .bad : .off, mono: true) {
+                                        dot: file.tone == .ok ? .on : file.tone == .failed ? .bad : .off) {
                                 if let action = file.action {
                                     Button(HookFileRowView.title(action)) { model.act(action, on: file, root: section.root) }
                                         .buttonStyle(.sh(.secondary, size: .s))

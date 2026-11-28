@@ -69,40 +69,55 @@ struct FleetExcludesSheet: View {
     private var current: FleetExcludeSpace? { spaces.first { $0.id == selection } ?? spaces.first }
 
     var body: some View {
-        DialogSheet(title: "Ignored files, per space",
-                    subtitle: "Always kept home: Swift .build, Xcode DerivedData, Python virtualenvs, CMake build trees and a Cargo target. List more below, or name one of those to send it anyway. One path or name per line.",
-                    actions: [DialogAction("Done", kind: .prominent) { commit(); done() }]) {
-            VStack(alignment: .leading, spacing: SH.Space.l) {
-                VStack(alignment: .leading, spacing: SH.Space.s) {
-                    SettingsSheetLabel(title: "Space")
-                    SHPopupMenu(current?.name ?? "", minWidth: AppLayout.settingsPopupWidth) {
-                        ForEach(spaces) { space in Button(space.name) { commit(); choose(space) } }
+        SpaceSheet(title: "Ignored files, per space",
+                   caption: AnyView(SpaceSheetCaption(text: "Always kept home: .build, DerivedData, virtualenvs, CMake and Cargo targets. One path or name per line.")),
+                   width: AppLayout.fleetExcludesWidth) {
+            VStack(alignment: .leading, spacing: 0) {
+                SpaceSheetLabel("Space")
+                Menu {
+                    ForEach(spaces) { space in Button(space.name) { commit(); choose(space) } }
+                } label: {
+                    SpaceSheetField {
+                        Text(current?.name ?? "").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        SHGlyph.popupChevrons.image.font(.shSans(SHSettingsControlMetrics.popupChevronSize)).foregroundStyle(Color.sh.textTertiary)
+                            .accessibilityHidden(true)
                     }
-                    .shControlScale(.settings)
-                    .accessibilityLabel("Space")
+                    .contentShape(Rectangle())
                 }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                .accessibilityLabel("Space")
                 field("Keep home", text: $home, example: "packages/web/dist")
                 field("Send anyway", text: $send, example: ".build")
             }
-            .dialogInset()
+        } actions: {
+            Button("Done") { commit(); done() }.buttonStyle(SpaceBarStyle(kind: .primary)).keyboardShortcut(.defaultAction)
         }
         .onAppear { if let first = spaces.first { choose(first) } }
     }
 
     private func field(_ label: String, text: Binding<String>, example: String) -> some View {
-        VStack(alignment: .leading, spacing: SH.Space.s) {
-            SettingsSheetLabel(title: label, openIn: text, file: label == "Keep home" ? "keep-home.txt" : "send-anyway.txt", scope: selection)
+        VStack(alignment: .leading, spacing: 0) {
+            SpaceSheetLabel(text: label, trailing: {
+                SettingsOpenIn(text: text, name: label == "Keep home" ? "keep-home.txt" : "send-anyway.txt").id(selection)
+            })
             TextEditor(text: text)
-                .font(.sh(.mono))
+                .font(.shMono(AppLayout.fleetExcludeTextSize))
                 .scrollContentBackground(.hidden)
-                .foregroundStyle(Color.sh.textSecondary)
-                .padding(SH.Space.m)
-                .frame(height: AppLayout.fleetExcludeEditorHeight)
-                .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
-                .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
+                .foregroundStyle(Color.sh.textPrimary)
+                .padding(.horizontal, AppLayout.fleetExcludeEditorInset - SH.Space.xs).padding(.vertical, SH.Space.m - SH.Space.xs)
+                .frame(height: Self.height(of: text.wrappedValue))
+                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(Color.sh.lineSubtle) }
                 .accessibilityLabel(label)
                 .accessibilityHint("One path or name per line, like \(example)")
         }
+    }
+
+    /// A box holds its lines on 19pt rows with 17pt over and under: 72pt for two, 52 at least, and it stops growing at six.
+    static func height(of text: String) -> CGFloat {
+        let lines = min(max(text.split(separator: "\n", omittingEmptySubsequences: false).count, 1), AppLayout.fleetExcludeMaxLines)
+        return max(AppLayout.fleetExcludeEditorHeight, CGFloat(lines) * AppLayout.fleetExcludeLine + AppLayout.fleetExcludeEditorPadding)
     }
 
     private func choose(_ space: FleetExcludeSpace) {

@@ -129,6 +129,9 @@ struct RootView: View {
                     }
             }
         }
+        // First-run setup: under Settings, so an API key can be added from it.
+        .overlay { OnboardingOverlay(vm: vm) }
+        .task { await vm.beginOnboardingIfNeeded() }
         .overlay { SettingsOverlay(vm: vm) }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }

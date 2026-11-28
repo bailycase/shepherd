@@ -21,7 +21,7 @@ struct SlashCommandsSettings: View {
                     (.all, "All \(presentation.total)"),
                     (.on, "On \(presentation.total - presentation.hidden)"),
                     (.off, "Off \(presentation.hidden)"),
-                ])
+                ], search: Binding(get: { model.query }, set: { model.query = $0 }), searchPrompt: "Filter commands")
             }
             if all.isEmpty {
                 SettingsGroup(title: "Commands") {
@@ -55,7 +55,7 @@ private struct SlashCommandListRow: View, Equatable {
 
     var body: some View {
         let _ = SHRenderProbe.tick("slashCommands.row")
-        SettingsRow(title: "/" + row.name, subtitle: row.description ?? row.arguments, mono: true) {
+        SettingsRow(title: "/" + row.name, subtitle: row.description ?? row.arguments) {
             SettingsSwitch(label: "/" + row.name, isOn: Binding(get: { row.isOn }, set: set))
         }
         .help(SlashCommandWords.help(row.name, isOn: row.isOn))

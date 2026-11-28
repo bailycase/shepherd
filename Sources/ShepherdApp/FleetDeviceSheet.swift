@@ -12,29 +12,21 @@ struct FleetDeviceSheet: View {
     let dismiss: () -> Void
 
     var body: some View {
-        SHDialog("Add a device", message: "On your iPhone or iPad, open Shepherd and Add a Mac. Enter the code, or scan this on a phone.",
-                 width: AppLayout.fleetJoinWidth) {
-            VStack(spacing: 0) {
-            VStack(spacing: SH.Space.l) {
-                if let end = model.deviceCodeEnd {
-                    outcome(end)
-                } else if let join = model.deviceCode {
-                    FleetQRCode(link: FleetProtocol.pairLink(code: join.code, advertisedID: model.snapshot.hostID.map(FleetProtocol.advertisedIDHash) ?? ""))
-                    FleetJoinCode(join: join, note: "The device connects as a client and holds no sign-ins.")
-                    Text("Both need to be on the same local network as this Mac.")
-                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
-                } else {
-                    Text("Opening a code…").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
+        SHSettingsSheet("Add a device", subtitle: "On your iPhone or iPad, open Shepherd and Add a Mac. Enter the code, or scan this on a phone.",
+                        width: AppLayout.fleetJoinWidth) {
+            if let end = model.deviceCodeEnd {
+                outcome(end)
+            } else if let join = model.deviceCode {
+                FleetQRCode(link: FleetProtocol.pairLink(code: join.code, advertisedID: model.snapshot.hostID.map(FleetProtocol.advertisedIDHash) ?? ""))
+                    .frame(maxWidth: .infinity)
+                FleetJoinCode(join: join, note: "the device connects as a client and holds no sign-ins")
+                SHSheetParagraph("Both need to be on the same local network as this Mac.", style: .small, centered: true).shSheetTight()
+                if let link = model.pairingLink(for: join, purpose: .device) {
+                    FleetShareSection(link: link, title: "If the device can’t find this Mac",
+                                      detail: "Send it a pairing link. On an iPhone or iPad it opens Add a Mac with this Mac and its code filled in, on any network the two share.")
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, SHDialogMetrics.inset)
-            .padding(.vertical, SH.Space.l)
-            if model.deviceCodeEnd == nil, let code = model.deviceCode, let link = model.pairingLink(for: code, purpose: .device) {
-                SHHairline()
-                FleetShareSection(link: link, title: "If the device can't find this Mac",
-                                  detail: "Send it a pairing link. On an iPhone or iPad it opens Add a Mac with this Mac and its code filled in, on any network the two share.")
-            }
+            } else {
+                SHSheetParagraph("Opening a code…", style: .small, centered: true)
             }
         } actions: {
             if model.deviceCodeEnd == .closed {
@@ -50,11 +42,11 @@ struct FleetDeviceSheet: View {
     @ViewBuilder private func outcome(_ end: FleetSettingsModel.DeviceCodeEnd) -> some View {
         switch end {
         case .added(let name):
-            Text("Added. \(name) is paired with your fleet.").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.done)
+            SHSheetParagraph("Added. \(name) is paired with your fleet.", style: .big)
+            SHSheetParagraph("It reads and sends on every Mac in the fleet, and holds no sign-ins. Revoke it any time in Phones and tablets.")
+                .shSheetTight()
         case .closed:
-            Text("That code is no longer good. It lasts 5 minutes and five wrong tries close it.")
-                .font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
-                .multilineTextAlignment(.center)
+            SHSheetParagraph("That code is no longer good. It lasts 5 minutes and five wrong tries close it.", centered: true)
         }
     }
 }
@@ -67,17 +59,21 @@ struct FleetQRCode: View {
     var body: some View {
         Group {
             if let image = Self.image(of: link) {
-                Image(decorative: image, scale: 1)
+                Image(decorative: image, scale: Self.pixelsPerPoint)
                     .interpolation(.none)
                     .resizable()
-                    .frame(width: CGFloat(image.width), height: CGFloat(image.height))
-                    .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .frame(width: CGFloat(image.width) / Self.pixelsPerPoint, height: CGFloat(image.height) / Self.pixelsPerPoint)
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: AppLayout.fleetQRRadius))
+        .overlay { RoundedRectangle(cornerRadius: AppLayout.fleetQRRadius).strokeBorder(Color.sh.lineStrong, lineWidth: SHSettingsNavMetrics.borderWidth) }
         .accessibilityLabel("QR code of the pairing code")
     }
 
-    /// The QR as pixels, sized to a whole number of points per module with a four module quiet zone.
+    /// Drawn for a Retina screen: a module is a whole number of pixels, so a module may be half a point.
+    static let pixelsPerPoint: CGFloat = 2
+
+    /// The QR as pixels, sized to a whole number of pixels per module.
     static func image(of text: String) -> CGImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
@@ -85,7 +81,7 @@ struct FleetQRCode: View {
         guard let code = filter.outputImage else { return nil }
         let quiet: CGFloat = 4
         let canvas = code.extent.insetBy(dx: -quiet, dy: -quiet)
-        let scale = (AppLayout.fleetQRSize / canvas.width).rounded(.down).clamped(min: 1)
+        let scale = (AppLayout.fleetQRSize * pixelsPerPoint / canvas.width).rounded(.down).clamped(min: 1)
         let page = CIImage(color: .white).cropped(to: canvas)
         let composed = code.composited(over: page).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         return CIContext().createCGImage(composed, from: composed.extent)

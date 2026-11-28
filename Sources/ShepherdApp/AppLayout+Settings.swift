@@ -11,7 +11,14 @@ extension AppLayout {
     static let settingsModalMargin: CGFloat = SH.Space.xxxl
     /// The page's one column, 56pt under the top.
     static let settingsColumnWidth: CGFloat = 620
-    static let settingsTop: CGFloat = 56
+    static let settingsTop: CGFloat = 44
+    static let settingsFadeHeight: CGFloat = SH.Space.xxxl
+    /// Between the controls at a row's end (a menu, then a button).
+    static let settingsControlsSpacing: CGFloat = SHCardRowMetrics.settingsHorizontalPadding
+    /// A sub-page's "‹ Parent" link sits this far above the column's top.
+    static let settingsUpLinkLift: CGFloat = 23
+    static let settingsUpLinkDrop: CGFloat = 1
+    static let settingsBottom: CGFloat = SH.Space.xxxl + SH.Space.xl
     /// Spaces keeps its full-width layout's bottom margin.
     static let settingsWideBottomSpaces: CGFloat = 48
     /// An editor drill-in's card: at least this tall.
@@ -19,11 +26,21 @@ extension AppLayout {
     /// What the column keeps around an editor card that fills the window: the top margin, the title and the bottom margin.
     static let settingsEditorChrome: CGFloat = 56 + 44 + SH.Space.xxxl + SH.Space.xl
     /// A group's footnote line height.
-    static let settingsFootnoteLineHeight: CGFloat = 1.35
+    static let settingsFootnoteLineHeight: CGFloat = 1.42
     /// A remote host's address in its row ("orbit.starlight.internal:7433"): mono 12.
     static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group, and between groups.
-    static let settingsGroupSpacing: CGFloat = SH.Space.xl
+    static let settingsGroupSpacing: CGFloat = SH.Space.xxl + SH.Space.xs
+    /// A page's title (18/600).
+    static let settingsTitleSize: CGFloat = 18
+    /// An editor card's header (`gs-edh`): 40pt, 14pt in and between, "Edited" pulled 6pt toward the name.
+    static let settingsEditorHeaderHeight: CGFloat = 40
+    static let settingsEditorHeaderInset: CGFloat = 14
+    static let settingsEditorHeaderGap: CGFloat = 14
+    static let settingsEditorEditedPull: CGFloat = 6
+    static let settingsTitleLine: CGFloat = 27
+    /// A group's label line.
+    static let settingsGroupHeaderHeight: CGFloat = 18
     /// A row's content, density-scaled; the row adds 6pt above and below (`SHCardRowFrame`).
     @MainActor static var settingsRowMinHeight: CGFloat { SH.Height.scaled(SHCardRowMetrics.settingsMinHeight) }
     /// Settings ▸ Keyboard: a changed shortcut's Reset, in Geist 12.
@@ -67,7 +84,7 @@ extension AppLayout {
     /// The editor: mono 12.5 on 21pt lines, 10pt above and below, a 34pt gutter of mono 10.5
     /// numbers 12pt before the text.
     static let instructionsEditorTextSize: CGFloat = 12.5
-    static let instructionsEditorLineHeight: CGFloat = 21
+    static let instructionsEditorLineHeight: CGFloat = 20
     static let instructionsEditorInset: CGFloat = 10
     static let instructionsGutterWidth: CGFloat = 34
     static let instructionsNumberSize: CGFloat = 10.5
@@ -99,7 +116,7 @@ extension AppLayout {
     static let skillsCardRadius: CGFloat = 10
     /// The list's columns: a switch, the skill, its source, how it's used, when it changed, and
     /// the disclosure chevron, 16pt apart; its header 30pt tall, a row at least 54.
-    static let skillsHeaderHeight: CGFloat = 30
+    static let skillsHeaderHeight: CGFloat = 32
     static let skillsRowMinHeight: CGFloat = 54
     static let skillsColumnGap: CGFloat = 16
     static let skillsSwitchColumn: CGFloat = 30
@@ -130,61 +147,73 @@ extension AppLayout {
     // Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch,
     // SettingsSkillsRepo): a 1200 × 860 sheet (860 × 600 at least); Add from repo's picker is
     // 560pt wide beside the preview.
-    static let skillsSheetWidth: CGFloat = 1200
-    static let skillsSheetHeight: CGFloat = 860
+    static let skillsSheetWidth: CGFloat = 920
+    static let skillsSheetHeight: CGFloat = 800
     static let skillsSheetMinWidth: CGFloat = 860
     static let skillsSheetMinHeight: CGFloat = 600
-    static let skillsSheetListWidth: CGFloat = 560
+    static let skillsSheetListWidth: CGFloat = 500
     // Browse's results stay narrower than Add from repo's picker so the selected skill keeps
     // the larger share: about 440pt of the 860pt minimum, 780pt of the 1200pt ideal.
-    static let skillsBrowseListWidth: CGFloat = 420
+    static let skillsBrowseListWidth: CGFloat = 380
     static let skillsSheetSides: CGFloat = 22
-    static let skillsSheetTitleSize: CGFloat = 17
+    static let skillsSheetTitleSize: CGFloat = 15
     static let skillsSheetCloseSize: CGFloat = 28
-    static let skillsSearchHeight: CGFloat = 38
+    static let skillsSearchHeight: CGFloat = 36
     static let skillsSearchTextSize: CGFloat = 14
-    static let skillsTopicHeight: CGFloat = 26
-    static let skillsResultMinHeight: CGFloat = 58
-    static let skillsResultRankWidth: CGFloat = 22
-    static let skillsResultInstallsWidth: CGFloat = 96
+    static let skillsTopicHeight: CGFloat = 24
+    static let skillsResultMinHeight: CGFloat = 54
+    static let skillsResultRankWidth: CGFloat = 18
+    static let skillsResultInstallsWidth: CGFloat = 84
     static let skillsProgressWidth: CGFloat = 64
     static let skillsProgressHeight: CGFloat = 3
     static let skillsPreviewNameSize: CGFloat = 18
     static let skillsPreviewTextSize: CGFloat = 13
     static let skillsPreviewHeaderHeight: CGFloat = 34
-    static let skillsPreviewLineHeight: CGFloat = 20
+    static let skillsPreviewLineHeight: CGFloat = 19
     static let skillsPreviewGutter: CGFloat = 34
     static let skillsPreviewNumberSize: CGFloat = 10.5
-    static let skillsPreviewFade: CGFloat = 56
+    static let skillsPreviewFade: CGFloat = 40
     /// The SKILL.md preview's height: Browse's, Search's, and Add from repo's.
-    static let skillsPreviewBrowseHeight: CGFloat = 240
-    static let skillsPreviewSearchHeight: CGFloat = 280
+    static let skillsPreviewBrowseHeight: CGFloat = 316
+    static let skillsPreviewSearchHeight: CGFloat = 316
     static let skillsPreviewRepoHeight: CGFloat = 340
-    static let skillsPickerRowHeight: CGFloat = 34
-    static let skillsPickerNameWidth: CGFloat = 168
-    static let skillsFooterHeight: CGFloat = 60
+    static let skillsPickerRowHeight: CGFloat = 40
+    static let skillsPickerNameWidth: CGFloat = 150
+    static let skillsSheetTextSize: CGFloat = 13
+    static let skillsPreviewNameLine: CGFloat = 24
+    static let skillsSubtitleWidth: CGFloat = 620
+    static let skillsFieldRadius: CGFloat = 10
+    static let skillsFilterGap: CGFloat = 14
+    static let skillsFilterRule: CGFloat = 16
+    static let skillsTopicPadding: CGFloat = 9
+    static let skillsRowLeading: CGFloat = 14
+    static let skillsRowTrailing: CGFloat = 16
+    static let skillsDetailGap: CGFloat = 16
+    static let skillsActionGap: CGFloat = 18
+    static let skillsSummaryLine: CGFloat = 20.0 / 13
+    static let skillsEmptyLift: CGFloat = 80
     static let skillsRepoFieldHeight: CGFloat = 38
-    static let skillsRepoFieldTextSize: CGFloat = 13.5
+    static let skillsRepoFieldTextSize: CGFloat = 13
 
     // Settings ▸ MCP servers (SettingsMCP): the servers beside the same 280pt rail as Skills.
     static let mcpExplanationWidth: CGFloat = 700
     static let mcpFilterWidth: CGFloat = 240
     /// The filter field in a Settings list card's first row.
-    static let settingsFilterWidth: CGFloat = 250
+    static let settingsFilterWidth: CGFloat = 200
     static let mcpCardRadius: CGFloat = 10
     static let mcpNoteSize: CGFloat = 12
     static let mcpPathSize: CGFloat = 11
     // The Add server sheet (SettingsMCPAdd, SettingsMCPLocal): 720pt wide (760 for Local),
     // 22pt sides, 34pt fields at radius 7, a 60pt footer.
-    static let mcpSheetWidth: CGFloat = 720
-    static let mcpSheetLocalWidth: CGFloat = 760
-    static let mcpSheetMinHeight: CGFloat = 520
+    static let mcpSheetWidth: CGFloat = 540
+    static let mcpSheetLocalWidth: CGFloat = 540
+    static let mcpSheetMinHeight: CGFloat = 420
     static let mcpSheetSides: CGFloat = 22
     static let mcpSheetTitleSize: CGFloat = SHTextStyle.title.size
     static let mcpSheetTextSize: CGFloat = 12.5
     static let mcpSheetCloseSize: CGFloat = 28
-    static let mcpSheetFieldHeight: CGFloat = 34
-    static let mcpSheetFieldRadius: CGFloat = 7
+    static let mcpSheetFieldHeight: CGFloat = 32
+    static let mcpSheetFieldRadius: CGFloat = 8
     static let mcpSheetFooterHeight: CGFloat = 60
     static let mcpSheetNameWidth: CGFloat = 200
     static let mcpSheetEnvKeyWidth: CGFloat = 250
@@ -244,6 +273,8 @@ extension AppLayout {
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.
+    /// The device code's Copy and Open links: 20pt apart.
+    static let signInCodeActionGap: CGFloat = 20
     static let signInAutoCloseDelay: Duration = .milliseconds(1200)
     /// How long a first launch's sheet shows its last step before it turns to what came over.
     static let importDoneBeat: Duration = .milliseconds(350)
@@ -285,8 +316,8 @@ extension AppLayout {
     /// A remote automation's details and runs, and how tall its run list grows before it scrolls.
     static let automationSheetWidth: CGFloat = 560
     static let automationRunsMaxHeight: CGFloat = 200
-    static let directoryPickerWidth: CGFloat = 480
-    static let directoryListHeight: CGFloat = 260
+    static let directoryPickerWidth: CGFloat = 520
+    static let directoryListHeight: CGFloat = 208
     static let promptEditorHeight: CGFloat = 96
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12
