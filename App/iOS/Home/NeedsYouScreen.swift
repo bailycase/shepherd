@@ -23,13 +23,13 @@ struct NeedsYouScreen: View {
             } else if sizeClass == .regular {
                 NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures, single: $single)
             } else {
-                NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures)
+                NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures, showsTitle: true)
             }
         }
         .background(Color.sh.bgWindow)
         .task { await feed.watch() }
         .navigationTitle("Needs you")
-        .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // On a wide iPad the trailing corner shares the status bar's space.
             if sizeClass == .regular {
@@ -50,7 +50,7 @@ struct NeedsYouScreen: View {
                 .sharedBackgroundVisibility(.hidden)
             }
         }
-        .toolbar(removing: sizeClass == .regular ? .title : nil)
+        .toolbar(removing: .title)
     }
 
     /// "4 things are waiting on you".
@@ -72,9 +72,7 @@ private struct NeedsYouCards: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 if showsTitle {
-                    Text("Needs you").font(.sh(.display)).foregroundStyle(Color.sh.textPrimary)
-                        .padding(.horizontal, SH.Space.xs)
-                        .accessibilityAddTraits(.isHeader)
+                    SettingsHeading("Needs you")
                 }
                 Text("Questions and blocked threads from every host show here.")
                     .shText(.caption).foregroundStyle(Color.sh.textSecondary)

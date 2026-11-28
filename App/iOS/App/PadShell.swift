@@ -41,13 +41,15 @@ struct PadShell: View {
             let detailLeading = fold?.upperBound ?? column
             let shown = navigator.padColumns != .detailOnly
             let beside = shown && !overlays
+            // The sidebar beside a screen it opened (iPadAutomations, iPadFleet, iPadHooks): no Back; the sidebar is the way out.
+            let hidesBack = navigator.hingeClosed == nil && beside && navigator.padSelection == nil && navigator.padPath.count <= 1
             Group {
                 if let arranged = navigator.sidePane.arranged, arranged == navigator.padSelection {
                     PadArrangedThread(ref: arranged)
                 } else {
                     ZStack(alignment: .leading) {
                         NavigationStack(path: $navigator.padPath) {
-                            PadDetailRoot().modifier(DuoTopEdge()).mobileDestinations()
+                            PadDetailRoot().modifier(DuoTopEdge()).mobileDestinations(hidesBack: hidesBack)
                         }
                         .padding(.leading, beside ? detailLeading : 0)
                         if overlays, shown {
